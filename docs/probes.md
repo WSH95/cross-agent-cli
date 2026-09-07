@@ -29,6 +29,21 @@ stdin, env scrubbed as in section 3, `DEV_TEAM_DEPTH=1`.
   dependencies are missing: socat not installed … Commands will run WITHOUT
   sandboxing." Prerequisite for the Claude adapter: `bwrap` and `socat`.
   The adapter must treat that warning as a refusal to spawn (fail closed).
+- Rerun after `socat` was installed (2026-09-07, 21:30Z): the sandbox
+  engaged, and every command then failed at the sandbox's own setup with
+  "apply-seccomp: write /proc/self/setgroups (nested userns is
+  capability-restricted; caller must provide CAP_SYS_ADMIN): Permission
+  denied", including a plain `curl`. Cause: Ubuntu 24.04 sets
+  `kernel.apparmor_restrict_unprivileged_userns=1`; the stock
+  `bwrap-userns-restrict` profile lets bubblewrap itself create a user
+  namespace but confines its children, and Claude Code's helper needs a
+  nested one. Claude Code's sandboxing docs prescribe an AppArmor profile
+  for `/usr/bin/bwrap` with `flags=(unconfined)` and `userns`, then
+  `systemctl reload apparmor`. So the Claude adapter's prerequisites on
+  Linux are three: `bwrap`, `socat`, and on Ubuntu 24.04 or later that
+  profile; the adapter's sandbox check must detect this failure mode too
+  (a command that cannot even start), not only the "Sandbox disabled"
+  warning. The P2 row for Claude stays open until the profile is in place.
 
 ## P2: implementer inside a linked worktree, writes outside it (2026-09-07)
 
