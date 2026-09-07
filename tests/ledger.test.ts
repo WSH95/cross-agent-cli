@@ -5,8 +5,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, reconcile, isProcessAlive } from "../src/ledger.ts";
-import type { CreateTask, EngineIdentity, TaskPatch, TaskStatus } from "../src/ledger.ts";
+import { create, read, update, list, reconcile, isProcessAlive, readProcessStat, TerminalTaskError } from "../src/ledger.ts";
+import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus } from "../src/ledger.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -104,6 +104,43 @@ test("update refuses status changes from terminal records", (t) => {
   }
 });
 
+test("update refuses same-status and metadata patches to terminal records when unlessTerminal is set", (t) => {
+  const root = project(t);
+  for (const terminal of ["done", "failed", "cancelled"] as const) {
+    const record = create(root, input(root), now);
+    const settled = update(root, record.id, { status: terminal, reason: "settled" }, now + 1);
+    const file = path.join(tasks(root), `${record.id}.json`);
+    const bytes = fs.readFileSync(file);
+    const entries = fs.readdirSync(tasks(root));
+    const listing = list(root);
+    const patches: TaskPatch[] = [
+      { status: terminal }, { status: terminal, exitCode: 0 }, { reason: "overwritten" }, { lastEventAt: now + 5 },
+      { status: terminal, reason: "overwritten", updatedAt: 0 } as TaskPatch,
+      ...statuses.filter((status) => status !== terminal).map((status) => ({ status })),
+    ];
+    for (const patch of patches) {
+      assert.throws(
+        () => update(root, record.id, patch, now + 2, { unlessTerminal: true }),
+        (error: unknown) => error instanceof TerminalTaskError && error.record.id === record.id
+          && assert.deepEqual(error.record, settled) === undefined && /already/.test(error.message),
+      );
+      assert.deepEqual(fs.readFileSync(file), bytes, "the terminal record's bytes are untouched");
+    }
+    assert.deepEqual(fs.readdirSync(tasks(root)), entries, "no temporary file was created");
+    assert.deepEqual(list(root), listing);
+  }
+
+  const active = create(root, input(root), now);
+  const running = update(root, active.id, { status: "running", lastEventAt: now + 1 }, now + 1, { unlessTerminal: true });
+  assert.deepEqual(running, { ...active, status: "running", lastEventAt: now + 1, updatedAt: now + 1 });
+  assert.deepEqual(read(root, active.id), running);
+  const finished = update(root, active.id, { status: "done", exitCode: 0 }, now + 2, { unlessTerminal: true });
+  assert.deepEqual(read(root, active.id), { ...running, status: "done", exitCode: 0, updatedAt: now + 2 });
+  assert.throws(() => update(root, active.id, { exitCode: 1 }, now + 3, { unlessTerminal: true }), TerminalTaskError);
+  assert.deepEqual(read(root, active.id), finished);
+  assert.equal(update(root, active.id, { exitCode: 1 }, now + 4).exitCode, 1, "without the option, T1's same-status metadata permission stands");
+});
+
 test("update rejects unknown statuses", (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
@@ -173,6 +210,30 @@ test("reconcile fails running and stalled tasks when both identities are dead", 
   }
 });
 
+test("reconcile skips a record settled between listing and its write", (t) => {
+  const root = project(t);
+  const dead = deadIdentity();
+  const record = create(root, input(root), now);
+  const active = update(root, record.id, { status: "running", runnerIdentity: dead, engineIdentity: dead }, now + 1);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const original = fs.readFileSync;
+  let reads = 0;
+  let external: TaskRecord | undefined;
+  // The first read of this record is the listing; the second is the one inside
+  // update. A settlement landing between them must be seen by that second read.
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === file && ++reads === 2) {
+      mock.mock.restore();
+      external = update(root, record.id, { status: "failed", reason: "external settlement" }, now + 2);
+    }
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  assert.deepEqual(reconcile(root, now + 3), []);
+  assert.equal(reads, 2);
+  assert.deepEqual(external, { ...active, status: "failed", reason: "external settlement", updatedAt: now + 2 });
+  assert.deepEqual(read(root, record.id), external);
+});
+
 test("reconcile orphans running and stalled tasks with a dead runner and live engine", (t) => {
   const root = project(t);
   const engine = liveIdentity();
@@ -192,6 +253,15 @@ test("process identity rejects missing processes and reused PIDs", () => {
   assert.equal(isProcessAlive({ pid: 2_147_483_647, startTime: "0" }), false);
   assert.equal(isProcessAlive(deadIdentity()), false);
   assert.equal(isProcessAlive(liveIdentity()), true);
+});
+
+test("process stat reports the process group and session of a live process", () => {
+  const stat = fs.readFileSync(`/proc/${process.pid}/stat`, "utf8");
+  const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+  assert.deepEqual(readProcessStat(process.pid), {
+    startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0],
+  });
+  assert.equal(readProcessStat(2_147_483_647), null);
 });
 
 test("process identity parses command names containing spaces and closing parentheses", (t) => {

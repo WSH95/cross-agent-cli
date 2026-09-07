@@ -51,6 +51,21 @@ export interface TaskRecord {
 
 export type TaskPatch = Partial<Omit<TaskRecord, "id" | "createdAt" | "updatedAt" | "launchToken">>;
 
+export interface UpdateOptions {
+  /** Refuse any write, including same-status metadata, when the record is terminal at the read. */
+  unlessTerminal?: boolean;
+}
+
+/** Thrown by update with unlessTerminal; carries the terminal record that was found. */
+export class TerminalTaskError extends Error {
+  record: TaskRecord;
+  constructor(record: TaskRecord) {
+    super(`task ${record.id} is already ${record.status}`);
+    this.name = "TerminalTaskError";
+    this.record = record;
+  }
+}
+
 const statuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"]);
 const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
 const patchFields = new Set<string>([
@@ -152,9 +167,13 @@ export function readSpec(projectRoot: string, id: string): LaunchSpec {
   return spec;
 }
 
-export function update(projectRoot: string, id: string, patch: TaskPatch, now = Date.now()): TaskRecord {
+export function update(projectRoot: string, id: string, patch: TaskPatch, now = Date.now(), options: UpdateOptions = {}): TaskRecord {
   const file = recordPath(projectRoot, id);
+  // One read, one check, one rename: a writer passing unlessTerminal never
+  // renames over a record that was terminal at this read. Without the option,
+  // same-status metadata writes to terminal records remain permitted.
   const current = readRecord(file);
+  if (options.unlessTerminal && terminalStatuses.has(current.status)) throw new TerminalTaskError(current);
   const fields = Object.fromEntries(Object.entries(patch).filter(([key, value]) => patchFields.has(key) && value !== undefined)) as TaskPatch;
   const status = fields.status ?? current.status;
   if (!statuses.has(status)) throw new Error(`invalid task status: ${status}`);
@@ -175,7 +194,7 @@ export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
     .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function readProcessStat(pid: number): { startTime: string; pgid: number; state: string } | null {
+export function readProcessStat(pid: number): { startTime: string; pgid: number; sid: number; state: string } | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   let stat: string;
   try {
@@ -189,7 +208,7 @@ export function readProcessStat(pid: number): { startTime: string; pgid: number;
   const end = stat.lastIndexOf(")");
   if (end < 0) return null;
   const fields = stat.slice(end + 1).trim().split(/\s+/);
-  return { startTime: fields[19], pgid: Number(fields[2]), state: fields[0] };
+  return { startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0] };
 }
 
 export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
@@ -209,7 +228,13 @@ export function reconcile(projectRoot: string, now = Date.now()): TaskRecord[] {
         ? { status: "orphaned" }
         : { status: "failed", reason: "runner lost" };
     }
-    if (patch) changed.push(update(projectRoot, record.id, patch, now));
+    if (!patch) continue;
+    try {
+      changed.push(update(projectRoot, record.id, patch, now, { unlessTerminal: true }));
+    } catch (error) {
+      // Settled by another writer between the listing and this write: not changed.
+      if (!(error instanceof TerminalTaskError)) throw error;
+    }
   }
   return changed;
 }
