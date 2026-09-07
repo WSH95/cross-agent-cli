@@ -1,0 +1,72 @@
+# Decisions
+
+Record decisions in order. Include the reason, the choice, and its practical
+effect.
+
+## 0001 — 2026-09-07T21:50:42Z — Adopt Project Steward
+
+Context: Project work needs to survive changes of agent, tool, or device.
+
+Decision: Keep project state in `.project-steward/`. Use `AGENTS.md` for
+shared instructions and `CLAUDE.md` as a small Claude Code adapter.
+
+Consequences: Git carries the files needed to resume the work elsewhere.
+
+## 0002 — 2026-09-07 — The design as approved
+
+Context: The user asked whether the OpenMausBot dev-team pack could become
+a plugin for a general-purpose coding agent CLI. Research on 2026-09-07
+found about 70% of the pack host-independent and every engine CLI on this
+machine headless with resume and a sandbox.
+
+Decision: One MCP server core in TypeScript on Node 24 with no
+dependencies, spawning `claude`, `codex`, and `grok` itself; each CLI's
+sandbox as the boundary; no time cap on a task, a stall flag instead;
+delegation loops impossible in code and tested; lead-owned git through
+explicit git-dir commands; a detached runner so completion survives the
+server. Two Codex gpt-6-astra reviews (twelve, then ten findings) shaped
+it. Full text: `docs/design.md`.
+
+Consequences: `docs/design.md` is the authority; every task's brief points
+at its sections; probes in `docs/probes.md` pin the spawn flags.
+
+## 0003 — 2026-09-07 — T1 to T5 built by the OpenMausBot pack; later work by the operator's sessions
+
+Context: This repository was the "first real repository" for validating
+the OpenMausBot dev-team pack (agent-team-devpack milestone M7).
+
+Decision: T1 to T5 were sent as briefs to the pack's lead and built by its
+planner, reviewers, and implementer (evidence in that repository's
+EVIDENCE.md). From T6 on, the operator's own Claude Code and Codex sessions
+build here, tracked in Beads (epic `atc-s96`) with Project Steward.
+
+Consequences: Closed beads `atc-s96.1` to `.5` carry the verbatim briefs
+and outcomes; the pack's timings and review rounds live in the devpack.
+
+## 0004 — 2026-09-07 — Locks are OS-held flock, never reclaimed
+
+Context: The design's first lock recipe (an `O_EXCL` file with a TTL and a
+rename-based reclaim) was refuted during T5's plan review: a reclaim by
+pathname can rename the winner's fresh lock, so two reclaimers could both
+succeed, and a "dead or expired" rule lets a stalled live writer lose its
+lock.
+
+Decision: All three locks (spawn, per-record, git) are `flock(2)` on files
+under `.dev-team/locks/`, held through a util-linux `flock` child on a
+pipe; the kernel releases them when the holder dies. Commit ac3e5d5.
+
+Consequences: T6 implements the helper and puts the per-record lock inside
+the ledger's update; until then two automated cleaners can both write the
+same failed "runner lost" record (design section 2, residual sentence).
+
+## 0005 — 2026-09-07 — T5 narrowed after two failed replans
+
+Context: Code review found two P1 defects in T5's first implementation;
+two replans that tried to add the lock inside T5 each had a hole.
+
+Decision: T5 fixed the two defects (kernel pgid and session scan; the
+terminal guard inside the ledger's single read-check-rename), stated the
+residual, and left the lock to T6. One extra review round was authorized
+beyond the pack's two-round cap.
+
+Consequences: 4f39c71 on `main`, 146 tests; T6 closes the residual.

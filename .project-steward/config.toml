@@ -1,0 +1,21 @@
+# Project Steward configuration (flat TOML; see references/cross-platform.md
+# for the supported subset on Python < 3.11).
+
+[session]
+# auto_handoff_mode: "block" forces one auto-checkpoint before the agent
+# stops when the handoff is stale; "remind" only warns; "off" disables.
+auto_handoff_mode = "block"
+auto_handoff_cooldown_min = 45
+auto_handoff_min_edits = 5
+
+[git]
+# commit_policy: "ask" (propose only), "auto" (agent may run `wrap
+# --commit`), "never".
+commit_policy = "auto"
+never_push = true
+
+[backend]
+name = "beads"
+
+[init]
+run_project_scripts = false
