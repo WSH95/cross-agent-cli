@@ -119,3 +119,74 @@ In a throwaway repository with a linked worktree `.worktrees/g` on
   `git worktree remove`, and `git branch -d` complete the lifecycle.
 - A second `flock -n` on the same lock file is refused while the first
   holder lives.
+
+## Native output samples (2026-09-07)
+
+Real lines from the probe logs above, shortened. The adapters and the fake
+engine's per-engine formats (T4) follow these shapes.
+
+### Claude Code, `claude -p --output-format stream-json --verbose`
+
+One JSON object per line. The first line with `"subtype":"init"` carries the
+session id; assistant turns are `"type":"assistant"`; the last line is
+`"type":"result"` with the final text in `result`.
+
+```
+{"type": "system", "subtype": "init", "cwd": "/tmp/claude-1000/-home-wsh-Documents-agent-team-devpack/39995ccc-23f3-4582-80eb-ff073a86fe7e/scratchpad/probe-repo", "session_id": "138a9c9e-f573-45c5-80fc-fda76dddc834", "tools": ["Task", "Bash", "CronCreate", "…"], "mcp_servers": [], "model": "claude-sonnet-5", "permissionMode": "bypassPermissions", "slash_commands": ["humanizer", "show-me", "deep-research", "…"], "terminal_slash_commands": ["doctor", "color", "reload-plugins"], "apiKeySource": "none", "claude_code_version": "2.1.263", "output_style": "default", "agents": ["claude", "code-simplifier:code-simplifier", "codex:codex-rescue", "…"]}
+{"type": "assistant", "message": {"model": "claude-sonnet-5", "id": "msg_011CepP2wAGvGKQdcLYgbkfa", "type": "message", "role": "assistant", "content": [{"type": "thinking", "thinking": "", "signature": "EtgECqgBCBEYAipASVvJq1aMZc+Xkz8O4WgNxLNeNNDJXXJ6MdW0AWF8RokHyULr6Q27479zWCGBuz9/TqDXP5ojh8jdx23VxYZITDIPY2xhdWRlLXNvb…"}], "stop_reason": null, "stop_sequence": null, "stop_details": null, "usage": {"input_tokens": 2, "cache_creation_input_tokens": 14580, "cache_read_input_tokens": 17595, "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 14580}, "output_tokens": 2, "service_tier": "standard", "inference_geo": "not_available"}, "diagnostics": null, "context_manage…
+{"duration_api_ms": 6970, "stop_reason": "end_turn", "session_id": "138a9c9e-f573-45c5-80fc-fda76dddc834", "total_cost_usd": 0.07443, "usage": {"input_tokens": 4, "cache_creation_input_tokens": 15032, "cache_read_input_tokens": 49770, "output_tokens": 434, "output_tokens_details": {"thinking_tokens": 119}, "server_tool_use": {"web_search_requests": 0, "web_fetch_requests": 0}, "service_tier": "standard", "cache_creation": {"ephemeral_1h_input_tokens": 15032, "ephemeral_5m_input_tokens": 0}, "inference_geo": "not_available", "iterations": [{"input_tokens": 2, "output_tokens": 153, "cache_read_input_tokens": 32175, "cache_creation_input_tokens": 452, "cache_creation": {"ephemeral_5m_input_toke…
+```
+
+### Codex, `codex exec --json`
+
+One JSON object per line. `thread.started` carries the thread id (the
+resume id); `item.completed` items of type `agent_message` carry text,
+`command_execution` items carry a command and its output; `turn.completed`
+ends the run. The final message is also written to the `-o` file.
+
+```
+{"type": "thread.started", "thread_id": "01a07ca9-83fb-78a0-a330-6b7555f3632f"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "I’ll run the command and check the available MCP tools."}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "command": "/bin/bash -lc 'echo \"DEPTH=${DEV_TEAM_DEPTH:-NONE} LINEAGE=${DEV_TEAM_LINEAGE:-NONE}\"'", "aggregated_output": "DEPTH=1 LINEAGE=probe/915db2f4-e5b7-4d5c-a69c-66544ca1330b:codex:/tmp/claude-1000/-home-wsh-Documents-agent-team-devp…", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "```text\nDEPTH=1 LINEAGE=probe/915db2f4-e5b7-4d5c-a69c-66544ca1330b:codex:/tmp/claude-1000/-home-wsh-Documents-agent-t…"}}
+```
+
+### Grok Build, `grok -p … --output-format json`
+
+Not line-delimited: one pretty-printed JSON object spanning many lines,
+printed at the end, with `text` (the final message) and `sessionId` (the
+resume id). An adapter parses the whole stdout once the process exits;
+`--output-format streaming-json` would give line events instead (not
+probed).
+
+```
+{
+  "text": "…the agent's final message…",
+  "stopReason": "end_turn",
+  "sessionId": "a78170b7-3e60-4f87-ae45-fde2f99b6519",
+  "requestId": "ec9abfff-de65-4c08-bfa3-98dfdf0cbfc0",
+  "thought": "…",
+  "usage": {
+    "input_tokens": 40749,
+    "cache_read_input_tokens": 118528,
+    "cache_creation_input_tokens": 0,
+    "output_tokens": 583,
+    "reasoning_tokens": 302,
+    "total_tokens": 159860
+  },
+  "num_turns": 8,
+  "total_cost_usd": 0.0245242,
+  "total_cost_usd_ticks": 245242000,
+  "modelUsage": {
+    "grok-4.6-build": {
+      "inputTokens": 40749,
+      "outputTokens": 583,
+      "cacheReadInputTokens": 118528,
+      "cacheCreationInputTokens": 0,
+      "modelCalls": 8,
+      "costUSD": 0.0245242
+    }
+  }
+}
+```
