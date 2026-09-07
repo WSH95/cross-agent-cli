@@ -1,3 +1,15 @@
 .dev-team/
 .worktrees/
 node_modules/
+
+# PROJECT-STEWARD:BEGIN runtime-state
+.project-steward/runtime/
+.project-steward/tmp/
+.project-steward/migration-backup-projectforge/
+# PROJECT-STEWARD:END runtime-state
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
