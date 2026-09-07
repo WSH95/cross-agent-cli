@@ -135,7 +135,6 @@ function run(projectRoot: string, id: string): void {
     const engineIdentity = identityOf(handle.pid);
     if (!runnerIdentity || !engineIdentity) throw new Error("cannot capture runner and engine process identities");
     engine = { ...engineIdentity, pgid: handle.pid };
-    groupAlive(engine);
     // No await between spawn and this atomic acknowledgement. Even an immediate
     // engine exit is not handled until both identities have reached the ledger.
     if (!write({ status: "running", runnerIdentity, engineIdentity: engine, lastEventAt: handle.lastEventAt })) {

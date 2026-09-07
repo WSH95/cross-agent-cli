@@ -59,7 +59,10 @@ function ownedProcesses(root: string): EngineIdentity[] {
   return identities;
 }
 
-function harness(options: { named?: boolean; delayedImport?: boolean; refusal?: boolean; race?: string; failure?: string; leadingHyphen?: boolean } = {}) {
+function harness(options: {
+  named?: boolean; delayedImport?: boolean; refusal?: boolean; race?: string; failure?: string; leadingHyphen?: boolean;
+  competitor?: "at-write" | "before-write";
+} = {}) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "dev-team-runner-"));
   const token = randomUUID();
   const adapterModule = path.join(fixtures, `runner-${token}.mjs`);
@@ -80,19 +83,36 @@ function harness(options: { named?: boolean; delayedImport?: boolean; refusal?: 
   const importReady = path.join(root, "import-ready");
   const importRelease = path.join(root, "import-release");
   const invocation = path.join(root, "invocation.json");
+  const descendantFile = path.join(root, "descendant.json");
+  const competitorScript = path.join(root, "competitor.mjs");
+  const outcomeFile = path.join(root, "competitor-outcome.json");
+  const markers = { atWrite: path.join(root, "competitor-at-write"), beforeWrite: path.join(root, "settled-before-write") };
   const spec: LaunchSpec = {
     role: "implementer", brief: "finish T5", rolePrompt: "Implement this brief.", cwd: root, engine: "claude",
     model: "fixture-model", effort: "high", sandbox: "workspace-write", denyTargets: ["claude", "codex", "grok"],
     sessionId: "requested-session", resumeSessionId: "previous-session", adapterModule,
     env: { RUNNER_TEST_ROOT: root, FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_RECORD: invocation },
   };
+  // The engine leader. DESCENDANT=1 leaves a group member behind that shares no
+  // pipe with the runner; ACTIVITY_AFTER=<file> holds all output until that file exists.
   fs.writeFileSync(engineModule, `
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 const env = process.env;
 if (env.FILE_RESULT) fs.writeFileSync(env.FILE_RESULT, "engine file result");
 if (env.RACE_EXIT === "1") process.on("exit", () => { try { process.kill(process.ppid, "SIGTERM"); } catch {} });
+if (env.DESCENDANT === "1") {
+  const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const stat = fs.readFileSync("/proc/" + descendant.pid + "/stat", "utf8");
+  const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\\s+/);
+  fs.writeFileSync(${JSON.stringify(descendantFile)}, JSON.stringify({
+    pid: descendant.pid, startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]),
+  }));
+  descendant.unref();
+}
 if (env.HOLD === "1") {
+  if (env.ACTIVITY_AFTER) while (!fs.existsSync(env.ACTIVITY_AFTER)) await delay(30);
   console.log(JSON.stringify({ type: "event", text: "fixture ready" }));
   while (!fs.existsSync(${JSON.stringify(release)})) {
     if (env.ACTIVITY === "1") console.log(JSON.stringify({ type: "event", text: "tick" }));
@@ -101,22 +121,51 @@ if (env.HOLD === "1") {
 }
 await import(${JSON.stringify(pathToFileURL(fake).href)});
 `);
+  // A second writer using the public ledger API from its own process. It writes
+  // the marker at the moment it calls update, then records how update answered.
+  fs.writeFileSync(competitorScript, `
+import fs from "node:fs";
+import * as ledger from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "ledger.ts")).href)};
+const [root, id, patch, now, marker, outcome] = process.argv.slice(2);
+if (marker) fs.writeFileSync(marker, String(Date.now()));
+let result;
+try {
+  result = { outcome: "ok", record: ledger.update(root, id, JSON.parse(patch), Number(now), { unlessTerminal: true }) };
+} catch (error) {
+  const refused = typeof ledger.TerminalTaskError === "function" && error instanceof ledger.TerminalTaskError;
+  result = { outcome: refused ? "TerminalTaskError" : String(error), record: error.record };
+}
+fs.writeFileSync(outcome, JSON.stringify(result));
+`);
   fs.writeFileSync(adapterModule, `
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 const target = ${JSON.stringify(recordFile)};
 const audit = ${JSON.stringify(auditFile)};
+const terminal = (record) => ["done", "failed", "cancelled"].includes(record.status);
+function compete(patch, now, marker) {
+  const result = spawnSync(process.execPath, [
+    ${JSON.stringify(competitorScript)}, ${JSON.stringify(root)}, ${JSON.stringify(record.id)},
+    JSON.stringify(patch), String(now), marker, ${JSON.stringify(outcomeFile)},
+  ], { stdio: ["ignore", "ignore", fs.openSync(${JSON.stringify(path.join(root, "competitor.err"))}, "a")] });
+  if (result.status !== 0) throw new Error("competitor exited " + result.status);
+}
 const rename = fs.renameSync;
 fs.renameSync = function(from, to) {
-  ${options.failure === "ledger" ? 'if (to === target) throw new Error("fixture ledger write failed");' : ""}
-  ${options.failure === "ledger-terminal" ? `if (to === target) {
-    const record = JSON.parse(fs.readFileSync(target, "utf8"));
-    fs.writeFileSync(target + ".external", JSON.stringify({ ...record, status: "failed", reason: "external settlement" }));
+  if (to !== target) return rename(from, to);
+  // The audit records the incoming record itself, before anyone else can touch the target.
+  const record = JSON.parse(fs.readFileSync(from, "utf8"));
+  ${options.failure === "ledger" ? 'throw new Error("fixture ledger write failed");' : ""}
+  ${options.failure === "ledger-terminal" ? `{
+    const current = JSON.parse(fs.readFileSync(target, "utf8"));
+    fs.writeFileSync(target + ".external", JSON.stringify({ ...current, status: "failed", reason: "external settlement" }));
     rename(target + ".external", target);
     throw new Error("fixture ledger write failed after external settlement");
   }` : ""}
   const result = rename(from, to);
-  if (to === target) fs.appendFileSync(audit, JSON.stringify({ at: Date.now(), record: JSON.parse(fs.readFileSync(target, "utf8")) }) + "\\n");
+  fs.appendFileSync(audit, JSON.stringify({ at: Date.now(), record }) + "\\n");
+  ${options.competitor === "at-write" ? `if (terminal(record)) compete({ status: "done", reason: "competitor" }, 456, ${JSON.stringify(markers.atWrite)});` : ""}
   return result;
 };
 ${options.delayedImport ? `fs.writeFileSync(${JSON.stringify(importReady)}, "ready");
@@ -127,20 +176,12 @@ function externalSettlement() {
   fs.writeFileSync(target + ".external", JSON.stringify({ ...record, status: "${options.race === "same-status" ? "done" : "failed"}", reason: "external settlement", updatedAt: 123 }));
   fs.renameSync(target + ".external", target);
 }
-function armRefusal() {
-  let reads = 0;
-  fs.readFileSync = function(file, ...args) {
-    if (file === target && ++reads === 2) externalSettlement();
-    return originalRead(file, ...args);
-  };
-}
 let request;
 const adapter = {
   name: "claude",
   sandboxSupport: () => (${options.refusal ? '{ ok: false, reason: "fixture sandbox missing" }' : "{ ok: true }"}),
   plan(value) {
     request = value;
-    ${options.race === "running-refusal" ? "armRefusal();" : ""}
     ${options.failure === "identity" ? `fs.readFileSync = function(file, ...args) {
       if (typeof file === "string" && /^\\/proc\\/\\d+\\/stat$/.test(file) && file !== "/proc/" + process.pid + "/stat") {
         throw Object.assign(new Error("missing engine identity"), { code: "ENOENT" });
@@ -160,7 +201,9 @@ const adapter = {
     return null;
   },
   finalMessage(events, text) {
-    ${options.race === "refusal" ? "armRefusal();" : ["settlement", "same-status"].includes(options.race!) ? "externalSettlement();" : ""}
+    ${["settlement", "same-status"].includes(options.race!) ? "externalSettlement();" : ""}
+    ${options.competitor === "before-write" ? `compete({ status: "done", reason: "external settlement" }, 123, "");
+    fs.writeFileSync(${JSON.stringify(markers.beforeWrite)}, "settled");` : ""}
     return events.findLast((event) => event.kind === "result")?.text ?? text ?? "";
   },
 };
@@ -181,10 +224,16 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     return tracked;
   }
   return {
-    root, record, spec, recordFile, auditFile, release, importReady, importRelease, invocation, adapterModule,
+    root, record, spec, recordFile, auditFile, release, importReady, importRelease, invocation, adapterModule, markers,
     start, track,
     read: () => ledger.read(root, record.id),
     audit: () => fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { at: number; record: TaskRecord }) : [],
+    descendant: () => poll(
+      () => fs.existsSync(descendantFile) ? JSON.parse(fs.readFileSync(descendantFile, "utf8")) as EngineIdentity & { sid: number } : null,
+      (identity) => identity !== null,
+    ).then((identity) => identity!),
+    outcome: () => JSON.parse(fs.readFileSync(outcomeFile, "utf8")) as { outcome: string; record?: TaskRecord },
+    runnerLog: () => fs.readFileSync(path.join(path.dirname(recordFile), `${record.id}.runner.log`), "utf8"),
     async cleanup() {
       const tracked = new Map<number, EngineIdentity>();
       for (const entry of children) {
@@ -321,6 +370,40 @@ test("process helpers reject stale identities and signal only the verified group
   } finally { await h.cleanup(); }
 });
 
+test("group helpers find descendants of a reaped leader without a prior scan", async (t) => {
+  const helpers = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const descendantFile = path.join(h.root, "descendant.json");
+    const leader = h.track(spawn(process.execPath, ["-e", `
+      const { spawn } = require("node:child_process");
+      const fs = require("node:fs");
+      const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      fs.writeFileSync(process.argv[1], JSON.stringify(child.pid));
+      setInterval(() => {}, 1000);
+    `, descendantFile], { detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root } }));
+    await poll(() => fs.existsSync(descendantFile), Boolean);
+    const descendant = proc(JSON.parse(fs.readFileSync(descendantFile, "utf8")))!;
+    const identity = { ...helpers.identityOf(leader.child.pid!)!, pgid: leader.child.pid! };
+    assert.equal(descendant.pgid, identity.pid);
+    // Reap the leader before any helper has looked at this group.
+    leader.child.kill("SIGKILL");
+    await poll(() => leader.closed, Boolean);
+    assert.equal(proc(identity.pid), null);
+    assert.equal(living(descendant), true);
+    assert.equal(helpers.groupAlive(identity), true, "the kernel scan finds the member by process group and session");
+    const missing = Object.assign(new Error("gone"), { code: "ESRCH" });
+    const mocked = t.mock.method(process, "kill", () => { throw missing; });
+    assert.equal(helpers.killGroup(identity, "SIGKILL"), false, "a group gone between the scan and the signal is not an error");
+    mocked.mock.restore();
+    assert.equal(living(descendant), true);
+    assert.equal(helpers.killGroup(identity, "SIGKILL"), true);
+    await poll(() => living(descendant), (alive) => !alive);
+    assert.equal(helpers.groupAlive(identity), false);
+    assert.equal(helpers.killGroup(identity, "SIGKILL"), false);
+  } finally { await h.cleanup(); }
+});
+
 test("fail script finishes failed with exit code 2", async () => {
   const h = harness();
   try {
@@ -406,8 +489,8 @@ test("activity persistence is throttled to once per two seconds", async () => {
   } finally { await h.cleanup(); }
 });
 
-async function orphan(h: ReturnType<typeof harness>, script: string) {
-  const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: script } });
+async function orphan(h: ReturnType<typeof harness>, script: string, env: Record<string, string> = {}) {
+  const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: script, ...env } });
   const running = await poll(h.read, (record) => record.status === "running");
   await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
   child.child.kill("SIGKILL");
@@ -428,6 +511,93 @@ test("SIGKILL leaves a live engine that reconciliation orphans and cleanup termi
     assert.equal(changed[0].reason, "runner lost");
     await poll(() => proc(identity.pid), (current) => current === null);
   } finally { await h.cleanup(); }
+});
+
+test("completion kills descendants the engine left behind in its group", async () => {
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1", DESCENDANT: "1" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    const descendant = await h.descendant();
+    assert.equal(descendant.pgid, running.engineIdentity!.pid);
+    assert.equal(descendant.sid, running.engineIdentity!.pid);
+    assert.equal(living(descendant), true);
+    fs.writeFileSync(h.release, "go");
+    const done = await poll(h.read, terminal);
+    assert.equal(done.status, "done");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.equal(living(descendant), false, "the leader exited on its own; the member it left died with the settlement");
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("orphan cleanup terminates descendants whose leader died before cleanup began", async () => {
+  const { terminateOrphans } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const identity = await orphan(h, "stall", { DESCENDANT: "1" });
+    const descendant = await h.descendant();
+    assert.equal(living(descendant), true);
+    // The leader exits on SIGTERM; the member keeps its process group and session.
+    process.kill(identity.pid, "SIGTERM");
+    await poll(() => proc(identity.pid), (current) => current === null || current.state === "Z");
+    assert.equal(living(descendant), true);
+    const changed = await terminateOrphans(h.root);
+    assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
+    assert.equal(living(descendant), false);
+    assert.equal(h.read().status, "failed");
+    assert.deepEqual(await terminateOrphans(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("orphan cleanup settles a group with no live member", async () => {
+  const { terminateOrphans } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const identity = await orphan(h, "stall");
+    process.kill(identity.pid, "SIGKILL");
+    await poll(() => proc(identity.pid), (current) => current === null || current.state === "Z");
+    const before = Date.now();
+    const changed = await terminateOrphans(h.root);
+    assert.ok(Date.now() - before < 1500, "nothing to signal means nothing to wait for");
+    assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
+    assert.equal(h.read().status, "failed");
+    assert.equal(h.read().reason, "runner lost");
+    assert.deepEqual(await terminateOrphans(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("group members of a live leader die with it on cancel and on orphan cleanup", async (t) => {
+  const { terminateOrphans } = await import("../src/process.ts");
+  await t.test("cancel", async () => {
+    const h = harness();
+    try {
+      const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall", DESCENDANT: "1" } });
+      const running = await poll(h.read, (record) => record.status === "running");
+      const descendant = await h.descendant();
+      await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
+      child.child.kill("SIGTERM");
+      const cancelled = await poll(h.read, terminal, 6000);
+      assert.equal(cancelled.status, "cancelled");
+      await poll(() => child.closed, Boolean);
+      assert.equal(child.code, 0);
+      assert.equal(living(running.engineIdentity!), false);
+      assert.equal(living(descendant), false);
+    } finally { await h.cleanup(); }
+  });
+  await t.test("orphan cleanup", async () => {
+    const h = harness();
+    try {
+      const identity = await orphan(h, "stall", { DESCENDANT: "1" });
+      const descendant = await h.descendant();
+      assert.equal(living(descendant), true);
+      const changed = await terminateOrphans(h.root);
+      assert.deepEqual(changed.map((record) => record.status), ["failed"]);
+      assert.equal(living(identity), false);
+      assert.equal(living(descendant), false);
+    } finally { await h.cleanup(); }
+  });
 });
 
 test("orphan cleanup escalates after two seconds and returns only changed records", async () => {
@@ -453,8 +623,14 @@ test("orphan cleanup escalates after two seconds and returns only changed record
     assert.equal(changed[0].status, "failed");
     assert.equal(changed[0].reason, "runner lost");
     await poll(() => proc(identity.pid), (current) => current === null);
+    // ledger.list returns newest first, so the stale record was inspected before the
+    // engine died, while its mismatched leader still lived: skipped, not settled.
     assert.equal(ledger.read(h.root, stale.id).status, "orphaned");
     assert.equal(ledger.read(h.root, settled.id).status, "cancelled");
+    // Now nothing holds that pid as process group or session: the group is dead, so
+    // the stale record settles, and a further pass finds nothing left to change.
+    const second = await terminateOrphans(h.root);
+    assert.deepEqual(second.map((record) => [record.id, record.status, record.reason]), [[stale.id, "failed", "runner lost"]]);
     assert.deepEqual(await terminateOrphans(h.root), []);
   } finally { await h.cleanup(); await cleanup; }
 });
@@ -507,8 +683,68 @@ test("SIGTERM racing normal exit produces exactly one terminal write", async () 
   }
 });
 
+test("a competitor that reads after the runner's terminal rename is refused", async () => {
+  const h = harness({ competitor: "at-write" });
+  try {
+    const child = h.start();
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.ok(fs.existsSync(h.markers.atWrite), "the competitor called update after the runner's terminal rename");
+    const outcome = h.outcome();
+    assert.equal(outcome.outcome, "TerminalTaskError");
+    const writes = h.audit().filter(({ record }) => terminal(record));
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].record.status, "done");
+    assert.deepEqual(h.read(), writes[0].record, "the record is the runner's write; the competitor changed nothing");
+    assert.deepEqual(outcome.record, writes[0].record, "the refusal carries the record the competitor found");
+  } finally { await h.cleanup(); }
+});
+
+test("the runner never renames over a record that was terminal at its read", async () => {
+  const h = harness({ competitor: "before-write" });
+  try {
+    const child = h.start();
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.ok(fs.existsSync(h.markers.beforeWrite), "the competitor settled before the runner's terminal write");
+    const outcome = h.outcome();
+    assert.equal(outcome.outcome, "ok");
+    const final = h.read();
+    assert.deepEqual(final, outcome.record);
+    assert.equal(final.status, "done");
+    assert.equal(final.reason, "external settlement");
+    assert.equal(final.updatedAt, 123);
+    assert.equal(h.audit().filter(({ record }) => terminal(record)).length, 0, "the runner made no terminal rename");
+    assert.equal(living(final.engineIdentity!), false);
+    assert.match(h.runnerLog(), /someone else settled/);
+  } finally { await h.cleanup(); }
+});
+
+test("an activity write after an external settlement is refused and the runner exits 0", async () => {
+  const h = harness();
+  try {
+    const activityRelease = path.join(h.root, "activity-release");
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1", ACTIVITY_AFTER: activityRelease } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    assert.equal(running.lastEventAt, null);
+    const external = ledger.update(h.root, h.record.id, { status: "failed", reason: "external settlement" });
+    fs.writeFileSync(activityRelease, "emit the first activity event now");
+    await poll(() => child.closed, Boolean, 8000);
+    assert.equal(child.code, 0);
+    assert.deepEqual(h.read(), external);
+    assert.match(fs.readFileSync(running.logPath, "utf8"), /fixture ready/, "the engine did emit the event");
+    const writes = h.audit();
+    assert.equal(writes.length, 1, "the running acknowledgement is the only rename; the activity write was refused");
+    assert.equal(writes[0].record.status, "running");
+    assert.ok(writes[0].at <= external.updatedAt);
+    assert.equal(living(running.engineIdentity!), false);
+    assert.deepEqual(ownedProcesses(h.root), []);
+    assert.match(h.runnerLog(), /someone else settled/);
+  } finally { await h.cleanup(); }
+});
+
 test("already terminal records remain unchanged and runner exits zero", async (t) => {
-  for (const race of ["startup", "delayed import", "settlement", "same-status", "refusal", "running-refusal"]) await t.test(race, async () => {
+  for (const race of ["startup", "delayed import", "settlement", "same-status"]) await t.test(race, async () => {
     const h = harness({ delayedImport: race === "delayed import", race });
     try {
       let expected: TaskRecord | undefined;
