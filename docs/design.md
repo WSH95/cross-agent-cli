@@ -124,23 +124,36 @@ the Phase 0 probes:
   get no `allowWrite` and no `Edit`/`Write` tools.
 - Codex: `codex exec --json -o <out> -C <cwd> --sandbox
   <read-only|workspace-write> --ignore-user-config --skip-git-repo-check
-  -m <m> -c model_reasoning_effort=<e>` plus an execpolicy rules file
-  carrying the deny list; `codex exec resume <thread id>` with the same
-  flags for resume. `--ignore-user-config` keeps auth and drops the user's
-  MCP servers, plugins, and marketplaces.
+  -m <m> -c model_reasoning_effort=<e>`; `codex exec resume <thread id>`
+  with the same flags for resume. `--ignore-user-config` keeps auth and
+  drops the user's MCP servers, plugins, and marketplaces. Probe P3 showed
+  that execpolicy rules files are not honoured by `codex exec`, so Codex
+  carries no deny list; its sandbox denies network access instead, and a
+  launched engine cannot reach its API (probe P3b).
 - Grok: `grok -p <prompt> --cwd <cwd> --sandbox
   <workspace|read-only|strict> --permission-mode bypassPermissions
   --output-format json --session-id <uuid> | -r <id> --model <m>` plus one
   `--deny` per deny-list entry, the same on resume.
 
-Deny list, identical on every engine and rebuilt from config at spawn:
-the commands `claude`, `codex`, `grok`, each configured `engines.<e>.bin`
-path, `node <absolute path of src/server.ts>`, `node <absolute path of
-src/cli.ts>`, and `dev-team`. Forms: Claude `Bash(<target> *)` and
-`Bash(<target>)`; Codex `prefix_rule` per target with decision
-`forbidden`; Grok `--deny "Bash(<target> *)"`. The argv builders are
-unit-tested for the exact list; P3 tests each target on each engine,
-including a resumed session.
+Deny list for Claude and Grok, rebuilt from config at spawn: the commands
+`claude`, `codex`, `grok`, each configured `engines.<e>.bin` path, `node
+<absolute path of src/server.ts>`, `node <absolute path of src/cli.ts>`,
+and `dev-team`. Forms: Claude `Bash(<target> *)` and `Bash(<target>)`
+(enforced under `bypassPermissions`, probe P3); Grok one `--deny
+"Bash(<target> *)"` per target (enforced, probe P3). Codex children rely on
+the sandbox's network denial (probe P3b). The argv builders are unit-tested
+for the exact list; P3 covers each target on each engine, including a
+resumed session.
+
+Sandbox facts from the probes that the adapters must respect: Claude's
+sandbox needs `bwrap` and `socat`, and prints "Sandbox disabled" when they
+are missing, which the adapter treats as a refusal to spawn; Codex and Grok
+treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
+(`dev-team init` warns); Codex refuses to rewrite the worktree's `.git`
+pointer, Grok allows it, so tampering is detected by `verify_worktree`, not
+prevented; a Grok child inherits the user's MCP configuration, so a
+dev-team server started by that child runs at depth 1 and offers no
+`delegate` (section 5, layer 1), which is what makes the inheritance safe.
 
 Child env: inherit `PATH`, `HOME`, `XDG_*`, `CODEX_HOME`; strip
 `CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`,
@@ -173,12 +186,17 @@ rebase conflict the lead aborts the rebase and escalates to the user
 flow per task: plan (root), plan review (root), worktree, implement, lead
 commit, code review, needs-work round through `resume`, lead commit,
 ready, merge. Branch-scoped metadata grants are not part of this plan.
+Under a Codex host the lead's own sandbox protects `.git` too, so
+`git_mutate` calls made by a Codex lead need that host's approval
+escalation, as EVIDENCE.md recorded for the 0.4.0 Codex lead.
 
 ### 5. Loop guard
 
 Scope, stated in the README: no delegation loop can form through
 `delegate`; direct engine launches from specialists are denied for exactly
-the deny-list forms of section 3 at each CLI's own permission layer. A
+the deny-list forms of section 3 at each CLI's own permission layer (Claude
+and Grok), or cannot reach a model API (Codex, network denied by its
+sandbox). A
 specialist that defeats its own CLI's permission rules (a copied binary, a
 wrapper script) is outside the guarantee, as it is for OpenMausBot.
 Layers, each with its own unit test:
@@ -191,7 +209,9 @@ Layers, each with its own unit test:
    error naming the lineage.
 2. No self-mount: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok.
-3. Denied launches: the deny list of section 3.
+3. Denied launches: the deny list of section 3 for Claude and Grok; for
+   Codex, the sandbox's network denial, which stops a launched engine from
+   reaching any model API.
 4. Lineage and duplicates: `DEV_TEAM_LINEAGE` is an ordered list of
    `(task id, role, canonical cwd)`. A `delegate` whose `(role, cwd)` is
    already in the lineage is refused. A request identical to a running task
@@ -341,8 +361,10 @@ without a reason), and the loop-guard scope as a hard requirement.
      denied, and after the fourth `verify-worktree` must refuse; the same
      on a resumed session.
    - P3 the deny list: each target on each engine, including resumed
-     sessions and a configured binary path; Codex through the execpolicy
-     rules file.
+     sessions and a configured binary path. (Outcome: Claude and Grok
+     enforce it; Codex ignores rules files in `exec`, see P3b.)
+   - P3b Codex network: a workspace-write child cannot reach a model API
+     or complete a nested engine run.
    - P5 `codex exec --ignore-user-config`: auth kept, no trust prompt, no
      user MCP servers.
    - P7 `dev-team git` over a worktree edited by a sandboxed implementer:
