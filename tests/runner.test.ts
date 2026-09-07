@@ -202,8 +202,7 @@ const adapter = {
   },
   finalMessage(events, text) {
     ${["settlement", "same-status"].includes(options.race!) ? "externalSettlement();" : ""}
-    ${options.competitor === "before-write" ? `compete({ status: "done", reason: "external settlement" }, 123, "");
-    fs.writeFileSync(${JSON.stringify(markers.beforeWrite)}, "settled");` : ""}
+    ${options.competitor === "before-write" ? `compete({ status: "done", reason: "external settlement" }, 123, ${JSON.stringify(markers.beforeWrite)});` : ""}
     return events.findLast((event) => event.kind === "result")?.text ?? text ?? "";
   },
 };
@@ -707,6 +706,7 @@ test("the runner never renames over a record that was terminal at its read", asy
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
     assert.ok(fs.existsSync(h.markers.beforeWrite), "the competitor settled before the runner's terminal write");
+    assert.match(fs.readFileSync(h.markers.beforeWrite, "utf8"), /^\d+$/, "the competitor itself wrote the marker when it called update");
     const outcome = h.outcome();
     assert.equal(outcome.outcome, "ok");
     const final = h.read();
