@@ -94,7 +94,12 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 - Reconciliation (on server start and every `list_tasks`): a `running`
   record whose runner identity is dead but whose engine identity is alive
   becomes `orphaned`; the reconciler terminates the engine group, then
-  writes `failed: runner lost`. A worktree reservation is never released
+  writes `failed: runner lost`. Until T6 adds the per-record lock, two
+  automated writers other than the runner, today only orphan cleaners, can
+  both settle one record between their read and their rename; both write
+  the same status and reason, `failed: runner lost`, while `updatedAt` can
+  differ, so the exposure is a duplicate settlement with possibly different
+  timestamps, not divergent state. A worktree reservation is never released
   while an engine identity is alive.
 - Spawn lock: `.dev-team/spawn.lock` created with `O_EXCL`, holding pid,
   start time, host name, timestamp, TTL 30 s. It guards `delegate`'s
