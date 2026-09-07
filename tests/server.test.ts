@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { createServer } from "../src/server.ts";
 
 type Json = Record<string, unknown>;
@@ -83,13 +84,21 @@ test("initialize identifies the dev-team server over stdio", async () => {
   }
 });
 
-test("tools/list offers list_roles", async () => {
-  const client = stdioClient(await projectWithConfig({ roles: {} }));
+test("tools/list offers list_roles and verify_worktree", async (t) => {
+  const root = await projectWithConfig({ roles: {} });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = stdioClient(root);
   try {
     await client.request("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } });
     const reply = await client.request("tools/list");
-    const names = ((reply.result as Json).tools as Json[]).map((t) => t.name);
+    const tools = (reply.result as Json).tools as Json[];
+    const names = tools.map((t) => t.name);
     assert.ok(names.includes("list_roles"), `tools were ${names.join(", ")}`);
+    assert.ok(names.includes("verify_worktree"), `tools were ${names.join(", ")}`);
+    const schema = tools.find((tool) => tool.name === "verify_worktree")!.inputSchema as Json;
+    assert.equal(schema.type, "object");
+    assert.deepEqual(schema.required, ["path", "branch"]);
+    assert.deepEqual(schema.properties, { path: { type: "string" }, branch: { type: "string" } });
   } finally {
     client.close();
   }
@@ -108,6 +117,71 @@ test("list_roles returns the roles from .dev-team/config.json", async () => {
     assert.equal(content[0].type, "text");
     const parsed = JSON.parse(content[0].text as string) as { roles: typeof roles };
     assert.deepEqual(parsed.roles, roles);
+  } finally {
+    client.close();
+  }
+});
+
+test("list_roles applies role defaults over stdio", async (t) => {
+  const root = await projectWithConfig({ roles: { planner: { engine: "codex" }, helper: { engine: "grok", sandbox: "off" } } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = stdioClient(root);
+  try {
+    const reply = await client.request("tools/call", { name: "list_roles", arguments: {} });
+    const content = (reply.result as Json).content as Json[];
+    assert.equal(content[0].type, "text");
+    assert.deepEqual(JSON.parse(content[0].text as string), { roles: {
+      planner: { engine: "codex", cwd: "root", sandbox: "read-only" },
+      helper: { engine: "grok", cwd: "root", sandbox: "off" },
+    } });
+  } finally {
+    client.close();
+  }
+});
+
+test("verify_worktree returns success and refusal JSON as text over stdio", async (t) => {
+  const root = await projectWithConfig({ roles: {} });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const exec = promisify(execFile);
+  await exec("git", ["-C", root, "init", "-b", "main"]);
+  await exec("git", ["-C", root, "-c", "user.name=Dev Team Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial"]);
+  const candidate = path.join(root, ".worktrees", "stdio");
+  await exec("git", ["-C", root, "worktree", "add", "-b", "task/stdio", candidate]);
+  const client = stdioClient(root);
+  try {
+    for (const branch of ["task/stdio", "task/other"]) {
+      const reply = await client.request("tools/call", { name: "verify_worktree", arguments: { path: candidate, branch } });
+      const result = reply.result as Json;
+      const content = result.content as Json[];
+      assert.equal(content[0].type, "text");
+      assert.notEqual(result.isError, true);
+      const parsed = JSON.parse(content[0].text as string) as Json;
+      if (branch === "task/stdio") {
+        assert.deepEqual(parsed, {
+          gitDir: await realpath(path.join(root, ".git", "worktrees", "stdio")),
+          workTree: await realpath(candidate), branch,
+        });
+      } else {
+        assert.deepEqual(Object.keys(parsed), ["reason"]);
+        assert.equal(typeof parsed.reason, "string");
+        assert.ok((parsed.reason as string).length > 0);
+      }
+    }
+  } finally {
+    client.close();
+  }
+});
+
+test("verify_worktree checks required string arguments at runtime", async (t) => {
+  const root = await projectWithConfig({ roles: {} });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const client = stdioClient(root);
+  try {
+    for (const args of [{}, { path: 1, branch: "task/t" }, { path: root }, { path: root, branch: false }, [], "invalid"]) {
+      const reply = await client.request("tools/call", { name: "verify_worktree", arguments: args });
+      assert.equal((reply.error as Json).code, -32602);
+      assert.match((reply.error as Json).message as string, /path|branch/);
+    }
   } finally {
     client.close();
   }

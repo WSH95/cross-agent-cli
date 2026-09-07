@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
+import { verifyWorktree } from "./worktree.ts";
 
 // dev-team MCP server: JSON-RPC 2.0 over stdio, one message per line.
 // Requests are dispatched as they arrive; a slow tool call never blocks the
@@ -132,6 +133,22 @@ export function projectTools(projectRoot: string): ToolDefinition[] {
       description: "List the dev team roles configured in .dev-team/config.json with their engine, model, working directory kind, and sandbox profile.",
       inputSchema: { type: "object", properties: {} },
       handler: () => text({ roles: loadConfig(projectRoot).roles }),
+    },
+    {
+      name: "verify_worktree",
+      description: "Verify a linked worktree and its exact branch, returning canonical Git and worktree paths or a refusal reason.",
+      inputSchema: {
+        type: "object",
+        properties: { path: { type: "string" }, branch: { type: "string" } },
+        required: ["path", "branch"],
+      },
+      handler: async (args) => {
+        if (!args || typeof args !== "object" || Array.isArray(args) || typeof args.path !== "string") {
+          throw new RpcError(-32602, "verify_worktree requires a string path");
+        }
+        if (typeof args.branch !== "string") throw new RpcError(-32602, "verify_worktree requires a string branch");
+        return text(await verifyWorktree(projectRoot, args.path, args.branch));
+      },
     },
   ];
 }
