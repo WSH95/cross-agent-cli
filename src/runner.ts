@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { read, readSpec, update } from "./ledger.ts";
+import { read, readSpec, TerminalTaskError, update } from "./ledger.ts";
 import type { EngineIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 import { groupAlive, identityOf, killGroup } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
@@ -27,14 +27,18 @@ function run(projectRoot: string, id: string): void {
     fs.appendFileSync(diagnosticPath, `${new Date().toISOString()} ${text}\n`);
   }
 
-  // The ledger permits metadata updates to a terminal record. The runner must
-  // preserve it entirely, including when another writer wins between these reads.
+  // Every write is conditional inside the ledger: one read, one check, one rename.
+  // A refusal means someone else settled the task, and the record stays theirs.
   function write(patch: TaskPatch): boolean {
-    if (terminal(read(projectRoot, id))) return false;
     try {
-      record = update(projectRoot, id, patch);
+      record = update(projectRoot, id, patch, Date.now(), { unlessTerminal: true });
       return true;
     } catch (error) {
+      if (error instanceof TerminalTaskError) {
+        log(error.message);
+        return false;
+      }
+      // A write that failed for another reason may still have lost to a settlement.
       if (terminal(read(projectRoot, id))) {
         log(error);
         return false;
