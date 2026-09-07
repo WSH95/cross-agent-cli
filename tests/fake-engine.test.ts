@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fake = path.join(here, "fixtures", "fake-engine.mjs");
@@ -40,4 +41,32 @@ test("the fake engine exits non-zero on the fail script", async () => {
   const { code, out } = await run([], { FAKE_ENGINE_SCRIPT: "fail" });
   assert.equal(code, 2);
   assert.match(out, /"type":"error"/);
+});
+
+test("stall-ignore-term survives SIGTERM and exits on SIGKILL", { timeout: 5000 }, async () => {
+  const child = spawn(process.execPath, [fake], { env: { FAKE_ENGINE_SCRIPT: "stall-ignore-term" } });
+  let out = "";
+  child.stdout.on("data", (chunk) => { out += chunk; });
+  child.stderr.resume();
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  });
+  child.stdin.end();
+  try {
+    const deadline = Date.now() + 2000;
+    while (!out.includes('"working"')) {
+      assert.ok(Date.now() < deadline, "fixture did not become ready");
+      await delay(10);
+    }
+    assert.equal(child.kill("SIGTERM"), true);
+    await delay(100);
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.equal(child.kill("SIGKILL"), true);
+    assert.deepEqual(await closed, { code: null, signal: "SIGKILL" });
+  } finally {
+    child.kill("SIGKILL");
+    await closed;
+  }
 });

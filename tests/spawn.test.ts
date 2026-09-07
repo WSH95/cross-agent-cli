@@ -143,6 +143,30 @@ test("generic run resolves ok, captures session, writes final text, and appends 
   assert.equal(readFileSync(request.logPath, "utf8"), "earlier evidence\n" + raw);
 });
 
+test("spawn exposes its PID and latest event time and creates a separate process group", async (t) => {
+  const { launch } = task(t);
+  const handle = launch(generic, { env: { FAKE_ENGINE_SCRIPT: "stall" } });
+  try {
+    const pid = handle.pid;
+    assert.ok(Number.isInteger(pid) && pid! > 0);
+    assert.equal(handle.lastEventAt, null);
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+    assert.equal(Number(fields[2]), pid);
+    assert.equal(Number(fields[3]), pid, "detached engine leads its session too");
+    await waitFor(() => handle.lastEventAt !== null);
+    const latest = handle.lastEventAt;
+    handle.kill("SIGKILL");
+    const result = await handle.result;
+    assert.equal(handle.pid, pid, "PID remains available after close");
+    assert.equal(handle.lastEventAt, result.lastEventAt);
+    assert.ok(handle.lastEventAt! >= latest!);
+  } finally {
+    handle.kill("SIGKILL");
+    await handle.result;
+  }
+});
+
 test("fail script resolves false with exit code 2 and its error event", async (t) => {
   const { launch, request } = task(t);
   const result = await launch(generic, { env: { FAKE_ENGINE_SCRIPT: "fail" } }).result;
@@ -206,6 +230,7 @@ test("plan stdin, argv, cwd, and environment reach the child", async (t) => {
       assert.deepEqual(args, argv);
       assert.equal(options.cwd, request.cwd);
       assert.deepEqual(options.env, env);
+      assert.equal(options.detached, true);
       return spawn(bin, args, options);
     },
   }).result;
@@ -220,7 +245,9 @@ test("first session wins and only parsed events advance lastEventAt", async (t) 
   t.mock.method(Date, "now", () => now);
   const engine = controlled();
   const handle = launch(generic, {}, { spawn: engine.spawn });
+  assert.equal(handle.lastEventAt, null);
   engine.child.stdout.write('{"type":"session","session_id":"first"}\n');
+  assert.equal(handle.lastEventAt, 100);
   now = 200;
   engine.child.stdout.write('{"type":"event","text":"working"}\n');
   now = 300;
@@ -228,6 +255,7 @@ test("first session wins and only parsed events advance lastEventAt", async (t) 
   now = 900;
   engine.child.stdout.write("unknown line\n");
   engine.child.stderr.write("stderr activity\n");
+  assert.equal(handle.lastEventAt, 300);
   await engine.close();
   const result = await handle.result;
   assert.equal(result.sessionId, "first");

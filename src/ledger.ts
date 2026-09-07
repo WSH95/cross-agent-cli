@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { SpawnRequest } from "./engines/types.ts";
 
 export type TaskStatus = "launching" | "running" | "stalled" | "orphaned" | "cancelling" | "done" | "failed" | "cancelled";
 
@@ -11,6 +12,11 @@ export interface ProcessIdentity {
 
 export interface EngineIdentity extends ProcessIdentity {
   pgid: number;
+}
+
+export interface LaunchSpec extends Omit<SpawnRequest, "logPath" | "resultPath"> {
+  engine: string;
+  adapterModule: string;
 }
 
 export interface CreateTask {
@@ -84,7 +90,7 @@ function readRecord(file: string): TaskRecord {
   return JSON.parse(fs.readFileSync(file, "utf8")) as TaskRecord;
 }
 
-function writeRecord(file: string, record: TaskRecord): void {
+function writeRecord(file: string, record: TaskRecord | LaunchSpec): void {
   const contents = JSON.stringify(record, null, 2) + "\n";
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(12).toString("base64url")}.tmp`);
   const fd = fs.openSync(temporary, "wx");
@@ -127,6 +133,25 @@ export function read(projectRoot: string, id: string): TaskRecord {
   return readRecord(recordPath(projectRoot, id));
 }
 
+function validateSpec(spec: LaunchSpec): void {
+  if (typeof spec?.adapterModule !== "string" || !path.isAbsolute(spec.adapterModule)) {
+    throw new Error("adapterModule must be an absolute path");
+  }
+}
+
+export function writeSpec(projectRoot: string, id: string, spec: LaunchSpec): void {
+  const file = recordPath(projectRoot, id).replace(/\.json$/, ".spec.json");
+  validateSpec(spec);
+  writeRecord(file, spec);
+}
+
+export function readSpec(projectRoot: string, id: string): LaunchSpec {
+  const file = recordPath(projectRoot, id).replace(/\.json$/, ".spec.json");
+  const spec = JSON.parse(fs.readFileSync(file, "utf8")) as LaunchSpec;
+  validateSpec(spec);
+  return spec;
+}
+
 export function update(projectRoot: string, id: string, patch: TaskPatch, now = Date.now()): TaskRecord {
   const file = recordPath(projectRoot, id);
   const current = readRecord(file);
@@ -150,21 +175,27 @@ export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
     .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
-  if (!identity || !Number.isInteger(identity.pid) || identity.pid <= 0) return false;
+export function readProcessStat(pid: number): { startTime: string; pgid: number; state: string } | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
   let stat: string;
   try {
-    stat = fs.readFileSync(`/proc/${identity.pid}/stat`, "utf8");
+    stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ESRCH") return false;
+    if (code === "ENOENT" || code === "ESRCH") return null;
     throw error;
   }
   // Field 2 (comm) can contain spaces and parentheses; the suffix begins at field 3.
   const end = stat.lastIndexOf(")");
-  if (end < 0) return false;
+  if (end < 0) return null;
   const fields = stat.slice(end + 1).trim().split(/\s+/);
-  return fields[19] === identity.startTime;
+  return { startTime: fields[19], pgid: Number(fields[2]), state: fields[0] };
+}
+
+export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
+  if (!identity) return false;
+  const stat = readProcessStat(identity.pid);
+  return stat !== null && stat.startTime === identity.startTime;
 }
 
 export function reconcile(projectRoot: string, now = Date.now()): TaskRecord[] {

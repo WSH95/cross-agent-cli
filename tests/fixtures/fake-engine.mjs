@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // A stand-in for a headless engine CLI. Records its invocation and stdin.
-//   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall
+//   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall | stall-ignore-term
 //   FAKE_ENGINE_FORMAT: generic (default) | claude | codex | grok
 //   FAKE_ENGINE_RECORD: path of a JSON file to write {argv, cwd, env, stdin}
 import { writeFileSync } from "node:fs";
 
 const script = process.env.FAKE_ENGINE_SCRIPT ?? "ok";
+// Readiness output must mean that the resistant mode is already ignoring SIGTERM.
+if (script === "stall-ignore-term") process.on("SIGTERM", () => {});
 const format = process.env.FAKE_ENGINE_FORMAT ?? "generic";
 let stdin = "";
 process.stdin.setEncoding("utf8");
@@ -40,8 +42,8 @@ switch (format) {
   default:
     throw new Error(`Unknown FAKE_ENGINE_FORMAT: ${format}`);
 }
-if (script === "stall") {
-  process.on("SIGTERM", () => process.exit(143));
+if (script === "stall" || script === "stall-ignore-term") {
+  if (script === "stall") process.on("SIGTERM", () => process.exit(143));
   setInterval(() => {}, 1 << 30);
 } else {
   const failed = script === "fail";

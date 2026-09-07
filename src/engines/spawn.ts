@@ -14,6 +14,8 @@ export interface SpawnResult {
 }
 
 export interface SpawnHandle {
+  readonly pid: number | undefined;
+  readonly lastEventAt: number | null;
   result: Promise<SpawnResult>;
   kill(signal?: NodeJS.Signals): boolean;
 }
@@ -60,6 +62,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   let sessionId: string | null = null;
   let lastEventAt: number | null = null;
   let child: ChildProcessWithoutNullStreams | undefined;
+  let pid: number | undefined;
   let log: number | undefined;
   let settled = false;
   let stopping = false;
@@ -149,7 +152,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   try {
     const plan = adapter.plan(request);
     log = openSync(request.logPath, "a");
-    child = (options.spawn ?? spawn)(plan.bin, plan.argv, { cwd: plan.cwd, env: plan.env });
+    child = (options.spawn ?? spawn)(plan.bin, plan.argv, { cwd: plan.cwd, env: plan.env, detached: true });
+    pid = child.pid;
     child.on("error", (error) => { failure("launch/process error", error); });
     child.stdout.on("data", stdout.write);
     child.stdout.on("end", stdout.flush);
@@ -167,6 +171,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   }
 
   return {
+    pid,
+    get lastEventAt() { return lastEventAt; },
     result,
     kill: (signal = "SIGTERM") => !settled && child !== undefined ? child.kill(signal) : false,
   };
