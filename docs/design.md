@@ -76,8 +76,14 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
   the token on its command line) and the engine's identity (pid, start
   time, process group). Reconciliation may turn `launching` into `failed:
   launch` only after the deadline passes with no runner acknowledgement.
-- `src/runner.ts`: a detached process per task that owns the engine child
-  in its own process group, tees events, updates `lastEventAt`, and on
+- Launch spec: `delegate` writes `<id>.spec.json` next to the record before
+  starting the runner: role, brief, role prompt, cwd, engine, model, effort,
+  sandbox, deny targets, session id, resume session id, the adapter module
+  path, and the prepared child environment. The runner rebuilds the spawn
+  from the spec alone, so it never needs the server.
+- `src/runner.ts`: a detached process per task (`node src/runner.ts
+  --project <root> --task <id>`) that owns the engine child in its own
+  process group, tees events, updates `lastEventAt` (throttled), and on
   engine exit writes the terminal record and `<id>.out` itself, so
   completion survives the MCP server. Terminal writers: the runner writes
   `done`, `failed`, `cancelled`; the server writes `cancelling` and, only
@@ -348,7 +354,8 @@ without a reason), and the loop-guard scope as a hard requirement.
    fake-engine.mjs` (emits JSONL; `FAKE_ENGINE_SCRIPT` selects stall,
    fail, loop attempt, denied command); `tools/probe.mjs`, a standalone
    harness that spawns one engine with the section 3 argv (no server, no
-   runner) so the probes do not wait on feature tasks. `npm test` green.
+   runner) so the probes do not wait on feature tasks. It stays a manual
+   tool; it is not moved onto the adapter interface. `npm test` green.
    First commit.
 2. Probes with the harness, each a short real run recorded in
    `docs/probes.md` with the exact command and outcome:
@@ -391,7 +398,7 @@ lines.
 | T1 Ledger and launch protocol | `src/ledger.ts`: records, atomic writes, statuses, `launchDeadline`, identities, reconciliation rules, `.git/info/exclude` | a `launching` record is untouched before its deadline and `failed: launch` after; dead runner with dead engine becomes `failed: runner lost` |
 | T2 Config and validation | `src/config.ts`: load, defaults, validation, `dev-team init`, `cwd` kinds; `verify_worktree` with `realpath`, `git worktree list --porcelain`, the three `rev-parse` checks, exact branch | root, a subdirectory, an unrelated repo, the main worktree, a wrong branch, and a rewritten `.git` pointer are refused; a linked `task/<slug>` worktree passes |
 | T3 Guard | `src/guard.ts`: depth parsing (fail closed), lineage, running and recent duplicates, resume binding and active-resume refusal, deny-list and exclusion-flag builders per engine | one test per layer; malformed and cleared variables; needs-work resume accepted; resume of a running task refused |
-| T4 Adapter interface, fake engine, harness | `src/engines/types.ts`, fake wired through `DEV_TEAM_<ENGINE>_BIN`, sandbox-or-refuse rule, `tools/probe.mjs` moved onto the interface | a fake run produces `<id>.ndjson`, `<id>.out`; a missing sandbox capability refuses to spawn |
+| T4 Adapter interface, fake engine | `src/engines/types.ts`, `src/engines/spawn.ts`, fake engine with per-engine output formats, sandbox-or-refuse rule | a fake run produces `<id>.ndjson`, `<id>.out`; a missing sandbox capability refuses to spawn |
 | T5 Runner and orphan handling | `src/runner.ts`: detached, own process group for the engine, identity file, event tee, terminal writes, SIGTERM handling | crash tests: kill the server during launch, execution, finalisation; kill the runner with the engine alive (engine terminated, `failed: runner lost`); cancel racing completion has one terminal writer |
 | T6 Locks, reservation, git_mutate, journal | `src/locks.ts` (spawn lock with TTL and rename reclaim; `flock` wrapper), reservation rules, `src/gitmutate.ts`, journal | two servers cannot both spawn; simultaneous reclaim yields one winner; `git_mutate` refuses an unsettled reservation and a failed verification; journal records SHAs and steps |
 | T7 Claude adapter | argv, env scrub, session id, resume, final message, settings JSON, deny list | tests with the fake binary; flags from P1, P2, P3 |
