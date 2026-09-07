@@ -94,27 +94,36 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 - Reconciliation (on server start and every `list_tasks`): a `running`
   record whose runner identity is dead but whose engine identity is alive
   becomes `orphaned`; the reconciler terminates the engine group, then
-  writes `failed: runner lost`. Until T6 adds the per-record lock, two
+  writes `failed: runner lost`. Until T6 adds the per-record lock (an OS-held `flock`, see the locks paragraph above), two
   automated writers other than the runner, today only orphan cleaners, can
   both settle one record between their read and their rename; both write
   the same status and reason, `failed: runner lost`, while `updatedAt` can
   differ, so the exposure is a duplicate settlement with possibly different
   timestamps, not divergent state. A worktree reservation is never released
   while an engine identity is alive.
-- Spawn lock: `.dev-team/spawn.lock` created with `O_EXCL`, holding pid,
-  start time, host name, timestamp, TTL 30 s. It guards `delegate`'s
-  validate-and-spawn only (milliseconds). Reclaim of a lock whose holder is
-  dead and whose TTL passed is `rename(lock, lock.stale.<random>)` followed
-  by a fresh `O_EXCL` create; two reclaimers cannot both succeed, and the
-  losing one retries.
+- Locks are OS-held and never reclaimed. A lock is `flock(2)` on a file
+  under `.dev-team/locks/`, taken by a helper that keeps a util-linux
+  `flock` child alive on a pipe (`flock <file> sh -c 'echo held; read _'`):
+  the helper knows it holds the lock when the child prints, releases it by
+  closing the pipe, and the kernel releases it when the holder dies, so a
+  dead holder needs no TTL, no stale detection, and no rename. (An earlier
+  recipe, an `O_EXCL` file with a TTL and a rename-based reclaim, was
+  refuted in T5's plan review: a reclaim by pathname can rename the
+  winner's fresh lock, so two reclaimers could both succeed.) Three locks:
+  `spawn.lock` around `delegate`'s validate-and-spawn; `record-<id>.lock`
+  around every ledger read-check-rename by an automated writer (runner,
+  cleaner, server), taken inside the ledger's update; `git.lock` around
+  every lead git mutation. A waiter blocks up to `lockWaitSeconds`
+  (default 5), then refuses naming the operation.
 - Worktree reservation: a task with a writable sandbox reserves its
   canonical cwd until it settles; `delegate` refuses any other task on that
   cwd meanwhile. `resume` of a task in `launching`, `running`, `stalled`,
   `orphaned`, or `cancelling` is refused ("wait or cancel first").
 - Git lock: every lead git mutation runs inside `flock -n
-  .dev-team/git.lock` (util-linux, OS-held, released when the git process
-  dies), through `git_mutate` or `dev-team git`. Two hosts on one project
-  therefore cannot spawn into or mutate the same repository concurrently.
+  .dev-team/locks/git.lock` (util-linux, OS-held, released when the git
+  process dies), through `git_mutate` or `dev-team git`. Two hosts on one
+  project therefore cannot spawn into or mutate the same repository
+  concurrently.
 
 ### 3. Engine adapters
 
@@ -184,7 +193,7 @@ is the only way the skill mutates git in a worktree, and it
    `git worktree list --porcelain`, that `git -C <path> rev-parse
    --git-dir` is `<root>/.git/worktrees/<slug>`, `--git-common-dir` is
    `<root>/.git`, and `--abbrev-ref HEAD` is exactly `task/<slug>`;
-3. runs `flock -n .dev-team/git.lock git --git-dir=<root>/.git/worktrees/<slug>
+3. runs `flock -n .dev-team/locks/git.lock git --git-dir=<root>/.git/worktrees/<slug>
    --work-tree=<path> <args>` so the pointer file is never consulted;
 4. appends the step to the task journal (section 7) with the SHAs before
    and after.
@@ -405,7 +414,7 @@ lines.
 | T3 Guard | `src/guard.ts`: depth parsing (fail closed), lineage, running and recent duplicates, resume binding and active-resume refusal, deny-list and exclusion-flag builders per engine | one test per layer; malformed and cleared variables; needs-work resume accepted; resume of a running task refused |
 | T4 Adapter interface, fake engine | `src/engines/types.ts`, `src/engines/spawn.ts`, fake engine with per-engine output formats, sandbox-or-refuse rule | a fake run produces `<id>.ndjson`, `<id>.out`; a missing sandbox capability refuses to spawn |
 | T5 Runner and orphan handling | `src/runner.ts`: detached, own process group for the engine, identity file, event tee, terminal writes, SIGTERM handling | crash tests: kill the server during launch, execution, finalisation; kill the runner with the engine alive (engine terminated, `failed: runner lost`); cancel racing completion has one terminal writer |
-| T6 Locks, reservation, git_mutate, journal | `src/locks.ts` (spawn lock with TTL and rename reclaim; `flock` wrapper), reservation rules, `src/gitmutate.ts`, journal | two servers cannot both spawn; simultaneous reclaim yields one winner; `git_mutate` refuses an unsettled reservation and a failed verification; journal records SHAs and steps |
+| T6 Locks, reservation, git_mutate, journal | `src/locks.ts` (OS-held `flock` locks for spawn, per-record, and git, held through a `flock` child on a pipe; no reclaim), the record lock inside the ledger's update, reservation rules, `src/gitmutate.ts`, journal | two holders serialize; a lock held by a killed process is acquired by the next holder within a second with no reclaim code; two processes updating one record serialize; `git_mutate` refuses an unsettled reservation and a failed verification; journal records SHAs and steps |
 | T7 Claude adapter | argv, env scrub, session id, resume, final message, settings JSON, deny list | tests with the fake binary; flags from P1, P2, P3 |
 | T8 Codex adapter | `exec --json -o -C`, sandbox, execpolicy rules file, `exec resume` | tests; flags from P2, P3, P5 |
 | T9 Grok adapter | `-p --cwd --sandbox`, deny rules, `--session-id`/`-r`, json output | tests; flags from P2, P3 |
