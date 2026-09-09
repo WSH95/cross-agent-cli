@@ -17,7 +17,7 @@ import type { SpawnOptions } from "../src/engines/spawn.ts";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "../src/engines/types.ts";
 
 const fake = fileURLToPath(new URL("./fixtures/fake-engine.mjs", import.meta.url));
-const formats = ["generic", "claude", "codex", "grok"] as const;
+const formats = ["generic", "claude", "codex", "grok", "grok-json"] as const;
 
 const generic: EngineAdapter = {
   name: "claude",
@@ -661,8 +661,29 @@ test("codex format emits thread_id, agent_message text, and turn.completed", asy
   assert.equal(lines.at(-1).type, "turn.completed");
 });
 
-test("grok format emits one multiline final object containing sessionId and text", async (t) => {
-  const { code, out } = await task(t).fixture("grok").result;
+test("grok format emits init session_id, an assistant message, and a final result (P8)", async (t) => {
+  const run = task(t).fixture("grok");
+  const { code, out } = await run.result;
+  assert.equal(code, 0);
+  // `streaming-messages-json` is NDJSON in the Messages API wire shape, so its lines are
+  // the `claude` case's: the session id on the first line and the final text on the last.
+  const lines = out.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0].type, "system");
+  assert.equal(lines[0].subtype, "init");
+  assert.match(lines[0].session_id, /^fake-\d+$/);
+  const assistant = lines.find((line) => line.type === "assistant");
+  assert.equal(assistant.message.role, "assistant");
+  assert.deepEqual(assistant.message.content, [{ type: "text", text: "working" }]);
+  assert.equal(lines.at(-1).type, "result");
+  assert.equal(lines.at(-1).subtype, "success");
+  assert.equal(lines.at(-1).is_error, false);
+  assert.equal(lines.at(-1).result, "DONE --flag value");
+  assert.equal(lines.at(-1).session_id, lines[0].session_id);
+});
+
+test("grok-json format is the json mode: one multiline object at exit and nothing before", async (t) => {
+  const { code, out } = await task(t).fixture("grok-json").result;
   assert.equal(code, 0);
   const value = JSON.parse(out);
   assert.equal(value.text, "DONE --flag value");
@@ -683,19 +704,20 @@ test("every format preserves fail, stall, and invocation recording", { timeout: 
           void run.result.then(() => { settled = true; });
           await delay(40);
           assert.equal(settled, false);
-          if (format === "grok") assert.equal(run.output(), "", "no final object before completion");
+          if (format === "grok-json") assert.equal(run.output(), "", "no final object before completion");
           else assert.notEqual(run.output(), "");
           run.child.kill("SIGTERM");
         }
         const { code, signal, out } = await run.result;
-        assert.equal(code, script === "fail" ? 2 : script === "stall" ? 143 : 0);
+        // A failed Grok turn exits 1 (P8); the other formats keep the fixture's own 2.
+        assert.equal(code, script === "fail" ? (format.startsWith("grok") ? 1 : 2) : script === "stall" ? 143 : 0);
         assert.equal(signal, null);
         assert.deepEqual(JSON.parse(readFileSync(run.record, "utf8")), {
           argv: ["--flag", "value"], cwd: request.cwd, env: run.env, stdin: "recorded stdin\n🌙",
         });
         if (script === "fail") {
           assert.match(out, /fake failure/);
-          if (format === "grok") {
+          if (format === "grok-json") {
             assert.equal(JSON.parse(out).text, "fake failure");
           } else {
             const last = JSON.parse(out.trim().split("\n").at(-1)!);
@@ -705,6 +727,15 @@ test("every format preserves fail, stall, and invocation recording", { timeout: 
               assert.equal(last.is_error, true);
             }
             if (format === "codex") assert.equal(last.type, "turn.failed");
+            // A failed Grok turn closes with a result line whose message is in `errors`
+            // and which carries no `result` field at all (P8).
+            if (format === "grok") {
+              assert.equal(last.type, "result");
+              assert.equal(last.subtype, "error_during_execution");
+              assert.equal(last.is_error, true);
+              assert.deepEqual(last.errors, ["fake failure"]);
+              assert.equal("result" in last, false);
+            }
           }
         }
       });
@@ -726,7 +757,7 @@ test("a declared finish is called once with the whole raw stdout and its events 
       return [{ kind: "session", sessionId: document.sessionId }, { kind: "result", text: document.text }];
     },
   };
-  const result = await launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok" } }).result;
+  const result = await launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok-json" } }).result;
   assert.equal(documents.length, 1);
   // Raw bytes, not parsed lines: the log holds exactly what the child wrote.
   assert.equal(documents[0], readFileSync(request.logPath, "utf8"));
@@ -745,7 +776,7 @@ test("an adapter that declares no finish is never asked for one, so nothing is b
   const { launch } = task(t);
   const adapter: EngineAdapter = { ...generic, parseLine: () => null };
   assert.equal("finish" in adapter, false);
-  const handle = launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok" } });
+  const handle = launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok-json" } });
   // Whether to keep the raw output is decided before any arrives; one attached after the
   // launch is an adapter this run never had, and a run that called it had been buffering.
   adapter.finish = () => assert.fail("a finish declared after the launch must not run");

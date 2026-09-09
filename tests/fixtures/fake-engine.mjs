@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A stand-in for a headless engine CLI. Records its invocation and stdin.
 //   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall | stall-ignore-term
-//   FAKE_ENGINE_FORMAT: generic (default) | claude | codex | grok
+//   FAKE_ENGINE_FORMAT: generic (default) | claude | codex | grok | grok-json
 //   FAKE_ENGINE_RECORD: path of a JSON file to write {argv, cwd, env, stdin}
 import { writeFileSync } from "node:fs";
 
@@ -37,7 +37,19 @@ switch (format) {
     emit({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "working" } });
     break;
   case "grok":
-    // Grok's json mode emits nothing until the final whole-output object.
+    // `--output-format streaming-messages-json`, the format P8 adopted: NDJSON in the
+    // Anthropic Messages API wire shape, so these are the `claude` case's lines. The
+    // session id is on the first one, on a resumed turn as well as a fresh one.
+    emit({ type: "system", subtype: "init", session_id: sessionId, apiKeySource: "oauth",
+      model: "grok-4.6", cwd: process.cwd(), permissionMode: "bypassPermissions",
+      tools: ["run_terminal_command", "read_file"] });
+    emit({ type: "assistant", session_id: sessionId, message: {
+      type: "message", role: "assistant", content: [{ type: "text", text: "working" }],
+    } });
+    break;
+  case "grok-json":
+    // Grok's `json` mode, which emits nothing until the final whole-output object: the
+    // fallback for an adapter that declares `finish`.
     break;
   default:
     throw new Error(`Unknown FAKE_ENGINE_FORMAT: ${format}`);
@@ -65,9 +77,19 @@ if (script === "stall" || script === "stall-ignore-term") {
       }
       break;
     case "grok":
+      // Success and failure close down one path. A failed turn's message is in `errors`
+      // and it carries no `result` field at all (P8).
+      emit(failed
+        ? { type: "result", subtype: "error_during_execution", is_error: true, duration_ms: 0,
+          num_turns: 0, stop_reason: null, errors: [text], session_id: sessionId }
+        : { type: "result", subtype: "success", is_error: false, duration_ms: 1, num_turns: 2,
+          result: text, session_id: sessionId });
+      break;
+    case "grok-json":
       process.stdout.write(JSON.stringify({ text, stopReason: failed ? "error" : "end_turn", sessionId }, null, 2) + "\n");
       break;
   }
-  // Let stdout drain before exiting, including when it is a pipe.
-  process.exitCode = failed ? 2 : 0;
+  // Let stdout drain before exiting, including when it is a pipe. A failed Grok turn
+  // exits 1 (P8); the other formats keep this fixture's own 2.
+  process.exitCode = failed ? (format.startsWith("grok") ? 1 : 2) : 0;
 }
