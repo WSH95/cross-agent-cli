@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T13:15:59Z
+updated_at: 2026-09-09T13:32:29Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,14 +25,12 @@ session (`.34`, `.35` closed). SDD ledger:
 
 ## In flight
 
-Two Opus reviews: Task 7, the Claude adapter (d8bc672: stream-json parse,
-settings sandbox, deny list, role file, lead mount, a `parseStderrLine?`
-hook for the run-time sandbox failure; 297 tests), and Task 5d
-(77eef9d, fe26d96: `tools/check-citations.mjs` under `npm test` — 364
-citations, 0 range misses — and §3 rewritten as built; `atc-2q4` closed).
-Citation refresh for `src/engines` is held until T9 lands (`atc-vao`,
-with `atc-6sl`/`atc-540` folded in); `atc-s96.36` proposes symbol
-citations so line drift stops.
+Scoped re-reviews of two fix rounds: T7's (90fd4d6 — the lead mount emitted
+with `--strict-mcp-config` before `--model` because `--mcp-config` is
+variadic; `canonicalPath` exported and `SpawnRequest.cwd` documented
+canonical; one sandbox-error event per run, latched in the pipeline's
+per-run closure; 305 tests) and 5d's (a3439cf — §7's exit-code fact; the
+checker reports brace-expansion paths and joins wrapped citations).
 
 ## Next steps
 

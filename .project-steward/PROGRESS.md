@@ -41,3 +41,4 @@ Set up Project Steward in this repository.
 2026-09-09T12:30:59Z — claude [auto-checkpoint] 3d docs round landed (eb21b5e; atc-n85 closed); Task 5 approved, fix round in flight; atc-2q4 extended with a citation checker.
 2026-09-09T12:47:54Z — claude [auto-checkpoint] Task 5 closed (cfaf2b0; 269 tests); T7 (Claude adapter) and 5d (citation checker + §3 sweep) in flight.
 2026-09-09T13:15:59Z — claude [auto-checkpoint] 5d landed (citation checker; §3 built); T7 Claude adapter landed (d8bc672; 297 tests); reviews in flight; beads .36, atc-vao/6sl/540.
+2026-09-09T13:32:29Z — claude [auto-checkpoint] T7 fix round landed (90fd4d6; 305 tests); 5d fix round landed (a3439cf); re-reviews in flight.
