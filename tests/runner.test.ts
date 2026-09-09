@@ -413,17 +413,56 @@ test("process helpers reject stale identities and signal only the verified group
     await poll(() => helpers.groupAlive(identity), (alive) => !alive);
     assert.equal(living(descendant), false);
     assert.equal(helpers.killGroup(identity, "SIGKILL"), false);
-    await t.test("disappearing processes and unexpected errors", () => {
+    await t.test("a non-leader identity is never signalled, and proc errors propagate", () => {
+      // This process is not a group leader, so its own identity names no group and must
+      // reach no signal at all. (An ESRCH between the scan and the signal of a real
+      // group is the next test's; mocking it here would test nothing, because the
+      // identity is refused before any kill.)
       const current = { ...proc(process.pid)!, bootId: ledger.currentBootId };
-      const missing = Object.assign(new Error("gone"), { code: "ESRCH" });
-      const denied = Object.assign(new Error("denied"), { code: "EACCES" });
-      const mocked = t.mock.method(process, "kill", () => { throw missing; });
+      assert.notEqual(current.pgid, current.pid);
+      const mocked = t.mock.method(process, "kill", () => { throw new Error("signalled a non-leader identity"); });
       assert.equal(helpers.killGroup(current, "SIGTERM"), false);
+      assert.equal(mocked.mock.callCount(), 0);
       mocked.mock.restore();
+      const denied = Object.assign(new Error("denied"), { code: "EACCES" });
       const deniedMock = t.mock.method(fs, "readFileSync", () => { throw denied; });
       assert.throws(() => helpers.identityOf(process.pid), (error) => error === denied);
       deniedMock.mock.restore();
     });
+  } finally { await h.cleanup(); }
+});
+
+test("the environment scan finds a task's own processes, leaders apart from strays", async () => {
+  const helpers = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const taskId = randomUUID();
+    const strayFile = path.join(h.root, "stray.json");
+    // A detached leader carrying the task id and a plain child of it carrying the same
+    // id: the two shapes the reconciler must tell apart, one adopted and one killed.
+    const leader = h.track(spawn(process.execPath, ["-e", `
+      const { spawn } = require("node:child_process");
+      const fs = require("node:fs");
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      fs.writeFileSync(process.argv[1], JSON.stringify(child.pid));
+      setInterval(() => {}, 1000);
+    `, strayFile], { detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root, CROSS_AGENT_TASK: taskId } }));
+    await poll(() => fs.existsSync(strayFile), Boolean);
+    const stray = JSON.parse(fs.readFileSync(strayFile, "utf8")) as number;
+    const found = helpers.findByEnvironment(taskId);
+    assert.deepEqual(found.map((entry) => entry.pid).sort(), [leader.child.pid!, stray].sort());
+    assert.deepEqual(found.find((entry) => entry.pid === leader.child.pid), {
+      pid: leader.child.pid, startTime: proc(leader.child.pid!)!.startTime,
+      pgid: leader.child.pid, sid: leader.child.pid, leader: true,
+    });
+    assert.deepEqual(found.find((entry) => entry.pid === stray), {
+      pid: stray, startTime: proc(stray)!.startTime, pgid: leader.child.pid, sid: leader.child.pid, leader: false,
+    });
+    assert.deepEqual(helpers.findByEnvironment(randomUUID()), [], "another task's id finds nothing");
+    assert.deepEqual(helpers.findByEnvironment(taskId.slice(0, 8)), [], "the assignment must match whole, not by prefix");
+    leader.child.kill("SIGKILL");
+    process.kill(stray, "SIGKILL");
+    await poll(() => helpers.findByEnvironment(taskId), (entries) => entries.length === 0);
   } finally { await h.cleanup(); }
 });
 

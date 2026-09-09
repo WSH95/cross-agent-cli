@@ -46,6 +46,47 @@ export function groupAlive(identity?: EngineIdentity | null): boolean {
   return inspectGroup(identity) === "alive";
 }
 
+export interface FoundProcess {
+  pid: number;
+  startTime: string;
+  pgid: number;
+  sid: number;
+  /** pid === pgid === sid: the only shape that can be recorded as an engine identity. */
+  leader: boolean;
+}
+
+// Every live process whose environment carries exactly `CROSS_AGENT_TASK=<taskId>`, the
+// assignment the server puts in an engine's environment (guard.childEnv). It is how a
+// stranded engine is found when its runner died before writing an identity. Entries
+// that cannot be read are skipped: /proc/<pid>/environ is readable only by the process
+// owner, and a pid can leave between the listing and the read.
+//
+// This is evidence, not authority. A process that forges CROSS_AGENT_TASK can only get
+// itself adopted-and-terminated or killed as a stray — the operator's own foot. It
+// cannot grant anything, because authority also requires an engineIdentity the server
+// itself wrote.
+export function findByEnvironment(taskId: string): FoundProcess[] {
+  const assignment = `CROSS_AGENT_TASK=${taskId}`;
+  const found: FoundProcess[] = [];
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    let environ: string;
+    try {
+      environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code!)) continue;
+      throw error;
+    }
+    if (!environ.split("\0").includes(assignment)) continue;
+    const stat = readProcessStat(pid);
+    if (!stat || !live(stat.state)) continue;
+    found.push({ pid, startTime: stat.startTime, pgid: stat.pgid, sid: stat.sid, leader: pid === stat.pgid && pid === stat.sid });
+  }
+  return found.sort((left, right) => left.pid - right.pid);
+}
+
 export function killGroup(identity: EngineIdentity, signal: NodeJS.Signals): boolean {
   if (!groupAlive(identity)) return false;
   try {
