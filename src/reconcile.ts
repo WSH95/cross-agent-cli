@@ -45,27 +45,31 @@ function stillRunning(entry: FoundProcess): boolean {
   return stat !== null && stat.startTime === entry.startTime && stat.state !== "Z" && stat.state !== "X";
 }
 
-/** SIGTERM, two seconds, SIGKILL, per stray: the escalation a group gets, one pid at a time. */
-async function killStrays(strays: FoundProcess[]): Promise<void> {
-  for (const stray of strays) {
+/**
+ * SIGTERM, two seconds, SIGKILL, per stray: the escalation a group gets, one pid at a
+ * time. It answers the strays it could not signal rather than throwing, because it runs
+ * after the decision has been written: losing that write to report a failed signal would
+ * drop a record from `changed` although it was settled.
+ */
+async function killStrays(strays: FoundProcess[]): Promise<string[]> {
+  const failed = new Map<number, string>();
+  const signal = (stray: FoundProcess, value: NodeJS.Signals) => {
     // Verified immediately before the signal, as killGroup verifies a group: a pid that
     // left between the scan and here can already belong to an unrelated process.
-    if (!stillRunning(stray)) continue;
+    if (!stillRunning(stray)) return;
     try {
-      process.kill(stray.pid, "SIGTERM");
+      process.kill(stray.pid, value);
+      failed.delete(stray.pid);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      const failure = error as NodeJS.ErrnoException;
+      if (failure.code !== "ESRCH") failed.set(stray.pid, `stray ${stray.pid} could not be signalled: ${failure.message}`);
     }
-  }
+  };
+  for (const stray of strays) signal(stray, "SIGTERM");
   const deadline = performance.now() + 2000;
   while (strays.some(stillRunning) && performance.now() < deadline) await delay(20);
-  for (const stray of strays.filter(stillRunning)) {
-    try {
-      process.kill(stray.pid, "SIGKILL");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
-  }
+  for (const stray of strays) signal(stray, "SIGKILL");
+  return [...failed.values()];
 }
 
 /**
@@ -88,9 +92,23 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number): Prom
   const expect = (current: TaskRecord) =>
     current.status === "launching" && !current.runnerIdentity && now > current.launchDeadline;
   const { found, unreadable } = findByEnvironment(record.id, record.createdAt);
-  const [leader] = found.filter((entry) => entry.leader);
-  const strays = found.filter((entry) => entry !== leader);
+  const leaders = found.filter((entry) => entry.leader);
+  const [leader] = leaders.filter((entry) => !entry.self);
+  // Nothing this reconciler is part of is ever signalled: those pids are its own process,
+  // its own children, or the engine whose session it lives in.
+  const strays = found.filter((entry) => entry !== leader && !entry.self);
+  const own = leaders.find((entry) => entry.self);
 
+  if (!leader && own) {
+    // The only engine carrying this id is the one this server runs inside. Adopting it
+    // would have cleanup kill the group this process lives in; calling it a stray would
+    // do it directly; settling the launch would leave a terminal record with no identity
+    // and a live engine nothing could ever reach. Another server judges it.
+    return {
+      changed: [],
+      errors: [{ id: record.id, reason: `engine ${own.pid} shares this reconciler's session; adoption deferred to another server` }],
+    };
+  }
   if (!leader && unreadable > 0) {
     // One of those could have been this engine, and calling the launch failed would leave
     // it running with no record accounting for it. The next pass tries again.
@@ -104,8 +122,7 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number): Prom
   if (!result.applied) {
     return { changed: [], errors: [{ id: record.id, reason: `launch decision refused: the record is ${result.record.status}` }] };
   }
-  await killStrays(strays);
-  return { changed: [result.record], errors: [] };
+  return { changed: [result.record], errors: (await killStrays(strays)).map((reason) => ({ id: record.id, reason })) };
 }
 
 async function judge(projectRoot: string, record: TaskRecord, now: number): Promise<Judgement> {

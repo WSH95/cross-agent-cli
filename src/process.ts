@@ -81,6 +81,12 @@ export interface FoundProcess {
   sid: number;
   /** pid === pgid === sid: the only shape that can be recorded as an engine identity. */
   leader: boolean;
+  /**
+   * This process, or one sharing its group or session. Exclusion belongs to signalling,
+   * never to seeing: a caller must know such a process exists — it may be the very engine
+   * a record is waiting for — and must never signal it, because that is itself.
+   */
+  self: boolean;
 }
 
 // Every live process whose environment carries exactly `CROSS_AGENT_TASK=<taskId>`, the
@@ -111,14 +117,8 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
-    // Never this process, and never anything sharing its group or session. The server
-    // inherits CROSS_AGENT_TASK from the engine that started it, so a reconciler could
-    // otherwise find itself, call itself a stray, and signal its own group. An engine is
-    // always a detached leader of its own session, so no engine is ever excluded here.
-    if (pid === process.pid) continue;
     const before = readProcessStat(pid);
     if (!before || !live(before.state)) continue;
-    if (self && (before.pgid === self.pgid || before.sid === self.sid)) continue;
     let environ: string;
     try {
       environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
@@ -140,7 +140,14 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
     // reads is a different process, and its start time would bind the record to it.
     const after = readProcessStat(pid);
     if (!after || !live(after.state) || after.startTime !== before.startTime) continue;
-    found.push({ pid, startTime: after.startTime, pgid: after.pgid, sid: after.sid, leader: pid === after.pgid && pid === after.sid });
+    found.push({
+      pid, startTime: after.startTime, pgid: after.pgid, sid: after.sid,
+      leader: pid === after.pgid && pid === after.sid,
+      // The MCP server inherits CROSS_AGENT_TASK from the engine that started it, so a
+      // reconciler can find itself, its own children, and the engine it lives inside.
+      // All three are reported; what a caller may do with them is its own decision.
+      self: pid === process.pid || (self !== null && (after.pgid === self.pgid || after.sid === self.sid)),
+    });
   }
   return { found: found.sort((left, right) => left.pid - right.pid), unreadable };
 }

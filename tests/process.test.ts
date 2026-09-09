@@ -100,10 +100,10 @@ test("the environment scan finds a task's own processes, leaders apart from stra
   assert.equal(unreadable, 0, "nothing this user started since the task could not be read");
   assert.deepEqual(found.find((entry) => entry.pid === leader.pid), {
     pid: leader.pid, startTime: readProcessStat(leader.pid)!.startTime,
-    pgid: leader.pid, sid: leader.pid, leader: true,
+    pgid: leader.pid, sid: leader.pid, leader: true, self: false,
   });
   assert.deepEqual(found.find((entry) => entry.pid === stray), {
-    pid: stray, startTime: readProcessStat(stray)!.startTime, pgid: leader.pid, sid: leader.pid, leader: false,
+    pid: stray, startTime: readProcessStat(stray)!.startTime, pgid: leader.pid, sid: leader.pid, leader: false, self: false,
   });
   assert.deepEqual(findByEnvironment(`${taskId}-other`, recent).found, [], "another task's id finds nothing");
   assert.deepEqual(findByEnvironment(taskId.slice(0, 8), recent).found, [], "the assignment must match whole, not by prefix");
@@ -112,14 +112,16 @@ test("the environment scan finds a task's own processes, leaders apart from stra
   await poll(() => findByEnvironment(taskId, recent).found, (entries) => entries.length === 0);
 });
 
-test("the environment scan never returns the scanning process or its own group", async (t) => {
+test("the environment scan marks what shares the scanner's own group or session", async (t) => {
   const zoo = processes(t);
   const taskId = `self-${process.pid}-${Date.now()}`;
   const outcome = path.join(zoo.root, "scan.json");
   const pidFile = path.join(zoo.root, "engine.pid");
   // The scanner carries the task id itself, as an MCP server that inherited it from its
-  // engine does, and so does a plain child of it. Signalling either would be the
-  // reconciler killing itself; only the detached engine may be found.
+  // engine does, and so does a plain child of it. Every match is reported — a reconciler
+  // that could not see an engine would settle its record over a live process — but the
+  // ones sharing the scanner's own group or session are marked, because those are the
+  // ones it must never signal.
   const script = `
 import fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -147,10 +149,16 @@ sibling.kill("SIGKILL");
   const [code] = await once(scanner, "close");
   assert.equal(code, 0, "the scanner survived its own scan");
   const result = JSON.parse(fs.readFileSync(outcome, "utf8")) as {
-    found: { pid: number }[]; unreadable: number; self: number; sibling: number; engine: number;
+    found: { pid: number; self: boolean; leader: boolean }[]; unreadable: number;
+    self: number; sibling: number; engine: number;
   };
-  assert.deepEqual(result.found.map((entry) => entry.pid), [result.engine],
-    "only the detached engine is a candidate: the scanner and its own group are not");
+  const byPid = new Map(result.found.map((entry) => [entry.pid, entry]));
+  assert.deepEqual([...byPid.keys()].sort(), [result.self, result.sibling, result.engine].sort(),
+    "everything carrying the id is seen, the scanner included");
+  assert.equal(byPid.get(result.self)!.self, true);
+  assert.equal(byPid.get(result.sibling)!.self, true, "a child in the scanner's own group is the scanner's own");
+  assert.equal(byPid.get(result.engine)!.self, false);
+  assert.equal(byPid.get(result.engine)!.leader, true);
 });
 
 test("the environment scan reports what it could not read and binds each match to one identity", async (t) => {

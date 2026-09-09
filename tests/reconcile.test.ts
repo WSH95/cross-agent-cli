@@ -13,6 +13,7 @@ import { create, currentBootId, list, read, readProcessStat, update } from "../s
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { findByEnvironment, groupAlive, terminateOrphans } from "../src/process.ts";
 import { reconcile, reconcileAndCleanup } from "../src/reconcile.ts";
+import type { Reconciled } from "../src/reconcile.ts";
 
 // A real wall clock: reconciliation compares a record's createdAt with the start times of
 // live processes, so a task from 1970 would be older than everything on the machine.
@@ -125,8 +126,8 @@ function processes(t: TestContext) {
   });
   return {
     /** A live engine group: one detached leader, and its identity as the runner would record it. */
-    leader(env: NodeJS.ProcessEnv = {}): { pid: number; identity: EngineIdentity; child: ChildProcess } {
-      const child = spawn(process.execPath, ["-e", fixture], { detached: true, stdio: "ignore", env });
+    leader(env: NodeJS.ProcessEnv = {}, script = fixture, argv: string[] = []): { pid: number; identity: EngineIdentity; child: ChildProcess } {
+      const child = spawn(process.execPath, ["-e", script, ...argv], { detached: true, stdio: "ignore", env });
       child.once("error", () => {});
       children.push(child);
       const pid = child.pid!;
@@ -444,6 +445,79 @@ sibling.kill("SIGKILL");
   assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
   assert.deepEqual(read(root, record.id).engineIdentity, engine.identity, "the detached engine is still what was adopted");
 });
+
+test("a reconciler inside the engine's own session defers the launch instead of settling it", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const outcome = path.join(root, "reconciled.json");
+  const pidFile = path.join(root, "reconciler.pid");
+  // An MCP server started by an engine lives in that engine's session and inherits its
+  // CROSS_AGENT_TASK. Reconciling from there, this server can neither adopt the engine
+  // — cleanup would then kill the group it is running in — nor call it a stray. What it
+  // must never do is settle the record: that would leave a terminal record with no
+  // identity and a live engine nothing can reach.
+  const reconciler = path.join(root, "reconciler.mjs");
+  fs.writeFileSync(reconciler, `
+import fs from "node:fs";
+import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+const result = await reconcile(process.argv[2], Number(process.argv[3]));
+fs.writeFileSync(process.argv[4], JSON.stringify(result));
+`);
+  const leaderScript = `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, [process.argv[1], process.argv[2], process.argv[3], process.argv[4]], { stdio: "ignore" });
+fs.writeFileSync(process.argv[5], String(child.pid));
+setInterval(() => {}, 1000);
+`;
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id }, leaderScript,
+    [reconciler, root, String(record.launchDeadline + 1), outcome, pidFile]);
+  const child = await zoo.member(pidFile);
+  const result = JSON.parse(await poll(
+    () => (fs.existsSync(outcome) ? fs.readFileSync(outcome, "utf8") : ""), (text) => text.length > 0,
+  )) as Reconciled;
+
+  assert.deepEqual(result.changed, [], "nothing was written over a live engine");
+  assert.deepEqual(result.errors.map((entry) => entry.id), [record.id]);
+  assert.match(result.errors[0].reason, new RegExp(`engine ${engine.pid} shares this reconciler's session`));
+  assert.equal(read(root, record.id).status, "launching");
+  assert.equal(running(engine.pid), true, "and the engine it could not judge is untouched");
+  assert.equal(running(child), true);
+
+  // A server in another session has no such conflict, and adopts it.
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 2);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => value.status), ["orphaned"]);
+  assert.deepEqual(read(root, record.id).engineIdentity, engine.identity);
+});
+
+test("a stray that cannot be signalled is reported without losing the write that applied", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const pidFile = path.join(root, "stray.pid");
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id, CHILD_PID_FILE: pidFile, CHILD_TASK: record.id });
+  const stray = await zoo.member(pidFile);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 2);
+
+  const denied = Object.assign(new Error("not permitted"), { code: "EPERM" });
+  const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    if (pid === stray) throw denied;
+    return (process.kill as unknown as (pid: number, signal?: string | number) => true)(pid, signal);
+  });
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+  mocked.mock.restore();
+
+  // The decision was written; a stray it then could not signal is news about that
+  // record, not a reason to report the adoption as if it had never happened.
+  assert.deepEqual(changed.map((value) => value.status), ["orphaned"]);
+  assert.deepEqual(read(root, record.id).engineIdentity, engine.identity);
+  assert.deepEqual(errors.map((entry) => entry.id), [record.id]);
+  assert.match(errors[0].reason, new RegExp(`stray ${stray}.*not permitted`));
+  assert.equal(running(stray), true);
+});
+
 
 test("reconcile skips a record settled between listing and its write", async (t) => {
   const root = project(t);
