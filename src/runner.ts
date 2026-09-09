@@ -112,26 +112,45 @@ async function run(projectRoot: string, id: string): Promise<void> {
         // runner's to settle.
         if (!claimed.applied && claimed.record.status !== "cancelling") kind = "external";
       }
-      const cancelling = kind === "cancel" || kind === "preempted";
+      let cancelling = kind === "cancel" || kind === "preempted";
       await stopEngine(cancelling ? 5000 : 0);
-      if (kind !== "external") {
+      // The identities go in even when the acknowledgement never applied, so cleanup
+      // can verify the group this runner owned.
+      const evidence: TaskPatch = {
+        exitCode: outcome?.exitCode ?? null, sessionId: outcome?.sessionId ?? null,
+        resultPath: record.resultPath, logPath: record.logPath,
+        lastEventAt: outcome?.lastEventAt ?? handle?.lastEventAt ?? null,
+        ...identities,
+      };
+      let completedDuringCancel = false;
+      if (kind === "completion" || kind === "failed") {
         const hasResult = outcome?.events.some((event) => event.kind === "result")
           || Boolean(outcome?.finalMessage.trim());
-        const status = cancelling ? "cancelled"
-          : kind === "completion" && outcome?.ok && outcome.exitCode === 0 && hasResult ? "done" : "failed";
+        const status = kind === "completion" && outcome?.ok && outcome.exitCode === 0 && hasResult ? "done" : "failed";
         const reason = error instanceof Error ? error.message : error !== undefined ? String(error)
           : outcome?.events.findLast((event) => event.kind === "error")?.text
             ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
               : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
-        // The identities go in even when the acknowledgement never applied, so cleanup
-        // can verify the group this runner owned.
+        // The engine's own outcome names the status only while the record is still this
+        // runner's. A record that reached `cancelling` while the engine was finishing is
+        // being cancelled, however well the engine ended; one that reached `orphaned`
+        // belongs to whoever wrote it. Taking the status from `kind` alone would attempt
+        // a transition the ledger forbids, and strand the record.
+        const settled = await write({ status, ...evidence, ...(status === "failed" ? { reason } : {}) }, {
+          unlessTerminal: true,
+          expect: (current) => !["cancelling", "orphaned"].includes(current.status),
+        });
+        if (!settled.applied) {
+          completedDuringCancel = settled.reason === "expect" && settled.record.status === "cancelling";
+          cancelling = completedDuringCancel;
+          if (!completedDuringCancel) kind = "external";
+        }
+      }
+      if (cancelling && kind !== "external") {
         const settled = await write({
-          status, exitCode: outcome?.exitCode ?? null, sessionId: outcome?.sessionId ?? null,
-          resultPath: record.resultPath, logPath: record.logPath,
-          lastEventAt: outcome?.lastEventAt ?? handle?.lastEventAt ?? null,
-          ...identities,
-          ...(status === "failed" ? { reason } : {}),
-        }, cancelling ? { expect: (current) => current.status === "cancelling" } : { unlessTerminal: true });
+          status: "cancelled", ...evidence,
+          ...(completedDuringCancel ? { reason: "engine completed during cancel" } : {}),
+        }, { expect: (current) => current.status === "cancelling" });
         if (!settled.applied) kind = "external";
       }
       log(kind === "external" ? "someone else settled the task"
@@ -145,7 +164,8 @@ async function run(projectRoot: string, id: string): Promise<void> {
   // A second runner takes it with a zero wait, fails, and leaves the record alone.
   try {
     await acquire(lockPath(projectRoot, runnerLockName(id)), { operation: `run task ${id}`, waitSeconds: 0 });
-  } catch {
+  } catch (error) {
+    log(error);
     log(`another runner owns task ${id}`);
     return process.exit(1);
   }
@@ -184,6 +204,9 @@ async function run(projectRoot: string, id: string): Promise<void> {
       // leaving the record `cancelling` for good.
       return settle(acknowledged.record.status === "cancelling" ? "preempted" : "external");
     }
+    // A cancel that arrived while the acknowledgement was in flight already owns the
+    // teardown, and has cleared an interval this would otherwise start behind it.
+    if (settling) return;
     let persistedEvent = handle.lastEventAt;
     let inFlight = false;
     activity = setInterval(() => {

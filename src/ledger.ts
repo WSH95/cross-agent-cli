@@ -201,7 +201,9 @@ export async function update(
     const fields = Object.fromEntries(Object.entries(patch).filter(([key, value]) => patchFields.has(key) && value !== undefined)) as TaskPatch;
     const status = fields.status ?? current.status;
     if (!statuses.has(status)) throw new Error(`invalid task status: ${status}`);
-    if (status !== current.status && !transitions[current.status].includes(status)) {
+    // A record carrying a status this build does not know has no legal transitions, so
+    // it is named in the error rather than crashing the writer.
+    if (status !== current.status && !(transitions[current.status] ?? []).includes(status)) {
       const kind = terminalStatuses.has(current.status) ? "terminal task" : "task";
       throw new Error(`cannot change ${kind} ${id} from ${current.status} to ${status}`);
     }

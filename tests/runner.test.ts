@@ -1064,3 +1064,51 @@ test("an engine identity from another boot is dead, not a reused pid", async () 
     assert.equal(living(identity), true, "the live process holding that pid was never signalled");
   } finally { await h.cleanup(); }
 });
+
+test("an engine that completes while the server is cancelling settles cancelled, not done", async () => {
+  const { groupAlive } = await import("../src/process.ts");
+  const h = harness({ delayedImport: true });
+  try {
+    const child = h.start();
+    await poll(() => fs.existsSync(h.importReady), Boolean);
+    await writeAs(h.root, h.record.id, "cancelling");
+    // Holding the record lock keeps the acknowledgement pending until the engine has
+    // already finished, so completion claims the settlement first. That is the order in
+    // which a terminal status taken from the engine's outcome alone would write
+    // `cancelling -> done`, which the ledger forbids: the write throws and the record
+    // is stranded `cancelling` with no identities.
+    const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    fs.writeFileSync(h.importRelease, "go");
+    await poll(() => fs.existsSync(h.record.resultPath), Boolean);
+    await held.release();
+    const cancelled = await poll(h.read, terminal, 8000);
+    assert.equal(cancelled.status, "cancelled");
+    assert.equal(cancelled.reason, "engine completed during cancel");
+    assert.equal(cancelled.exitCode, 0);
+    assert.match(cancelled.sessionId!, /^fake-/);
+    assert.ok(cancelled.lastEventAt);
+    assert.equal(fs.readFileSync(cancelled.resultPath, "utf8"), "DONE finish T5", "the engine's own output is kept");
+    assert.equal(cancelled.runnerIdentity?.pid, child.child.pid);
+    assert.ok(cancelled.engineIdentity);
+    assert.equal(groupAlive(cancelled.engineIdentity), false);
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("a completion over a record another writer orphaned settles nothing", async () => {
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    await writeAs(h.root, h.record.id, "orphaned");
+    fs.writeFileSync(h.release, "go");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.equal(h.read().status, "orphaned", "the record belongs to whoever orphaned it");
+    assert.equal(h.audit().filter(({ record }) => terminal(record)).length, 0, "the runner made no terminal write");
+    assert.equal(living(running.engineIdentity!), false, "its own group was stopped all the same");
+    assert.match(h.runnerLog(), /someone else settled the task/);
+  } finally { await h.cleanup(); }
+});
