@@ -9,6 +9,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ledger from "../src/ledger.ts";
+import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import type { EngineIdentity, LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
@@ -107,6 +108,7 @@ function harness(options: {
   const importReady = path.join(root, "import-ready");
   const importRelease = path.join(root, "import-release");
   const invocation = path.join(root, "invocation.json");
+  const invocations = path.join(root, "invocations");
   const descendantFile = path.join(root, "descendant.json");
   const competitorScript = path.join(root, "competitor.mjs");
   const outcomeFile = path.join(root, "competitor-outcome.json");
@@ -124,6 +126,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 const env = process.env;
+if (env.INVOCATIONS) fs.appendFileSync(env.INVOCATIONS, process.pid + "\\n");
 if (env.FILE_RESULT) fs.writeFileSync(env.FILE_RESULT, "engine file result");
 if (env.RACE_EXIT === "1") process.on("exit", () => { try { process.kill(process.ppid, "SIGTERM"); } catch {} });
 if (env.DESCENDANT === "1") {
@@ -261,8 +264,9 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     return tracked;
   }
   return {
-    root, record, spec, recordFile, auditFile, release, importReady, importRelease, invocation, adapterModule, markers,
-    start, track,
+    root, record, spec, recordFile, auditFile, release, importReady, importRelease, invocation, invocations,
+    adapterModule, markers, start, track,
+    engineLaunches: () => (fs.existsSync(invocations) ? fs.readFileSync(invocations, "utf8").trim().split("\n").filter(Boolean) : []),
     read: () => ledger.read(root, record.id),
     audit: () => fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { at: number; record: TaskRecord }) : [],
     descendant: () => poll(
@@ -906,5 +910,152 @@ test("runner diagnostics are written to runner.log without stdout output", async
     assert.equal(stdout, "");
     assert.equal(stderr, "");
     assert.match(fs.readFileSync(path.join(path.dirname(h.recordFile), `${h.record.id}.runner.log`), "utf8"), /Cannot find module/);
+  } finally { await h.cleanup(); }
+});
+
+test("a second runner for one task takes no lock, touches no record, and exits 1", async () => {
+  const h = harness({ delayedImport: true });
+  try {
+    const first = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
+    await poll(() => fs.existsSync(h.importReady), Boolean);
+    const before = h.read();
+    // Spawned while the first runner still holds runner-<id>.lock and its engine is
+    // not yet launched: without the lock this second runner would launch a second one.
+    const second = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
+    await poll(() => second.closed, Boolean);
+    assert.equal(second.code, 1);
+    assert.deepEqual(h.read(), before, "the second runner exited without touching the record");
+    assert.ok(h.runnerLog().includes(`another runner owns task ${h.record.id}`));
+    fs.writeFileSync(h.importRelease, "go");
+    const done = await poll(h.read, terminal);
+    assert.equal(done.status, "done");
+    assert.equal(h.engineLaunches().length, 1, "one task, one engine");
+    await poll(() => first.closed, Boolean);
+    assert.equal(first.code, 0);
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("a cancel that lands before acknowledgement is a cancel, not a stranger's settlement", async () => {
+  const { groupAlive } = await import("../src/process.ts");
+  const h = harness({ delayedImport: true });
+  try {
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    await poll(() => fs.existsSync(h.importReady), Boolean);
+    // The server's cancel, written while the runner is still importing its adapter:
+    // by the time the runner has an engine to acknowledge, the record is cancelling.
+    await writeAs(h.root, h.record.id, "cancelling");
+    // Holding the record lock makes the acknowledgement wait, so the engine is fully
+    // up when the runner learns it was cancelled, and the settlement it writes carries
+    // real evidence rather than whatever the engine managed before it was signalled.
+    const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    fs.writeFileSync(h.importRelease, "go");
+    await poll(
+      () => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
+      (log) => log.includes('"working"'),
+    );
+    await held.release();
+    const cancelled = await poll(h.read, terminal, 8000);
+    assert.equal(cancelled.status, "cancelled");
+    // The identities are written even though the acknowledgement never applied, so
+    // cleanup can verify the group this runner owned.
+    assert.equal(cancelled.runnerIdentity?.pid, child.child.pid);
+    assert.equal(cancelled.runnerIdentity?.bootId, ledger.currentBootId);
+    assert.ok(cancelled.engineIdentity);
+    assert.equal(cancelled.engineIdentity.pgid, cancelled.engineIdentity.pid);
+    assert.equal(cancelled.engineIdentity.bootId, ledger.currentBootId);
+    assert.equal(cancelled.exitCode, 143);
+    assert.match(cancelled.sessionId!, /^fake-/);
+    assert.ok(cancelled.lastEventAt);
+    assert.equal(groupAlive(cancelled.engineIdentity), false);
+    assert.deepEqual(ownedProcesses(h.root), []);
+    assert.deepEqual(h.audit().map(({ record }) => record.status), ["cancelled"],
+      "the runner never claimed running, and never rewrote the cancelling it did not own");
+    assert.match(h.runnerLog(), /cancelled before acknowledgement/);
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+  } finally { await h.cleanup(); }
+});
+
+test("a runner that cannot acknowledge because another writer owns the record settles nothing", async () => {
+  const h = harness({ delayedImport: true });
+  try {
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    await poll(() => fs.existsSync(h.importReady), Boolean);
+    const owned = await writeAs(h.root, h.record.id, "running");
+    fs.writeFileSync(h.importRelease, "go");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.deepEqual(h.read(), owned, "a record another writer owns is left exactly as it was");
+    assert.deepEqual(h.audit(), [], "the runner made no rename at all");
+    assert.deepEqual(ownedProcesses(h.root), [], "its own engine group was stopped immediately");
+    assert.match(h.runnerLog(), /someone else settled the task/);
+  } finally { await h.cleanup(); }
+});
+
+test("a SIGTERM after the server has already written cancelling still settles cancelled", async () => {
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
+    const cancelling = await writeAs(h.root, h.record.id, "cancelling");
+    child.child.kill("SIGTERM");
+    const cancelled = await poll(h.read, terminal, 6000);
+    assert.equal(cancelled.status, "cancelled");
+    assert.ok(cancelled.updatedAt >= cancelling.updatedAt);
+    assert.equal(living(running.engineIdentity!), false);
+    assert.deepEqual(h.audit().map(({ record }) => record.status), ["running", "cancelled"],
+      "the refused cancelling write is the server's, so the runner continued the cancel without rewriting it");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+  } finally { await h.cleanup(); }
+});
+
+test("two writers with contradictory expectations: exactly one applies, the other is refused", async () => {
+  const h = harness();
+  try {
+    // Both read `launching` and both intend to move it, so at most one can be right.
+    // The gate releases them together; the record lock decides which.
+    const gate = path.join(h.root, "race-go");
+    const first = h.competitor("claims-running", { status: "running", reason: "first" }, 111, "launching", gate);
+    const second = h.competitor("claims-cancelling", { status: "cancelling", reason: "second" }, 222, "launching", gate);
+    await poll(() => fs.existsSync(first.marker) && fs.existsSync(second.marker), Boolean);
+    fs.writeFileSync(gate, "go");
+    await poll(() => first.tracked.closed && second.tracked.closed, Boolean);
+    const results = [await h.outcome(first.outcome), await h.outcome(second.outcome)];
+    for (const result of results) assert.ok("applied" in result, `competitor threw: ${JSON.stringify(result)}`);
+    const applied = results.filter((result) => "applied" in result && result.applied);
+    const refused = results.filter((result) => "applied" in result && !result.applied);
+    assert.equal(applied.length, 1, `exactly one writer applied: ${JSON.stringify(results)}`);
+    assert.equal(refused.length, 1);
+    assert.equal((refused[0] as { reason: string }).reason, "expect");
+    const final = h.read();
+    assert.deepEqual((applied[0] as { record: TaskRecord }).record, final, "the record holds the winner's write");
+    assert.deepEqual((refused[0] as { record: TaskRecord }).record, final,
+      "the loser read the winner's record inside the lock, so it can act on what beat it");
+    assert.equal(final.reason, final.status === "running" ? "first" : "second");
+    assert.equal(final.updatedAt, final.status === "running" ? 111 : 222);
+  } finally { await h.cleanup(); }
+});
+
+test("an engine identity from another boot is dead, not a reused pid", async () => {
+  const helpers = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const child = h.track(spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root },
+    }));
+    const identity = { ...helpers.identityOf(child.child.pid!)!, pgid: child.child.pid! };
+    assert.equal(helpers.groupAlive(identity), true);
+    const foreign = { ...identity, bootId: "3a1e0e6c-0000-4000-8000-000000000000" };
+    assert.equal(helpers.groupAlive(foreign), false, "a pid and start time from another boot are not this group");
+    // A stale identity whose pid a live process has taken over is skipped for as long
+    // as that process lives. One from another boot is simply dead, so cleanup settles
+    // its record instead of leaving it orphaned for good — and signals nothing.
+    await writeAs(h.root, h.record.id, "orphaned", { engineIdentity: { ...foreign, startTime: "0" } });
+    const changed = await helpers.terminateOrphans(h.root);
+    assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
+    assert.equal(living(identity), true, "the live process holding that pid was never signalled");
   } finally { await h.cleanup(); }
 });

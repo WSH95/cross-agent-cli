@@ -25,6 +25,10 @@ function inspectGroup(identity?: EngineIdentity | null): "invalid" | "reused" | 
   if (!identity || !Number.isInteger(identity.pid) || identity.pid <= 1
     || !Number.isInteger(identity.pgid) || identity.pgid <= 1 || identity.pgid !== identity.pid
     || !/^\d+$/.test(identity.startTime)) return "invalid";
+  // A pid, start time and group from an earlier boot can all match a live process by
+  // chance, so an identity from another boot is dead rather than reused: its record
+  // settles instead of being skipped for as long as that unrelated process lives.
+  if (identity.bootId !== currentBootId) return "dead";
   const leader = readProcessStat(identity.pid);
   if (leader && (leader.startTime !== identity.startTime || leader.pgid !== identity.pid || leader.sid !== identity.pid)) {
     return "reused";

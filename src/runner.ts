@@ -3,7 +3,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { read, readSpec, update } from "./ledger.ts";
-import type { EngineIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
+import { acquire, lockPath, runnerLockName } from "./locks.ts";
+import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { groupAlive, identityOf, killGroup } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
@@ -11,7 +12,7 @@ import type { EngineAdapter } from "./engines/types.ts";
 
 const terminal = (record: TaskRecord) => ["done", "failed", "cancelled"].includes(record.status);
 
-function run(projectRoot: string, id: string): void {
+async function run(projectRoot: string, id: string): Promise<void> {
   const directory = path.join(projectRoot, ".cross-agent", "tasks");
   fs.mkdirSync(directory, { recursive: true });
   const diagnosticPath = path.join(directory, `${id}.runner.log`);
@@ -21,6 +22,8 @@ function run(projectRoot: string, id: string): void {
   let outcome: SpawnResult | undefined;
   let activity: ReturnType<typeof setInterval> | undefined;
   let settling = false;
+  let identities: { runnerIdentity: ProcessIdentity; engineIdentity: EngineIdentity } | undefined;
+  let acknowledgement: Promise<UpdateResult> | undefined;
 
   function log(value: unknown) {
     const text = value instanceof Error ? value.stack ?? value.message : String(value);
@@ -87,7 +90,9 @@ function run(projectRoot: string, id: string): void {
     process.exit(1);
   }
 
-  function settle(kind: "completion" | "failed" | "cancel" | "external", error?: unknown): void {
+  // "preempted" is a cancel this runner found already written when it tried to
+  // acknowledge: the same teardown, without a `cancelling` write of its own.
+  function settle(kind: "completion" | "failed" | "cancel" | "preempted" | "external", error?: unknown): void {
     if (settling) return;
     // Claim settlement synchronously: SIGTERM and close can each arrive first,
     // but neither can independently write after the other has claimed it.
@@ -95,31 +100,57 @@ function run(projectRoot: string, id: string): void {
     clearInterval(activity);
     void (async () => {
       if (error !== undefined) log(error);
-      if (kind === "cancel" && !(await write({ status: "cancelling" })).applied) kind = "external";
-      await stopEngine(kind === "cancel" ? 5000 : 0);
+      // The acknowledgement is this runner's claim on the record. A settlement that
+      // arrives while it is in flight waits for it, so no terminal write can overtake it.
+      if (acknowledgement) await acknowledgement.catch(() => undefined);
+      if (kind === "cancel") {
+        const claimed = await write({ status: "cancelling" }, {
+          expect: (current) => !["cancelling", "done", "failed", "cancelled"].includes(current.status),
+        });
+        // A record already `cancelling` is this same cancel, written by the server, so
+        // the cancel continues. Any other refusal means the task is no longer this
+        // runner's to settle.
+        if (!claimed.applied && claimed.record.status !== "cancelling") kind = "external";
+      }
+      const cancelling = kind === "cancel" || kind === "preempted";
+      await stopEngine(cancelling ? 5000 : 0);
       if (kind !== "external") {
         const hasResult = outcome?.events.some((event) => event.kind === "result")
           || Boolean(outcome?.finalMessage.trim());
-        const status = kind === "cancel" ? "cancelled"
+        const status = cancelling ? "cancelled"
           : kind === "completion" && outcome?.ok && outcome.exitCode === 0 && hasResult ? "done" : "failed";
         const reason = error instanceof Error ? error.message : error !== undefined ? String(error)
           : outcome?.events.findLast((event) => event.kind === "error")?.text
             ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
               : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
+        // The identities go in even when the acknowledgement never applied, so cleanup
+        // can verify the group this runner owned.
         const settled = await write({
           status, exitCode: outcome?.exitCode ?? null, sessionId: outcome?.sessionId ?? null,
           resultPath: record.resultPath, logPath: record.logPath,
           lastEventAt: outcome?.lastEventAt ?? handle?.lastEventAt ?? null,
+          ...identities,
           ...(status === "failed" ? { reason } : {}),
-        });
+        }, cancelling ? { expect: (current) => current.status === "cancelling" } : { unlessTerminal: true });
         if (!settled.applied) kind = "external";
       }
-      log(kind === "external" ? "someone else settled the task" : `settled ${record.status}`);
+      log(kind === "external" ? "someone else settled the task"
+        : kind === "preempted" ? "cancelled before acknowledgement" : `settled ${record.status}`);
       process.exit(0);
     })().catch(fatal);
   }
 
-  // This handler also covers a SIGTERM received during an asynchronous import.
+  // Exclusive ownership of the task for this process's lifetime, so one task can never
+  // own two engines. It is never released: the kernel releases it when this runner dies.
+  // A second runner takes it with a zero wait, fails, and leaves the record alone.
+  try {
+    await acquire(lockPath(projectRoot, runnerLockName(id)), { operation: `run task ${id}`, waitSeconds: 0 });
+  } catch {
+    log(`another runner owns task ${id}`);
+    return process.exit(1);
+  }
+  // Registered once this runner owns the task, because before that it has nothing to
+  // cancel. It also covers a SIGTERM received during an asynchronous import.
   process.on("SIGTERM", () => settle("cancel"));
   void (async () => {
     record = read(projectRoot, id);
@@ -140,10 +171,19 @@ function run(projectRoot: string, id: string): void {
     const engineIdentity = identityOf(handle.pid);
     if (!runnerIdentity || !engineIdentity) throw new Error("cannot capture runner and engine process identities");
     engine = { ...engineIdentity, pgid: handle.pid };
-    // No await between spawn and this atomic acknowledgement. Even an immediate
-    // engine exit is not handled until both identities have reached the ledger.
-    const acknowledged = await write({ status: "running", runnerIdentity, engineIdentity: engine, lastEventAt: handle.lastEventAt });
-    if (!acknowledged.applied) return settle("external");
+    identities = { runnerIdentity, engineIdentity: engine };
+    // The acknowledgement claims a record that is still `launching`; anything else was
+    // written by someone else while this runner was starting. Settlement waits for it,
+    // so even an immediate engine exit is not written before both identities are.
+    acknowledgement = write({ status: "running", ...identities, lastEventAt: handle.lastEventAt },
+      { expect: (current) => current.status === "launching" });
+    const acknowledged = await acknowledgement;
+    if (!acknowledged.applied) {
+      // A cancel that beat the acknowledgement is still this task's cancel. Reading it
+      // as a stranger's settlement would kill the engine and skip the settlement,
+      // leaving the record `cancelling` for good.
+      return settle(acknowledged.record.status === "cancelling" ? "preempted" : "external");
+    }
     let persistedEvent = handle.lastEventAt;
     let inFlight = false;
     activity = setInterval(() => {
@@ -177,7 +217,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     if (!values["--project"] || !values["--task"] || !/^[A-Za-z0-9_-]+$/.test(values["--task"])) {
       throw new Error("expected --project <root> --task <id>");
     }
-    run(path.resolve(values["--project"]), values["--task"]);
+    void run(path.resolve(values["--project"]), values["--task"]).catch(() => { process.exitCode = 1; });
   } catch {
     // Invalid arguments cannot identify a task-local diagnostic destination.
     process.exitCode = 1;
