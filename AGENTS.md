@@ -36,9 +36,10 @@ Shipped:
   in the design.
 - `src/engines/types.ts` (the adapter contract), `src/engines/spawn.ts`
   (the pipeline), `src/engines/registry.ts` (the built-in table,
-  `sandboxFor`), `src/engines/binaries.ts`, `src/engines/claude.ts` (the
-  Claude adapter), `src/engines/codex.ts` and `src/engines/grok.ts` (static
-  parts; the Codex and Grok adapters are in progress);
+  `sandboxFor`), `src/engines/binaries.ts`, and the three adapters
+  `src/engines/{claude,codex,grok}.ts` (Claude: stream-json, settings
+  sandbox, deny list; Codex: `exec`/`exec resume` with the prompt on stdin;
+  Grok: `streaming-messages-json`, `--rules`, not an engine-placed lead);
   `tests/fixtures/fake-engine.mjs` stands in for a CLI.
 - `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;
   `tests/citations.test.ts` runs `tools/check-citations.mjs`, which fails

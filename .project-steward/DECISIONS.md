@@ -109,3 +109,16 @@ Managed blocks untouched; `CLAUDE.md` unchanged.
 
 Consequences: Instruction files match the tree; the Planned list shrinks
 as T8–T13 land.
+
+## 0009 — 2026-09-09 — AGENTS.md Layout names the three adapters as built (user-approved diff)
+
+Context: T7, T8 and T9 landed the Claude, Codex and Grok adapters; the
+Layout still called two of them "in progress".
+
+Decision: The user approved the diff at
+`.superpowers/sdd/the-original-intent-of-rustling-hummingbird/agents-md-proposed-3.diff`
+on 2026-09-09: the three adapters are listed with one line each on what they
+do. Managed blocks untouched; `CLAUDE.md` unchanged.
+
+Consequences: Instruction files match the tree at the close of the
+adapter milestone.
