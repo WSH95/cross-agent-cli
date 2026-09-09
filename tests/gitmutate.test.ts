@@ -22,8 +22,13 @@ const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../", import.meta.url));
 const locksModule = pathToFileURL(path.join(sources, "src", "locks.ts")).href;
 
+// The harness's own git, with a clean environment of its own: a test that poisons the
+// process's GIT_* variables to see what reaches the child must still be able to look at
+// the repository afterwards.
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await exec("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) if (name.startsWith("GIT_")) delete env[name];
+  const { stdout } = await exec("git", ["-C", cwd, ...args], { encoding: "utf8", env });
   return stdout.replace(/\n$/, "");
 }
 
@@ -118,6 +123,18 @@ exec ${JSON.stringify(realGit)} "$@"
     }
   }
   return { lines, argv: async () => (await lines()).filter((line) => line.startsWith("argv ")).map((line) => line.slice("argv ".length)) };
+}
+
+/** Sets environment variables for one test and puts the process's own back afterwards. */
+function poison(t: TestContext, values: Record<string, string>): void {
+  for (const [name, value] of Object.entries(values)) {
+    const original = process.env[name];
+    t.after(() => {
+      if (original === undefined) delete process.env[name];
+      else process.env[name] = original;
+    });
+    process.env[name] = value;
+  }
 }
 
 /** A task at `status` holding `cwd`, with the launch spec that says it may write. */
@@ -295,28 +312,46 @@ test("git_mutate passes the verified directories explicitly and hands the child 
   const b = await add("b");
   const recorder = await shim(t, temporary);
 
-  const originalGitDir = process.env.GIT_DIR;
-  const originalWorkTree = process.env.GIT_WORK_TREE;
-  t.after(() => {
-    if (originalGitDir === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = originalGitDir;
-    if (originalWorkTree === undefined) delete process.env.GIT_WORK_TREE; else process.env.GIT_WORK_TREE = originalWorkTree;
+  // What a server started from a hook, or from `git rebase --exec`, inherits. None of it
+  // may reach the child: the directories a mutation runs against are the verifier's answer
+  // alone, and GIT_CONFIG_* would put back exactly the `-c` settings git_mutate refuses.
+  const hooks = path.join(temporary, "hooks");
+  const marker = path.join(temporary, "the-hook-ran");
+  const index = path.join(temporary, "elsewhere.index");
+  await mkdir(hooks, { recursive: true });
+  await writeFile(path.join(hooks, "pre-commit"), `#!/bin/sh\n: > ${JSON.stringify(marker)}\n`);
+  await chmod(path.join(hooks, "pre-commit"), 0o755);
+  poison(t, {
+    GIT_DIR: await realpath(path.join(root, ".git", "worktrees", "b")),
+    GIT_WORK_TREE: temporary,
+    GIT_INDEX_FILE: index,
+    GIT_OBJECT_DIRECTORY: path.join(temporary, "elsewhere-objects"),
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    GIT_CONFIG_VALUE_0: hooks,
+    CROSS_AGENT_TASK: "the server's own task",
   });
-  // What a server started from a hook inside that worktree inherits. Neither may reach
-  // the child: the directories a mutation runs against are the verifier's answer alone.
-  process.env.GIT_DIR = await realpath(path.join(root, ".git", "worktrees", "b"));
-  process.env.GIT_WORK_TREE = temporary;
 
-  const result = accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "explicit"] }, { waitSeconds: 5 }));
+  await writeFile(path.join(b, "notes.md"), "the implementer's edit\n");
+  accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["add", "-A"] }, { waitSeconds: 5 }));
+  const result = accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "-m", "explicit"] }, { waitSeconds: 5 }));
   assert.equal(result.exitCode, 0);
+
   const argv = await recorder.argv();
   const gitDir = await realpath(path.join(root, ".git", "worktrees", "b"));
   assert.deepEqual(argv.slice(0, 2), [`--git-dir=${gitDir}`, `--work-tree=${await realpath(b)}`]);
   assert.ok(argv.every((argument) => !argument.includes(path.join("worktrees", "a"))), argv.join(" "));
   const lines = await recorder.lines();
-  for (const variable of ["GIT_DIR", "GIT_WORK_TREE"]) {
+  for (const variable of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "CROSS_AGENT_TASK"]) {
     assert.equal(lines.some((line) => line.startsWith(`env ${variable}=`)), false, `${variable} reached the child`);
   }
   assert.equal(lines.some((line) => line.startsWith("env PATH=")), true, "git is still found on the server's PATH");
+
+  // And the proof that it never reached git: the index was the worktree's own, and the
+  // hook that config would have installed never ran.
+  assert.equal(fs.existsSync(index), false, "the inherited index file was never written");
+  assert.equal(fs.existsSync(marker), false, "the inherited core.hooksPath never ran");
+  assert.match(await git(root, "ls-tree", "-r", "--name-only", "task/b"), /notes\.md/);
 });
 
 test("git_mutate refuses arguments that are not one subcommand in this worktree", async (t) => {

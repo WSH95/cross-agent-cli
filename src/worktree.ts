@@ -7,8 +7,34 @@ export type WorktreeResult = { gitDir: string; workTree: string; branch: string 
 
 const exec = promisify(execFile);
 
+// Design section 4: what git works on is decided here and by `git_mutate`, never by what
+// the process happens to have inherited — a server started from a hook or from `git rebase
+// --exec` carries GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY,
+// GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_NAMESPACE, GIT_CEILING_DIRECTORIES, and
+// GIT_CONFIG_* would put back exactly the `-c` settings `git_mutate` refuses. So this is an
+// allowlist and not a deny list: a variable nobody has thought about does not reach git.
+const passedVariables = [
+  "PATH", "HOME", "USER", "LANG", "TZ", "TMPDIR",
+  "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SSH_AUTH_SOCK", "GIT_TERMINAL_PROMPT",
+];
+const passedPrefixes = ["LC_", "GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_SSH"];
+
+/**
+ * The environment every git invocation in this project gets: where to find git and the
+ * user's own config, who is committing, how to talk to a remote, and nothing that could
+ * point git at another repository, index, object store, or configuration.
+ */
+export function gitEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (passedVariables.includes(name) || passedPrefixes.some((prefix) => name.startsWith(prefix))) env[name] = value;
+  }
+  return env;
+}
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await exec("git", ["-C", cwd, ...args], { encoding: "utf8" });
+  const { stdout } = await exec("git", ["-C", cwd, ...args], { encoding: "utf8", env: gitEnvironment() });
   return stdout;
 }
 

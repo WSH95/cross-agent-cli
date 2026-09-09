@@ -122,6 +122,35 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
   });
 }
 
+test("verifyWorktree ignores what the server's own environment says about a repository", async (t) => {
+  const { root, add } = await repository(t);
+  const candidate = await add("inherited");
+  // A server started from a hook, or from `git rebase --exec`, inherits these. Reading
+  // them would answer every question about the wrong repository — GIT_DIR alone makes
+  // `rev-parse --git-dir` report the root's, and the worktree is then refused.
+  const poisoned: Record<string, string> = {
+    GIT_DIR: path.join(root, ".git"),
+    GIT_WORK_TREE: root,
+    GIT_INDEX_FILE: path.join(root, "elsewhere.index"),
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.bare",
+    GIT_CONFIG_VALUE_0: "true",
+  };
+  for (const [name, value] of Object.entries(poisoned)) {
+    const original = process.env[name];
+    t.after(() => {
+      if (original === undefined) delete process.env[name];
+      else process.env[name] = original;
+    });
+    process.env[name] = value;
+  }
+  assert.deepEqual(await verifyWorktree(root, candidate, "task/inherited"), {
+    gitDir: await realpath(path.join(root, ".git", "worktrees", "inherited")),
+    workTree: await realpath(candidate),
+    branch: "task/inherited",
+  });
+});
+
 test("verifyWorktree refuses a rewritten .git pointer", async (t) => {
   const { temporary, root, add } = await repository(t);
   const candidate = await add("a");

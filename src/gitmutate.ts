@@ -7,7 +7,7 @@ import type { Journal, JournalEntry } from "./journal.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
-import { verifyWorktree } from "./worktree.ts";
+import { gitEnvironment, verifyWorktree } from "./worktree.ts";
 
 export interface GitMutateRequest {
   slug: string;
@@ -76,12 +76,10 @@ interface Ran {
 }
 
 // The explicit form of probe P7: the pointer file is never consulted, and the paths are
-// the ones the verifier resolved. GIT_DIR and GIT_WORK_TREE are dropped from the child's
-// environment, because a server started from inside a git command inherits them.
+// the ones the verifier resolved. The child's environment is the allowlist every git
+// invocation in this project gets, so nothing the server inherited can redirect it.
 async function run(gitDir: string, workTree: string, args: string[]): Promise<Ran> {
-  const env = { ...process.env };
-  delete env.GIT_DIR;
-  delete env.GIT_WORK_TREE;
+  const env = gitEnvironment();
   const argv = [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args];
   try {
     const { stdout, stderr } = await exec("git", argv, { cwd: workTree, env, encoding: "utf8", maxBuffer });
