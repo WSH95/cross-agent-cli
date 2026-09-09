@@ -34,6 +34,16 @@ export function runnerLockName(id: string): string {
   return `runner-${id}.lock`;
 }
 
+/** Serializes the lead's git mutations against each other (design section 4, step 3). */
+export function gitLockName(): string {
+  return "git.lock";
+}
+
+/** Serializes delegate's validate-and-spawn, so two hosts cannot both pass one check. */
+export function spawnLockName(): string {
+  return "spawn.lock";
+}
+
 // The lock is flock(2), held by a util-linux `flock` child that stays alive on a pipe.
 // Two facts follow, and they are the whole reason for this shape. The child prints
 // `held` only once the kernel has granted the lock, so the caller never guesses. And

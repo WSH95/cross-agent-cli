@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { acquire, lockPath, recordLockName, runnerLockName } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, recordLockName, runnerLockName, spawnLockName } from "../src/locks.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 const locksModule = pathToFileURL(path.join(worktree, "src", "locks.ts")).href;
@@ -32,9 +32,14 @@ test("lock names and paths live under the project's lock directory", (t) => {
   const root = project(t);
   assert.equal(recordLockName("abc"), "record-abc.lock");
   assert.equal(runnerLockName("abc"), "runner-abc.lock");
+  // The two project-wide locks of design section 2: one name each, so no caller spells them.
+  assert.equal(gitLockName(), "git.lock");
+  assert.equal(spawnLockName(), "spawn.lock");
   assert.equal(lockPath(root, recordLockName("abc")), path.join(root, ".cross-agent", "locks", "record-abc.lock"));
   assert.equal(lockPath(root, runnerLockName("-leading")), path.join(root, ".cross-agent", "locks", "runner--leading.lock"));
-  assert.equal(path.isAbsolute(lockPath(path.relative(process.cwd(), root), "spawn.lock")), true);
+  assert.equal(lockPath(root, gitLockName()), path.join(root, ".cross-agent", "locks", "git.lock"));
+  assert.equal(lockPath(root, spawnLockName()), path.join(root, ".cross-agent", "locks", "spawn.lock"));
+  assert.equal(path.isAbsolute(lockPath(path.relative(process.cwd(), root), spawnLockName())), true);
 });
 
 test("two acquirers of one file serialize, and the directory is created on demand", async (t) => {
