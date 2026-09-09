@@ -89,31 +89,72 @@ loop. What follows is the target the remaining tasks are measured against.
 #### Authority is process ancestry, not a token
 
 A lead token carried in the launch spec was considered and rejected. It is
-unsafe here: `LaunchSpec` serializes the child environment
-(`src/ledger.ts:17-20`, `src/engines/types.ts:16`) into
-`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts:157-161`), and every
-sandbox in use restricts *writes*, not reads (probe P2). Any specialist could
-read a lead's token, so possession must not equal authority.
+unsafe here for a structural reason, not a probed one: `LaunchSpec` serializes
+the child environment (`src/ledger.ts:17-20`, `src/engines/types.ts:16`) into
+`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts:157-161`); `.cross-agent/`
+lives inside the project, and every role — read-only ones above all — must
+be able to read the project to do its work. P2 records that the profiles in use
+restrict *writes*, not reads, so nothing stops a specialist from reading a
+lead's token out of a spec file. Possession must therefore not equal
+authority.
 
 The design requires instead that the server derive its authority from **who
 spawned it**. Every engine CLI spawns its MCP servers as children of the
-engine process, and the ledger already records each engine's `{pid,
-startTime}` as `engineIdentity` (`src/ledger.ts:13-15`, written at
-`src/runner.ts:138-144`). At startup the server will walk its own ancestors —
-bounded, through any `sh -c` wrapper — and take the **nearest** ancestor that
-matches an active task's `engineIdentity`:
+engine process, and the ledger already records each engine's identity as
+`engineIdentity` — today `{pid, startTime, pgid}` (`src/ledger.ts:13-15`),
+written at `src/runner.ts:138-144`.
 
-- none → the host's own server: **operator**;
-- a task whose role is the mode's declared lead role → **lead**;
-- any other task → **specialist**.
+**The walk.** At each hop the server reads `/proc/<pid>/stat` for `ppid`,
+`startTime`, `state`, `pgid` and `sid` (`readProcessStat`,
+`src/ledger.ts:197-212`, already parses that record), starting at its own
+parent and following `ppid` for at most **8 hops** — enough for any `sh -c`
+wrapper an engine puts in between. The walk **fails closed to the specialist
+row** on any read error, on a cycle, on hop exhaustion, and on a parent whose
+start time is later than its child's, which means the chain was reparented and
+the ancestor is not the one that spawned this server.
 
-Nearest-match makes a server started by a specialist under a lead resolve to
-the specialist, not the lead. A Grok specialist that inherits the user's MCP
-configuration (section 3) starts a server whose nearest engine ancestor is
-itself, so it resolves to specialist. No secret exists to copy or replay.
-`CROSS_AGENT_DEPTH` (`src/guard.ts:31-43`) stays as the fail-closed secondary
-signal: absent with no lineage means depth 0; present but malformed, or a
-lineage with no depth, means a child.
+**Identity across boots.** `runnerIdentity` and `engineIdentity` gain a
+`bootId`, read from `/proc/sys/kernel/random/boot_id` when the identity is
+captured, so `engineIdentity` becomes `{pid, startTime, pgid, bootId}`. A pid
+and start time from another boot can collide with a live process; an identity
+whose `bootId` differs from the current one is dead, full stop. `bootId` is a
+target field: the shipped type has three.
+
+**What counts as a match.** An ancestor matches a task when all of these hold:
+its `pid`, `startTime` and `bootId` equal that record's `engineIdentity`; its
+`/proc/<pid>/environ` contains `CROSS_AGENT_TASK=<that record's id>`; exactly
+one such record exists in the canonical project; and that record's status is
+`running` or `stalled`. No other status carries authority — `launching` has
+not been acknowledged, `cancelling` is being torn down, `orphaned` has lost
+its runner, and a terminal record is over. The **nearest** matching ancestor
+decides the row, and the row is **lead** only when that record's `role` equals
+the active mode's `lead.role`; otherwise **specialist**. Nearest-match makes a
+server started by a specialist under a lead resolve to the specialist, and a
+Grok specialist that inherits the user's MCP configuration (section 3) resolve
+to itself. No secret exists to copy or replay.
+
+**Operator provenance is positive, not the absence of a match.** A server is
+the operator's own only when `CROSS_AGENT_DEPTH`, `CROSS_AGENT_LINEAGE` and
+`CROSS_AGENT_TASK` are all absent from its environment **and** no ancestor
+matches. A server that carries any of those variables but matches no record is
+a **specialist**. That also settles the spawn-versus-acknowledgement race: a
+lead's server that starts before its record reaches `running` is a specialist
+until revalidation sees `running`, which is the safe direction.
+
+**Resolution is revalidated on every `tools/list` and `tools/call`** — one
+`/proc` read of the matched ancestor plus one record read — and never cached
+for the connection's lifetime. A lead whose record leaves `running|stalled`
+loses the row on its next call.
+
+**Which project.** The server takes `--project <root>`, and the lead mount
+spec passes it. `childEnv` also sets `CROSS_AGENT_PROJECT=<canonical root>`,
+so a server a Grok child starts from inherited configuration finds the right
+ledger. For a host session with neither, the fallback is the nearest ancestor
+directory of the working directory containing `.cross-agent/config.json`,
+resolved through `git rev-parse --git-common-dir` so a linked worktree maps
+back to its main project. Today the server binds unconditionally to
+`process.cwd()` (`src/server.ts:156-158`); the flag, the variable and the
+fallback are a T10 change.
 
 #### Permission matrix
 
@@ -126,6 +167,7 @@ lineage with no depth, means a child.
 | `verify_worktree`, `git_mutate` | yes | yes | no |
 | `git_root`, `run_command` | yes | yes | no |
 | `ask` | — | yes | no |
+| `list_asks` | yes | own asks | no |
 | `answer` | yes | no | no |
 
 A refused tool must be refused at **`tools/call` by name**, not merely omitted
@@ -141,28 +183,45 @@ which row the caller was resolved to, and why.
    default branch, runs the tests there, removes worktrees and deletes
    branches (section 4). Under `host` placement the host session performs
    those directly, with its own tools. An engine lead is read-only at the
-   root, so the design gives it `git_root`, restricted to a verb whitelist —
-   `worktree add -b`, `worktree remove`, `branch -d`, `merge --ff-only`,
-   `rebase --abort`, and read-only queries — journaled, and taken under
-   `git.lock`; and `run_command`, limited to the configured `testCommand` and
-   `setupCommand`, at the root or in a verified worktree.
-2. **Cascade ownership.** Records gain `parentTaskId`. Cancelling a lead
-   cancels its descendants through that lineage; a lead is reattached
-   exclusively, one runner per task (the `runner-<id>.lock` of section 2); a
-   persisted answer reaches a resumed lead through `resume`, with the answer
-   in the brief.
+   root, so the design gives it two tools whose contracts section 4 states in
+   full: `git_root`, one whitelisted verb at a time, journaled, under
+   `git.lock`; and `run_command`, which takes a selector rather than a command
+   string.
+2. **Cascade ownership.** Records gain `parentTaskId`, preserved across
+   `resume`. `cancel` on a lead writes `cancelling` on the **lead first** —
+   from that moment `delegate` refuses any child of a cancelling parent — then
+   cancels the descendants from the lineage leaves upward, then the lead
+   itself, and returns one outcome per task. A partial failure is reported as
+   such and a later `cancel` retries it, because a cascade that reported
+   success while a descendant survived would be the field failure this whole
+   lifecycle exists to prevent. A lead is reattached exclusively, one runner
+   per task (the `runner-<id>.lock` of section 2).
 3. **The mailbox.** `ask`, `list_asks`, `answer`, backed by
-   `.cross-agent/asks/<id>.json` and **written by the server only**. It
-   sidesteps every relay limit the OpenMausBot reference carries: cards that
-   die with the turn, a three-per-five-minute wake budget, a four-minute ask
-   cap, a fifteen-minute auto-deny. It is not built earlier because
-   specialists are **unauthorized** to ask, not because they cannot reach the
-   server: a Grok specialist can reach an inherited server, since the Grok
-   exclusion list is empty by necessity (`src/guard.ts:135-142`).
+   `.cross-agent/asks/<id>.json` and written by **the server or the operator
+   CLI only** — never by an engine child, which has no path to that directory
+   but its sandbox and no tool that writes there. An ask record is `{id,
+   taskId, question, createdAt, status: "open" | "answered" | "cancelled",
+   answer?, answeredAt?}`. `ask` blocks up to `timeout_seconds` (default
+   `waitDefaultSeconds`) and returns `{id, status, answer?}`; a lead that is
+   still waiting re-calls `ask` with the same `id`, which is what keeps a
+   long wait inside the host's tool timeout. The first `answer` wins and later
+   ones are refused, so two operators cannot both reply; cancelling a lead
+   cancels its open asks; and on `resume` the launcher lists the open and
+   answered asks in the resume brief, which is how an answer reaches a lead
+   that was killed while waiting. The mailbox sidesteps every relay limit the
+   OpenMausBot reference carries: cards that die with the turn, a
+   three-per-five-minute wake budget, a four-minute ask cap, a fifteen-minute
+   auto-deny. It is not built earlier because specialists are
+   **unauthorized** to ask, not because they cannot reach the server: a Grok
+   specialist can reach an inherited server, since the Grok exclusion list is
+   empty by necessity (`src/guard.ts:135-142`).
 4. **Injection, probed per engine (P9).** Read from each CLI's `--help` on
-   this machine: Claude names `--mcp-config`, `--strict-mcp-config`, and
-   `--append-system-prompt-file`, which is a clean mount plus a clean
-   instruction path; `codex exec` has only `-c key=value` and no
+   this machine: Claude names `--mcp-config` and `--strict-mcp-config`, and
+   accepts `--append-system-prompt-file` (P1's harness run passed it,
+   `tools/probe.mjs:44`, though `claude --help` lists only
+   `--append-system-prompt <prompt>` and mentions the `[-file]` form inside
+   another flag's description) — a clean mount plus a clean instruction path;
+   `codex exec` has only `-c key=value` and no
    system-prompt flag, so a Codex lead needs `-c mcp_servers…` under
    `--ignore-user-config` and prompt-prepended instructions; Grok has
    `--rules` and `--system-prompt-override` but only a persistent `grok mcp`
@@ -192,7 +251,12 @@ A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
 carries `id`, `release`, `name`, `summary`, `lead: {placement:
 "host"|"engine", role?}`, `roles[{key, title, promptFile, workspace,
-sandboxDefault}]`, a `git` policy, and `requires{engines?}`.
+sandboxDefault}]`, a `git` policy, and `requires{engines?}`. Validation
+refuses unknown fields, requires role keys to be unique, requires `id` to
+equal the directory name, requires every `promptFile` to resolve inside the
+mode directory, and requires `lead.role` exactly when `placement` is
+`engine` — a host-placed mode has no lead role to name, and an engine-placed
+one cannot resolve the lead row without it.
 
 The **bind-time layer** stays out of the mode and lives in
 `.cross-agent/config.json`: which engine, model, effort, and binary each role
@@ -200,11 +264,11 @@ runs on. A mode is therefore portable text; binding it to this machine's
 engines is a separate, local act. That split, the length caps on every text
 field, and stripping unknown fields on load are borrowed as *design* from
 OpenMausBot's `~/.cache/agent-team/openmausbot-src/server/bot-package.ts`
-(v0.1.56), where package parsing strips unknown fields so "ids, grants,
-credentials, paths, model selections, and runtime state cannot ride through
-the package boundary". Its schema itself is **not** adopted: `openmaus.package`
-v1 describes agents, playbooks, rooms, and routines, and only the first has an
-analogue here.
+(v0.1.56), whose package parser is documented as "Unknown fields are
+stripped; ids, grants, credentials, paths, model selections, and runtime state
+therefore cannot ride through the package boundary." Its schema itself is
+**not** adopted: `openmaus.package` v1 describes agents, playbooks, rooms, and
+routines, and only the first has an analogue here.
 
 Two modes will ship built in:
 
@@ -221,6 +285,21 @@ worktree provider registers `verify_worktree` and `git_mutate`, and only when
 a mode declares it; `solo` therefore yields a `tools/list` without them.
 Arbitrary-path workspace providers are deferred (see "Not built").
 
+**A role's `workspace` and `sandboxDefault` belong to the mode, not to the
+config.** Config binds `engine`, `model`, `effort` and `bin` per role and may
+override `sandbox` alone; a `workspace` key in `.cross-agent/config.json` is
+refused, and every role key in config must name a role the mode declares.
+Otherwise a local binding could move a read-only reviewer into a writable
+worktree, and the mode's own containment argument (section 4) would no longer
+be about the mode.
+
+**`describe_mode` returns** `{mode: {id, release, name, summary, lead}, loop:
+string, roles: [{key, title, workspace, sandboxDefault, prompt}], git}`, where
+`loop` is `SKILL.md` verbatim and each `prompt` is that role's prompt file. It
+refuses, with a reason, when the config's `mode` names no existing mode
+directory — the launcher's first call is this one, so a missing mode has to
+fail loudly at step one rather than half-way through a task.
+
 `cross-agent init --mode <name>` writes the bind-time config for a mode.
 `initConfig` already exists (`src/config.ts:137-149`); the CLI entry point
 that calls it does not.
@@ -231,8 +310,10 @@ that calls it does not.
 `initialize`, `tools/list`, `tools/call`, `ping`, `notifications/cancelled`;
 no dependencies, so the setup command is `none` and Node 24 runs the `.ts`
 sources directly). Requests are dispatched concurrently: a pending `wait`
-never blocks `check`, `cancel`, or `list_tasks` on the same connection, and a
-`notifications/cancelled` for a `wait` aborts it. "Registered by" says which
+never blocks `check`, `cancel`, or `list_tasks` on the same connection —
+that part is built and tested. Having `notifications/cancelled` abort a
+pending `wait` is a target for T11: the dispatcher accepts the notification
+and ignores it today (`src/server.ts:79-81`). "Registered by" says which
 part of the system offers the tool: **core** always; **worktree** only when
 the active mode declares the worktree provider; **engine lead** only under
 `placement: engine`.
@@ -249,10 +330,10 @@ the active mode declares the worktree provider; **engine lead** only under
 | `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
 | `git_mutate` | `slug`, `args[]` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
-| `git_root` | `args[]` | a whitelisted git verb at the project root, journaled, under `git.lock` | engine lead |
-| `run_command` | `command`, optional `cwd` | the configured `testCommand` or `setupCommand`, at the root or in a verified worktree | engine lead |
-| `ask` | `question`, optional `options[]` | writes `.cross-agent/asks/<id>.json` and blocks the lead until answered | engine lead |
-| `list_asks` | optional `status` | pending and answered questions | engine lead |
+| `git_root` | `args[]` | one whitelisted git verb at the project root, journaled, under `git.lock` (section 4) | engine lead |
+| `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `timeout_seconds` | the configured command, by selector rather than by string (section 4) | engine lead |
+| `ask` | `question`, optional `id` (to keep waiting on an earlier ask), `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered or the timeout | engine lead |
+| `list_asks` | optional `status` | this lead's open and answered asks; every ask for the operator | engine lead |
 | `answer` | `ask_id`, `text` | the operator's reply; persisted, so it survives a killed lead | engine lead |
 
 Statuses: `launching`, `running`, `stalled` (running, no engine event for
@@ -285,7 +366,11 @@ each says which behaviour is today's and which the design requires.
   `running` with its own identity (pid and start time from
   `/proc/<pid>/stat`, `src/ledger.ts:197-212`) and the engine's identity (pid,
   start time, process group) in one atomic acknowledgement
-  (`src/runner.ts:138-144`). There is **no launch token**: the field written
+  (`src/runner.ts:138-144`). Three record fields the design needs are not in
+  the shipped `TaskRecord` (`src/ledger.ts:30-50`) and arrive with the tasks
+  that use them: `depth`, written by `delegate` (section 5, layer 1);
+  `parentTaskId`, for cascade ownership; and `bootId` inside each identity
+  (the lead model). There is **no launch token**: the field written
   today at `src/ledger.ts:139` is never read, and a token on the *runner's*
   argv could not identify the engine anyway, because the engine is a separate
   detached spawn with adapter-built argv (`src/engines/spawn.ts:153-155`).
@@ -299,8 +384,9 @@ each says which behaviour is today's and which the design requires.
     no such process exists. Without this, a SIGKILL between the spawn and the
     acknowledgement leaves a live engine that nothing will ever kill.
   - **Exclusive ownership.** The runner will hold `runner-<id>.lock` for its
-    whole lifetime. A second runner for the same task fails `flock -n` and
-    exits without touching the record, so one task can never own two engines.
+    whole lifetime, and a second runner for the same task takes it with a zero
+    wait, fails, and exits without touching the record, so one task can never
+    own two engines.
 - Launch spec: `delegate` writes `<id>.spec.json` next to the record before
   starting the runner (`src/ledger.ts:157-161`): role, brief, role prompt,
   cwd, engine, model, effort, sandbox, deny targets, session id, resume
@@ -312,13 +398,20 @@ each says which behaviour is today's and which the design requires.
   <root> --task <id>`) that owns the engine child in its own process group,
   tees events, updates `lastEventAt` on a 2-second interval
   (`src/runner.ts:148-156`), and on engine exit writes the terminal record and
-  `<id>.out` itself, so completion survives the MCP server. Terminal writers:
-  the runner writes `done`, `failed`, `cancelled`; the server writes
-  `cancelling` and, only when the runner is dead and the engine group is
-  verified dead, `cancelled` or `failed`. `cancel` sends SIGTERM to the
-  runner, which terminates the engine group and writes `cancelled`
-  (`src/runner.ts:90-119`); the server escalates to SIGKILL on both groups
-  after a grace period. Group cleanup always precedes terminal settlement.
+  `<id>.out` itself, so completion survives the MCP server. It is the only
+  cancel path that exists today: on SIGTERM (`src/runner.ts:121-122`) it
+  writes `cancelling` itself (`src/runner.ts:98`), terminates the engine
+  group, and writes `cancelled` (`src/runner.ts:90-119`). Group cleanup always
+  precedes terminal settlement.
+- **The other two cancel writers are targets.** The `cancel` tool does not
+  exist — `projectTools` registers two tools and neither is it
+  (`src/server.ts:128-154`). The design requires: `cancel` writes `cancelling`
+  and sends SIGTERM to the runner, escalating to SIGKILL on both groups after
+  a grace period; and reconciliation settles a `cancelling` record whose
+  runner is dead, by terminating the engine group by identity and writing
+  `cancelled`. With all three in place the terminal writers are the runner
+  (`done`, `failed`, `cancelled`) and, only when the runner is dead and the
+  engine group is verified dead, the reconciler (`cancelled` or `failed`).
 - **Conditional update.** `ledger.update` is asynchronous: it takes
   `record-<id>.lock` around one read, one check, and one rename, and returns
   `{applied: true, record}` or `{applied: false, record, reason: "terminal" |
@@ -331,7 +424,18 @@ each says which behaviour is today's and which the design requires.
   carry on as if acknowledged. The lock is required, not optional: a
   predicate without cross-process exclusion still interleaves, and a stale
   reconciliation could otherwise overwrite a runner's fresh `running` write
-  and make the runner kill its own healthy engine.
+  and make the runner kill its own healthy engine. The rest of the contract:
+  the `record` returned with `applied: false` is the record as read **inside**
+  the lock, so a caller can act on the state that beat it; the terminal check
+  precedes `expect`, so a terminal record is always `reason: "terminal"`; a
+  lock timeout **throws** rather than returning `applied: false`, because a
+  caller that could not even look at the record must not treat that as a
+  refusal it can reason about; and the lock is released in `finally`. The
+  legal transitions are `launching → running | cancelling | failed`,
+  `running ↔ stalled`, `running | stalled → cancelling | orphaned | done |
+  failed`, `orphaned → failed | cancelled`, and `cancelling → cancelled |
+  failed`; any other transition throws, because it is a bug in a writer, not
+  a race to be tolerated.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
   status === "launching"`. On `applied: false` with `record.status ===
   "cancelling"` it **treats the refusal as a cancel**: stop the engine group,
@@ -357,14 +461,31 @@ each says which behaviour is today's and which the design requires.
     is alive, otherwise `failed: runner lost`;
   - `cancelling` with a dead runner: terminate the group by identity, then
     `cancelled`;
-  - anything else: untouched.
-  A worktree reservation is never released while an engine identity is alive.
+  - anything else: untouched. In particular `stalled → running` when events
+    resume is T11's job, not the reconciler's; the reconciler never revives a
+    task.
+
+  Orphan cleanup runs in the **same pass** (`reconcileAndCleanup`), so no
+  caller can observe an `orphaned` record whose group is still being decided;
+  an identity the group scan calls invalid or reused is skipped and reported,
+  never signalled. The environ scan of a `launching` record adopts only a
+  **group leader** (`pid === pgid === sid`) and kills any non-leader stray it
+  finds carrying the task id, because only a leader can be recorded as an
+  `engineIdentity`. A forged `CROSS_AGENT_TASK` on a foreign process can
+  therefore get that process killed — the operator's own foot — but it can
+  never grant authority, since authority also requires a matching
+  `engineIdentity` the server itself wrote (the lead model). A worktree
+  reservation is never released while an engine identity is alive.
 - **Malformed records.** `list` returns only valid records;
   `scan(projectRoot)` returns `{records, invalid: [{file, reason}]}`;
   reconciliation reports `invalid`. Today one unparsable `<id>.json` makes
   `list` throw for every caller (`src/ledger.ts:188-195`, and `readRecord` at
-  `:104-106` only casts). A skipped file is treated as **unknown-active** by
-  the reservation rule: it never frees a workspace.
+  `:104-106` only casts). An invalid file **refuses every writable
+  `delegate`** until the operator repairs or removes it, and `cross-agent
+  tasks` names the file: its `cwd` cannot be read, so no reservation check can
+  clear any workspace while it exists. Refusing every writable delegation is
+  the conservative reading of "it never frees a workspace"; a read-only
+  delegation is unaffected.
 - **Locks** are OS-held and never reclaimed. A lock is `flock(2)` on a file
   under `.cross-agent/locks/`, taken by a helper that keeps a util-linux `flock`
   child alive on a pipe (`flock <file> sh -c 'echo held; read _'`): the helper
@@ -376,9 +497,12 @@ each says which behaviour is today's and which the design requires.
   two reclaimers could both succeed.) Four locks: `spawn.lock` around
   `delegate`'s validate-and-spawn; `record-<id>.lock` around every ledger
   read-check-rename, taken inside `update`; `runner-<id>.lock` held by a
-  runner for its lifetime; `git.lock` around every lead git mutation. A waiter
-  blocks up to `lockWaitSeconds` (default 5), then refuses naming the
-  operation.
+  runner for its lifetime; `git.lock` around every lead git mutation. **One
+  helper, one waiting rule**: every waiter blocks up to `lockWaitSeconds`
+  (default 5) and then refuses, naming the operation. Nothing uses `flock -n`;
+  a caller that wants no wait passes `lockWaitSeconds: 0`. The one exception
+  is `runner-<id>.lock`, whose whole purpose is an immediate failure, so the
+  second runner takes it with a zero wait and exits.
 - **Bounded settlement.** `spawnEngine` settles on the child's `exit` plus a
   bounded stdio drain (`drainMs`, default 2000), then on `close` if it arrives
   in time; on timeout the data listeners are detached and the streams
@@ -390,20 +514,33 @@ each says which behaviour is today's and which the design requires.
   `claude -p` still running when its parent's turn ended — and the runner's
   own fixture must spawn its descendant with `stdio: "ignore"`, so that it
   shares no pipe with the runner, for the existing tests to settle at all
-  (`tests/runner.test.ts:96-106`). Finalisation happens exactly once (the
+  (`tests/runner.test.ts:96-106`). The drain timer starts at `exit`, not at
+  the last byte; `truncated` covers stdout and stderr together, since a
+  reader cannot tell which stream lost the tail; buffered partial lines are
+  flushed before the result is built, so a final line without a terminator is
+  not dropped; and a stream error arriving after `exit` is recorded as an
+  event rather than treated as fatal. `SpawnResult.truncated` is persisted on
+  the task record as `truncated: true` — another target field — and appended
+  to `reason` when the task failed, so an operator reading a failure knows
+  whether the evidence is complete. Finalisation happens exactly once (the
   `settled` flag), the launch-error path (`src/engines/spawn.ts:168-171`) is
   unchanged, and so is the runner's order: group cleanup before terminal
   settlement.
-- **Worktree reservation.** A task with a writable sandbox reserves its
-  canonical cwd until it settles; `delegate` refuses any other task on that cwd
-  meanwhile. `resume` of a task in `launching`, `running`, `stalled`,
-  `orphaned`, or `cancelling` is refused ("wait or cancel first",
-  `src/guard.ts:102-115`).
-- **Git lock.** Every lead git mutation runs inside `flock -n
-  .cross-agent/locks/git.lock` (util-linux, OS-held, released when the git
-  process dies), through `git_mutate`, `git_root`, or `cross-agent git`. Two
-  hosts on one project therefore cannot spawn into or mutate the same
-  repository concurrently.
+- **Worktree reservation.** A task whose sandbox mode is `write` reserves its
+  canonical cwd until it settles; `delegate` refuses any other task on that
+  cwd meanwhile. `resume` of a task in `launching`, `running`, `stalled`,
+  `orphaned`, or `cancelling` is already refused, with `refused resume of task
+  <id>: status <status> is active` (`src/guard.ts:102-115`).
+- **Git lock.** Every lead git mutation runs while `.cross-agent/locks/git.lock`
+  is held, through `git_mutate`, `git_root`, or `cross-agent git`. What the
+  locks give, stated exactly: `spawn.lock` serializes validate-and-spawn, so
+  two hosts cannot both pass the reservation check and then both spawn;
+  `git.lock` serializes lead git mutations against each other. What keeps a
+  writable task and a git mutation off the same worktree is neither lock but
+  the **per-cwd reservation** — `git_mutate` refuses while a task reserving
+  that path is unsettled. A read-only spawn during a git mutation is allowed
+  and is not a defect: it reads a tree mid-change, which is what a reviewer
+  reading a moving branch would see anyway.
 
 The process model is Linux-only in these mechanisms: `/proc/<pid>/stat` for
 identities and the group scan, `/proc/*/environ` for the stranded-engine
@@ -427,22 +564,47 @@ section is the contract they must meet.
 `src/guard.ts`'s per-engine switches and onto `EngineAdapter`
 (`src/engines/types.ts:35-42`), which gains:
 
-- `sandboxProfiles`: the profile names this engine accepts;
+- `sandboxProfiles: Record<string, "read-only" | "write" | "off">` — the
+  profile names this engine accepts, each mapped to a portable mode. Claude
+  `{"read-only": "read-only", "workspace-write": "write", "off": "off"}`;
+  Codex the same, with `off` spawning `--sandbox danger-full-access`; Grok
+  `{"read-only": "read-only", "strict": "read-only", "workspace": "write",
+  "off": "off"}`.
 - `denyArgs(targets)` and `exclusionArgs()`, today engine switches in
   `src/guard.ts:126-142`;
-- `leadMount(serverSpec)`: the argv that mounts exactly this server for a lead
-  under `placement: engine` (P9's result per engine);
-- optional `finish(rawStdout)`, for an engine whose output is one document at
-  exit rather than a line stream.
+- `leadMount(spec: {command: string; args: string[]; env?: Record<string,
+  string>}, scratchDir: string): {argv: string[]; files?: Array<{path: string;
+  contents: string}>; inherited?: true}` — the argv that mounts exactly this
+  server for a lead under `placement: engine`. Claude writes an MCP-config
+  JSON into `scratchDir` and returns `--mcp-config <file>`, keeping
+  `--strict-mcp-config` so nothing else is mounted; Codex returns `-c
+  mcp_servers.cross-agent.command=…` and `…args=…`; Grok returns an empty
+  argv with `inherited: true`, because it has no per-invocation mount. All
+  three pending P9. Returning the files to write, rather than writing them,
+  keeps the adapter a pure argv builder as `plan()` already is.
+- `finish?(rawStdout: string): EngineEvent[]`, for an engine whose output is
+  one document at exit rather than a line stream. It runs once at completion,
+  **before** `finalMessage`; the pipeline buffers raw stdout only for an
+  adapter that declares it; the returned events are appended to the event
+  list, so a late `session` or `result` event can still be emitted; and
+  `finalMessage(events, resultFileText)` then runs exactly as today
+  (`src/engines/types.ts:41`).
 
-`SpawnRequest.sandbox` becomes `{mode, profile}`: `mode` is the portable
-intent — `read-only`, `write`, or `off` — which drives the fail-closed rule
-(today `src/engines/spawn.ts:56` tests only `!== "off"`), and `profile` is the
-engine's own name for the profile. **The profile is validated against the
-engine at config load.** Today nothing checks the pair: `src/config.ts:7`
-accepts five profiles, `src/engines/types.ts:9` three, and nothing type-checks
-the sources (`package.json` runs `node --test`; there is no `tsconfig.json`),
-so `{engine: "codex", sandbox: "workspace"}` reaches the Codex adapter
+`SpawnRequest.sandbox` becomes `{mode, profile}`, where `profile` is the
+engine's own name for the profile and `mode` is `sandboxProfiles[profile]`.
+`mode !== "off"` drives the fail-closed check (today `src/engines/spawn.ts:56`
+tests the profile string itself), and `mode === "write"` drives the worktree
+reservation, so neither the pipeline nor the reservation rule has to know any
+engine's vocabulary. `SpawnRequest` also gains `scratchDir` (=
+`path.dirname(logPath)`), which is where `leadMount` writes its files and
+where T7 writes Claude's role-prompt file — never inside the specialist's own
+worktree.
+
+**A role's profile must be a key of its engine's map, checked at config
+load.** Today nothing checks the pair: `src/config.ts:7` accepts five profiles
+for every engine, `src/engines/types.ts:9` three, and nothing type-checks the
+sources (`package.json` runs `node --test`; there is no `tsconfig.json`), so
+`{engine: "codex", sandbox: "workspace"}` reaches the Codex adapter
 unchallenged. Config load must refuse it, naming the engine and its accepted
 profiles.
 
@@ -462,19 +624,37 @@ Spawn lines, to be pinned by the Phase 0 probes:
   --disallowedTools <deny list>`, cwd = the role's workspace. Sandbox through
   the settings JSON (`sandbox.enabled`, `filesystem.allowWrite`,
   `autoAllowBashIfSandboxed`). Read-only roles get no `allowWrite` and no
-  `Edit`/`Write` tools. Prerequisites on Linux are three, all from P1:
-  `bwrap`, `socat`, and on Ubuntu 24.04 or later an AppArmor profile for
+  `Edit`/`Write` tools. `--append-system-prompt-file` is written as such
+  because P1's harness run passed it and Claude Code 2.1.263 accepted the run
+  (`tools/probe.mjs:44`); `claude --help` lists only `--append-system-prompt
+  <prompt>` and mentions the `[-file]` form inside another flag's
+  description, so the flag's spelling is confirmed in P9 with the rest of the
+  instruction path. Prerequisites on Linux are three, all from P1: `bwrap`,
+  `socat`, and on Ubuntu 24.04 or later an AppArmor profile for
   `/usr/bin/bwrap` with `flags=(unconfined)` and `userns`; the adapter's
   sandbox check must detect both failure modes — the "Sandbox disabled"
   warning and a sandbox that engages but cannot start any command. The role
-  prompt needs a file on disk: it is written next to the task's log, derived
-  from `path.dirname(request.logPath)`, never inside the specialist's own
-  worktree.
+  prompt needs a file on disk: it goes in `scratchDir`, never inside the
+  specialist's own worktree.
 - **Codex**: `codex exec --json -o <out> -C <cwd> --sandbox
   <read-only|workspace-write> --ignore-user-config --skip-git-repo-check -m
-  <m> -c model_reasoning_effort=<e>`; `codex exec resume <thread id>` with the
-  same flags for resume. `--ignore-user-config` keeps auth and drops the
-  user's MCP servers, plugins, and marketplaces (P5). Codex carries **no deny
+  <m> -c model_reasoning_effort=<e>`. Resume is a **different flag set**:
+  `codex exec resume <thread id>` accepts `-c/--config`, `--last`, `--all`,
+  `--enable`, `--disable`, `-i/--image`, `--strict-config`, `-m/--model`,
+  `--dangerously-bypass-approvals-and-sandbox`,
+  `--dangerously-bypass-hook-trust`, `--thread-source`, `--skip-git-repo-check`,
+  `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`,
+  `--json`, and `-o/--output-last-message`, and **neither `-C` nor
+  `--sandbox`** (`codex exec resume --help`, 0.153.4, read 2026-09-09). So the
+  resume line is `codex exec resume <thread id> --json -o <out>
+  --ignore-user-config --skip-git-repo-check -m <m> -c
+  model_reasoning_effort=<e>`, run with the process's cwd set to the role's
+  workspace, and whether the resumed thread keeps its original cwd and sandbox
+  is **pending P10**. If it does not, a Codex role cannot be resumed inside a
+  sandbox and T8 must say so rather than resume unsandboxed.
+  `--ignore-user-config` keeps auth, raises no trust prompt, and removes the
+  user's MCP servers, leaving only Codex's built-in `codex_apps` (P5; P5 does
+  not speak to plugins or marketplaces). Codex carries **no deny
   list**: probe P3 showed that execpolicy rules files are not honoured by
   `codex exec`, so its sandbox's network denial is the layer that holds
   instead, and a launched engine cannot reach its API (P3b). `codex exec` is
@@ -514,10 +694,13 @@ Sandbox facts from the probes that the adapters must respect: Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
 (`cross-agent init` warns, `src/config.ts:117-134`); Codex refuses to rewrite
 the worktree's `.git` pointer, Grok allows it, so tampering is detected by
-`verify_worktree`, not prevented (P2); a Grok child inherits the user's MCP
-configuration, so a `cross-agent` server started by that child is a real,
-reachable server, and what makes that safe is the specialist row it resolves
-to by ancestry (section 5), not an exclusion flag.
+`verify_worktree`, not prevented (P2). A Grok child is expected to inherit the
+user's MCP configuration — Grok has no per-invocation exclusion flag, only a
+persistent `grok mcp` subcommand — so a `cross-agent` server started by that
+child would be a real, reachable server, and what makes that safe is the
+specialist row it resolves to by ancestry (section 5), not an exclusion flag.
+The inheritance itself is **pending P9**, which probes exactly what a Grok
+child sees.
 
 **Child env** (`src/guard.ts:144-161`) is a **blocklist**, not an allowlist.
 It copies the parent environment and removes: the exact names `CLAUDECODE`,
@@ -525,7 +708,9 @@ It copies the parent environment and removes: the exact names `CLAUDECODE`,
 `CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when
 `billing` is `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `XAI_API_KEY`. It then sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, and
-`CROSS_AGENT_LINEAGE`. The residual is inherent to a blocklist: a host
+`CROSS_AGENT_LINEAGE`, and will add `CROSS_AGENT_PROJECT=<canonical root>` so
+that a server started from inherited configuration inside the child finds the
+right ledger (the lead model). The residual is inherent to a blocklist: a host
 variable that matches no listed name or prefix reaches the child. That is a
 deliberate trade — an allowlist would have to enumerate every variable an
 engine CLI needs to run, `PATH`, `HOME`, `XDG_*`, `CODEX_HOME`, terminal and
@@ -534,12 +719,12 @@ release — but it means the blocklist grows when a new host marker appears, and
 a new marker is a change to this list.
 
 Provenance of the flag facts in this section: P1, P2, P3, P3b, P5, and P7 are
-recorded runs in `docs/probes.md`. The Grok and Claude flag facts that no
-probe has yet exercised — `streaming-json`, `--reasoning-effort`, `--rules`,
-`--mcp-config`, `--append-system-prompt-file`, `-c mcp_servers…` — were read
-from `--help` on this machine on 2026-09-09 (Claude Code 2.1.265, Codex
-0.153.4, Grok 1.0.13) and are to be recorded in `docs/probes.md` together with
-P8 and P9.
+recorded runs in `docs/probes.md`. The facts that no probe has yet exercised —
+`streaming-json`, `--reasoning-effort`, `--rules`, `--mcp-config`, `-c
+mcp_servers…`, and `codex exec resume`'s flag list — were read from `--help`
+on this machine on 2026-09-09 (Claude Code 2.1.265, Codex 0.153.4, Grok
+1.0.13) and are to be recorded in `docs/probes.md` together with P8, P9, and
+P10.
 
 ### 4. Git ownership
 
@@ -566,10 +751,10 @@ only way a lead mutates git in a worktree, and it
    resolves to that worktree's `.git` and no other (`:68-74`), which is what
    rejects a pointer redirected at a sibling. On success it returns
    `{gitDir, workTree, branch}` (`:75`);
-3. runs `flock -n .cross-agent/locks/git.lock git --git-dir=<the gitDir
-   verify_worktree returned> --work-tree=<the workTree it returned> <args>`,
-   so the pointer file is never consulted and the paths are never re-derived
-   from the slug;
+3. runs, while `.cross-agent/locks/git.lock` is held, `git --git-dir=<the
+   gitDir verify_worktree returned> --work-tree=<the workTree it returned>
+   <args>`, so the pointer file is never consulted and the paths are never
+   re-derived from the slug;
 4. appends the step to the task journal (section 7) with the SHAs before and
    after.
 
@@ -586,14 +771,41 @@ Under `placement: host` the host session performs every root operation
 directly — create the worktree, merge, run the tests, remove the worktree,
 delete the branch — with its own tools; `git_mutate` covers only the worktree.
 Under `placement: engine` the lead has no write access at the root, and the
-same operations run through `git_root`'s verb whitelist under the same
-`git.lock`. Under a Codex host the lead's own sandbox protects `.git` too, so
-`git_mutate` calls made by a Codex lead need that host's approval escalation,
-as EVIDENCE.md recorded for the 0.4.0 Codex lead.
+same operations run through `git_root` and `run_command`, under the same
+`git.lock` and the same reservation rule. Under a Codex host the lead's own
+sandbox protects `.git` too, so `git_mutate` calls made by a Codex lead need
+that host's approval escalation, as EVIDENCE.md recorded for the 0.4.0 Codex
+lead.
+
+**`git_root`.** `args[0]` is the verb, and it must be one of `worktree add -b
+<branch> <dir> <base>`, `worktree remove <dir>`, `branch -d <branch>`, `merge
+--ff-only <branch>`, `rebase --abort`, or the read-only set `status`, `log`,
+`rev-parse`, `merge-base`, `branch --list`, `worktree list`. No global git
+option is accepted — `-c`, `--git-dir`, `--work-tree` and `-C` are refused,
+because each of them turns a whitelisted verb into an arbitrary one against an
+arbitrary repository. Every path argument must resolve under the project root
+or its `.worktrees/`, and every branch argument must match the mode's
+`branchPattern` or be the default branch. The result is `{exitCode, stdout,
+stderr, before, after}`, where `before` and `after` are the default branch's
+SHA around the call, and the step is journaled like a `git_mutate` step. The
+whitelist is the whole security argument for handing an engine any root git
+access at all, so it is a fixed list in code, never config.
+
+**`run_command`.** `run_command({which: "test" | "setup", where: "root" | <a
+verified worktree path>, timeout_seconds?})` — a **selector, never a command
+string**, so no argument the lead composes ever reaches a shell. The server
+runs the project's configured `testCommand` or `setupCommand` through `sh -c`
+in the same child environment a specialist gets, capping the returned output
+tail at 64 KB and the run at `timeout_seconds` (default 600), and returns
+`{exitCode, tail}`. A configured value of `"none"` is a no-op success, which
+is what this project's own `setupCommand` is. A worktree `where` is verified
+exactly as `git_mutate` verifies it, with the branch taken from the journal
+entry for that worktree.
 
 ### 5. Loop guard
 
-Scope, stated in the README: no delegation loop can form through `delegate`;
+Scope, to be restated in the README by Task 1c: no delegation loop can form
+through `delegate`;
 direct engine launches from specialists are denied for exactly the deny-list
 forms of section 3 at each CLI's own permission layer (Claude and Grok), or
 cannot reach a model API (Codex, network denied by its sandbox). A specialist
@@ -604,26 +816,39 @@ nothing in `src/` calls them yet — `src/server.ts:129-154` registers its two
 tools with no gating at all — so the layers below are the target that step 7
 wires. Layers, each with its own unit test:
 
-1. **Authority by ancestry, depth as the fail-closed secondary signal.** The
-   server resolves itself to operator, lead, or specialist by the nearest
-   engine ancestor matching an active task's `engineIdentity` ("The lead
-   model" above), and offers exactly that row of the permission matrix. A call
-   to a tool outside the row is refused at `tools/call` by name, with the
-   reason. `CROSS_AGENT_DEPTH` is read at startup as it is today
-   (`src/guard.ts:31-43`) and fails closed: absent with no lineage means 0;
-   present but malformed, or a lineage with no depth, means a child. At depth
-   ≥ `maxDepth` (default 1) no row above specialist is possible, whatever the
-   ancestry walk finds. The specialist row is the four read tools plus
-   `describe_mode`, which is what `toolsAtDepth` approximates today
-   (`src/guard.ts:45-49`).
+1. **Authority by ancestry; depth is a cap, not a second opinion.** Ancestry
+   decides the row a server *may* receive — operator, lead, or specialist —
+   by the nearest matching engine ancestor ("The lead model" above). Depth
+   then caps it: at depth ≥ `maxDepth` the row is forced to specialist
+   whatever the walk found, and so it is when `CROSS_AGENT_DEPTH` is
+   malformed, or absent while `CROSS_AGENT_LINEAGE` is present
+   (`src/guard.ts:31-43` already reads it that way, returning `Infinity` for
+   both). The effective row is the **lower of the two**, and the server
+   offers exactly that row of the permission matrix; a call to a tool outside
+   it is refused at `tools/call` by name, with the reason.
+
+   `maxDepth` comes from the **active mode**, not from a constant: a mode
+   with `placement: engine` needs 2, because its lead runs at depth 1 and the
+   lead's specialists at 2; every other mode needs 1. `limits.maxDepth` in
+   config may only lower that value, never raise it. Raising the cap to 2
+   does not hand `delegate` to anyone new, because ancestry is primary: a
+   server a depth-1 specialist starts — the Grok inheritance case — matches
+   that specialist's own record and gets the specialist row at any cap. The
+   cap exists to bound a chain whose ancestry the walk could not read, which
+   is why it fails closed.
+
+   Records gain a `depth` field, written by `delegate`; the shipped
+   `TaskRecord` has none (`src/ledger.ts:30-50`). The specialist row is the
+   four read tools plus `describe_mode`, which is what `toolsAtDepth`
+   approximates today (`src/guard.ts:45-49`).
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
    specialists **can** still reach a server, because Grok has no
    per-invocation exclusion flag (`src/guard.ts:135-142` returns an empty list
-   for it, and P2 confirms the inheritance). They are held to the specialist
-   row by ancestry, not by exclusion — that is why layer 1 had to become a
-   capability model. Under `placement: engine` this layer is relaxed for the
-   lead's own server only, through the adapter's `leadMount`.
+   for it; the inheritance itself is pending P9). They are held to the
+   specialist row by ancestry, not by exclusion — that is why layer 1 had to
+   become a capability model. Under `placement: engine` this layer is relaxed
+   for the lead's own server only, through the adapter's `leadMount`.
 3. **Denied launches**: the deny list of section 3 for Claude and Grok; for
    Codex, the sandbox's network denial, which stops a launched engine from
    reaching any model API (P3, P3b).
@@ -645,10 +870,12 @@ wires. Layers, each with its own unit test:
 ### 6. Config and validation
 
 `<project>/.cross-agent/config.json`, created by `cross-agent init --mode
-<name>`, validated on load (`src/config.ts:53-115`). It carries the bind-time
-layer only: which mode is active, and which engine, model, effort, and sandbox
-profile each of that mode's roles runs on. The `mode` field, the `workspace`
-rename, and the profile check below are targets; the rest is validated today.
+<name>`, validated on load (`src/config.ts:53-115`). It carries the
+**bind-time layer only**: which mode is active, and which engine, model,
+effort and binary each of that mode's roles runs on, plus an optional
+`sandbox` override. Where a role works and what sandbox it defaults to belong
+to the mode (the Modes section), so a `workspace` key here is refused and
+every role key must name a role the mode declares.
 
 ```json
 {
@@ -656,10 +883,10 @@ rename, and the profile check below are targets; the rest is validated today.
   "project": {"defaultBranch": "main", "testCommand": "npm test",
               "setupCommand": "none", "mergePolicy": "auto"},
   "roles": {
-    "planner":       {"engine": "codex",  "model": "gpt-6-astra", "effort": "high", "workspace": "root",     "sandbox": "read-only"},
-    "plan-reviewer": {"engine": "claude", "model": "claude-opus-5",                 "workspace": "root",     "sandbox": "read-only"},
-    "implementer":   {"engine": "codex",  "model": "gpt-6-astra",                   "workspace": "worktree", "sandbox": "workspace-write"},
-    "code-reviewer": {"engine": "claude", "model": "claude-opus-5",                 "workspace": "worktree", "sandbox": "read-only"}
+    "planner":       {"engine": "codex",  "model": "gpt-6-astra", "effort": "high"},
+    "plan-reviewer": {"engine": "claude", "model": "claude-opus-5"},
+    "implementer":   {"engine": "codex",  "model": "gpt-6-astra"},
+    "code-reviewer": {"engine": "claude", "model": "claude-opus-5", "sandbox": "read-only"}
   },
   "engines": {"claude": {}, "codex": {}, "grok": {}},
   "limits": {"maxDepth": 1, "stallMinutes": 15, "waitDefaultSeconds": 600,
@@ -668,16 +895,21 @@ rename, and the profile check below are targets; the rest is validated today.
 }
 ```
 
-`workspace: "root"` roles run at the project root with a read-only sandbox.
-`workspace: "worktree"` roles require the `verify_worktree` checks of section 4
-against the branch named in the request (`task/<slug>`), and a writable
-sandbox reserves the path. The field is named `workspace` because a mode
-declares workspace *policy* (the Modes section), of which "root" and
-"worktree" are the two kinds this release ships; the shipped loader still
-calls it `cwd` (`src/config.ts:16`, `:96`) and is renamed with the mode work.
-Loading also checks each role's sandbox profile against its engine's
-`sandboxProfiles` and refuses a mismatch, naming the engine and its accepted
-profiles.
+The `dev-team` mode supplies the rest: `planner` and `plan-reviewer` at
+`workspace: {kind: "root"}` with `sandboxDefault: "read-only"`, `implementer`
+and `code-reviewer` at `{kind: "worktree", branchPattern: "task/*", dir:
+".worktrees"}` with the implementer defaulting to a writable profile. A
+`kind: "root"` role runs at the project root; a `kind: "worktree"` role
+requires the `verify_worktree` checks of section 4 against the branch named in
+the request, and a role whose sandbox mode is `write` reserves the path.
+
+What is a target here and what is not: the `mode` field, the refusal of
+`workspace`, `limits.lockWaitSeconds` (absent from `CrossAgentConfig`,
+`src/config.ts:20-26,36-38`) and the per-engine profile check all arrive with
+the tasks that need them; `project`, `roles`' engine/model/effort, `engines`,
+the other four limits and `billing` are validated today. The shipped loader
+still carries the role's directory kind as `cwd` (`src/config.ts:16`, `:96`);
+the Work plan says what happens to it in the meantime.
 
 ### 7. The skills
 
@@ -693,8 +925,16 @@ never copied into a host's skill directory. For `dev-team` it is the devpack's
 `worktree-workflow` with the verbs remapped (`delegate_bot` and `ask_bot`
 become `delegate` then `wait`; "end your turn, you are woken" becomes "call
 `wait` again while it reports running"; roles are names; the closing room post
-becomes one line in `.cross-agent/log.md`), plus the git ownership and
-ordering of section 4, and:
+becomes the task's closing report), plus the git ownership and ordering of
+section 4, and:
+
+Where that closing report goes depends on placement. Under `host` the host
+session appends one line to `.cross-agent/log.md` itself, as it appends
+anything else. Under `engine` the lead is read-only at the root and cannot
+append it: its closing report **is** the task's final message, and `cross-agent
+report` renders the log from the ledger. An engine lead writes no project file
+itself; the ledger, the journal and the mailbox are all written by the server
+on its behalf.
 
 - Journal: `.cross-agent/journal/<slug>.json` records, per task, the default
   branch SHA before the merge, the task branch head, and each completed git
@@ -706,8 +946,9 @@ ordering of section 4, and:
   Rules: an interrupted rebase is aborted; a merged branch with a surviving
   worktree continues at the cleanup gate; a branch-only leftover is deleted
   with `branch -d`; a running task is waited on; an unmerged branch with a
-  dead task is reported to the user; any record `list_tasks` reports as
-  invalid is reported and its workspace stays reserved.
+  dead task is reported to the user; and any file `list_tasks` reports as
+  invalid is named to the operator, who must repair or remove it before the
+  next writable delegation can run.
 - Repair path: never reset or rewrite `<default>`. If the suite fails on
   `<default>` after a merge, stop, report, and offer `git revert --no-edit
   <recorded default SHA>..<recorded merged head>` as a new commit; the
@@ -781,23 +1022,28 @@ Claude Code's MCP tool timeout defaults to about 28 hours, Codex takes
 Chat, rooms, a roster UI, an approval broker, runtime bot creation, the lead's
 own persistence under `placement: host` (the host's job), ACP engines,
 branch-scoped git metadata grants, a conflict-edit mode for rebases. Deferred
-with reasons, one backlog bead each:
+with reasons. Four have a backlog bead (`atc-s96.25`–`.28`); two are **not
+planned** and have none, because nothing would trigger them:
 
-- **Arbitrary-path workspace providers.** Only `root` and `worktree` are in
-  scope. A
-  provider that hands a role any path would have to carry its own containment
-  argument, and section 4's guarantees are written for a linked worktree.
-- **Config-declared adapter modules.** The reason is in section 3: the runner
-  imports that path unsandboxed and only its absoluteness is validated.
-- **`openmaus.package` as an import format.** Native modes only.
-- **Diff-scoped review and critique verbs.** The vendor bridges' `/review` and
-  `/critique`; `solo` covers the same ground without a second protocol.
-- **An engine `doctor` / preflight.** The sandbox-or-refuse rule already fails
-  closed at spawn time (`src/engines/spawn.ts:55-59`), so a preflight would
-  report the same refusal one step earlier and could go stale between the
-  two.
-- **Session transfer between engines.** Resume is bound to the original task's
-  engine (`src/guard.ts:102-115`).
+- **Arbitrary-path workspace providers** (`atc-s96.25`). Only `root` and
+  `worktree` are in scope. A provider that hands a role any path would have to
+  carry its own containment argument, and section 4's guarantees are written
+  for a linked worktree.
+- **Config-declared adapter modules** (`atc-s96.26`). The reason is in section
+  3: the runner imports that path unsandboxed and only its absoluteness is
+  validated.
+- **Diff-scoped review and critique verbs** (`atc-s96.27`). The vendor
+  bridges' `/review` and `/critique`; `solo` covers the same ground without a
+  second protocol.
+- **An engine `doctor` / preflight** (`atc-s96.28`). The sandbox-or-refuse
+  rule already fails closed at spawn time (`src/engines/spawn.ts:55-59`), so a
+  preflight would report the same refusal one step earlier and could go stale
+  between the two.
+- **`openmaus.package` as an import format.** Not planned: native modes only,
+  and the converter runs once.
+- **Session transfer between engines.** Not planned: resume is bound to the
+  original task's engine (`src/guard.ts:102-115`), and a transfer would have
+  to reconstruct one engine's session state inside another's.
 
 ## Repository layout (`~/Documents/agent-team-cli`)
 
@@ -837,8 +1083,10 @@ reason), and the loop-guard scope as a hard requirement.
    `initialize`, `tools/list`, `list_roles` from a config file, concurrent
    dispatch; `tests/server.test.ts` over stdio, including one test that
    answers `ping` while a slow tool call is pending;
-   `tests/fixtures/fake-engine.mjs` (emits JSONL; `FAKE_ENGINE_SCRIPT`
-   selects stall, fail, loop attempt, denied command); `tools/probe.mjs`, a
+   `tests/fixtures/fake-engine.mjs` (emits JSONL in a per-engine format
+   chosen by `FAKE_ENGINE_FORMAT`; `FAKE_ENGINE_SCRIPT` selects `ok`, `fail`,
+   `stall`, or `stall-ignore-term`,
+   `tests/fixtures/fake-engine.mjs:3`); `tools/probe.mjs`, a
    standalone harness that spawns one engine with the section 3 argv (no
    server, no runner) so the probes do not wait on feature tasks. It stays a
    manual tool; it is not moved onto the adapter interface. `npm test` green.
@@ -848,16 +1096,23 @@ reason), and the loop-guard scope as a hard requirement.
    - P1 nested `claude -p` from inside a Claude Code session with the
      scrubbed env (the binary carries a `CLAUDECODE` guard). **Done**; the
      Claude sandbox needs `bwrap`, `socat`, and the bwrap AppArmor profile.
-   - P2 each engine as implementer inside `.worktrees/x` under its sandbox:
-     an edit and the tests succeed; writes to a root file, to another
-     worktree, to `<root>/.git/refs/heads/main`, and a rewrite of the
-     worktree's `.git` pointer are attempted; the first three must be denied,
-     and after the fourth `verify-worktree` must refuse; the same on a resumed
-     session. **Done for Codex and Grok**; the Claude row waits on the
-     AppArmor profile (`atc-s96.17`).
-   - P3 the deny list: each target on each engine, including resumed sessions
-     and a configured binary path. **Done** — Claude and Grok enforce it;
-     Codex ignores rules files in `exec`, see P3b.
+   - P2 each engine as implementer inside a linked worktree under its
+     sandbox. Recorded (`docs/probes.md:48-63`): an in-worktree edit and the
+     tests succeed, and writes to a root file, to a path inside `<root>/.git`,
+     to a sibling path, and to `$HOME` are all denied; the rewrite of the
+     worktree's `.git` pointer is denied by Codex and **allowed by Grok**.
+     **Done for Codex and Grok**; the Claude row waits on the AppArmor profile
+     (`atc-s96.17`). Outstanding variants, not yet recorded: a write into
+     another *registered* worktree, a write to
+     `<root>/.git/refs/heads/<default>` specifically, and the whole set on a
+     resumed session.
+   - P3 the deny list. Recorded (`docs/probes.md:65-87`): four targets
+     (`claude`, `codex`, `grok`, `node <repo>/src/server.ts`) attempted on
+     each engine, with `node --version` as the control. **Done** — Claude and
+     Grok deny all four and allow the control; Codex ignores an execpolicy
+     rules file in `exec`, see P3b. Outstanding: the `cross-agent` and `node
+     <repo>/src/cli.ts` targets, a configured `engines.<e>.bin` path, and a
+     resumed session.
    - P3b Codex network: a workspace-write child cannot reach a model API or
      complete a nested engine run. **Done.**
    - P5 `codex exec --ignore-user-config`: auth kept, no trust prompt, no user
@@ -879,6 +1134,12 @@ reason), and the loop-guard scope as a hard requirement.
      row and no user server, and whether the loop text is delivered (Claude
      `--append-system-prompt-file`, Codex a prompt prefix, Grok `--rules`).
      Also records the `--help` facts of section 3. **Outstanding**
+     (`atc-s96.21`).
+   - P10 `codex exec resume`: which flags the subcommand accepts, and whether
+     a resumed thread keeps the cwd and sandbox of the original run. It takes
+     neither `-C` nor `--sandbox` (§3), so T8 cannot resume the way it
+     launches, and a resume that silently dropped the sandbox would be a
+     containment failure rather than an inconvenience. **Outstanding**
      (`atc-s96.21`).
 3. Task records: the devpack's own record of this work — Decision 0008, the
    T-series beads under epic `atw-07l`, the `bd remember` notes, the
@@ -906,11 +1167,11 @@ integration probes and end-to-end run right after it.
 | 1 | Rename and design rewrite | `atc-s96.19` | One pass; `npm test` gates the rename. History files untouched. |
 | 2 | Locks primitive, conditional update, lifecycle | `atc-s96.20` | `src/locks.ts` (the `flock` child); `update` with `expect` and `{applied}`; B1 (reconcile on the group scan in `src/reconcile.ts`, the `cancelling` case), B2 (bounded drain, `truncated`), B3, B4, B5 (environ scan, runner lock, `launchToken` removed), A4-a (record validation). |
 | 3 | T6 remainder | `atc-s96.6` | Reservation, journal, `git_mutate` on the verified git-dir, `git.lock`. |
-| 4 | Probe harness flags, P8, P9 | `atc-s96.21` | `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; P8 Grok streaming; P9 per engine: mount only this server, `tools/list` shows exactly the matrix row, instructions delivered. Records the `--help` facts. |
+| 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; P8 Grok streaming; P9 per engine: mount only this server, `tools/list` shows exactly the matrix row, instructions delivered; P10 `codex exec resume`. Also fixes `tools/probe.mjs:53-54`, which builds an **invalid resume argv** today — it pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Records the `--help` facts. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | A2; the adapter fields of section 3; informed by P8 and P9. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | T7 Claude; T8 Codex, **without an execpolicy rules file**; T9 Grok, per P8. |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | Ancestry-bound authority, the permission matrix, guard wiring, reconciliation on every `list_tasks`, `tools/call` refusal by name. `describe_mode` registers with step 8, which builds the mode loader it reads. |
-| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; the `workspace` schema. |
+| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts:16`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | `git_root`, `run_command`, the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each** of claude, codex, grok from one host — one lead engine under three hosts would not validate three injection paths. |
@@ -945,6 +1206,11 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
 
 - `npm test` green after every task; T3, T5, and the locks task are gates: no
   adapter or tool task is briefed before they pass.
+- **Probes gate the tasks that cite them.** P1, P2 (Codex and Grok), P3, P3b,
+  P5 and P7 are recorded; P2 for Claude, P8, P9 and P10 are outstanding and
+  gate the adapter and engine-placement tasks that cite them. A failed
+  negative probe — a denied write that succeeded, a pointer rewrite
+  `verify-worktree` accepted — blocks the corresponding adapter.
 - **B1:** runner dead, leader reaped, descendant alive → `orphaned` →
   cleanup kills it. `cancelling` with a dead runner → group terminated →
   `cancelled`.
@@ -963,23 +1229,34 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
 - **A2:** `{engine: "codex", sandbox: "workspace"}` is refused at config load.
 - **A3:** a mismatched slug and path → `git_mutate` uses the `gitDir`
   `verify_worktree` returned.
-- **A4-a:** a malformed record is reported and keeps its reservation.
+- **A4-a:** a malformed record file is reported by name and refuses every
+  writable `delegate` until it is repaired or removed.
 - **Authority:** a server whose nearest engine ancestor is a specialist gets
   the specialist row even when the process also carries a lead's environment;
-  a direct `tools/call delegate` is refused by name with a reason; a Grok
-  specialist inheriting the user's MCP configuration sees exactly the
-  specialist row (this is I1).
-- **Modes:** `init --mode dev-team` yields the four roles, engines, models,
-  efforts and profiles of section 6; `solo` yields a `tools/list` without the
-  worktree tools; `describe_mode` returns the loop text on all three hosts
-  with no file copied.
+  a server carrying `CROSS_AGENT_TASK` that matches no record gets the
+  specialist row, not the operator row; a walk that hits a read error, a
+  cycle, 8 hops, or a parent younger than its child gets the specialist row; a
+  lead's row is lost on the first call after its record leaves
+  `running|stalled`; a direct `tools/call delegate` is refused by name with a
+  reason; a Grok specialist inheriting the user's MCP configuration sees
+  exactly the specialist row (this is I1).
+- **Modes:** `init --mode dev-team` yields the four roles with the engines,
+  models, efforts and profiles of section 6; a config carrying a `workspace`
+  key, or a role key the mode does not declare, is refused; `solo` yields a
+  `tools/list` without the worktree tools; `describe_mode` returns the loop
+  text on all three hosts with no file copied, and refuses with a reason when
+  the mode directory is missing.
 - **P9:** per engine, a lead mount shows exactly the lead row and no user
   server; Codex's `-c mcp_servers…` under `--ignore-user-config` and its
   instruction delivery recorded as pass or fail.
+- **P10:** `codex exec resume`'s accepted flags recorded, and whether the
+  resumed thread keeps the original run's cwd and sandbox; if it does not, T8
+  records what a Codex resume can safely do instead.
 - **Engine placement:** end-to-end with the lead on each engine; cancelling
-  the lead settles every descendant; a killed lead's `ask` survives and its
-  answer reaches the resumed lead; `git_root` refuses any verb outside the
-  whitelist.
+  the lead settles every descendant and reports one outcome per task; a killed
+  lead's `ask` survives and its answer reaches the resumed lead; `git_root`
+  refuses any verb outside the whitelist, any global git option, and any path
+  outside the project; `run_command` refuses anything but its two selectors.
 - Failure injection, each recorded once: a suite that fails on `<default>`
   after a merge (repair path offered, dispatch halted); an interruption after
   `worktree remove` and before `branch -d` (reconciliation deletes the
@@ -992,8 +1269,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   list` shows only the root, no `task/*` branch remains, `git status
   --porcelain --untracked-files=normal` is empty, the suite is green on
   `main`; `.cross-agent/tasks/` holds one record per delegation with native
-  logs; the journal shows every step; no record shows depth above 1; the
-  specialists' transcripts show no `delegate` and no engine launch.
+  logs; the journal shows every step; no record's `depth` exceeds the mode's
+  `maxDepth`; the specialists' transcripts show no `delegate` and no engine
+  launch.
 - **Docs:** every changed claim in this document matches a `file:line` in this
   repository or a recorded probe.
 - For the pack (M7): every task ends with no worktree, no task branch, a clean

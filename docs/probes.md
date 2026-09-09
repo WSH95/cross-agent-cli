@@ -56,7 +56,7 @@ the worktree's `.git` pointer file with `gitdir: /tmp/elsewhere`.
 |---|---|---|---|---|---|---|
 | Codex: `codex exec --json -o <out> -C <worktree> --sandbox workspace-write --ignore-user-config --skip-git-repo-check -m gpt-6-astra` | success | denied (read-only file system) | denied | denied | denied | denied (Codex protects the `.git` entry even inside the writable cwd) |
 | Grok: `grok -p <prompt> --cwd <worktree> --sandbox workspace --permission-mode bypassPermissions --output-format json --session-id <uuid>` | success | denied (permission denied) | denied | denied | denied | **allowed** (the pointer was rewritten; restored by hand afterwards) |
-| Claude | not run yet: the sandbox needs `socat` | | | | | |
+| Claude | not run yet: with `socat` installed the sandbox still needs the `bwrap` AppArmor profile (see P1) | | | | | |
 
 Consequence: the worktree pointer is writable by a Grok implementer, so
 `verify_worktree` and the explicit `--git-dir`/`--work-tree` form (section
