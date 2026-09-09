@@ -13,12 +13,12 @@ reviewer, implementer, code reviewer), and `solo`, one role with no git.
 Scaffold, plus the core everything else is built on: the task ledger with
 conditional updates under an OS-held lock, config loading, worktree
 verification, the loop-guard helpers, the engine adapter interface and spawn
-pipeline, and the detached runner with its orphan handling — 159 tests, all
-passing. The rest is a target, modes included: the delegation tools and the
-authority model that gates them, the three engine adapters, the mode loader,
-the skills, and each host's packaging.
-`docs/design.md` is the design and the work plan; `docs/probes.md` records
-what each engine CLI was observed to do.
+pipeline, and the detached runner with its orphan handling. `npm test` covers
+each of those and is green at every commit on `main`. The rest is a target,
+modes included: the delegation tools and the authority model that gates them,
+the three engine adapters, the mode loader, the skills, and each host's
+packaging. `docs/design.md` is the design and the work plan; `docs/probes.md`
+records what each engine CLI was observed to do.
 
 ## Run the tests
 
