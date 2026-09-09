@@ -1,19 +1,54 @@
+import path from "node:path";
 import { commandPath, engineBin } from "./binaries.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
 
-const unimplemented = () => { throw new Error("codex adapter: not implemented (T7/T8/T9)"); };
+/** How much of a turn is kept as evidence of progress: enough to read, not a transcript. */
+const activityLimit = 200;
+
+/** Whole code points: cutting UTF-16 units could leave a lone surrogate in the ledger. */
+function truncate(text: string): string {
+  if (text.length <= activityLimit) return text;
+  return Array.from(text).slice(0, activityLimit).join("");
+}
+
+/** A field Codex declares as a string, as the string it is or as nothing at all. */
+function asText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
 
 /**
- * Codex. The static parts of the contract (design section 3); T8 writes `plan` — where
- * `off` becomes `--sandbox danger-full-access` and a resume re-applies the profile as
- * `-c sandbox_mode=` (P10) — `parseLine` and `finalMessage`, and either implements
- * `finish` or removes it.
+ * The name Codex gives a profile on its command line. `off` is `danger-full-access` in
+ * both places the profile appears — `--sandbox` on launch and `-c sandbox_mode=` on
+ * resume — and every other profile name is already Codex's own (design section 3).
+ */
+function sandboxName(profile: string): string {
+  return profile === "off" ? "danger-full-access" : profile;
+}
+
+/**
+ * What a failed turn says. `turn.failed` carries the message under `error`, and a failure
+ * that arrives without one still has to say which engine failed and that it said nothing.
+ */
+function failureText(error: unknown): string {
+  const message = (error as { message?: unknown } | null | undefined)?.message;
+  return typeof message === "string" && message !== "" ? message : "codex reported a failed turn with no message";
+}
+
+/**
+ * Codex, on the `codex exec` line P2 and P5 recorded, the `codex exec resume` line P10
+ * recorded, and the `--json` output the probe logs sampled.
  */
 const codex = {
   name: "codex",
   sandboxProfiles: { "read-only": "read-only", "workspace-write": "write", off: "off" },
 
-  // Codex's sandbox is the binary's own, so the binary resolving is the whole of the check.
+  /**
+   * Codex's sandbox is the binary's own, so the binary resolving is the whole of the
+   * check. What it cannot see is where the workspace is: Codex treats `/tmp` and `$TMPDIR`
+   * as writable, so a project under either is not isolated by a workspace-write profile.
+   * `cross-agent init` warns about that (design section 3, `src/config.ts:148-165`); the
+   * adapter does not refuse, because the operator may have meant it.
+   */
   sandboxSupport(): { ok: true } | { ok: false; reason: string } {
     const bin = engineBin("codex");
     return commandPath(bin) === null
@@ -53,10 +88,103 @@ const codex = {
     };
   },
 
-  plan(_request: SpawnRequest): SpawnPlan { return unimplemented(); },
-  parseLine(_line: string): EngineEvent | null { return unimplemented(); },
-  finish(_rawStdout: string): EngineEvent[] { return unimplemented(); },
-  finalMessage(_events: EngineEvent[], _resultFileText: string | null): string { return unimplemented(); },
+  /**
+   * P2's `codex exec` line for a launch and P10's `codex exec resume` line for a resume,
+   * which is a different subcommand with a different flag set: it accepts neither `-C` nor
+   * `--sandbox`, and a resumed thread keeps neither the cwd nor the sandbox it was
+   * launched with. So the resume re-applies both — the cwd as the spawn's own, because
+   * `-c cwd=` is ignored and the writable root silently follows the process, and the
+   * profile as `-c sandbox_mode=`, because the thread comes back read-only whatever it was.
+   */
+  plan(request: SpawnRequest): SpawnPlan {
+    const sandbox = sandboxName(request.sandbox.profile);
+    const resume = request.resumeSessionId;
+    // The `-o` file is the pipeline's own result path: Codex writes its last message
+    // there, the pipeline reads it back as `resultFileText` and rewrites it with
+    // `finalMessage`. It is emptied below, before the spawn.
+    const argv = resume
+      ? ["exec", "resume", resume, "--json", "-o", request.resultPath]
+      : ["exec", "--json", "-o", request.resultPath, "-C", request.cwd, "--sandbox", sandbox];
+    argv.push(...codex.exclusionArgs(), "--skip-git-repo-check");
+    if (request.model) argv.push("-m", request.model);
+    if (request.effort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(request.effort)}`);
+    // The profile the launch line spent `--sandbox` on, restored the only way the resume
+    // subcommand accepts. There is no unsandboxed resume by omission (P10).
+    if (resume) argv.push("-c", `sandbox_mode=${JSON.stringify(sandbox)}`);
+
+    // Emptied first, so that a run which dies before Codex writes its last message cannot
+    // leave the previous run's text to be read back and reported as this one's — on a
+    // resumed task it is the same file every time.
+    const files: NonNullable<SpawnPlan["files"]> = [{ path: request.resultPath, contents: "" }];
+    // A Codex role prompt reaches the child as a file, and it is obeyed with no role text
+    // in the prompt at all (P9), so a lead spends no prompt space on the loop. The file is
+    // the task's own, never inside the specialist's worktree, which the role may edit. The
+    // value is TOML, so the quotes are part of the argument. It is re-supplied on a resume
+    // for the same reason the sandbox is: a `-c` setting belongs to the process, and the
+    // resumed thread is a new one.
+    if (request.rolePrompt !== "") {
+      const rolePath = path.join(request.scratchDir, "role.md");
+      files.push({ path: rolePath, contents: request.rolePrompt });
+      argv.push("-c", `model_instructions_file=${JSON.stringify(rolePath)}`);
+    }
+    if (request.lead !== undefined) argv.push(...codex.leadMount(request.lead, request.scratchDir).argv);
+
+    // The prompt is the last argument, as P2 and P5 ran it: `codex exec [PROMPT]` takes it
+    // positionally and nothing goes on stdin. Every `-c` and `-m` above takes exactly one
+    // value, so none of them can swallow it.
+    argv.push(request.brief);
+
+    // `cwd` is passed through as the request wrote it: it is already canonical, and on a
+    // resume it is the whole of the sandbox's writable root, so it has to be the name the
+    // child sees.
+    return { bin: engineBin("codex", request.env), argv, cwd: request.cwd, env: request.env, files };
+  },
+
+  /**
+   * One `--json` object per line. `thread.started` carries the id a resume names, a
+   * completed item is the engine being alive, and the turn's own line is the verdict.
+   */
+  parseLine(line: string): EngineEvent | null {
+    let value: unknown;
+    try { value = JSON.parse(line); } catch { return null; }
+    if (typeof value !== "object" || value === null) return null;
+    const event = value as { type?: unknown; thread_id?: unknown; item?: unknown; error?: unknown };
+    switch (event.type) {
+      case "thread.started":
+        return typeof event.thread_id === "string" ? { kind: "session", sessionId: event.thread_id } : null;
+      case "item.completed": {
+        const item = event.item as { type?: unknown; text?: unknown; command?: unknown } | null | undefined;
+        // What the model said and what it ran: the two item types an operator reads as
+        // progress. The item type is what identifies the line, so an item missing its
+        // string is still an event — `lastEventAt` is what keeps the task off the stall
+        // path. Every other item type Codex reports stays in the log alone.
+        if (item?.type === "agent_message") return { kind: "activity", text: truncate(asText(item.text)) };
+        if (item?.type === "command_execution") return { kind: "activity", text: truncate(asText(item.command)) };
+        return null;
+      }
+      case "turn.completed":
+        // That the turn ended. Its text is the `-o` file's, which `finalMessage` reads:
+        // this line carries usage figures and no message of its own.
+        return { kind: "result", text: "" };
+      case "turn.failed":
+        return { kind: "error", text: failureText(event.error) };
+      default:
+        return null;
+    }
+  },
+
+  /**
+   * The `-o` file is Codex's own last message, written by the engine at the end of the
+   * turn, and `plan` empties it before the spawn — so a non-empty file is this run's and
+   * the first place to look. Without one the events are the whole of the evidence: a turn
+   * that somehow spoke on its completion line, then whatever failed.
+   */
+  finalMessage(events: EngineEvent[], resultFileText: string | null): string {
+    if (resultFileText !== null && resultFileText !== "") return resultFileText;
+    const result = events.findLast((event) => event.kind === "result");
+    if (result !== undefined && result.text !== "") return result.text;
+    return events.findLast((event) => event.kind === "error")?.text ?? "";
+  },
 } satisfies EngineAdapter;
 
 export default codex;
