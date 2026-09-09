@@ -178,10 +178,12 @@ test("a read-only role's argv is P2's exec line, and the -o file is the pipeline
     "--ignore-user-config", "--skip-git-repo-check",
     "-m", "gpt-6-astra",
     "-c", instructions(dirs.role),
-    "Review the branch.",
+    "-",
   ]);
-  // P2 and P5 both ran the prompt as the positional argument, with nothing on stdin.
-  assert.equal(plan.stdin, undefined);
+  // The prompt goes on stdin, with `-` holding its place: a bare positional would be read
+  // as a flag the moment a brief began with `-`, and a brief is prose the lead composes.
+  assert.equal(plan.stdin, "Review the branch.");
+  assert.equal(plan.argv.includes("Review the branch."), false);
   // The `-o` file is the one the pipeline reads back and rewrites with the final message.
   assert.equal(plan.argv[plan.argv.indexOf("-o") + 1], request.resultPath);
 });
@@ -196,8 +198,9 @@ test("a write role's argv names its worktree as the cwd and workspace-write as t
     "-m", "gpt-6-astra",
     "-c", 'model_reasoning_effort="high"',
     "-c", instructions(dirs.role),
-    "Implement the brief.",
+    "-",
   ]);
+  assert.equal(plan.stdin, "Implement the brief.");
   // No deny layer of any kind reaches the argv: P3 found execpolicy rules unenforced.
   for (const argument of plan.argv) assert.equal(argument.includes("execpolicy"), false, argument);
 });
@@ -205,8 +208,13 @@ test("a write role's argv names its worktree as the cwd and workspace-write as t
 test("the off profile launches as danger-full-access, the name Codex gives no sandbox", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs, { sandbox: sandboxFor("codex", "off") }));
-  assert.deepEqual(plan.argv.slice(0, 8),
-    ["exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "danger-full-access"]);
+  assert.deepEqual(plan.argv, [
+    "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "danger-full-access",
+    "--ignore-user-config", "--skip-git-repo-check",
+    "-c", instructions(dirs.role),
+    "-",
+  ]);
+  // The portable mode's name is this project's; `--sandbox` only ever sees Codex's own.
   assert.equal(plan.argv.includes("off"), false);
 });
 
@@ -221,8 +229,11 @@ test("a resumed run is exec resume: no -C, no --sandbox, and the profile restore
     "-c", 'model_reasoning_effort="high"',
     "-c", 'sandbox_mode="workspace-write"',
     "-c", instructions(dirs.role),
-    "Implement the brief.",
+    "-",
   ]);
+  // Both heads read `-` from stdin: `codex exec resume [SESSION_ID] [PROMPT]` documents
+  // "If `-` is used, read from stdin" exactly as `codex exec` does (0.153.4 `--help`).
+  assert.equal(plan.stdin, "Implement the brief.");
   // `codex exec resume` accepts neither flag (0.153.4 `--help`), and `-c cwd=` is ignored:
   // the resuming process's own cwd is the only lever on the writable root, so it is the
   // role's workspace and the plan carries it there.
@@ -242,7 +253,7 @@ test("an off role resumes as sandbox_mode=danger-full-access, never by omission 
     "--ignore-user-config", "--skip-git-repo-check",
     "-c", 'sandbox_mode="danger-full-access"',
     "-c", instructions(dirs.role),
-    "Implement the brief.",
+    "-",
   ]);
   // A read-only role resumes read-only, which is what a thread does on its own; saying it
   // is still the adapter's job, because the thread is not what it was launched as.
@@ -261,9 +272,13 @@ test("the role prompt travels as a file under scratchDir, pointed at by -c (P9)"
   // The adapter names the files; the pipeline is what puts them on disk.
   for (const file of plan.files!) assert.equal(existsSync(file.path), false);
   // A path needing TOML quoting gets it, since the value is TOML and not a bare argument.
-  const odd = path.join(dirs.root, 'a "task" dir');
+  // Both characters a TOML basic string escapes are in this one: a quote and a backslash,
+  // and the escaper here is written out rather than borrowed from the implementation.
+  const odd = path.join(dirs.root, 'a "task"\\dir');
   const quoted = codex.plan(requestFor(dirs, { scratchDir: odd }));
-  assert.equal(quoted.argv[quoted.argv.indexOf("-c") + 1], `model_instructions_file="${path.join(odd, "role.md").replace(/"/g, '\\"')}"`);
+  const escaped = path.join(odd, "role.md").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  assert.equal(quoted.argv[quoted.argv.indexOf("-c") + 1], `model_instructions_file="${escaped}"`);
+  assert.ok(escaped.includes('\\"') && escaped.includes("\\\\"), escaped);
 });
 
 test("a role with no prompt of its own is pointed at no instructions file at all", (t) => {
@@ -272,7 +287,7 @@ test("a role with no prompt of its own is pointed at no instructions file at all
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
     "--ignore-user-config", "--skip-git-repo-check",
-    "Implement the brief.",
+    "-",
   ]);
   assert.equal(plan.files?.some((file) => file.path === dirs.role), false);
 });
@@ -298,15 +313,21 @@ test("an engine-placed lead's argv carries P9's three -c settings before the pro
     "-c", `mcp_servers.cross-agent.command=${JSON.stringify(process.execPath)}`,
     "-c", 'mcp_servers.cross-agent.args=["/projects/team/src/server.ts","--project","/projects/team"]',
     "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
-    "Run the loop.",
+    "-",
   ]);
+  assert.equal(plan.stdin, "Run the loop.");
+  // Nothing variadic and nothing greedy is left holding the end of the line: `-` is the
+  // last argument, and every `-c` before it takes exactly one value.
+  assert.equal(plan.argv.at(-1), "-");
   // The mount travels with the flag that makes it exclusive, and there is one of each.
   assert.equal(plan.argv.filter((argument) => argument === "--ignore-user-config").length, 1);
   assert.equal(plan.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 3);
   // A lead is resumed too, and the mount has to survive the different flag set.
   const resumed = codex.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead, resumeSessionId: threadId }));
   assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 3);
-  // Codex has no lead-mount file, so the plan's files are the ones `plan` itself names.
+  // `plan` folds the whole mount, files included; Codex's own carries none, so the plan's
+  // files stay the two it names itself.
+  assert.equal(codex.leadMount(lead, dirs.task).files, undefined);
   assert.deepEqual(plan.files?.map((file) => file.path), [dirs.result, dirs.role]);
 });
 
@@ -423,7 +444,7 @@ test("a fake codex run through the pipeline yields the thread id, the activity a
     "-m", "gpt-6-astra",
     "-c", 'model_reasoning_effort="high"',
     "-c", instructions(dirs.role),
-    "Implement the brief.",
+    "-",
   ];
   // A previous run's message, which the emptied `-o` file must not let through as this one's.
   writeFileSync(dirs.result, "the previous run's final message");
@@ -445,8 +466,9 @@ test("a fake codex run through the pipeline yields the thread id, the activity a
   assert.equal(roleAtSpawn, request.rolePrompt);
   assert.equal(resultAtSpawn, "");
   assert.deepEqual(JSON.parse(readFileSync(record, "utf8")).argv, argv);
-  // The prompt is the positional argument, and stdin carries nothing (P2, P5).
-  assert.equal(JSON.parse(readFileSync(record, "utf8")).stdin, "");
+  // `-` holds the prompt's place in the argv and the brief arrives on stdin, which is
+  // what the child read: the fixture echoes back every byte it was given.
+  assert.equal(JSON.parse(readFileSync(record, "utf8")).stdin, request.brief);
   assert.equal(JSON.parse(readFileSync(record, "utf8")).cwd, dirs.worktree);
   assert.match(result.sessionId ?? "", /^fake-\d+$/);
   // Codex's last word arrives as an `agent_message` item like any other, so the ledger
@@ -483,9 +505,17 @@ test("a failed turn settles as an error carrying codex's own message", async (t)
   assert.equal(result.finalMessage, "fake failure");
 });
 
-// I2: the P2 negative writes on a *resumed* Codex session — a real `codex exec resume`
-// with `-c sandbox_mode="workspace-write"`, spawned in the role's worktree, must still be
-// refused the repository root that P10 saw a resume one directory up write to. It needs
-// the real binary, an account, and about a minute per turn, so it is an integration test
-// and not this task's.
-test.skip("I2: a resumed real Codex session is denied the writes P2 recorded", () => {});
+// I2 covers two things only the real binary can answer, and both need an account and
+// about a minute per turn, so neither is this task's.
+//
+// The stdin form on **both heads**: `codex exec … -` and `codex exec resume <id> … -`
+// must each take the brief from stdin rather than send the literal `-` as the prompt.
+// `--help` on 0.153.4 documents it for each — `codex exec [PROMPT]` says "If not provided
+// as an argument (or if `-` is used), instructions are read from stdin", and `codex exec
+// resume [SESSION_ID] [PROMPT]` says "If `-` is used, read from stdin" — so the flag fact
+// is settled and what is left is that the run behaves as the help says, on both heads.
+//
+// And the P2 negative writes on a *resumed* session: a resume with `-c
+// sandbox_mode="workspace-write"`, spawned in the role's worktree, must still be refused
+// the repository root that P10 saw a resume one directory up write to.
+test.skip("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", () => {});

@@ -95,6 +95,7 @@ const codex = {
    * launched with. So the resume re-applies both — the cwd as the spawn's own, because
    * `-c cwd=` is ignored and the writable root silently follows the process, and the
    * profile as `-c sandbox_mode=`, because the thread comes back read-only whatever it was.
+   * Both heads take the prompt from stdin behind a `-` positional.
    */
   plan(request: SpawnRequest): SpawnPlan {
     const sandbox = sandboxName(request.sandbox.profile);
@@ -127,17 +128,29 @@ const codex = {
       files.push({ path: rolePath, contents: request.rolePrompt });
       argv.push("-c", `model_instructions_file=${JSON.stringify(rolePath)}`);
     }
-    if (request.lead !== undefined) argv.push(...codex.leadMount(request.lead, request.scratchDir).argv);
+    if (request.lead !== undefined) {
+      const mount = codex.leadMount(request.lead, request.scratchDir);
+      // The whole mount, not its argv alone: `files` because an adapter may name a file
+      // its argv points at, and nothing further for `inherited` — a mount that is the
+      // operator's own configuration rather than this run's (Grok's, P9) carries an empty
+      // argv and no files, so folding it in is both right and a no-op. Codex's own mount
+      // is three `-c` settings and no file, but `plan` reads the contract, not this
+      // file's implementation of it.
+      argv.push(...mount.argv);
+      files.push(...(mount.files ?? []));
+    }
 
-    // The prompt is the last argument, as P2 and P5 ran it: `codex exec [PROMPT]` takes it
-    // positionally and nothing goes on stdin. Every `-c` and `-m` above takes exactly one
-    // value, so none of them can swallow it.
-    argv.push(request.brief);
+    // The prompt goes on stdin and `-` holds its place, last. Both heads document it:
+    // `codex exec [PROMPT]` reads stdin "if not provided as an argument (or if `-` is
+    // used)", and `codex exec resume [SESSION_ID] [PROMPT]` the same (0.153.4 `--help`).
+    // A bare positional — what the probe harness ran — is misread as a flag the moment a
+    // brief begins with `-`, and a brief is prose composed by a lead, not by this file.
+    argv.push("-");
 
     // `cwd` is passed through as the request wrote it: it is already canonical, and on a
     // resume it is the whole of the sandbox's writable root, so it has to be the name the
     // child sees.
-    return { bin: engineBin("codex", request.env), argv, cwd: request.cwd, env: request.env, files };
+    return { bin: engineBin("codex", request.env), argv, cwd: request.cwd, env: request.env, stdin: request.brief, files };
   },
 
   /**
