@@ -4,19 +4,19 @@ One MCP server plus a launcher skill that run a team of headless `claude`,
 `codex`, and `grok` processes on your own subscriptions, each inside its own
 CLI's sandbox. A host is anything that can attach an MCP server and load a
 skill: Claude Code, Codex, and Grok today. What the team does is a **mode** —
-data, not code: the roles, the loop the lead runs, and a git policy. The
-design builds in two modes: `dev-team`, the four-role worktree team
-(planner, plan reviewer, implementer, code reviewer), and `solo`, one role
-with no git.
+data, not code: the roles, the loop the lead runs, and a git policy — and the
+design builds in two, `dev-team`, the four-role worktree team (planner, plan
+reviewer, implementer, code reviewer), and `solo`, one role with no git.
 
 ## Status
 
-Scaffold, plus the core everything else is built on: the task ledger, config
-loading, worktree verification, the loop-guard helpers, the engine adapter
-interface and spawn pipeline, and the detached runner with its orphan
-handling — 146 tests, all passing. The rest is a target, modes included: the
-delegation tools and the authority model that gates them, the three engine
-adapters, the mode loader, the skills, and each host's packaging.
+Scaffold, plus the core everything else is built on: the task ledger with
+conditional updates under an OS-held lock, config loading, worktree
+verification, the loop-guard helpers, the engine adapter interface and spawn
+pipeline, and the detached runner with its orphan handling — 159 tests, all
+passing. The rest is a target, modes included: the delegation tools and the
+authority model that gates them, the three engine adapters, the mode loader,
+the skills, and each host's packaging.
 `docs/design.md` is the design and the work plan; `docs/probes.md` records
 what each engine CLI was observed to do.
 
@@ -30,20 +30,23 @@ No dependencies; Node 24 or later runs the TypeScript sources directly.
 
 ## The lead, in one paragraph
 
-The lead is whichever session holds the lead tools and runs the mode's loop,
-and the mode's `placement` decides which process that session is. Under
-`placement: host` it is your own session: it loads the loop and is busy
-between `wait` calls. Under `placement: engine` a spawned engine runs the
-loop, your session stays free to watch it, answer its questions through a
-mailbox, and cancel it, and the run survives closing your session. `host` is
-built first; `engine` follows the first end-to-end run. Either way a server's
-authority comes from process ancestry rather than from depth or a token: it
-walks its own parent chain for the engine that spawned it, matches that
-against the ledger, and serves the operator, lead, or specialist row of the
-permission matrix accordingly, failing closed to specialist. Depth only caps
-that row, never raises it, and no token could grant it — the launch spec
-holding a child's environment sits in the project, where every role can read
-it, so possession must not equal authority.
+In the design, the lead is whichever session holds the lead tools and runs
+the mode's loop, and the mode's `placement` decides which process that
+session is. Under `placement: host` it is your own session: it loads the loop
+and is busy between `wait` calls. Under `placement: engine` a spawned engine
+runs the loop, your session stays free to check status, watch it, answer its
+questions through a mailbox, and cancel it, and the run survives closing your
+session. `host` is built first; `engine` follows the first end-to-end run.
+Either way the design derives a server's authority from process ancestry
+rather than from depth or a token: the server walks its own parent chain for
+the engine that spawned it, matches that against the ledger, and serves the
+operator, lead, or specialist row of the permission matrix accordingly,
+failing closed to specialist. Depth only caps that row, never raises it, and
+no token could grant it — the launch spec holding a child's environment sits
+in the project, where every role can read it, so possession must not equal
+authority. None of this is built at this commit: nothing in `src/` resolves a
+placement, walks the ancestry, or serves a row, and the server registers two
+tools, `list_roles` and `verify_worktree`.
 
 ## Loop guard, in one paragraph
 
