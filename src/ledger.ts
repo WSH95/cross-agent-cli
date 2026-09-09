@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { acquire, lockPath, recordLockName } from "./locks.ts";
 import type { SpawnRequest } from "./engines/types.ts";
 
 export type TaskStatus = "launching" | "running" | "stalled" | "orphaned" | "cancelling" | "done" | "failed" | "cancelled";
@@ -8,6 +9,7 @@ export type TaskStatus = "launching" | "running" | "stalled" | "orphaned" | "can
 export interface ProcessIdentity {
   pid: number;
   startTime: string;
+  bootId: string;
 }
 
 export interface EngineIdentity extends ProcessIdentity {
@@ -38,7 +40,6 @@ export interface TaskRecord {
   createdAt: number;
   updatedAt: number;
   launchDeadline: number;
-  launchToken: string;
   runnerIdentity?: ProcessIdentity | null;
   engineIdentity?: EngineIdentity | null;
   lastEventAt?: number | null;
@@ -49,25 +50,41 @@ export interface TaskRecord {
   reason?: string;
 }
 
-export type TaskPatch = Partial<Omit<TaskRecord, "id" | "createdAt" | "updatedAt" | "launchToken">>;
+export type TaskPatch = Partial<Omit<TaskRecord, "id" | "createdAt" | "updatedAt">>;
 
 export interface UpdateOptions {
   /** Refuse any write, including same-status metadata, when the record is terminal at the read. */
   unlessTerminal?: boolean;
+  /** Refuse the write unless the record read inside the lock satisfies this. */
+  expect?: (record: TaskRecord) => boolean;
+  /** How long to wait for the record lock before throwing. */
+  waitSeconds?: number;
 }
 
-/** Thrown by update with unlessTerminal; carries the terminal record that was found. */
-export class TerminalTaskError extends Error {
-  record: TaskRecord;
-  constructor(record: TaskRecord) {
-    super(`task ${record.id} is already ${record.status}`);
-    this.name = "TerminalTaskError";
-    this.record = record;
-  }
-}
+/**
+ * A write either happened or was refused, and a caller that must tell "I wrote it"
+ * from "someone else owns it" needs that as a value rather than an exception. The
+ * record is always the one read inside the lock, so a refused caller can act on the
+ * state that beat it.
+ */
+export type UpdateResult =
+  | { applied: true; record: TaskRecord }
+  | { applied: false; record: TaskRecord; reason: "terminal" | "expect" };
 
 const statuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"]);
 const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
+// Design section 2, E1. Every other status change is a bug in a writer, not a race to
+// tolerate, so update throws for it. A patch that keeps the status is not a transition.
+const transitions: Record<TaskStatus, TaskStatus[]> = {
+  launching: ["running", "cancelling", "failed"],
+  running: ["stalled", "cancelling", "orphaned", "done", "failed"],
+  stalled: ["running", "cancelling", "orphaned", "done", "failed"],
+  orphaned: ["failed", "cancelled"],
+  cancelling: ["cancelled", "failed"],
+  done: [],
+  failed: [],
+  cancelled: [],
+};
 const patchFields = new Set<string>([
   "role", "briefHash", "cwd", "engine", "model", "status", "launchDeadline", "runnerIdentity", "engineIdentity",
   "lastEventAt", "exitCode", "resultPath", "logPath", "sessionId", "reason",
@@ -136,7 +153,6 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
     createdAt: now,
     updatedAt: now,
     launchDeadline: now + 30_000,
-    launchToken: randomBytes(32).toString("base64url"),
     resultPath: path.join(directory, `${id}.out`),
     logPath: path.join(directory, `${id}.ndjson`),
   };
@@ -167,22 +183,34 @@ export function readSpec(projectRoot: string, id: string): LaunchSpec {
   return spec;
 }
 
-export function update(projectRoot: string, id: string, patch: TaskPatch, now = Date.now(), options: UpdateOptions = {}): TaskRecord {
+export async function update(
+  projectRoot: string, id: string, patch: TaskPatch, now = Date.now(), options: UpdateOptions = {},
+): Promise<UpdateResult> {
   const file = recordPath(projectRoot, id);
-  // One read, one check, one rename: a writer passing unlessTerminal never
-  // renames over a record that was terminal at this read. Without the option,
-  // same-status metadata writes to terminal records remain permitted.
-  const current = readRecord(file);
-  if (options.unlessTerminal && terminalStatuses.has(current.status)) throw new TerminalTaskError(current);
-  const fields = Object.fromEntries(Object.entries(patch).filter(([key, value]) => patchFields.has(key) && value !== undefined)) as TaskPatch;
-  const status = fields.status ?? current.status;
-  if (!statuses.has(status)) throw new Error(`invalid task status: ${status}`);
-  if (terminalStatuses.has(current.status) && status !== current.status) {
-    throw new Error(`cannot change terminal task ${id} from ${current.status} to ${status}`);
+  // One read, one check, one rename, all inside the record lock. The lock is what makes
+  // the check mean anything: a predicate without cross-process exclusion still
+  // interleaves, so a stale writer could overwrite a fresh one between the two.
+  const lock = await acquire(lockPath(projectRoot, recordLockName(id)), {
+    operation: `update task ${id}`, waitSeconds: options.waitSeconds,
+  });
+  try {
+    const current = readRecord(file);
+    // Terminal first, so a terminal record is always reason "terminal".
+    if (options.unlessTerminal && terminalStatuses.has(current.status)) return { applied: false, record: current, reason: "terminal" };
+    if (options.expect && !options.expect(current)) return { applied: false, record: current, reason: "expect" };
+    const fields = Object.fromEntries(Object.entries(patch).filter(([key, value]) => patchFields.has(key) && value !== undefined)) as TaskPatch;
+    const status = fields.status ?? current.status;
+    if (!statuses.has(status)) throw new Error(`invalid task status: ${status}`);
+    if (status !== current.status && !transitions[current.status].includes(status)) {
+      const kind = terminalStatuses.has(current.status) ? "terminal task" : "task";
+      throw new Error(`cannot change ${kind} ${id} from ${current.status} to ${status}`);
+    }
+    const record: TaskRecord = { ...current, ...fields, status, updatedAt: now };
+    writeRecord(file, record);
+    return { applied: true, record };
+  } finally {
+    await lock.release();
   }
-  const record: TaskRecord = { ...current, ...fields, status, updatedAt: now };
-  writeRecord(file, record);
-  return record;
 }
 
 export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
@@ -211,13 +239,18 @@ export function readProcessStat(pid: number): { startTime: string; pgid: number;
   return { startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0] };
 }
 
+// A pid and start time from an earlier boot can collide with a live process, so an
+// identity is only ever compared within the boot that captured it. The boot id is
+// constant for the life of the kernel, so it is read once, here.
+export const currentBootId: string = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+
 export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
-  if (!identity) return false;
+  if (!identity || identity.bootId !== currentBootId) return false;
   const stat = readProcessStat(identity.pid);
   return stat !== null && stat.startTime === identity.startTime;
 }
 
-export function reconcile(projectRoot: string, now = Date.now()): TaskRecord[] {
+export async function reconcile(projectRoot: string, now = Date.now()): Promise<TaskRecord[]> {
   const changed: TaskRecord[] = [];
   for (const record of list(projectRoot)) {
     let patch: TaskPatch | undefined;
@@ -229,12 +262,10 @@ export function reconcile(projectRoot: string, now = Date.now()): TaskRecord[] {
         : { status: "failed", reason: "runner lost" };
     }
     if (!patch) continue;
-    try {
-      changed.push(update(projectRoot, record.id, patch, now, { unlessTerminal: true }));
-    } catch (error) {
-      // Settled by another writer between the listing and this write: not changed.
-      if (!(error instanceof TerminalTaskError)) throw error;
-    }
+    // A record settled by another writer between the listing and this write is refused,
+    // and a refusal is not a change.
+    const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true });
+    if (result.applied) changed.push(result.record);
   }
   return changed;
 }

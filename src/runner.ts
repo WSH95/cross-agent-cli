@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { read, readSpec, TerminalTaskError, update } from "./ledger.ts";
-import type { EngineIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
+import { read, readSpec, update } from "./ledger.ts";
+import type { EngineIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { groupAlive, identityOf, killGroup } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
@@ -27,21 +27,21 @@ function run(projectRoot: string, id: string): void {
     fs.appendFileSync(diagnosticPath, `${new Date().toISOString()} ${text}\n`);
   }
 
-  // Every write is conditional inside the ledger: one read, one check, one rename.
-  // A refusal means someone else settled the task, and the record stays theirs.
-  function write(patch: TaskPatch): boolean {
+  // Every write is conditional inside the ledger: one read, one check, one rename, all
+  // under the record lock. A refusal carries the record that beat this one, so a caller
+  // can tell "I wrote it" from "someone else owns it" and act on what it found.
+  async function write(patch: TaskPatch, options: UpdateOptions = { unlessTerminal: true }): Promise<UpdateResult> {
     try {
-      record = update(projectRoot, id, patch, Date.now(), { unlessTerminal: true });
-      return true;
+      const result = await update(projectRoot, id, patch, Date.now(), options);
+      if (result.applied) record = result.record;
+      else log(`refused ${result.reason}: task ${id} is ${result.record.status}`);
+      return result;
     } catch (error) {
-      if (error instanceof TerminalTaskError) {
-        log(error.message);
-        return false;
-      }
       // A write that failed for another reason may still have lost to a settlement.
-      if (terminal(read(projectRoot, id))) {
+      const current = read(projectRoot, id);
+      if (terminal(current)) {
         log(error);
-        return false;
+        return { applied: false, record: current, reason: "terminal" };
       }
       throw error;
     }
@@ -95,7 +95,7 @@ function run(projectRoot: string, id: string): void {
     clearInterval(activity);
     void (async () => {
       if (error !== undefined) log(error);
-      if (kind === "cancel" && !write({ status: "cancelling" })) kind = "external";
+      if (kind === "cancel" && !(await write({ status: "cancelling" })).applied) kind = "external";
       await stopEngine(kind === "cancel" ? 5000 : 0);
       if (kind !== "external") {
         const hasResult = outcome?.events.some((event) => event.kind === "result")
@@ -106,12 +106,13 @@ function run(projectRoot: string, id: string): void {
           : outcome?.events.findLast((event) => event.kind === "error")?.text
             ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
               : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
-        if (!write({
+        const settled = await write({
           status, exitCode: outcome?.exitCode ?? null, sessionId: outcome?.sessionId ?? null,
           resultPath: record.resultPath, logPath: record.logPath,
           lastEventAt: outcome?.lastEventAt ?? handle?.lastEventAt ?? null,
           ...(status === "failed" ? { reason } : {}),
-        })) kind = "external";
+        });
+        if (!settled.applied) kind = "external";
       }
       log(kind === "external" ? "someone else settled the task" : `settled ${record.status}`);
       process.exit(0);
@@ -141,18 +142,18 @@ function run(projectRoot: string, id: string): void {
     engine = { ...engineIdentity, pgid: handle.pid };
     // No await between spawn and this atomic acknowledgement. Even an immediate
     // engine exit is not handled until both identities have reached the ledger.
-    if (!write({ status: "running", runnerIdentity, engineIdentity: engine, lastEventAt: handle.lastEventAt })) {
-      return settle("external");
-    }
+    const acknowledged = await write({ status: "running", runnerIdentity, engineIdentity: engine, lastEventAt: handle.lastEventAt });
+    if (!acknowledged.applied) return settle("external");
     let persistedEvent = handle.lastEventAt;
+    let inFlight = false;
     activity = setInterval(() => {
-      try {
-        const latest = handle!.lastEventAt;
-        if (latest !== persistedEvent) {
-          if (!write({ lastEventAt: latest })) return settle("external");
-          persistedEvent = latest;
-        }
-      } catch (error) { settle("failed", error); }
+      const latest = handle!.lastEventAt;
+      if (inFlight || latest === persistedEvent) return;
+      inFlight = true;
+      void write({ lastEventAt: latest }).then((result) => {
+        if (!result.applied) return settle("external");
+        persistedEvent = latest;
+      }).catch((error) => settle("failed", error)).finally(() => { inFlight = false; });
     }, 2000);
   })().catch((error) => {
     if (!record) void fatal(error);

@@ -9,12 +9,36 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ledger from "../src/ledger.ts";
-import type { EngineIdentity, LaunchSpec, TaskRecord } from "../src/ledger.ts";
+import type { EngineIdentity, LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 const fixtures = path.join(worktree, "tests", "fixtures");
 const fake = path.join(fixtures, "fake-engine.mjs");
 const terminal = (record: TaskRecord) => ["done", "failed", "cancelled"].includes(record.status);
+
+/** ledger.update, asserting it applied, for callers that only want the new record. */
+async function applied(result: Promise<UpdateResult>): Promise<TaskRecord> {
+  const value = await result;
+  assert.equal(value.applied, true, `update was refused: ${JSON.stringify(value)}`);
+  return value.record;
+}
+
+// Design section 2, E1: only some status changes are legal, so a test that wants a
+// record in a given state walks there the way a real writer would.
+const routes: Record<string, TaskStatus[]> = {
+  running: ["running"], orphaned: ["running", "orphaned"], cancelling: ["cancelling"],
+  done: ["running", "done"], failed: ["failed"], cancelled: ["cancelling", "cancelled"],
+};
+
+/** Another writer settling or moving a record, through legal transitions only. */
+async function writeAs(root: string, id: string, status: TaskStatus, patch: TaskPatch = {}): Promise<TaskRecord> {
+  const steps = routes[status] ?? [status];
+  let record: TaskRecord | undefined;
+  for (const [index, step] of steps.entries()) {
+    record = await applied(ledger.update(root, id, index === steps.length - 1 ? { status: step, ...patch } : { status: step }));
+  }
+  return record!;
+}
 
 async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
   const deadline = Date.now() + timeout;
@@ -121,35 +145,49 @@ if (env.HOLD === "1") {
 }
 await import(${JSON.stringify(pathToFileURL(fake).href)});
 `);
-  // A second writer using the public ledger API from its own process. It writes
-  // the marker at the moment it calls update, then records how update answered.
+  // A second writer using the public ledger API from its own process. It writes its
+  // marker on entry, optionally waits for a gate so two of them contend, then records
+  // what update answered. The outcome file is renamed into place so a reader never
+  // sees half of it.
   fs.writeFileSync(competitorScript, `
 import fs from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import * as ledger from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "ledger.ts")).href)};
-const [root, id, patch, now, marker, outcome] = process.argv.slice(2);
+const [root, id, patch, now, marker, outcome, expected, gate] = process.argv.slice(2);
 if (marker) fs.writeFileSync(marker, String(Date.now()));
+if (gate) while (!fs.existsSync(gate)) await delay(5);
 let result;
 try {
-  result = { outcome: "ok", record: ledger.update(root, id, JSON.parse(patch), Number(now), { unlessTerminal: true }) };
+  result = await ledger.update(root, id, JSON.parse(patch), Number(now), expected
+    ? { expect: (record) => record.status === expected }
+    : { unlessTerminal: true });
 } catch (error) {
-  const refused = typeof ledger.TerminalTaskError === "function" && error instanceof ledger.TerminalTaskError;
-  result = { outcome: refused ? "TerminalTaskError" : String(error), record: error.record };
+  result = { error: String(error) };
 }
-fs.writeFileSync(outcome, JSON.stringify(result));
+fs.writeFileSync(outcome + ".tmp", JSON.stringify(result));
+fs.renameSync(outcome + ".tmp", outcome);
 `);
   fs.writeFileSync(adapterModule, `
 import fs from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 const target = ${JSON.stringify(recordFile)};
 const audit = ${JSON.stringify(auditFile)};
 const terminal = (record) => ["done", "failed", "cancelled"].includes(record.status);
+const args = (patch, now, marker) => [
+  ${JSON.stringify(competitorScript)}, ${JSON.stringify(root)}, ${JSON.stringify(record.id)},
+  JSON.stringify(patch), String(now), marker, ${JSON.stringify(outcomeFile)},
+];
+const stdio = () => ["ignore", "ignore", fs.openSync(${JSON.stringify(path.join(root, "competitor.err"))}, "a")];
+// Blocking: the competitor's write lands before this process writes anything more.
 function compete(patch, now, marker) {
-  const result = spawnSync(process.execPath, [
-    ${JSON.stringify(competitorScript)}, ${JSON.stringify(root)}, ${JSON.stringify(record.id)},
-    JSON.stringify(patch), String(now), marker, ${JSON.stringify(outcomeFile)},
-  ], { stdio: ["ignore", "ignore", fs.openSync(${JSON.stringify(path.join(root, "competitor.err"))}, "a")] });
+  const result = spawnSync(process.execPath, args(patch, now, marker), { stdio: stdio() });
   if (result.status !== 0) throw new Error("competitor exited " + result.status);
+}
+// Non-blocking: the competitor starts here but takes the record lock only once this
+// process releases it, so waiting for it inside the lock would deadlock both.
+function competeLater(patch, now, marker) {
+  spawn(process.execPath, args(patch, now, marker), { stdio: stdio(), detached: true }).unref();
 }
 const rename = fs.renameSync;
 fs.renameSync = function(from, to) {
@@ -165,7 +203,7 @@ fs.renameSync = function(from, to) {
   }` : ""}
   const result = rename(from, to);
   fs.appendFileSync(audit, JSON.stringify({ at: Date.now(), record }) + "\\n");
-  ${options.competitor === "at-write" ? `if (terminal(record)) compete({ status: "done", reason: "competitor" }, 456, ${JSON.stringify(markers.atWrite)});` : ""}
+  ${options.competitor === "at-write" ? `if (terminal(record)) competeLater({ status: "done", reason: "competitor" }, 456, ${JSON.stringify(markers.atWrite)});` : ""}
   return result;
 };
 ${options.delayedImport ? `fs.writeFileSync(${JSON.stringify(importReady)}, "ready");
@@ -231,7 +269,18 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
       () => fs.existsSync(descendantFile) ? JSON.parse(fs.readFileSync(descendantFile, "utf8")) as EngineIdentity & { sid: number } : null,
       (identity) => identity !== null,
     ).then((identity) => identity!),
-    outcome: () => JSON.parse(fs.readFileSync(outcomeFile, "utf8")) as { outcome: string; record?: TaskRecord },
+    outcome: async (file = outcomeFile) => JSON.parse(await poll(
+      () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""),
+      (text) => text.length > 0,
+    )) as UpdateResult | { error: string },
+    competitor(name: string, patch: TaskPatch, at: number, expected?: TaskStatus, gate?: string) {
+      const marker = path.join(root, `${name}.marker`);
+      const outcome = path.join(root, `${name}.outcome.json`);
+      const child = spawn(process.execPath, [
+        competitorScript, root, record.id, JSON.stringify(patch), String(at), marker, outcome, expected ?? "", gate ?? "",
+      ], { stdio: ["ignore", "ignore", fs.openSync(path.join(root, "competitor.err"), "a")] });
+      return { tracked: track(child), marker, outcome };
+    },
     runnerLog: () => fs.readFileSync(path.join(path.dirname(recordFile), `${record.id}.runner.log`), "utf8"),
     async cleanup() {
       const tracked = new Map<number, EngineIdentity>();
@@ -495,7 +544,7 @@ async function orphan(h: ReturnType<typeof harness>, script: string, env: Record
   child.child.kill("SIGKILL");
   await poll(() => child.closed, Boolean);
   assert.equal(living(running.engineIdentity!), true);
-  assert.equal(ledger.reconcile(h.root)[0]?.status, "orphaned");
+  assert.equal((await ledger.reconcile(h.root))[0]?.status, "orphaned");
   return running.engineIdentity!;
 }
 
@@ -606,9 +655,9 @@ test("orphan cleanup escalates after two seconds and returns only changed record
   try {
     const identity = await orphan(h, "stall-ignore-term");
     const stale = ledger.create(h.root, h.spec);
-    ledger.update(h.root, stale.id, { status: "orphaned", engineIdentity: { ...identity, startTime: "0" } });
+    await writeAs(h.root, stale.id, "orphaned", { engineIdentity: { ...identity, startTime: "0" } });
     const settled = ledger.create(h.root, h.spec);
-    ledger.update(h.root, settled.id, { status: "cancelled", engineIdentity: identity });
+    await writeAs(h.root, settled.id, "cancelled", { engineIdentity: identity });
     const before = Date.now();
     cleanup = terminateOrphans(h.root);
     await delay(150);
@@ -682,20 +731,22 @@ test("SIGTERM racing normal exit produces exactly one terminal write", async () 
   }
 });
 
-test("a competitor that reads after the runner's terminal rename is refused", async () => {
+test("a competitor that starts inside the runner's terminal write is refused", async () => {
   const h = harness({ competitor: "at-write" });
   try {
     const child = h.start();
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
-    assert.ok(fs.existsSync(h.markers.atWrite), "the competitor called update after the runner's terminal rename");
-    const outcome = h.outcome();
-    assert.equal(outcome.outcome, "TerminalTaskError");
+    // The competitor started while the runner held the record lock, so its own read
+    // could only happen after the runner released it, and by then the record was terminal.
+    const outcome = await h.outcome();
+    assert.ok(fs.existsSync(h.markers.atWrite), "the competitor started at the runner's terminal rename");
     const writes = h.audit().filter(({ record }) => terminal(record));
     assert.equal(writes.length, 1);
     assert.equal(writes[0].record.status, "done");
     assert.deepEqual(h.read(), writes[0].record, "the record is the runner's write; the competitor changed nothing");
-    assert.deepEqual(outcome.record, writes[0].record, "the refusal carries the record the competitor found");
+    assert.deepEqual(outcome, { applied: false, reason: "terminal", record: writes[0].record },
+      "the refusal carries the record the competitor found");
   } finally { await h.cleanup(); }
 });
 
@@ -707,10 +758,9 @@ test("the runner never renames over a record that was terminal at its read", asy
     assert.equal(child.code, 0);
     assert.ok(fs.existsSync(h.markers.beforeWrite), "the competitor settled before the runner's terminal write");
     assert.match(fs.readFileSync(h.markers.beforeWrite, "utf8"), /^\d+$/, "the competitor itself wrote the marker when it called update");
-    const outcome = h.outcome();
-    assert.equal(outcome.outcome, "ok");
+    const outcome = await h.outcome();
     const final = h.read();
-    assert.deepEqual(final, outcome.record);
+    assert.deepEqual(outcome, { applied: true, record: final });
     assert.equal(final.status, "done");
     assert.equal(final.reason, "external settlement");
     assert.equal(final.updatedAt, 123);
@@ -727,7 +777,7 @@ test("an activity write after an external settlement is refused and the runner e
     const child = h.start({ env: { ...h.spec.env, HOLD: "1", ACTIVITY_AFTER: activityRelease } });
     const running = await poll(h.read, (record) => record.status === "running");
     assert.equal(running.lastEventAt, null);
-    const external = ledger.update(h.root, h.record.id, { status: "failed", reason: "external settlement" });
+    const external = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
     fs.writeFileSync(activityRelease, "emit the first activity event now");
     await poll(() => child.closed, Boolean, 8000);
     assert.equal(child.code, 0);
@@ -748,11 +798,11 @@ test("already terminal records remain unchanged and runner exits zero", async (t
     const h = harness({ delayedImport: race === "delayed import", race });
     try {
       let expected: TaskRecord | undefined;
-      if (race === "startup") expected = ledger.update(h.root, h.record.id, { status: "done", reason: "external settlement" });
+      if (race === "startup") expected = await writeAs(h.root, h.record.id, "done", { reason: "external settlement" });
       const child = h.start();
       if (race === "delayed import") {
         await poll(() => fs.existsSync(h.importReady), Boolean);
-        expected = ledger.update(h.root, h.record.id, { status: "cancelled", reason: "external settlement" });
+        expected = await writeAs(h.root, h.record.id, "cancelled", { reason: "external settlement" });
         fs.writeFileSync(h.importRelease, "go");
       }
       await poll(() => child.closed, Boolean);
@@ -832,7 +882,7 @@ test("orphan cleanup preserves a record settled during its grace period", async 
   try {
     const identity = await orphan(h, "stall-ignore-term");
     cleanup = terminateOrphans(h.root);
-    const settled = ledger.update(h.root, h.record.id, { status: "failed", reason: "external settlement" });
+    const settled = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
     assert.deepEqual(await cleanup, []);
     assert.deepEqual(h.read(), settled);
     assert.equal(living(identity), false);

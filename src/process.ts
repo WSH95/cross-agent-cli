@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
-import { list, readProcessStat, TerminalTaskError, update } from "./ledger.ts";
+import { currentBootId, list, readProcessStat, update } from "./ledger.ts";
 import type { EngineIdentity, ProcessIdentity, TaskRecord } from "./ledger.ts";
 
 export function identityOf(pid: number): ProcessIdentity | null {
   const stat = readProcessStat(pid);
-  return stat && /^\d+$/.test(stat.startTime) ? { pid, startTime: stat.startTime } : null;
+  return stat && /^\d+$/.test(stat.startTime) ? { pid, startTime: stat.startTime, bootId: currentBootId } : null;
 }
 
 const live = (state: string) => state !== "Z" && state !== "X";
@@ -81,12 +81,9 @@ export async function terminateOrphans(projectRoot: string): Promise<TaskRecord[
         if (!await waitForGroup(identity, 500)) throw new Error(`engine group ${identity.pgid} did not terminate`);
       }
     }
-    try {
-      changed.push(update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true }));
-    } catch (error) {
-      // Settled by another writer since the listing: not changed.
-      if (!(error instanceof TerminalTaskError)) throw error;
-    }
+    // A record settled by another writer since the listing is refused: not changed.
+    const result = await update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true });
+    if (result.applied) changed.push(result.record);
   }
   return changed;
 }

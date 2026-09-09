@@ -5,11 +5,37 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, reconcile, isProcessAlive, readProcessStat, TerminalTaskError } from "../src/ledger.ts";
-import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus } from "../src/ledger.ts";
+import { create, read, update, list, reconcile, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
+import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
+import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
+
+// Design section 2, E1: every status change update may write. Anything else is a bug
+// in a writer, not a race to tolerate, so update throws instead of refusing.
+const legalTransitions: Record<TaskStatus, TaskStatus[]> = {
+  launching: ["running", "cancelling", "failed"],
+  running: ["stalled", "cancelling", "orphaned", "done", "failed"],
+  stalled: ["running", "cancelling", "orphaned", "done", "failed"],
+  orphaned: ["failed", "cancelled"],
+  cancelling: ["cancelled", "failed"],
+  done: [],
+  failed: [],
+  cancelled: [],
+};
+
+// One legal path from launching to each status, so a test can start anywhere.
+const routes: Record<TaskStatus, TaskStatus[]> = {
+  launching: [],
+  running: ["running"],
+  stalled: ["running", "stalled"],
+  orphaned: ["running", "orphaned"],
+  cancelling: ["cancelling"],
+  done: ["running", "done"],
+  failed: ["failed"],
+  cancelled: ["cancelling", "cancelled"],
+};
 
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-ledger-"));
@@ -25,10 +51,14 @@ function tasks(root: string): string {
   return path.join(root, ".cross-agent", "tasks");
 }
 
+function bootId(): string {
+  return fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+}
+
 function liveIdentity(): EngineIdentity {
   const stat = fs.readFileSync(`/proc/${process.pid}/stat`, "utf8");
   const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
-  return { pid: process.pid, startTime: fields[19], pgid: Number(fields[2]) };
+  return { pid: process.pid, startTime: fields[19], pgid: Number(fields[2]), bootId: bootId() };
 }
 
 function deadIdentity(): EngineIdentity {
@@ -36,13 +66,26 @@ function deadIdentity(): EngineIdentity {
   return { ...live, startTime: String(BigInt(live.startTime) + 1n) };
 }
 
+/** update, asserting it applied, for the many callers that only want the new record. */
+async function change(root: string, id: string, patch: TaskPatch, at?: number, options?: UpdateOptions): Promise<TaskRecord> {
+  const result = await update(root, id, patch, at, options);
+  assert.equal(result.applied, true, `update was refused: ${JSON.stringify(result)}`);
+  return result.record;
+}
+
+/** A record in the requested status, reached only through legal transitions. */
+async function started(root: string, status: TaskStatus, at = now): Promise<TaskRecord> {
+  let record = create(root, input(root), at);
+  for (const step of routes[status]) record = await change(root, record.id, { status: step }, at);
+  return record;
+}
+
 test("create persists a launching record that read returns", (t) => {
   const root = project(t);
   const data = input(root);
   const record = create(root, data, now);
   assert.match(record.id, /^[A-Za-z0-9_-]+$/);
-  assert.match(record.launchToken, /^[A-Za-z0-9_-]+$/);
-  assert.notEqual(record.launchToken, record.id);
+  assert.equal("launchToken" in record, false, "ownership is the runner lock, not a token in a readable file");
   assert.equal(record.role, data.role);
   assert.equal(record.briefHash, createHash("sha256").update(data.brief).digest("hex"));
   assert.equal(record.cwd, root);
@@ -64,51 +107,55 @@ test("create persists a launching record that read returns", (t) => {
 
   const second = create(path.relative(process.cwd(), root), { ...data, model: undefined }, now);
   assert.notEqual(second.id, record.id);
-  assert.notEqual(second.launchToken, record.launchToken);
   assert.equal(path.isAbsolute(second.resultPath), true);
   assert.equal(path.isAbsolute(second.logPath), true);
   assert.deepEqual(read(root, second.id), second);
 });
 
-test("update merges fields and advances updatedAt", (t) => {
+test("update merges fields, advances updatedAt, and reports that it applied", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
   const patch: TaskPatch = {
     status: "running", runnerIdentity: liveIdentity(), engineIdentity: liveIdentity(),
     lastEventAt: now + 10, exitCode: null, sessionId: "engine-session",
   };
-  const changed = update(root, record.id, patch, now + 20);
-  assert.deepEqual(changed, { ...record, ...patch, updatedAt: now + 20 });
+  const changed = { ...record, ...patch, updatedAt: now + 20 };
+  assert.deepEqual(await update(root, record.id, patch, now + 20), { applied: true, record: changed });
   assert.deepEqual(read(root, record.id), changed);
 
-  const protectedFields = { id: "replacement", createdAt: 0, updatedAt: 0, launchToken: "replacement", reason: "metadata" };
-  const metadata = update(root, record.id, protectedFields, now + 30);
+  const protectedFields = { id: "replacement", createdAt: 0, updatedAt: 0, reason: "metadata" };
+  const metadata = await change(root, record.id, protectedFields, now + 30);
   assert.deepEqual(metadata, { ...changed, reason: "metadata", updatedAt: now + 30 });
   assert.equal(fs.existsSync(path.join(tasks(root), "replacement.json")), false);
 });
 
-test("update refuses status changes from terminal records", (t) => {
+test("update writes only the legal status transitions and throws on the rest", async (t) => {
   const root = project(t);
-  for (const terminal of ["done", "failed", "cancelled"] as const) {
-    const record = create(root, input(root), now);
-    const settled = update(root, record.id, { status: terminal }, now + 1);
-    for (const status of statuses.filter((status) => status !== terminal)) {
-      assert.throws(() => update(root, record.id, { status }, now + 2), /terminal/i);
-      assert.deepEqual(read(root, record.id), settled);
+  for (const from of statuses) {
+    for (const to of statuses) {
+      const record = await started(root, from, now);
+      const before = read(root, record.id);
+      assert.equal(before.status, from);
+      if (to === from || legalTransitions[from].includes(to)) {
+        const after = await change(root, record.id, { status: to, reason: "moved" }, now + 5);
+        assert.deepEqual(after, { ...before, status: to, reason: "moved", updatedAt: now + 5 });
+        continue;
+      }
+      await assert.rejects(
+        update(root, record.id, { status: to }, now + 5),
+        (error: Error) => new RegExp(`cannot change.*task .* from ${from} to ${to}`).test(error.message)
+          && (["done", "failed", "cancelled"].includes(from) ? /terminal/.test(error.message) : true),
+      );
+      assert.deepEqual(read(root, record.id), before, "a refused transition leaves the record alone");
     }
-    const metadata = update(root, record.id, { status: terminal, exitCode: 0 }, now + 3);
-    assert.equal(metadata.status, terminal);
-    assert.equal(metadata.exitCode, 0);
-    assert.equal(metadata.updatedAt, now + 3);
-    assert.equal(update(root, record.id, { status: undefined, sessionId: "finished" }, now + 4).status, terminal);
   }
 });
 
-test("update refuses same-status and metadata patches to terminal records when unlessTerminal is set", (t) => {
+test("update refuses every patch to a terminal record when unlessTerminal is set", async (t) => {
   const root = project(t);
   for (const terminal of ["done", "failed", "cancelled"] as const) {
-    const record = create(root, input(root), now);
-    const settled = update(root, record.id, { status: terminal, reason: "settled" }, now + 1);
+    const record = await started(root, terminal, now);
+    const settled = await change(root, record.id, { reason: "settled" }, now + 1);
     const file = path.join(tasks(root), `${record.id}.json`);
     const bytes = fs.readFileSync(file);
     const entries = fs.readdirSync(tasks(root));
@@ -119,10 +166,10 @@ test("update refuses same-status and metadata patches to terminal records when u
       ...statuses.filter((status) => status !== terminal).map((status) => ({ status })),
     ];
     for (const patch of patches) {
-      assert.throws(
-        () => update(root, record.id, patch, now + 2, { unlessTerminal: true }),
-        (error: unknown) => error instanceof TerminalTaskError && error.record.id === record.id
-          && assert.deepEqual(error.record, settled) === undefined && /already/.test(error.message),
+      assert.deepEqual(
+        await update(root, record.id, patch, now + 2, { unlessTerminal: true }),
+        { applied: false, record: settled, reason: "terminal" },
+        "an illegal transition is refused, not thrown, once the record is terminal",
       );
       assert.deepEqual(fs.readFileSync(file), bytes, "the terminal record's bytes are untouched");
     }
@@ -131,30 +178,83 @@ test("update refuses same-status and metadata patches to terminal records when u
   }
 
   const active = create(root, input(root), now);
-  const running = update(root, active.id, { status: "running", lastEventAt: now + 1 }, now + 1, { unlessTerminal: true });
+  const running = await change(root, active.id, { status: "running", lastEventAt: now + 1 }, now + 1, { unlessTerminal: true });
   assert.deepEqual(running, { ...active, status: "running", lastEventAt: now + 1, updatedAt: now + 1 });
   assert.deepEqual(read(root, active.id), running);
-  const finished = update(root, active.id, { status: "done", exitCode: 0 }, now + 2, { unlessTerminal: true });
+  const finished = await change(root, active.id, { status: "done", exitCode: 0 }, now + 2, { unlessTerminal: true });
   assert.deepEqual(read(root, active.id), { ...running, status: "done", exitCode: 0, updatedAt: now + 2 });
-  assert.throws(() => update(root, active.id, { exitCode: 1 }, now + 3, { unlessTerminal: true }), TerminalTaskError);
+  assert.deepEqual(await update(root, active.id, { exitCode: 1 }, now + 3, { unlessTerminal: true }),
+    { applied: false, record: finished, reason: "terminal" });
   assert.deepEqual(read(root, active.id), finished);
-  assert.equal(update(root, active.id, { exitCode: 1 }, now + 4).exitCode, 1, "without the option, T1's same-status metadata permission stands");
+  assert.equal((await change(root, active.id, { exitCode: 1 }, now + 4)).exitCode, 1,
+    "without the option, T1's same-status metadata permission stands");
 });
 
-test("update rejects unknown statuses", (t) => {
+test("expect decides inside the lock, after the terminal check, and refuses without writing", async (t) => {
+  const root = project(t);
+  const record = await started(root, "running", now);
+  const running = read(root, record.id);
+  const seen: TaskRecord[] = [];
+  assert.deepEqual(
+    await update(root, record.id, { status: "done" }, now + 1, { expect: (current) => { seen.push(current); return false; } }),
+    { applied: false, record: running, reason: "expect" },
+  );
+  assert.deepEqual(seen, [running], "expect saw the record as read inside the lock");
+  assert.deepEqual(read(root, record.id), running, "a refused write changes nothing");
+
+  const stalled = await change(root, record.id, { status: "stalled" }, now + 2, { expect: (current) => current.status === "running" });
+  assert.equal(stalled.status, "stalled");
+
+  // The record a refusal carries is the state that beat the caller, so a caller can act on it.
+  const cancelling = await change(root, record.id, { status: "cancelling" }, now + 3);
+  const refused = await update(root, record.id, { status: "running" }, now + 4, { expect: (current) => current.status === "stalled" });
+  assert.deepEqual(refused, { applied: false, record: cancelling, reason: "expect" });
+
+  const cancelled = await change(root, record.id, { status: "cancelled" }, now + 5);
+  let evaluated = false;
+  assert.deepEqual(
+    await update(root, record.id, { reason: "late" }, now + 6, { unlessTerminal: true, expect: () => { evaluated = true; return true; } }),
+    { applied: false, record: cancelled, reason: "terminal" },
+    "the terminal check precedes expect, so a terminal record is always reason terminal",
+  );
+  assert.equal(evaluated, false);
+});
+
+test("update takes the record lock, refuses to guess when it cannot, and releases it", async (t) => {
+  const root = project(t);
+  const record = await started(root, "running", now);
+  const file = lockPath(root, recordLockName(record.id));
+  assert.equal(fs.existsSync(file), true, "the record lock was taken for the writes so far");
+  const holder = await acquire(file, { operation: "test holder", waitSeconds: 5 });
+  try {
+    // A caller that could not even look at the record must not read that as a refusal.
+    await assert.rejects(
+      update(root, record.id, { status: "done" }, now + 1, { waitSeconds: 0 }),
+      (error: Error) => error.message === `update task ${record.id}: lock ${file} is held by another process (waited 0s)`,
+    );
+    assert.equal(read(root, record.id).status, "running");
+  } finally {
+    await holder.release();
+  }
+  assert.equal((await change(root, record.id, { status: "done" }, now + 2)).status, "done");
+  const second = await acquire(file, { operation: "test holder", waitSeconds: 1 });
+  await second.release();
+});
+
+test("update rejects unknown statuses", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
-  assert.throws(() => update(root, record.id, { status: "unknown" as TaskStatus }, now + 1), /status/i);
+  await assert.rejects(update(root, record.id, { status: "unknown" as TaskStatus }, now + 1), /status/i);
   assert.deepEqual(read(root, record.id), record);
 });
 
-test("update atomically replaces the record and leaves no temporary files", (t) => {
+test("update atomically replaces the record and leaves no temporary files", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
   const file = path.join(tasks(root), `${record.id}.json`);
   const previous = fs.openSync(file, "r");
   try {
-    const changed = update(root, record.id, { status: "running" }, now + 1);
+    const changed = await change(root, record.id, { status: "running" }, now + 1);
     assert.deepEqual(JSON.parse(fs.readFileSync(previous, "utf8")), record, "the old inode stays intact");
     assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), changed);
     assert.deepEqual(fs.readdirSync(tasks(root)), [`${record.id}.json`]);
@@ -163,85 +263,89 @@ test("update atomically replaces the record and leaves no temporary files", (t) 
   }
 });
 
-test("failed atomic writes preserve the record and clean up temporary files", (t) => {
+test("failed atomic writes preserve the record, clean up, and still release the lock", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
   const failure = Object.assign(new Error("rename refused"), { code: "EACCES" });
-  t.mock.method(fs, "renameSync", () => { throw failure; });
-  assert.throws(() => update(root, record.id, { status: "running" }, now + 1), (error) => error === failure);
+  const mock = t.mock.method(fs, "renameSync", () => { throw failure; });
+  await assert.rejects(update(root, record.id, { status: "running" }, now + 1), (error) => error === failure);
   assert.deepEqual(read(root, record.id), record);
   assert.deepEqual(fs.readdirSync(tasks(root)), [`${record.id}.json`]);
+  mock.mock.restore();
+  assert.equal((await change(root, record.id, { status: "running" }, now + 2)).status, "running");
 });
 
-test("read and update reject IDs that could escape the task directory", (t) => {
+test("read and update reject IDs that could escape the task directory", async (t) => {
   const root = project(t);
   for (const id of ["", ".", "..", "../outside", "/absolute", "nested/id", "nested\\id", "id.json", "bad id"]) {
     assert.throws(() => read(root, id), /id/i);
-    assert.throws(() => update(root, id, { status: "running" }), /id/i);
+    await assert.rejects(update(root, id, { status: "running" }), /id/i);
   }
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent", "locks")), false, "no lock is named after an invalid id");
 });
 
-test("reconcile fails unacknowledged launches only after their deadline", (t) => {
+test("reconcile fails unacknowledged launches only after their deadline", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
-  assert.deepEqual(reconcile(root, record.launchDeadline - 1), []);
+  assert.deepEqual(await reconcile(root, record.launchDeadline - 1), []);
   assert.deepEqual(read(root, record.id), record);
-  assert.deepEqual(reconcile(root, record.launchDeadline), []);
+  assert.deepEqual(await reconcile(root, record.launchDeadline), []);
   assert.deepEqual(read(root, record.id), record);
 
   const after = record.launchDeadline + 1;
   const expected = { ...record, status: "failed", reason: "launch", updatedAt: after };
-  assert.deepEqual(reconcile(root, after), [expected]);
+  assert.deepEqual(await reconcile(root, after), [expected]);
   assert.deepEqual(read(root, record.id), expected);
-  assert.deepEqual(reconcile(root, after + 1), []);
+  assert.deepEqual(await reconcile(root, after + 1), []);
 });
 
-test("reconcile fails running and stalled tasks when both identities are dead", (t) => {
+test("reconcile fails running and stalled tasks when both identities are dead", async (t) => {
   const root = project(t);
   const dead = deadIdentity();
   for (const status of ["running", "stalled"] as const) {
     for (const identities of [{}, { runnerIdentity: dead, engineIdentity: dead }]) {
-      const record = create(root, input(root), now);
-      const active = update(root, record.id, { status, ...identities }, now + 1);
+      const record = await started(root, status, now);
+      const active = await change(root, record.id, identities, now + 1);
       const expected = { ...active, status: "failed", reason: "runner lost", updatedAt: now + 2 };
-      assert.deepEqual(reconcile(root, now + 2), [expected]);
+      assert.deepEqual(await reconcile(root, now + 2), [expected]);
       assert.deepEqual(read(root, record.id), expected);
     }
   }
 });
 
-test("reconcile skips a record settled between listing and its write", (t) => {
+test("reconcile skips a record settled between listing and its write", async (t) => {
   const root = project(t);
   const dead = deadIdentity();
-  const record = create(root, input(root), now);
-  const active = update(root, record.id, { status: "running", runnerIdentity: dead, engineIdentity: dead }, now + 1);
+  const record = await started(root, "running", now);
+  const active = await change(root, record.id, { runnerIdentity: dead, engineIdentity: dead }, now + 1);
   const file = path.join(tasks(root), `${record.id}.json`);
   const original = fs.readFileSync;
   let reads = 0;
-  let external: TaskRecord | undefined;
-  // The first read of this record is the listing; the second is the one inside
-  // update. A settlement landing between them must be seen by that second read.
+  const external: TaskRecord = { ...active, status: "failed", reason: "external settlement", updatedAt: now + 2 };
+  // The first read of this record is the listing; the second is the one update makes
+  // inside the record lock. A settlement landing between them must be seen by that
+  // second read. It is written here as another process would: whole file, one rename.
   const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
     if (target === file && ++reads === 2) {
       mock.mock.restore();
-      external = update(root, record.id, { status: "failed", reason: "external settlement" }, now + 2);
+      fs.writeFileSync(`${file}.external`, JSON.stringify(external, null, 2) + "\n");
+      fs.renameSync(`${file}.external`, file);
     }
     return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
   }) as typeof fs.readFileSync);
-  assert.deepEqual(reconcile(root, now + 3), []);
+  assert.deepEqual(await reconcile(root, now + 3), []);
   assert.equal(reads, 2);
-  assert.deepEqual(external, { ...active, status: "failed", reason: "external settlement", updatedAt: now + 2 });
   assert.deepEqual(read(root, record.id), external);
 });
 
-test("reconcile orphans running and stalled tasks with a dead runner and live engine", (t) => {
+test("reconcile orphans running and stalled tasks with a dead runner and live engine", async (t) => {
   const root = project(t);
   const engine = liveIdentity();
   for (const status of ["running", "stalled"] as const) {
-    const record = create(root, input(root), now);
-    const active = update(root, record.id, { status, runnerIdentity: deadIdentity(), engineIdentity: engine }, now + 1);
+    const record = await started(root, status, now);
+    const active = await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine }, now + 1);
     const expected = { ...active, status: "orphaned", updatedAt: now + 2 };
-    assert.deepEqual(reconcile(root, now + 2), [expected]);
+    assert.deepEqual(await reconcile(root, now + 2), [expected]);
     assert.deepEqual(read(root, record.id), expected);
     assert.equal(isProcessAlive(engine), true);
   }
@@ -250,9 +354,17 @@ test("reconcile orphans running and stalled tasks with a dead runner and live en
 test("process identity rejects missing processes and reused PIDs", () => {
   assert.equal(isProcessAlive(), false);
   assert.equal(isProcessAlive(null), false);
-  assert.equal(isProcessAlive({ pid: 2_147_483_647, startTime: "0" }), false);
+  assert.equal(isProcessAlive({ pid: 2_147_483_647, startTime: "0", bootId: bootId() }), false);
   assert.equal(isProcessAlive(deadIdentity()), false);
   assert.equal(isProcessAlive(liveIdentity()), true);
+});
+
+test("an identity from another boot is dead however well its pid and start time match", () => {
+  const live = liveIdentity();
+  assert.equal(currentBootId, bootId());
+  assert.equal(isProcessAlive({ ...live, bootId: "3a1e0e6c-0000-4000-8000-000000000000" }), false);
+  assert.equal(isProcessAlive({ pid: live.pid, startTime: live.startTime } as EngineIdentity), false,
+    "a record written before bootId existed is from another boot");
 });
 
 test("process stat reports the process group and session of a live process", () => {
@@ -268,37 +380,37 @@ test("process identity parses command names containing spaces and closing parent
   const startTime = "12345678901234567890";
   const fields = ["S", ...Array(18).fill("0"), startTime, "0"];
   t.mock.method(fs, "readFileSync", () => `123 (worker ) with (spaces)) ${fields.join(" ")}\n`);
-  assert.equal(isProcessAlive({ pid: 123, startTime }), true);
-  assert.equal(isProcessAlive({ pid: 123, startTime: "0" }), false);
+  assert.equal(isProcessAlive({ pid: 123, startTime, bootId: currentBootId }), true);
+  assert.equal(isProcessAlive({ pid: 123, startTime: "0", bootId: currentBootId }), false);
 });
 
 test("process identity propagates unexpected proc access errors", (t) => {
   const failure = Object.assign(new Error("proc read refused"), { code: "EACCES" });
   t.mock.method(fs, "readFileSync", () => { throw failure; });
-  assert.throws(() => isProcessAlive({ pid: process.pid, startTime: "0" }), (error) => error === failure);
+  assert.throws(() => isProcessAlive({ pid: process.pid, startTime: "0", bootId: currentBootId }), (error) => error === failure);
 });
 
-test("reconcile preserves live-runner tasks and all other states", (t) => {
+test("reconcile preserves live-runner tasks and all other states", async (t) => {
   const root = project(t);
   const live = liveIdentity();
   const dead = deadIdentity();
   for (const status of statuses) {
-    const record = create(root, input(root), now);
+    const record = await started(root, status, now);
     const runnerIdentity = status === "running" || status === "stalled" ? live : dead;
-    update(root, record.id, { status, runnerIdentity, engineIdentity: dead }, now + 1);
+    await change(root, record.id, { runnerIdentity, engineIdentity: dead }, now + 1);
   }
   const before = list(root);
-  assert.deepEqual(reconcile(root, now + 60_000), []);
+  assert.deepEqual(await reconcile(root, now + 60_000), []);
   assert.deepEqual(list(root), before);
 });
 
-test("list filters statuses, sorts newest first, and ignores output and temporary files", (t) => {
+test("list filters statuses, sorts newest first, and ignores output and temporary files", async (t) => {
   const root = project(t);
   assert.deepEqual(list(root), []);
   const oldest = create(root, input(root), now);
   const newest = create(root, input(root), now + 20);
   const middle = create(root, input(root), now + 10);
-  const running = update(root, oldest.id, { status: "running" }, now + 30);
+  const running = await change(root, oldest.id, { status: "running" }, now + 30);
   fs.writeFileSync(oldest.resultPath, "final output");
   fs.writeFileSync(oldest.logPath, "{\"event\":\"started\"}\n");
   fs.writeFileSync(path.join(tasks(root), `.${oldest.id}.pending.tmp`), "partial JSON");
@@ -310,7 +422,7 @@ test("list filters statuses, sorts newest first, and ignores output and temporar
   assert.deepEqual(list(root, "done"), []);
 });
 
-test("first ledger use appends each missing exclusion once", (t) => {
+test("first ledger use appends each missing exclusion once", async (t) => {
   for (const existing of [undefined, "", "# existing", "# existing\n", ".cross-agent/", ".worktrees/\n", ".cross-agent/\n.worktrees/\n", "# existing\r\n.cross-agent/\r\n"]) {
     const root = project(t);
     const exclude = path.join(root, ".git", "info", "exclude");
@@ -327,8 +439,8 @@ test("first ledger use appends each missing exclusion once", (t) => {
     }
     const record = create(root, input(root), now);
     read(root, record.id);
-    update(root, record.id, { status: "running" }, now + 1);
-    reconcile(root, now + 2);
+    await change(root, record.id, { status: "running" }, now + 1);
+    await reconcile(root, now + 2);
     assert.equal(fs.readFileSync(exclude, "utf8"), first);
   }
 });

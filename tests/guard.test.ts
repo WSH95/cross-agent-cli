@@ -27,7 +27,7 @@ function record(patch: Partial<TaskRecord> = {}): TaskRecord {
     id: "task-original", role: request.role, cwd: request.cwd, engine: "codex",
     briefHash: createHash("sha256").update(request.brief).digest("hex"),
     status: "done", createdAt: now - 2 * windowMs, updatedAt: now - 1,
-    launchDeadline: now - 2 * windowMs + 30_000, launchToken: "test-token",
+    launchDeadline: now - 2 * windowMs + 30_000,
     resultPath: "/projects/team/.cross-agent/tasks/task-original.out",
     logPath: "/projects/team/.cross-agent/tasks/task-original.ndjson",
     ...patch,
