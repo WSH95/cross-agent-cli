@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -58,7 +58,7 @@ function task(t: TestContext) {
     rmSync(cwd, { recursive: true, force: true });
   });
   const request: SpawnRequest = {
-    role: "implementer", brief: "complete the task", rolePrompt: "Implement the brief.", cwd,
+    role: "implementer", brief: "complete the task", rolePrompt: "Implement the brief.", cwd, engine: "claude",
     sandbox: { mode: "write", profile: "workspace-write" }, model: "test-model", effort: "high", sessionId: randomUUID(),
     denyTargets: ["claude", "codex", "grok"], env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "generic" },
     scratchDir: cwd, logPath: path.join(cwd, "task.ndjson"), resultPath: path.join(cwd, "task.out"),
@@ -207,13 +207,36 @@ test("unsupported sandbox refuses before planning or spawning", (t) => {
   // Every profile whose mode is not `off` is checked; the mode, not the engine's own
   // name for the profile, is what the pipeline reads (design section 3).
   for (const sandbox of [
-    { mode: "read-only", profile: "read-only" }, { mode: "read-only", profile: "strict" },
-    { mode: "write", profile: "workspace-write" }, { mode: "write", profile: "workspace" },
+    { mode: "read-only", profile: "read-only" }, { mode: "write", profile: "workspace-write" },
   ] as const) {
     assert.throws(() => spawnEngine(adapter, { ...request, sandbox }, {
       spawn: () => { assert.fail("must refuse before spawning"); },
     }), /claude.*missing sandbox dependency/);
   }
+  assert.equal(existsSync(request.logPath), false);
+  assert.equal(existsSync(request.resultPath), false);
+});
+
+test("a mode its engine's map contradicts is refused before anything else happens", (t) => {
+  const { request } = task(t);
+  const adapter: EngineAdapter = {
+    ...generic,
+    sandboxSupport: () => assert.fail("must refuse before the capability check"),
+    plan: () => assert.fail("must refuse before planning"),
+  };
+  const refuse = (patch: Partial<SpawnRequest>) => assert.throws(
+    () => spawnEngine(adapter, { ...request, ...patch }, { spawn: () => { assert.fail("must refuse before spawning"); } }),
+    /claude .*refused/,
+  );
+  // A request that calls a writable profile `off` would otherwise skip the capability
+  // check entirely; one that calls it read-only would free a workspace it can write to.
+  refuse({ sandbox: { mode: "off", profile: "workspace-write" } });
+  refuse({ sandbox: { mode: "read-only", profile: "workspace-write" } });
+  // A profile Claude does not declare has no mode to agree with.
+  refuse({ sandbox: { mode: "read-only", profile: "strict" } });
+  // And a spec whose engine is not the adapter module the runner imported: the map the
+  // mode is derived from would describe one engine while another builds the argv.
+  refuse({ engine: "grok", sandbox: { mode: "read-only", profile: "strict" } });
   assert.equal(existsSync(request.logPath), false);
   assert.equal(existsSync(request.resultPath), false);
 });
@@ -718,6 +741,9 @@ test("plan files are written, parents included, before the child is spawned", as
   }).result;
   assert.equal(spawned, 1);
   assert.equal(result.ok, true);
+  // A mount config or a role prompt is this task's alone; nothing else on the machine
+  // needs to read it.
+  for (const file of files) assert.equal(statSync(file.path).mode & 0o777, 0o600);
 });
 
 test("a plan file that cannot be written is a launch failure, and nothing is spawned", async (t) => {

@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import claude from "../../src/engines/claude.ts";
-import { adapterFor } from "../../src/engines/registry.ts";
+import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
 import type { EngineAdapter, SpawnRequest } from "../../src/engines/types.ts";
 
 // The deny list design section 3 builds at spawn: the three CLIs, a configured binary,
@@ -102,9 +102,25 @@ test("claude's sandbox support names the Linux prerequisites it cannot find (P1)
   assert.deepEqual(claude.sandboxSupport(), { ok: true });
 });
 
+test("sandboxFor pairs a profile with the mode claude gives it, and refuses any other", () => {
+  for (const [profile, mode] of Object.entries(claude.sandboxProfiles)) {
+    assert.deepEqual(sandboxFor("claude", profile), { mode, profile });
+  }
+  // Another engine's profile name, and names only Object.prototype carries.
+  for (const profile of ["strict", "workspace", "toString", ""]) {
+    assert.throws(() => sandboxFor("claude", profile), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes("claude"), error.message);
+      assert.ok(error.message.includes(JSON.stringify(profile)), error.message);
+      return true;
+    });
+  }
+});
+
 test("the claude parts T7 owns are declared and refuse to run", () => {
   const calls: Array<() => unknown> = [
     () => claude.plan({} as SpawnRequest), () => claude.parseLine("{}"),
+    // T7: delete the finish stub and this assertion — a line stream declares none.
     () => claude.finish!(""), () => claude.finalMessage([], null),
   ];
   for (const call of calls) assert.throws(call, /claude adapter: not implemented \(T7\/T8\/T9\)/);

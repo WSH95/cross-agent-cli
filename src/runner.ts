@@ -195,7 +195,9 @@ async function run(projectRoot: string, id: string): Promise<void> {
   void (async () => {
     record = read(projectRoot, id);
     if (isTerminal(record.status)) return settle("external");
-    const { engine: engineName, adapterModule, ...request } = readSpec(projectRoot, id);
+    // Only the adapter module is the runner's own; the engine stays in the request,
+    // which is what lets the pipeline check the module against the spec that named it.
+    const { adapterModule, ...request } = readSpec(projectRoot, id);
     const imported = await import(pathToFileURL(adapterModule).href);
     if (settling) return;
     if (isTerminal(read(projectRoot, id).status)) return settle("external");
@@ -209,7 +211,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
       log(`engine already running for task ${id}`);
       return process.exit(1);
     }
-    log(`launching ${engineName}`);
+    log(`launching ${request.engine}`);
     handle = spawnEngine(adapter, { ...request, resultPath: record.resultPath, logPath: record.logPath });
     void handle.result.then((result) => {
       outcome = result;

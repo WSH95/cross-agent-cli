@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { sandboxFor } from "./engines/registry.ts";
 import { isTerminal, readSpec, scan } from "./ledger.ts";
 import type { InvalidRecord, TaskRecord } from "./ledger.ts";
 
@@ -38,19 +39,26 @@ function canonicalPath(target: string): string {
 
 // The record carries no sandbox; the launch spec beside it does (design section 2). Only a
 // mode of `read-only` frees the workspace: `write` may write inside it, and `off` is the
-// least constrained task there is and may write anywhere. A spec that cannot be read, or
-// whose sandbox this build cannot read as a `{mode, profile}` pair, leaves the task's mode
-// unknown — and an unknown mode has never been shown to be read-only, so it holds the
-// workspace rather than silently letting a second writer in.
+// least constrained task there is and may write anywhere. The spec's own `mode` is a
+// claim, so the mode is re-derived from what the spec's engine says of the profile it
+// names, and both have to say read-only. Everything else holds the workspace: a spec that
+// cannot be read, one this build cannot read as a `{mode, profile}` pair, an engine no
+// adapter answers for, a profile that engine does not declare, and a pair whose two
+// halves disagree. None of those has ever been shown to be read-only, and letting a
+// second writer into a workspace on the strength of an unchecked label is the failure
+// this rule exists to prevent.
 function reservesWorkspace(projectRoot: string, record: TaskRecord): boolean {
-  let sandbox: unknown;
+  let carried: unknown;
+  let declared: string;
   try {
-    sandbox = readSpec(projectRoot, record.id).sandbox;
+    const spec = readSpec(projectRoot, record.id);
+    const sandbox = spec.sandbox as { mode?: unknown; profile: string };
+    carried = sandbox.mode;
+    declared = sandboxFor(spec.engine, sandbox.profile).mode;
   } catch {
     return true;
   }
-  const mode = sandbox !== null && typeof sandbox === "object" ? (sandbox as { mode?: unknown }).mode : undefined;
-  return mode !== "read-only";
+  return !(carried === "read-only" && declared === "read-only");
 }
 
 /** Every workspace an unsettled writable task holds, and every record that cannot be read. */

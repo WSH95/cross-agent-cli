@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from "node:child_process";
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { EngineAdapter, EngineEvent, SpawnRequest } from "./types.ts";
+import { sandboxFor } from "./registry.ts";
+import type { EngineAdapter, EngineEvent, SandboxMode, SpawnRequest } from "./types.ts";
 
 export interface SpawnResult {
   ok: boolean;
@@ -58,9 +59,25 @@ function lineBuffer(accept: (raw: Buffer) => void) {
 
 /** Capability refusals throw synchronously; process and output failures settle through result. */
 export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, options: SpawnOptions = {}): SpawnHandle {
-  // The mode, not the engine's own name for the profile: the pipeline knows no engine's
-  // vocabulary, and only a profile that maps to `off` may run without a sandbox.
-  if (request.sandbox.mode !== "off") {
+  // The request's mode is a claim; the engine's own map is the fact. A request that
+  // called a writable profile `off` would otherwise skip the check below entirely, so the
+  // two are compared before anything is planned or spawned. The spec's engine must also
+  // be the adapter module the runner imported, or the map the mode is derived from would
+  // describe one engine while another builds the argv.
+  if (request.engine !== adapter.name) {
+    throw new Error(`${adapter.name} spawn refused: the launch spec names engine ${JSON.stringify(request.engine)}`);
+  }
+  let declared: SandboxMode;
+  try {
+    declared = sandboxFor(request.engine, request.sandbox.profile).mode;
+  } catch (error) {
+    throw new Error(`${adapter.name} sandbox refused: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (declared !== request.sandbox.mode) {
+    throw new Error(`${adapter.name} sandbox refused: profile ${JSON.stringify(request.sandbox.profile)} is ${declared}, not ${request.sandbox.mode}`);
+  }
+  // Only a profile that maps to `off` may run without a sandbox.
+  if (declared !== "off") {
     const support = adapter.sandboxSupport();
     if (!support.ok) throw new Error(`${adapter.name} sandbox refused: ${support.reason}`);
   }
@@ -198,7 +215,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     // them in place, parents included, and invents no path of its own.
     for (const file of plan.files ?? []) {
       mkdirSync(path.dirname(file.path), { recursive: true });
-      writeFileSync(file.path, file.contents);
+      // A lead's mount config and a role prompt are this task's alone.
+      writeFileSync(file.path, file.contents, { mode: 0o600 });
     }
     log = openSync(request.logPath, "a");
     child = (options.spawn ?? spawn)(plan.bin, plan.argv, { cwd: plan.cwd, env: plan.env, detached: true });

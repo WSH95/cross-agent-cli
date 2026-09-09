@@ -1,5 +1,9 @@
-import type { EngineName } from "../config.ts";
-export type { EngineName };
+/**
+ * The engines this build has adapters for. It lives here, with the contract, so that the
+ * contract depends on nothing: `src/config.ts` reads these names, not the other way round.
+ */
+export const engineNames = ["claude", "codex", "grok"] as const;
+export type EngineName = typeof engineNames[number];
 
 /** What a profile means to the pipeline, whatever the engine calls it (design section 3). */
 export type SandboxMode = "read-only" | "write" | "off";
@@ -8,6 +12,7 @@ export type SandboxMode = "read-only" | "write" | "off";
 export interface LeadMountSpec {
   command: string;
   args: string[];
+  /** An adapter with no probed way to carry a server environment may refuse a non-empty one (Codex does). */
   env?: Record<string, string>;
 }
 
@@ -29,7 +34,13 @@ export interface SpawnRequest {
   brief: string;
   rolePrompt: string;
   cwd: string;
-  /** `profile` is the engine's own name for it; `mode` is what it means (`sandboxProfiles`). */
+  /** The engine this request is for, which must be the adapter that runs it. */
+  engine: EngineName;
+  /**
+   * `profile` is the engine's own name for it; `mode` is what `sandboxProfiles` says that
+   * profile means. The pair is a claim: both the pipeline and the reservation rule
+   * re-derive the mode from the engine's own map rather than trust what is carried here.
+   */
   sandbox: { mode: SandboxMode; profile: string };
   model?: string;
   effort?: string;
@@ -69,6 +80,12 @@ export interface EngineAdapter {
   sandboxSupport(): { ok: true } | { ok: false; reason: string };
   denyArgs(targets: readonly string[]): string[];
   exclusionArgs(): string[];
+  /**
+   * Called by this adapter's own `plan` when `request.lead` is set: `plan` folds `argv`
+   * into the spawn line and `files` into `SpawnPlan.files`, and still emits
+   * `exclusionArgs()` beside it — on Claude that flag, not the config file, is what makes
+   * the mount exclusive.
+   */
   leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount;
   plan(request: SpawnRequest): SpawnPlan;
   /** Receives one stdout line without its terminator; unknown lines return null. */

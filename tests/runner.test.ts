@@ -406,7 +406,8 @@ test("normal runner records both identities while running and finishes done with
     assert.deepEqual(done.runnerIdentity, running.runnerIdentity);
     assert.deepEqual(done.engineIdentity, running.engineIdentity);
     const request = JSON.parse(fs.readFileSync(path.join(h.root, "request.json"), "utf8"));
-    const { engine, adapterModule, ...expected } = { ...h.spec, env: { ...h.spec.env, HOLD: "1" } };
+    // Only the adapter module is the runner's own; the engine travels with the request.
+    const { adapterModule, ...expected } = { ...h.spec, env: { ...h.spec.env, HOLD: "1" } };
     assert.deepEqual(request, { ...expected, resultPath: done.resultPath, logPath: done.logPath });
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);

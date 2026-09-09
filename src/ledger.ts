@@ -17,7 +17,7 @@ export interface EngineIdentity extends ProcessIdentity {
 }
 
 export interface LaunchSpec extends Omit<SpawnRequest, "logPath" | "resultPath"> {
-  engine: string;
+  /** `engine` comes from the request itself, which is what the pipeline checks its adapter against. */
   adapterModule: string;
 }
 

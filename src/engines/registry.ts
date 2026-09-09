@@ -1,7 +1,7 @@
 import claude from "./claude.ts";
 import codex from "./codex.ts";
 import grok from "./grok.ts";
-import type { EngineAdapter, EngineName } from "./types.ts";
+import type { EngineAdapter, EngineName, SandboxMode } from "./types.ts";
 
 /**
  * The built-in adapter table: one file plus one entry per engine. Config-declared adapter
@@ -24,4 +24,19 @@ export const sandboxProfiles: readonly SandboxProfile[] =
 export function adapterFor(engine: EngineName): EngineAdapter {
   if (!Object.hasOwn(adapters, engine)) throw new Error(`no built-in adapter for engine ${JSON.stringify(engine)}`);
   return adapters[engine];
+}
+
+/**
+ * The one place a `{mode, profile}` pair is constructed. A profile means nothing apart
+ * from the engine that declares it, so the mode is never written by hand: everything that
+ * needs one asks here, and everything that is handed one re-derives it the same way
+ * (`src/engines/spawn.ts`, `src/reservation.ts`).
+ */
+export function sandboxFor(engine: EngineName, profile: string): { mode: SandboxMode; profile: string } {
+  const profiles = adapterFor(engine).sandboxProfiles;
+  // Own keys only: `toString` is on every object and is nobody's sandbox profile.
+  if (!Object.hasOwn(profiles, profile)) {
+    throw new Error(`engine ${engine} has no sandbox profile ${JSON.stringify(profile)}; it accepts ${Object.keys(profiles).join(" | ")}`);
+  }
+  return { mode: profiles[profile], profile };
 }

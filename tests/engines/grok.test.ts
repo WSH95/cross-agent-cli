@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import grok from "../../src/engines/grok.ts";
-import { adapterFor } from "../../src/engines/registry.ts";
+import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
 import type { EngineAdapter, SpawnRequest } from "../../src/engines/types.ts";
 
 const targets = Object.freeze([
@@ -62,9 +62,25 @@ test("grok's sandbox support reports the binary it cannot resolve", (t) => {
   assert.deepEqual(grok.sandboxSupport(), { ok: true });
 });
 
+test("sandboxFor pairs a profile with the mode grok gives it, and refuses any other", () => {
+  for (const [profile, mode] of Object.entries(grok.sandboxProfiles)) {
+    assert.deepEqual(sandboxFor("grok", profile), { mode, profile });
+  }
+  // Another engine's profile name, and names only Object.prototype carries.
+  for (const profile of ["workspace-write", "toString", ""]) {
+    assert.throws(() => sandboxFor("grok", profile), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes("grok"), error.message);
+      assert.ok(error.message.includes(JSON.stringify(profile)), error.message);
+      return true;
+    });
+  }
+});
+
 test("the grok parts T9 owns are declared and refuse to run", () => {
   const calls: Array<() => unknown> = [
     () => grok.plan({} as SpawnRequest), () => grok.parseLine("{}"),
+    // T9: delete the finish stub and this assertion — a line stream declares none.
     () => grok.finish!(""), () => grok.finalMessage([], null),
   ];
   for (const call of calls) assert.throws(call, /grok adapter: not implemented \(T7\/T8\/T9\)/);

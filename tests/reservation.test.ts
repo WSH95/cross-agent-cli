@@ -7,6 +7,8 @@ import path from "node:path";
 import { create, scan, update, writeSpec } from "../src/ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskStatus } from "../src/ledger.ts";
 import { reservations, reservedBy } from "../src/reservation.ts";
+import { adapters, sandboxFor } from "../src/engines/registry.ts";
+import type { EngineName } from "../src/engines/types.ts";
 
 const now = 1_000_000;
 
@@ -33,18 +35,20 @@ function project(t: TestContext): string {
   return root;
 }
 
-function launchSpec(sandbox: LaunchSpec["sandbox"]): LaunchSpec {
+function launchSpec(sandbox: LaunchSpec["sandbox"], engine: EngineName = "codex"): LaunchSpec {
   return {
     role: "implementer", brief: "Implement the reservation.", rolePrompt: "prompt", cwd: "/unused",
     sandbox, sessionId: "session", denyTargets: [], env: {}, scratchDir: "/unused",
-    engine: "codex", adapterModule: "/adapters/codex.ts",
+    engine, adapterModule: `/adapters/${engine}.ts`,
   };
 }
 
 /** A task at `status` on `cwd`, with the launch spec that says whether it may write. */
-async function task(root: string, cwd: string, status: TaskStatus, sandbox: LaunchSpec["sandbox"] | null): Promise<TaskRecord> {
-  const record = create(root, { role: "implementer", brief: `brief ${cwd} ${status}`, cwd, engine: "codex" }, now);
-  if (sandbox !== null) writeSpec(root, record.id, launchSpec(sandbox));
+async function task(
+  root: string, cwd: string, status: TaskStatus, sandbox: LaunchSpec["sandbox"] | null, engine: EngineName = "codex",
+): Promise<TaskRecord> {
+  const record = create(root, { role: "implementer", brief: `brief ${cwd} ${status}`, cwd, engine }, now);
+  if (sandbox !== null) writeSpec(root, record.id, launchSpec(sandbox, engine));
   let current = record;
   for (const step of routes[status]) {
     const result = await update(root, record.id, { status: step }, now + 1);
@@ -82,20 +86,40 @@ test("a writable task reserves its cwd for as long as it is unsettled", async (t
 
 test("every profile but the read-only ones reserves the workspace", async (t) => {
   const root = project(t);
-  // Every profile the three adapters declare, with the mode each maps to (design section
-  // 3). `off` is the least constrained task there is — no sandbox at all, so it can write
-  // anywhere — and it holds its workspace exactly as a workspace-write task does.
-  const profiles: LaunchSpec["sandbox"][] = [
-    { mode: "read-only", profile: "read-only" }, { mode: "read-only", profile: "strict" },
-    { mode: "write", profile: "workspace-write" }, { mode: "write", profile: "workspace" },
-    { mode: "off", profile: "off" },
-  ];
-  for (const sandbox of profiles) {
-    const cwd = workspace(root, `profile-${sandbox.profile}`);
-    const record = await task(root, cwd, "running", sandbox);
-    if (sandbox.mode === "read-only") assert.equal(reservedBy(root, cwd), null, `${sandbox.profile} may not write`);
-    else assert.deepEqual(reservedBy(root, cwd), record, `${sandbox.profile} may write`);
+  // Every profile every adapter declares, paired with its own engine. `off` is the least
+  // constrained task there is — no sandbox at all, so it can write anywhere — and it
+  // holds its workspace exactly as a workspace-write task does.
+  for (const [engine, adapter] of Object.entries(adapters)) {
+    for (const profile of Object.keys(adapter.sandboxProfiles)) {
+      const sandbox = sandboxFor(engine as EngineName, profile);
+      const cwd = workspace(root, `${engine}-${profile}`);
+      const record = await task(root, cwd, "running", sandbox, engine as EngineName);
+      if (sandbox.mode === "read-only") assert.equal(reservedBy(root, cwd), null, `${engine} ${profile} may not write`);
+      else assert.deepEqual(reservedBy(root, cwd), record, `${engine} ${profile} may write`);
+    }
   }
+});
+
+test("a mode the engine's own map contradicts holds the workspace", async (t) => {
+  const root = project(t);
+  // The spec is a claim, not a fact: what the engine does with the profile it names is
+  // the engine's map's to say, and a task that may write cannot free a workspace by
+  // labelling itself read-only.
+  const contradicted = workspace(root, "contradicted");
+  const record = await task(root, contradicted, "running", { mode: "read-only", profile: "workspace-write" });
+  assert.deepEqual(reservedBy(root, contradicted), record);
+
+  // A profile its engine does not declare leaves the mode underivable, and so does an
+  // engine no adapter answers for.
+  const foreign = workspace(root, "foreign-profile");
+  const other = await task(root, foreign, "running", { mode: "read-only", profile: "strict" });
+  assert.deepEqual(reservedBy(root, foreign), other, "codex declares no strict profile");
+
+  const unknown = workspace(root, "unknown-engine");
+  const third = create(root, { role: "implementer", brief: "brief unknown", cwd: unknown, engine: "nosuch" }, now);
+  writeSpec(root, third.id, { ...launchSpec(readOnly), engine: "nosuch" as EngineName });
+  assert.equal((await update(root, third.id, { status: "running" }, now + 1)).applied, true);
+  assert.equal(reservedBy(root, unknown)?.id, third.id);
 });
 
 test("a launch spec whose sandbox this build cannot read keeps the workspace", async (t) => {

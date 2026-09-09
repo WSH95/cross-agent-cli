@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import codex from "../../src/engines/codex.ts";
-import { adapterFor } from "../../src/engines/registry.ts";
+import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
 import type { EngineAdapter, SpawnRequest } from "../../src/engines/types.ts";
 
 const targets = Object.freeze([
@@ -78,9 +78,25 @@ test("codex's sandbox support reports the binary it cannot resolve", (t) => {
   assert.deepEqual(codex.sandboxSupport(), { ok: true });
 });
 
+test("sandboxFor pairs a profile with the mode codex gives it, and refuses any other", () => {
+  for (const [profile, mode] of Object.entries(codex.sandboxProfiles)) {
+    assert.deepEqual(sandboxFor("codex", profile), { mode, profile });
+  }
+  // Another engine's profile name, and names only Object.prototype carries.
+  for (const profile of ["strict", "workspace", "toString", ""]) {
+    assert.throws(() => sandboxFor("codex", profile), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes("codex"), error.message);
+      assert.ok(error.message.includes(JSON.stringify(profile)), error.message);
+      return true;
+    });
+  }
+});
+
 test("the codex parts T8 owns are declared and refuse to run", () => {
   const calls: Array<() => unknown> = [
     () => codex.plan({} as SpawnRequest), () => codex.parseLine("{}"),
+    // T8: delete the finish stub and this assertion — a line stream declares none.
     () => codex.finish!(""), () => codex.finalMessage([], null),
   ];
   for (const call of calls) assert.throws(call, /codex adapter: not implemented \(T7\/T8\/T9\)/);

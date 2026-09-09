@@ -2,12 +2,13 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { adapterFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
+import { engineNames } from "./engines/types.ts";
+import type { EngineName } from "./engines/types.ts";
 
 export const CONFIG_PATH = ".cross-agent/config.json";
 
-const engineNames = ["claude", "codex", "grok"] as const;
-
-export type EngineName = typeof engineNames[number];
+// The engine names are the contract's, so nothing the adapters need imports this file.
+export type { EngineName };
 // Every profile name a built-in engine accepts, derived from the adapters' own maps.
 // Which engine accepts which is the adapter's, and a role's pair is checked below.
 export type { SandboxProfile };
