@@ -410,11 +410,18 @@ detached runner: the conditional update, the OS-held locks, `src/reconcile.ts`,
 the environ scan and bounded settlement. Two reviews of that step — the task
 review and the Codex milestone review of 2a and 2b — ruled on the questions the
 code raised; each ruling is stated below as this design's decision, with the
-line that implements it. A bullet whose lead reads **target** is what nothing
-has built yet: the `cancel` tool, the per-cwd reservation, `git.lock`, and the
-two record fields section 5 and the lead model still need. One bullet is split
-rather than led: reconciliation's pass is built and its triggers are not, and
-it says so where it says what the pass decides.
+line that implements it. Step 3 (T6, `atc-s96.6`, commits `58b90cf..69f3eac`
+with its review round's fixes in `608c89a..53e5e45`) then built the rest:
+`limits.lockWaitSeconds` and the helper that reads it, the four lock names, the
+per-cwd reservation in `src/reservation.ts`, and both locks under
+`src/gitmutate.ts`. That review ruled on several more questions, and those
+rulings are stated here as decisions too. A bullet whose lead reads **target**
+is what nothing has built yet: the `cancel` tool, `delegate`'s own use of the
+reservation and of `spawn.lock`, and the two record fields section 5 and the
+lead model still need. Two bullets are split rather than led, because part of
+each is built: reconciliation's pass is built and its triggers are not, and the
+reservation is computed but only `git_mutate` consults it. Each says so where
+it says what it decides.
 
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
   writing a temporary file and renaming it (`src/ledger.ts:189-204`);
@@ -669,22 +676,25 @@ it says so where it says what the pass decides.
   leader started during the task holds the record `launching` until it exits,
   and bounding that hold in time is a later bead (`atc-s96.31`).
 - **Malformed records.** `list` returns only valid records
-  (`src/ledger.ts:317-321`); `scan(projectRoot)` returns `{records, invalid:
-  [{file, reason}]}` (`src/ledger.ts:296-315`); reconciliation reports
+  (`src/ledger.ts:327-331`); `scan(projectRoot)` returns `{records, invalid:
+  [{file, reason}]}` (`src/ledger.ts:292-325`); reconciliation reports
   `invalid`. A read error is reported in `invalid` rather than thrown — only a
   file that vanished between the listing and its read is skipped, because that
-  file is gone, not invalid (`src/ledger.ts:309-311`) — so one damaged or
+  file is gone, not invalid (`src/ledger.ts:315-321`) — so one damaged or
   unreadable `<id>.json` can never hide the rest. Validation also binds a
   record to its own file: `id` must equal the file's base name
-  (`src/ledger.ts:158`), because every writer addresses a record by id and
+  (`src/ledger.ts:163`), because every writer addresses a record by id and
   reaches `<id>.json`, so `foo.json` carrying `"id":"bar"` would be read at one
-  path and written at another. What remains a target is the consequence: an
-  invalid file must **refuse every writable `delegate`** until the operator
-  repairs or removes it, and `cross-agent tasks` must name the file, because
-  its `cwd` cannot be read and so no reservation check can clear any workspace
-  while it exists. Refusing every writable delegation is the conservative
-  reading of "it never frees a workspace"; a read-only delegation is
-  unaffected.
+  path and written at another. The consequence (E2): an invalid file **refuses
+  every writer** until the operator repairs or removes it, because its `cwd`
+  cannot be read and so no reservation check can clear any workspace while it
+  exists. Refusing every writable operation is the conservative reading of "it
+  never frees a workspace"; a read-only delegation is unaffected. `scan`'s
+  `invalid` is carried through `reservations().unknown` verbatim
+  (`src/reservation.ts:15`, `:77`) and `git_mutate` refuses on it, naming each
+  file and the reason it could not be read (`src/gitmutate.ts:167-173`).
+  **Target**: the same refusal in `delegate` (row 7) and `cross-agent tasks`
+  naming the file (row 13).
 - **Locks** are OS-held and never reclaimed (`src/locks.ts:54-109`). A lock is
   `flock(2)` on a file under `.cross-agent/locks/`, taken by a helper that
   keeps a util-linux `flock` child alive on a pipe (`flock <file> sh -c 'echo
@@ -693,21 +703,31 @@ it says so where it says what the pass decides.
   when the holder dies, so a dead holder needs no TTL, no stale detection, and
   no rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
   reclaim, was refuted in T5's plan review: a reclaim by pathname can rename
-  the winner's fresh lock, so two reclaimers could both succeed.) Four locks:
-  `spawn.lock` around `delegate`'s validate-and-spawn; `record-<id>.lock`
-  around every ledger read-check-rename, taken inside `update`
-  (`src/locks.ts:29-31`); `runner-<id>.lock` held by a runner for its lifetime
-  (`src/locks.ts:33-35`); `git.lock` around every lead git mutation. All four
-  names resolve through `lockPath` (`src/locks.ts:38-40`, `:43-45`), but the
-  first and the last are still targets as *locks*, because neither `delegate`
-  nor `git_mutate` takes one yet. **One helper, one waiting rule**: every
-  waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation.
-  The key is in config and validated — a finite number, defaulting to 5 and
-  refused when negative, because `flock -w -1` sets no timer and exits before
-  it looks at the file, which the helper would read as a live holder
+  the winner's fresh lock, so two reclaimers could both succeed.) Four locks,
+  all four named in one place and resolved through `lockPath`
+  (`src/locks.ts:25-45`): `spawn.lock` around `delegate`'s validate-and-spawn
+  and around the whole of a `git_mutate` call (`src/locks.ts:43-45`,
+  `src/gitmutate.ts:138-152`); `record-<id>.lock` around every ledger
+  read-check-rename, taken inside `update` (`src/locks.ts:29-31`);
+  `runner-<id>.lock` held by a runner for its lifetime (`src/locks.ts:33-35`);
+  and `git.lock` around every lead git mutation, taken by `git_mutate` inside
+  its `spawn.lock` (`src/locks.ts:38-40`, `src/gitmutate.ts:189-191`). Every
+  one of the four is taken by built code today; the only holder that does not
+  exist yet is `delegate` (row 7). **One helper, one waiting rule**: every
+  waiter blocks up to `lockWaitSeconds` and then refuses, naming the
+  operation. The key is in config and validated — a finite number, defaulting
+  to 5 and refused when negative, because `flock -w -1` sets no timer and exits
+  before it looks at the file, which the helper would read as a live holder
   (`src/config.ts:24`, `:37`, `:117`) — and the helper's own default is the
-  same 5 (`src/locks.ts:55`). Handing the configured value to each caller is
-  still a target: nothing in `src/` loads config to take a lock yet. Nothing
+  same 5 (`src/locks.ts:55`). Every acquisition in product code reads the
+  configured value. `git_mutate` takes it as an argument, so that module stays
+  a function of what it is handed (`src/gitmutate.ts:21-25`); `update`'s
+  callers read it once per process or per pass through
+  `lockWaitSeconds(projectRoot)` (`src/runner.ts:22`, `src/reconcile.ts:178`,
+  `src/process.ts:222`), a helper that answers with the documented 5 when no
+  config can be read (`src/config.ts:129-135`) — locks are taken on paths that
+  run before anyone has a readable config, and a caller whose only question was
+  how long to wait should not be thrown at (bead `atc-s96.34`, closed). Nothing
   uses `flock -n`; a caller that wants no wait passes `waitSeconds: 0`. The one
   exception to the waiting rule is `runner-<id>.lock`, whose whole purpose is
   an immediate failure, so the second runner takes it with a zero wait and
@@ -737,22 +757,63 @@ it says so where it says what the pass decides.
   settlement (`src/runner.ts:131`) and appended to `reason` when the task
   failed (`src/runner.ts:145`), so an operator reading a failure knows whether
   the evidence is complete.
-- **Target: the worktree reservation.** A task whose sandbox mode is `write`
-  reserves its canonical cwd until it settles; `delegate` refuses any other
-  task on that cwd meanwhile. `resume` of a task in `launching`, `running`,
-  `stalled`, `orphaned`, or `cancelling` is already refused, with `refused
-  resume of task <id>: status <status> is active` (`src/guard.ts:102-115`).
-- **Target: the git lock.** Every lead git mutation runs while
-  `.cross-agent/locks/git.lock` is held, through `git_mutate`, `git_root`, or
-  `cross-agent git`. What the locks give, stated exactly: `spawn.lock`
-  serializes validate-and-spawn, so two hosts cannot both pass the reservation
-  check and then both spawn; `git.lock` serializes lead git mutations against
-  each other. What keeps a writable task and a git mutation off the same
-  worktree is neither lock but the **per-cwd reservation** — `git_mutate`
-  refuses while a task reserving that path is unsettled. A read-only spawn
-  during a git mutation is allowed and is not a defect: it reads a tree
-  mid-change, which is what a reviewer reading a moving branch would see
-  anyway.
+- **The worktree reservation**: computed, and consulted by `git_mutate`; its
+  use in `delegate` is a target. `reservations(projectRoot)` walks one `scan`
+  and returns `{reserved, unknown}` — a map from canonical cwd to the task
+  holding it, and `scan`'s `invalid` verbatim (`src/reservation.ts:6-16`,
+  `:62-78`); `reservedBy(root, target, known)` answers for one path and takes
+  an already-computed `Reservations`, so a caller that must also judge
+  `unknown` scans once (`src/reservation.ts:84-86`). A record reserves when two
+  things hold. **It is not settled**: `done`, `failed` and `cancelled` release
+  the workspace and nothing else does (`src/ledger.ts:77`, `:80`,
+  `src/reservation.ts:66`). **It may write**: the record carries no sandbox, so
+  the launch spec beside it is read (`src/reservation.ts:54`), and the ruling
+  from T6's review is that every profile *except* the read-only ones reserves —
+  the set is `read-only` and Grok's `strict` (`src/reservation.ts:24`), so `off`
+  reserves too, because an unsandboxed task is the least constrained writer
+  there is, not the most constrained. A spec that cannot be read, or a
+  `sandbox` this build cannot read as a profile name, leaves the mode unknown,
+  and an unknown mode has never been shown to be read-only, so it holds the
+  workspace rather than letting a second writer in
+  (`src/reservation.ts:47-58`). Reservations are
+  keyed by a **canonical** path: the closest existing ancestor's `realpath`
+  with the unresolved remainder appended, so a worktree that has been removed
+  still compares equal to itself and still holds its reservation
+  (`src/reservation.ts:31-45`). Two unsettled writable tasks on one path is
+  what the check exists to prevent, but if one is ever seen the map answers
+  with the task that took the path first, by `createdAt` then by id, so the
+  answer does not depend on the order the directory happened to list
+  (`src/reservation.ts:73-75`). Two things follow for the writer of a record.
+  `record.cwd` must be **absolute**: the map is keyed by a canonical path, and
+  a relative cwd would be resolved against whichever process happened to read
+  it. And a delegation is judged writable by the same rule its record will be
+  reserved by, so `delegate` reads the role's own profile, not the request's.
+  **Target**: `delegate` refusing another task on a reserved cwd (row 7), with
+  the holder and its status named as `git_mutate` names them, and refusing
+  every writable delegation while `unknown` is non-empty. `resume` of a task in
+  `launching`, `running`, `stalled`, `orphaned`, or `cancelling` is already
+  refused, with `refused resume of task <id>: status <status> is active`
+  (`src/guard.ts:102-115`).
+- **The git lock.** Every lead git mutation runs while
+  `.cross-agent/locks/git.lock` is held: `git_mutate` takes it around the
+  command and the journal append and releases it in `finally`
+  (`src/gitmutate.ts:189-191`, `:242-244`); `git_root` and `cross-agent git`
+  are targets of rows 11 and 13 and take the same lock. What the locks give,
+  stated exactly: `spawn.lock` serializes validate-and-spawn, so two hosts
+  cannot both pass the reservation check and then both spawn; `git.lock`
+  serializes lead git mutations against each other. What keeps a writable task
+  and a git mutation off the same worktree is neither lock but the **per-cwd
+  reservation** — `git_mutate` refuses while a task reserving that path is
+  unsettled (`src/gitmutate.ts:162-166`). That check is a read of the ledger,
+  and a `delegate` running beside it could pass its own check and write its
+  record in between, so the reservation is made two-directional by a lock the
+  two share: `git_mutate` holds `spawn.lock` for its whole duration, with
+  `git.lock` taken inside it (`src/gitmutate.ts:138-152`), and `delegate` holds
+  `spawn.lock` around validate-and-spawn. **The order is always `spawn.lock`
+  then `git.lock`**, in both callers, because two orders are a deadlock.
+  **Target**: `delegate`'s half of it (row 7). A read-only spawn during a git
+  mutation is allowed and is not a defect: it reads a tree mid-change, which is
+  what a reviewer reading a moving branch would see anyway.
 
 The process model is Linux-only in these mechanisms: `/proc/<pid>/stat` for
 identities and the group scan, `/proc/*/environ` for the stranded-engine scan,
@@ -816,10 +877,12 @@ section is the contract they must meet.
 `SpawnRequest.sandbox` becomes `{mode, profile}`, where `profile` is the
 engine's own name for the profile and `mode` is `sandboxProfiles[profile]`.
 `mode !== "off"` drives the fail-closed check (today `src/engines/spawn.ts:60`
-tests the profile string itself), and `mode === "write"` drives the worktree
-reservation, so neither the pipeline nor the reservation rule has to know any
-engine's vocabulary. `SpawnRequest` also gains `scratchDir` (=
-`path.dirname(logPath)`), which is where `leadMount` writes its files and
+tests the profile string itself), and `mode !== "read-only"` drives the
+worktree reservation (section 2; today `src/reservation.ts:24` holds the same
+map's read-only half as profile names), so neither the pipeline nor the
+reservation rule has to know any engine's vocabulary. `SpawnRequest` also
+gains `scratchDir` (= `path.dirname(logPath)`), which is where `leadMount`
+writes its files and
 where T7 writes Claude's role-prompt file — never inside the specialist's own
 worktree.
 
@@ -1000,35 +1063,117 @@ probe.
 
 ### 4. Git ownership
 
-Of this section only the verification is built — `verify_worktree` and
-`src/worktree.ts`, from T2. `src/gitmutate.ts`, the reservation, the journal,
-the lock, and `git_root` arrive with steps 2, 3, and 11 of the work plan.
+The worktree half of this section is built: `verify_worktree` and
+`src/worktree.ts` from T2, and `gitMutate` from T6 (`src/gitmutate.ts`) with
+the reservation, both locks and the journal. What is left is the wiring and
+the root half — registering the two tools on a mode's worktree provider
+(row 8), `git_root` and `run_command` (row 11), and the `cross-agent git` CLI
+(row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
 `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI) is the
-only way a lead mutates git in a worktree, and it
+only way a lead mutates git in a worktree. Its request is `{slug, path?,
+branch?, args}` (`src/gitmutate.ts:12-19`): `path` defaults to
+`<root>/.worktrees/<slug>` and `branch` to `task/<slug>`, the worktree
+provider's own defaults (`src/gitmutate.ts:127-128`), and row 8 makes both the
+mode's to configure, since `dir` and `branchPattern` are already the mode's.
+The slug is used for exactly four things — those two defaults, the lock's
+operation label, and the journal file name — and never for the git directory.
+Before the four steps, the **shape of the request** is judged, because it needs
+no lock, no scan and no worktree (`src/gitmutate.ts:114-125`): `args` must be a
+non-empty array of strings whose first element is a subcommand, not an option;
+no element anywhere may be `--git-dir`, `--work-tree`, `-C` or `-c`, nor the
+attached forms `--git-dir=` and `--work-tree=` (`src/gitmutate.ts:55`,
+`:57-70`), each of which turns a whitelisted verb into an arbitrary one against
+an arbitrary repository; and `slug`'s journal must be readable and, if it
+exists, must already be on the branch this call names, so the step it will
+append is known to be recordable and to belong where the earlier steps' SHAs
+were recorded (`src/gitmutate.ts:120-133`, section 7). The four steps then run
+with `spawn.lock` held for all of them (`src/gitmutate.ts:135-152`), which is
+what stops the reservation `git_mutate` reads in step 1 from racing a
+`delegate` about to take the same workspace (section 2). It
 
-1. refuses while any task reserving that path is not settled;
+1. refuses while any task reserving that path is not settled — `<path> is
+   reserved by task <id> (<status>); wait or cancel first` — and refuses every
+   path at all while any task record cannot be read, naming each file and its
+   reason (`src/gitmutate.ts:160-173`, section 2);
 2. verifies the worktree from the root, with the checks
-   `verifyWorktree` performs (`src/worktree.ts:21-78`): `realpath` of both
+   `verifyWorktree` performs (`src/worktree.ts:47-104`): `realpath` of both
    paths; the worktree appears in `git worktree list --porcelain -z` as a
    linked worktree, which excludes the main worktree and any subdirectory
-   (`:44`); its `.git` is a regular file, not a symlink (`:48-50`); `git
+   (`:70`); its `.git` is a regular file, not a symlink (`:74-76`); `git
    rev-parse --git-dir` resolves to a directory whose **parent** is
-   `<root>/.git/worktrees` (`:57-60`) — the check is on the parent directory,
+   `<root>/.git/worktrees` (`:83-86`) — the check is on the parent directory,
    not on equality with a slug-derived name; `--git-common-dir` equals
-   `<root>/.git` (`:61-63`); `--abbrev-ref HEAD` is exactly the requested
-   branch (`:64-66`); and the administrative directory's own `gitdir` backlink
-   resolves to that worktree's `.git` and no other (`:68-74`), which is what
+   `<root>/.git` (`:87-89`); `--abbrev-ref HEAD` is exactly the requested
+   branch (`:90-92`); and the administrative directory's own `gitdir` backlink
+   resolves to that worktree's `.git` and no other (`:94-100`), which is what
    rejects a pointer redirected at a sibling. On success it returns
-   `{gitDir, workTree, branch}` (`:75`);
+   `{gitDir, workTree, branch}` (`:101`); a refusal is returned to the lead as
+   the verifier's own `reason`, verbatim (`src/gitmutate.ts:176-177`);
 3. runs, while `.cross-agent/locks/git.lock` is held, `git --git-dir=<the
    gitDir verify_worktree returned> --work-tree=<the workTree it returned>
    <args>`, so the pointer file is never consulted and the paths are never
-   re-derived from the slug;
+   re-derived from the slug (`src/gitmutate.ts:83`, `:186-198`). It is
+   `execFile` with an argv array, never a shell (`src/gitmutate.ts:85`), with
+   `cwd` the verified work tree and the **allowlisted** git environment of the
+   paragraph below (`src/gitmutate.ts:82`). Output is capped at 16 MB
+   (`src/gitmutate.ts:52`): exceeding the cap kills the child, which for a
+   mutation is worse than a truncated log;
 4. appends the step to the task journal (section 7) with the SHAs before and
-   after.
+   after — `git rev-parse --verify --quiet refs/heads/<branch>` through the
+   same explicit form, before and after the command, plus the default branch's
+   SHA and the branch names (`src/gitmutate.ts:97-101`, `:196-197`, `:206`,
+   `:212-219`). The append happens **while the lock is still held**
+   (`src/gitmutate.ts:208-209`), so two callers' steps are ordered by the same
+   lock that ordered their commands.
+
+The result is `{ok: true, exitCode: 0, stdout, stderr, before?, after?,
+lockLost?, journal}` or `{ok: false, reason, exitCode?, stdout?, stderr?}`
+(`src/gitmutate.ts:27-34`); `journal` is the entry as written, so the lead
+never re-reads the file to learn what it just recorded. A refusal before the
+command carries a reason and nothing else. A non-zero git exit returns the
+exit code and both streams and journals nothing (`src/gitmutate.ts:199-205`):
+the mutation did not happen, so there is no step. A journal write that fails
+**after** a successful command returns `ok: false` saying the command ran and
+its step could not be written (`src/gitmutate.ts:220-228`) — `ok: true` would
+tell the lead its journal is current when it is not, and the result type has no
+honest slot for "it happened but is unrecorded".
+
+**What git works on is decided here, never inherited.** Every git invocation
+in this project — the verifier's reads and `git_mutate`'s command alike —
+gets one **allowlisted** environment, built in `gitEnvironment`
+(`src/worktree.ts:16-34`, used at `:37` and `src/gitmutate.ts:82`): `PATH`,
+`HOME`, `USER`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `XDG_CONFIG_HOME`,
+`XDG_CACHE_HOME`, `SSH_AUTH_SOCK`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`,
+`GIT_SSH*` and `GIT_TERMINAL_PROMPT` pass; everything else, `GIT_DIR`,
+`GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
+`GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_CEILING_DIRECTORIES`
+and `GIT_CONFIG_*`, is dropped. A server started from inside a git command — a
+hook, `git rebase --exec` — carries those, and they would put back exactly the
+`-c` settings the argument guard refuses, or point a verified mutation at
+another index or object store. An allowlist rather than a deny list, so a
+variable nobody has thought about does not reach git. It is also the fix for
+the bug this found (`atc-s96.35`, closed): with `GIT_DIR` inherited, `git -C
+<worktree> rev-parse --git-dir` answered with the inherited value and the
+verifier refused *every* worktree. It failed closed, so it was never a hole,
+but the lead could do nothing at all.
+
+One residual is stated rather than hidden: there is no timeout on the git
+child, so a command that hangs holds `git.lock` until it is killed, and every
+other mutation then waits `lockWaitSeconds` and refuses.
+
+`git_mutate` never throws for an operational failure. A missing git binary or
+a signal-killed child has no exit code to judge, so it is named as its own
+refusal (`src/gitmutate.ts:36-42`, `:89-91`, `:239-241`); a lock that could
+not be taken, and a config that could not be read, are refusals too
+(`:143-147`, `:179-184`, `:192-194`). The lead's loop reads a result and has
+no other way to hear one. And a lock **lost** while the command ran (section 2:
+the helper child died, so the kernel let the next waiter in) does not undo the
+command: the step is still journaled, and the result carries `lockLost: true`
+(`src/gitmutate.ts:29-31`, `:233-236`), so the lead knows the mutation
+happened but was not exclusive for all of its life.
 
 The lead creates the worktree after plan approval, commits the task branch
 with the implementer's summary, rebases it, merges with `--ff-only`, runs the
@@ -1184,7 +1329,8 @@ and `code-reviewer` at `{kind: "worktree", branchPattern: "task/*", dir:
 ".worktrees"}` with the implementer defaulting to a writable profile. A
 `kind: "root"` role runs at the project root; a `kind: "worktree"` role
 requires the `verify_worktree` checks of section 4 against the branch named in
-the request, and a role whose sandbox mode is `write` reserves the path.
+the request, and a role whose sandbox mode is anything but read-only reserves
+the path (section 2).
 
 What is a target here and what is not: the `mode` field, the refusal of
 `workspace`, the per-engine profile check, and the refusal of a `grok`-bound
@@ -1192,7 +1338,9 @@ What is a target here and what is not: the `mode` field, the refusal of
 model", item 4) all arrive with the tasks that need them. `project`, `roles`'
 engine/model/effort, `engines`, all five limits and `billing` are validated
 today — `limits.lockWaitSeconds` included (`src/config.ts:24`, `:37`, `:117`),
-though no lock caller reads it yet (section 2). The shipped loader
+and every lock acquisition in product code reads it, through the caller's
+argument or through `lockWaitSeconds(projectRoot)` (`src/config.ts:129-135`,
+section 2). The shipped loader
 still carries the role's directory kind as `cwd` (`src/config.ts:16`, `:96`);
 the Work plan says what happens to it in the meantime.
 
@@ -1221,10 +1369,40 @@ report` renders the log from the ledger. An engine lead writes no project file
 itself; the ledger, the journal and the mailbox are all written by the server
 on its behalf.
 
-- Journal: `.cross-agent/journal/<slug>.json` records, per task, the default
-  branch SHA before the merge, the task branch head, and each completed git
-  step (`worktree-created`, `committed`, `rebased`, `merged`, `tests-passed`,
-  `worktree-removed`, `branch-deleted`); `git_mutate` and `git_root` write it.
+- Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
+  document is `{slug, branch, defaultBranch, defaultShaBeforeMerge?,
+  branchHead?, steps}` and each step is `{step, at, before?, after?, args?}`
+  (`src/journal.ts:13-29`). The step names are the completed git steps of the
+  loop — `worktree-created`, `committed`, `rebased`, `merged`, `tests-passed`,
+  `worktree-removed`, `branch-deleted` — plus `git`, which is any other
+  `git_mutate` call and records the arguments it ran instead of a name
+  (`src/journal.ts:9-11`). Today `git_mutate` writes exactly one of them,
+  `git` (`src/gitmutate.ts:212`); the seven named steps arrive with the lead
+  loop that performs them (rows 7 and 11), and `git_root` writes the same
+  journal. Three functions: `appendStep(root, slug, step, data)` reads,
+  appends, and writes through the ledger's own atomic write — a temporary file
+  and a rename — so a reader sees the whole previous document or the whole new
+  one (`src/journal.ts:108`, `:139-140`, `src/ledger.ts:199`); `readJournal`
+  returns null when the task has none and **throws, naming the file**, when the
+  document is damaged (`src/journal.ts:64`, `:80-82`), because an append that
+  silently started from an empty journal would drop every step the file still
+  holds; `listJournals`
+  returns the slugs, sorted, ignoring temporary files and anything else that is
+  not a journal (`src/journal.ts:87`). A slug names a file here, a directory
+  under `.worktrees` and a branch, so it is one path segment of the ledger's
+  own alphabet and never `.` or `..` (`src/journal.ts:46-51`). Four fields are
+  the document's rather than a step's. The step that *creates* a journal must
+  name both branches rather than have them invented (`src/journal.ts:118-120`).
+  `branchHead` moves with the branch and `defaultBranch` follows the config,
+  but `branch` and `defaultShaBeforeMerge` are **written once, by the step that
+  records them**, and a later step offering another value does not move them
+  (`src/journal.ts:111-115`, `:116`, `:121`): a journal belongs to one task
+  branch, and the pre-merge SHA is the revert target of the repair path below,
+  so a step that moved either would destroy what every earlier step's SHAs were
+  recorded against. `git_mutate` enforces the branch half from its own side as
+  well: a call whose branch differs from the one its journal already records is
+  refused, `slug <a> is journaled on <task/b>; refusing <task/c>`, before any
+  lock is taken and before any git runs (`src/gitmutate.ts:129-133`).
 - Reconciliation at the start of every task and after any interruption:
   `list_tasks`, the journal, `git worktree list`, `git branch --list 'task/*'`,
   `git status --porcelain --untracked-files=normal`, and `git rebase` state.
@@ -1340,7 +1518,8 @@ skills/cross-agent/SKILL.md  modes/<name>/mode.json
 modes/<name>/SKILL.md        modes/<name>/roles/*.md
 src/server.ts     src/config.ts     src/ledger.ts     src/process.ts
 src/reconcile.ts  src/runner.ts     src/guard.ts      src/worktree.ts
-src/locks.ts      src/gitmutate.ts  src/cli.ts
+src/locks.ts      src/reservation.ts                  src/gitmutate.ts
+src/journal.ts    src/cli.ts
 src/engines/{types,spawn,claude,codex,grok}.ts
 tests/*.test.ts   tests/fixtures/fake-engine.mjs
 tools/probe.mjs   docs/design.md    docs/probes.md
@@ -1350,9 +1529,10 @@ LICENSE (Apache-2.0)
 
 Present today:
 `src/{server,config,ledger,process,reconcile,runner,locks,guard,worktree}.ts`,
-`src/engines/{types,spawn}.ts`, the tests, `tools/probe.mjs`, the two docs, and
-the root files. Still to be written: `src/{gitmutate,cli}.ts`, the three engine
-adapters, both plugin manifests, `.mcp.json`, `skills/`, and `modes/`.
+`src/{reservation,journal,gitmutate}.ts`, `src/engines/{types,spawn}.ts`, the
+tests, `tools/probe.mjs`, the two docs, and the root files. Still to be
+written: `src/cli.ts`, the three engine adapters, both plugin manifests,
+`.mcp.json`, `skills/`, and `modes/`.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`.
 AGENTS.md carries the Project facts (default branch `main`, test command `npm
@@ -1457,19 +1637,21 @@ reason), and the loop-guard scope as a hard requirement.
 ### Phase 1: build order
 
 T1–T5 (ledger, config and `verify_worktree`, guard, adapter interface and
-spawn pipeline, detached runner) are built and green, and so are steps 1, 2 and
-4 below: the rename and this document's rewrite, the lifecycle step that closed
-the five correctness defects in shipped code, and the probes the adapters
-depend on. What is left starts at step 3, the T6 remainder, and then runs
-through the engine contract, the adapters, the tools, the modes, the skills,
-and each host's packaging with its integration probes and end-to-end run right
-after it.
+spawn pipeline, detached runner) are built and green, and so are steps 1 to 4
+below: the rename and this document's rewrite, the lifecycle step that closed
+the five correctness defects in shipped code, the T6 remainder, and the probes
+the adapters depend on. What is left starts at step 5, the engine contract, and
+then runs through the adapters, the tools, the modes, the skills, and each
+host's packaging with its integration probes and end-to-end run right after it.
+Rows 7 and 8 are where the built git and reservation machinery is finally
+reached by a caller: until then no tool registers `git_mutate` and no
+`delegate` consults a reservation.
 
 | # | Work | Bead | Notes |
 |---|---|---|---|
 | 1 | Rename and design rewrite | `atc-s96.19` | **Done.** One pass; `npm test` gated the rename. History files untouched. |
 | 2 | Locks primitive, conditional update, lifecycle | `atc-s96.20` | **Done** (`45ee841..e426f35`). `src/locks.ts` (the `flock` child); `update` with `expect` and `{applied}`; B1 (reconcile on the group scan in `src/reconcile.ts`, the `cancelling` case), B2 (bounded drain, `truncated`), B3, B4, B5 (environ scan, runner lock, `launchToken` removed), A4-a (record validation); plus the two review rounds' rulings, which section 2 states with the line that implements each. The reconciliation **triggers** are not in this step: they belong to row 7. |
-| 3 | T6 remainder | `atc-s96.6` | Reservation, journal, `git_mutate` on the verified git-dir, `git.lock`. |
+| 3 | T6 remainder | `atc-s96.6` | **Done** (`58b90cf..69f3eac`, with its review round's fixes in `608c89a..53e5e45`). `limits.lockWaitSeconds` and `lockWaitSeconds(root)` (`src/config.ts`); `gitLockName`/`spawnLockName` (`src/locks.ts`); `src/reservation.ts`; `src/journal.ts`; `src/gitmutate.ts` — the four steps of section 4 on the verified git-dir, under `spawn.lock` then `git.lock`, journaled; `gitEnvironment` for every git invocation (`src/worktree.ts`). The review's rulings are stated in sections 2, 4 and 7 with the line that implements each. Three beads came out of it: `atc-s96.33` (a pre-existing suite flake in `reconcile`/`process` under load, open), `.34` (`lockWaitSeconds` through `update`'s callers, closed) and `.35` (an inherited `GIT_DIR` makes `verify_worktree` refuse, closed). Not in this row: registering the two worktree tools (row 8), `delegate`'s reservation check and `spawn.lock` (row 7), `git_root` (row 11), `cross-agent git` (row 13). |
 | 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | **Done** (397763c, 649b8e5, f40cadb). `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; the resume argv no longer pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Outcomes in Phase 0 above: `streaming-messages-json` for T9, three `-c` settings for a Codex lead mount, no Grok lead, and a Codex resume that keeps neither cwd nor sandbox. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | A2; the adapter fields of section 3; informed by P8 and P9. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | T7 Claude, `--append-system-prompt-file` for the role file (P9); T8 Codex, **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10); T9 Grok on `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape. |
@@ -1533,6 +1715,38 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
 - **B5:** SIGKILL between the spawn and the acknowledgement → the engine is
   found by `CROSS_AGENT_TASK` and terminated; two runners started for one task
   → one engine.
+- **T6 (recorded).** Locks: two acquirers of one file serialize
+  (`tests/locks.test.ts:45`), a waiter refuses after its wait naming the
+  operation and the file (`:99`), and a lock whose holder was SIGKILLed is
+  taken by the next holder in under a second, with the lock file never deleted
+  (`:68`) — no TTL, no stale detection, no reclaim. The same over `git.lock`:
+  two `git_mutate` calls serialize on it, and their journal steps chain
+  `before` to the previous `after` (`tests/gitmutate.test.ts:471`), while a
+  mutation behind a SIGKILLed holder completes well inside the five-second wait
+  (`:501`); `spawn.lock` is held for the whole call with `git.lock` inside it
+  (`:280`). `limits.lockWaitSeconds` is read where a config is loadable and
+  answers with the default where none is (`tests/config.test.ts:161`).
+  Reservation: a writable task holds its cwd until it settles, every profile
+  but the read-only ones reserves, an unreadable launch spec holds the
+  workspace anyway, paths compare canonically, and a removed workspace is still
+  reserved (`tests/reservation.test.ts:63`, `:82`, `:98`, `:116`, `:135`,
+  `:150`). `git_mutate` refuses: a workspace an unsettled writable task is
+  holding (`tests/gitmutate.test.ts:186`), every workspace while a record
+  cannot be read (`:205`), a worktree the verifier rejects — the main worktree,
+  a subdirectory, the wrong branch, a missing path, a pointer redirected at a
+  sibling — with the verifier's own reason (`:222`), an argument list that is
+  not one subcommand in this worktree (`:357`), and a step that could not be
+  recorded, **before** it runs anything (`:390`). A failing git command returns
+  its exit code and both streams and journals nothing (`:408`); a config, a
+  lock, or a git that could not run is refused rather than thrown (`:440`); a
+  lock lost while the command ran is reported and the step is still journaled
+  (`:420`). Journal: a commit lands on the task branch and is journaled with
+  the SHAs around it (`:152`); steps accumulate in order with only the fields
+  they carry, each append is a rename that leaves no temporary behind, the
+  branch a journal was created on is write-once, and a damaged journal is named
+  rather than replaced (`tests/journal.test.ts:62`, `:106`, `:51`, `:139`).
+  Environment: the verifier ignores what the server's own environment says
+  about a repository (`tests/worktree.test.ts:125`).
 - **A1 / P8 (T9):** the Grok adapter runs `--output-format
   streaming-messages-json`; per-line events arrive before the final one; the
   session id is read from the first line's `system/init`, on a resumed run as
@@ -1540,10 +1754,16 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `is_error` is false and its `errors` when it is true, so a failed run settles
   down the same path as a successful one.
 - **A2:** `{engine: "codex", sandbox: "workspace"}` is refused at config load.
-- **A3:** a mismatched slug and path → `git_mutate` uses the `gitDir`
-  `verify_worktree` returned.
+- **A3 (recorded):** a mismatched slug and path → `git_mutate` uses the
+  `gitDir` `verify_worktree` returned. The commit lands on the branch of the
+  worktree at `path` and the slug's own branch is untouched
+  (`tests/gitmutate.test.ts:252`); a `git` shim on `PATH` captures the argv and
+  asserts `--git-dir=<realpath of the verified administrative directory>` with
+  no argument naming the slug's worktree, and that the child is handed no
+  `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` or `GIT_CONFIG_*` (`:310`).
 - **A4-a:** a malformed record file is reported by name and refuses every
-  writable `delegate` until it is repaired or removed.
+  writer until it is repaired or removed. Recorded for `git_mutate`
+  (`tests/gitmutate.test.ts:205`); the `delegate` half arrives with row 7.
 - **Authority:** a server whose nearest engine ancestor is a specialist gets
   the specialist row even when the process also carries a lead's environment;
   a server carrying `CROSS_AGENT_TASK` that matches no record gets the
