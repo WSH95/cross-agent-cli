@@ -8,7 +8,7 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
+import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 
@@ -92,6 +92,31 @@ async function started(root: string, status: TaskStatus, at = now): Promise<Task
   for (const step of routes[status]) record = await change(root, record.id, { status: step }, at);
   return record;
 }
+
+test("isTerminal names the three settled statuses, and nothing else", () => {
+  // One definition of settled, shared by every reader: the reservation asks it whether a
+  // task has let its workspace go, and the runner and reconciler judge the same way.
+  for (const status of statuses) {
+    assert.equal(isTerminal(status), ["done", "failed", "cancelled"].includes(status), status);
+  }
+});
+
+test("writeAtomic replaces a whole file by rename and leaves no temporary behind", (t) => {
+  const root = project(t);
+  const file = path.join(root, "value.json");
+  writeAtomic(file, { one: 1 });
+  assert.equal(fs.readFileSync(file, "utf8"), `${JSON.stringify({ one: 1 }, null, 2)}\n`);
+  const first = fs.statSync(file).ino;
+  writeAtomic(file, { two: 2 });
+  assert.notEqual(fs.statSync(file).ino, first, "a reader sees the whole old file or the whole new one");
+  assert.deepEqual(fs.readdirSync(root), ["value.json"]);
+
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  assert.throws(() => writeAtomic(file, circular));
+  assert.deepEqual(fs.readdirSync(root), ["value.json"], "a value that cannot be written leaves nothing behind");
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { two: 2 });
+});
 
 test("create persists a launching record that read returns", (t) => {
   const root = project(t);

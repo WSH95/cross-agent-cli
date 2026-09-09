@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { writeAtomic } from "./ledger.ts";
 
 /**
  * The named steps of design section 7, plus `git` for any other `git_mutate` call, which
@@ -101,9 +101,9 @@ export function listJournals(projectRoot: string): string[] {
 
 /**
  * Appends one step to `slug`'s journal, creating it if this is the first, and returns the
- * journal as written. The write is a temporary file and a rename, as the ledger's is, so a
- * reader sees the whole previous document or the whole new one. Ordering across processes
- * is the caller's: `git_mutate` appends while it still holds `git.lock`.
+ * journal as written. The write is the ledger's own atomic write, so a reader sees the
+ * whole previous document or the whole new one. Ordering across processes is the
+ * caller's: `git_mutate` appends while it still holds `git.lock`.
  */
 export function appendStep(projectRoot: string, slug: string, step: JournalStep, data: StepData = {}): Journal {
   const file = journalFile(projectRoot, slug);
@@ -137,18 +137,6 @@ export function appendStep(projectRoot: string, slug: string, step: JournalStep,
   };
 
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(12).toString("base64url")}.tmp`);
-  const descriptor = fs.openSync(temporary, "wx");
-  try {
-    try {
-      fs.writeFileSync(descriptor, JSON.stringify(journal, null, 2) + "\n");
-    } finally {
-      fs.closeSync(descriptor);
-    }
-    fs.renameSync(temporary, file);
-  } catch (error) {
-    fs.rmSync(temporary, { force: true });
-    throw error;
-  }
+  writeAtomic(file, journal);
   return journal;
 }

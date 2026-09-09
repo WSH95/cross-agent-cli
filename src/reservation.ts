@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readSpec, scan } from "./ledger.ts";
+import { isTerminal, readSpec, scan } from "./ledger.ts";
 import type { InvalidRecord, TaskRecord } from "./ledger.ts";
 
 export interface Reservations {
@@ -15,7 +15,6 @@ export interface Reservations {
   unknown: InvalidRecord[];
 }
 
-const terminal = new Set(["done", "failed", "cancelled"]);
 // The profiles that cannot write: Claude and Codex `read-only`, Grok `read-only` and
 // `strict` (design section 3's map). Everything else reserves — `workspace-write` and
 // `workspace` because they may write inside the workspace, and `off` because it is the
@@ -64,7 +63,7 @@ export function reservations(projectRoot: string): Reservations {
   const { records, invalid } = scan(projectRoot);
   const reserved = new Map<string, TaskRecord>();
   for (const record of records) {
-    if (terminal.has(record.status)) continue;
+    if (isTerminal(record.status)) continue;
     if (!reservesWorkspace(projectRoot, record)) continue;
     const key = canonicalPath(record.cwd);
     const held = reserved.get(key);

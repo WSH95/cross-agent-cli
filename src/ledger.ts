@@ -75,6 +75,11 @@ export type UpdateResult =
 
 const statuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"]);
 const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
+
+/** Settled: the task owns nothing any more, and has let its workspace go. */
+export function isTerminal(status: TaskStatus): boolean {
+  return terminalStatuses.has(status);
+}
 // Design section 2, E1. Every other status change is a bug in a writer, not a race to
 // tolerate, so update throws for it. A patch that keeps the status is not a transition.
 const transitions: Record<TaskStatus, TaskStatus[]> = {
@@ -186,8 +191,13 @@ function readRecord(file: string): TaskRecord {
   return parsed as TaskRecord;
 }
 
-function writeRecord(file: string, record: TaskRecord | LaunchSpec): void {
-  const contents = JSON.stringify(record, null, 2) + "\n";
+/**
+ * One JSON document, written whole: a temporary file in the same directory and a rename,
+ * so a reader sees the whole previous document or the whole new one and never a partial
+ * write. A value that cannot be serialized leaves nothing behind, temporary included.
+ */
+export function writeAtomic(file: string, value: unknown): void {
+  const contents = JSON.stringify(value, null, 2) + "\n";
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(12).toString("base64url")}.tmp`);
   const fd = fs.openSync(temporary, "wx");
   try {
@@ -220,7 +230,7 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
     resultPath: path.join(directory, `${id}.out`),
     logPath: path.join(directory, `${id}.ndjson`),
   };
-  writeRecord(path.join(directory, `${id}.json`), record);
+  writeAtomic(path.join(directory, `${id}.json`), record);
   return record;
 }
 
@@ -237,7 +247,7 @@ function validateSpec(spec: LaunchSpec): void {
 export function writeSpec(projectRoot: string, id: string, spec: LaunchSpec): void {
   const file = recordPath(projectRoot, id).replace(/\.json$/, ".spec.json");
   validateSpec(spec);
-  writeRecord(file, spec);
+  writeAtomic(file, spec);
 }
 
 export function readSpec(projectRoot: string, id: string): LaunchSpec {
@@ -272,7 +282,7 @@ export async function update(
       throw new Error(`cannot change ${kind} ${id} from ${current.status} to ${status}`);
     }
     const record: TaskRecord = { ...current, ...fields, status, updatedAt: now };
-    writeRecord(file, record);
+    writeAtomic(file, record);
     return { applied: true, record };
   } finally {
     await lock.release();
