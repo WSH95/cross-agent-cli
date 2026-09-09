@@ -21,7 +21,11 @@ const formats = ["generic", "claude", "codex", "grok"] as const;
 
 const generic: EngineAdapter = {
   name: "claude",
+  sandboxProfiles: { "read-only": "read-only", "workspace-write": "write", off: "off" },
   sandboxSupport: () => ({ ok: true }),
+  denyArgs: (targets) => targets.map((target) => `deny:${target}`),
+  exclusionArgs: () => ["--exclude"],
+  leadMount: (spec, scratchDir) => ({ argv: ["--mount", path.join(scratchDir, "mount.json"), spec.command] }),
   plan: (request) => ({ bin: process.execPath, argv: [fake, request.brief], cwd: request.cwd, env: request.env }),
   parseLine(line) {
     let value;
@@ -55,9 +59,9 @@ function task(t: TestContext) {
   });
   const request: SpawnRequest = {
     role: "implementer", brief: "complete the task", rolePrompt: "Implement the brief.", cwd,
-    sandbox: "workspace-write", model: "test-model", effort: "high", sessionId: randomUUID(),
+    sandbox: { mode: "write", profile: "workspace-write" }, model: "test-model", effort: "high", sessionId: randomUUID(),
     denyTargets: ["claude", "codex", "grok"], env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "generic" },
-    logPath: path.join(cwd, "task.ndjson"), resultPath: path.join(cwd, "task.out"),
+    scratchDir: cwd, logPath: path.join(cwd, "task.ndjson"), resultPath: path.join(cwd, "task.out"),
   };
   return {
     request,
@@ -200,7 +204,12 @@ test("unsupported sandbox refuses before planning or spawning", (t) => {
     ...generic, sandboxSupport: () => ({ ok: false, reason: "missing sandbox dependency" }),
     plan: () => { assert.fail("must refuse before planning"); },
   };
-  for (const sandbox of ["read-only", "workspace-write"] as const) {
+  // Every profile whose mode is not `off` is checked; the mode, not the engine's own
+  // name for the profile, is what the pipeline reads (design section 3).
+  for (const sandbox of [
+    { mode: "read-only", profile: "read-only" }, { mode: "read-only", profile: "strict" },
+    { mode: "write", profile: "workspace-write" }, { mode: "write", profile: "workspace" },
+  ] as const) {
     assert.throws(() => spawnEngine(adapter, { ...request, sandbox }, {
       spawn: () => { assert.fail("must refuse before spawning"); },
     }), /claude.*missing sandbox dependency/);
@@ -212,7 +221,7 @@ test("unsupported sandbox refuses before planning or spawning", (t) => {
 test("sandbox off permits an unsupported adapter", async (t) => {
   const { launch } = task(t);
   const adapter = { ...generic, sandboxSupport: () => { assert.fail("off must bypass the capability check"); } };
-  assert.equal((await launch(adapter, { sandbox: "off" }).result).ok, true);
+  assert.equal((await launch(adapter, { sandbox: { mode: "off", profile: "off" } }).result).ok, true);
 });
 
 test("plan stdin, argv, cwd, and environment reach the child", async (t) => {

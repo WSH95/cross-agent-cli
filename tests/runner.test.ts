@@ -122,7 +122,8 @@ function harness(options: {
   const markers = { atWrite: path.join(root, "competitor-at-write"), beforeWrite: path.join(root, "settled-before-write") };
   const spec: LaunchSpec = {
     role: "implementer", brief: "finish T5", rolePrompt: "Implement this brief.", cwd: root, engine: "claude",
-    model: "fixture-model", effort: "high", sandbox: "workspace-write", denyTargets: ["claude", "codex", "grok"],
+    model: "fixture-model", effort: "high", sandbox: { mode: "write", profile: "workspace-write" },
+    denyTargets: ["claude", "codex", "grok"], scratchDir: path.join(root, ".cross-agent", "tasks"),
     sessionId: "requested-session", resumeSessionId: "previous-session", adapterModule,
     env: { RUNNER_TEST_ROOT: root, FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_RECORD: invocation },
   };

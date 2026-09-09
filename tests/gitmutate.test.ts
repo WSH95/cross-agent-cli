@@ -138,11 +138,11 @@ function poison(t: TestContext, values: Record<string, string>): void {
 }
 
 /** A task at `status` holding `cwd`, with the launch spec that says it may write. */
-async function reserve(root: string, cwd: string, sandbox = "workspace-write") {
+async function reserve(root: string, cwd: string, sandbox: LaunchSpec["sandbox"] = { mode: "write", profile: "workspace-write" }) {
   const record = create(root, { role: "implementer", brief: "hold the workspace", cwd, engine: "codex" });
   writeSpec(root, record.id, {
     role: "implementer", brief: "hold the workspace", rolePrompt: "prompt", cwd,
-    sandbox: sandbox as LaunchSpec["sandbox"], sessionId: "session", denyTargets: [], env: {},
+    sandbox, sessionId: "session", denyTargets: [], env: {}, scratchDir: cwd,
     engine: "codex", adapterModule: "/adapters/codex.ts",
   });
   assert.equal((await update(root, record.id, { status: "running" })).applied, true);
@@ -198,7 +198,7 @@ test("git_mutate refuses a workspace an unsettled writable task is holding", asy
   assert.equal(readJournal(root, "held"), null);
 
   // A read-only task never held it, and a settled one has let it go.
-  await reserve(root, worktree, "read-only");
+  await reserve(root, worktree, { mode: "read-only", profile: "read-only" });
   assert.equal(refusal(await gitMutate(root, { slug: "held", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 })), reason);
   assert.equal((await update(root, record.id, { status: "done" })).applied, true);
   accepted(await gitMutate(root, { slug: "held", args: ["commit", "--allow-empty", "-m", "after it settled"] }, { waitSeconds: 5 }));

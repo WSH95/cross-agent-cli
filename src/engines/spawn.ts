@@ -57,7 +57,9 @@ function lineBuffer(accept: (raw: Buffer) => void) {
 
 /** Capability refusals throw synchronously; process and output failures settle through result. */
 export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, options: SpawnOptions = {}): SpawnHandle {
-  if (request.sandbox !== "off") {
+  // The mode, not the engine's own name for the profile: the pipeline knows no engine's
+  // vocabulary, and only a profile that maps to `off` may run without a sandbox.
+  if (request.sandbox.mode !== "off") {
     const support = adapter.sandboxSupport();
     if (!support.ok) throw new Error(`${adapter.name} sandbox refused: ${support.reason}`);
   }

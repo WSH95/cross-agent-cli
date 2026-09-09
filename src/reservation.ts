@@ -15,14 +15,6 @@ export interface Reservations {
   unknown: InvalidRecord[];
 }
 
-// The profiles that cannot write: Claude and Codex `read-only`, Grok `read-only` and
-// `strict` (design section 3's map). Everything else reserves — `workspace-write` and
-// `workspace` because they may write inside the workspace, and `off` because it is the
-// least constrained task there is and may write anywhere. S5 moves the map onto the
-// adapters and puts `{mode, profile}` on the spec, and then this set becomes
-// `mode === "read-only"`.
-const readOnlyProfiles = new Set(["read-only", "strict"]);
-
 /**
  * The path a reservation is keyed by. A removed worktree still holds its reservation, so
  * the closest existing ancestor is canonicalized and the rest is kept as it was written:
@@ -44,10 +36,12 @@ function canonicalPath(target: string): string {
   }
 }
 
-// The record carries no sandbox; the launch spec beside it does (design section 2). A spec
-// that cannot be read, or whose sandbox this build cannot read as a profile name, leaves
-// the task's mode unknown — and an unknown mode has never been shown to be read-only, so
-// it holds the workspace rather than silently letting a second writer in.
+// The record carries no sandbox; the launch spec beside it does (design section 2). Only a
+// mode of `read-only` frees the workspace: `write` may write inside it, and `off` is the
+// least constrained task there is and may write anywhere. A spec that cannot be read, or
+// whose sandbox this build cannot read as a `{mode, profile}` pair, leaves the task's mode
+// unknown — and an unknown mode has never been shown to be read-only, so it holds the
+// workspace rather than silently letting a second writer in.
 function reservesWorkspace(projectRoot: string, record: TaskRecord): boolean {
   let sandbox: unknown;
   try {
@@ -55,7 +49,8 @@ function reservesWorkspace(projectRoot: string, record: TaskRecord): boolean {
   } catch {
     return true;
   }
-  return typeof sandbox === "string" ? !readOnlyProfiles.has(sandbox) : true;
+  const mode = sandbox !== null && typeof sandbox === "object" ? (sandbox as { mode?: unknown }).mode : undefined;
+  return mode !== "read-only";
 }
 
 /** Every workspace an unsettled writable task holds, and every record that cannot be read. */

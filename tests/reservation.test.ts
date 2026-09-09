@@ -23,6 +23,9 @@ const routes: Record<TaskStatus, TaskStatus[]> = {
 };
 const unsettled: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling"];
 const settled: TaskStatus[] = ["done", "failed", "cancelled"];
+// Two of the {mode, profile} pairs design section 3 declares; the test below covers all of them.
+const writable: LaunchSpec["sandbox"] = { mode: "write", profile: "workspace-write" };
+const readOnly: LaunchSpec["sandbox"] = { mode: "read-only", profile: "read-only" };
 
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-reservation-"));
@@ -30,18 +33,16 @@ function project(t: TestContext): string {
   return root;
 }
 
-function launchSpec(sandbox: string): LaunchSpec {
+function launchSpec(sandbox: LaunchSpec["sandbox"]): LaunchSpec {
   return {
     role: "implementer", brief: "Implement the reservation.", rolePrompt: "prompt", cwd: "/unused",
-    // Grok's `workspace` is not in SpawnRequest's three profiles yet; S5 replaces the
-    // string with {mode, profile}, and the reservation reads the mode instead.
-    sandbox: sandbox as LaunchSpec["sandbox"], sessionId: "session", denyTargets: [], env: {},
+    sandbox, sessionId: "session", denyTargets: [], env: {}, scratchDir: "/unused",
     engine: "codex", adapterModule: "/adapters/codex.ts",
   };
 }
 
 /** A task at `status` on `cwd`, with the launch spec that says whether it may write. */
-async function task(root: string, cwd: string, status: TaskStatus, sandbox: string | null): Promise<TaskRecord> {
+async function task(root: string, cwd: string, status: TaskStatus, sandbox: LaunchSpec["sandbox"] | null): Promise<TaskRecord> {
   const record = create(root, { role: "implementer", brief: `brief ${cwd} ${status}`, cwd, engine: "codex" }, now);
   if (sandbox !== null) writeSpec(root, record.id, launchSpec(sandbox));
   let current = record;
@@ -64,13 +65,13 @@ test("a writable task reserves its cwd for as long as it is unsettled", async (t
   const root = project(t);
   for (const status of unsettled) {
     const cwd = workspace(root, `unsettled-${status}`);
-    const record = await task(root, cwd, status, "workspace-write");
+    const record = await task(root, cwd, status, writable);
     assert.deepEqual(reservedBy(root, cwd), record, `${status} reserves its workspace`);
     assert.deepEqual(reservations(root).reserved.get(cwd), record);
   }
   for (const status of settled) {
     const cwd = workspace(root, `settled-${status}`);
-    await task(root, cwd, status, "workspace-write");
+    await task(root, cwd, status, writable);
     assert.equal(reservedBy(root, cwd), null, `${status} has released its workspace`);
     assert.equal(reservations(root).reserved.has(cwd), false);
   }
@@ -81,17 +82,32 @@ test("a writable task reserves its cwd for as long as it is unsettled", async (t
 
 test("every profile but the read-only ones reserves the workspace", async (t) => {
   const root = project(t);
-  // `off` is the least constrained task there is — no sandbox at all, so it can write
+  // Every profile the three adapters declare, with the mode each maps to (design section
+  // 3). `off` is the least constrained task there is — no sandbox at all, so it can write
   // anywhere — and it holds its workspace exactly as a workspace-write task does.
-  for (const sandbox of ["workspace-write", "workspace", "off"]) {
-    const cwd = workspace(root, `write-${sandbox}`);
+  const profiles: LaunchSpec["sandbox"][] = [
+    { mode: "read-only", profile: "read-only" }, { mode: "read-only", profile: "strict" },
+    { mode: "write", profile: "workspace-write" }, { mode: "write", profile: "workspace" },
+    { mode: "off", profile: "off" },
+  ];
+  for (const sandbox of profiles) {
+    const cwd = workspace(root, `profile-${sandbox.profile}`);
     const record = await task(root, cwd, "running", sandbox);
-    assert.deepEqual(reservedBy(root, cwd), record, `${sandbox} may write`);
+    if (sandbox.mode === "read-only") assert.equal(reservedBy(root, cwd), null, `${sandbox.profile} may not write`);
+    else assert.deepEqual(reservedBy(root, cwd), record, `${sandbox.profile} may write`);
   }
-  for (const sandbox of ["read-only", "strict"]) {
-    const cwd = workspace(root, `read-${sandbox}`);
-    await task(root, cwd, "running", sandbox);
-    assert.equal(reservedBy(root, cwd), null, `${sandbox} may not write`);
+});
+
+test("a launch spec whose sandbox this build cannot read keeps the workspace", async (t) => {
+  const root = project(t);
+  // An older spec's profile string, and a spec with no sandbox at all: neither has ever
+  // been shown to be read-only, so both hold the path rather than let a writer in.
+  for (const [name, sandbox] of [["string", "read-only"], ["absent", undefined], ["null", null]] as const) {
+    const cwd = workspace(root, `unreadable-${name}`);
+    const record = create(root, { role: "implementer", brief: `brief ${name}`, cwd, engine: "codex" }, now);
+    writeSpec(root, record.id, { ...launchSpec(readOnly), sandbox: sandbox as LaunchSpec["sandbox"] });
+    assert.equal((await update(root, record.id, { status: "running" }, now + 1)).applied, true);
+    assert.equal(reservedBy(root, cwd)?.id, record.id, `a ${name} sandbox holds the workspace`);
   }
 });
 
@@ -103,7 +119,7 @@ test("a running task whose launch spec cannot be read keeps its workspace", asyn
   assert.deepEqual(reservedBy(root, missing), record);
 
   const damaged = workspace(root, "damaged-spec");
-  const other = await task(root, damaged, "running", "read-only");
+  const other = await task(root, damaged, "running", readOnly);
   fs.writeFileSync(path.join(root, ".cross-agent", "tasks", `${other.id}.spec.json`), "{not json");
   assert.deepEqual(reservedBy(root, damaged), other);
 
@@ -116,7 +132,7 @@ test("a running task whose launch spec cannot be read keeps its workspace", asyn
 test("an unreadable record is reported as unknown, verbatim from the ledger scan", async (t) => {
   const root = project(t);
   const cwd = workspace(root, "valid");
-  const record = await task(root, cwd, "running", "workspace-write");
+  const record = await task(root, cwd, "running", writable);
   assert.deepEqual(reservations(root).unknown, []);
 
   const broken = path.join(root, ".cross-agent", "tasks", "broken.json");
@@ -137,7 +153,7 @@ test("reservations compare paths canonically", async (t) => {
   const real = workspace(root, "canonical");
   const alias = path.join(root, "alias");
   fs.symlinkSync(path.join(root, ".worktrees"), alias, "dir");
-  const record = await task(root, path.join(alias, "canonical"), "running", "workspace-write");
+  const record = await task(root, path.join(alias, "canonical"), "running", writable);
 
   assert.deepEqual([...reservations(root).reserved.keys()], [fs.realpathSync(real)]);
   assert.deepEqual(reservedBy(root, real), record, "the record's aliased cwd answers for the real path");
@@ -150,7 +166,7 @@ test("reservations compare paths canonically", async (t) => {
 test("a removed workspace is still reserved by the task that has not settled", async (t) => {
   const root = project(t);
   const cwd = workspace(root, "removed");
-  const record = await task(root, cwd, "running", "workspace-write");
+  const record = await task(root, cwd, "running", writable);
   fs.rmSync(cwd, { recursive: true, force: true });
   assert.deepEqual(reservedBy(root, cwd), record);
 });
