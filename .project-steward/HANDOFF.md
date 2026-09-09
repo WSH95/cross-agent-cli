@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T06:40:07Z
+updated_at: 2026-09-09T07:22:59Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -9,24 +9,25 @@ branch: task/cross-agent
 
 ## Now
 
-The plugin is being renamed to `cross-agent` and generalized on branch
-`task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @ 9f85269).
-Landed on the branch: the mechanical rename (9d648b2) and the rewrite of
-`docs/design.md` as the authority for the lead model, modes, ancestry-bound
-authority, and the lifecycle target (b446d32). The plan being executed is
-`~/.claude/plans/the-original-intent-of-rustling-hummingbird.md`; its ledger
-is `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
-in the main checkout. Beads: S1 `atc-s96.19` (in progress), S2 `.20`, S4
-`.21`, S5 `.22`, S8 `.23`, S11 `.24`, backlog `.25`–`.28`; T6–T16 amended.
+Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
+9f85269) carries: the rename (9d648b2); `docs/design.md` rewritten as the
+authority and closed after two review rounds (b446d32, 59ec7f5, 99d19ce);
+the README aligned (9fa1540, one fix round pending); and Task 2a of the
+lifecycle work (45ee841..3a28be7): `src/locks.ts` (OS-held flock on a pipe),
+`ledger.update` async and conditional under the record lock with an
+`{applied}` result, the runner acknowledging only from `launching`,
+treating `cancelling` as a cancel, and holding `runner-<id>.lock` for its
+lifetime; identities carry `bootId`. Tests 146 → 159. The SDD ledger is
+`.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
+in the main checkout. Beads: S1 `atc-s96.19` in progress; S2 `.20` half
+done; new bug `.29` (SIGTERM before the runner's first record read).
 
 ## In flight
 
-Task 1b's design rewrite went through two review rounds (Opus task review,
-Codex gpt-5.6-sol milestone review, two scoped re-reviews): fix round 1
-(59ec7f5) settled the depth cap versus ancestry rule, positive operator
-provenance, the authority walk, and nine contracts; fix round 2 (99d19ce)
-closed the remaining factual minors. The round-2 re-review is running; Task
-1c (README) follows, then the AGENTS.md approval diff is presented.
+Task 2a's Opus review and Task 1c's README fix round, in parallel. Then
+Task 2b (reconcile on the group scan, stranded-engine adoption, spawn
+drain, record validation). The AGENTS.md rename/Layout diff awaits the
+user's approval (`.superpowers/sdd/.../agents-md-proposed.diff`).
 
 ## Next steps
 
