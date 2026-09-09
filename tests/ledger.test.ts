@@ -1,10 +1,13 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
@@ -15,7 +18,7 @@ const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "
 // Design section 2, E1: every status change update may write. Anything else is a bug
 // in a writer, not a race to tolerate, so update throws instead of refusing.
 const legalTransitions: Record<TaskStatus, TaskStatus[]> = {
-  launching: ["running", "cancelling", "failed"],
+  launching: ["running", "cancelling", "failed", "orphaned"],
   running: ["stalled", "cancelling", "orphaned", "done", "failed"],
   stalled: ["running", "cancelling", "orphaned", "done", "failed"],
   orphaned: ["failed", "cancelled"],
@@ -36,6 +39,16 @@ const routes: Record<TaskStatus, TaskStatus[]> = {
   failed: ["failed"],
   cancelled: ["cancelling", "cancelled"],
 };
+
+async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
+  const deadline = Date.now() + timeout;
+  while (true) {
+    const value = read();
+    if (accepts(value)) return value;
+    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
+    await delay(10);
+  }
+}
 
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-ledger-"));
@@ -407,6 +420,72 @@ test("scan reports every unreadable file by name while list returns the valid re
   mock.mock.restore();
   assert.deepEqual(removed.records, [running]);
   assert.deepEqual(removed.invalid.map((entry) => entry.file).sort(), scanned.invalid.map((entry) => entry.file).sort());
+});
+
+test("a zombie is dead however well its pid and start time match", async (t) => {
+  const root = project(t);
+  const marker = path.join(root, "zombie.pid");
+  // The shell starts a background child, records its pid, then execs: nothing is left
+  // that will ever wait on it, so the kernel keeps the entry as a zombie.
+  const parent = spawn("sh", ["-c", `sleep 0 & echo $! > ${marker}; exec sleep 60`], { stdio: "ignore" });
+  t.after(async () => {
+    parent.kill("SIGKILL");
+    await once(parent, "close");
+  });
+  const pid = Number(await poll(() => (fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : ""), (text) => text.length > 0));
+  const stat = await poll(() => readProcessStat(pid), (value) => value?.state === "Z");
+  assert.equal(isProcessAlive({ pid, startTime: stat!.startTime, bootId: currentBootId }), false,
+    "a process that has exited is dead even while its entry survives unreaped");
+});
+
+test("a record whose id does not name its own file is invalid", (t) => {
+  const root = project(t);
+  const record = create(root, input(root), now);
+  const foreign = path.join(tasks(root), "elsewhere.json");
+  fs.writeFileSync(foreign, JSON.stringify({ ...record, id: record.id }));
+  // update(root, "elsewhere") would read this file and write the other one.
+  assert.throws(() => read(root, "elsewhere"), (error: unknown) => {
+    assert.ok(error instanceof InvalidRecordError);
+    assert.match(error.reason, /id .*file/);
+    return true;
+  });
+  assert.deepEqual(scan(root).invalid.map((entry) => entry.file), [foreign]);
+  assert.deepEqual(list(root), [record]);
+  fs.writeFileSync(foreign, JSON.stringify({ ...record, id: "elsewhere" }));
+  assert.equal(read(root, "elsewhere").id, "elsewhere");
+});
+
+test("scan reports a record it may not read instead of throwing", (t) => {
+  const root = project(t);
+  const record = create(root, input(root), now);
+  const other = create(root, input(root), now + 1);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
+  const original = fs.readFileSync;
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === file) throw denied;
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  const scanned = scan(root);
+  mock.mock.restore();
+  assert.deepEqual(scanned.records, [other]);
+  assert.deepEqual(scanned.invalid, [{ file, reason: "permission denied" }]);
+});
+
+test("truncated is a record field the runner may patch", async (t) => {
+  const root = project(t);
+  const record = create(root, input(root), now);
+  const running = await change(root, record.id, { status: "running", truncated: true }, now + 1);
+  assert.equal(running.truncated, true);
+  assert.equal(read(root, record.id).truncated, true);
+  assert.equal((await change(root, record.id, { status: "done", truncated: false }, now + 2)).truncated, false);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  fs.writeFileSync(file, JSON.stringify({ ...record, truncated: "partly" }));
+  assert.throws(() => read(root, record.id), (error: unknown) => {
+    assert.ok(error instanceof InvalidRecordError);
+    assert.match(error.reason, /truncated/);
+    return true;
+  });
 });
 
 test("list filters statuses, sorts newest first, and ignores output and temporary files", async (t) => {

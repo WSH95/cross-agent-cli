@@ -48,6 +48,8 @@ export interface TaskRecord {
   logPath: string;
   sessionId?: string | null;
   reason?: string;
+  /** The engine's stdio drain expired: this record's evidence may be missing its tail. */
+  truncated?: boolean;
 }
 
 export type TaskPatch = Partial<Omit<TaskRecord, "id" | "createdAt" | "updatedAt">>;
@@ -76,7 +78,10 @@ const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
 // Design section 2, E1. Every other status change is a bug in a writer, not a race to
 // tolerate, so update throws for it. A patch that keeps the status is not a transition.
 const transitions: Record<TaskStatus, TaskStatus[]> = {
-  launching: ["running", "cancelling", "failed"],
+  // launching -> orphaned is reconciliation adopting a stranded engine: the record never
+  // passes through running, because a record that is running with an engine identity
+  // grants that engine authority (design, the lead model).
+  launching: ["running", "cancelling", "failed", "orphaned"],
   running: ["stalled", "cancelling", "orphaned", "done", "failed"],
   stalled: ["running", "cancelling", "orphaned", "done", "failed"],
   orphaned: ["failed", "cancelled"],
@@ -87,7 +92,7 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
 };
 const patchFields = new Set<string>([
   "role", "briefHash", "cwd", "engine", "model", "status", "launchDeadline", "runnerIdentity", "engineIdentity",
-  "lastEventAt", "exitCode", "resultPath", "logPath", "sessionId", "reason",
+  "lastEventAt", "exitCode", "resultPath", "logPath", "sessionId", "reason", "truncated",
 ] satisfies (keyof TaskPatch)[]);
 
 function initialize(projectRoot: string): string {
@@ -144,10 +149,13 @@ function identityFault(value: unknown, group: boolean): string | null {
 
 // Every field a reader dereferences without checking, checked once here. Fields this
 // build does not know are kept: a record a later build wrote is not malformed.
-function recordFault(value: unknown): string | null {
+function recordFault(value: unknown, file: string): string | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return "not a JSON object";
   const record = value as Record<string, unknown>;
   if (typeof record.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(record.id)) return "id must be a [A-Za-z0-9_-] string";
+  // Every writer addresses a record by id and reaches <id>.json. A record whose id names
+  // another file would be read here and written there.
+  if (record.id !== path.basename(file, ".json")) return `id ${record.id} does not name its own file`;
   if (typeof record.status !== "string" || !statuses.has(record.status as TaskStatus)) {
     return `status must be one of ${[...statuses].join(", ")}`;
   }
@@ -161,6 +169,7 @@ function recordFault(value: unknown): string | null {
     const fault = identityFault(record[field], field === "engineIdentity");
     if (fault !== null) return `${field} ${fault}`;
   }
+  if (record.truncated !== undefined && typeof record.truncated !== "boolean") return "truncated must be a boolean";
   return null;
 }
 
@@ -172,7 +181,7 @@ function readRecord(file: string): TaskRecord {
   } catch (error) {
     throw new InvalidRecordError(file, `unparsable JSON: ${(error as Error).message}`);
   }
-  const fault = recordFault(parsed);
+  const fault = recordFault(parsed, file);
   if (fault !== null) throw new InvalidRecordError(file, fault);
   return parsed as TaskRecord;
 }
@@ -293,8 +302,13 @@ export function scan(projectRoot: string): { records: TaskRecord[]; invalid: Inv
     try {
       records.push(readRecord(path.join(directory, entry.name)));
     } catch (error) {
+      // A file that vanished between the listing and its read is gone, not invalid.
+      // Anything else — a permission, an I/O error — is a file no reader can judge, and
+      // an operator has to be told its name rather than have the whole scan fail.
       if (error instanceof InvalidRecordError) invalid.push({ file: error.file, reason: error.reason });
-      else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      else if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        invalid.push({ file: path.join(directory, entry.name), reason: (error as Error).message });
+      }
     }
   }
   return { records, invalid };
@@ -331,5 +345,7 @@ export const currentBootId: string = fs.readFileSync("/proc/sys/kernel/random/bo
 export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
   if (!identity || identity.bootId !== currentBootId) return false;
   const stat = readProcessStat(identity.pid);
-  return stat !== null && stat.startTime === identity.startTime;
+  // Z and X are processes that have exited; the entry survives only until someone waits
+  // on it, and a runner in that state owns nothing.
+  return stat !== null && stat.startTime === identity.startTime && stat.state !== "Z" && stat.state !== "X";
 }
