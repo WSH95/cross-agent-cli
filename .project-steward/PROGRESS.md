@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-09T15:48:03Z — claude
+cross-agent T1–T9 series merged to main at 45aacf8 (rename, design as the authority, lifecycle core, T6, engine contract v2, Claude/Codex/Grok adapters, probes P8–P10; 347 tests, 1 skipped); handover written; next T10
+
 ### 2026-09-07T21:55:02Z — claude
 Project Steward and Beads (prefix atc) set up; the T-series record migrated from agent-team-devpack: closed beads atc-s96.1 to .5 with verbatim briefs and outcomes, open atc-s96.6 to .18 with dependencies; steward files written.
 

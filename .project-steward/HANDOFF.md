@@ -1,58 +1,94 @@
 ---
-updated_at: 2026-09-09T14:58:24Z
+updated_at: 2026-09-09T15:48:03Z
 updated_by: claude
-session_status: active
-branch: task/cross-agent
+session_status: closed
+branch: main
 ---
-
 # Handoff
 
 ## Now
 
-Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
-9f85269). Landed and reviewed: rename; `docs/design.md` as the authority
-(`tools/check-citations.mjs` under `npm test`); README; `AGENTS.md` by
-three approved diffs (Decisions 0006, 0007, 0009); the lifecycle core (S2);
-probes P8–P10 (S4); T6; the engine contract v2 (S5); the three adapters —
-Claude (T7, 90fd4d6), Codex (T8, 1a20cc8), Grok (T9, 992a830) — 343 tests
-+ 1 skipped (the I2 placeholder). The final whole-branch review (Opus,
-9f85269..fd36d21) found no Critical defect: three Important (the reconcile
-flake `atc-7bj`; the runner's environ check counting itself and ignoring
-unreadable candidates; nothing enforcing `CROSS_AGENT_TASK` in the engine
-env) and six Minor. Residuals beaded: `atc-s96.39`–`.43`, `.10.1`, `.10.2`.
-SDD ledger (rulings):
-`.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
-(main checkout); DECISIONS 0008 drafted at the session scratchpad.
+`main` at 45aacf8 holds branch `task/cross-agent`, merged fast-forward
+on 2026-09-09 (51 files, about 10,200 insertions over 9f85269). What it
+contains: the rename from `dev-team` to `cross-agent`; `docs/design.md`
+rewritten as the authority (the lead model with `placement: host | engine`,
+authority by process ancestry, the permission matrix, modes as data, engine
+placement's four requirements), checked by `tools/check-citations.mjs`
+under `npm test` (456 citations, 0 misses); the lifecycle core — OS-held
+`flock` locks, async conditional `ledger.update` with a transition table,
+runner ownership and cancel semantics, `bootId`, reconciliation on the
+group scan with adoption by `CROSS_AGENT_TASK`, the spawn drain, record
+validation; T6 — workspace reservation, `git_mutate` on the verified
+git-dir under `spawn.lock` then `git.lock`, the per-task journal; the
+engine contract v2 with `sandboxFor` as the one place a `{mode, profile}`
+pair is built; the Claude, Codex and Grok adapters; probes P8, P9, P10.
+`npm test`: 346 pass, 1 skipped (`tests/engines/codex.test.ts`, the I2
+placeholder that needs a real `codex` binary). The final whole-branch
+review (Opus, 9f85269..fd36d21) found no Critical defect; its three
+Important findings were fixed in `ff18caa` and `da3fc1b` (a second
+pre-existing reconcile flake was fixed test-side on the way; its product
+residual is `atc-1p0`), its Minor findings are beads (`atc-s96.39` to
+`.43`, `.10.1`, `.10.2`), and the 9d review's minors landed as `45aacf8`. Nothing in `src/` yet
+builds a spawn request: the server registers `list_roles` and
+`verify_worktree` only; delegation and authority arrive with T10.
 
 ## In flight
 
-Task 9d, the §3 refresh (`atc-vao`, `atc-6sl`, `atc-540`): `5a70d24`
-committed, `docs/probes.md` still being edited. Queued behind it: the one
-fix dispatch for the final review's I1/I2/I3/M2/M6
-(`task-final-fix-brief.md`) and a scoped re-review; a scoped review of 9d.
+Nothing. The worktree `.worktrees/cross-agent` and branch
+`task/cross-agent` were removed after the merge. The git-ignored SDD
+workspace `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/`
+holds this session's ledger (`progress.md`, every ruling), briefs,
+reports and reviews; it can be deleted once DECISIONS 0008 has been read.
 
 ## Next steps
 
-The operator's close sequence, after the fix and both reviews: a full
-`npm test` on the branch; `git merge --ff-only task/cross-agent` into
-`main` and the suite on `main`; the handover (HANDOFF, PROGRESS, VERIFY,
-PLAN, QUESTIONS; beads closed; DECISIONS 0008 from the scratchpad draft);
-remove the worktree and delete the branch. No push. After that, the next
-work is T10 (two halves briefed; `.10.1`/`.10.2` fold in), T11, modes,
-T12, T13 (needs `.17`), engine placement.
+1. T10a (`atc-s96.10`, first half): authority by ancestry and the server
+   plumbing. Brief: `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/task-10a-brief.md`;
+   rulings in `bd show atc-s96.10` and DECISIONS 0008 ("for T10"). Fold in
+   `atc-s96.10.1` (one source for the engine binary; `sandboxSupport` and
+   `plan` read the same env) and `atc-s96.10.2` (the unexercised contract
+   surface). Expect `resolveAuthority` tests in `tests/authority.test.ts`
+   and `npm test` green.
+2. T10b (`atc-s96.10`, second half): `delegate`, `check`, `result`,
+   `cancel`, `list_tasks`. Brief: `task-10b-brief.md` beside 10a's. It
+   owes `atc-s96.37` (per-task `scratchDir` `<tasks>/<id>.scratch/`) and
+   `atc-vuu` (prefix reservation). The runner now sets `CROSS_AGENT_TASK`
+   itself and stands down on a foreign or unreadable environ match, so
+   `delegate` may spawn the runner with the server's env unchanged.
+3. Before T10 shifts many lines: `atc-s96.36` (cite code by symbol). The
+   checker only proves a cited line exists; every `src/` edit today
+   silently drifts the design's line citations.
+4. T11 (`atc-s96.11`) `wait` with stall detection; then S8 modes
+   (`atc-s96.23`), T12 (`.12`), T13 (`.13`, needs `.17`), T14/T15, S11
+   engine placement (`.24`), T16, the go/no-go (`.18`). `bd ready` lists
+   what is unblocked.
+5. Housekeeping when convenient: `atc-s96.39` (orphaned → cancelling),
+   `.40` (`reservations()` throwing out of `git_mutate`), `.41`
+   (duplicated helpers and ladders), `.42` (docs nits), `.43` (test
+   hygiene), `.33` (load-sensitive tests), `.29` to `.32`, `.38`, and
+   `atc-1p0` (the environ scan's candidate bound loses up to a second to
+   `btime` rounding; P2).
 
 ## Blockers
 
-Probe P2 for Claude still waits on the bwrap AppArmor profile (`atc-s96.17`).
+Probe P2 for Claude (`atc-s96.17`) waits on the bwrap AppArmor profile
+from Claude Code's sandboxing docs (needs sudo). T13 depends on it.
 
 ## Key files
 
-- `docs/design.md`: the authority; sections 1 to 10 plus the work plan.
-- `docs/probes.md`: what each engine CLI does, with commands.
-- `src/`: server, config, worktree, guard, ledger, runner, process, and
-  `engines/` (types, spawn); `tests/` mirrors it;
-  `tests/fixtures/fake-engine.mjs` stands in for a CLI.
-- `tools/probe.mjs`: manual engine probe harness (not product code).
+- `docs/design.md`: the authority — "The lead model", sections 1 to 10,
+  the work plan with what landed per row, Verification.
+- `docs/probes.md`: what each engine CLI does, P1 to P10, and the
+  `--help` facts the adapters rely on.
+- `src/`: `server.ts`, `config.ts`, `ledger.ts`, `locks.ts`, `process.ts`,
+  `reconcile.ts`, `worktree.ts`, `reservation.ts`, `gitmutate.ts`,
+  `journal.ts`, `runner.ts`, `guard.ts`; `engines/` (`types.ts`,
+  `spawn.ts`, `registry.ts`, `binaries.ts`, `claude.ts`, `codex.ts`,
+  `grok.ts`). `tests/` mirrors it; `tests/fixtures/fake-engine.mjs` stands
+  in for a CLI.
+- `tools/probe.mjs` (manual engine probes), `tools/check-citations.mjs`.
+- `.project-steward/DECISIONS.md` 0008: every ruling of the session, each
+  with what it costs if wrong.
 
 ## Tried and rejected
 
@@ -62,12 +98,28 @@ Probe P2 for Claude still waits on the bwrap AppArmor profile (`atc-s96.17`).
   of a reaped leader; replaced by a kernel pgid and session scan).
 - Moving the probe harness onto the adapter interface at T4 (kept manual).
 - Execpolicy rules files as a Codex deny layer (`codex exec` ignores them).
+- A lead token in the launch spec: the spec is readable by every sandbox,
+  so possession cannot mean authority. Replaced by process ancestry.
+- Judging an engine by its leader pid alone (a reaped leader's descendants
+  survive; the group scan replaced it).
+- Grok as an engine-placed lead: P9 found no per-run MCP isolation.
+- `openmaus.package` v1 as an import format: the native mode format only.
+- The Codex `app-server` transport: `exec` needs no dependency or second
+  JSON-RPC client.
 
 ## Warnings
 
 - Never push. Commit policy auto for checkpoints, Conventional Commits.
+- `npm test` runs the citation checker: a `src/` edit that shortens a file
+  below a cited line fails the suite until `docs/` is refreshed, and any
+  edit above a cited line drifts the citation without failing anything.
+- The suite is load-sensitive (`atc-s96.33`): a reconcile or process
+  timing assertion can fail under load about one run in four. Rerun the
+  file in isolation before blaming a change.
 - Projects under `/tmp` or `$TMPDIR` are not isolated by the Codex or Grok
   sandbox.
 - Tests that spawn processes need to run outside Codex's sandbox.
+- The git stash is shared across worktrees: never a bare `git stash`.
 - `AGENTS.md` and `CLAUDE.md` carry managed blocks (Project Steward and
-  Beads); edit only outside them or through the tools.
+  Beads); edit only outside them or through the tools, and only by a diff
+  the user approved (Decisions 0006, 0007, 0009).

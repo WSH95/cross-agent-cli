@@ -10,13 +10,18 @@ reviewer, implementer, code reviewer), and `solo`, one role with no git.
 
 ## Status
 
-Scaffold, plus the core everything else is built on: the task ledger with
-conditional updates under an OS-held lock, config loading, worktree
-verification, the loop-guard helpers, the engine adapter interface and spawn
-pipeline, and the detached runner with its orphan handling. `npm test` covers
-each of those and is green at every commit on `main`. The rest is a target,
-modes included: the delegation tools and the authority model that gates them,
-the three engine adapters, the mode loader, the skills, and each host's
+The core everything else is built on: the task ledger with conditional
+updates under an OS-held lock and a transition table, reconciliation on the
+process-group scan that adopts a stranded engine by its `CROSS_AGENT_TASK`,
+config loading that checks each role's sandbox profile against its engine,
+worktree verification, workspace reservation, `git_mutate` on the verified
+git-dir with a per-task journal, the loop-guard helpers, the engine contract
+with its three adapters (Claude, Codex, Grok) and the spawn pipeline, and
+the detached runner with its orphan handling. `npm test` covers each of
+those, runs the citation checker over the docs, and is green at every commit
+on `main`; one test stays skipped until a real `codex` binary runs it. The
+rest is a target, modes included: the delegation tools and the authority
+model that gates them, the mode loader, the skills, and each host's
 packaging. `docs/design.md` is the design and the work plan; `docs/probes.md`
 records what each engine CLI was observed to do.
 

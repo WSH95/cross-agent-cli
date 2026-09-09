@@ -2,12 +2,15 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## M0: scaffold and engine probes (done 2026-09-07)
+## M0: scaffold and engine probes (done 2026-09-07; P8–P10 added 2026-09-09)
 
 Server skeleton, config loader, fake engine, probe harness (cef9aa5);
 probes P1, P2 (Codex, Grok), P3, P3b, P5, P7 and the design changes they
-forced (93b9956, 529fc46, dda08d1). Open: probe P2 for Claude, blocked on
-the bwrap AppArmor profile (`atc-s96.17`).
+forced (93b9956, 529fc46, dda08d1). P8 (Grok `streaming-messages-json`),
+P9 (per-engine lead mount and instruction delivery), P10 (`codex exec
+resume` keeps neither cwd nor sandbox) recorded on 2026-09-09 (`atc-s96.21`,
+closed). Open: probe P2 for Claude, blocked on the bwrap AppArmor profile
+(`atc-s96.17`).
 
 ## M1: core runtime
 
@@ -15,22 +18,35 @@ the bwrap AppArmor profile (`atc-s96.17`).
   worktree verification (975e394), T3 loop guard (3dba529), T4 adapter
   interface and spawn pipeline (464ac65), T5 runner and orphan handling
   (4f39c71).
-- Open: T6 OS-held locks, reservation, `git_mutate`, journal (`atc-s96.6`);
-  T10 delegate, check, result, cancel (`atc-s96.10`); T11 wait with stall
-  detection (`atc-s96.11`).
+- Done on 2026-09-09 (branch `task/cross-agent`, merged): the rename to
+  `cross-agent` and the design rewritten as the authority (S1, `.19`); the
+  lifecycle core — OS-held locks, async conditional `update` with the
+  transition table, runner ownership and cancel semantics, `bootId`,
+  reconciliation on the group scan with single-write adoption, the spawn
+  drain, record validation (S2, `.20`); T6 — reservation, `git_mutate` on
+  the verified git-dir, the journal, `lockWaitSeconds` (`.6`).
+- Open: T10 delegate, check, result, cancel, list_tasks with authority by
+  ancestry (`.10`, two halves briefed; `.10.1` and `.10.2` fold in; `.37`
+  and `atc-vuu` owed); T11 wait with stall detection (`.11`).
 
-## M2: engine adapters
+## M2: engine adapters (done 2026-09-09)
 
-T7 Claude (`atc-s96.7`, after the Claude probe), T8 Codex (`atc-s96.8`),
-T9 Grok (`atc-s96.9`); all after T6.
+Engine contract v2 (S5, `.22`); T7 Claude (`.7`), T8 Codex (`.8`), T9 Grok
+(`.9`). Grok is not an engine-placed lead (P9). The one-time §3 citation
+refresh after the adapters (`atc-vao`, closed) and the final whole-branch
+review's fix (beads `.39`–`.43` for its residuals).
 
-## M3: skill and packaging
+## M3: modes, skills and packaging
 
-T12 skill and role prompts (`atc-s96.12`), then T13 Claude Code, T14 Codex,
-T15 Grok packaging, each followed by integration probes I1 and I2 and one
-end-to-end slugkit task with that host as the lead (`atc-s96.13` to `.15`).
+Modes and the worktree workspace provider with the built-in `dev-team` and
+`solo` (S8, `.23`); T12 the launcher skill and the mode loops (`.12`); then
+T13 Claude Code, T14 Codex, T15 Grok packaging, each with integration probes
+I1 and I2 (rewritten around the permission matrix) and an end-to-end run
+(`.13`–`.15`; `.13` waits on `.17`); engine placement — `git_root`,
+`run_command`, the mailbox, cascade — with the lead on Claude and Codex
+(S11, `.24`).
 
 ## M4: operator CLI and decision
 
-T16 operator CLI (`atc-s96.16`); go or no-go for the plugin as the second
-binding (`atc-s96.18`).
+T16 operator CLI (`.16`); go or no-go for the plugin as the second binding
+(`.18`).
