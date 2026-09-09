@@ -609,20 +609,24 @@ it says so where it says what the pass decides.
   both callers consume that boolean, `terminateOrphans` to skip the record with
   its identity named and `reconcile.ts:151` to leave a `cancelling` record
   named for the next pass. A caller judging many records has to be able to
-  report a survivor and carry on. The runner keeps its own escalation for the
-  one case the helper cannot serve, where no identity was ever captured and
-  only `handle.pid` names the group (`src/runner.ts:53-68`); folding that one
-  in, and telling an EPERM apart from a group that would not die, are
-  follow-ups on `atc-s96.31`. Killing the strays is the one step that runs
-  **after** the decision has been written, so it reports the pids it could not
-  signal instead of throwing (`src/reconcile.ts:48-73`, `:125`): losing the
-  write to report a failed signal would drop a settled record from `changed`.
-  Orphan cleanup runs in the **same pass** (`reconcileAndCleanup`,
-  `src/reconcile.ts:197-203`), so no caller can observe an `orphaned` record
-  whose group is still being decided; `terminateOrphans` returns `{changed,
-  skipped}` (`src/process.ts:217-236`) so that an identity the group scan calls
-  invalid or reused is named rather than silently skipped, and
-  `reconcileAndCleanup` surfaces `skipped` beside `errors`.
+  report a survivor and carry on. One escalation is still written out by hand:
+  the runner's identity-captured branch, which sequences `killGroup` and
+  `waitForGroup` itself and throws when the group survives
+  (`src/runner.ts:63-69`). That is the remaining duplicate, and folding it onto
+  the helper — with telling an EPERM apart from a group that would not die — is
+  `atc-s96.31`. The runner's other branch, the one with no identity to name the
+  group by, already goes through the helper (`src/runner.ts:70-76` →
+  `src/process.ts:207-210`), as the settlement bullet above states. Killing the
+  strays is the one step that runs **after** the decision has been written, so
+  it reports the pids it could not signal instead of throwing
+  (`src/reconcile.ts:48-73`, `:125`): losing the write to report a failed
+  signal would drop a settled record from `changed`. Orphan cleanup runs in the
+  **same pass** (`reconcileAndCleanup`, `src/reconcile.ts:197-203`), so no
+  caller can observe an `orphaned` record whose group is still being decided;
+  `terminateOrphans` returns `{changed, skipped}` (`src/process.ts:217-236`) so
+  that an identity the group scan calls invalid or reused is named rather than
+  silently skipped, and `reconcileAndCleanup` surfaces `skipped` beside
+  `errors`.
 
   **A pass sees every engine and signals none of its own.** The MCP server is a
   child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts:158`), and
