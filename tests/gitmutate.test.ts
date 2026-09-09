@@ -269,6 +269,24 @@ test("git_mutate refuses arguments that are not one subcommand in this worktree"
   }
 });
 
+test("git_mutate refuses before it runs anything if the step could not be recorded", async (t) => {
+  const { root, add } = await repository(t);
+  await add("recordable");
+  // The slug names the journal file, so a slug that is not a file name of its own would be
+  // found only once the command had already run.
+  for (const slug of ["../escape", "a/b", "", "."]) {
+    refusal(await gitMutate(root, { slug, path: path.join(root, ".worktrees", "recordable"), branch: "task/recordable", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+  }
+  assert.equal(await git(root, "rev-list", "--count", "task/recordable"), "1");
+
+  accepted(await gitMutate(root, { slug: "recordable", args: ["commit", "--allow-empty", "-m", "one"] }, { waitSeconds: 5 }));
+  const journal = path.join(root, ".cross-agent", "journal", "recordable.json");
+  fs.writeFileSync(journal, "{not json");
+  const reason = refusal(await gitMutate(root, { slug: "recordable", args: ["commit", "--allow-empty", "-m", "two"] }, { waitSeconds: 5 }));
+  assert.match(reason, new RegExp(journal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(await git(root, "rev-list", "--count", "task/recordable"), "2", "the damaged journal stopped the commit");
+});
+
 test("a git command that fails returns its exit code and output, and journals nothing", async (t) => {
   const { root, add } = await repository(t);
   await add("failing");

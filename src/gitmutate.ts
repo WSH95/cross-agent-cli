@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "./config.ts";
-import { appendStep } from "./journal.ts";
+import { appendStep, readJournal } from "./journal.ts";
 import type { JournalEntry } from "./journal.ts";
 import { acquire, gitLockName, lockPath } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
@@ -95,6 +95,14 @@ export async function gitMutate(
   const fault = argumentFault(request.args);
   // The shape of the request is judged first: it needs no lock, no scan, and no worktree.
   if (fault !== null) return { ok: false, reason: fault };
+  // The slug names the journal file, and the step this call appends has to be recordable
+  // before the command runs: a slug that is not a file name of its own, or a journal that
+  // cannot be read, would otherwise be found only once the mutation had happened.
+  try {
+    readJournal(projectRoot, request.slug);
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
   const slug = request.slug;
   const branch = request.branch ?? `task/${slug}`;
   const target = path.resolve(projectRoot, request.path ?? path.join(".worktrees", slug));
