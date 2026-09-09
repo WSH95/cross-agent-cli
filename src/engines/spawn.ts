@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from "node:child_process";
-import { appendFileSync, closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "./types.ts";
 
 export interface SpawnResult {
@@ -64,6 +65,11 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     if (!support.ok) throw new Error(`${adapter.name} sandbox refused: ${support.reason}`);
   }
 
+  // Taken once, before any output can arrive: an engine whose output is one document at
+  // exit declares `finish`, and only then is raw stdout kept. Every other adapter buffers
+  // nothing, and its bytes are the log's alone.
+  const finish = adapter.finish?.bind(adapter);
+  const rawStdout: Buffer[] = [];
   const events: EngineEvent[] = [];
   let sessionId: string | null = null;
   let lastEventAt: number | null = null;
@@ -113,6 +119,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
       }
     }
     if (stderr) return;
+    if (finish !== undefined) rawStdout.push(raw);
     let end = raw.length;
     if (raw[end - 1] === 10) {
       end--;
@@ -147,6 +154,20 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     closeLog();
     child = undefined;
 
+    // The document the run was, read once, after the last byte of it and before the final
+    // message is extracted: a session or a result that only the whole output carries is
+    // still this run's, and still counts as evidence.
+    if (finish !== undefined) {
+      try {
+        for (const event of finish(Buffer.concat(rawStdout).toString("utf8"))) {
+          events.push(event);
+          if (event.kind === "session" && sessionId === null) sessionId = event.sessionId;
+        }
+      } catch (error) {
+        failure("finishing output", error);
+      }
+    }
+
     let resultFileText: string | null = null;
     try {
       resultFileText = readFileSync(request.resultPath, "utf8");
@@ -173,6 +194,12 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   try {
     const plan = adapter.plan(request);
+    // The adapter builds argv and names the files that argv points at; the pipeline puts
+    // them in place, parents included, and invents no path of its own.
+    for (const file of plan.files ?? []) {
+      mkdirSync(path.dirname(file.path), { recursive: true });
+      writeFileSync(file.path, file.contents);
+    }
     log = openSync(request.logPath, "a");
     child = (options.spawn ?? spawn)(plan.bin, plan.argv, { cwd: plan.cwd, env: plan.env, detached: true });
     pid = child.pid;

@@ -639,3 +639,97 @@ test("every format preserves fail, stall, and invocation recording", { timeout: 
     }
   }
 });
+
+test("a declared finish is called once with the whole raw stdout and its events are appended", async (t) => {
+  const { launch, request } = task(t);
+  const documents: string[] = [];
+  // Grok's `json` mode is the case finish exists for: one document at exit, nothing
+  // before it, so no line means anything on its own.
+  const adapter: EngineAdapter = {
+    ...generic,
+    parseLine: () => null,
+    finish(rawStdout) {
+      documents.push(rawStdout);
+      const document = JSON.parse(rawStdout);
+      return [{ kind: "session", sessionId: document.sessionId }, { kind: "result", text: document.text }];
+    },
+  };
+  const result = await launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok" } }).result;
+  assert.equal(documents.length, 1);
+  // Raw bytes, not parsed lines: the log holds exactly what the child wrote.
+  assert.equal(documents[0], readFileSync(request.logPath, "utf8"));
+  assert.deepEqual(JSON.parse(documents[0]), { text: "DONE complete the task", stopReason: "end_turn", sessionId: result.sessionId });
+  // A late session is still the run's session, and a late result is still its result.
+  assert.match(result.sessionId!, /^fake-\d+$/);
+  assert.deepEqual(result.events, [
+    { kind: "session", sessionId: result.sessionId! }, { kind: "result", text: "DONE complete the task" },
+  ]);
+  assert.equal(result.finalMessage, "DONE complete the task");
+  assert.equal(readFileSync(request.resultPath, "utf8"), "DONE complete the task");
+  assert.equal(result.ok, true);
+});
+
+test("an adapter that declares no finish is never asked for one, so nothing is buffered", async (t) => {
+  const { launch } = task(t);
+  const adapter: EngineAdapter = { ...generic, parseLine: () => null };
+  assert.equal("finish" in adapter, false);
+  const handle = launch(adapter, { env: { FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_FORMAT: "grok" } });
+  // Whether to keep the raw output is decided before any arrives; one attached after the
+  // launch is an adapter this run never had, and a run that called it had been buffering.
+  adapter.finish = () => assert.fail("a finish declared after the launch must not run");
+  const result = await handle.result;
+  assert.deepEqual(result.events, []);
+  assert.equal(result.sessionId, null);
+  assert.equal(result.lastEventAt, null);
+  assert.equal(result.finalMessage, "");
+  assert.equal(result.ok, true);
+});
+
+test("a failing finish is reported as this engine's error and does not lose the run", async (t) => {
+  const { launch } = task(t);
+  const adapter: EngineAdapter = {
+    ...generic, finish() { throw new Error("cannot read the document"); },
+  };
+  const result = await launch(adapter).result;
+  assert.equal(result.ok, false);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.events.at(-1)!.text, /^claude finishing output: cannot read the document$/);
+  // The events parsed before it are still evidence, and still name the run's session.
+  assert.deepEqual(result.events.slice(0, -1), [
+    { kind: "session", sessionId: result.sessionId! },
+    { kind: "activity", text: "working" },
+    { kind: "result", text: "DONE complete the task" },
+  ]);
+});
+
+test("plan files are written, parents included, before the child is spawned", async (t) => {
+  const { launch, request } = task(t);
+  const mount = path.join(request.cwd, "scratch", "lead", "mcp-config.json");
+  const role = path.join(request.cwd, "scratch", "role.md");
+  const files = [{ path: mount, contents: '{"mcpServers":{}}\n' }, { path: role, contents: "Implement the brief." }];
+  const adapter: EngineAdapter = { ...generic, plan: (value) => ({ ...generic.plan(value), files }) };
+  let spawned = 0;
+  const result = await launch(adapter, {}, {
+    spawn(bin, argv, options) {
+      spawned++;
+      for (const file of files) assert.equal(readFileSync(file.path, "utf8"), file.contents);
+      return spawn(bin, argv, options);
+    },
+  }).result;
+  assert.equal(spawned, 1);
+  assert.equal(result.ok, true);
+});
+
+test("a plan file that cannot be written is a launch failure, and nothing is spawned", async (t) => {
+  const { launch, request } = task(t);
+  const blocker = path.join(request.cwd, "blocker");
+  writeFileSync(blocker, "not a directory");
+  const adapter: EngineAdapter = {
+    ...generic,
+    plan: (value) => ({ ...generic.plan(value), files: [{ path: path.join(blocker, "mcp-config.json"), contents: "{}" }] }),
+  };
+  const result = await launch(adapter, {}, { spawn: () => { assert.fail("must refuse before spawning"); } }).result;
+  assert.equal(result.ok, false);
+  assert.equal(result.exitCode, null);
+  assert.match(result.events.at(-1)!.text, /^claude launch error: /);
+});
