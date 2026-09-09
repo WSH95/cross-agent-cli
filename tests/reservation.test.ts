@@ -79,17 +79,19 @@ test("a writable task reserves its cwd for as long as it is unsettled", async (t
   assert.equal(reservedBy(root, path.join(root, ".worktrees", "never-used")), null);
 });
 
-test("only a write sandbox reserves, and the profile map decides which one that is", async (t) => {
+test("every profile but the read-only ones reserves the workspace", async (t) => {
   const root = project(t);
-  for (const sandbox of ["workspace-write", "workspace"]) {
+  // `off` is the least constrained task there is — no sandbox at all, so it can write
+  // anywhere — and it holds its workspace exactly as a workspace-write task does.
+  for (const sandbox of ["workspace-write", "workspace", "off"]) {
     const cwd = workspace(root, `write-${sandbox}`);
     const record = await task(root, cwd, "running", sandbox);
-    assert.deepEqual(reservedBy(root, cwd), record, `${sandbox} is a write profile`);
+    assert.deepEqual(reservedBy(root, cwd), record, `${sandbox} may write`);
   }
-  for (const sandbox of ["read-only", "strict", "off"]) {
+  for (const sandbox of ["read-only", "strict"]) {
     const cwd = workspace(root, `read-${sandbox}`);
     await task(root, cwd, "running", sandbox);
-    assert.equal(reservedBy(root, cwd), null, `${sandbox} is not a write profile`);
+    assert.equal(reservedBy(root, cwd), null, `${sandbox} may not write`);
   }
 });
 

@@ -16,11 +16,13 @@ export interface Reservations {
 }
 
 const terminal = new Set(["done", "failed", "cancelled"]);
-// Design section 3's map from an engine's own profile name to a portable mode, for the
-// two profiles that mean `write`: Claude and Codex `workspace-write`, Grok `workspace`.
-// S5 moves the map onto the adapters and puts `{mode, profile}` on the spec, and then
-// this set becomes `mode === "write"`.
-const writeProfiles = new Set(["workspace-write", "workspace"]);
+// The profiles that cannot write: Claude and Codex `read-only`, Grok `read-only` and
+// `strict` (design section 3's map). Everything else reserves — `workspace-write` and
+// `workspace` because they may write inside the workspace, and `off` because it is the
+// least constrained task there is and may write anywhere. S5 moves the map onto the
+// adapters and puts `{mode, profile}` on the spec, and then this set becomes
+// `mode === "read-only"`.
+const readOnlyProfiles = new Set(["read-only", "strict"]);
 
 /**
  * The path a reservation is keyed by. A removed worktree still holds its reservation, so
@@ -54,7 +56,7 @@ function reservesWorkspace(projectRoot: string, record: TaskRecord): boolean {
   } catch {
     return true;
   }
-  return typeof sandbox === "string" ? writeProfiles.has(sandbox) : true;
+  return typeof sandbox === "string" ? !readOnlyProfiles.has(sandbox) : true;
 }
 
 /** Every workspace an unsettled writable task holds, and every record that cannot be read. */
