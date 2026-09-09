@@ -15,7 +15,7 @@ import type { GitMutateResult } from "../src/gitmutate.ts";
 import { readJournal } from "../src/journal.ts";
 import { create, update, writeSpec } from "../src/ledger.ts";
 import type { LaunchSpec } from "../src/ledger.ts";
-import { acquire, gitLockName, lockPath } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 
 const exec = promisify(execFile);
@@ -190,6 +190,44 @@ test("git_mutate runs in the worktree the verifier resolved, not the one the slu
   assert.equal(journal.branch, "task/b", "the journal records the branch that was verified");
   assert.equal(journal.branchHead, result.after);
   assert.deepEqual(journal.steps.map((step) => step.after), [result.after]);
+
+  // A journal belongs to one branch, so the next call under this slug has to be on it.
+  // The refusal comes before anything runs, not after the branch has moved.
+  const second = await gitMutate(root, { slug: "a", args: ["commit", "--allow-empty", "-m", "in a"] }, { waitSeconds: 5, now: 8 });
+  assert.equal(refusal(second), "slug a is journaled on task/b; refusing task/a");
+  assert.equal(await git(root, "rev-parse", "refs/heads/task/a"), beforeA, "and task/a still never moved");
+  assert.deepEqual(readJournal(root, "a")!.steps.length, 1);
+  accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "in b again"] }, { waitSeconds: 5, now: 9 }));
+});
+
+test("git_mutate holds spawn.lock for the whole call and takes git.lock inside it", async (t) => {
+  const { root, add } = await repository(t);
+  await add("ordered");
+  const initial = await git(root, "rev-parse", "refs/heads/task/ordered");
+
+  // delegate holds spawn.lock around validate-and-spawn (T10), so a mutation that holds
+  // it too cannot have its reservation check race a delegation taking the same workspace.
+  const held = await acquire(lockPath(root, spawnLockName()), { operation: "a delegate", waitSeconds: 5 });
+  t.after(() => held.release());
+  const blocked = gitMutate(root, { slug: "ordered", args: ["commit", "--allow-empty", "-m", "waits"] }, { waitSeconds: 20, now: 1 });
+  await delay(400);
+  assert.equal(await git(root, "rev-parse", "refs/heads/task/ordered"), initial, "nothing ran while spawn.lock was held");
+  await held.release();
+  accepted(await blocked);
+
+  // And the order is always spawn.lock then git.lock: a mutation waiting for git.lock is
+  // already holding spawn.lock, which is why no delegate can slip in behind it.
+  const competitor = await acquire(lockPath(root, gitLockName()), { operation: "a competing mutation", waitSeconds: 5 });
+  t.after(() => competitor.release());
+  const waiting = gitMutate(root, { slug: "ordered", args: ["commit", "--allow-empty", "-m", "second"] }, { waitSeconds: 20, now: 2 });
+  await delay(400);
+  await assert.rejects(
+    acquire(lockPath(root, spawnLockName()), { operation: "a delegate", waitSeconds: 0 }),
+    /held by another process/,
+  );
+  await competitor.release();
+  accepted(await waiting);
+  assert.equal(await git(root, "rev-list", "--count", "task/ordered"), "3");
 });
 
 test("git_mutate passes the verified directories explicitly and hands the child no GIT_DIR", async (t) => {

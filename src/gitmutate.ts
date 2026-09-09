@@ -3,8 +3,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
-import type { JournalEntry } from "./journal.ts";
-import { acquire, gitLockName, lockPath } from "./locks.ts";
+import type { Journal, JournalEntry } from "./journal.ts";
+import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import { verifyWorktree } from "./worktree.ts";
 
@@ -87,7 +87,8 @@ async function revision(gitDir: string, workTree: string, branch: string): Promi
  * worktree's `.git` is a writable file inside the implementer's sandbox, so nothing here
  * trusts it: the four steps are refuse while the workspace is reserved, verify the
  * worktree from the root, run the command under `git.lock` against the directories the
- * verifier returned, and journal the step with the SHAs around it.
+ * verifier returned, and journal the step with the SHAs around it. This function judges
+ * the request, which needs no lock at all, and then takes `spawn.lock` for the four.
  */
 export async function gitMutate(
   projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,
@@ -98,15 +99,39 @@ export async function gitMutate(
   // The slug names the journal file, and the step this call appends has to be recordable
   // before the command runs: a slug that is not a file name of its own, or a journal that
   // cannot be read, would otherwise be found only once the mutation had happened.
+  let journalled: Journal | null;
   try {
-    readJournal(projectRoot, request.slug);
+    journalled = readJournal(projectRoot, request.slug);
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
   }
   const slug = request.slug;
   const branch = request.branch ?? `task/${slug}`;
   const target = path.resolve(projectRoot, request.path ?? path.join(".worktrees", slug));
+  // A journal belongs to one branch: every step's SHAs were recorded against it, so a call
+  // on another branch under the same slug is refused here, before anything has run.
+  if (journalled !== null && journalled.branch !== branch) {
+    return { ok: false, reason: `slug ${slug} is journaled on ${journalled.branch}; refusing ${branch}` };
+  }
 
+  // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
+  // around validate-and-spawn (T10), so holding it across this whole call is what keeps
+  // the reservation check below from racing a delegation about to take this workspace.
+  const claim = await acquire(lockPath(projectRoot, spawnLockName()), {
+    waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
+  });
+  try {
+    return await mutate(projectRoot, request, options, { slug, branch, target });
+  } finally {
+    await claim.release();
+  }
+}
+
+/** The four steps, with `spawn.lock` held for all of them. */
+async function mutate(
+  projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,
+  { slug, branch, target }: { slug: string; branch: string; target: string },
+): Promise<GitMutateResult> {
   // 1. A task that may write there owns it until it settles, and a record nobody can read
   // is a task whose workspace nobody can clear (design section 2, E2).
   const known = reservations(projectRoot);
