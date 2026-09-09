@@ -158,6 +158,25 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
   validationError(root, "limits.stallMinutes");
 });
 
+test("lockWaitSeconds reads the configured wait, and answers even when it cannot", (t) => {
+  const root = project(t);
+  writeConfig(root, { roles: {} });
+  assert.equal(config.lockWaitSeconds(root), 5);
+  writeConfig(root, { roles: {}, limits: { lockWaitSeconds: 0 } });
+  assert.equal(config.lockWaitSeconds(root), 0);
+  writeConfig(root, { roles: {}, limits: { lockWaitSeconds: 12.5 } });
+  assert.equal(config.lockWaitSeconds(root), 12.5);
+  // Locks are taken on paths that run before anyone has a config to read — a runner in a
+  // project that was never initialized, a reconciliation of a half-written one — and every
+  // one of them still has to wait for something rather than refuse or throw.
+  rmSync(path.join(root, config.CONFIG_PATH));
+  assert.equal(config.lockWaitSeconds(root), 5);
+  writeConfig(root, { roles: {}, limits: { lockWaitSeconds: -1 } });
+  assert.equal(config.lockWaitSeconds(root), 5);
+  writeFileSync(path.join(root, config.CONFIG_PATH), "{broken");
+  assert.equal(config.lockWaitSeconds(root), 5);
+});
+
 test("loadConfig retains missing-config guidance", (t) => {
   const root = project(t);
   assert.throws(() => config.loadConfig(root), (error: unknown) => {

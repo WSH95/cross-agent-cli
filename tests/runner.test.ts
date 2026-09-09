@@ -361,6 +361,30 @@ test("launch specs round-trip atomically and remain separate from task records",
   } finally { await h.cleanup(); }
 });
 
+test("the runner waits the configured lockWaitSeconds for its record writes", async () => {
+  const h = harness();
+  try {
+    fs.writeFileSync(path.join(h.root, ".cross-agent", "config.json"),
+      JSON.stringify({ roles: {}, limits: { lockWaitSeconds: 0 } }));
+    // The record lock is held for as long as this test wants it. A runner that took the
+    // helper's own five-second default would still be blocked here; one that reads the
+    // project's limit refuses at once and says how long it waited.
+    const lock = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "a competing writer", waitSeconds: 5 });
+    try {
+      h.start();
+      const diagnostic = path.join(h.root, ".cross-agent", "tasks", `${h.record.id}.runner.log`);
+      await poll(
+        () => (fs.existsSync(diagnostic) ? fs.readFileSync(diagnostic, "utf8") : ""),
+        (text) => /waited 0s/.test(text),
+        4000,
+      );
+      assert.equal(h.read().status, "launching", "and nothing was written past the lock");
+    } finally {
+      await lock.release();
+    }
+  } finally { await h.cleanup(); }
+});
+
 test("normal runner records both identities while running and finishes done with output", async () => {
   const h = harness();
   try {

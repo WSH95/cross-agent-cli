@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, isProcessAlive, readProcessStat, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 import { findByEnvironment, groupAlive, terminateGroup, terminateOrphans } from "./process.ts";
@@ -86,7 +87,7 @@ async function killStrays(strays: FoundProcess[]): Promise<string[]> {
  * and is killed once the write has applied. A forged CROSS_AGENT_TASK can therefore get a
  * process killed — the operator's own foot — but it can never grant authority.
  */
-async function adopt(projectRoot: string, record: TaskRecord, now: number): Promise<Judgement> {
+async function adopt(projectRoot: string, record: TaskRecord, now: number, waitSeconds: number): Promise<Judgement> {
   // The same preconditions, re-read inside the lock, so the decision is taken on the
   // record as it is when it is written, not as it was when it was listed.
   const expect = (current: TaskRecord) =>
@@ -118,17 +119,17 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number): Prom
     ? { status: "orphaned", engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } }
     : { status: "failed", reason: strays.length > 0 ? `launch; killed stray ${strays.map((entry) => entry.pid).join(", ")}` : "launch" };
 
-  const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true, expect });
+  const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true, expect, waitSeconds });
   if (!result.applied) {
     return { changed: [], errors: [{ id: record.id, reason: `launch decision refused: the record is ${result.record.status}` }] };
   }
   return { changed: [result.record], errors: (await killStrays(strays)).map((reason) => ({ id: record.id, reason })) };
 }
 
-async function judge(projectRoot: string, record: TaskRecord, now: number): Promise<Judgement> {
+async function judge(projectRoot: string, record: TaskRecord, now: number, waitSeconds: number): Promise<Judgement> {
   if (record.status === "launching") {
     if (now <= record.launchDeadline || record.runnerIdentity) return nothing;
-    return adopt(projectRoot, record, now);
+    return adopt(projectRoot, record, now, waitSeconds);
   }
 
   if ((record.status === "running" || record.status === "stalled") && !runnerAlive(record)) {
@@ -136,7 +137,7 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
       ? { status: "orphaned" as const }
       : { status: "failed" as const, reason: "runner lost" };
     const result = await update(projectRoot, record.id, patch, now, {
-      unlessTerminal: true,
+      unlessTerminal: true, waitSeconds,
       expect: (current) => current.status === record.status && sameRunner(current.runnerIdentity, record.runnerIdentity),
     });
     // A record another writer moved on is that writer's, not this pass's business.
@@ -152,7 +153,7 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
       return { changed: [], errors: [{ id: record.id, reason: `engine group ${identity.pgid} did not terminate` }] };
     }
     const result = await update(projectRoot, record.id, { status: "cancelled", reason: "runner lost during cancel" }, now, {
-      unlessTerminal: true, expect: (current) => current.status === "cancelling",
+      unlessTerminal: true, waitSeconds, expect: (current) => current.status === "cancelling",
     });
     return result.applied ? { changed: [result.record], errors: [] } : nothing;
   }
@@ -172,13 +173,16 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
  */
 export async function reconcile(projectRoot: string, now = Date.now()): Promise<Reconciled> {
   const { records, invalid } = scan(projectRoot);
+  // One read of the project's waiting rule for the whole pass: every record write below
+  // waits that long for its record lock and then reports the record it could not judge.
+  const waitSeconds = lockWaitSeconds(projectRoot);
   const changed: TaskRecord[] = [];
   const errors: TaskError[] = [];
   for (const record of records) {
     // One record's trouble is that record's. A pass that stopped at the first would leave
     // every task after it unjudged, and reconciliation runs on every listing.
     try {
-      const judgement = await judge(projectRoot, record, now);
+      const judgement = await judge(projectRoot, record, now, waitSeconds);
       changed.push(...judgement.changed);
       errors.push(...judgement.errors);
     } catch (error) {

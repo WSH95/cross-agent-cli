@@ -119,6 +119,21 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
   return { ...document, project, roles, limits, billing } as CrossAgentConfig;
 }
 
+/**
+ * How long every lock in this project waits before it refuses (design section 2). Locks
+ * are taken on paths that run before anyone has a readable config — a runner in a project
+ * that was never initialized, a reconciliation of a half-written one — so a config that
+ * cannot be read answers with the documented default rather than throwing at a caller
+ * whose only question was how long to wait.
+ */
+export function lockWaitSeconds(projectRoot: string): number {
+  try {
+    return loadConfig(projectRoot).limits.lockWaitSeconds;
+  } catch {
+    return limitDefaults.lockWaitSeconds;
+  }
+}
+
 function temporaryLocationWarning(projectRoot: string): string | undefined {
   const root = realpathSync(projectRoot);
   for (const temporary of ["/tmp", process.env.TMPDIR]) {

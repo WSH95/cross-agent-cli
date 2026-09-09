@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { create, currentBootId, list, read, readProcessStat, update } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { findByEnvironment, groupAlive, terminateOrphans } from "../src/process.ts";
+import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { reconcile, reconcileAndCleanup } from "../src/reconcile.ts";
 import type { Reconciled } from "../src/reconcile.ts";
 
@@ -39,6 +40,12 @@ function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-reconcile-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
+}
+
+/** A project whose config sets one limit; the rest are the documented defaults. */
+function configure(root: string, lockWaitSeconds: number): void {
+  fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, limits: { lockWaitSeconds } }));
 }
 
 function input(cwd: string): CreateTask {
@@ -615,4 +622,41 @@ test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
   assert.deepEqual(result.skipped, []);
   assert.equal(read(root, record.id).status, "failed");
   assert.equal(groupAlive(engine.identity), false, "no caller can see an orphan whose group is still being decided");
+});
+
+test("a pass waits the configured lockWaitSeconds for a record it cannot write", async (t) => {
+  const root = project(t);
+  configure(root, 0);
+  const record = await started(root, "running", now);
+  await change(root, record.id, { runnerIdentity: deadIdentity() }, now + 1);
+
+  // Another writer holds the record lock. Every lock in the project waits
+  // limits.lockWaitSeconds and then refuses, so a pass configured not to wait reports the
+  // record it could not judge at once instead of blocking on each one in turn.
+  const lock = await acquire(lockPath(root, recordLockName(record.id)), { operation: "a competing writer", waitSeconds: 5 });
+  t.after(() => lock.release());
+  const at = Date.now();
+  const { changed, errors } = await reconcile(root, now + 2);
+  const elapsed = Date.now() - at;
+  assert.deepEqual(changed, []);
+  assert.deepEqual(errors.map((entry) => entry.id), [record.id]);
+  assert.match(errors[0].reason, /waited 0s/);
+  assert.ok(elapsed < 1000, `the pass took ${elapsed}ms`);
+  assert.equal(read(root, record.id).status, "running", "and the record it could not take is untouched");
+});
+
+test("orphan cleanup waits the configured lockWaitSeconds for each settlement", async (t) => {
+  const root = project(t);
+  configure(root, 0);
+  const record = await started(root, "orphaned", now);
+  // An identity from another boot is dead however alive that pid looks now, so cleanup has
+  // nothing to signal and goes straight to the settlement this test holds the lock on.
+  await change(root, record.id, { engineIdentity: { pid: 2, pgid: 2, startTime: "1", bootId: "an earlier boot" } }, now + 1);
+
+  const lock = await acquire(lockPath(root, recordLockName(record.id)), { operation: "a competing writer", waitSeconds: 5 });
+  t.after(() => lock.release());
+  const at = Date.now();
+  await assert.rejects(terminateOrphans(root), /waited 0s/);
+  const elapsed = Date.now() - at;
+  assert.ok(elapsed < 1000, `cleanup took ${elapsed}ms`);
 });

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
+import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, list, readProcessStat, update } from "./ledger.ts";
 import type { EngineIdentity, ProcessIdentity, TaskRecord } from "./ledger.ts";
 
@@ -217,6 +218,8 @@ export function terminateGroupByPid(pid: number, options: TerminateOptions = {})
 export async function terminateOrphans(projectRoot: string): Promise<{ changed: TaskRecord[]; skipped: Skipped[] }> {
   const changed: TaskRecord[] = [];
   const skipped: Skipped[] = [];
+  // One read of the project's waiting rule for the whole pass, as reconciliation does.
+  const waitSeconds = lockWaitSeconds(projectRoot);
   for (const record of list(projectRoot, "orphaned")) {
     const identity = record.engineIdentity;
     const state = inspectGroup(identity);
@@ -229,7 +232,7 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
       continue;
     }
     // A record settled by another writer since the listing is refused: not changed.
-    const result = await update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true });
+    const result = await update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true, waitSeconds });
     if (result.applied) changed.push(result.record);
   }
   return { changed, skipped };

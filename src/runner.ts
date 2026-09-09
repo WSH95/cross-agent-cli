@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
+import { lockWaitSeconds } from "./config.ts";
 import { read, readSpec, update } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
@@ -16,6 +17,9 @@ async function run(projectRoot: string, id: string): Promise<void> {
   const directory = path.join(projectRoot, ".cross-agent", "tasks");
   fs.mkdirSync(directory, { recursive: true });
   const diagnosticPath = path.join(directory, `${id}.runner.log`);
+  // The launch spec does not carry it, so the runner reads the project's own waiting rule
+  // once, here: every record write below waits that long for the record lock and no longer.
+  const waitSeconds = lockWaitSeconds(projectRoot);
   let record: TaskRecord;
   let handle: SpawnHandle | undefined;
   let engine: EngineIdentity | undefined;
@@ -35,7 +39,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
   // can tell "I wrote it" from "someone else owns it" and act on what it found.
   async function write(patch: TaskPatch, options: UpdateOptions = { unlessTerminal: true }): Promise<UpdateResult> {
     try {
-      const result = await update(projectRoot, id, patch, Date.now(), options);
+      const result = await update(projectRoot, id, patch, Date.now(), { waitSeconds, ...options });
       if (result.applied) record = result.record;
       else log(`refused ${result.reason}: task ${id} is ${result.record.status}`);
       return result;
