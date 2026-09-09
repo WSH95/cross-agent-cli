@@ -21,7 +21,7 @@ export interface CrossAgentConfig {
   project: { defaultBranch: string; testCommand: string; setupCommand: string; mergePolicy: string };
   roles: Record<string, RoleConfig>;
   engines?: Record<string, { bin?: string }>;
-  limits: { maxDepth: number; stallMinutes: number; waitDefaultSeconds: number; duplicateWindowMinutes: number };
+  limits: { maxDepth: number; stallMinutes: number; waitDefaultSeconds: number; duplicateWindowMinutes: number; lockWaitSeconds: number };
   billing: "subscription" | "api";
 }
 
@@ -34,7 +34,7 @@ const projectDefaults: CrossAgentConfig["project"] = {
   defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto",
 };
 const limitDefaults: CrossAgentConfig["limits"] = {
-  maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10,
+  maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
 };
 const defaultConfig: CrossAgentConfig = {
   project: projectDefaults,
@@ -110,6 +110,11 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
     const value = limits[key as keyof typeof limitDefaults];
     if (typeof value !== "number" || !Number.isFinite(value)) invalid(`limits.${key}`, "a finite number");
   }
+  // Every lock waits this long and then refuses (design section 2). `flock -w -1` sets no
+  // timer at all and exits 71 before it ever looks at the file, which this helper would
+  // read as "held by another process": a negative wait would refuse every lock in the
+  // project and blame a holder that does not exist.
+  if (limits.lockWaitSeconds < 0) invalid("limits.lockWaitSeconds", "a finite number of seconds, not negative");
   const billing = oneOf(document.billing === undefined ? "subscription" : document.billing, "billing", ["subscription", "api"] as const);
   return { ...document, project, roles, limits, billing } as CrossAgentConfig;
 }

@@ -9,7 +9,7 @@ import * as config from "../src/config.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
-const limitDefaults = { maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10 };
+const limitDefaults = { maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5 };
 const sectionSixDefaults = {
   project: projectDefaults,
   roles: {
@@ -95,7 +95,7 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
       workspace: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
     },
     engines: { claude: { bin: "/custom/claude" }, codex: {}, grok: { bin: "custom-grok" } },
-    limits: { maxDepth: 2, stallMinutes: 0.5, waitDefaultSeconds: 0, duplicateWindowMinutes: 0 },
+    limits: { maxDepth: 2, stallMinutes: 0.5, waitDefaultSeconds: 0, duplicateWindowMinutes: 0, lockWaitSeconds: 0 },
     billing: "api",
   };
   writeConfig(root, explicit);
@@ -147,6 +147,8 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
   for (const field of Object.keys(limitDefaults)) {
     for (const value of [null, "1", true, []]) invalid.push([{ roles: {}, limits: { [field]: value } }, `limits.${field}`]);
   }
+  // A wait cannot run backwards, and flock would take -1 as an argument it never refuses.
+  for (const value of [-1, -0.5]) invalid.push([{ roles: {}, limits: { lockWaitSeconds: value } }, "limits.lockWaitSeconds"]);
   for (const value of [null, "unknown", 1]) invalid.push([{ roles: {}, billing: value }, "billing"]);
   for (const [value, field] of invalid) {
     writeConfig(root, value);
