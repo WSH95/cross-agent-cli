@@ -1100,7 +1100,7 @@ which is a property of the line, not of the pipeline.
   place** (`src/engines/codex.ts:143-148`, `:153`): a bare positional is
   misread as a flag the moment a brief begins with `-`, and a brief is prose a
   lead composes, not a string this file controls. Both heads document the
-  spelling (`codex-cli` 0.153.4 `--help`, `docs/probes.md:452-463`), and the
+  spelling (`codex-cli` 0.153.4 `--help`, `docs/probes.md:454-465`), and the
   `-o` file is emptied before the spawn so a dead run cannot report the
   previous one's last message as its own (`src/engines/codex.ts:119`,
   `tests/engines/codex.test.ts:295`). The launch, write, `off` and resumed
@@ -1114,7 +1114,7 @@ which is a property of the line, not of the pipeline.
   `--ignore-rules`, `--output-schema`, `--json`, and
   `-o/--output-last-message`, and **neither `-C` nor `--sandbox`** (`codex exec
   resume --help`, 0.153.4, read 2026-09-09 and recorded at
-  `docs/probes.md:447-452`). So the resume line is `codex exec resume <thread
+  `docs/probes.md:449-454`). So the resume line is `codex exec resume <thread
   id> --json -o <out> --ignore-user-config --skip-git-repo-check -m <m> -c
   model_reasoning_effort="<e>" -c sandbox_mode="<the role's Codex profile>" -c
   model_instructions_file="<role.md>" -`, spawned with the **resuming
@@ -1261,10 +1261,11 @@ named where they occur. P2 for Claude is **outstanding**, waiting on the
 `bwrap` AppArmor profile (`atc-s96.17`), so the Claude sandbox row of that
 probe is a `--help` and P1 fact rather than a run. And the flags no run had to
 exercise — `codex exec`'s and `codex exec resume`'s full option lists, the `-`
-positional each of those two heads reads stdin behind,
-`--reasoning-effort` and its `--effort` alias, `--system-prompt-override`,
-`--include-partial-messages` — are `--help` readings, recorded with their CLI
-versions in the same file (`docs/probes.md:408-463`; Claude Code 2.1.266, Codex
+positional each of those two heads reads stdin behind, Claude's `--effort`,
+Grok's `--reasoning-effort` and its `--effort` alias,
+`--system-prompt-override` and `--include-partial-messages` — are `--help`
+readings, recorded with their CLI
+versions in the same file (`docs/probes.md:408-465`; Claude Code 2.1.266, Codex
 0.153.4, Grok Build 1.0.13). No other claim in this section is waiting on a
 probe.
 
@@ -1913,7 +1914,7 @@ reason), and the loop-guard scope as a hard requirement.
      kind, and a child inherits the operator's Grok configuration, Grok plugins
      and `~/.claude.json` servers. Ruling: **no Grok lead** ("The lead model",
      item 4). The run also recorded the `--help` facts of section 3
-     (`docs/probes.md:408-463`).
+     (`docs/probes.md:408-465`).
    - P10 `codex exec resume`. **Recorded 2026-09-09**
      (`docs/probes.md:363-406`): the subcommand takes neither `-C` nor
      `--sandbox`, and a resumed thread keeps neither the cwd nor the sandbox of
@@ -2156,7 +2157,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/engines/codex.test.ts:521`): that `codex exec … -` and `codex exec
   resume <id> … -` each take the brief from stdin rather than send the literal
   `-` as the prompt — `--help` settles the flag on both heads
-  (`docs/probes.md:452-463`), so what is left is that a run behaves as the help
+  (`docs/probes.md:454-465`), so what is left is that a run behaves as the help
   says — and the resumed-session negative writes above.
 - **Engine placement:** end-to-end with the lead on each supported lead engine,
   Claude and Codex (P9 rules Grok out); cancelling

@@ -433,7 +433,9 @@ them.
   entry of its own — it appears only inside another flag's description, as
   "`--system-prompt[-file]`, `--append-system-prompt[-file]`" — but
   `--append-system-prompt-file <path>` is accepted and honoured by the binary
-  (P9).
+  (P9). `--effort <level>`, "Effort level for the current session", read on
+  this machine during T7; it is Claude's counterpart of Grok's
+  `--reasoning-effort` and no run has exercised it.
 - **Codex 0.153.4** (`codex exec --help`, `codex exec resume --help`). `codex
   exec` takes `-c/--config <key=value>`, `-m/--model`, `-C/--cd <DIR>`,
   `-s/--sandbox <SANDBOX_MODE>`, `--add-dir`, `--json`,
