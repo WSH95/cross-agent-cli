@@ -11,6 +11,8 @@ export interface SpawnResult {
   events: EngineEvent[];
   finalMessage: string;
   lastEventAt: number | null;
+  /** The stdio drain expired: stdout and stderr may both be missing their tail. */
+  truncated: boolean;
 }
 
 export interface SpawnHandle {
@@ -22,6 +24,8 @@ export interface SpawnHandle {
 
 export interface SpawnOptions {
   spawn?: (bin: string, argv: string[], options: SpawnOptionsWithoutStdio) => ChildProcessWithoutNullStreams;
+  /** How long after the child's exit to keep reading its stdio before giving up. */
+  drainMs?: number;
 }
 
 /** Buffers bytes until LF or EOF, preserving both UTF-8 boundaries and native terminators. */
@@ -66,6 +70,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   let log: number | undefined;
   let settled = false;
   let stopping = false;
+  let truncated = false;
+  let drain: ReturnType<typeof setTimeout> | undefined;
   let resolve!: (result: SpawnResult) => void;
   const result = new Promise<SpawnResult>((done) => { resolve = done; });
 
@@ -89,6 +95,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   }
 
   function record(raw: Buffer, stderr: boolean) {
+    // The result has been built and the log closed: this arrived too late to be evidence.
+    if (settled) return;
     if (log !== undefined) {
       try {
         appendFileSync(log, stderr ? Buffer.concat([Buffer.from("stderr "), raw]) : raw);
@@ -120,9 +128,12 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   function complete(exitCode: number | null, signal: NodeJS.Signals | null) {
     if (settled) return;
-    settled = true;
+    clearTimeout(drain);
+    // Flushed while record still accepts data, so a final line without a terminator is
+    // evidence rather than a dropped tail. Nothing after this point is.
     stdout.flush();
     stderr.flush();
+    settled = true;
     closeLog();
     child = undefined;
 
@@ -145,7 +156,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     }
     resolve({
       ok: exitCode === 0 && signal === null && !events.some((event) => event.kind === "error"),
-      exitCode, signal, sessionId, events, finalMessage, lastEventAt,
+      exitCode, signal, sessionId, events, finalMessage, lastEventAt, truncated,
     });
   }
 
@@ -164,6 +175,24 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     child.stdin.on("error", (error) => { failure("stdin error", error); });
     // close follows exit and the closure of all stdio streams.
     child.once("close", complete);
+    // A descendant that inherited stdout holds those streams open for as long as it
+    // lives, so close alone can never arrive (probe P3b). Exit starts a bounded drain
+    // for the real tail; when it expires the streams are detached and destroyed before
+    // the result is built, and the result says the evidence may be incomplete.
+    child.once("exit", (code, signal) => {
+      drain = setTimeout(() => {
+        const streams = child;
+        if (settled || streams === undefined) return;
+        truncated = true;
+        streams.stdout.off("data", stdout.write);
+        streams.stdout.off("end", stdout.flush);
+        streams.stderr.off("data", stderr.write);
+        streams.stderr.off("end", stderr.flush);
+        streams.stdout.destroy();
+        streams.stderr.destroy();
+        complete(code, signal);
+      }, options.drainMs ?? 2000);
+    });
     child.stdin.end(plan.stdin ?? "");
   } catch (error) {
     failure("launch error", error);

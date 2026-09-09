@@ -135,6 +135,11 @@ const env = process.env;
 if (env.INVOCATIONS) fs.appendFileSync(env.INVOCATIONS, process.pid + "\\n");
 if (env.FILE_RESULT) fs.writeFileSync(env.FILE_RESULT, "engine file result");
 if (env.RACE_EXIT === "1") process.on("exit", () => { try { process.kill(process.ppid, "SIGTERM"); } catch {} });
+// DESCENDANT_INHERIT=1 leaves a member that shares the runner's pipe, so the engine's
+// own exit can never close it.
+if (env.DESCENDANT_INHERIT === "1") {
+  spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" }).unref();
+}
 if (env.DESCENDANT === "1") {
   const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
   const stat = fs.readFileSync("/proc/" + descendant.pid + "/stat", "utf8");
@@ -607,6 +612,25 @@ test("SIGKILL leaves a live engine that reconciliation orphans and cleanup termi
     assert.equal(changed[0].status, "failed");
     assert.equal(changed[0].reason, "runner lost");
     await poll(() => proc(identity.pid), (current) => current === null);
+  } finally { await h.cleanup(); }
+});
+
+test("a descendant holding the engine's stdout delays settlement by the drain and marks it truncated", async () => {
+  const h = harness();
+  try {
+    const started = Date.now();
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "fail", DESCENDANT_INHERIT: "1" } });
+    const failed = await poll(h.read, terminal, 8000);
+    assert.ok(Date.now() - started >= 2000, "the engine's own exit starts a two-second drain, not an unbounded wait");
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.exitCode, 2);
+    assert.match(failed.reason!, /fake failure; output truncated/,
+      "an operator reading the failure is told the evidence may be incomplete");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    // Group cleanup still precedes the terminal write, so the descendant that held the
+    // pipe open is dead by the time the record settles.
+    assert.deepEqual(ownedProcesses(h.root), []);
   } finally { await h.cleanup(); }
 });
 

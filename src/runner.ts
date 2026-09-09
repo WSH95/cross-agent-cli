@@ -127,10 +127,13 @@ async function run(projectRoot: string, id: string): Promise<void> {
         const hasResult = outcome?.events.some((event) => event.kind === "result")
           || Boolean(outcome?.finalMessage.trim());
         const status = kind === "completion" && outcome?.ok && outcome.exitCode === 0 && hasResult ? "done" : "failed";
-        const reason = error instanceof Error ? error.message : error !== undefined ? String(error)
+        const detail = error instanceof Error ? error.message : error !== undefined ? String(error)
           : outcome?.events.findLast((event) => event.kind === "error")?.text
             ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
               : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
+        // The stdio drain expired, so this failure's evidence may be missing its tail.
+        // An operator reading the reason has to be told that, or read it as complete.
+        const reason = outcome?.truncated ? `${detail}; output truncated` : detail;
         // The engine's own outcome names the status only while the record is still this
         // runner's. A record that reached `cancelling` while the engine was finishing is
         // being cancelled, however well the engine ended; one that reached `orphaned`

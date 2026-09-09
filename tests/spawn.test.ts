@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -370,6 +370,88 @@ test("stream errors terminate the child and finalize once", async (t) => {
       assert.equal(readFileSync(request.resultPath, "utf8"), result.finalMessage);
     });
   }
+});
+
+// A leader that leaves one descendant behind and exits. `share` decides whether that
+// descendant inherits the engine's stdout, which is what holds the pipe open after the
+// leader is gone and stops `close` from ever arriving (probe P3b).
+function holder(cwd: string, share: boolean): EngineAdapter {
+  return {
+    ...generic,
+    plan: (request) => ({
+      bin: process.execPath,
+      argv: ["-e", `
+        const fs = require("node:fs");
+        const { spawn } = require("node:child_process");
+        const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+          stdio: ${JSON.stringify(share ? "inherit" : "ignore")},
+        });
+        fs.writeFileSync(${JSON.stringify(path.join(cwd, "descendant.pid"))}, String(child.pid));
+        fs.writeSync(1, JSON.stringify({ type: "result", text: "leader done" }) + "\\n");
+        process.exit(7);
+      `],
+      cwd: request.cwd, env: request.env,
+    }),
+  };
+}
+
+/** The descendants of a settled engine, which only the group can still reach. */
+function reachable(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+function openFds(target: string): string[] {
+  return readdirSync("/proc/self/fd").filter((fd) => {
+    try { return readlinkSync(`/proc/self/fd/${fd}`) === target; } catch { return false; }
+  });
+}
+
+test("a descendant holding the engine's stdout cannot block settlement", { timeout: 10000 }, async (t) => {
+  const { launch, request } = task(t);
+  const handle = launch(holder(request.cwd, true), {}, { drainMs: 100 });
+  const pid = handle.pid!;
+  t.after(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+  const started = Date.now();
+  const result = await handle.result;
+  const elapsed = Date.now() - started;
+
+  assert.ok(elapsed < 1100, `the drain is bounded: settled after ${elapsed}ms`);
+  assert.equal(result.truncated, true, "the tail of the evidence may be missing and the result says so");
+  assert.equal(result.exitCode, 7, "the exit values captured at exit are the ones reported");
+  assert.equal(result.signal, null);
+  assert.equal(result.ok, false);
+  assert.equal(result.finalMessage, "leader done", "everything that did arrive is kept");
+  assert.equal(readFileSync(request.resultPath, "utf8"), "leader done");
+  assert.deepEqual(openFds(request.logPath), [], "the log is closed, not left open on a stream nobody reads");
+  assert.equal(reachable(pid), true, "the drain ended the wait, not the descendant");
+
+  process.kill(-pid, "SIGKILL");
+  await waitFor(() => !reachable(pid));
+});
+
+test("a descendant that shares no pipe leaves settlement on close unchanged", { timeout: 15000 }, async (t) => {
+  const { launch, request } = task(t);
+  const handle = launch(holder(request.cwd, false), {}, { drainMs: 5000 });
+  const pid = handle.pid!;
+  t.after(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+  const started = Date.now();
+  const result = await handle.result;
+
+  assert.ok(Date.now() - started < 4000, "close arrived long before the drain could expire");
+  assert.equal(result.truncated, false);
+  assert.equal(result.exitCode, 7);
+  assert.equal(result.finalMessage, "leader done");
+  assert.equal(readFileSync(request.resultPath, "utf8"), "leader done");
+  assert.equal(reachable(pid), true);
+
+  process.kill(-pid, "SIGKILL");
+  await waitFor(() => !reachable(pid));
 });
 
 test("completion waits for close and drained output after exit", async (t) => {
