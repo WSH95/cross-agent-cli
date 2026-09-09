@@ -15,9 +15,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const serverEntry = path.join(here, "..", "src", "server.ts");
 
 async function projectWithConfig(config: Json): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "dev-team-"));
-  await mkdir(path.join(dir, ".dev-team"), { recursive: true });
-  await writeFile(path.join(dir, ".dev-team", "config.json"), JSON.stringify(config));
+  const dir = await mkdtemp(path.join(tmpdir(), "cross-agent-"));
+  await mkdir(path.join(dir, ".cross-agent"), { recursive: true });
+  await writeFile(path.join(dir, ".cross-agent", "config.json"), JSON.stringify(config));
   return dir;
 }
 
@@ -67,7 +67,7 @@ async function waitFor(condition: () => boolean, ms = 2000): Promise<void> {
   }
 }
 
-test("initialize identifies the dev-team server over stdio", async () => {
+test("initialize identifies the cross-agent server over stdio", async () => {
   const client = stdioClient(await projectWithConfig({ roles: {} }));
   try {
     const reply = await client.request("initialize", {
@@ -76,7 +76,7 @@ test("initialize identifies the dev-team server over stdio", async () => {
       clientInfo: { name: "test", version: "0" },
     });
     const result = reply.result as Json;
-    assert.equal((result.serverInfo as Json).name, "dev-team");
+    assert.equal((result.serverInfo as Json).name, "cross-agent");
     assert.equal(typeof result.protocolVersion, "string");
     assert.ok((result.capabilities as Json).tools, "advertises tools");
   } finally {
@@ -104,7 +104,7 @@ test("tools/list offers list_roles and verify_worktree", async (t) => {
   }
 });
 
-test("list_roles returns the roles from .dev-team/config.json", async () => {
+test("list_roles returns the roles from .cross-agent/config.json", async () => {
   const roles = {
     planner: { engine: "codex", model: "gpt-6-astra", cwd: "root", sandbox: "read-only" },
     implementer: { engine: "claude", model: "claude-opus-5", cwd: "worktree", sandbox: "workspace-write" },
@@ -144,7 +144,7 @@ test("verify_worktree returns success and refusal JSON as text over stdio", asyn
   t.after(() => rm(root, { recursive: true, force: true }));
   const exec = promisify(execFile);
   await exec("git", ["-C", root, "init", "-b", "main"]);
-  await exec("git", ["-C", root, "-c", "user.name=Dev Team Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial"]);
+  await exec("git", ["-C", root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial"]);
   const candidate = path.join(root, ".worktrees", "stdio");
   await exec("git", ["-C", root, "worktree", "add", "-b", "task/stdio", candidate]);
   const client = stdioClient(root);

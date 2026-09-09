@@ -17,12 +17,12 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 async function repository(t: TestContext) {
-  const temporary = await mkdtemp(path.join(tmpdir(), "dev-team-worktree-"));
+  const temporary = await mkdtemp(path.join(tmpdir(), "cross-agent-worktree-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const root = path.join(temporary, "project");
   await mkdir(root);
   await git(root, "init", "-b", "main");
-  await git(root, "-c", "user.name=Dev Team Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial");
+  await git(root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial");
   async function add(name: string, relativePath = name): Promise<string> {
     const worktree = path.join(temporary, "linked", relativePath);
     await git(root, "worktree", "add", "-b", `task/${name}`, worktree);

@@ -24,7 +24,7 @@ const sectionSixDefaults = {
 };
 
 function project(t: TestContext, parent = tmpdir()): string {
-  const root = mkdtempSync(path.join(parent, "dev-team-config-"));
+  const root = mkdtempSync(path.join(parent, "cross-agent-config-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -161,7 +161,7 @@ test("loadConfig retains missing-config guidance", (t) => {
   assert.throws(() => config.loadConfig(root), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.ok(error.message.includes(path.join(root, config.CONFIG_PATH)));
-    assert.match(error.message, /dev-team init/);
+    assert.match(error.message, /cross-agent init/);
     return true;
   });
 });

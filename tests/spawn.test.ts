@@ -45,7 +45,7 @@ const generic: EngineAdapter = {
 };
 
 function task(t: TestContext) {
-  const cwd = mkdtempSync(path.join(tmpdir(), "dev-team-spawn-"));
+  const cwd = mkdtempSync(path.join(tmpdir(), "cross-agent-spawn-"));
   const kills: (() => void)[] = [];
   const results: Promise<unknown>[] = [];
   t.after(async () => {
@@ -218,7 +218,7 @@ test("sandbox off permits an unsupported adapter", async (t) => {
 test("plan stdin, argv, cwd, and environment reach the child", async (t) => {
   const { launch, request } = task(t);
   const record = path.join(request.cwd, "invocation.json");
-  const env = { FAKE_ENGINE_RECORD: record, DEV_TEAM_DEPTH: "1", DEV_TEAM_LINEAGE: "[]", TASK_MARKER: "child only" };
+  const env = { FAKE_ENGINE_RECORD: record, CROSS_AGENT_DEPTH: "1", CROSS_AGENT_LINEAGE: "[]", TASK_MARKER: "child only" };
   const argv = [fake, "--flag", "two words", "quotes ' \" $()", "日本語"];
   const stdin = "first line\nsecond line — 🌙\n";
   let calls = 0;

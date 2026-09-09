@@ -23,13 +23,13 @@ const prompt = args["prompt-file"] ? readFileSync(args["prompt-file"], "utf8") :
 const role = args["role-file"] ? readFileSync(args["role-file"], "utf8") : "";
 const model = args.model;
 const effort = args.effort;
-const bins = { claude: process.env.DEV_TEAM_CLAUDE_BIN ?? "claude", codex: process.env.DEV_TEAM_CODEX_BIN ?? "codex", grok: process.env.DEV_TEAM_GROK_BIN ?? "grok" };
+const bins = { claude: process.env.CROSS_AGENT_CLAUDE_BIN ?? "claude", codex: process.env.CROSS_AGENT_CODEX_BIN ?? "codex", grok: process.env.CROSS_AGENT_GROK_BIN ?? "grok" };
 
-// Deny list (design section 3): the three CLIs, this server, this CLI, dev-team.
-const denyTargets = ["claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "dev-team"];
+// Deny list (design section 3): the three CLIs, this server, this CLI, cross-agent.
+const denyTargets = ["claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent"];
 const denyRules = args["no-deny"] ? [] : denyTargets.flatMap((t) => [`Bash(${t} *)`, `Bash(${t})`]);
 
-const scratch = path.join(cwd, ".dev-team", "probe");
+const scratch = path.join(cwd, ".cross-agent", "probe");
 mkdirSync(scratch, { recursive: true });
 const sessionId = args["session-id"] ?? randomUUID();
 
@@ -57,7 +57,7 @@ if (engine === "claude") {
   if (args.rules) {
     // Project rules file: installed under the cwd so Codex discovers it (to be confirmed by probe P3).
     const dir = path.join(cwd, ".codex", "rules"); mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, "dev-team.rules"), readFileSync(args.rules, "utf8"));
+    writeFileSync(path.join(dir, "cross-agent.rules"), readFileSync(args.rules, "utf8"));
   }
   argv.push((role ? role + "\n\n" : "") + prompt);
 } else if (engine === "grok") {
@@ -78,7 +78,7 @@ for (const [k, v] of Object.entries(process.env)) {
   if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY)/.test(k)) continue;
   env[k] = v;
 }
-Object.assign(env, { DEV_TEAM_DEPTH: "1", DEV_TEAM_TASK: `probe-${sessionId}`, DEV_TEAM_LINEAGE: `probe/${sessionId}:${engine}:${cwd}` });
+Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: `probe/${sessionId}:${engine}:${cwd}` });
 
 const log = args.log ? path.resolve(args.log) : path.join(scratch, `${engine}-${sessionId}.log`);
 const header = { engine, bin, argv, cwd, sandbox, sessionId, stdin: stdinText !== null, deny: denyRules.length, at: new Date().toISOString() };

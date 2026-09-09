@@ -12,7 +12,7 @@ import type { EngineAdapter } from "./engines/types.ts";
 const terminal = (record: TaskRecord) => ["done", "failed", "cancelled"].includes(record.status);
 
 function run(projectRoot: string, id: string): void {
-  const directory = path.join(projectRoot, ".dev-team", "tasks");
+  const directory = path.join(projectRoot, ".cross-agent", "tasks");
   fs.mkdirSync(directory, { recursive: true });
   const diagnosticPath = path.join(directory, `${id}.runner.log`);
   let record: TaskRecord;

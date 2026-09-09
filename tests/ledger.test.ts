@@ -12,7 +12,7 @@ const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
 function project(t: TestContext): string {
-  const root = fs.mkdtempSync(path.join(tmpdir(), "dev-team-ledger-"));
+  const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-ledger-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -22,7 +22,7 @@ function input(cwd: string): CreateTask {
 }
 
 function tasks(root: string): string {
-  return path.join(root, ".dev-team", "tasks");
+  return path.join(root, ".cross-agent", "tasks");
 }
 
 function liveIdentity(): EngineIdentity {
@@ -311,7 +311,7 @@ test("list filters statuses, sorts newest first, and ignores output and temporar
 });
 
 test("first ledger use appends each missing exclusion once", (t) => {
-  for (const existing of [undefined, "", "# existing", "# existing\n", ".dev-team/", ".worktrees/\n", ".dev-team/\n.worktrees/\n", "# existing\r\n.dev-team/\r\n"]) {
+  for (const existing of [undefined, "", "# existing", "# existing\n", ".cross-agent/", ".worktrees/\n", ".cross-agent/\n.worktrees/\n", "# existing\r\n.cross-agent/\r\n"]) {
     const root = project(t);
     const exclude = path.join(root, ".git", "info", "exclude");
     fs.mkdirSync(path.join(root, ".git"));
@@ -322,7 +322,7 @@ test("first ledger use appends each missing exclusion once", (t) => {
     assert.deepEqual(list(root), []);
     const first = fs.readFileSync(exclude, "utf8");
     assert.ok(first.startsWith(existing ?? ""), "preserves existing content");
-    for (const line of [".dev-team/", ".worktrees/"]) {
+    for (const line of [".cross-agent/", ".worktrees/"]) {
       assert.equal(first.split(/\r?\n/).filter((entry) => entry === line).length, 1);
     }
     const record = create(root, input(root), now);

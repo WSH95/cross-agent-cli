@@ -63,21 +63,21 @@ function harness(options: {
   named?: boolean; delayedImport?: boolean; refusal?: boolean; race?: string; failure?: string; leadingHyphen?: boolean;
   competitor?: "at-write" | "before-write";
 } = {}) {
-  const root = fs.mkdtempSync(path.join(tmpdir(), "dev-team-runner-"));
+  const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-runner-"));
   const token = randomUUID();
   const adapterModule = path.join(fixtures, `runner-${token}.mjs`);
   const engineModule = path.join(fixtures, `runner-engine-${token}.mjs`);
   const children: { child: ChildProcess; closed: boolean; code: number | null; signal: NodeJS.Signals | null }[] = [];
   const record = ledger.create(root, { role: "implementer", brief: "finish T5", cwd: root, engine: "claude" });
   if (options.leadingHyphen) {
-    const originalFile = path.join(root, ".dev-team", "tasks", `${record.id}.json`);
+    const originalFile = path.join(root, ".cross-agent", "tasks", `${record.id}.json`);
     record.id = `-${record.id}`;
     record.resultPath = path.join(path.dirname(originalFile), `${record.id}.out`);
     record.logPath = path.join(path.dirname(originalFile), `${record.id}.ndjson`);
     fs.writeFileSync(path.join(path.dirname(originalFile), `${record.id}.json`), JSON.stringify(record));
     fs.rmSync(originalFile);
   }
-  const recordFile = path.join(root, ".dev-team", "tasks", `${record.id}.json`);
+  const recordFile = path.join(root, ".cross-agent", "tasks", `${record.id}.json`);
   const auditFile = path.join(root, "writes.ndjson");
   const release = path.join(root, "release");
   const importReady = path.join(root, "import-ready");
@@ -266,7 +266,7 @@ test("launch specs round-trip atomically and remain separate from task records",
   const h = harness();
   try {
     ledger.writeSpec(h.root, h.record.id, h.spec);
-    const file = path.join(h.root, ".dev-team", "tasks", `${h.record.id}.spec.json`);
+    const file = path.join(h.root, ".cross-agent", "tasks", `${h.record.id}.spec.json`);
     assert.deepEqual(ledger.readSpec(h.root, h.record.id), h.spec);
     const previous = fs.openSync(file, "r");
     const replacement = { ...h.spec, brief: "replacement", model: undefined, effort: undefined, resumeSessionId: undefined };

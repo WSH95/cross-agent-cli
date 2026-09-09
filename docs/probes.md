@@ -9,7 +9,7 @@ bubblewrap installed and `socat` absent.
 A first round ran in a repository under `/tmp`; both the Codex and the Grok
 sandboxes treat `/tmp` as writable, so those write checks proved nothing
 and were rerun under `~/.cache/agent-team/probe-repo`. Rule for the
-product: a project under `/tmp` or `$TMPDIR` is not isolated; `dev-team
+product: a project under `/tmp` or `$TMPDIR` is not isolated; `cross-agent
 init` warns about it.
 
 ## P1: nested `claude -p` from inside a Claude Code session (2026-09-07)
@@ -18,12 +18,12 @@ init` warns about it.
 bypassPermissions --strict-mcp-config --model sonnet --session-id <uuid>
 --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
 --disallowedTools <deny list> Edit Write MultiEdit NotebookEdit`, prompt on
-stdin, env scrubbed as in section 3, `DEV_TEAM_DEPTH=1`.
+stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
 
 - Runs and exits 0 in 10 s; the `CLAUDECODE` guard in the binary does not
   stop a nested `-p` run. The child's shell still shows `CLAUDECODE=1`
   because Claude Code sets it for its own Bash tool, not because the scrub
-  failed. `DEV_TEAM_DEPTH` and `DEV_TEAM_LINEAGE` are visible. MCP tools:
+  failed. `CROSS_AGENT_DEPTH` and `CROSS_AGENT_LINEAGE` are visible. MCP tools:
   none (`--strict-mcp-config` with no config).
 - The sandbox did not engage: "Sandbox disabled: sandbox is enabled but
   dependencies are missing: socat not installed … Commands will run WITHOUT
@@ -48,8 +48,8 @@ stdin, env scrubbed as in section 3, `DEV_TEAM_DEPTH=1`.
 ## P2: implementer inside a linked worktree, writes outside it (2026-09-07)
 
 Prompt: append to `notes.md`, run `npm test`, then try to append to
-`../../ROOT-WRITE.txt`, `../../.git/dev-team-probe-write.txt`,
-`../other-WRITE.txt`, `$HOME/dev-team-probe-HOME.txt`, and finally overwrite
+`../../ROOT-WRITE.txt`, `../../.git/cross-agent-probe-write.txt`,
+`../other-WRITE.txt`, `$HOME/cross-agent-probe-HOME.txt`, and finally overwrite
 the worktree's `.git` pointer file with `gitdir: /tmp/elsewhere`.
 
 | Engine and command | in-worktree edit, tests | root file | root `.git` | sibling path | `$HOME` | `.git` pointer |
@@ -65,7 +65,7 @@ Consequence: the worktree pointer is writable by a Grok implementer, so
 ## P3: the deny list (2026-09-07)
 
 Targets: `claude`, `codex`, `grok`, `node <repo>/src/server.ts`,
-`node <repo>/src/cli.ts`, `dev-team`; the child is asked to run
+`node <repo>/src/cli.ts`, `cross-agent`; the child is asked to run
 `claude --version`, `codex --version`, `grok --version`,
 `node <repo>/src/server.ts --help`, and `node --version` as a control.
 
@@ -80,7 +80,7 @@ Targets: `claude`, `codex`, `grok`, `node <repo>/src/server.ts`,
 - Codex, an execpolicy rules file (`prefix_rule(pattern=["claude"],
   decision="forbidden")` and the others; `codex execpolicy check --rules
   <file> claude --version` reports `forbidden`) installed as
-  `<worktree>/.codex/rules/dev-team.rules`: **not enforced** in `codex
+  `<worktree>/.codex/rules/cross-agent.rules`: **not enforced** in `codex
   exec`, neither with `--ignore-user-config` nor with an added
   `-c 'projects."<worktree>".trust_level="trusted"'`. All three CLIs ran
   and printed their versions. Rules files are not a usable deny layer for
@@ -163,7 +163,7 @@ ends the run. The final message is also written to the `-o` file.
 {"type": "thread.started", "thread_id": "01a07ca9-83fb-78a0-a330-6b7555f3632f"}
 {"type": "turn.started"}
 {"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "I’ll run the command and check the available MCP tools."}}
-{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "command": "/bin/bash -lc 'echo \"DEPTH=${DEV_TEAM_DEPTH:-NONE} LINEAGE=${DEV_TEAM_LINEAGE:-NONE}\"'", "aggregated_output": "DEPTH=1 LINEAGE=probe/915db2f4-e5b7-4d5c-a69c-66544ca1330b:codex:/tmp/claude-1000/-home-wsh-Documents-agent-team-devp…", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "command": "/bin/bash -lc 'echo \"DEPTH=${CROSS_AGENT_DEPTH:-NONE} LINEAGE=${CROSS_AGENT_LINEAGE:-NONE}\"'", "aggregated_output": "DEPTH=1 LINEAGE=probe/915db2f4-e5b7-4d5c-a69c-66544ca1330b:codex:/tmp/claude-1000/-home-wsh-Documents-agent-team-devp…", "exit_code": 0, "status": "completed"}}
 {"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "```text\nDEPTH=1 LINEAGE=probe/915db2f4-e5b7-4d5c-a69c-66544ca1330b:codex:/tmp/claude-1000/-home-wsh-Documents-agent-t…"}}
 ```
 

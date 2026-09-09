@@ -1,6 +1,6 @@
-# dev-team
+# cross-agent
 
-A standalone multi-engine dev team for coding agent CLIs. One MCP server
+A standalone multi-engine orchestrator for coding agent CLIs. One MCP server
 delegates planning, plan review, implementation, and code review to
 `claude`, `codex`, or `grok` running headless on your own subscriptions,
 each inside its own sandbox; one skill gives the host session (Claude

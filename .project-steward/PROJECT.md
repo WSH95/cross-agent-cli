@@ -1,7 +1,8 @@
 # agent-team-cli project charter
 
-dev-team: a multi-engine dev team (planner, plan reviewer, implementer, code
-reviewer) as one MCP server plus one skill for Claude Code, Codex, and Grok.
+cross-agent: a multi-engine orchestrator that runs a dev team (planner, plan
+reviewer, implementer, code reviewer) as one MCP server plus one skill for
+Claude Code, Codex, and Grok.
 The host session is the lead; specialists run as headless `claude`, `codex`,
 or `grok` processes on the user's own subscriptions, each inside its own
 CLI's sandbox, in git worktrees the lead owns.

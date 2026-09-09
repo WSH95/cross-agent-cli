@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-export const CONFIG_PATH = ".dev-team/config.json";
+export const CONFIG_PATH = ".cross-agent/config.json";
 
 const engineNames = ["claude", "codex", "grok"] as const;
 const sandboxProfiles = ["read-only", "workspace-write", "workspace", "strict", "off"] as const;
@@ -17,7 +17,7 @@ export interface RoleConfig {
   sandbox: SandboxProfile;
 }
 
-export interface DevTeamConfig {
+export interface CrossAgentConfig {
   project: { defaultBranch: string; testCommand: string; setupCommand: string; mergePolicy: string };
   roles: Record<string, RoleConfig>;
   engines?: Record<string, { bin?: string }>;
@@ -30,13 +30,13 @@ export interface InitConfigResult {
   warning?: string;
 }
 
-const projectDefaults: DevTeamConfig["project"] = {
+const projectDefaults: CrossAgentConfig["project"] = {
   defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto",
 };
-const limitDefaults: DevTeamConfig["limits"] = {
+const limitDefaults: CrossAgentConfig["limits"] = {
   maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10,
 };
-const defaultConfig: DevTeamConfig = {
+const defaultConfig: CrossAgentConfig = {
   project: projectDefaults,
   roles: {
     planner: { engine: "codex", model: "gpt-6-astra", effort: "high", cwd: "root", sandbox: "read-only" },
@@ -50,14 +50,14 @@ const defaultConfig: DevTeamConfig = {
 };
 
 /** Validates the documented fields and fills only absent defaults. */
-export function loadConfig(projectRoot: string): DevTeamConfig {
+export function loadConfig(projectRoot: string): CrossAgentConfig {
   const file = path.join(projectRoot, CONFIG_PATH);
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`no config at ${file}; run "dev-team init" in the project root`);
+      throw new Error(`no config at ${file}; run "cross-agent init" in the project root`);
     }
     throw new Error(`${file}: cannot read config: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -111,7 +111,7 @@ export function loadConfig(projectRoot: string): DevTeamConfig {
     if (typeof value !== "number" || !Number.isFinite(value)) invalid(`limits.${key}`, "a finite number");
   }
   const billing = oneOf(document.billing === undefined ? "subscription" : document.billing, "billing", ["subscription", "api"] as const);
-  return { ...document, project, roles, limits, billing } as DevTeamConfig;
+  return { ...document, project, roles, limits, billing } as CrossAgentConfig;
 }
 
 function temporaryLocationWarning(projectRoot: string): string | undefined {

@@ -74,7 +74,7 @@ const patchFields = new Set<string>([
 ] satisfies (keyof TaskPatch)[]);
 
 function initialize(projectRoot: string): string {
-  const directory = path.resolve(projectRoot, ".dev-team", "tasks");
+  const directory = path.resolve(projectRoot, ".cross-agent", "tasks");
   fs.mkdirSync(directory, { recursive: true });
   const gitDirectory = path.resolve(projectRoot, ".git");
   if (!fs.statSync(gitDirectory, { throwIfNoEntry: false })?.isDirectory()) return directory;
@@ -87,7 +87,7 @@ function initialize(projectRoot: string): string {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const lines = new Set(existing.split(/\r?\n/));
-  const missing = [".dev-team/", ".worktrees/"].filter((line) => !lines.has(line));
+  const missing = [".cross-agent/", ".worktrees/"].filter((line) => !lines.has(line));
   if (missing.length > 0) {
     fs.mkdirSync(path.dirname(exclude), { recursive: true });
     const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";

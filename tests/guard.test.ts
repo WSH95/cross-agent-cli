@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import type { DevTeamConfig } from "../src/config.ts";
+import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord, TaskStatus } from "../src/ledger.ts";
 import {
   readDepth, toolsAtDepth, parseLineage, formatLineage, childLineage, lineageRefusal,
@@ -28,13 +28,13 @@ function record(patch: Partial<TaskRecord> = {}): TaskRecord {
     briefHash: createHash("sha256").update(request.brief).digest("hex"),
     status: "done", createdAt: now - 2 * windowMs, updatedAt: now - 1,
     launchDeadline: now - 2 * windowMs + 30_000, launchToken: "test-token",
-    resultPath: "/projects/team/.dev-team/tasks/task-original.out",
-    logPath: "/projects/team/.dev-team/tasks/task-original.ndjson",
+    resultPath: "/projects/team/.cross-agent/tasks/task-original.out",
+    logPath: "/projects/team/.cross-agent/tasks/task-original.ndjson",
     ...patch,
   };
 }
 
-const config: DevTeamConfig = {
+const config: CrossAgentConfig = {
   project: { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" },
   roles: {},
   engines: {
@@ -47,24 +47,24 @@ const config: DevTeamConfig = {
 
 test("readDepth accepts absent, zero, and one; rejects malformed or missing child depth", () => {
   assert.deepEqual(readDepth({}), { depth: 0 });
-  assert.deepEqual(readDepth({ DEV_TEAM_DEPTH: undefined, DEV_TEAM_LINEAGE: undefined }), { depth: 0 });
+  assert.deepEqual(readDepth({ CROSS_AGENT_DEPTH: undefined, CROSS_AGENT_LINEAGE: undefined }), { depth: 0 });
   for (const value of ["0", "1", "12", "001", String(Number.MAX_SAFE_INTEGER)]) {
-    assert.deepEqual(readDepth({ DEV_TEAM_DEPTH: value }), { depth: Number(value) });
-    assert.deepEqual(readDepth({ DEV_TEAM_DEPTH: value, DEV_TEAM_LINEAGE: "[]" }), { depth: Number(value) });
+    assert.deepEqual(readDepth({ CROSS_AGENT_DEPTH: value }), { depth: Number(value) });
+    assert.deepEqual(readDepth({ CROSS_AGENT_DEPTH: value, CROSS_AGENT_LINEAGE: "[]" }), { depth: Number(value) });
   }
   for (const value of [
     "abc", "-1", "", " ", "1.5", "1e2", "0x10", "+1", " 1", "1 ", "1\n",
     "Infinity", "NaN", "9007199254740992", "9".repeat(400),
   ]) {
-    const result = readDepth({ DEV_TEAM_DEPTH: value });
+    const result = readDepth({ CROSS_AGENT_DEPTH: value });
     assert.equal(result.depth, Infinity, JSON.stringify(value));
-    assert.match(result.reason!, /DEV_TEAM_DEPTH/);
+    assert.match(result.reason!, /CROSS_AGENT_DEPTH/);
   }
   for (const value of ["[]", "", "malformed"]) {
-    const result = readDepth({ DEV_TEAM_LINEAGE: value });
+    const result = readDepth({ CROSS_AGENT_LINEAGE: value });
     assert.equal(result.depth, Infinity);
-    assert.match(result.reason!, /DEV_TEAM_LINEAGE/);
-    assert.match(result.reason!, /DEV_TEAM_DEPTH/);
+    assert.match(result.reason!, /CROSS_AGENT_LINEAGE/);
+    assert.match(result.reason!, /CROSS_AGENT_DEPTH/);
   }
 });
 
@@ -99,7 +99,7 @@ test("lineage round-trips ordered entries and appends without mutation", () => {
 
 test("parseLineage rejects malformed supplied lineage", () => {
   for (const value of ["", " ", "not JSON", "[", "null", "{}", "true", "42", '"lineage"']) {
-    assert.throws(() => parseLineage(value), /DEV_TEAM_LINEAGE/, value);
+    assert.throws(() => parseLineage(value), /CROSS_AGENT_LINEAGE/, value);
   }
   const valid = { taskId: "parent", role: "planner", cwd: "/projects/team" };
   for (const entry of [
@@ -107,7 +107,7 @@ test("parseLineage rejects malformed supplied lineage", () => {
     { taskId: valid.taskId, cwd: valid.cwd }, { taskId: valid.taskId, role: valid.role },
     { ...valid, taskId: 1 }, { ...valid, role: null }, { ...valid, cwd: [] },
   ]) {
-    assert.throws(() => parseLineage(JSON.stringify([valid, entry])), /DEV_TEAM_LINEAGE/);
+    assert.throws(() => parseLineage(JSON.stringify([valid, entry])), /CROSS_AGENT_LINEAGE/);
   }
 });
 
@@ -212,12 +212,12 @@ test("denyTargets includes configured binaries and both entrypoints", () => {
   const before = structuredClone(config);
   assert.deepEqual(denyTargets(config, "/projects/team"), [
     "claude", "codex", "grok", "/opt/engines/claude", "/opt/custom codex", "/opt/engines/grok", "/opt/wrapper",
-    "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "dev-team",
+    "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
   ]);
   const { engines, ...withoutEngines } = config;
   for (const plain of [withoutEngines, { ...config, engines: {} }]) {
     assert.deepEqual(denyTargets(plain, "/projects/space team/"), [
-      "claude", "codex", "grok", "node /projects/space team/src/server.ts", "node /projects/space team/src/cli.ts", "dev-team",
+      "claude", "codex", "grok", "node /projects/space team/src/server.ts", "node /projects/space team/src/cli.ts", "cross-agent",
     ]);
   }
   assert.deepEqual(config, before);
@@ -225,17 +225,17 @@ test("denyTargets includes configured binaries and both entrypoints", () => {
 
 test("denyArgs matches exact Claude, Grok, and Codex arrays", () => {
   const targets = Object.freeze([
-    "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "dev-team",
+    "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
   ]);
   assert.deepEqual(denyArgs("claude", targets), [
     "--disallowedTools", "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
     "Bash(node /projects/team/src/server.ts *)", "Bash(node /projects/team/src/server.ts)",
-    "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)", "Bash(dev-team *)", "Bash(dev-team)",
+    "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)", "Bash(cross-agent *)", "Bash(cross-agent)",
   ]);
   assert.deepEqual(denyArgs("grok", targets), [
     "--deny", "Bash(claude *)", "--deny", "Bash(codex *)", "--deny", "Bash(grok *)", "--deny", "Bash(/opt/custom codex *)",
-    "--deny", "Bash(node /projects/team/src/server.ts *)", "--deny", "Bash(node /projects/team/src/cli.ts *)", "--deny", "Bash(dev-team *)",
+    "--deny", "Bash(node /projects/team/src/server.ts *)", "--deny", "Bash(node /projects/team/src/cli.ts *)", "--deny", "Bash(cross-agent *)",
   ]);
   assert.deepEqual(denyArgs("codex", targets), []);
 });
@@ -265,27 +265,27 @@ const apiKeys = Object.freeze({ ANTHROPIC_API_KEY: "anthropic-test", OPENAI_API_
 const childEntries = Object.freeze([Object.freeze({ taskId: "child", role: request.role, cwd: request.cwd })]);
 
 test("childEnv strips every specified marker and subscription API key", () => {
-  const parent = Object.freeze({ ...retainedEnv, ...strippedEnv, ...apiKeys, DEV_TEAM_DEPTH: "9", DEV_TEAM_TASK: "parent", DEV_TEAM_LINEAGE: "[]" });
+  const parent = Object.freeze({ ...retainedEnv, ...strippedEnv, ...apiKeys, CROSS_AGENT_DEPTH: "9", CROSS_AGENT_TASK: "parent", CROSS_AGENT_LINEAGE: "[]" });
   const before = structuredClone(parent);
   const child = childEnv(parent, 0, "child", childEntries, "subscription");
   assert.deepEqual(child, {
-    ...retainedEnv, DEV_TEAM_DEPTH: "1", DEV_TEAM_TASK: "child", DEV_TEAM_LINEAGE: JSON.stringify(childEntries),
+    ...retainedEnv, CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "child", CROSS_AGENT_LINEAGE: JSON.stringify(childEntries),
   });
   for (const key of [...Object.keys(strippedEnv), ...Object.keys(apiKeys)]) assert.equal(Object.hasOwn(child, key), false, key);
   assert.deepEqual(parent, before);
   assert.notEqual(child, parent);
 });
 
-test("childEnv preserves API billing credentials and sets all DEV_TEAM variables without mutation", () => {
+test("childEnv preserves API billing credentials and sets all CROSS_AGENT variables without mutation", () => {
   const parent = Object.freeze({ ...retainedEnv, ...strippedEnv, ...apiKeys });
   const before = structuredClone(parent);
   const child = childEnv(parent, 2, "child", childEntries, "api");
   assert.deepEqual(child, {
-    ...retainedEnv, ...apiKeys, DEV_TEAM_DEPTH: "3", DEV_TEAM_TASK: "child", DEV_TEAM_LINEAGE: JSON.stringify(childEntries),
+    ...retainedEnv, ...apiKeys, CROSS_AGENT_DEPTH: "3", CROSS_AGENT_TASK: "child", CROSS_AGENT_LINEAGE: JSON.stringify(childEntries),
   });
-  assert.deepEqual(parseLineage(child.DEV_TEAM_LINEAGE), childEntries);
+  assert.deepEqual(parseLineage(child.CROSS_AGENT_LINEAGE), childEntries);
   assert.deepEqual(parent, before);
   assert.deepEqual(childEnv({}, 0, "root-child", [], "subscription"), {
-    DEV_TEAM_DEPTH: "1", DEV_TEAM_TASK: "root-child", DEV_TEAM_LINEAGE: "[]",
+    CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "root-child", CROSS_AGENT_LINEAGE: "[]",
   });
 });

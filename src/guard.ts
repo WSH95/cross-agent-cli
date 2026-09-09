@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import type { DevTeamConfig, EngineName, SandboxProfile } from "./config.ts";
+import type { CrossAgentConfig, EngineName, SandboxProfile } from "./config.ts";
 import type { TaskRecord, TaskStatus } from "./ledger.ts";
 
 // Callers supply canonical absolute cwd values; guards never resolve paths through the filesystem.
@@ -29,15 +29,15 @@ type ResumeRecord = TaskRecord & { sandbox?: SandboxProfile };
 const activeStatuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling"]);
 
 export function readDepth(env: Readonly<NodeJS.ProcessEnv>): { depth: number; reason?: string } {
-  const value = env.DEV_TEAM_DEPTH;
+  const value = env.CROSS_AGENT_DEPTH;
   if (value === undefined) {
-    return env.DEV_TEAM_LINEAGE === undefined
+    return env.CROSS_AGENT_LINEAGE === undefined
       ? { depth: 0 }
-      : { depth: Infinity, reason: "DEV_TEAM_LINEAGE is present but DEV_TEAM_DEPTH is absent" };
+      : { depth: Infinity, reason: "CROSS_AGENT_LINEAGE is present but CROSS_AGENT_DEPTH is absent" };
   }
   const depth = Number(value);
   if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(depth)) {
-    return { depth: Infinity, reason: "DEV_TEAM_DEPTH must be a non-negative decimal safe integer" };
+    return { depth: Infinity, reason: "CROSS_AGENT_DEPTH must be a non-negative decimal safe integer" };
   }
   return { depth };
 }
@@ -50,7 +50,7 @@ export function toolsAtDepth(depth: number, maxDepth: number): string[] {
 
 export function parseLineage(value: string | undefined): LineageEntry[] {
   if (value === undefined) return [];
-  const reason = "DEV_TEAM_LINEAGE must be a JSON array of {taskId, role, cwd} string entries";
+  const reason = "CROSS_AGENT_LINEAGE must be a JSON array of {taskId, role, cwd} string entries";
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -77,7 +77,7 @@ export function childLineage(parent: readonly LineageEntry[], entry: LineageEntr
 export function lineageRefusal(lineage: readonly LineageEntry[], role: string, cwd: string): string | null {
   const ancestor = lineage.find((entry) => entry.role === role && entry.cwd === cwd);
   return ancestor
-    ? `refused delegation for role ${JSON.stringify(role)} in ${JSON.stringify(cwd)}: task ${ancestor.taskId} already has this pair in DEV_TEAM_LINEAGE`
+    ? `refused delegation for role ${JSON.stringify(role)} in ${JSON.stringify(cwd)}: task ${ancestor.taskId} already has this pair in CROSS_AGENT_LINEAGE`
     : null;
 }
 
@@ -115,11 +115,11 @@ export function resumeRefusal(request: ResumeRequest, record: ResumeRecord): str
 }
 
 /** repoRoot is the caller-supplied absolute repository path. */
-export function denyTargets(config: DevTeamConfig, repoRoot: string): string[] {
+export function denyTargets(config: CrossAgentConfig, repoRoot: string): string[] {
   const binaries = Object.values(config.engines ?? {}).flatMap((engine) => engine.bin === undefined ? [] : [engine.bin]);
   return [
     "claude", "codex", "grok", ...binaries,
-    `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "dev-team",
+    `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent",
   ];
 }
 
@@ -143,7 +143,7 @@ export function exclusionArgs(engine: EngineName): string[] {
 
 export function childEnv(
   parentEnv: Readonly<NodeJS.ProcessEnv>, depth: number, taskId: string,
-  lineage: readonly LineageEntry[], billing: DevTeamConfig["billing"],
+  lineage: readonly LineageEntry[], billing: CrossAgentConfig["billing"],
 ): NodeJS.ProcessEnv {
   const exactMarkers = ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"];
   const prefixes = ["CLAUDE_CODE_", "CLAUDE_PLUGIN_", "CODEX_COMPANION_", "GROK_CC_", "MCP_"];
@@ -154,8 +154,8 @@ export function childEnv(
   ));
   return {
     ...env,
-    DEV_TEAM_DEPTH: String(depth + 1),
-    DEV_TEAM_TASK: taskId,
-    DEV_TEAM_LINEAGE: formatLineage(lineage),
+    CROSS_AGENT_DEPTH: String(depth + 1),
+    CROSS_AGENT_TASK: taskId,
+    CROSS_AGENT_LINEAGE: formatLineage(lineage),
   };
 }

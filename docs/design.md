@@ -1,6 +1,6 @@
 <!-- Approved design of 2026-09-07. Source of truth for agent-team-cli; the OpenMausBot pack's history lives in ~/Documents/agent-team-devpack. -->
 
-# dev-team: a standalone multi-engine dev team plugin for Claude Code, Codex, and Grok
+# cross-agent: a standalone multi-engine dev team plugin for Claude Code, Codex, and Grok
 
 ## Context
 
@@ -26,7 +26,7 @@ Decisions taken with the user:
   delegates back) must be impossible in code and tested.
 - The user's `agent-plugins` marketplace and the `agent-artifact-maintainer`
   skill are unrelated to this project.
-- New repository `~/Documents/agent-team-cli`, plugin name `dev-team`. I
+- New repository `~/Documents/agent-team-cli`, plugin name `cross-agent`. I
   scaffold it; its feature tasks are M7's "first real repository" for the
   OpenMausBot pack, sent to Sudo one at a time from this session. The new
   repo is not bound by this repo's AGENTS.md (no 500-line ceiling).
@@ -39,7 +39,7 @@ option than suggested are marked "(narrowed)".
 
 ## Design
 
-### 1. The `dev-team` MCP server
+### 1. The `cross-agent` MCP server
 
 `src/server.ts`: stdio, JSON-RPC 2.0 written by hand (the subset is
 `initialize`, `tools/list`, `tools/call`, `ping`, `notifications/cancelled`;
@@ -66,9 +66,9 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 
 ### 2. Ledger, runner, locks
 
-- `src/ledger.ts`: `<project>/.dev-team/tasks/<id>.json` written with
+- `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json` written with
   atomic rename, `<id>.ndjson` (the engine's native event stream teed
-  verbatim), `<id>.out` (final message). Ids are random. `.dev-team/` and
+  verbatim), `<id>.out` (final message). Ids are random. `.cross-agent/` and
   `.worktrees/` are added to `.git/info/exclude` on first use.
 - Launch protocol: `delegate` writes `launching` with `launchDeadline`
   (now + 30 s) and a launch token; the runner, once started, writes
@@ -102,7 +102,7 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
   timestamps, not divergent state. A worktree reservation is never released
   while an engine identity is alive.
 - Locks are OS-held and never reclaimed. A lock is `flock(2)` on a file
-  under `.dev-team/locks/`, taken by a helper that keeps a util-linux
+  under `.cross-agent/locks/`, taken by a helper that keeps a util-linux
   `flock` child alive on a pipe (`flock <file> sh -c 'echo held; read _'`):
   the helper knows it holds the lock when the child prints, releases it by
   closing the pipe, and the kernel releases it when the holder dies, so a
@@ -120,8 +120,8 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
   cwd meanwhile. `resume` of a task in `launching`, `running`, `stalled`,
   `orphaned`, or `cancelling` is refused ("wait or cancel first").
 - Git lock: every lead git mutation runs inside `flock -n
-  .dev-team/locks/git.lock` (util-linux, OS-held, released when the git
-  process dies), through `git_mutate` or `dev-team git`. Two hosts on one
+  .cross-agent/locks/git.lock` (util-linux, OS-held, released when the git
+  process dies), through `git_mutate` or `cross-agent git`. Two hosts on one
   project therefore cannot spawn into or mutate the same repository
   concurrently.
 
@@ -130,7 +130,7 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `src/engines/{types,claude,codex,grok}.ts`: build argv and env, capture the
 session id from the first native event, extract the final message, support
 `resume`. Binaries are overridable through config (`engines.<e>.bin`) and
-`DEV_TEAM_<ENGINE>_BIN` (tests use fake engines). Every adapter must apply
+`CROSS_AGENT_<ENGINE>_BIN` (tests use fake engines). Every adapter must apply
 the configured sandbox or refuse to spawn (fail closed); running without a
 sandbox requires `sandbox: "off"` in config. Spawn lines to be pinned by
 the Phase 0 probes:
@@ -158,7 +158,7 @@ the Phase 0 probes:
 Deny list for Claude and Grok, rebuilt from config at spawn: the commands
 `claude`, `codex`, `grok`, each configured `engines.<e>.bin` path, `node
 <absolute path of src/server.ts>`, `node <absolute path of src/cli.ts>`,
-and `dev-team`. Forms: Claude `Bash(<target> *)` and `Bash(<target>)`
+and `cross-agent`. Forms: Claude `Bash(<target> *)` and `Bash(<target>)`
 (enforced under `bypassPermissions`, probe P3); Grok one `--deny
 "Bash(<target> *)"` per target (enforced, probe P3). Codex children rely on
 the sandbox's network denial (probe P3b). The argv builders are unit-tested
@@ -169,23 +169,23 @@ Sandbox facts from the probes that the adapters must respect: Claude's
 sandbox needs `bwrap` and `socat`, and prints "Sandbox disabled" when they
 are missing, which the adapter treats as a refusal to spawn; Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
-(`dev-team init` warns); Codex refuses to rewrite the worktree's `.git`
+(`cross-agent init` warns); Codex refuses to rewrite the worktree's `.git`
 pointer, Grok allows it, so tampering is detected by `verify_worktree`, not
 prevented; a Grok child inherits the user's MCP configuration, so a
-dev-team server started by that child runs at depth 1 and offers no
+cross-agent server started by that child runs at depth 1 and offers no
 `delegate` (section 5, layer 1), which is what makes the inheritance safe.
 
 Child env: inherit `PATH`, `HOME`, `XDG_*`, `CODEX_HOME`; strip
 `CLAUDECODE`, `CLAUDE_CODE_*`, `CLAUDE_PID`, `CLAUDE_EFFORT`,
 `CLAUDE_PLUGIN_*`, `CODEX_COMPANION_*`, `GROK_CC_*`, `MCP_*`; unset
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY` (config `billing:
-subscription`); set `DEV_TEAM_DEPTH`, `DEV_TEAM_TASK`, `DEV_TEAM_LINEAGE`.
+subscription`); set `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, `CROSS_AGENT_LINEAGE`.
 
 ### 4. Git ownership
 
 Specialists never write git metadata. A linked worktree's `.git` is a
 writable file inside the implementer's sandbox, so the lead never trusts
-it: `git_mutate` (and the identical `dev-team git <slug> -- <args>` CLI)
+it: `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI)
 is the only way the skill mutates git in a worktree, and it
 
 1. refuses while any task reserving that path is not settled;
@@ -193,7 +193,7 @@ is the only way the skill mutates git in a worktree, and it
    `git worktree list --porcelain`, that `git -C <path> rev-parse
    --git-dir` is `<root>/.git/worktrees/<slug>`, `--git-common-dir` is
    `<root>/.git`, and `--abbrev-ref HEAD` is exactly `task/<slug>`;
-3. runs `flock -n .dev-team/locks/git.lock git --git-dir=<root>/.git/worktrees/<slug>
+3. runs `flock -n .cross-agent/locks/git.lock git --git-dir=<root>/.git/worktrees/<slug>
    --work-tree=<path> <args>` so the pointer file is never consulted;
 4. appends the step to the task journal (section 7) with the SHAs before
    and after.
@@ -221,8 +221,8 @@ specialist that defeats its own CLI's permission rules (a copied binary, a
 wrapper script) is outside the guarantee, as it is for OpenMausBot.
 Layers, each with its own unit test:
 
-1. Depth: the server reads `DEV_TEAM_DEPTH` at startup. Absent with no
-   `DEV_TEAM_LINEAGE` means 0. Present, malformed, or lineage present with
+1. Depth: the server reads `CROSS_AGENT_DEPTH` at startup. Absent with no
+   `CROSS_AGENT_LINEAGE` means 0. Present, malformed, or lineage present with
    depth absent means a child (fail closed). At depth ≥ `maxDepth`
    (default 1) the server registers only `list_roles`, `list_tasks`,
    `check`, and `result`; a `delegate` call by name is answered with an
@@ -232,7 +232,7 @@ Layers, each with its own unit test:
 3. Denied launches: the deny list of section 3 for Claude and Grok; for
    Codex, the sandbox's network denial, which stops a launched engine from
    reaching any model API.
-4. Lineage and duplicates: `DEV_TEAM_LINEAGE` is an ordered list of
+4. Lineage and duplicates: `CROSS_AGENT_LINEAGE` is an ordered list of
    `(task id, role, canonical cwd)`. A `delegate` whose `(role, cwd)` is
    already in the lineage is refused. A request identical to a running task
    in `(role, canonical cwd, sha256(brief))` is refused with "already
@@ -245,7 +245,7 @@ Layers, each with its own unit test:
 
 ### 6. Config and validation
 
-`<project>/.dev-team/config.json`, created by `dev-team init`, validated on
+`<project>/.cross-agent/config.json`, created by `cross-agent init`, validated on
 load:
 
 ```json
@@ -272,14 +272,14 @@ sandbox reserves the path.
 
 ### 7. The skill
 
-`skills/dev-team/SKILL.md` carries the lead loop: the pack's
+`skills/cross-agent/SKILL.md` carries the lead loop: the pack's
 `worktree-workflow` with the verbs remapped (`delegate_bot` and `ask_bot`
 become `delegate` then `wait`; "end your turn, you are woken" becomes "call
 `wait` again while it reports running"; roles are names; the closing room
-post becomes one line in `.dev-team/log.md`), the git ownership and
+post becomes one line in `.cross-agent/log.md`), the git ownership and
 ordering of section 4, and:
 
-- Journal: `.dev-team/journal/<slug>.json` records, per task, the default
+- Journal: `.cross-agent/journal/<slug>.json` records, per task, the default
   branch SHA before the merge, the task branch head, and each completed
   git step (`worktree-created`, `committed`, `rebased`, `merged`,
   `tests-passed`, `worktree-removed`, `branch-deleted`); `git_mutate`
@@ -312,14 +312,14 @@ Repo root is the plugin root for all three hosts: `.claude-plugin/plugin.json`
 + `.mcp.json` + `skills/` for Claude Code (`claude --plugin-dir
 ~/Documents/agent-team-cli` in development); `.codex-plugin/plugin.json`
 with `skills` and `mcpServers` (`tool_timeout_sec: 3600`) for Codex, plus
-`codex mcp add dev-team -- node <repo>/src/server.ts` and a copy into
-`~/.codex/skills/dev-team/` as the documented fallback; Grok through
+`codex mcp add cross-agent -- node <repo>/src/server.ts` and a copy into
+`~/.codex/skills/cross-agent/` as the documented fallback; Grok through
 `--plugin-dir` or `grok plugin install <path>`, which reads the Claude
 manifest. Grok's MCP tool timeout is settled by integration probe I2.
 
 ### 10. Operator CLI
 
-`src/cli.ts`: `dev-team init | tasks | show <id> | log <id> | cancel <id> |
+`src/cli.ts`: `cross-agent init | tasks | show <id> | log <id> | cancel <id> |
 verify-worktree <path> <branch> | git <slug> -- <args> | journal <slug>`.
 
 ### Time limits, as agreed
@@ -340,7 +340,7 @@ metadata grants, a conflict-edit mode for rebases.
 
 ```
 .claude-plugin/plugin.json   .codex-plugin/plugin.json   .mcp.json
-skills/dev-team/SKILL.md     roles/*.md
+skills/cross-agent/SKILL.md     roles/*.md
 src/server.ts  src/ledger.ts  src/runner.ts  src/guard.ts  src/config.ts
 src/locks.ts   src/gitmutate.ts  src/cli.ts
 src/engines/{types,claude,codex,grok}.ts
@@ -360,7 +360,7 @@ without a reason), and the loop-guard scope as a hard requirement.
 ### Phase 0: scaffold and engine-level probes (this session)
 
 1. Create the repository: `git init`, LICENSE, package.json, `.gitignore`
-   (`.dev-team/`, `.worktrees/`, `node_modules/`), AGENTS.md, README.md,
+   (`.cross-agent/`, `.worktrees/`, `node_modules/`), AGENTS.md, README.md,
    `docs/design.md` (this design), `src/server.ts` with the JSON-RPC loop,
    `initialize`, `tools/list`, `list_roles` from a config file, concurrent
    dispatch; `tests/server.test.ts` over stdio, including one test that
@@ -388,7 +388,7 @@ without a reason), and the loop-guard scope as a hard requirement.
      or complete a nested engine run.
    - P5 `codex exec --ignore-user-config`: auth kept, no trust prompt, no
      user MCP servers.
-   - P7 `dev-team git` over a worktree edited by a sandboxed implementer:
+   - P7 `cross-agent git` over a worktree edited by a sandboxed implementer:
      commit, rebase, `--ff-only` merge, cleanup, with `flock` held.
 3. In this repo: Decision 0008, beads under epic `atw-07l` for the
    T-series, `bd remember` for the marketplace and skill clarification,
@@ -410,7 +410,7 @@ lines.
 | Task | Scope | Acceptance |
 |---|---|---|
 | T1 Ledger and launch protocol | `src/ledger.ts`: records, atomic writes, statuses, `launchDeadline`, identities, reconciliation rules, `.git/info/exclude` | a `launching` record is untouched before its deadline and `failed: launch` after; dead runner with dead engine becomes `failed: runner lost` |
-| T2 Config and validation | `src/config.ts`: load, defaults, validation, `dev-team init`, `cwd` kinds; `verify_worktree` with `realpath`, `git worktree list --porcelain`, the three `rev-parse` checks, exact branch | root, a subdirectory, an unrelated repo, the main worktree, a wrong branch, and a rewritten `.git` pointer are refused; a linked `task/<slug>` worktree passes |
+| T2 Config and validation | `src/config.ts`: load, defaults, validation, `cross-agent init`, `cwd` kinds; `verify_worktree` with `realpath`, `git worktree list --porcelain`, the three `rev-parse` checks, exact branch | root, a subdirectory, an unrelated repo, the main worktree, a wrong branch, and a rewritten `.git` pointer are refused; a linked `task/<slug>` worktree passes |
 | T3 Guard | `src/guard.ts`: depth parsing (fail closed), lineage, running and recent duplicates, resume binding and active-resume refusal, deny-list and exclusion-flag builders per engine | one test per layer; malformed and cleared variables; needs-work resume accepted; resume of a running task refused |
 | T4 Adapter interface, fake engine | `src/engines/types.ts`, `src/engines/spawn.ts`, fake engine with per-engine output formats, sandbox-or-refuse rule | a fake run produces `<id>.ndjson`, `<id>.out`; a missing sandbox capability refuses to spawn |
 | T5 Runner and orphan handling | `src/runner.ts`: detached, own process group for the engine, identity file, event tee, terminal writes, SIGTERM handling | crash tests: kill the server during launch, execution, finalisation; kill the runner with the engine alive (engine terminated, `failed: runner lost`); cancel racing completion has one terminal writer |
@@ -420,15 +420,15 @@ lines.
 | T9 Grok adapter | `-p --cwd --sandbox`, deny rules, `--session-id`/`-r`, json output | tests; flags from P2, P3 |
 | T10 delegate, check, result, cancel | validation order under the spawn lock, reservation, identity-checked cancel of both groups, adoption after restart | cancel of a running fake; a retried delegate while the child survives is refused; a second writable task on a reserved cwd is refused |
 | T11 wait with stall | per-call timeout, `stalled` after silence, `orphaned` surfaced, cancellation notification | fake silent for N seconds flips `stalled` and keeps running; `check` answers during a pending `wait` |
-| T12 Skill and roles | `skills/dev-team/SKILL.md`, `roles/*.md`, README with the guard scope | reviewed against sections 4, 5, 7, 8 |
+| T12 Skill and roles | `skills/cross-agent/SKILL.md`, `roles/*.md`, README with the guard scope | reviewed against sections 4, 5, 7, 8 |
 | T13 Claude Code packaging | `.claude-plugin/plugin.json`, `.mcp.json` | `claude --plugin-dir . -p` lists the skill and the tools; then integration probes I1, I2 for this host and end-to-end run 1 (mine) |
 | T14 Codex packaging | `.codex-plugin/plugin.json`, `codex mcp add` notes, skills copy script | a Codex session sees the tools and the skill; then I1, I2 and end-to-end run 2 |
 | T15 Grok packaging | manifest reuse, `--plugin-dir` notes | a Grok session sees the tools; then I1, I2 (including the MCP tool timeout) and end-to-end run 3 |
-| T16 Operator CLI | `dev-team tasks | show | log | cancel | journal` | tests over a seeded ledger |
+| T16 Operator CLI | `cross-agent tasks | show | log | cancel | journal` | tests over a seeded ledger |
 
 Integration probes after each packaging task (mine): I1 self-mount, with
 the plugin installed in that host, each of the three engines spawned as a
-specialist lists its MCP tools and shows no `dev-team` tool; I2 host ×
+specialist lists its MCP tools and shows no `cross-agent` tool; I2 host ×
 engine isolation, each engine spawned by the server launched from that
 host repeats the P2 negative writes and can reach the network, plus a
 ten-minute `wait` under that host's MCP timeout.
@@ -458,9 +458,9 @@ Decision records the go or no-go for the plugin as the second binding.
   implement, lead commit, code review, merge, tests, cleanup; `git
   worktree list` shows only the root, no `task/*` branch remains, `git
   status --porcelain --untracked-files=normal` is empty, the suite is green
-  on `main`; `.dev-team/tasks/` holds one record per delegation with native
+  on `main`; `.cross-agent/tasks/` holds one record per delegation with native
   logs; the journal shows every step; no record shows depth above 1; the
-  specialists' transcripts show no `dev-team` tool and no engine launch.
+  specialists' transcripts show no `cross-agent` tool and no engine launch.
 - For the pack (M7): every T-series task ends with no worktree, no task
   branch, a clean root, and `npm test` green on `main`, as in 0.4.0.
 

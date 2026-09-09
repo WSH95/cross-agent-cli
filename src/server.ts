@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { verifyWorktree } from "./worktree.ts";
 
-// dev-team MCP server: JSON-RPC 2.0 over stdio, one message per line.
+// cross-agent MCP server: JSON-RPC 2.0 over stdio, one message per line.
 // Requests are dispatched as they arrive; a slow tool call never blocks the
 // next request on the same connection.
 
@@ -51,7 +51,7 @@ function packageVersion(): string {
 
 export function createServer(options: ServerOptions) {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
-  const serverInfo = { name: options.name ?? "dev-team", version: options.version ?? packageVersion() };
+  const serverInfo = { name: options.name ?? "cross-agent", version: options.version ?? packageVersion() };
 
   async function dispatch(method: string, params: Json): Promise<unknown> {
     switch (method) {
@@ -130,7 +130,7 @@ export function projectTools(projectRoot: string): ToolDefinition[] {
   return [
     {
       name: "list_roles",
-      description: "List the dev team roles configured in .dev-team/config.json with their engine, model, working directory kind, and sandbox profile.",
+      description: "List the dev team roles configured in .cross-agent/config.json with their engine, model, working directory kind, and sandbox profile.",
       inputSchema: { type: "object", properties: {} },
       handler: () => text({ roles: loadConfig(projectRoot).roles }),
     },
