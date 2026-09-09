@@ -166,7 +166,13 @@ async function run(projectRoot: string, id: string): Promise<void> {
   // own two engines. It is never released: the kernel releases it when this runner dies.
   // A second runner takes it with a zero wait, fails, and leaves the record alone.
   try {
-    await acquire(lockPath(projectRoot, runnerLockName(id)), { operation: `run task ${id}`, waitSeconds: 0 });
+    await acquire(lockPath(projectRoot, runnerLockName(id)), {
+      operation: `run task ${id}`, waitSeconds: 0,
+      // The lock is this runner's claim to be the only one for the task. If the kernel
+      // has dropped it, another runner may already be starting, so this one gives up
+      // everything it owns rather than keep an engine nobody's record accounts for.
+      onLost: () => settle("failed", new Error("runner lock lost")),
+    });
   } catch (error) {
     log(error);
     log(`another runner owns task ${id}`);

@@ -9,7 +9,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ledger from "../src/ledger.ts";
-import { acquire, lockPath, recordLockName } from "../src/locks.ts";
+import { acquire, lockPath, recordLockName, runnerLockName } from "../src/locks.ts";
 import { reconcile } from "../src/reconcile.ts";
 import type { LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
 
@@ -991,6 +991,42 @@ test("orphan cleanup preserves a record settled during its grace period", async 
     assert.deepEqual(h.read(), settled);
     assert.equal(living(identity), false);
   } finally { await h.cleanup(); await cleanup; }
+});
+
+/** The util-linux child that actually holds a lock, found by the file on its command line. */
+function holderOf(file: string): number | null {
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let cmdline: string;
+    try {
+      cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
+    } catch {
+      continue;
+    }
+    const argv = cmdline.split("\0");
+    if (argv[0]?.endsWith("flock") && argv.includes(file)) return Number(entry);
+  }
+  return null;
+}
+
+test("a runner that loses its lock settles failed and leaves no engine group", async () => {
+  const { groupAlive } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    const holder = await poll(() => holderOf(lockPath(h.root, runnerLockName(h.record.id))), (pid) => pid !== null);
+    // The lock is this runner's claim to be the only one for the task. Once the kernel
+    // has dropped it another runner may start, so this one must own nothing afterwards.
+    process.kill(holder!, "SIGKILL");
+    const failed = await poll(h.read, terminal, 8000);
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.reason, "runner lock lost");
+    assert.equal(groupAlive(running.engineIdentity!), false);
+    await poll(() => child.closed, Boolean);
+    assert.match(h.runnerLog(), /runner lock lost/);
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
 });
 
 test("runner diagnostics are written to runner.log without stdout output", async () => {

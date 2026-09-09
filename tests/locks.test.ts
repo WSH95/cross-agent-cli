@@ -108,3 +108,46 @@ test("a waiter refuses after its wait, naming the operation and the file", async
     await holder.release();
   }
 });
+
+/** The util-linux child that actually holds a lock, found by the file on its command line. */
+function holderOf(file: string): number | null {
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let cmdline: string;
+    try {
+      cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
+    } catch {
+      continue;
+    }
+    const argv = cmdline.split("\0");
+    if (argv[0]?.endsWith("flock") && argv.includes(file)) return Number(entry);
+  }
+  return null;
+}
+
+test("a holder that dies before its release reports the lock lost", { timeout: 20000 }, async (t) => {
+  const root = project(t);
+  const file = lockPath(root, runnerLockName("task"));
+  const lost: string[] = [];
+  const lock = await acquire(file, { operation: "hold a lock", onLost: () => lost.push("lost") });
+  // Held locks keep a live child on a pipe, so a failed assertion must not leave one.
+  t.after(() => lock.release());
+  assert.equal(lock.lost, false);
+  const holder = await poll(() => holderOf(file), (pid) => pid !== null);
+
+  // The kernel releases the lock when its holder dies, so a caller that believed it
+  // owned something exclusive has to be told it no longer does.
+  process.kill(holder!, "SIGKILL");
+  await poll(() => lock.lost, Boolean);
+  assert.deepEqual(lost, ["lost"]);
+  const next = await acquire(file, { operation: "take the freed lock", waitSeconds: 0 });
+  await next.release();
+
+  const quiet: string[] = [];
+  const released = await acquire(file, { operation: "hold and release", onLost: () => quiet.push("lost") });
+  t.after(() => released.release());
+  await released.release();
+  await delay(50);
+  assert.equal(released.lost, false, "a release this caller asked for is not a loss");
+  assert.deepEqual(quiet, []);
+});

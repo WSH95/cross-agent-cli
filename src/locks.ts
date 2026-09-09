@@ -4,6 +4,11 @@ import path from "node:path";
 
 export interface Lock {
   readonly file: string;
+  /**
+   * True once the holder has gone without this caller releasing it: the kernel has
+   * dropped the lock and whatever it protected is no longer this caller's alone.
+   */
+  readonly lost: boolean;
   /** Ends the holder, which releases the lock. Calling it again is a no-op. */
   release(): Promise<void>;
 }
@@ -13,6 +18,8 @@ export interface AcquireOptions {
   waitSeconds?: number;
   /** Named in the refusal, so an operator reads what could not proceed. */
   operation: string;
+  /** Called once if the lock is lost, so a long-lived holder can give up what it owned. */
+  onLost?: () => void;
 }
 
 export function lockPath(projectRoot: string, name: string): string {
@@ -66,8 +73,20 @@ export async function acquire(file: string, options: AcquireOptions): Promise<Lo
   }
 
   let released: Promise<void> | undefined;
+  let lost = false;
+  // The child is the lock. If it goes while this caller still believes it holds it —
+  // killed, or lost to an error nobody saw — the kernel has already let the next waiter
+  // in, and a holder that carried on would be acting on exclusivity it no longer has.
+  void exit.then(() => {
+    if (released) return;
+    lost = true;
+    try {
+      options.onLost?.();
+    } catch { /* The caller's own failure is not this helper's to handle. */ }
+  });
   return {
     file,
+    get lost() { return lost; },
     release(): Promise<void> {
       // The newline ends `read _` even before the pipe's own close reaches the child,
       // so a caller that blocks its loop right after this still frees the lock.
