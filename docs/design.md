@@ -105,13 +105,16 @@ engine process, and the ledger already records each engine's identity as
 written at `src/runner.ts:138-144`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` for `ppid`,
-`startTime`, `state`, `pgid` and `sid` (`readProcessStat`,
-`src/ledger.ts:197-212`, already parses that record), starting at its own
-parent and following `ppid` for at most **8 hops** — enough for any `sh -c`
-wrapper an engine puts in between. The walk **fails closed to the specialist
-row** on any read error, on a cycle, on hop exhaustion, and on a parent whose
-start time is later than its child's, which means the chain was reparented and
-the ancestor is not the one that spawned this server.
+`startTime`, `state`, `pgid` and `sid`. `readProcessStat`
+(`src/ledger.ts:197-212`) already parses that record and returns the last
+four of those; the walk extends it to return `ppid` as well — stat field 4,
+the element before `pgrp` in the suffix it already splits — which is a T10
+change. Starting at its own parent, the walk follows `ppid` for at most **8
+hops** — enough for any `sh -c` wrapper an engine puts in between. The walk
+**fails closed to the specialist row** on any read error, on a cycle, on hop
+exhaustion, and on a parent whose start time is later than its child's,
+which means the chain was reparented and the ancestor is not the one that
+spawned this server.
 
 **Identity across boots.** `runnerIdentity` and `engineIdentity` gain a
 `bootId`, read from `/proc/sys/kernel/random/boot_id` when the identity is
@@ -141,10 +144,16 @@ a **specialist**. That also settles the spawn-versus-acknowledgement race: a
 lead's server that starts before its record reaches `running` is a specialist
 until revalidation sees `running`, which is the safe direction.
 
-**Resolution is revalidated on every `tools/list` and `tools/call`** — one
-`/proc` read of the matched ancestor plus one record read — and never cached
-for the connection's lifetime. A lead whose record leaves `running|stalled`
-loses the row on its next call.
+**Resolution is revalidated on every `tools/list` and `tools/call`**, never
+cached for the connection's lifetime, and the work depends on what the first
+resolution found. A server with a matched ancestor revalidates **that**
+ancestor and its record — one `/proc` read plus one record read — so a lead
+whose record leaves `running|stalled` loses the row on its next call. A server
+that resolved to specialist because the walk found **no** match re-walks in
+full, at most 8 `/proc` reads, so a lead whose record reaches `running` after
+its server started gains the row on its next call. Without the re-walk the
+spawn-versus-acknowledgement race above would be permanent rather than
+transient.
 
 **Which project.** The server takes `--project <root>`, and the lead mount
 spec passes it. `childEnv` also sets `CROSS_AGENT_PROJECT=<canonical root>`,
@@ -198,10 +207,13 @@ which row the caller was resolved to, and why.
    per task (the `runner-<id>.lock` of section 2).
 3. **The mailbox.** `ask`, `list_asks`, `answer`, backed by
    `.cross-agent/asks/<id>.json` and written by **the server or the operator
-   CLI only** — never by an engine child, which has no path to that directory
-   but its sandbox and no tool that writes there. An ask record is `{id,
-   taskId, question, createdAt, status: "open" | "answered" | "cancelled",
-   answer?, answeredAt?}`. `ask` blocks up to `timeout_seconds` (default
+   CLI only**. No engine child can write there: it has no tool that does, and
+   `.cross-agent/` sits at the project root, which no writable sandbox
+   reaches — that second half holds because of the mode rule that no role may
+   combine `{kind: "root"}` with a writable sandbox (the Modes section), so it
+   is a guarantee and not an accident. An ask record is `{id, taskId,
+   question, createdAt, status: "open" | "answered" | "cancelled", answer?,
+   answeredAt?}`. `ask` blocks up to `timeout_seconds` (default
    `waitDefaultSeconds`) and returns `{id, status, answer?}`; a lead that is
    still waiting re-calls `ask` with the same `id`, which is what keeps a
    long wait inside the host's tool timeout. The first `answer` wins and later
@@ -217,10 +229,11 @@ which row the caller was resolved to, and why.
    empty by necessity (`src/guard.ts:135-142`).
 4. **Injection, probed per engine (P9).** Read from each CLI's `--help` on
    this machine: Claude names `--mcp-config` and `--strict-mcp-config`, and
-   accepts `--append-system-prompt-file` (P1's harness run passed it,
-   `tools/probe.mjs:44`, though `claude --help` lists only
-   `--append-system-prompt <prompt>` and mentions the `[-file]` form inside
-   another flag's description) — a clean mount plus a clean instruction path;
+   takes its instructions through `--append-system-prompt-file`, which is what
+   the harness emits when it is given a role file (`tools/probe.mjs:44`) and
+   which `claude --help` documents only as the `[-file]` form of
+   `--append-system-prompt` — a clean mount and an instruction path that is
+   **pending P9**, since no probe has yet run with a role file;
    `codex exec` has only `-c key=value` and no
    system-prompt flag, so a Codex lead needs `-c mcp_servers…` under
    `--ignore-user-config` and prompt-prepended instructions; Grok has
@@ -259,16 +272,17 @@ mode directory, and requires `lead.role` exactly when `placement` is
 one cannot resolve the lead row without it.
 
 The **bind-time layer** stays out of the mode and lives in
-`.cross-agent/config.json`: which engine, model, effort, and binary each role
-runs on. A mode is therefore portable text; binding it to this machine's
-engines is a separate, local act. That split, the length caps on every text
-field, and stripping unknown fields on load are borrowed as *design* from
-OpenMausBot's `~/.cache/agent-team/openmausbot-src/server/bot-package.ts`
-(v0.1.56), whose package parser is documented as "Unknown fields are
-stripped; ids, grants, credentials, paths, model selections, and runtime state
-therefore cannot ride through the package boundary." Its schema itself is
-**not** adopted: `openmaus.package` v1 describes agents, playbooks, rooms, and
-routines, and only the first has an analogue here.
+`.cross-agent/config.json`: which engine, model and effort each role runs
+on, and where each engine's binary is. A mode is therefore portable text;
+binding it to this machine's engines is a separate, local act. That split,
+the length caps on every text field, and stripping unknown fields on load
+are borrowed as *design* from OpenMausBot's
+`~/.cache/agent-team/openmausbot-src/server/bot-package.ts` (v0.1.56), whose
+package parser is documented as "Unknown fields are stripped; ids, grants,
+credentials, paths, model selections, and runtime state therefore cannot
+ride through the package boundary." Its schema itself is **not** adopted:
+`openmaus.package` v1 describes agents, playbooks, rooms, and routines, and
+only the first has an analogue here.
 
 Two modes will ship built in:
 
@@ -285,10 +299,17 @@ worktree provider registers `verify_worktree` and `git_mutate`, and only when
 a mode declares it; `solo` therefore yields a `tools/list` without them.
 Arbitrary-path workspace providers are deferred (see "Not built").
 
+**No role may combine `{kind: "root"}` with a writable sandbox**, and mode
+validation refuses one that does. A writable root role could edit
+`.cross-agent/` itself — the ledger, the mailbox, the journal, the config —
+and every containment argument in this document assumes those are the
+server's to write. A role that must write does so in a worktree.
+
 **A role's `workspace` and `sandboxDefault` belong to the mode, not to the
-config.** Config binds `engine`, `model`, `effort` and `bin` per role and may
-override `sandbox` alone; a `workspace` key in `.cross-agent/config.json` is
-refused, and every role key in config must name a role the mode declares.
+config.** Config binds `engine`, `model` and `effort` per role — `bin` is per
+engine, under `engines.<e>.bin`, never per role — and may override `sandbox`
+alone; a `workspace` key in `.cross-agent/config.json` is refused, and every
+role key in config must name a role the mode declares.
 Otherwise a local binding could move a read-only reviewer into a writable
 worktree, and the mode's own containment argument (section 4) would no longer
 be about the mode.
@@ -366,11 +387,13 @@ each says which behaviour is today's and which the design requires.
   `running` with its own identity (pid and start time from
   `/proc/<pid>/stat`, `src/ledger.ts:197-212`) and the engine's identity (pid,
   start time, process group) in one atomic acknowledgement
-  (`src/runner.ts:138-144`). Three record fields the design needs are not in
+  (`src/runner.ts:138-144`). Four record fields the design needs are not in
   the shipped `TaskRecord` (`src/ledger.ts:30-50`) and arrive with the tasks
   that use them: `depth`, written by `delegate` (section 5, layer 1);
-  `parentTaskId`, for cascade ownership; and `bootId` inside each identity
-  (the lead model). There is **no launch token**: the field written
+  `parentTaskId`, for cascade ownership (the lead model); `bootId` inside each
+  identity (the lead model); and `truncated`, written by the runner when the
+  stdio drain timed out (the bounded-settlement bullet below). There is **no
+  launch token**: the field written
   today at `src/ledger.ts:139` is never read, and a token on the *runner's*
   argv could not identify the engine anyway, because the engine is a separate
   detached spawn with adapter-built argv (`src/engines/spawn.ts:153-155`).
@@ -520,8 +543,9 @@ each says which behaviour is today's and which the design requires.
   flushed before the result is built, so a final line without a terminator is
   not dropped; and a stream error arriving after `exit` is recorded as an
   event rather than treated as fatal. `SpawnResult.truncated` is persisted on
-  the task record as `truncated: true` — another target field — and appended
-  to `reason` when the task failed, so an operator reading a failure knows
+  the task record as `truncated: true` — one of the four target fields listed
+  under the launch protocol above — and appended to `reason` when the task
+  failed, so an operator reading a failure knows
   whether the evidence is complete. Finalisation happens exactly once (the
   `settled` flag), the launch-error path (`src/engines/spawn.ts:168-171`) is
   unchanged, and so is the runner's order: group cleanup before terminal
@@ -624,13 +648,13 @@ Spawn lines, to be pinned by the Phase 0 probes:
   --disallowedTools <deny list>`, cwd = the role's workspace. Sandbox through
   the settings JSON (`sandbox.enabled`, `filesystem.allowWrite`,
   `autoAllowBashIfSandboxed`). Read-only roles get no `allowWrite` and no
-  `Edit`/`Write` tools. `--append-system-prompt-file` is written as such
-  because P1's harness run passed it and Claude Code 2.1.263 accepted the run
-  (`tools/probe.mjs:44`); `claude --help` lists only `--append-system-prompt
-  <prompt>` and mentions the `[-file]` form inside another flag's
-  description, so the flag's spelling is confirmed in P9 with the rest of the
-  instruction path. Prerequisites on Linux are three, all from P1: `bwrap`,
-  `socat`, and on Ubuntu 24.04 or later an AppArmor profile for
+  `Edit`/`Write` tools. `--append-system-prompt-file` is the flag
+  `tools/probe.mjs:44` emits when a role file is given; P1 ran without one
+  (`docs/probes.md:17-21`), and `claude --help` documents the spelling only as
+  the `[-file]` form of `--append-system-prompt`, so both the flag and the
+  delivery of the role prompt through it are **pending P9**. Prerequisites on
+  Linux are three, all from P1: `bwrap`, `socat`, and on Ubuntu 24.04 or later
+  an AppArmor profile for
   `/usr/bin/bwrap` with `flags=(unconfined)` and `userns`; the adapter's
   sandbox check must detect both failure modes — the "Sandbox disabled"
   warning and a sandbox that engages but cannot start any command. The role
@@ -871,9 +895,11 @@ wires. Layers, each with its own unit test:
 
 `<project>/.cross-agent/config.json`, created by `cross-agent init --mode
 <name>`, validated on load (`src/config.ts:53-115`). It carries the
-**bind-time layer only**: which mode is active, and which engine, model,
-effort and binary each of that mode's roles runs on, plus an optional
-`sandbox` override. Where a role works and what sandbox it defaults to belong
+**bind-time layer only**: which mode is active, which engine, model and
+effort each of that mode's roles runs on, plus an optional `sandbox` override
+per role, and, under `engines`, where each engine's binary is
+(`engines.<e>.bin`, section 3) — a per-engine setting, never a per-role
+one. Where a role works and what sandbox it defaults to belong
 to the mode (the Modes section), so a `workspace` key here is refused and
 every role key must name a role the mode declares.
 
@@ -1006,8 +1032,10 @@ it; the rest is step 13.
 log <id> | cancel <id> | answer <ask-id> <text> | report | verify-worktree
 <path> <branch> | git <slug> -- <args> | journal <slug>`. `modes` lists the
 installed modes and marks the active one; `answer` replies to a pending `ask`
-without a host session; `report` prints the per-task summary the lead posts to
-`.cross-agent/log.md`.
+without a host session; `report` renders the per-task summary from the ledger
+and each task's final message. Under `host` placement `.cross-agent/log.md`
+already holds that summary, because the host appended it (section 7); under
+`engine` placement `report` is where the log comes from.
 
 ### Time limits, as agreed
 
@@ -1241,7 +1269,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   reason; a Grok specialist inheriting the user's MCP configuration sees
   exactly the specialist row (this is I1).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,
-  models, efforts and profiles of section 6; a config carrying a `workspace`
+  models and efforts of section 6 and the profiles of the mode's
+  `sandboxDefault`; a config carrying a `workspace`
   key, or a role key the mode does not declare, is refused; `solo` yields a
   `tools/list` without the worktree tools; `describe_mode` returns the loop
   text on all three hosts with no file copied, and refuses with a reason when

@@ -4,7 +4,8 @@ What each engine CLI was observed to do when spawned the way the adapters
 will spawn it (design section 3). Every entry names the command (from
 `tools/probe.mjs`), the date, and the outcome. Versions: Claude Code
 2.1.263, Codex 0.153.4, Grok Build 1.0.13, Node 24.11.0, Ubuntu with
-bubblewrap installed and `socat` absent.
+bubblewrap installed; `socat` was absent for P1's first run and installed on
+2026-09-07 for its rerun, and the `bwrap` AppArmor profile is still pending.
 
 A first round ran in a repository under `/tmp`; both the Codex and the Grok
 sandboxes treat `/tmp` as writable, so those write checks proved nothing
