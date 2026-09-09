@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T07:22:59Z
+updated_at: 2026-09-09T08:21:20Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -10,34 +10,35 @@ branch: task/cross-agent
 ## Now
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
-9f85269) carries: the rename (9d648b2); `docs/design.md` rewritten as the
-authority and closed after two review rounds (b446d32, 59ec7f5, 99d19ce);
-the README aligned (9fa1540, one fix round pending); and Task 2a of the
-lifecycle work (45ee841..3a28be7): `src/locks.ts` (OS-held flock on a pipe),
-`ledger.update` async and conditional under the record lock with an
-`{applied}` result, the runner acknowledging only from `launching`,
-treating `cancelling` as a cancel, and holding `runner-<id>.lock` for its
-lifetime; identities carry `bootId`. Tests 146 → 159. The SDD ledger is
+9f85269). Landed: the rename; `docs/design.md` as the authority (two review
+rounds closed); README aligned; `AGENTS.md` updated by user-approved diff
+(5a7cd5f, Decision 0006); Task 2a of the lifecycle work — `src/locks.ts`,
+async conditional `ledger.update` under the record lock with `{applied}`,
+the runner acknowledging only from `launching`, treating `cancelling` as a
+cancel (including an engine that completes during a cancel), and holding
+`runner-<id>.lock` for its lifetime; identities carry `bootId`. Tests 161.
+Beads: S1 `atc-s96.19` closed; S2 `.20` claimed (2a done, 2b in progress);
+new `.29` (SIGTERM before the runner's first read), `.30` (a completed
+engine over an orphaned record loses its evidence). SDD ledger:
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
-in the main checkout. Beads: S1 `atc-s96.19` in progress; S2 `.20` half
-done; new bug `.29` (SIGTERM before the runner's first record read).
+in the main checkout.
 
 ## In flight
 
-Task 2a's Opus review and Task 1c's README fix round, in parallel. Then
-Task 2b (reconcile on the group scan, stranded-engine adoption, spawn
-drain, record validation). The AGENTS.md rename/Layout diff awaits the
-user's approval (`.superpowers/sdd/.../agents-md-proposed.diff`).
+Task 2b (Opus): `src/reconcile.ts` on the group scan with the `cancelling`
+case, stranded-engine adoption by `CROSS_AGENT_TASK` in `/proc/*/environ`,
+the spawn pipeline's bounded stdio drain with `truncated`, record validation
+and `scan().invalid`. Then its Opus review and a Codex gpt-5.6-sol milestone
+review of 2a+2b together, then Task 3 (T6 remainder).
 
 ## Next steps
 
-1. Close the 1b reviews; fix round if needed; then Task 1c (README).
-2. Task 2a then 2b (bead `atc-s96.20`): locks primitive, conditional
-   `update`, reconcile on the group scan, spawn drain, record validation.
-3. T6 remainder (`.6`), probes P8/P9 (`.21`), engine contract (`.22`),
-   adapters, T10/T11, modes (`.23`), T12, T13, engine placement (`.24`).
-4. Present the held `AGENTS.md` diff (rename + Layout correction) for
-   approval once the design is final.
+1. Close 2b's reviews; amend the Task 3 brief against the landed signatures;
+   dispatch Task 3 (`atc-s96.6`: reservation, `git.lock`, `git_mutate` on
+   the verified git-dir, journal, `lockWaitSeconds`).
+2. Task 4 (`atc-s96.21`): probe harness flags; probes P8, P9, P10.
+3. Engine contract (`.22`), adapters (`.7/.8/.9`), T10/T11, modes (`.23`),
+   T12, T13, engine placement (`.24`).
 
 ## Blockers
 
