@@ -127,9 +127,12 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
       if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code!)) throw error;
       // Unreadable environments are ordinary: another user's processes, and this user's
       // own non-dumpable ones (systemd --user, ssh-agent), can never be read. Only a
-      // process that could be the engine of the task being judged is counted — this
-      // user's, and no older than the task itself.
-      if (code !== "ENOENT" && code !== "ESRCH" && startedAt(before.startTime) >= since && ownedByThisUser(pid)) unreadable++;
+      // process that could be the engine of the task being judged is counted: this
+      // user's, no older than the task, and leading its own group and session, which is
+      // the only shape a detached engine spawn can have.
+      const candidate = before.pgid === pid && before.sid === pid
+        && startedAt(before.startTime) >= since && ownedByThisUser(pid);
+      if (code !== "ENOENT" && code !== "ESRCH" && candidate) unreadable++;
       continue;
     }
     if (!environ.split("\0").includes(assignment)) continue;

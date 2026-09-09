@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { read, readSpec, update } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
-import { groupAlive, identityOf, killGroup } from "./process.ts";
+import { findByEnvironment, groupAlive, identityOf, killGroup, terminateGroupByPid } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
 import type { EngineAdapter } from "./engines/types.ts";
@@ -67,6 +67,12 @@ async function run(projectRoot: string, id: string): Promise<void> {
         killGroup(engine, "SIGKILL");
         if (!await waitForGroup(500)) throw new Error(`engine group ${engine.pgid} did not terminate`);
       }
+    } else if (!engine && handle?.pid !== undefined) {
+      // The identity could not be captured, so no record can name this group — but the
+      // detached spawn made handle.pid its group and session id, and the kernel keeps
+      // that id reserved while any member lives. Killing the child alone would settle
+      // the task with the descendants it left still running.
+      await terminateGroupByPid(handle.pid, { termGrace: grace, killGrace: 500 });
     }
     // A failed launch or identity read may leave only the directly owned child.
     handle?.kill("SIGKILL");
@@ -189,6 +195,15 @@ async function run(projectRoot: string, id: string): Promise<void> {
     if (settling) return;
     if (terminal(read(projectRoot, id))) return settle("external");
     const adapter = (imported.default ?? imported.adapter) as EngineAdapter;
+    // The lock keeps two runners from owning this task at once, but not one after
+    // another: a runner killed between its spawn and its acknowledgement leaves the
+    // record `launching` and the lock free, and a replacement that spawned again would
+    // give the task a second engine and strand the first for ever. Reconciliation adopts
+    // what is already there, so this runner has nothing to do but stand down.
+    if (findByEnvironment(id, record.createdAt).found.length > 0) {
+      log(`engine already running for task ${id}`);
+      return process.exit(1);
+    }
     log(`launching ${engineName}`);
     handle = spawnEngine(adapter, { ...request, resultPath: record.resultPath, logPath: record.logPath });
     void handle.result.then((result) => {

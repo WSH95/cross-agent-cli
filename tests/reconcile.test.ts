@@ -8,12 +8,17 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { create, currentBootId, list, read, readProcessStat, update } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { findByEnvironment, groupAlive, terminateOrphans } from "../src/process.ts";
 import { reconcile, reconcileAndCleanup } from "../src/reconcile.ts";
 
-const now = 1_000_000;
+// A real wall clock: reconciliation compares a record's createdAt with the start times of
+// live processes, so a task from 1970 would be older than everything on the machine.
+const worktree = fileURLToPath(new URL("../", import.meta.url));
+
+const now = Date.now();
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
 // One legal path from launching to each status (design section 2, E1), so a test can
@@ -148,16 +153,16 @@ function processes(t: TestContext) {
 test("reconcile fails unacknowledged launches only after their deadline", async (t) => {
   const root = project(t);
   const record = create(root, input(root), now);
-  assert.deepEqual(await reconcile(root, record.launchDeadline - 1), { changed: [], invalid: [] });
+  assert.deepEqual(await reconcile(root, record.launchDeadline - 1), { changed: [], invalid: [], errors: [] });
   assert.deepEqual(read(root, record.id), record);
-  assert.deepEqual(await reconcile(root, record.launchDeadline), { changed: [], invalid: [] });
+  assert.deepEqual(await reconcile(root, record.launchDeadline), { changed: [], invalid: [], errors: [] });
   assert.deepEqual(read(root, record.id), record);
 
   const after = record.launchDeadline + 1;
   const expected = { ...record, status: "failed", reason: "launch", updatedAt: after };
-  assert.deepEqual(await reconcile(root, after), { changed: [expected], invalid: [] });
+  assert.deepEqual(await reconcile(root, after), { changed: [expected], invalid: [], errors: [] });
   assert.deepEqual(read(root, record.id), expected);
-  assert.deepEqual(await reconcile(root, after + 1), { changed: [], invalid: [] });
+  assert.deepEqual(await reconcile(root, after + 1), { changed: [], invalid: [], errors: [] });
 });
 
 test("reconcile fails running and stalled tasks when no member of the engine group is alive", async (t) => {
@@ -168,7 +173,7 @@ test("reconcile fails running and stalled tasks when no member of the engine gro
       const record = await started(root, status, now);
       const active = await change(root, record.id, identities, now + 1);
       const expected = { ...active, status: "failed", reason: "runner lost", updatedAt: now + 2 };
-      assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [] });
+      assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [], errors: [] });
       assert.deepEqual(read(root, record.id), expected);
     }
   }
@@ -182,7 +187,7 @@ test("reconcile orphans running and stalled tasks with a dead runner and a live 
     const record = await started(root, status, now);
     const active = await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 1);
     const expected = { ...active, status: "orphaned", updatedAt: now + 2 };
-    assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [] });
+    assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [], errors: [] });
     assert.deepEqual(read(root, record.id), expected);
     assert.equal(groupAlive(engine.identity), true, "an orphaned record's engine is left running for cleanup");
   }
@@ -218,7 +223,8 @@ test("a launching record past its deadline adopts the group leader carrying its 
   await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
 
   const after = record.launchDeadline + 1;
-  const { changed } = await reconcile(root, after);
+  const { changed, errors } = await reconcile(root, after);
+  assert.deepEqual(errors, []);
   assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "orphaned"]]);
   const adopted = read(root, record.id);
   assert.deepEqual(adopted.engineIdentity, engine.identity, "the record now names the group cleanup must terminate");
@@ -256,11 +262,187 @@ test("a cancelling record whose runner is dead terminates the group and settles 
     const record = await started(root, "cancelling", now);
     const cancelling = await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine }, now + 1);
     const expected = { ...cancelling, status: "cancelled", reason: "runner lost during cancel", updatedAt: now + 2 };
-    assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [] });
+    assert.deepEqual(await reconcile(root, now + 2), { changed: [expected], invalid: [], errors: [] });
     assert.deepEqual(read(root, record.id), expected);
     assert.equal(groupAlive(engine), false, "the group is verified dead before the terminal write");
   }
   assert.deepEqual((await reconcile(root, now + 3)).changed, []);
+});
+
+test("adoption is one write: the record is never running with an engine it does not own", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const written: TaskStatus[] = [];
+  // A record that is `running` with an engine identity satisfies every clause of the
+  // authority match, so adoption must never pass through it, however briefly.
+  const rename = fs.renameSync;
+  const mock = t.mock.method(fs, "renameSync", ((from: fs.PathLike, to: fs.PathLike) => {
+    if (to === file) written.push((JSON.parse(fs.readFileSync(from, "utf8")) as TaskRecord).status);
+    return rename(from as string, to as string);
+  }) as typeof fs.renameSync);
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+  mock.mock.restore();
+
+  assert.deepEqual(written, ["orphaned"]);
+  assert.deepEqual(changed.map((value) => value.status), ["orphaned"]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(read(root, record.id).engineIdentity, engine.identity);
+});
+
+test("one pass adopts the leader carrying the task id and kills everything else that does", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const pidFile = path.join(root, "stray.pid");
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id, CHILD_PID_FILE: pidFile, CHILD_TASK: record.id });
+  const stray = await zoo.member(pidFile);
+  const second = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 3);
+
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => value.status), ["orphaned"]);
+  // At most one engine per task: the lowest pid is the one adopted, and a second leader
+  // carrying the same id is a stray like any other.
+  const adopted = [engine, second].reduce((left, right) => (left.pid < right.pid ? left : right));
+  const extra = engine.pid === adopted.pid ? second : engine;
+  assert.deepEqual(read(root, record.id).engineIdentity, adopted.identity);
+  await poll(() => running(stray), (alive) => !alive);
+  await poll(() => running(extra.pid), (alive) => !alive);
+  assert.equal(running(adopted.pid), true, "the adopted engine is left for cleanup to terminate");
+});
+
+test("a launch decision refused at the write signals nothing and is reported", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const pidFile = path.join(root, "stray.pid");
+  const parent = zoo.leader({ CHILD_PID_FILE: pidFile, CHILD_TASK: record.id });
+  const stray = await zoo.member(pidFile);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const acknowledged: TaskRecord = {
+    ...record, status: "running", runnerIdentity: liveIdentity(), engineIdentity: liveIdentity(), updatedAt: now + 1,
+  };
+  const original = fs.readFileSync;
+  let reads = 0;
+  // The runner acknowledges between the scan and the write. The write is the decision
+  // point: because it was refused, nothing this pass found may be signalled.
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === file && ++reads === 2) {
+      mock.mock.restore();
+      fs.writeFileSync(`${file}.external`, JSON.stringify(acknowledged, null, 2) + "\n");
+      fs.renameSync(`${file}.external`, file);
+    }
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+
+  assert.deepEqual(changed, [], "nothing was written for this record");
+  assert.deepEqual(errors.map((entry) => entry.id), [record.id]);
+  assert.match(errors[0].reason, /refused/);
+  assert.deepEqual(read(root, record.id), acknowledged);
+  await delay(100);
+  assert.equal(running(stray), true, "the acknowledged runner's engine kept its descendants");
+  assert.equal(running(parent.pid), true);
+});
+
+test("a launching record with an environment it could not read waits for the next pass", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const hidden = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  const original = fs.readFileSync;
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === `/proc/${hidden.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  const blind = await reconcile(root, record.launchDeadline + 1);
+  mock.mock.restore();
+
+  // Declaring the launch failed would leave that engine running with nothing to own it.
+  assert.deepEqual(blind.changed, []);
+  assert.deepEqual(blind.errors.map((entry) => entry.id), [record.id]);
+  assert.match(blind.errors[0].reason, /environ unreadable for 1 process/);
+  assert.equal(read(root, record.id).status, "launching");
+  assert.equal(running(hidden.pid), true);
+
+  const seeing = await reconcile(root, record.launchDeadline + 2);
+  assert.deepEqual(seeing.errors, []);
+  assert.deepEqual(seeing.changed.map((value) => value.status), ["orphaned"], "the next pass judges it");
+});
+
+test("a record whose group will not die is reported, and the pass judges the rest", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const stubborn = zoo.leader();
+  const cancelling = await started(root, "cancelling", now);
+  await change(root, cancelling.id, { runnerIdentity: deadIdentity(), engineIdentity: stubborn.identity }, now + 1);
+  const other = await started(root, "running", now);
+  await change(root, other.id, { runnerIdentity: deadIdentity(), engineIdentity: deadIdentity() }, now + 1);
+
+  const denied = Object.assign(new Error("not permitted"), { code: "EPERM" });
+  const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    if (pid === -stubborn.pid) throw denied;
+    return (process.kill as unknown as (pid: number, signal?: string | number) => true)(pid, signal);
+  });
+  const { changed, errors } = await reconcile(root, now + 2);
+  mocked.mock.restore();
+
+  assert.deepEqual(errors.map((entry) => entry.id), [cancelling.id]);
+  assert.match(errors[0].reason, /did not terminate/);
+  assert.equal(read(root, cancelling.id).status, "cancelling", "the record keeps its status for the next pass");
+  assert.equal(groupAlive(stubborn.identity), true);
+  // One record's failure is not the pass's: every other record was still judged.
+  assert.deepEqual(changed.map((value) => [value.id, value.status]), [[other.id, "failed"]]);
+});
+
+test("a reconciler carrying the task id in its own environment never signals itself", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  const outcome = path.join(root, "reconciled.json");
+  const siblingFile = path.join(root, "sibling.pid");
+  // The MCP server inherits CROSS_AGENT_TASK from the engine that started it, and
+  // reconciliation runs on every listing: this is a server reconciling the very task it
+  // was launched for. Finding itself, or a child in its own group, and calling it a
+  // stray would kill the server mid-pass.
+  const script = `
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+const sibling = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+fs.writeFileSync(process.argv[4], String(sibling.pid));
+await new Promise((resolve) => setTimeout(resolve, 100));
+const result = await reconcile(process.argv[2], Number(process.argv[3]));
+fs.writeFileSync(process.argv[5], JSON.stringify({ ...result, self: process.pid, sibling: sibling.pid }));
+sibling.kill("SIGKILL");
+`;
+  const file = path.join(root, "reconciler.mjs");
+  fs.writeFileSync(file, script);
+  const reconciler = spawn(process.execPath, [file, root, String(record.launchDeadline + 1), siblingFile, outcome], {
+    stdio: "ignore", env: { ...process.env, CROSS_AGENT_TASK: record.id },
+  });
+  const sibling = Number(await poll(() => (fs.existsSync(siblingFile) ? fs.readFileSync(siblingFile, "utf8") : ""), (text) => text.length > 0));
+  t.after(async () => {
+    try { process.kill(sibling, "SIGKILL"); } catch { /* already gone */ }
+    reconciler.kill("SIGKILL");
+    await poll(() => running(sibling), (alive) => !alive);
+  });
+  const [code] = await once(reconciler, "close");
+
+  assert.equal(code, 0, "the reconciler survived its own pass");
+  const result = JSON.parse(fs.readFileSync(outcome, "utf8")) as { changed: TaskRecord[]; errors: unknown[] };
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
+  assert.deepEqual(read(root, record.id).engineIdentity, engine.identity, "the detached engine is still what was adopted");
 });
 
 test("reconcile skips a record settled between listing and its write", async (t) => {
@@ -283,7 +465,7 @@ test("reconcile skips a record settled between listing and its write", async (t)
     }
     return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
   }) as typeof fs.readFileSync);
-  assert.deepEqual(await reconcile(root, now + 3), { changed: [], invalid: [] });
+  assert.deepEqual(await reconcile(root, now + 3), { changed: [], invalid: [], errors: [] });
   assert.equal(reads, 2);
   assert.deepEqual(read(root, record.id), external);
 });
@@ -308,7 +490,9 @@ test("a launch acknowledged between the listing and the write is left running", 
     }
     return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
   }) as typeof fs.readFileSync);
-  assert.deepEqual(await reconcile(root, record.launchDeadline + 1), { changed: [], invalid: [] });
+  const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+  assert.deepEqual(changed, []);
+  assert.deepEqual(errors, [{ id: record.id, reason: "launch decision refused: the record is running" }]);
   assert.equal(reads, 2, "one read for the listing, one inside the record lock");
   assert.deepEqual(read(root, record.id), acknowledged);
 });
@@ -325,7 +509,7 @@ test("reconcile preserves live-runner tasks and all other states", async (t) => 
     await change(root, record.id, { runnerIdentity, engineIdentity: dead }, now + 1);
   }
   const before = list(root);
-  assert.deepEqual(await reconcile(root, now + 60_000), { changed: [], invalid: [] });
+  assert.deepEqual(await reconcile(root, now + 60_000), { changed: [], invalid: [], errors: [] });
   assert.deepEqual(list(root), before);
 });
 
@@ -334,12 +518,13 @@ test("reconciliation reports unreadable record files and judges the rest", async
   const record = create(root, input(root), now);
   fs.writeFileSync(path.join(tasks(root), "damaged.json"), "{ not json");
   const after = record.launchDeadline + 1;
-  const { changed, invalid } = await reconcile(root, after);
+  const { changed, invalid, errors } = await reconcile(root, after);
+  assert.deepEqual(errors, []);
   assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "failed"]]);
   assert.deepEqual(invalid.map((entry) => path.basename(entry.file)), ["damaged.json"]);
   assert.ok(invalid[0].reason.length > 0);
   assert.deepEqual(await terminateOrphans(root), { changed: [], skipped: [] });
-  assert.deepEqual(await reconcileAndCleanup(root, after + 1), { changed: [], invalid, cleaned: [], skipped: [] });
+  assert.deepEqual(await reconcileAndCleanup(root, after + 1), { changed: [], invalid, errors: [], cleaned: [], skipped: [] });
 });
 
 test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
@@ -352,6 +537,8 @@ test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
   assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
   assert.deepEqual(result.cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost"]]);
   assert.deepEqual(result.invalid, []);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.skipped, []);
   assert.equal(read(root, record.id).status, "failed");
   assert.equal(groupAlive(engine.identity), false, "no caller can see an orphan whose group is still being decided");
 });

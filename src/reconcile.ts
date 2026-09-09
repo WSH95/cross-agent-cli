@@ -1,15 +1,30 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { currentBootId, isProcessAlive, readProcessStat, scan, update } from "./ledger.ts";
-import type { EngineIdentity, InvalidRecord, ProcessIdentity, TaskRecord } from "./ledger.ts";
+import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 import { findByEnvironment, groupAlive, terminateGroup, terminateOrphans } from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";
+
+export interface TaskError {
+  id: string;
+  reason: string;
+}
 
 export interface Reconciled {
   /** What this pass wrote, as written. A refused write is not a change. */
   changed: TaskRecord[];
   /** Record files that could not be read, by name (design section 2, A4-a and E2). */
   invalid: InvalidRecord[];
+  /**
+   * Records this pass could not judge: a group that would not die, a decision another
+   * writer overtook, an environment it could not read. Each keeps its status for the
+   * next pass, and one record's trouble never stops the others being judged.
+   */
+  errors: TaskError[];
 }
+
+type Judgement = { changed: TaskRecord[]; errors: TaskError[] };
+
+const nothing: Judgement = { changed: [], errors: [] };
 
 // The runner is one process, so its identity is judged by pid and start time; the engine
 // is a whole process group, so it is judged by the group scan. A leader that was reaped
@@ -56,48 +71,48 @@ async function killStrays(strays: FoundProcess[]): Promise<number[]> {
 }
 
 /**
- * A `launching` record past its deadline that no runner ever acknowledged. The engine
- * may still exist: a runner killed between the spawn and the acknowledgement leaves one
- * that nothing else knows about. It is found by the `CROSS_AGENT_TASK` assignment the
- * server put in its environment (design section 2, B5-i).
+ * A `launching` record past its deadline that no runner ever acknowledged. The engine may
+ * still exist: a runner killed between the spawn and the acknowledgement leaves one that
+ * nothing else knows about. It is found by the `CROSS_AGENT_TASK` assignment the server
+ * put in its environment (design section 2, B5-i).
  *
- * Only a group leader can be adopted, because only a leader can be an engineIdentity;
- * anything else carrying the id is a stray and is killed. A forged CROSS_AGENT_TASK can
- * therefore get a process killed — the operator's own foot — but never grant authority.
+ * The conditional write is the decision point, and nothing is signalled before it: a
+ * runner that acknowledges between the scan and the write owns the task, and killing what
+ * this pass found would then be killing that runner's own engine. Only a group leader can
+ * be adopted, because only a leader can be an engineIdentity, and only the lowest pid of
+ * them, because a task has at most one engine; everything else carrying the id is a stray
+ * and is killed once the write has applied. A forged CROSS_AGENT_TASK can therefore get a
+ * process killed — the operator's own foot — but it can never grant authority.
  */
-async function adopt(projectRoot: string, record: TaskRecord, now: number): Promise<TaskRecord[]> {
-  // The same preconditions, re-read inside the lock: a runner that acknowledged between
-  // the listing and this write owns the task, and this pass must leave it alone.
-  const expect = (current: TaskRecord) => current.status === "launching" && !current.runnerIdentity;
-  const { found } = findByEnvironment(record.id, record.createdAt);
-  const leader = found.find((entry) => entry.leader);
-  const killed = await killStrays(found.filter((entry) => !entry.leader));
+async function adopt(projectRoot: string, record: TaskRecord, now: number): Promise<Judgement> {
+  // The same preconditions, re-read inside the lock, so the decision is taken on the
+  // record as it is when it is written, not as it was when it was listed.
+  const expect = (current: TaskRecord) =>
+    current.status === "launching" && !current.runnerIdentity && now > current.launchDeadline;
+  const { found, unreadable } = findByEnvironment(record.id, record.createdAt);
+  const [leader] = found.filter((entry) => entry.leader);
+  const strays = found.filter((entry) => entry !== leader);
 
-  if (leader) {
-    const engineIdentity: EngineIdentity = {
-      pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId,
-    };
-    // `launching -> orphaned` is not an edge of the transition table (design section 2,
-    // E1), so adoption walks the two edges that are. The intermediate record states
-    // exactly what was found — this engine is running and no runner owns it — which is
-    // the B1 case, so a pass interrupted between the two writes leaves work its
-    // successor finishes rather than a state nothing can reach.
-    const adopted = await update(projectRoot, record.id, { status: "running", engineIdentity }, now, { unlessTerminal: true, expect });
-    if (!adopted.applied) return [];
-    const orphaned = await update(projectRoot, record.id, { status: "orphaned" }, now, {
-      unlessTerminal: true, expect: (current) => current.status === "running" && !current.runnerIdentity,
-    });
-    return [orphaned.applied ? orphaned.record : adopted.record];
+  if (!leader && unreadable > 0) {
+    // One of those could have been this engine, and calling the launch failed would leave
+    // it running with no record accounting for it. The next pass tries again.
+    return { changed: [], errors: [{ id: record.id, reason: `environ unreadable for ${unreadable} processes` }] };
   }
+  const patch: TaskPatch = leader
+    ? { status: "orphaned", engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } }
+    : { status: "failed", reason: strays.length > 0 ? `launch; killed stray ${strays.map((entry) => entry.pid).join(", ")}` : "launch" };
 
-  const reason = killed.length > 0 ? `launch; killed stray ${killed.join(", ")}` : "launch";
-  const result = await update(projectRoot, record.id, { status: "failed", reason }, now, { unlessTerminal: true, expect });
-  return result.applied ? [result.record] : [];
+  const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true, expect });
+  if (!result.applied) {
+    return { changed: [], errors: [{ id: record.id, reason: `launch decision refused: the record is ${result.record.status}` }] };
+  }
+  await killStrays(strays);
+  return { changed: [result.record], errors: [] };
 }
 
-async function judge(projectRoot: string, record: TaskRecord, now: number): Promise<TaskRecord[]> {
+async function judge(projectRoot: string, record: TaskRecord, now: number): Promise<Judgement> {
   if (record.status === "launching") {
-    if (now <= record.launchDeadline || record.runnerIdentity) return [];
+    if (now <= record.launchDeadline || record.runnerIdentity) return nothing;
     return adopt(projectRoot, record, now);
   }
 
@@ -109,21 +124,25 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
       unlessTerminal: true,
       expect: (current) => current.status === record.status && sameRunner(current.runnerIdentity, record.runnerIdentity),
     });
-    return result.applied ? [result.record] : [];
+    // A record another writer moved on is that writer's, not this pass's business.
+    return result.applied ? { changed: [result.record], errors: [] } : nothing;
   }
 
   if (record.status === "cancelling" && !runnerAlive(record)) {
     // The cancel outlives the runner that started it: the group is terminated by the
-    // identity the record carries, and only then is the record settled.
+    // identity the record carries, and only then is the record settled. A group that
+    // will not die leaves the record cancelling, named, for the next pass.
     const identity = record.engineIdentity;
-    if (identity && !await terminateGroup(identity)) throw new Error(`engine group ${identity.pgid} did not terminate`);
+    if (identity && !await terminateGroup(identity)) {
+      return { changed: [], errors: [{ id: record.id, reason: `engine group ${identity.pgid} did not terminate` }] };
+    }
     const result = await update(projectRoot, record.id, { status: "cancelled", reason: "runner lost during cancel" }, now, {
       unlessTerminal: true, expect: (current) => current.status === "cancelling",
     });
-    return result.applied ? [result.record] : [];
+    return result.applied ? { changed: [result.record], errors: [] } : nothing;
   }
 
-  return [];
+  return nothing;
 }
 
 /**
@@ -139,8 +158,19 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
 export async function reconcile(projectRoot: string, now = Date.now()): Promise<Reconciled> {
   const { records, invalid } = scan(projectRoot);
   const changed: TaskRecord[] = [];
-  for (const record of records) changed.push(...await judge(projectRoot, record, now));
-  return { changed, invalid };
+  const errors: TaskError[] = [];
+  for (const record of records) {
+    // One record's trouble is that record's. A pass that stopped at the first would leave
+    // every task after it unjudged, and reconciliation runs on every listing.
+    try {
+      const judgement = await judge(projectRoot, record, now);
+      changed.push(...judgement.changed);
+      errors.push(...judgement.errors);
+    } catch (error) {
+      errors.push({ id: record.id, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { changed, invalid, errors };
 }
 
 /**
@@ -151,7 +181,7 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
 export async function reconcileAndCleanup(
   projectRoot: string, now = Date.now(),
 ): Promise<Reconciled & { cleaned: TaskRecord[]; skipped: Skipped[] }> {
-  const { changed, invalid } = await reconcile(projectRoot, now);
+  const { changed, invalid, errors } = await reconcile(projectRoot, now);
   const { changed: cleaned, skipped } = await terminateOrphans(projectRoot);
-  return { changed, invalid, cleaned, skipped };
+  return { changed, invalid, errors, cleaned, skipped };
 }

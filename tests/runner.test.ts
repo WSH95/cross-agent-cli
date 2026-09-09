@@ -116,6 +116,7 @@ function harness(options: {
   const invocation = path.join(root, "invocation.json");
   const invocations = path.join(root, "invocations");
   const descendantFile = path.join(root, "descendant.json");
+  const inheritedFile = path.join(root, "descendant-inherited");
   const competitorScript = path.join(root, "competitor.mjs");
   const outcomeFile = path.join(root, "competitor-outcome.json");
   const markers = { atWrite: path.join(root, "competitor-at-write"), beforeWrite: path.join(root, "settled-before-write") };
@@ -139,6 +140,7 @@ if (env.RACE_EXIT === "1") process.on("exit", () => { try { process.kill(process
 // own exit can never close it.
 if (env.DESCENDANT_INHERIT === "1") {
   spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" }).unref();
+  fs.writeFileSync(${JSON.stringify(inheritedFile)}, "spawned");
 }
 if (env.DESCENDANT === "1") {
   const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -234,8 +236,12 @@ const adapter = {
   sandboxSupport: () => (${options.refusal ? '{ ok: false, reason: "fixture sandbox missing" }' : "{ ok: true }"}),
   plan(value) {
     request = value;
-    ${options.failure === "identity" ? `fs.readFileSync = function(file, ...args) {
+    ${["identity", "identity-late"].includes(options.failure!) ? `fs.readFileSync = function(file, ...args) {
       if (typeof file === "string" && /^\\/proc\\/\\d+\\/stat$/.test(file) && file !== "/proc/" + process.pid + "/stat") {
+        ${options.failure === "identity-late" ? `while (!fs.existsSync(${JSON.stringify(inheritedFile)})) {
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+        }` : ""}
+        fs.readFileSync = originalRead;
         throw Object.assign(new Error("missing engine identity"), { code: "ENOENT" });
       }
       return originalRead(file, ...args);
@@ -697,6 +703,52 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
     assert.deepEqual(cleaned.map((record) => [record.status, record.reason]), [["failed", "runner lost"]]);
     await poll(() => proc(engine.pid), (current) => current === null || current.state === "Z");
     assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("a replacement runner refuses to start a second engine for one task", async () => {
+  const { findByEnvironment } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const env = { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall", CROSS_AGENT_TASK: h.record.id, INVOCATIONS: h.invocations };
+    // Runner A dies after spawning and before acknowledging, so the kernel frees its
+    // lock and the record is still `launching`: exactly the state in which a second
+    // runner would take the lock, believe nothing had started, and spawn engine B.
+    const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    const first = h.start({ env });
+    await poll(() => h.engineLaunches(), (launches) => launches.length === 1);
+    await poll(() => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
+      (log) => log.includes('"working"'));
+    first.child.kill("SIGKILL");
+    await poll(() => first.closed, Boolean);
+    await held.release();
+    assert.equal(h.read().status, "launching");
+    const engine = findByEnvironment(h.record.id, h.record.createdAt).found;
+    assert.equal(engine.length, 1);
+
+    const second = h.start({ env });
+    await poll(() => second.closed, Boolean);
+    assert.equal(second.code, 1, "the replacement exits rather than owning a second engine");
+    assert.deepEqual(h.engineLaunches().length, 1, "it spawned nothing");
+    assert.equal(h.read().status, "launching", "and left the record for reconciliation to adopt");
+    assert.match(h.runnerLog(), new RegExp(`engine already running for task ${h.record.id}`));
+    assert.equal(living(engine[0]), true);
+  } finally { await h.cleanup(); }
+});
+
+test("a runner that cannot capture its engine's identity still ends the group it spawned", async () => {
+  const h = harness({ failure: "identity-late" });
+  try {
+    // The engine leads a group, leaves a descendant holding its pipe, and exits; the
+    // identity read fails, so the record can name no group. The pid the detached spawn
+    // made the group and session id is all the runner has, and it is enough.
+    const child = h.start({ env: { ...h.spec.env, DESCENDANT_INHERIT: "1" } });
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    const failed = h.read();
+    assert.equal(failed.status, "failed");
+    assert.match(failed.reason!, /identit/);
+    assert.deepEqual(ownedProcesses(h.root), [], "no member of the group it spawned is left running");
   } finally { await h.cleanup(); }
 });
 
