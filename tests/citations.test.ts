@@ -105,3 +105,57 @@ test("a fenced code block is not scanned, so an example citation is not a miss",
   const { code, out } = await run([doc]);
   assert.equal(code, 0, out);
 });
+
+test("a brace-expansion path is a miss: a line belongs to one file", async (t) => {
+  const doc = await docWith(t, "The adapters (`src/engines/{codex,grok}.ts:12`) declare it.\n");
+  const { code, out } = await run([doc]);
+  assert.equal(code, 1);
+  assert.match(out, /doc\.md:1: src\/engines\/\{codex,grok\}\.ts:12 — brace expansion cannot be checked; cite one file/);
+});
+
+test("a brace-expansion path with no line numbers is not a citation at all", async (t) => {
+  const doc = await docWith(t, "The adapters (`src/engines/{codex,grok}.ts`) declare it.\n");
+  const { code, out, err } = await run([doc]);
+  assert.equal(code, 0, out);
+  assert.match(err, /0 citations/);
+});
+
+test("a citation wrapped across a line break is joined and reported where it starts", async (t) => {
+  const doc = await docWith(t, "Line one.\nThe pipeline refuses (`src/engines/spawn.ts\n:99999`) outright.\n");
+  const { code, out } = await run([doc]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /doc\.md:2: src\/engines\/spawn\.ts:99999 — file has \d+ lines/);
+});
+
+test("a wrapped citation that is in range passes, and counts once", async (t) => {
+  const doc = await docWith(t, "The loader (`src/config.ts:\n1`) reads it.\n");
+  const { code, out, err } = await run([doc]);
+  assert.equal(code, 0, out);
+  assert.match(err, /1 citations/);
+});
+
+test("an empty file has no lines, so even :1 into it is a miss", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "citations-root-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(path.join(dir, "empty.ts"), "", "utf8");
+  const doc = path.join(dir, "doc.md");
+  await writeFile(doc, "It is here (`empty.ts:1`).\n", "utf8");
+  const { code, out } = await run(["--root", dir, doc]);
+  assert.equal(code, 1);
+  assert.match(out, /doc\.md:1: empty\.ts:1 — file has 0 lines/);
+});
+
+test("a file whose last line has no terminator still has that line", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "citations-root-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(path.join(dir, "two.ts"), "one\ntwo", "utf8");
+  const doc = path.join(dir, "doc.md");
+  await writeFile(doc, "Here (`two.ts:2`) and past it (`two.ts:3`).\n", "utf8");
+  const { code, out } = await run(["--root", dir, doc]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /doc\.md:1: two\.ts:3 — file has 2 lines/);
+});

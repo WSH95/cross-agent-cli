@@ -874,12 +874,16 @@ review's fix round in `cfaf2b0`) built the engine contract on top of what T4
 shipped, the interface and the spawn pipeline: the adapter-owned profile map,
 the deny and exclusion argv, `leadMount`, the `finish` hook, the
 `{mode, profile}` pair, the built-in adapter table, and the per-engine profile
-check at config load. Everything in this section is built except the spawn
-lines, which are row 6's: each adapter answers `plan`, `parseLine` and
-`finalMessage` by throwing until its own task lands (T7 Claude, T8 Codex, T9
-Grok), so the paragraph that introduces those three bullets is led by
-**`Target:`**. Their flags are recorded by a Phase 0 probe except where a
-bullet says otherwise.
+check at config load. Everything in this section is built except three things,
+each marked where it appears. The spawn lines are row 6's: each adapter answers
+`plan`, `parseLine` and `finalMessage` by throwing until its own task lands (T7
+Claude, T8 Codex, T9 Grok), so the paragraph that introduces those three
+bullets is led by **`Target:`**, and their flags are recorded by a Phase 0
+probe except where a bullet says otherwise. `CROSS_AGENT_PROJECT` is not in the
+child environment yet; the blocklist paragraph below says `will add`. And
+`denyTargets` builds the list this section specifies, but nothing in `src/`
+calls it: the per-adapter `denyArgs` that consume its output are tested, and the
+production caller arrives with `delegate` in row 7.
 
 `src/engines/{types,spawn,registry,binaries,claude,codex,grok}.ts`: build argv
 and env, capture the session id from the first native event, extract the final
@@ -926,9 +930,9 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   mcp_servers.cross-agent.default_tools_approval_mode="approve"` — because
   `codex exec` runs with approval policy `never`, so without the third the lead
   sees the tools and is refused every call (`docs/probes.md:285-301`); it
-  refuses a non-empty `spec.env`, because no probed setting carries a server
-  environment and a lead's project reaches it through `args`
-  (`src/engines/types.ts:15-16`). Grok returns an empty argv with `inherited:
+  refuses a non-empty `spec.env` (`src/engines/codex.ts:44-46`), because no
+  probed setting carries a server environment and a lead's project reaches it
+  through `args`. Grok returns an empty argv with `inherited:
   true`, because it has no per-invocation mount at all; that value describes
   the specialist path and the operator CLI's own registration, not a lead,
   because Grok is not a supported lead engine ("The lead model", item 4).
@@ -1249,8 +1253,9 @@ never re-reads the file to learn what it just recorded. A refusal before the
 command carries a reason and nothing else. A non-zero git exit returns the
 exit code and both streams and journals nothing (`src/gitmutate.ts:210-216`),
 and so does a `GitRunError` — but **that is not a claim that nothing
-happened**. A `worktree add` that failed while checking out has already created
-the directory and its administrative entry under `.git/worktrees`; a `rebase`
+happened**. A `worktree add` — a root operation, so through `git_root` — that
+failed while checking out has already created the directory and its
+administrative entry under `.git/worktrees`; a `rebase`
 that stops on a conflict leaves the worktree mid-rebase and `REBASE_HEAD` on
 disk; a `merge` stopped on conflicts leaves an index full of them; a command
 killed by the 16 MB cap was killed at whatever point it had reached. The step
@@ -1591,11 +1596,11 @@ on its behalf.
   exit code or without one. A `GitRunError` carries none, and it is the answer
   for a git that was killed at the 16 MB cap or died part-way, which is exactly
   the case where the repository may have changed; a journal write that failed
-  after a successful command carries none either, and there the command
-  certainly ran. So the trigger is the refusal, not the exit code: any
-  `ok: false` call may have changed the repository without journaling a step
-  (section 4). What the pass reads: `list_tasks`, the journal, `git worktree
-  list`, `git branch --list 'task/*'`,
+  after a successful command carries a zero one, which is no better a signal —
+  the command ran and its step is missing. So the trigger is the refusal, not
+  the exit code: any `ok: false` call may have changed the repository without
+  journaling a step (section 4). What the pass reads: `list_tasks`, the
+  journal, `git worktree list`, `git branch --list 'task/*'`,
   `git status --porcelain --untracked-files=normal`, and `git rebase` state.
   Rules: an interrupted rebase is aborted; a merged branch with a surviving
   worktree continues at the cleanup gate; a branch-only leftover is deleted
