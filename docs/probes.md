@@ -425,6 +425,14 @@ them.
   flag: `grok mcp` is a subcommand (`list`, `add`, `remove`, `enable`,
   `disable`, `doctor`), and `grok mcp add` writes to `~/.grok/config.toml`
   (`--scope user`, the default) or `./.grok/config.toml` (`--scope project`).
+  `--sandbox <PROFILE>`, "Sandbox profile for filesystem and network access",
+  `[env: GROK_SANDBOX=]`; the profiles are not enumerated. A name is resolved
+  when the run starts, against the built-ins and `~/.grok/sandbox.toml` or
+  `.grok/sandbox.toml`: `grok --sandbox bogus -p hi` fails with "Custom sandbox
+  profile 'bogus' not found. Define it in ~/.grok/sandbox.toml or
+  .grok/sandbox.toml" before doing anything else, and `grok inspect` does not
+  list them. The adapter's map names `workspace`, `read-only`, `strict` and
+  `off`; P2 ran the first two, and no run has exercised `strict` or `off`.
 - **Claude Code 2.1.266** (`claude --help`). `--mcp-config <configs...>`, "Load
   MCP servers from JSON files or strings (space-separated)";
   `--strict-mcp-config`, "Only use MCP servers from `--mcp-config`, ignoring
