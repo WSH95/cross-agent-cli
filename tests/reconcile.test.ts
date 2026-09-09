@@ -362,7 +362,11 @@ test("a launch decision refused at the write signals nothing and is reported", a
 test("a launching record with an environment it could not read waits for the next pass", async (t) => {
   const root = project(t);
   const zoo = processes(t);
-  const record = create(root, input(root), now);
+  // Dated a clear second before the leader below, because a start time read from /proc
+  // is ticks since a boot whose wall clock `/proc/stat` gives in whole seconds: it can
+  // name a start up to a second earlier than the real one. The candidate bound is not
+  // what this test measures, and a record created in that window would fall outside it.
+  const record = create(root, input(root), now - 5000);
   const hidden = zoo.leader({ CROSS_AGENT_TASK: record.id });
   await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
   const original = fs.readFileSync;
@@ -459,6 +463,7 @@ test("a reconciler inside the engine's own session defers the launch instead of 
   const record = create(root, input(root), now);
   const outcome = path.join(root, "reconciled.json");
   const pidFile = path.join(root, "reconciler.pid");
+  const exitFile = path.join(root, "reconciler.exit");
   // An MCP server started by an engine lives in that engine's session and inherits its
   // CROSS_AGENT_TASK. Reconciling from there, this server can neither adopt the engine
   // — cleanup would then kill the group it is running in — nor call it a stray. What it
@@ -471,15 +476,18 @@ import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "sr
 const result = await reconcile(process.argv[2], Number(process.argv[3]));
 fs.writeFileSync(process.argv[4], JSON.stringify(result));
 `);
+  // The leader is the only process that can say how its own child ended, because it is
+  // the one that reaps it. It records that exit for the assertion below.
   const leaderScript = `
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
 const child = spawn(process.execPath, [process.argv[1], process.argv[2], process.argv[3], process.argv[4]], { stdio: "ignore" });
+child.on("exit", (code, signal) => fs.writeFileSync(process.argv[6], JSON.stringify({ code, signal })));
 fs.writeFileSync(process.argv[5], String(child.pid));
 setInterval(() => {}, 1000);
 `;
   const engine = zoo.leader({ CROSS_AGENT_TASK: record.id }, leaderScript,
-    [reconciler, root, String(record.launchDeadline + 1), outcome, pidFile]);
+    [reconciler, root, String(record.launchDeadline + 1), outcome, pidFile, exitFile]);
   const child = await zoo.member(pidFile);
   const result = JSON.parse(await poll(
     () => (fs.existsSync(outcome) ? fs.readFileSync(outcome, "utf8") : ""), (text) => text.length > 0,
@@ -490,7 +498,12 @@ setInterval(() => {}, 1000);
   assert.match(result.errors[0].reason, new RegExp(`engine ${engine.pid} shares this reconciler's session`));
   assert.equal(read(root, record.id).status, "launching");
   assert.equal(running(engine.pid), true, "and the engine it could not judge is untouched");
-  assert.equal(running(child), true);
+  // The reconciler did not signal itself. Its own liveness cannot be read once the
+  // outcome file exists — writing that file is its last act, and it exits and is reaped
+  // immediately after — so the evidence is the exit its leader saw: no signal, code 0.
+  assert.deepEqual(JSON.parse(await poll(
+    () => (fs.existsSync(exitFile) ? fs.readFileSync(exitFile, "utf8") : ""), (text) => text.length > 0,
+  )), { code: 0, signal: null }, `reconciler ${child} ended of its own accord`);
 
   // A server in another session has no such conflict, and adopts it.
   const { changed, errors } = await reconcile(root, record.launchDeadline + 2);
