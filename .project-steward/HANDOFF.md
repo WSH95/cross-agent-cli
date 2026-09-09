@@ -1,40 +1,44 @@
 ---
-updated_at: 2026-09-07T21:55:56Z
+updated_at: 2026-09-09T05:41:19Z
 updated_by: claude
 session_status: closed
-branch: main
+branch: task/cross-agent
 ---
 
 # Handoff
 
 ## Now
 
-The repository is at 4f39c71 plus documentation and setup commits (dda08d1
-probes, 993b24a Beads init, then the steward state). T1 to T5 of the
-design's task series are merged and green (146 tests); they were built by
-the OpenMausBot dev-team pack as that pack's validation run (Decision
-0003). From here the operator's own CLI sessions build T6 onward, tracked
-in Beads (epic `atc-s96`, `bd ready`).
+The plugin is being renamed to `cross-agent` and generalized on branch
+`task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @ 9f85269).
+Landed on the branch: the mechanical rename (9d648b2) and the rewrite of
+`docs/design.md` as the authority for the lead model, modes, ancestry-bound
+authority, and the lifecycle target (b446d32). The plan being executed is
+`~/.claude/plans/the-original-intent-of-rustling-hummingbird.md`; its ledger
+is `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
+in the main checkout. Beads: S1 `atc-s96.19` (in progress), S2 `.20`, S4
+`.21`, S5 `.22`, S8 `.23`, S11 `.24`, backlog `.25`–`.28`; T6–T16 amended.
 
 ## In flight
 
-Nothing.
+Task 1b's reviews: an Opus task review and a Codex gpt-5.6-sol milestone
+review of `docs/design.md` at b446d32, running in parallel. Findings enter
+the SDD fix loop before Task 1c (README) and Task 2a (locks, conditional
+update, runner acknowledgement) are dispatched.
 
 ## Next steps
 
-1. Install the bwrap AppArmor profile from Claude Code's sandboxing docs
-   (needs sudo), then run probe P2 for Claude (`atc-s96.17`) with
-   `tools/probe.mjs` and record the row in `docs/probes.md`.
-2. T6 (`atc-s96.6`): OS-held locks, reservation, `git_mutate`, journal; its
-   bead description is the brief; design sections 2, 4, 7.
-3. Then T7 to T9 adapters (T7 needs the Claude probe), T10, T11, T12, the
-   packaging tasks with their end-to-end runs, T16, and the go or no-go
-   decision (`atc-s96.18`).
+1. Close the 1b reviews; fix round if needed; then Task 1c (README).
+2. Task 2a then 2b (bead `atc-s96.20`): locks primitive, conditional
+   `update`, reconcile on the group scan, spawn drain, record validation.
+3. T6 remainder (`.6`), probes P8/P9 (`.21`), engine contract (`.22`),
+   adapters, T10/T11, modes (`.23`), T12, T13, engine placement (`.24`).
+4. Present the held `AGENTS.md` diff (rename + Layout correction) for
+   approval once the design is final.
 
 ## Blockers
 
-Probe P2 for Claude waits on the AppArmor profile (`docs/probes.md`, P1
-rerun; `QUESTIONS.md`).
+Probe P2 for Claude still waits on the bwrap AppArmor profile (`atc-s96.17`).
 
 ## Key files
 

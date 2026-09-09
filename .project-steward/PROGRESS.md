@@ -26,3 +26,5 @@ Scaffold (cef9aa5) and engine probes P1, P2, P3, P3b, P5, P7 (93b9956).
 
 ### 2026-09-07T21:50:42Z — project-steward init
 Set up Project Steward in this repository.
+
+2026-09-09T05:41:19Z — claude [auto-checkpoint] Branch task/cross-agent: rename to cross-agent (9d648b2) and docs/design.md rewritten as the authority (b446d32); 1b reviews in flight; S-series beads created.
