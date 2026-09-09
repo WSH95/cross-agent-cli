@@ -621,7 +621,7 @@ are named in the launch-protocol bullet.
   It never
   throws — an EPERM or a group that will not die is reported as `false` — and
   both callers consume that boolean, `terminateOrphans` to skip the record with
-  its identity named and `reconcile.ts:151` to leave a `cancelling` record
+  its identity named and `src/reconcile.ts:152-153` to leave a `cancelling` record
   named for the next pass. A caller judging many records has to be able to
   report a survivor and carry on. One escalation is still written out by hand:
   the runner's identity-captured branch, which sequences `killGroup` and
