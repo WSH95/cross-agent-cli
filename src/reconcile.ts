@@ -52,6 +52,9 @@ async function terminateGroup(identity?: EngineIdentity | null): Promise<void> {
 async function killStrays(strays: FoundProcess[]): Promise<number[]> {
   const killed: number[] = [];
   for (const stray of strays) {
+    // Verified immediately before the signal, as killGroup verifies a group: a pid that
+    // left between the scan and here can already belong to an unrelated process.
+    if (!stillRunning(stray)) continue;
     try {
       process.kill(stray.pid, "SIGTERM");
       killed.push(stray.pid);
