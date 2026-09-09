@@ -449,7 +449,18 @@ them.
   `--strict-config`, `-m`, `--thread-source`, `--skip-git-repo-check`,
   `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`,
   `--json`, `-o`, and the two `--dangerously-*` flags — **neither `-C` nor
-  `--sandbox`** (P10).
+  `--sandbox`** (P10). Both heads take the prompt as a **positional argument
+  and read it from stdin behind `-`**, which is how the adapter delivers a
+  brief: `codex exec [PROMPT]` is "Initial instructions for the agent. If not
+  provided as an argument (or if `-` is used), instructions are read from
+  stdin. If stdin is piped and a prompt is also provided, stdin is appended as
+  a `<stdin>` block", and `codex exec resume [SESSION_ID] [PROMPT]` is "Prompt
+  to send after resuming the session. If `-` is used, read from stdin". So the
+  literal `-` is never sent as a prompt on either head, and there is no
+  double-send: stdin is appended as a `<stdin>` block only when a prompt is
+  *also* given as an argument, and `-` is not one. This is a `--help` reading
+  of 0.153.4, not a run; the run that confirms a child behaves as the help says
+  is the **I2** placeholder (`tests/engines/codex.test.ts:521`).
 
 ## Native output samples (2026-09-07)
 
