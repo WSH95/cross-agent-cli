@@ -1,13 +1,16 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { adapterFor, sandboxProfiles } from "./engines/registry.ts";
+import type { SandboxProfile } from "./engines/registry.ts";
 
 export const CONFIG_PATH = ".cross-agent/config.json";
 
 const engineNames = ["claude", "codex", "grok"] as const;
-const sandboxProfiles = ["read-only", "workspace-write", "workspace", "strict", "off"] as const;
 
 export type EngineName = typeof engineNames[number];
-export type SandboxProfile = typeof sandboxProfiles[number];
+// Every profile name a built-in engine accepts, derived from the adapters' own maps.
+// Which engine accepts which is the adapter's, and a role's pair is checked below.
+export type { SandboxProfile };
 
 export interface RoleConfig {
   engine: EngineName;
@@ -95,6 +98,13 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
     optionalString(role, "effort", field);
     const cwd = oneOf(role.cwd === undefined ? "root" : role.cwd, `${field}.cwd`, ["root", "worktree"] as const);
     const sandbox = oneOf(role.sandbox === undefined ? "read-only" : role.sandbox, `${field}.sandbox`, sandboxProfiles);
+    // A profile means nothing apart from the engine that declares it: `workspace` is
+    // Grok's name and `workspace-write` is Claude's and Codex's, and an engine handed
+    // another engine's profile would otherwise reach its adapter unchallenged.
+    const profiles = adapterFor(engine).sandboxProfiles;
+    if (!Object.hasOwn(profiles, sandbox)) {
+      invalid(`${field}.sandbox`, `one of the ${engine} profiles: ${Object.keys(profiles).join(" | ")}`);
+    }
     return [name, { ...role, engine, cwd, sandbox }];
   }));
 

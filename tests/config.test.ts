@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as config from "../src/config.ts";
+import { adapterFor, adapters } from "../src/engines/registry.ts";
+import type { EngineName } from "../src/engines/types.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
@@ -90,7 +92,7 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
   const explicit = {
     project: { defaultBranch: "trunk", testCommand: "node --test", setupCommand: "node setup.mjs", mergePolicy: "manual" },
     roles: {
-      "custom-role": { engine: "grok", model: "custom-model", effort: "custom-effort", cwd: "root", sandbox: "workspace-write" },
+      "custom-role": { engine: "grok", model: "custom-model", effort: "custom-effort", cwd: "root", sandbox: "workspace" },
       strict: { engine: "grok", cwd: "worktree", sandbox: "strict" },
       workspace: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
     },
@@ -105,6 +107,34 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
   writeConfig(root, JSON.parse('{"roles":{"__proto__":{"engine":"claude"}}}'));
   assert.deepEqual(Object.keys(config.loadConfig(root).roles), ["__proto__"]);
   assert.equal(config.loadConfig(root).roles.__proto__.engine, "claude");
+});
+
+test("a role's sandbox profile must be one its own engine accepts", (t) => {
+  const root = project(t);
+  // Nothing checked the pair before: every engine accepted every profile, so
+  // {engine: "codex", sandbox: "workspace"} reached the Codex adapter unchallenged.
+  const mismatched: Array<[EngineName, string]> = [
+    ["codex", "workspace"], ["codex", "strict"], ["claude", "strict"], ["claude", "workspace"], ["grok", "workspace-write"],
+  ];
+  for (const [engine, sandbox] of mismatched) {
+    writeConfig(root, { roles: { planner: { engine, sandbox } } });
+    assert.throws(() => config.loadConfig(root), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes("roles.planner.sandbox"), error.message);
+      // The refusal names the engine and the profiles that engine does accept.
+      assert.ok(error.message.includes(engine), error.message);
+      for (const profile of Object.keys(adapterFor(engine).sandboxProfiles)) {
+        assert.ok(error.message.includes(profile), error.message);
+      }
+      return true;
+    });
+  }
+  for (const [engine, adapter] of Object.entries(adapters)) {
+    for (const sandbox of Object.keys(adapter.sandboxProfiles)) {
+      writeConfig(root, { roles: { planner: { engine, sandbox } } });
+      assert.deepEqual(config.loadConfig(root).roles.planner, { engine, cwd: "root", sandbox }, `${engine} accepts ${sandbox}`);
+    }
+  }
 });
 
 test("loadConfig rejects an unknown or missing engine naming its path and file", (t) => {
