@@ -5,8 +5,16 @@
 //
 //   node tools/probe.mjs --engine claude|codex|grok --cwd DIR [--sandbox read-only|workspace-write|off]
 //        [--model M] [--effort E] [--prompt TEXT | --prompt-file F] [--role-file F]
-//        [--session-id UUID | --resume ID] [--permission-mode MODE] [--rules F]
+//        [--session-id UUID | --resume ID] [--permission-mode MODE]
 //        [--no-deny] [--dry-run] [--log FILE]
+//
+// Passthrough flags, each one engine's only (ignored by the others):
+//   claude: [--mcp-config FILE]  mounts that file's servers; [--no-strict-mcp]
+//           drops --strict-mcp-config so the user's own servers are inherited.
+//   codex:  [--codex-config KEY=VALUE]  repeatable, appended as -c KEY=VALUE;
+//           [--rules F]  installs F as <cwd>/.codex/rules/cross-agent.rules.
+//   grok:   [--output-format json|streaming-json|streaming-messages-json]
+//           (default json); [--rules TEXT]  appended as --rules TEXT.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
@@ -37,7 +45,9 @@ let bin, argv, stdinText = null;
 if (engine === "claude") {
   bin = bins.claude;
   const settings = { sandbox: { enabled: sandbox !== "off", autoAllowBashIfSandboxed: true } };
-  argv = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", args["permission-mode"] ?? "bypassPermissions", "--strict-mcp-config"];
+  argv = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", args["permission-mode"] ?? "bypassPermissions"];
+  if (!args["no-strict-mcp"]) argv.push("--strict-mcp-config");
+  if (args["mcp-config"]) argv.push("--mcp-config", path.resolve(args["mcp-config"]));
   if (model) argv.push("--model", model);
   if (effort) argv.push("--effort", effort);
   argv.push(args.resume ? "--resume" : "--session-id", args.resume ?? sessionId);
@@ -51,9 +61,14 @@ if (engine === "claude") {
   bin = bins.codex;
   const out = path.join(scratch, `codex-${sessionId}.last.txt`);
   argv = args.resume ? ["exec", "resume", args.resume] : ["exec"];
-  argv.push("--json", "-o", out, "-C", cwd, "--sandbox", sandbox === "off" ? "danger-full-access" : sandbox, "--ignore-user-config", "--skip-git-repo-check");
+  argv.push("--json", "-o", out);
+  // `codex exec resume` takes neither -C nor --sandbox (0.153.4 `--help`); the
+  // resumed turn gets this process's cwd, and its sandbox is probe P10's question.
+  if (!args.resume) argv.push("-C", cwd, "--sandbox", sandbox === "off" ? "danger-full-access" : sandbox);
+  argv.push("--ignore-user-config", "--skip-git-repo-check");
   if (model) argv.push("-m", model);
   if (effort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
+  for (const setting of args["codex-config"]) argv.push("-c", setting);
   if (args.rules) {
     // Project rules file: installed under the cwd so Codex discovers it (to be confirmed by probe P3).
     const dir = path.join(cwd, ".codex", "rules"); mkdirSync(dir, { recursive: true });
@@ -63,10 +78,11 @@ if (engine === "claude") {
 } else if (engine === "grok") {
   bin = bins.grok;
   const profile = sandbox === "workspace-write" ? "workspace" : sandbox === "off" ? "off" : sandbox;
-  argv = ["-p", (role ? role + "\n\n" : "") + prompt, "--cwd", cwd, "--sandbox", profile, "--permission-mode", args["permission-mode"] ?? "bypassPermissions", "--output-format", "json"];
+  argv = ["-p", (role ? role + "\n\n" : "") + prompt, "--cwd", cwd, "--sandbox", profile, "--permission-mode", args["permission-mode"] ?? "bypassPermissions", "--output-format", args["output-format"] ?? "json"];
   argv.push(args.resume ? "-r" : "--session-id", args.resume ?? sessionId);
   if (model) argv.push("--model", model);
   if (effort) argv.push("--reasoning-effort", effort);
+  if (args.rules) argv.push("--rules", args.rules);
   for (const rule of denyRules) argv.push("--deny", rule);
 } else {
   fail(`unknown engine ${engine}`);
@@ -78,7 +94,7 @@ for (const [k, v] of Object.entries(process.env)) {
   if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY)/.test(k)) continue;
   env[k] = v;
 }
-Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: `probe/${sessionId}:${engine}:${cwd}` });
+Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: `probe-${sessionId}`, role: `probe-${engine}`, cwd }]) });
 
 const log = args.log ? path.resolve(args.log) : path.join(scratch, `${engine}-${sessionId}.log`);
 const header = { engine, bin, argv, cwd, sandbox, sessionId, stdin: stdinText !== null, deny: denyRules.length, at: new Date().toISOString() };
@@ -110,12 +126,13 @@ child.on("exit", (code, signal) => {
 });
 
 function parseArgs(list) {
-  const out = {};
+  const out = { "codex-config": [] };
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
     if (!a.startsWith("--")) fail(`unexpected argument ${a}`);
     const key = a.slice(2);
-    if (key === "dry-run" || key === "no-deny") { out[key] = true; continue; }
+    if (key === "dry-run" || key === "no-deny" || key === "no-strict-mcp") { out[key] = true; continue; }
+    if (key === "codex-config") { out[key].push(list[++i]); continue; }
     out[key] = list[++i];
   }
   return out;
