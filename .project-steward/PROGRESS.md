@@ -43,3 +43,4 @@ Set up Project Steward in this repository.
 2026-09-09T13:15:59Z — claude [auto-checkpoint] 5d landed (citation checker; §3 built); T7 Claude adapter landed (d8bc672; 297 tests); reviews in flight; beads .36, atc-vao/6sl/540.
 2026-09-09T13:32:29Z — claude [auto-checkpoint] T7 fix round landed (90fd4d6; 305 tests); 5d fix round landed (a3439cf); re-reviews in flight.
 2026-09-09T13:57:55Z — claude [auto-checkpoint] T7 closed; AGENTS.md Layout by approved diff (c2a0a64, Decision 0007); T8 Codex adapter landed (aa3e8bc; 323 tests), review in flight; T9 dispatched.
+2026-09-09T14:08:21Z — claude [auto-checkpoint] T8 fix round and T9 in flight; session-close sequence recorded (9d, final review, ff-merge, handover, worktree removal).

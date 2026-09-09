@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T13:57:55Z
+updated_at: 2026-09-09T14:08:21Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -24,20 +24,22 @@ the engine contract v2 (S5, closed); the Claude adapter (T7, closed at
 
 ## In flight
 
-The Opus review of T8 (one ruling pending in it: the Codex prompt goes on
-stdin with `-` as the positional, so a brief beginning with `-` cannot be
-read as a flag). T9, the Grok adapter (`streaming-messages-json`,
-`--rules`, the deny list, the fixture rewritten), dispatched in parallel on
-disjoint files.
+T8's fix round (the Codex prompt on stdin with `-`; the mount's files
+folded; a whole-argv `off` case) and T9, the Grok adapter
+(`streaming-messages-json`, `--rules`, the deny list, the fixture
+rewritten), on disjoint files. Bead `atc-s96.37` (per-task `scratchDir`)
+filed for T10 and the design.
 
 ## Next steps
 
-1. Close T8 and T9 on clean reviews; then the one §3 citation refresh
-   (`atc-vao`, with `atc-6sl`/`atc-540` folded in).
-2. T10 in two halves (`.10`: 10a authority + server plumbing, 10b the
-   tools — briefs drafted), T11 (`.11`), modes (`.23`), T12, T13 (needs
-   `.17`, the Claude P2 probe — AppArmor profile, sudo), engine placement
-   (`.24`).
+The operator's instruction for this session's close: once T8 and T9 clear
+review — (1) Task 9d, the one §3 refresh (`atc-vao`); (2) a final
+whole-branch review and a full `npm test`; (3) `git merge --ff-only
+task/cross-agent` into `main`, the suite on `main`; (4) the handover
+(HANDOFF, PROGRESS, VERIFY, PLAN, QUESTIONS; beads closed; DECISIONS 0008
+listing every ruling); (5) remove the worktree and delete the branch. No
+push. After that, the next work is T10 (two halves, briefs drafted), T11,
+modes, T12, T13 (needs `.17`), engine placement.
 
 ## Blockers
 
