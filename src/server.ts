@@ -130,7 +130,7 @@ export function projectTools(projectRoot: string): ToolDefinition[] {
   return [
     {
       name: "list_roles",
-      description: "List the dev team roles configured in .cross-agent/config.json with their engine, model, working directory kind, and sandbox profile.",
+      description: "List the roles configured in .cross-agent/config.json with their engine, model, working directory kind, and sandbox profile.",
       inputSchema: { type: "object", properties: {} },
       handler: () => text({ roles: loadConfig(projectRoot).roles }),
     },

@@ -237,3 +237,23 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
   }
   return { changed, skipped };
 }
+
+/**
+ * Why a launch for this task must not spawn, or null when nothing stands in its way. It is
+ * `adopt`'s rule read from the other side (`src/reconcile.ts`): a `self` entry is this
+ * process, its own group or its own session — a runner the server started carries the
+ * assignment in its own environment, and the `flock` child holding its lock inherits it —
+ * so none of them is an engine, while anything else carrying the id is one an earlier
+ * runner left for reconciliation to adopt. An environment that could not be read is
+ * answered the same way, because one of those could be that engine. The asymmetry is the
+ * reason: standing down costs one failed delegate a lead can see and retry, and spawning a
+ * second engine costs concurrent work in one worktree that no record accounts for.
+ */
+export function foreignEngine(scan: EnvironmentScan): string | null {
+  // The scan is in pid order, so this is the lowest-pid foreign process — the same one
+  // `adopt` would take as the engine, when it is a leader.
+  const foreign = scan.found.find((entry) => !entry.self);
+  if (foreign) return `engine ${foreign.pid} already carries task`;
+  if (scan.unreadable > 0) return `environ unreadable for ${scan.unreadable} processes`;
+  return null;
+}

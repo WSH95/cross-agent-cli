@@ -6,7 +6,7 @@ import { lockWaitSeconds } from "./config.ts";
 import { isTerminal, read, readSpec, update } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
-import { findByEnvironment, groupAlive, identityOf, killGroup, terminateGroupByPid } from "./process.ts";
+import { findByEnvironment, foreignEngine, groupAlive, identityOf, killGroup, terminateGroupByPid } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
 import type { EngineAdapter } from "./engines/types.ts";
@@ -206,13 +206,25 @@ async function run(projectRoot: string, id: string): Promise<void> {
     // another: a runner killed between its spawn and its acknowledgement leaves the
     // record `launching` and the lock free, and a replacement that spawned again would
     // give the task a second engine and strand the first for ever. Reconciliation adopts
-    // what is already there, so this runner has nothing to do but stand down.
-    if (findByEnvironment(id, record.createdAt).found.length > 0) {
-      log(`engine already running for task ${id}`);
+    // what is already there, so this runner has nothing to do but stand down. It stands
+    // down on an environment it could not read as well, because one of those could be that
+    // engine — the rule `adopt` applies. What it never stands down for is itself: the
+    // server starts it with `CROSS_AGENT_TASK` in its own environment, and the lock child
+    // inherits it, so both carry the id and neither is an engine.
+    const standDown = foreignEngine(findByEnvironment(id, record.createdAt));
+    if (standDown) {
+      log(`not launching task ${id}: ${standDown}`);
       return process.exit(1);
     }
     log(`launching ${request.engine}`);
-    handle = spawnEngine(adapter, { ...request, resultPath: record.resultPath, logPath: record.logPath });
+    // The record names what this runner spawns, so the task id comes from it beside the
+    // two paths, and not from the spec: `CROSS_AGENT_TASK` is how a stranded engine is
+    // found and what a replacement runner stands down on, and a spec that omitted it would
+    // leave an engine nothing could ever identify.
+    handle = spawnEngine(adapter, {
+      ...request, resultPath: record.resultPath, logPath: record.logPath,
+      env: { ...request.env, CROSS_AGENT_TASK: id },
+    });
     void handle.result.then((result) => {
       outcome = result;
       settle("completion");

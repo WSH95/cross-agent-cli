@@ -128,7 +128,7 @@ const grok = {
     if (request.model) argv.push("--model", request.model);
     if (request.effort) argv.push("--reasoning-effort", request.effort);
     if (request.rolePrompt !== "" && carried) argv.push("--rules", request.rolePrompt);
-    argv.push(...grok.denyArgs(request.denyTargets));
+    argv.push(...grok.denyArgs(request.denyTargets), ...grok.exclusionArgs());
 
     // `cwd` is passed through as the request wrote it — it is already canonical — and it
     // is both the spawn's own cwd and the `--cwd` the child is told about, because a

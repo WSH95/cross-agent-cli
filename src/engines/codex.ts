@@ -106,7 +106,7 @@ const codex = {
     const argv = resume
       ? ["exec", "resume", resume, "--json", "-o", request.resultPath]
       : ["exec", "--json", "-o", request.resultPath, "-C", request.cwd, "--sandbox", sandbox];
-    argv.push(...codex.exclusionArgs(), "--skip-git-repo-check");
+    argv.push(...codex.exclusionArgs(), "--skip-git-repo-check", ...codex.denyArgs(request.denyTargets));
     if (request.model) argv.push("-m", request.model);
     if (request.effort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(request.effort)}`);
     // The profile the launch line spent `--sandbox` on, restored the only way the resume

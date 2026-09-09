@@ -11,7 +11,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { currentBootId, readProcessStat } from "../src/ledger.ts";
 import type { EngineIdentity } from "../src/ledger.ts";
-import { findByEnvironment, groupAlive, terminateGroup, terminateGroupByPid } from "../src/process.ts";
+import { findByEnvironment, foreignEngine, groupAlive, terminateGroup, terminateGroupByPid } from "../src/process.ts";
+import type { FoundProcess } from "../src/process.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 
@@ -205,6 +206,33 @@ test("the environment scan reports what it could not read and binds each match t
   assert.equal(raced.unreadable, 0);
 
   assert.deepEqual(findByEnvironment(taskId, since).found.map((entry) => entry.pid), [leader.pid], "the mocks changed nothing else");
+});
+
+// The judgement a runner makes about a scan, taken over synthetic ones: the shapes below
+// are what the scan reports, and no process is needed to decide what they mean.
+test("foreignEngine names the engine or the blind spot a launch must stand down for", () => {
+  const entry = (pid: number, self: boolean): FoundProcess =>
+    ({ pid, startTime: "4200", pgid: pid, sid: pid, leader: true, self });
+
+  assert.equal(foreignEngine({ found: [], unreadable: 0 }), null, "nothing carries the id: launch");
+  // A runner the server spawned with `guard.childEnv` carries the assignment itself, and
+  // the flock child holding runner-<id>.lock inherits it and shares its session. Counting
+  // either would have every launch stand down for an engine that is the runner.
+  assert.equal(foreignEngine({ found: [entry(1101, true), entry(1102, true)], unreadable: 0 }), null,
+    "this runner and its own children are not an engine");
+
+  // Anything else carrying the id is an earlier runner's engine, which reconciliation
+  // adopts. The pid is what makes the log line worth reading.
+  const foreign = foreignEngine({ found: [entry(1101, true), entry(2202, false)], unreadable: 0 });
+  assert.match(foreign!, /\b2202\b/);
+  assert.doesNotMatch(foreign!, /\b1101\b/);
+
+  // An environment that could not be read could have been the engine, so it is the same
+  // answer as finding one: `adopt` refuses to conclude absence from it, and so does this.
+  assert.match(foreignEngine({ found: [], unreadable: 3 })!, /\b3\b/);
+  assert.match(foreignEngine({ found: [entry(1101, true)], unreadable: 1 })!, /\b1\b/);
+  // Both at once: the engine it can name beats the count it cannot.
+  assert.match(foreignEngine({ found: [entry(2202, false)], unreadable: 1 })!, /\b2202\b/);
 });
 
 test("terminateGroup escalates, reports what survives, and never throws", async (t) => {

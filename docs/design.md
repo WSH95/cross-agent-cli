@@ -102,7 +102,7 @@ The design requires instead that the server derive its authority from **who
 spawned it**. Every engine CLI spawns its MCP servers as children of the
 engine process, and the ledger already records each engine's identity as
 `engineIdentity` — `{pid, startTime, bootId, pgid}` (`src/ledger.ts:9-17`),
-written at `src/runner.ts:219-228`.
+written at `src/runner.ts:231-240`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` for `ppid`,
 `startTime`, `state`, `pgid` and `sid`. `readProcessStat`
@@ -436,13 +436,13 @@ are named in the launch-protocol bullet.
   runner's own diagnostic trail (`src/runner.ts:17`). Ids are 18 random bytes
   in base64url (`src/ledger.ts:218`), so an id can begin with `-`, which is
   why the runner's argument parser consumes each option's value literally
-  (`src/runner.ts:260-268`). `.cross-agent/` and `.worktrees/` are added to
+  (`src/runner.ts:272-280`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` on first use (`src/ledger.ts:104-117`).
 - Launch protocol: `delegate` creates the record as `launching` with a
   `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts:216`, `:229`);
   the runner, once started, writes
   `running` with its own identity and the engine's identity in one atomic
-  acknowledgement (`src/runner.ts:221-230`), conditional on the record still
+  acknowledgement (`src/runner.ts:233-242`), conditional on the record still
   being `launching`. Both identities carry `{pid, startTime, bootId}`, the
   engine's with its `pgid` as well (`src/ledger.ts:9-17`); `bootId` is read
   once from `/proc/sys/kernel/random/boot_id` (`src/ledger.ts:350-353`), because
@@ -460,7 +460,14 @@ are named in the launch-protocol bullet.
   (`src/engines/spawn.ts:229`, `:238`). Its two jobs are done instead by two
   mechanisms that cannot be forged, and both are built:
   - **Identifying a stranded engine.** The engine carries
-    `CROSS_AGENT_TASK=<id>` in its environment (`src/guard.ts:143`).
+    `CROSS_AGENT_TASK=<id>` in its environment, and it is the **runner** that
+    puts it there, from the id of the record it was started for
+    (`src/runner.ts:224-227`), beside the two paths it takes from the same
+    record. `guard.childEnv` sets the same assignment in the environment it
+    prepares for a spec (`src/guard.ts:143`), but nothing validates a spec
+    (`validateSpec` checks only that `adapterModule` is absolute,
+    `src/ledger.ts:241-245`), and everything below rests on the assignment, so
+    the runner does not take it on trust from a file.
     Reconciliation of a `launching` record past its deadline scans
     `/proc/*/environ` for that assignment (`src/process.ts:113-153`), adopts
     the identity it finds as `orphaned`, and writes `failed: launch` only when
@@ -476,25 +483,42 @@ are named in the launch-protocol bullet.
     acknowledgement leaves the record `launching` and the lock free, and a
     replacement that spawned again would give the task a second engine and
     strand the first. So before spawning, the runner runs the same environ scan
-    for its own task id, and if any live process already carries it the runner
-    logs `engine already running for task <id>` and exits 1 without spawning
-    (`src/runner.ts:208-211`); reconciliation then adopts what is already
-    there. Because a task has at most one engine, the reconciler adopts the
-    **lowest-pid** leader of the processes it finds — the scan returns them in
-    pid order (`src/process.ts:153`) — and treats every other process carrying
-    the id, extra leaders included, as a stray (`src/reconcile.ts:95-100`).
+    for its own task id and puts what it finds to `foreignEngine`
+    (`src/process.ts:252-259`), which answers with the reason to stand down or
+    `null`. Two things are reasons, and they are `adopt`'s own: a process
+    carrying the id that is not this runner, its own group or its own session,
+    and an environment the scan could not read, because one of those could be
+    that engine. The runner logs `not launching task <id>: <reason>` and exits
+    1 without spawning (`src/runner.ts:214-218`); reconciliation then adopts
+    what is already there. Excluding `self` is not optional: the server starts
+    the runner with `CROSS_AGENT_TASK` in its own environment
+    (`src/guard.ts:143`) and the `flock` child holding `runner-<id>.lock`
+    inherits it and stays in its session, so a stand-down that counted those
+    would refuse every launch for an engine that is the runner itself. The
+    unreadable case is decided by the asymmetry: standing down costs one failed
+    delegate the lead can see and retry, and a second engine costs concurrent
+    work in one worktree that no record accounts for. Its residual is the same
+    one reconciliation has — a same-uid non-dumpable leader holds launches off
+    until it exits — and the same bead bounds it (`atc-s96.31`). Because a task
+    has at most one engine, the reconciler adopts the **lowest-pid** leader of
+    the processes it finds — the scan returns them in pid order
+    (`src/process.ts:153`) — and treats every other process carrying the id,
+    extra leaders included, as a stray (`src/reconcile.ts:95-100`).
 - Launch spec: `delegate` writes `<id>.spec.json` next to the record before
   starting the runner (`ledger.writeSpec`, `src/ledger.ts:247-251`): role,
   brief, role prompt,
   cwd, engine, model, effort, sandbox, deny targets, session id, resume
   session id, the adapter module path, and the prepared child environment.
-  The runner rebuilds the spawn from the spec alone, so it never needs the
-  server. The adapter module path is always an entry of the fixed built-in
-  table of section 3; config cannot name one.
+  The runner rebuilds the spawn from that file and the record, so it never
+  needs the server; three fields of the request come from the record rather
+  than the spec — `logPath`, `resultPath`, and `CROSS_AGENT_TASK` in the
+  engine's environment (`src/runner.ts:224-227`) — because the record, not the
+  spec, names what this runner spawns. The adapter module path is always an
+  entry of the fixed built-in table of section 3; config cannot name one.
 - `src/runner.ts`: a detached process per task (`node src/runner.ts --project
   <root> --task <id>`) that owns the engine child in its own process group,
   tees events, updates `lastEventAt` on a 2-second interval
-  (`src/runner.ts:241-249`), and on engine exit writes the terminal record and
+  (`src/runner.ts:253-261`), and on engine exit writes the terminal record and
   `<id>.out` itself, so completion survives the MCP server. On SIGTERM
   (`src/runner.ts:194`) it writes `cancelling` itself (`src/runner.ts:115-117`),
   terminates the engine group, and writes `cancelled`
@@ -511,7 +535,7 @@ are named in the launch-protocol bullet.
     lock ignores `lost`; it is released in the same call that took it.
   - **A group with no identity is still terminated.** If the leader exits
     after spawning a descendant and before `identityOf` succeeds, the runner
-    has no `engineIdentity` to name the group with (`src/runner.ts:222-224`). But
+    has no `engineIdentity` to name the group with (`src/runner.ts:234-236`). But
     the detached spawn made `handle.pid` both the group and the session id, and
     the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
@@ -565,9 +589,9 @@ are named in the launch-protocol bullet.
   hand the stranded engine a lead's authority for as long as the second write
   was delayed or refused.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
-  status === "launching"` (`src/runner.ts:229-230`). On `applied: false` with
+  status === "launching"` (`src/runner.ts:241-242`). On `applied: false` with
   `record.status === "cancelling"` it **treats the refusal as a cancel**
-  (`src/runner.ts:232-236`): stop the engine group, then write `cancelled` with
+  (`src/runner.ts:244-248`): stop the engine group, then write `cancelled` with
   both identities, again conditionally. Mapping it to "someone else settled
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
@@ -750,7 +774,7 @@ are named in the launch-protocol bullet.
   resolve and the task would stay `running` with no engine. Probe P3b records
   the shape of it — a nested `claude -p` still running when its parent's turn
   ended — and the suite exercises both descendants: one that inherits stdout
-  and one that does not (`tests/runner.test.ts:142`, `:146`, `:616`, `:636`).
+  and one that does not (`tests/runner.test.ts:142`, `:146`, `:620`, `:640`).
   The drain timer starts at `exit`, not at the last byte; `truncated` covers
   stdout and stderr together, since a reader cannot tell which stream lost the
   tail; and finalisation happens exactly
@@ -918,7 +942,10 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   each engine's own: Claude both deny forms in one appendable
   `--disallowedTools` array and `--strict-mcp-config` for exclusion, Codex an
   empty deny list and `--ignore-user-config`, Grok one `--deny` per target and
-  no exclusion flag at all.
+  no exclusion flag at all. Every `plan` spreads both into its argv whatever
+  its own engine answers today (`src/engines/claude.ts:105`, `:136`,
+  `src/engines/codex.ts:109`, `src/engines/grok.ts:131`), so an engine that
+  gains a deny form or an exclusion flag gains it by returning one.
 - `leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount`
   (`src/engines/types.ts:91-97`, `:12-17`, `:26-30`) — the argv that mounts
   exactly this server for a lead under `placement: engine`. P9 settled what

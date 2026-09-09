@@ -267,10 +267,11 @@ const adapter = {
 };
 ${options.named ? "export { adapter };" : "export default adapter;"}
 `);
-  function start(patch: Partial<LaunchSpec> = {}, capture = false) {
+  /** `patch` overrides the spec, whose `env` is the engine's; `runnerEnv` is the runner's own. */
+  function start(patch: Partial<LaunchSpec> = {}, capture = false, runnerEnv = process.env) {
     ledger.writeSpec(root, record.id, { ...spec, ...patch });
     const child = spawn(process.execPath, ["src/runner.ts", "--project", root, "--task", record.id], {
-      cwd: worktree, detached: true, stdio: capture ? ["ignore", "pipe", "pipe"] : "ignore",
+      cwd: worktree, detached: true, env: runnerEnv, stdio: capture ? ["ignore", "pipe", "pipe"] : "ignore",
     });
     return track(child);
   }
@@ -407,7 +408,10 @@ test("normal runner records both identities while running and finishes done with
     assert.deepEqual(done.engineIdentity, running.engineIdentity);
     const request = JSON.parse(fs.readFileSync(path.join(h.root, "request.json"), "utf8"));
     // Only the adapter module is the runner's own; the engine travels with the request.
-    const { adapterModule, ...expected } = { ...h.spec, env: { ...h.spec.env, HOLD: "1" } };
+    // Three fields come from the record instead of the spec: both paths and the task id.
+    const { adapterModule, ...expected } = {
+      ...h.spec, env: { ...h.spec.env, HOLD: "1", CROSS_AGENT_TASK: h.record.id },
+    };
     assert.deepEqual(request, { ...expected, resultPath: done.resultPath, logPath: done.logPath });
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
@@ -773,8 +777,53 @@ test("a replacement runner refuses to start a second engine for one task", async
     assert.equal(second.code, 1, "the replacement exits rather than owning a second engine");
     assert.deepEqual(h.engineLaunches().length, 1, "it spawned nothing");
     assert.equal(h.read().status, "launching", "and left the record for reconciliation to adopt");
-    assert.match(h.runnerLog(), new RegExp(`engine already running for task ${h.record.id}`));
+    assert.match(h.runnerLog(), new RegExp(`not launching task ${h.record.id}: engine ${engine[0].pid} already carries task`));
     assert.equal(living(engine[0]), true);
+  } finally { await h.cleanup(); }
+});
+
+test("a runner carrying its own task id in its environment launches all the same", async () => {
+  const h = harness();
+  try {
+    // The server starts a runner with the environment `guard.childEnv` built, so the
+    // runner's own environment carries `CROSS_AGENT_TASK=<id>`, and the `flock` child
+    // holding `runner-<id>.lock` inherits it and stays in the runner's session. A stand-down
+    // that counted those two would refuse every launch for an engine that is the runner.
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1", INVOCATIONS: h.invocations } }, false,
+      { ...process.env, CROSS_AGENT_TASK: h.record.id });
+    const running = await poll(h.read, (record) => record.status === "running");
+    assert.ok(running.engineIdentity, "it spawned an engine and acknowledged it");
+    assert.doesNotMatch(h.runnerLog(), /not launching/);
+    fs.writeFileSync(h.release, "go");
+    const done = await poll(h.read, terminal);
+    assert.equal(done.status, "done");
+    assert.equal(h.engineLaunches().length, 1, "one engine, and its own runner did not count itself twice");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("the runner puts the record's own id in the engine's environment", async () => {
+  const { findByEnvironment } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    // Everything B5 rests on is this assignment: a stranded engine is found by it, and a
+    // replacement runner stands down on it. The spec need not carry it — the record, not
+    // the spec, names what this runner spawns — so the runner sets it from the record id.
+    assert.equal(h.spec.env.CROSS_AGENT_TASK, undefined);
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    const found = await poll(() => findByEnvironment(h.record.id, h.record.createdAt).found,
+      (entries) => entries.length === 1);
+    assert.equal(found[0].self, false, "a session of its own, not this test's");
+    assert.equal(found[0].leader, true, "and the shape an engineIdentity can be recorded from");
+    assert.equal(found[0].pid, running.engineIdentity!.pid);
+
+    child.child.kill("SIGTERM");
+    const cancelled = await poll(h.read, terminal, 6000);
+    assert.equal(cancelled.status, "cancelled");
+    assert.equal(living(running.engineIdentity!), false);
   } finally { await h.cleanup(); }
 });
 
