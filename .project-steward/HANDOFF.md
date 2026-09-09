@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T12:20:49Z
+updated_at: 2026-09-09T12:30:59Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,15 +25,13 @@ session (`.34`, `.35` closed). SDD ledger:
 
 ## In flight
 
-The Opus review of Task 5 (`.22`, claimed): engine contract v2 landed in
-734e1e9..193b511 (264 tests) — adapter-owned profiles/deny/exclusion/
-`leadMount`/`finish`, `src/engines/{registry,binaries,claude,codex,grok}.ts`
-with the three engines' static parts, profile validation at config load,
-`{mode, profile}` + `scratchDir` + `lead?` on the spawn request, the
-pipeline's `finish` hook and `plan.files`. Task 3d's docs round (a false
-justification sentence, the `atc-n85` citation refresh, six minors, four
-T10 rulings written into §2/§4/§7). Task 3d's sweep itself landed
-(7607f69, ee17f96; design 1905 lines).
+Task 5's fix round (one construction site `sandboxFor(engine, profile)`;
+the pipeline and reservation re-derive the mode; the erased import cycle
+reversed; small doc items) after an approved Opus review. The Sonnet
+re-review of Task 3d's docs round (eb21b5e: a failed mutation is a
+reconciliation trigger; 38 citations refreshed, `atc-n85` closed; four T10
+rulings written into §2/§4/§7). Bead `atc-2q4` (§3 stale after Task 5 +
+a `tools/check-citations.mjs` run by `npm test`) is the next docs task.
 
 ## Next steps
 
