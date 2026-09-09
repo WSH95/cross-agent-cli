@@ -10,7 +10,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as ledger from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
-import type { EngineIdentity, LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
+import type { LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
+
+// What this file's own /proc reading yields. It deliberately does not carry the boot
+// id the implementation records: these helpers judge liveness for cleanup, so they
+// must keep working even when the implementation's own notion of identity is broken.
+type Inspected = { pid: number; startTime: string; pgid: number; state: string };
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 const fixtures = path.join(worktree, "tests", "fixtures");
@@ -63,13 +68,13 @@ function proc(pid: number) {
   }
 }
 
-function living(identity: EngineIdentity) {
+function living(identity: { pid: number; startTime: string }) {
   const current = proc(identity.pid);
   return current?.startTime === identity.startTime && !["Z", "X"].includes(current.state);
 }
 
-function ownedProcesses(root: string): EngineIdentity[] {
-  const identities: EngineIdentity[] = [];
+function ownedProcesses(root: string): Inspected[] {
+  const identities: Inspected[] = [];
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     try {
@@ -270,7 +275,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     read: () => ledger.read(root, record.id),
     audit: () => fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { at: number; record: TaskRecord }) : [],
     descendant: () => poll(
-      () => fs.existsSync(descendantFile) ? JSON.parse(fs.readFileSync(descendantFile, "utf8")) as EngineIdentity & { sid: number } : null,
+      () => fs.existsSync(descendantFile) ? JSON.parse(fs.readFileSync(descendantFile, "utf8")) as Inspected & { sid: number } : null,
       (identity) => identity !== null,
     ).then((identity) => identity!),
     outcome: async (file = outcomeFile) => JSON.parse(await poll(
@@ -287,7 +292,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     },
     runnerLog: () => fs.readFileSync(path.join(path.dirname(recordFile), `${record.id}.runner.log`), "utf8"),
     async cleanup() {
-      const tracked = new Map<number, EngineIdentity>();
+      const tracked = new Map<number, Inspected>();
       for (const entry of children) {
         if (entry.child.pid && !entry.closed) {
           const identity = proc(entry.child.pid);
@@ -409,7 +414,7 @@ test("process helpers reject stale identities and signal only the verified group
     assert.equal(living(descendant), false);
     assert.equal(helpers.killGroup(identity, "SIGKILL"), false);
     await t.test("disappearing processes and unexpected errors", () => {
-      const current = proc(process.pid)!;
+      const current = { ...proc(process.pid)!, bootId: ledger.currentBootId };
       const missing = Object.assign(new Error("gone"), { code: "ESRCH" });
       const denied = Object.assign(new Error("denied"), { code: "EACCES" });
       const mocked = t.mock.method(process, "kill", () => { throw missing; });
