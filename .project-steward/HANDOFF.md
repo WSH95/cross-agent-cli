@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T05:41:19Z
+updated_at: 2026-09-09T06:40:07Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -21,10 +21,12 @@ in the main checkout. Beads: S1 `atc-s96.19` (in progress), S2 `.20`, S4
 
 ## In flight
 
-Task 1b's reviews: an Opus task review and a Codex gpt-5.6-sol milestone
-review of `docs/design.md` at b446d32, running in parallel. Findings enter
-the SDD fix loop before Task 1c (README) and Task 2a (locks, conditional
-update, runner acknowledgement) are dispatched.
+Task 1b's design rewrite went through two review rounds (Opus task review,
+Codex gpt-5.6-sol milestone review, two scoped re-reviews): fix round 1
+(59ec7f5) settled the depth cap versus ancestry rule, positive operator
+provenance, the authority walk, and nine contracts; fix round 2 (99d19ce)
+closed the remaining factual minors. The round-2 re-review is running; Task
+1c (README) follows, then the AGENTS.md approval diff is presented.
 
 ## Next steps
 
