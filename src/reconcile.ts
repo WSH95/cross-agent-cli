@@ -1,8 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { currentBootId, isProcessAlive, readProcessStat, scan, update } from "./ledger.ts";
 import type { EngineIdentity, InvalidRecord, ProcessIdentity, TaskRecord } from "./ledger.ts";
-import { findByEnvironment, groupAlive, killGroup, terminateOrphans } from "./process.ts";
-import type { FoundProcess } from "./process.ts";
+import { findByEnvironment, groupAlive, terminateGroup, terminateOrphans } from "./process.ts";
+import type { FoundProcess, Skipped } from "./process.ts";
 
 export interface Reconciled {
   /** What this pass wrote, as written. A refused write is not a change. */
@@ -28,25 +28,6 @@ function sameRunner(left?: ProcessIdentity | null, right?: ProcessIdentity | nul
 function stillRunning(entry: FoundProcess): boolean {
   const stat = readProcessStat(entry.pid);
   return stat !== null && stat.startTime === entry.startTime && stat.state !== "Z" && stat.state !== "X";
-}
-
-async function waitForGroup(identity: EngineIdentity, timeout: number): Promise<boolean> {
-  const deadline = performance.now() + timeout;
-  while (groupAlive(identity)) {
-    const remaining = deadline - performance.now();
-    if (remaining <= 0) return false;
-    await delay(Math.min(20, remaining));
-  }
-  return true;
-}
-
-/** SIGTERM, two seconds, SIGKILL, half a second — the same escalation cleanup uses. */
-async function terminateGroup(identity?: EngineIdentity | null): Promise<void> {
-  if (!identity || !groupAlive(identity)) return;
-  killGroup(identity, "SIGTERM");
-  if (await waitForGroup(identity, 2000)) return;
-  killGroup(identity, "SIGKILL");
-  if (!await waitForGroup(identity, 500)) throw new Error(`engine group ${identity.pgid} did not terminate`);
 }
 
 async function killStrays(strays: FoundProcess[]): Promise<number[]> {
@@ -88,7 +69,7 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number): Prom
   // The same preconditions, re-read inside the lock: a runner that acknowledged between
   // the listing and this write owns the task, and this pass must leave it alone.
   const expect = (current: TaskRecord) => current.status === "launching" && !current.runnerIdentity;
-  const found = findByEnvironment(record.id);
+  const { found } = findByEnvironment(record.id, record.createdAt);
   const leader = found.find((entry) => entry.leader);
   const killed = await killStrays(found.filter((entry) => !entry.leader));
 
@@ -134,7 +115,8 @@ async function judge(projectRoot: string, record: TaskRecord, now: number): Prom
   if (record.status === "cancelling" && !runnerAlive(record)) {
     // The cancel outlives the runner that started it: the group is terminated by the
     // identity the record carries, and only then is the record settled.
-    await terminateGroup(record.engineIdentity);
+    const identity = record.engineIdentity;
+    if (identity && !await terminateGroup(identity)) throw new Error(`engine group ${identity.pgid} did not terminate`);
     const result = await update(projectRoot, record.id, { status: "cancelled", reason: "runner lost during cancel" }, now, {
       unlessTerminal: true, expect: (current) => current.status === "cancelling",
     });
@@ -168,7 +150,8 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
  */
 export async function reconcileAndCleanup(
   projectRoot: string, now = Date.now(),
-): Promise<Reconciled & { cleaned: TaskRecord[] }> {
+): Promise<Reconciled & { cleaned: TaskRecord[]; skipped: Skipped[] }> {
   const { changed, invalid } = await reconcile(projectRoot, now);
-  return { changed, invalid, cleaned: await terminateOrphans(projectRoot) };
+  const { changed: cleaned, skipped } = await terminateOrphans(projectRoot);
+  return { changed, invalid, cleaned, skipped };
 }

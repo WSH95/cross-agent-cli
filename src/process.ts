@@ -3,6 +3,23 @@ import { setTimeout as delay } from "node:timers/promises";
 import { currentBootId, list, readProcessStat, update } from "./ledger.ts";
 import type { EngineIdentity, ProcessIdentity, TaskRecord } from "./ledger.ts";
 
+// Process start times are ticks since boot, at Linux's fixed USER_HZ of 100, and btime
+// is the wall clock of that boot. Both are constant for this boot, so both are read once.
+const bootTimeMs = Number(/^btime (\d+)$/m.exec(fs.readFileSync("/proc/stat", "utf8"))?.[1] ?? 0) * 1000;
+
+/** Wall-clock milliseconds at which a process with this start time began. */
+function startedAt(startTime: string): number {
+  return bootTimeMs + Number(startTime) * 10;
+}
+
+function ownedByThisUser(pid: number): boolean {
+  try {
+    return fs.statSync(`/proc/${pid}`).uid === process.getuid!();
+  } catch {
+    return false;
+  }
+}
+
 export function identityOf(pid: number): ProcessIdentity | null {
   const stat = readProcessStat(pid);
   return stat && /^\d+$/.test(stat.startTime) ? { pid, startTime: stat.startTime, bootId: currentBootId } : null;
@@ -21,6 +38,17 @@ const live = (state: string) => state !== "Z" && state !== "X";
 // session X whose own leader has exited leaves descendants the scan cannot tell from
 // ours and would signal. No timing bound is claimed. Descendants that leave the group
 // with setpgid or setsid are not members and are not signalled.
+// A live process holding pgid as both its group and its session: a member of the group
+// a detached spawn created, whether or not the leader itself still exists.
+function hasMember(pgid: number): boolean {
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    const stat = readProcessStat(Number(entry));
+    if (stat && stat.pgid === pgid && stat.sid === pgid && live(stat.state)) return true;
+  }
+  return false;
+}
+
 function inspectGroup(identity?: EngineIdentity | null): "invalid" | "reused" | "alive" | "dead" {
   if (!identity || !Number.isInteger(identity.pid) || identity.pid <= 1
     || !Number.isInteger(identity.pgid) || identity.pgid <= 1 || identity.pgid !== identity.pid
@@ -34,16 +62,16 @@ function inspectGroup(identity?: EngineIdentity | null): "invalid" | "reused" | 
     return "reused";
   }
   if (leader && live(leader.state)) return "alive";
-  for (const entry of fs.readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
-    const stat = readProcessStat(Number(entry));
-    if (stat && stat.pgid === identity.pid && stat.sid === identity.pid && live(stat.state)) return "alive";
-  }
-  return "dead";
+  return hasMember(identity.pid) ? "alive" : "dead";
 }
 
 export function groupAlive(identity?: EngineIdentity | null): boolean {
   return inspectGroup(identity) === "alive";
+}
+
+export interface Skipped {
+  id: string;
+  reason: string;
 }
 
 export interface FoundProcess {
@@ -65,26 +93,53 @@ export interface FoundProcess {
 // itself adopted-and-terminated or killed as a stray — the operator's own foot. It
 // cannot grant anything, because authority also requires an engineIdentity the server
 // itself wrote.
-export function findByEnvironment(taskId: string): FoundProcess[] {
+export interface EnvironmentScan {
+  found: FoundProcess[];
+  /**
+   * Live processes of this user, started no earlier than `since`, whose environment
+   * could not be read. Each could have been the engine, so a caller that would conclude
+   * "no engine exists" must not conclude it while this is non-zero.
+   */
+  unreadable: number;
+}
+
+export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
   const assignment = `CROSS_AGENT_TASK=${taskId}`;
+  const self = readProcessStat(process.pid);
   const found: FoundProcess[] = [];
+  let unreadable = 0;
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
+    // Never this process, and never anything sharing its group or session. The server
+    // inherits CROSS_AGENT_TASK from the engine that started it, so a reconciler could
+    // otherwise find itself, call itself a stray, and signal its own group. An engine is
+    // always a detached leader of its own session, so no engine is ever excluded here.
+    if (pid === process.pid) continue;
+    const before = readProcessStat(pid);
+    if (!before || !live(before.state)) continue;
+    if (self && (before.pgid === self.pgid || before.sid === self.sid)) continue;
     let environ: string;
     try {
       environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code!)) continue;
-      throw error;
+      if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code!)) throw error;
+      // Unreadable environments are ordinary: another user's processes, and this user's
+      // own non-dumpable ones (systemd --user, ssh-agent), can never be read. Only a
+      // process that could be the engine of the task being judged is counted — this
+      // user's, and no older than the task itself.
+      if (code !== "ENOENT" && code !== "ESRCH" && startedAt(before.startTime) >= since && ownedByThisUser(pid)) unreadable++;
+      continue;
     }
     if (!environ.split("\0").includes(assignment)) continue;
-    const stat = readProcessStat(pid);
-    if (!stat || !live(stat.state)) continue;
-    found.push({ pid, startTime: stat.startTime, pgid: stat.pgid, sid: stat.sid, leader: pid === stat.pgid && pid === stat.sid });
+    // The identity is read again after the environment: a pid reused between the two
+    // reads is a different process, and its start time would bind the record to it.
+    const after = readProcessStat(pid);
+    if (!after || !live(after.state) || after.startTime !== before.startTime) continue;
+    found.push({ pid, startTime: after.startTime, pgid: after.pgid, sid: after.sid, leader: pid === after.pgid && pid === after.sid });
   }
-  return found.sort((left, right) => left.pid - right.pid);
+  return { found: found.sort((left, right) => left.pid - right.pid), unreadable };
 }
 
 export function killGroup(identity: EngineIdentity, signal: NodeJS.Signals): boolean {
@@ -98,9 +153,16 @@ export function killGroup(identity: EngineIdentity, signal: NodeJS.Signals): boo
   }
 }
 
-async function waitForGroup(identity: EngineIdentity, timeout: number): Promise<boolean> {
+export interface TerminateOptions {
+  /** How long SIGTERM is given before SIGKILL. */
+  termGrace?: number;
+  /** How long SIGKILL is given before the group is reported as surviving. */
+  killGrace?: number;
+}
+
+async function waitFor(dead: () => boolean, timeout: number): Promise<boolean> {
   const deadline = performance.now() + timeout;
-  while (groupAlive(identity)) {
+  while (!dead()) {
     const remaining = deadline - performance.now();
     if (remaining <= 0) return false;
     await delay(Math.min(20, remaining));
@@ -108,27 +170,57 @@ async function waitForGroup(identity: EngineIdentity, timeout: number): Promise<
   return true;
 }
 
+// SIGTERM, a grace, SIGKILL, a shorter grace. It answers whether the group is gone and
+// never throws: a caller judging many records reports the survivor and carries on, and
+// an EPERM or a group that will not die is that answer, not an exception.
+async function terminate(pgid: number, alive: () => boolean, options: TerminateOptions): Promise<boolean> {
+  const signal = (value: NodeJS.Signals) => {
+    try {
+      if (alive()) process.kill(-pgid, value);
+    } catch { /* ESRCH is a group that died first; EPERM is answered by the wait below. */ }
+  };
+  if (!alive()) return true;
+  signal("SIGTERM");
+  if (await waitFor(() => !alive(), options.termGrace ?? 2000)) return true;
+  signal("SIGKILL");
+  return waitFor(() => !alive(), options.killGrace ?? 500);
+}
+
+/** The verified group of a recorded engine identity. */
+export function terminateGroup(identity: EngineIdentity, options: TerminateOptions = {}): Promise<boolean> {
+  return terminate(identity.pgid, () => groupAlive(identity), options);
+}
+
+// The group a detached spawn created, known only by the pid it made the group and session
+// id — the case where the engine's identity could never be captured. The kernel keeps that
+// id reserved while any member holds it, so the members are exactly what the scan finds.
+export function terminateGroupByPid(pid: number, options: TerminateOptions = {}): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 1) return Promise.resolve(true);
+  return terminate(pid, () => hasMember(pid), options);
+}
+
 // Each call judges every orphaned record on the current kernel state: an invalid or
 // reused identity is left alone, a live group is terminated, and a dead group, one
 // with no live member, is settled. A stale identity is therefore skipped while its
 // pid lives under another identity and settled once that pid is gone, because the
 // pid could only be reallocated after the original group had died.
-export async function terminateOrphans(projectRoot: string): Promise<TaskRecord[]> {
+export async function terminateOrphans(projectRoot: string): Promise<{ changed: TaskRecord[]; skipped: Skipped[] }> {
   const changed: TaskRecord[] = [];
+  const skipped: Skipped[] = [];
   for (const record of list(projectRoot, "orphaned")) {
     const identity = record.engineIdentity;
     const state = inspectGroup(identity);
-    if (!identity || state === "invalid" || state === "reused") continue;
-    if (state === "alive") {
-      killGroup(identity, "SIGTERM");
-      if (!await waitForGroup(identity, 2000)) {
-        killGroup(identity, "SIGKILL");
-        if (!await waitForGroup(identity, 500)) throw new Error(`engine group ${identity.pgid} did not terminate`);
-      }
+    // A record left orphaned on purpose is not silently left: an operator reading a task
+    // that never settles has to be told which identity cleanup would not act on.
+    if (!identity) { skipped.push({ id: record.id, reason: "no engine identity" }); continue; }
+    if (state === "invalid" || state === "reused") { skipped.push({ id: record.id, reason: `engine identity ${state}` }); continue; }
+    if (state === "alive" && !await terminateGroup(identity)) {
+      skipped.push({ id: record.id, reason: `engine group ${identity.pgid} did not terminate` });
+      continue;
     }
     // A record settled by another writer since the listing is refused: not changed.
     const result = await update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true });
     if (result.applied) changed.push(result.record);
   }
-  return changed;
+  return { changed, skipped };
 }

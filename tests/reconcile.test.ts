@@ -204,7 +204,7 @@ test("reconcile judges the engine by its group, so a reaped leader with a live m
 
   const { changed } = await reconcile(root, now + 2);
   assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "orphaned"]]);
-  const cleaned = await terminateOrphans(root);
+  const { changed: cleaned } = await terminateOrphans(root);
   assert.deepEqual(cleaned.map((value) => [value.id, value.status, value.reason]), [[record.id, "failed", "runner lost"]]);
   await poll(() => running(member), (alive) => !alive);
   assert.equal(read(root, record.id).status, "failed");
@@ -215,7 +215,7 @@ test("a launching record past its deadline adopts the group leader carrying its 
   const zoo = processes(t);
   const record = create(root, input(root), now);
   const engine = zoo.leader({ CROSS_AGENT_TASK: record.id });
-  await poll(() => findByEnvironment(record.id), (found) => found.length === 1);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
 
   const after = record.launchDeadline + 1;
   const { changed } = await reconcile(root, after);
@@ -225,7 +225,7 @@ test("a launching record past its deadline adopts the group leader carrying its 
   assert.equal(adopted.runnerIdentity ?? null, null);
   assert.equal(groupAlive(adopted.engineIdentity), true);
 
-  const cleaned = await terminateOrphans(root);
+  const { changed: cleaned } = await terminateOrphans(root);
   assert.deepEqual(cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost"]]);
   await poll(() => running(engine.pid), (alive) => !alive);
 });
@@ -239,8 +239,9 @@ test("a launching record past its deadline kills a stray that leads nothing and 
   // identity must be a group leader, and a stray can only be killed.
   const parent = zoo.leader({ CHILD_PID_FILE: pidFile, CHILD_TASK: record.id });
   const stray = await zoo.member(pidFile);
-  await poll(() => findByEnvironment(record.id), (found) => found.length === 1);
-  assert.deepEqual(findByEnvironment(record.id).map((entry) => [entry.pid, entry.leader]), [[stray, false]]);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  assert.deepEqual(findByEnvironment(record.id, record.createdAt).found.map((entry) => [entry.pid, entry.leader]),
+    [[stray, false]]);
 
   const { changed } = await reconcile(root, record.launchDeadline + 1);
   assert.deepEqual(changed.map((value) => [value.status, value.reason]), [["failed", `launch; killed stray ${stray}`]]);
@@ -337,8 +338,8 @@ test("reconciliation reports unreadable record files and judges the rest", async
   assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "failed"]]);
   assert.deepEqual(invalid.map((entry) => path.basename(entry.file)), ["damaged.json"]);
   assert.ok(invalid[0].reason.length > 0);
-  assert.deepEqual(await terminateOrphans(root), []);
-  assert.deepEqual(await reconcileAndCleanup(root, after + 1), { changed: [], invalid, cleaned: [] });
+  assert.deepEqual(await terminateOrphans(root), { changed: [], skipped: [] });
+  assert.deepEqual(await reconcileAndCleanup(root, after + 1), { changed: [], invalid, cleaned: [], skipped: [] });
 });
 
 test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {

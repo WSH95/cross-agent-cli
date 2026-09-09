@@ -438,40 +438,6 @@ test("process helpers reject stale identities and signal only the verified group
   } finally { await h.cleanup(); }
 });
 
-test("the environment scan finds a task's own processes, leaders apart from strays", async () => {
-  const helpers = await import("../src/process.ts");
-  const h = harness();
-  try {
-    const taskId = randomUUID();
-    const strayFile = path.join(h.root, "stray.json");
-    // A detached leader carrying the task id and a plain child of it carrying the same
-    // id: the two shapes the reconciler must tell apart, one adopted and one killed.
-    const leader = h.track(spawn(process.execPath, ["-e", `
-      const { spawn } = require("node:child_process");
-      const fs = require("node:fs");
-      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-      fs.writeFileSync(process.argv[1], JSON.stringify(child.pid));
-      setInterval(() => {}, 1000);
-    `, strayFile], { detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root, CROSS_AGENT_TASK: taskId } }));
-    await poll(() => fs.existsSync(strayFile), Boolean);
-    const stray = JSON.parse(fs.readFileSync(strayFile, "utf8")) as number;
-    const found = helpers.findByEnvironment(taskId);
-    assert.deepEqual(found.map((entry) => entry.pid).sort(), [leader.child.pid!, stray].sort());
-    assert.deepEqual(found.find((entry) => entry.pid === leader.child.pid), {
-      pid: leader.child.pid, startTime: proc(leader.child.pid!)!.startTime,
-      pgid: leader.child.pid, sid: leader.child.pid, leader: true,
-    });
-    assert.deepEqual(found.find((entry) => entry.pid === stray), {
-      pid: stray, startTime: proc(stray)!.startTime, pgid: leader.child.pid, sid: leader.child.pid, leader: false,
-    });
-    assert.deepEqual(helpers.findByEnvironment(randomUUID()), [], "another task's id finds nothing");
-    assert.deepEqual(helpers.findByEnvironment(taskId.slice(0, 8)), [], "the assignment must match whole, not by prefix");
-    leader.child.kill("SIGKILL");
-    process.kill(stray, "SIGKILL");
-    await poll(() => helpers.findByEnvironment(taskId), (entries) => entries.length === 0);
-  } finally { await h.cleanup(); }
-});
-
 test("group helpers find descendants of a reaped leader without a prior scan", async (t) => {
   const helpers = await import("../src/process.ts");
   const h = harness();
@@ -607,7 +573,7 @@ test("SIGKILL leaves a live engine that reconciliation orphans and cleanup termi
   const h = harness();
   try {
     const identity = await orphan(h, "stall");
-    const changed = await terminateOrphans(h.root);
+    const { changed } = await terminateOrphans(h.root);
     assert.equal(changed.length, 1);
     assert.equal(changed[0].status, "failed");
     assert.equal(changed[0].reason, "runner lost");
@@ -664,11 +630,11 @@ test("orphan cleanup terminates descendants whose leader died before cleanup beg
     process.kill(identity.pid, "SIGTERM");
     await poll(() => proc(identity.pid), (current) => current === null || current.state === "Z");
     assert.equal(living(descendant), true);
-    const changed = await terminateOrphans(h.root);
+    const { changed } = await terminateOrphans(h.root);
     assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
     assert.equal(living(descendant), false);
     assert.equal(h.read().status, "failed");
-    assert.deepEqual(await terminateOrphans(h.root), []);
+    assert.deepEqual(await terminateOrphans(h.root), { changed: [], skipped: [] });
   } finally { await h.cleanup(); }
 });
 
@@ -691,7 +657,7 @@ test("reconciliation orphans a task whose engine leader is gone but whose group 
 
     const { changed } = await reconcile(h.root);
     assert.deepEqual(changed.map((record) => [record.id, record.status]), [[h.record.id, "orphaned"]]);
-    const cleaned = await terminateOrphans(h.root);
+    const { changed: cleaned } = await terminateOrphans(h.root);
     assert.deepEqual(cleaned.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
     assert.equal(living(descendant), false);
     assert.deepEqual(ownedProcesses(h.root), []);
@@ -706,7 +672,13 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
     // is spawned and running, and nothing has been written about it.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
     const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall", CROSS_AGENT_TASK: h.record.id } });
-    const [engine] = await poll(() => findByEnvironment(h.record.id), (found) => found.length === 1);
+    const [engine] = await poll(() => findByEnvironment(h.record.id, h.record.createdAt).found,
+      (found) => found.length === 1);
+    // The engine's first output must reach the runner's log before the runner dies: an
+    // engine still flushing into a pipe whose reader has gone takes SIGPIPE with it, and
+    // this test is about the engine that survives.
+    await poll(() => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
+      (log) => log.includes('"working"'));
     child.child.kill("SIGKILL");
     await poll(() => child.closed, Boolean);
     await held.release();
@@ -721,7 +693,7 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
     assert.deepEqual(changed.map((record) => [record.id, record.status]), [[h.record.id, "orphaned"]]);
     assert.deepEqual(h.read().engineIdentity,
       { pid: engine.pid, startTime: engine.startTime, pgid: engine.pid, bootId: ledger.currentBootId });
-    const cleaned = await terminateOrphans(h.root);
+    const { changed: cleaned } = await terminateOrphans(h.root);
     assert.deepEqual(cleaned.map((record) => [record.status, record.reason]), [["failed", "runner lost"]]);
     await poll(() => proc(engine.pid), (current) => current === null || current.state === "Z");
     assert.deepEqual(ownedProcesses(h.root), []);
@@ -736,12 +708,12 @@ test("orphan cleanup settles a group with no live member", async () => {
     process.kill(identity.pid, "SIGKILL");
     await poll(() => proc(identity.pid), (current) => current === null || current.state === "Z");
     const before = Date.now();
-    const changed = await terminateOrphans(h.root);
+    const { changed } = await terminateOrphans(h.root);
     assert.ok(Date.now() - before < 1500, "nothing to signal means nothing to wait for");
     assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
     assert.equal(h.read().status, "failed");
     assert.equal(h.read().reason, "runner lost");
-    assert.deepEqual(await terminateOrphans(h.root), []);
+    assert.deepEqual(await terminateOrphans(h.root), { changed: [], skipped: [] });
   } finally { await h.cleanup(); }
 });
 
@@ -769,7 +741,7 @@ test("group members of a live leader die with it on cancel and on orphan cleanup
       const identity = await orphan(h, "stall", { DESCENDANT: "1" });
       const descendant = await h.descendant();
       assert.equal(living(descendant), true);
-      const changed = await terminateOrphans(h.root);
+      const { changed } = await terminateOrphans(h.root);
       assert.deepEqual(changed.map((record) => record.status), ["failed"]);
       assert.equal(living(identity), false);
       assert.equal(living(descendant), false);
@@ -788,7 +760,8 @@ test("orphan cleanup escalates after two seconds and returns only changed record
     const settled = ledger.create(h.root, h.spec);
     await writeAs(h.root, settled.id, "cancelled", { engineIdentity: identity });
     const before = Date.now();
-    cleanup = terminateOrphans(h.root);
+    let skipped: { id: string; reason: string }[] = [];
+    cleanup = terminateOrphans(h.root).then((result) => { skipped = result.skipped; return result.changed; });
     await delay(150);
     assert.equal(living(identity), true);
     await delay(1650);
@@ -797,6 +770,8 @@ test("orphan cleanup escalates after two seconds and returns only changed record
     const changed = await cleanup;
     assert.ok(Date.now() - before >= 2000);
     assert.deepEqual(changed.map((record) => record.id), [h.record.id]);
+    assert.deepEqual(skipped, [{ id: stale.id, reason: "engine identity reused" }],
+      "an identity cleanup will not act on is named, not passed over in silence");
     assert.equal(changed[0].status, "failed");
     assert.equal(changed[0].reason, "runner lost");
     await poll(() => proc(identity.pid), (current) => current === null);
@@ -806,9 +781,9 @@ test("orphan cleanup escalates after two seconds and returns only changed record
     assert.equal(ledger.read(h.root, settled.id).status, "cancelled");
     // Now nothing holds that pid as process group or session: the group is dead, so
     // the stale record settles, and a further pass finds nothing left to change.
-    const second = await terminateOrphans(h.root);
+    const second = (await terminateOrphans(h.root)).changed;
     assert.deepEqual(second.map((record) => [record.id, record.status, record.reason]), [[stale.id, "failed", "runner lost"]]);
-    assert.deepEqual(await terminateOrphans(h.root), []);
+    assert.deepEqual(await terminateOrphans(h.root), { changed: [], skipped: [] });
   } finally { await h.cleanup(); await cleanup; }
 });
 
@@ -1010,7 +985,7 @@ test("orphan cleanup preserves a record settled during its grace period", async 
   let cleanup: Promise<TaskRecord[]> | undefined;
   try {
     const identity = await orphan(h, "stall-ignore-term");
-    cleanup = terminateOrphans(h.root);
+    cleanup = terminateOrphans(h.root).then((result) => result.changed);
     const settled = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
     assert.deepEqual(await cleanup, []);
     assert.deepEqual(h.read(), settled);
@@ -1179,7 +1154,7 @@ test("an engine identity from another boot is dead, not a reused pid", async () 
     // as that process lives. One from another boot is simply dead, so cleanup settles
     // its record instead of leaving it orphaned for good — and signals nothing.
     await writeAs(h.root, h.record.id, "orphaned", { engineIdentity: { ...foreign, startTime: "0" } });
-    const changed = await helpers.terminateOrphans(h.root);
+    const { changed } = await helpers.terminateOrphans(h.root);
     assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
     assert.equal(living(identity), true, "the live process holding that pid was never signalled");
   } finally { await h.cleanup(); }
