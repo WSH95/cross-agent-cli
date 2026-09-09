@@ -386,7 +386,7 @@ the active mode declares the worktree provider; **engine lead** only under
 | `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups | core |
 | `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
-| `git_mutate` | `slug`, `args[]` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
+| `git_mutate` | `slug`, `args[]`, optional `path`, `branch` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
 | `git_root` | `args[]` | one whitelisted git verb at the project root, journaled, under `git.lock` (section 4) | engine lead |
 | `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `timeout_seconds` | the configured command, by selector rather than by string (section 4) | engine lead |
 | `ask` | `question`, optional `id` (to keep waiting on an earlier ask), `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered or the timeout | engine lead |
@@ -415,50 +415,56 @@ with its review's fixes in `608c89a..53e5e45` and `ffbb84d`) then built the
 rest: `limits.lockWaitSeconds` and the helper that reads it, the four lock
 names, the per-cwd reservation in `src/reservation.ts`, and both locks under
 `src/gitmutate.ts`. That review ruled on several more questions, and those
-rulings are stated here as decisions too. A bullet whose lead reads **target**
-is what nothing has built yet: the `cancel` tool, `delegate`'s own use of the
-reservation and of `spawn.lock`, and the two record fields section 5 and the
-lead model still need. Two bullets are split rather than led, because part of
-each is built: reconciliation's pass is built and its triggers are not, and the
-reservation is computed but only `git_mutate` consults it. Each says so where
-it says what it decides.
+rulings are stated here as decisions too. Everything below is built except
+where it says otherwise, and it says so in one of two ways. **One bullet is
+led by `Target:`** — the other two cancel writers — because nothing of it
+exists. **Four are split**, because part of each is built and the split falls
+inside the bullet rather than at its head: reconciliation (the pass is built,
+its triggers are row 7's), malformed records (`git_mutate` refuses on
+`scan().invalid`, `delegate` and `cross-agent tasks` do not yet), the worktree
+reservation (computed and read by `git_mutate`, unread by `delegate`), and the
+git lock (`git_mutate` takes both locks, `delegate` and `git_root` take
+none). Each marks its own target where it states the rule. The two record
+fields section 5 and the lead model still need — `depth` and `parentTaskId` —
+are named in the launch-protocol bullet.
 
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
-  writing a temporary file and renaming it (`src/ledger.ts:189-204`);
+  writing a temporary file and renaming it (`src/ledger.ts:194-214`);
   `<id>.ndjson` is the engine's native event stream, with lines the engine
-  wrote to stderr prefixed `stderr ` (`src/engines/spawn.ts:107`), not a
+  wrote to stderr prefixed `stderr ` (`src/engines/spawn.ts:115`), not a
   verbatim tee; `<id>.out` is the final message; `<id>.runner.log` is the
-  runner's own diagnostic trail (`src/runner.ts:18`). Ids are 18 random bytes
-  in base64url (`src/ledger.ts:208`), so an id can begin with `-`, which is
+  runner's own diagnostic trail (`src/runner.ts:17`). Ids are 18 random bytes
+  in base64url (`src/ledger.ts:218`), so an id can begin with `-`, which is
   why the runner's argument parser consumes each option's value literally
   (`src/runner.ts:258-266`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` on first use (`src/ledger.ts:104-117`).
 - Launch protocol: `delegate` creates the record as `launching` with a
-  `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts:219`); the
-  runner, once started, writes
+  `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts:216`, `:229`);
+  the runner, once started, writes
   `running` with its own identity and the engine's identity in one atomic
-  acknowledgement (`src/runner.ts:217-226`), conditional on the record still
+  acknowledgement (`src/runner.ts:219-228`), conditional on the record still
   being `launching`. Both identities carry `{pid, startTime, bootId}`, the
   engine's with its `pgid` as well (`src/ledger.ts:9-17`); `bootId` is read
-  once from `/proc/sys/kernel/random/boot_id` (`src/ledger.ts:343`), because a
-  pid and start time from another boot can collide with a live process, so an
-  identity from another boot is dead rather than reused (`src/ledger.ts:346`).
+  once from `/proc/sys/kernel/random/boot_id` (`src/ledger.ts:350-353`), because
+  a pid and start time from another boot can collide with a live process, so an
+  identity from another boot is dead rather than reused
+  (`src/ledger.ts:355-356`).
   `startTime`, `pgid`, `sid` and `state` all come from `/proc/<pid>/stat`
-  (`src/ledger.ts:323-338`). Two record fields the design needs are still
+  (`src/ledger.ts:333-347`). Two record fields the design needs are still
   absent from `TaskRecord` (`src/ledger.ts:32-53`) and arrive with the tasks
   that use them: `depth`, written by `delegate` (section 5, layer 1), and
   `parentTaskId`, for cascade ownership (the lead model). There is **no launch
-  token**: `create` writes none (`src/ledger.ts:209-222`), and a token on the
+  token**: `create` writes none (`src/ledger.ts:216-235`), and a token on the
   *runner's* argv could not identify the engine anyway, because the engine is a
   separate detached spawn with adapter-built argv
-  (`src/engines/spawn.ts:173-175`). Its two jobs are done instead by two
+  (`src/engines/spawn.ts:196`, `:204`). Its two jobs are done instead by two
   mechanisms that cannot be forged, and both are built:
   - **Identifying a stranded engine.** The engine carries
-    `CROSS_AGENT_TASK=<id>` in its environment (`src/guard.ts:158`).
+    `CROSS_AGENT_TASK=<id>` in its environment (`src/guard.ts:143`).
     Reconciliation of a `launching` record past its deadline scans
-    `/proc/*/environ` for that assignment (`src/process.ts:112-153`), adopts
+    `/proc/*/environ` for that assignment (`src/process.ts:113-153`), adopts
     the identity it finds as `orphaned`, and writes `failed: launch` only when
-    no such process exists (`src/reconcile.ts:89-126`). Without this, a SIGKILL
+    no such process exists (`src/reconcile.ts:90-126`). Without this, a SIGKILL
     between the spawn and the acknowledgement would leave a live engine that
     nothing will ever kill.
   - **Exclusive ownership.** The runner holds `runner-<id>.lock` for its whole
@@ -475,10 +481,10 @@ it says what it decides.
     (`src/runner.ts:206-209`); reconciliation then adopts what is already
     there. Because a task has at most one engine, the reconciler adopts the
     **lowest-pid** leader of the processes it finds — the scan returns them in
-    pid order (`src/process.ts:152`) — and treats every other process carrying
+    pid order (`src/process.ts:153`) — and treats every other process carrying
     the id, extra leaders included, as a stray (`src/reconcile.ts:95-100`).
 - Launch spec: `delegate` writes `<id>.spec.json` next to the record before
-  starting the runner (`ledger.writeSpec`, `src/ledger.ts:231-241`): role,
+  starting the runner (`ledger.writeSpec`, `src/ledger.ts:247-251`): role,
   brief, role prompt,
   cwd, engine, model, effort, sandbox, deny targets, session id, resume
   session id, the adapter module path, and the prepared child environment.
@@ -490,49 +496,49 @@ it says what it decides.
   tees events, updates `lastEventAt` on a 2-second interval
   (`src/runner.ts:239-247`), and on engine exit writes the terminal record and
   `<id>.out` itself, so completion survives the MCP server. On SIGTERM
-  (`src/runner.ts:192`) it writes `cancelling` itself (`src/runner.ts:113`),
+  (`src/runner.ts:194`) it writes `cancelling` itself (`src/runner.ts:115-117`),
   terminates the engine group, and writes `cancelled`
   (`src/runner.ts:101-172`). Group cleanup always precedes terminal
-  settlement (`src/runner.ts:122`). Three rulings from the reviews attach to
+  settlement (`src/runner.ts:124`). Three rulings from the reviews attach to
   this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
-    `release` (`src/locks.ts:11`, `:22`, `:86-96`) — the kernel has already let
-    the next waiter in, so a holder that carried on would be acting on
+    `release` (`src/locks.ts:11`, `:22`, `:89-100`) — the kernel has already
+    let the next waiter in, so a holder that carried on would be acting on
     exclusivity it no longer has. The runner registers `onLost` for
     `runner-<id>.lock` (`src/runner.ts:180-183`): it stops the engine group and
     settles `failed` with the reason `runner lock lost`. `update`'s own short
     lock ignores `lost`; it is released in the same call that took it.
   - **A group with no identity is still terminated.** If the leader exits
     after spawning a descendant and before `identityOf` succeeds, the runner
-    has no `engineIdentity` to name the group with (`src/runner.ts:219`). But
+    has no `engineIdentity` to name the group with (`src/runner.ts:220-222`). But
     the detached spawn made `handle.pid` both the group and the session id, and
     the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
     (`src/process.ts:207-210`) before settling `failed`
-    (`src/runner.ts:70-76`). Killing the direct child alone would settle the
+    (`src/runner.ts:72-77`). Killing the direct child alone would settle the
     task with its descendants still running.
   - **`truncated` on every settlement.** The evidence patch the runner writes
     carries `truncated: outcome.truncated` whether the task ends `done`,
-    `failed` or `cancelled` (`src/runner.ts:131`), because a completed task can
+    `failed` or `cancelled` (`src/runner.ts:133`), because a completed task can
     be missing the tail of its log too; the `; output truncated` suffix on a
-    failure's `reason` stays (`src/runner.ts:145`).
+    failure's `reason` stays (`src/runner.ts:147`).
 - **Target: the other two cancel writers.** The `cancel` tool does not exist —
   `projectTools` registers two tools and neither is it
   (`src/server.ts:129-154`). The design requires that `cancel` write
   `cancelling` and send SIGTERM to the runner, escalating to SIGKILL on both
   groups after a grace period. The third writer is built: reconciliation
   settles a `cancelling` record whose runner is dead by terminating the engine
-  group by identity and then writing `cancelled` (`src/reconcile.ts:146-158`).
+  group by identity and then writing `cancelled` (`src/reconcile.ts:147-158`).
   With all three in place the terminal writers are the runner (`done`,
   `failed`, `cancelled`) and, only when the runner is dead and the engine group
   is verified dead, the reconciler (`cancelled` or `failed`).
 - **Conditional update.** `ledger.update` is asynchronous: it takes
   `record-<id>.lock` around one read, one check, and one rename, and returns
   `{applied: true, record}` or `{applied: false, record, reason: "terminal" |
-  "expect"}` (`src/ledger.ts:72-74`, `:250-280`). `create`, `read`, and `list`
+  "expect"}` (`src/ledger.ts:72-74`, `:260-290`). `create`, `read`, and `list`
   stay synchronous. `options.expect?: (record) => boolean` is evaluated
-  **inside** the lock (`src/ledger.ts:264`); there is no `TerminalTaskError`,
+  **inside** the lock (`src/ledger.ts:274`); there is no `TerminalTaskError`,
   because a caller that must distinguish "I wrote it" from "someone else owns
   it" needs a value, not an exception — any non-throwing return would
   otherwise make the runner's `write()` true (`src/runner.ts:36-51`) and let it
@@ -543,25 +549,25 @@ it says what it decides.
   returned with `applied: false` is the record as read **inside** the lock, so
   a caller can act on the state that beat it; the terminal check precedes
   `expect`, so a terminal record is always `reason: "terminal"`
-  (`src/ledger.ts:263`); a lock timeout **throws** rather than returning
-  `applied: false` (`src/locks.ts:75-82`), because a caller that could not even
+  (`src/ledger.ts:273`); a lock timeout **throws** rather than returning
+  `applied: false` (`src/locks.ts:78-81`), because a caller that could not even
   look at the record must not treat that as a refusal it can reason about; and
-  the lock is released in `finally` (`src/ledger.ts:277-279`). The legal
+  the lock is released in `finally` (`src/ledger.ts:287-289`). The legal
   transitions are `launching → running | cancelling | failed | orphaned`,
   `running ↔ stalled`, `running | stalled → cancelling | orphaned | done |
   failed`, `orphaned → failed | cancelled`, and `cancelling → cancelled |
-  failed` (`src/ledger.ts:80-92`); any other transition throws, because it is a
+  failed` (`src/ledger.ts:85-97`); any other transition throws, because it is a
   bug in a writer, not a race to be tolerated. `launching → orphaned`
-  (`src/ledger.ts:84`) is the adoption edge, and it exists so that adoption
+  (`src/ledger.ts:86-89`) is the adoption edge, and it exists so that adoption
   never passes through `running`: a record that is `running` with an
   `engineIdentity` satisfies every clause of the authority match (the lead
   model), so an adoption that wrote `running` first and `orphaned` second would
   hand the stranded engine a lead's authority for as long as the second write
   was delayed or refused.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
-  status === "launching"` (`src/runner.ts:225-226`). On `applied: false` with
+  status === "launching"` (`src/runner.ts:227-228`). On `applied: false` with
   `record.status === "cancelling"` it **treats the refusal as a cancel**
-  (`src/runner.ts:228-233`): stop the engine group, then write `cancelled` with
+  (`src/runner.ts:230-234`): stop the engine group, then write `cancelled` with
   both identities, again conditionally. Mapping it to "someone else settled
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
@@ -570,7 +576,7 @@ it says what it decides.
   lives in `src/reconcile.ts`, because it needs both `ledger.ts` and
   `process.ts` and `src/process.ts` already imports `ledger.ts`; that leaves
   `ledger.ts` as record I/O. It is asynchronous and returns `{changed, invalid,
-  errors}` (`src/reconcile.ts:12-23`). Nothing outside that file calls it yet —
+  errors}` (`src/reconcile.ts:13-24`). Nothing outside that file calls it yet —
   `projectTools` registers two tools and `list_tasks` is not one of them
   (`src/server.ts:129-154`) — so **running it on server start and on every
   `list_tasks` is a T10 target** (Work plan row 7), and until that lands a
@@ -580,9 +586,9 @@ it says what it decides.
   leader that has been reaped while a descendant lives becomes `orphaned` and
   is cleaned up, not `failed: runner lost`. It judges the runner, which is one
   process, by pid and start time, and a runner in state `Z` or `X` has exited
-  and owns nothing (`src/ledger.ts:348-350`), which is the same test the group
-  scan applies to a member (`src/process.ts:28`). Its four cases
-  (`src/reconcile.ts:128-161`):
+  and owns nothing (`src/ledger.ts:358-360`), which is the same test the group
+  scan applies to a member (`src/process.ts:29`). Its four cases
+  (`src/reconcile.ts:129-161`):
   - `launching` past its deadline: the environ scan above, then `orphaned` or
     `failed: launch`;
   - `running` or `stalled` with a dead runner: `orphaned` if the engine group
@@ -607,11 +613,12 @@ it says what it decides.
   **A failure is per record, never per pass.** `Reconciled.errors` is `[{id,
   reason}]`, each record's judgement runs inside its own boundary, and a record
   that could not be judged keeps its status for the next pass
-  (`src/reconcile.ts:177-187`): a group that survives SIGKILL, an EPERM from
+  (`src/reconcile.ts:181-191`): a group that survives SIGKILL, an EPERM from
   `process.kill`, a decision another writer overtook. Those two are answers,
   not exceptions, because **the escalation is one helper**: SIGTERM, a grace,
-  SIGKILL, a shorter grace, written once in `src/process.ts` (`terminate`,
-  `:186-197`) and reached through `terminateGroup` (`:200-202`). It never
+  SIGKILL, a shorter grace, written once as `terminate`
+  (`src/process.ts:185-198`) and reached through `terminateGroup` (`:200-203`).
+  It never
   throws — an EPERM or a group that will not die is reported as `false` — and
   both callers consume that boolean, `terminateOrphans` to skip the record with
   its identity named and `reconcile.ts:151` to leave a `cancelling` record
@@ -619,14 +626,14 @@ it says what it decides.
   report a survivor and carry on. One escalation is still written out by hand:
   the runner's identity-captured branch, which sequences `killGroup` and
   `waitForGroup` itself and throws when the group survives
-  (`src/runner.ts:63-69`). That is the remaining duplicate, and folding it onto
+  (`src/runner.ts:66-71`). That is the remaining duplicate, and folding it onto
   the helper — with telling an EPERM apart from a group that would not die — is
   `atc-s96.31`. The runner's other branch, the one with no identity to name the
-  group by, already goes through the helper (`src/runner.ts:70-76` →
+  group by, already goes through the helper (`src/runner.ts:72-77` →
   `src/process.ts:207-210`), as the settlement bullet above states. Killing the
   strays is the one step that runs **after** the decision has been written, so
   it reports the pids it could not signal instead of throwing
-  (`src/reconcile.ts:48-73`, `:125`): losing the write to report a failed
+  (`src/reconcile.ts:49-74`, `:126`): losing the write to report a failed
   signal would drop a settled record from `changed`. Orphan cleanup runs in the
   **same pass** (`reconcileAndCleanup`, `src/reconcile.ts:197-203`), so no
   caller can observe an `orphaned` record whose group is still being decided;
@@ -636,11 +643,11 @@ it says what it decides.
   `errors`.
 
   **A pass sees every engine and signals none of its own.** The MCP server is a
-  child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts:158`), and
+  child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts:143`), and
   reconciliation runs inside that server, so a pass judging its own task meets
   its own process, its own children, and the engine whose session it lives in.
   The scan reports all of them, each marked `self` (`src/process.ts:84-89`,
-  `:149`): exclusion belongs to signalling, never to seeing, because one of
+  `:147-150`): exclusion belongs to signalling, never to seeing, because one of
   those processes may be the very engine the record is waiting for. Adoption
   then takes no `self` process as its leader and puts none in the stray set
   (`src/reconcile.ts:95-100`). When the **only** engine carrying the id is the
@@ -653,7 +660,7 @@ it says what it decides.
   leader** (`pid === pgid === sid`), because only a leader can be recorded as
   an `engineIdentity`, and the scan reads `/proc/<pid>/stat` **before and
   after** the environment, keeping the match only when both reads agree on
-  `startTime` (`src/process.ts:120`, `:141-142`): a pid reused between the two
+  `startTime` (`src/process.ts:121`, `:140-143`): a pid reused between the two
   reads is a different process, and its start time would bind the record to it.
   A forged `CROSS_AGENT_TASK` on a foreign process can therefore get that
   process killed — the operator's own foot — but it can never grant
@@ -691,7 +698,7 @@ it says what it decides.
   exists. Refusing every writable operation is the conservative reading of "it
   never frees a workspace"; a read-only delegation is unaffected. `scan`'s
   `invalid` is carried through `reservations().unknown` verbatim
-  (`src/reservation.ts:15`, `:77`) and `git_mutate` refuses on it, naming each
+  (`src/reservation.ts:15`, `:72`) and `git_mutate` refuses on it, naming each
   file and the reason it could not be read (`src/gitmutate.ts:178-184`).
   **Target**: the same refusal in `delegate` (row 7) and `cross-agent tasks`
   naming the file (row 13).
@@ -718,14 +725,15 @@ it says what it decides.
   operation. The key is in config and validated — a finite number, defaulting
   to 5 and refused when negative, because `flock -w -1` sets no timer and exits
   before it looks at the file, which the helper would read as a live holder
-  (`src/config.ts:24`, `:37`, `:117`) — and the helper's own default is the
-  same 5 (`src/locks.ts:59`). Every acquisition in product code reads the
-  configured value. `git_mutate` takes it as an argument, so that module stays
-  a function of what it is handed (`src/gitmutate.ts:21-28`); `update`'s
+  (`src/config.ts:27`, `:40`, `:127`) — and the helper's own default is the
+  same 5 (`src/locks.ts:59`). Every acquisition but the runner's own claim
+  reads the configured value — that one is `waitSeconds: 0` by design, below.
+  `git_mutate` takes it as an argument, so that module stays a function of what
+  it is handed (`src/gitmutate.ts:21-28`); `update`'s
   callers read it once per process or per pass through
   `lockWaitSeconds(projectRoot)` (`src/runner.ts:20`, `src/reconcile.ts:178`,
   `src/process.ts:222`), a helper that answers with the documented 5 when no
-  config can be read (`src/config.ts:129-135`) — locks are taken on paths that
+  config can be read (`src/config.ts:139-144`) — locks are taken on paths that
   run before anyone has a readable config, and a caller whose only question was
   how long to wait should not be thrown at (bead `atc-s96.34`, closed). Nothing
   uses `flock -n`; a caller that wants no wait passes `waitSeconds: 0`. The one
@@ -733,67 +741,92 @@ it says what it decides.
   an immediate failure, so the second runner takes it with a zero wait and
   exits.
 - **Bounded settlement.** `spawnEngine` settles on the child's `exit` plus a
-  bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts:191-204`)
-  and on `close` if that arrives first (`src/engines/spawn.ts:186`); on timeout
+  bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts:220-233`)
+  and on `close` if that arrives first (`src/engines/spawn.ts:215`); on timeout
   the data listeners are detached and the streams destroyed **before** the
   promise resolves, and the result carries `truncated: true`
-  (`src/engines/spawn.ts:195-202`). Settling on `close` alone hangs whenever a
+  (`src/engines/spawn.ts:224-231`). Settling on `close` alone hangs whenever a
   grandchild inherited stdout and holds it open: `handle.result` would never
   resolve and the task would stay `running` with no engine. Probe P3b records
   the shape of it — a nested `claude -p` still running when its parent's turn
   ended — and the suite exercises both descendants: one that inherits stdout
-  and one that does not (`tests/runner.test.ts:142`, `:146`,
-  `tests/runner.test.ts:590-616`). The drain timer starts at `exit`, not at the
-  last byte; `truncated` covers stdout and stderr together, since a reader
-  cannot tell which stream lost the tail; and finalisation happens exactly
+  and one that does not (`tests/runner.test.ts:142`, `:146`, `:619`, `:638`).
+  The drain timer starts at `exit`, not at the last byte; `truncated` covers
+  stdout and stderr together, since a reader cannot tell which stream lost the
+  tail; and finalisation happens exactly
   once, claiming the `settled` flag **before** the final flush
-  (`src/engines/spawn.ts:134-146`), so nothing entered twice and nothing after
+  (`src/engines/spawn.ts:143-152`), so nothing entered twice and nothing after
   the flush is read as a child still worth signalling, while a buffered partial
   line is still evidence and is flushed into the result. A stream or process
   error arriving after the result has resolved is recorded and returned to its
   own caller but never mutates the result the caller already holds
-  (`src/engines/spawn.ts:84`, `:169`) — a late error cannot rewrite a delivered
-  outcome. `SpawnResult.truncated` is persisted on the task record for every
-  settlement (`src/runner.ts:131`) and appended to `reason` when the task
-  failed (`src/runner.ts:145`), so an operator reading a failure knows whether
-  the evidence is complete.
+  (`src/engines/spawn.ts:90-92`, `:192`) — a late error cannot rewrite a
+  delivered outcome. `SpawnResult.truncated` is persisted on the task record
+  for every settlement (`src/runner.ts:133`) and appended to `reason` when the
+  task failed (`src/runner.ts:147`), so an operator reading a failure knows
+  whether the evidence is complete.
 - **The worktree reservation**: computed, and consulted by `git_mutate`; its
   use in `delegate` is a target. `reservations(projectRoot)` walks one `scan`
   and returns `{reserved, unknown}` — a map from canonical cwd to the task
   holding it, and `scan`'s `invalid` verbatim (`src/reservation.ts:6-16`,
-  `:62-78`); `reservedBy(root, target, known)` answers for one path and takes
+  `:57-73`); `reservedBy(root, target, known)` answers for one path and takes
   an already-computed `Reservations`, so a caller that must also judge
-  `unknown` scans once (`src/reservation.ts:84-86`). A record reserves when two
+  `unknown` scans once (`src/reservation.ts:79-81`). A record reserves when two
   things hold. **It is not settled**: `done`, `failed` and `cancelled` release
   the workspace and nothing else does (`src/ledger.ts:77`, `:80`,
-  `src/reservation.ts:66`). **It may write**: the record carries no sandbox, so
-  the launch spec beside it is read (`src/reservation.ts:54`), and the ruling
-  from T6's review is that every profile *except* the read-only ones reserves —
-  the set is `read-only` and Grok's `strict` (`src/reservation.ts:24`), so `off`
-  reserves too, because an unsandboxed task is the least constrained writer
-  there is, not the most constrained. A spec that cannot be read, or a
-  `sandbox` this build cannot read as a profile name, leaves the mode unknown,
-  and an unknown mode has never been shown to be read-only, so it holds the
-  workspace rather than letting a second writer in
-  (`src/reservation.ts:47-58`). Reservations are
-  keyed by a **canonical** path: the closest existing ancestor's `realpath`
-  with the unresolved remainder appended, so a worktree that has been removed
-  still compares equal to itself and still holds its reservation
-  (`src/reservation.ts:31-45`). Two unsettled writable tasks on one path is
+  `src/reservation.ts:61`). **It may write**: the record carries no sandbox, so
+  the launch spec beside it is read (`src/reservation.ts:48`), and the rule is
+  `mode !== "read-only"` on the spec's `{mode, profile}` pair — section 3's
+  map, now owned by the adapters, is what turned the engine's own profile name
+  into that mode (`src/reservation.ts:52-53`). So `off` reserves too, because
+  an unsandboxed task is the least constrained writer there is, not the most
+  constrained. A spec that cannot be read, or a `sandbox` this build cannot
+  read as that pair, leaves the mode unknown, and an unknown mode has never
+  been shown to be read-only, so it holds the workspace rather than letting a
+  second writer in (`src/reservation.ts:39-53`). Reservations are keyed by a
+  **canonical** path: the closest existing ancestor's `realpath` with the
+  unresolved remainder appended, so a worktree that has been removed still
+  compares equal to itself and still holds its reservation
+  (`src/reservation.ts:23-37`). Two unsettled writable tasks on one path is
   what the check exists to prevent, but if one is ever seen the map answers
   with the task that took the path first, by `createdAt` then by id, so the
   answer does not depend on the order the directory happened to list
-  (`src/reservation.ts:73-75`). Two things follow for the writer of a record.
-  `record.cwd` must be **absolute**: the map is keyed by a canonical path, and
-  a relative cwd would be resolved against whichever process happened to read
-  it. And a delegation is judged writable by the same rule its record will be
-  reserved by, so `delegate` reads the role's own profile, not the request's.
-  **Target**: `delegate` refusing another task on a reserved cwd (row 7), with
-  the holder and its status named as `git_mutate` names them, and refusing
-  every writable delegation while `unknown` is non-empty. `resume` of a task in
-  `launching`, `running`, `stalled`, `orphaned`, or `cancelling` is already
-  refused, with `refused resume of task <id>: status <status> is active`
-  (`src/guard.ts:102-115`).
+  (`src/reservation.ts:68-70`).
+
+  **What a reservation refuses, exactly**, since `delegate` is written against
+  this and nothing else. A cwd held by an unsettled writable task refuses
+  **every** delegation onto it, read-only included, until that task settles.
+  The mode's flow is sequential — implement, lead commit, then review — so a
+  reviewer reading a worktree while its implementer is still writing would be
+  reading a tree that is not the one the lead committed, and the reservation is
+  the only thing that says so. This is stricter than `git_mutate`'s rule, which
+  only ever runs a mutation, and deliberately so. An **`unknown`** record is
+  the other case and a weaker one: an unreadable file's `cwd` cannot be matched
+  against anything, so it refuses every **writable** delegation and leaves
+  read-only ones alone (E2, the malformed-records bullet above) — the
+  conservative reading of "it never frees a workspace" when the workspace
+  cannot even be named.
+
+  **A reservation covers its path and everything beneath it.** A delegation
+  whose cwd is inside a reserved path, equals it, or contains it is refused:
+  two tasks writing to `<w>` and `<w>/src` are writing to one tree, and a task
+  at the project root would contain every worktree under it. Today
+  `reservedBy` matches one exact canonical key
+  (`src/reservation.ts:79-81`), which is enough because a mode's worktree
+  provider hands each task a sibling `<dir>/<slug>` and nothing nests; **target
+  and bead `atc-vuu`**: the prefix comparison, in `reservedBy`, so row 14's
+  arbitrary-path workspaces cannot reach the case unguarded.
+
+  Two things follow for the writer of a record. `record.cwd` must be
+  **absolute**: the map is keyed by a canonical path, and a relative cwd would
+  be resolved against whichever process happened to read it. And a delegation
+  is judged writable by the same rule its record will be reserved by, so
+  `delegate` reads the role's own profile, not the request's. **Target**: all
+  of `delegate`'s side of this (row 7) — the refusal itself, naming the holder
+  and its status as `git_mutate` names them; the `unknown` refusal; and the
+  containment comparison. `resume` of a task in `launching`, `running`,
+  `stalled`, `orphaned`, or `cancelling` is already refused, with `refused
+  resume of task <id>: status <status> is active` (`src/guard.ts:102-115`).
 - **The git lock.** Every lead git mutation runs while
   `.cross-agent/locks/git.lock` is held: `git_mutate` takes it around the
   command and the journal append and releases it in `finally`
@@ -811,9 +844,20 @@ it says what it decides.
   `git.lock` taken inside it (`src/gitmutate.ts:132-150`), and `delegate` holds
   `spawn.lock` around validate-and-spawn. **The order is always `spawn.lock`
   then `git.lock`**, in both callers, because two orders are a deadlock.
-  **Target**: `delegate`'s half of it (row 7). A read-only spawn during a git
-  mutation is allowed and is not a defect: it reads a tree mid-change, which is
-  what a reviewer reading a moving branch would see anyway.
+
+  A lock lost mid-call is answered differently by the two, because they own
+  different things. `git_mutate`'s command has already run, so it reports
+  `lockLost` and returns (section 4). `delegate` has a window in which nothing
+  yet exists: if `claim.lost` is set **before** the `launching` record is
+  written, the launch is refused and nothing is spawned — the reservation check
+  it passed was only true while the lock held it true, and a spawn on a
+  workspace another delegate may have taken meanwhile is exactly what the lock
+  exists to prevent. Once the `launching` record exists the reservation is a
+  fact in the ledger rather than a claim on a lock, `runner-<id>.lock` governs
+  from there, and `delegate` returns normally however `spawn.lock` ends.
+  **Target**: `delegate` (row 7). A read-only spawn during a git mutation is
+  allowed and is not a defect: it reads a tree mid-change, which is what a
+  reviewer reading a moving branch would see anyway.
 
 The process model is Linux-only in these mechanisms: `/proc/<pid>/stat` for
 identities and the group scan, `/proc/*/environ` for the stranded-engine scan,
@@ -874,17 +918,15 @@ section is the contract they must meet.
   `finalMessage(events, resultFileText)` then runs exactly as today
   (`src/engines/types.ts:41`).
 
-`SpawnRequest.sandbox` becomes `{mode, profile}`, where `profile` is the
-engine's own name for the profile and `mode` is `sandboxProfiles[profile]`.
-`mode !== "off"` drives the fail-closed check (today `src/engines/spawn.ts:60`
-tests the profile string itself), and `mode !== "read-only"` drives the
-worktree reservation (section 2; today `src/reservation.ts:24` holds the same
-map's read-only half as profile names), so neither the pipeline nor the
-reservation rule has to know any engine's vocabulary. `SpawnRequest` also
-gains `scratchDir` (= `path.dirname(logPath)`), which is where `leadMount`
-writes its files and
-where T7 writes Claude's role-prompt file — never inside the specialist's own
-worktree.
+`SpawnRequest.sandbox` is `{mode, profile}`, where `profile` is the engine's
+own name for the profile and `mode` is `sandboxProfiles[profile]`
+(`src/engines/types.ts:32-33`, `:68`). `mode !== "off"` drives the fail-closed
+check (`src/engines/spawn.ts:62`) and `mode !== "read-only"` drives the worktree
+reservation (`src/reservation.ts:52-53`, section 2), so neither the pipeline nor
+the reservation rule has to know any engine's vocabulary. `SpawnRequest` also
+carries `scratchDir`, the task's own directory (`src/engines/types.ts:42`),
+which is where `leadMount` writes its files and where T7 writes Claude's
+role-prompt file — never inside the specialist's own worktree.
 
 **A role's profile must be a key of its engine's map, checked at config
 load.** Today nothing checks the pair: `src/config.ts:7` accepts five profiles
@@ -1031,7 +1073,7 @@ started by that child is a real, reachable server, and what makes that safe is
 the specialist row it resolves to by ancestry (section 5), not an exclusion
 flag.
 
-**Child env** (`src/guard.ts:144-161`) is a **blocklist**, not an allowlist.
+**Child env** (`src/guard.ts:129-146`) is a **blocklist**, not an allowlist.
 It copies the parent environment and removes: the exact names `CLAUDECODE`,
 `CLAUDE_PID`, `CLAUDE_EFFORT`; anything starting with `CLAUDE_CODE_`,
 `CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when
@@ -1067,8 +1109,9 @@ The worktree half of this section is built: `verify_worktree` and
 `src/worktree.ts` from T2, and `gitMutate` from T6 (`src/gitmutate.ts`) with
 the reservation, both locks and the journal. What is left is the wiring and
 the root half — registering the two tools on a mode's worktree provider
-(row 8), `git_root` and `run_command` (row 11), and the `cross-agent git` CLI
-(row 13).
+(row 8; `verify_worktree` itself is registered today, ungated,
+`src/server.ts:137-152`), `git_root` and `run_command` (row 11), and the
+`cross-agent git` CLI (row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
@@ -1119,9 +1162,9 @@ two different branches. It
    gitDir verify_worktree returned> --work-tree=<the workTree it returned>
    <args>`, so the pointer file is never consulted and the paths are never
    re-derived from the slug (`src/gitmutate.ts:86`, `:197-209`). It is
-   `execFile` with an argv array, never a shell (`src/gitmutate.ts:88`), with
-   `cwd` the verified work tree and the **allowlisted** git environment of the
-   paragraph below (`src/gitmutate.ts:85`). Output is capped at 16 MB
+   `execFile` with an argv array, never a shell, with `cwd` the verified work
+   tree (`src/gitmutate.ts:88`) and the **allowlisted** git environment of the
+   paragraph below (`:85`). Output is capped at 16 MB
    (`src/gitmutate.ts:55`): exceeding the cap kills the child, which for a
    mutation is worse than a truncated log;
 4. appends the step to the task journal (section 7) with the SHAs around it —
@@ -1139,8 +1182,18 @@ lockLost?, journal}` or `{ok: false, reason, exitCode?, stdout?, stderr?}`
 (`src/gitmutate.ts:30-38`); `journal` is the entry as written, so the lead
 never re-reads the file to learn what it just recorded. A refusal before the
 command carries a reason and nothing else. A non-zero git exit returns the
-exit code and both streams and journals nothing (`src/gitmutate.ts:210-216`):
-the mutation did not happen, so there is no step. A journal write that fails
+exit code and both streams and journals nothing (`src/gitmutate.ts:210-216`),
+and so does a `GitRunError` — but **that is not a claim that nothing
+happened**. A `commit` refused by a failing post-commit hook has written the
+commit; a `rebase` that stops on a conflict leaves the worktree mid-rebase and
+`REBASE_HEAD` on disk; a `merge` stopped on conflicts leaves an index full of
+them; a command killed by the 16 MB cap was killed at whatever point it had
+reached. The step is not journaled because `git_mutate` cannot say which of
+those it was, and a journal of steps that may not have happened is worse than
+a gap. So a non-zero exit is a **reconciliation trigger**: the lead reads the
+exit code and the streams, and reconciles the worktree by section 7's rules —
+`git status --porcelain`, `git worktree list`, the rebase state, the journal —
+before it does anything else with that slug. A journal write that fails
 **after** a successful command returns `ok: false` saying the command ran and
 its step could not be written (`src/gitmutate.ts:230-238`) — `ok: true` would
 tell the lead its journal is current when it is not, and the result type has no
@@ -1215,8 +1268,11 @@ arbitrary repository. Every path argument must resolve under the project root
 or its `.worktrees/`, and every branch argument must match the mode's
 `branchPattern` or be the default branch. The result is `{exitCode, stdout,
 stderr, before, after}`, where `before` and `after` are the default branch's
-SHA around the call, and the step is journaled like a `git_mutate` step. The
-whitelist is the whole security argument for handing an engine any root git
+SHA around the call, and each verb appends its own named step under the same
+lock — section 7's table says which, and `merge --ff-only` is the one that also
+writes the journal's two merge fields, from `before` and from `rev-parse
+<branch>` taken in that same locked call. The whitelist is the whole security
+argument for handing an engine any root git
 access at all, so it is a fixed list in code, never config.
 
 **`run_command`.** `run_command({which: "test" | "setup", where: "root" | <a
@@ -1348,11 +1404,11 @@ What is a target here and what is not: the `mode` field, the refusal of
 `lead.role` under an engine-placed mode (P9: no per-run isolation, "The lead
 model", item 4) all arrive with the tasks that need them. `project`, `roles`'
 engine/model/effort, `engines`, all five limits and `billing` are validated
-today — `limits.lockWaitSeconds` included (`src/config.ts:24`, `:37`, `:117`),
-and every lock acquisition in product code reads it, through the caller's
-argument or through `lockWaitSeconds(projectRoot)` (`src/config.ts:129-135`,
-section 2). The shipped loader
-still carries the role's directory kind as `cwd` (`src/config.ts:16`, `:96`);
+today — `limits.lockWaitSeconds` included (`src/config.ts:27`, `:40`, `:127`),
+and every lock acquisition but the runner's own claim reads it, through the
+caller's argument or through `lockWaitSeconds(projectRoot)`
+(`src/config.ts:139-144`, section 2). The shipped loader
+still carries the role's directory kind as `cwd` (`src/config.ts:19`, `:99`);
 the Work plan says what happens to it in the meantime.
 
 ### 7. The skills
@@ -1388,11 +1444,35 @@ on its behalf.
   `merged`, `tests-passed`, `worktree-removed`, `branch-deleted` — plus `git`,
   which is any other `git_mutate` call and records the arguments it ran instead
   of a name (`src/journal.ts:9-11`). Today `git_mutate` writes exactly one of
-  them, `git` (`src/gitmutate.ts:223`); the seven named steps arrive with the
-  lead loop that performs them (rows 7 and 11), and `git_root` writes the same
-  journal. Three functions: `appendStep(root, slug, step, data)` reads,
-  appends, and writes through the ledger's own atomic write — a temporary file
-  and a rename — so a reader sees the whole previous document or the whole new
+  them, `git` (`src/gitmutate.ts:223`).
+
+  **Each named step is written by the tool that performs it**, in the same
+  locked call, so nothing has to remember to journal afterwards and no separate
+  journal verb exists for the lead to forget or misuse:
+
+  | step | written by |
+  | --- | --- |
+  | `worktree-created` | `git_root worktree add -b <branch> <dir> <base>` |
+  | `committed` | `git_mutate` whose `args[0]` is `commit` |
+  | `rebased` | `git_mutate` whose `args[0]` is `rebase` |
+  | `merged` | `git_root merge --ff-only <branch>` |
+  | `tests-passed` | `run_command {which: "test", where: "root"}` succeeding after the merge |
+  | `worktree-removed` | `git_root worktree remove <dir>` |
+  | `branch-deleted` | `git_root branch -d <branch>` |
+  | `git` | any other `git_mutate` call, with its `args` |
+
+  The `merged` step is the one that carries the document's two merge fields,
+  and `git_root` takes both values **inside the same `git.lock` it holds for
+  the merge**: `defaultShaBeforeMerge` is the default branch's `before` SHA,
+  the one `git_root` already reads to report `before`, and `branchHead` is
+  `rev-parse <branch>` on the branch it is about to merge. Taken anywhere else
+  they would be a different repository's state. **Target**: `git_root` (row 11)
+  and the lead loop that calls it (rows 7 and 9); of this table only the `git`
+  row is built.
+
+  Three functions: `appendStep(root, slug, step, data)` reads, appends, and
+  writes through the ledger's own atomic write — a temporary file and a
+  rename — so a reader sees the whole previous document or the whole new
   one (`src/journal.ts:118`, `:156-157`, `src/ledger.ts:199`); `readJournal`
   returns null when the task has none and **throws, naming the file**, when the
   document is damaged (`src/journal.ts:74`, `:90-92`), because an append that
@@ -1412,8 +1492,9 @@ on its behalf.
   recorded against (`src/journal.ts:121-124`). `defaultShaBeforeMerge` and
   `branchHead` are the **merge**'s to write, and only the merge's: an
   `appendStep` reads them from its data only when its step is `merged`, and a
-  second `merged` step for one slug is refused — `a merged step is already
-  recorded; a task merges once` — so a task merges once and the pair is written
+  second `merged` step for one slug is refused — `journal <slug>: a merged step
+  is already recorded; a task merges once` — so a task merges once and the pair
+  is written
   once (`src/journal.ts:129-138`). Every other step records the default
   branch's SHA it observed in **its own** step, as `steps[].defaultSha` beside
   `before` and `after` (`src/journal.ts:18-19`, `:144`), and never touches the
@@ -1437,8 +1518,11 @@ on its behalf.
   belongs with (`src/gitmutate.ts:157-169`): two first calls on one slug read
   outside the lock would both find no journal and both commit, on two different
   branches.
-- Reconciliation at the start of every task and after any interruption:
-  `list_tasks`, the journal, `git worktree list`, `git branch --list 'task/*'`,
+- Reconciliation at the start of every task, after any interruption, and after
+  any `git_mutate` or `git_root` call that came back `ok: false` with an exit
+  code — that call may have changed the repository without journaling a step
+  (section 4): `list_tasks`, the journal, `git worktree list`, `git branch
+  --list 'task/*'`,
   `git status --porcelain --untracked-files=normal`, and `git rebase` state.
   Rules: an interrupted rebase is aborted; a merged branch with a surviving
   worktree continues at the cleanup gate; a branch-only leftover is deleted
@@ -1760,13 +1844,15 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   mutation behind a SIGKILLed holder completes well inside the five-second wait
   (`:533`); `spawn.lock` is held for the whole call with `git.lock` inside it
   (`:303`). `limits.lockWaitSeconds` is read where a config is loadable and
-  answers with the default where none is (`tests/config.test.ts:161`).
+  answers with the default where none is (`tests/config.test.ts:191`).
   Reservation: a writable task holds its cwd until it settles, every profile
   but the read-only ones reserves, an unreadable launch spec holds the
   workspace anyway, paths compare canonically, and a removed workspace is still
-  reserved (`tests/reservation.test.ts:63`, `:82`, `:98`, `:116`, `:135`,
-  `:150`). `git_mutate` refuses: a workspace an unsettled writable task is
-  holding (`tests/gitmutate.test.ts:189`), every workspace while a record
+  reserved (`tests/reservation.test.ts:64`, `:83`, `:114`, `:132`, `:151`,
+  `:166`), and a sandbox this build cannot read as a `{mode, profile}` pair
+  keeps it too (`:101`). `git_mutate` refuses: a workspace an unsettled
+  writable task is holding (`tests/gitmutate.test.ts:189`), every workspace
+  while a record
   cannot be read (`:208`), a worktree the verifier rejects — the main worktree,
   a subdirectory, the wrong branch, a missing path, a pointer redirected at a
   sibling — with the verifier's own reason (`:225`), an argument list that is
