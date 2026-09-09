@@ -598,10 +598,26 @@ test("a descendant holding the engine's stdout delays settlement by the drain an
     assert.equal(failed.exitCode, 2);
     assert.match(failed.reason!, /fake failure; output truncated/,
       "an operator reading the failure is told the evidence may be incomplete");
+    assert.equal(failed.truncated, true, "and the record carries it as a field, not only as prose");
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
     // Group cleanup still precedes the terminal write, so the descendant that held the
     // pipe open is dead by the time the record settles.
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally { await h.cleanup(); }
+});
+
+test("a task that succeeds with truncated output is done, and says so", async () => {
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, DESCENDANT_INHERIT: "1" } });
+    const done = await poll(h.read, terminal, 8000);
+    assert.equal(done.status, "done", "a drained tail is not a failure: the engine finished");
+    assert.equal(done.truncated, true);
+    assert.equal(done.exitCode, 0);
+    assert.equal(done.reason, undefined, "nothing failed, so nothing is explained away");
+    assert.equal(fs.readFileSync(done.resultPath, "utf8"), "DONE finish T5");
+    await poll(() => child.closed, Boolean);
     assert.deepEqual(ownedProcesses(h.root), []);
   } finally { await h.cleanup(); }
 });

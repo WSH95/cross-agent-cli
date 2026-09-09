@@ -126,6 +126,9 @@ async function run(projectRoot: string, id: string): Promise<void> {
         exitCode: outcome?.exitCode ?? null, sessionId: outcome?.sessionId ?? null,
         resultPath: record.resultPath, logPath: record.logPath,
         lastEventAt: outcome?.lastEventAt ?? handle?.lastEventAt ?? null,
+        // Whether the evidence is complete belongs on every settled record, not only in
+        // the prose of a failure: a done task can be missing the tail of its log too.
+        truncated: outcome?.truncated ?? false,
         ...identities,
       };
       let completedDuringCancel = false;

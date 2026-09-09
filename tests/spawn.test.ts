@@ -474,6 +474,48 @@ test("completion waits for close and drained output after exit", async (t) => {
   assert.equal(readFileSync(request.logPath, "utf8"), raw + "stderr last diagnostic");
 });
 
+test("the final flush is evidence, not a reason to signal a child that has gone", async (t) => {
+  const { launch } = task(t);
+  const engine = controlled();
+  const kills: (NodeJS.Signals | undefined)[] = [];
+  const kill = engine.child.kill.bind(engine.child);
+  engine.child.kill = ((signal?: NodeJS.Signals) => { kills.push(signal); return kill(signal); }) as typeof engine.child.kill;
+  const adapter: EngineAdapter = {
+    ...generic,
+    parseLine(line) {
+      if (line === "tail") throw new Error("cannot parse the tail");
+      return generic.parseLine(line);
+    },
+  };
+  const handle = launch(adapter, {}, { spawn: engine.spawn, drainMs: 50 });
+  engine.child.stdout.write("tail");
+  engine.child.emit("exit", 0, null);
+  const result = await handle.result;
+
+  assert.equal(result.truncated, true);
+  assert.ok(result.events.some((event) => event.kind === "error" && event.text.includes("cannot parse the tail")),
+    "a final line without a terminator is still evidence");
+  assert.deepEqual(kills, [], "the child had already exited: settlement signals nothing");
+});
+
+test("an error after the result cannot change the result the caller holds", async (t) => {
+  const { launch } = task(t);
+  const engine = controlled();
+  const handle = launch(generic, {}, { spawn: engine.spawn });
+  engine.child.stdout.write('{"type":"result","text":"done"}\n');
+  await engine.close();
+  const result = await handle.result;
+  const events = [...result.events];
+
+  // The listeners stay attached, so a late error is still handled rather than thrown at
+  // the process; it simply has nowhere to go, because the answer has been given.
+  engine.child.emit("error", new Error("late process failure"));
+  engine.child.stdout.emit("error", new Error("late stdout failure"));
+  await delay(20);
+  assert.deepEqual(result.events, events);
+  assert.equal(result.ok, true);
+});
+
 test("finalMessage receives engine-written result text before replacement", async (t) => {
   const { launch, request } = task(t);
   let finalized = 0;

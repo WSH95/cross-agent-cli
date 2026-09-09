@@ -69,6 +69,8 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   let pid: number | undefined;
   let log: number | undefined;
   let settled = false;
+  let accepting = true;
+  let resolved = false;
   let stopping = false;
   let truncated = false;
   let drain: ReturnType<typeof setTimeout> | undefined;
@@ -77,6 +79,9 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   function failure(source: string, error: unknown): string {
     const text = `${adapter.name} ${source}: ${error instanceof Error ? error.message : String(error)}`;
+    // The caller already holds the result: a late error cannot change what it holds. The
+    // listeners stay attached, so it is still handled rather than thrown at the process.
+    if (resolved) return text;
     events.push({ kind: "error", text });
     // A broken pipe or lost evidence trail cannot leave a child running indefinitely.
     if (child && !settled && !stopping) {
@@ -96,7 +101,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   function record(raw: Buffer, stderr: boolean) {
     // The result has been built and the log closed: this arrived too late to be evidence.
-    if (settled) return;
+    if (!accepting) return;
     if (log !== undefined) {
       try {
         appendFileSync(log, stderr ? Buffer.concat([Buffer.from("stderr "), raw]) : raw);
@@ -128,12 +133,15 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   function complete(exitCode: number | null, signal: NodeJS.Signals | null) {
     if (settled) return;
+    // Settled first, so nothing here can be entered twice and nothing here reads as a
+    // child still worth signalling. The buffers are then flushed while record still
+    // accepts data, because a final line without a terminator is evidence, not a tail to
+    // drop; everything after that flush is too late.
+    settled = true;
     clearTimeout(drain);
-    // Flushed while record still accepts data, so a final line without a terminator is
-    // evidence rather than a dropped tail. Nothing after this point is.
     stdout.flush();
     stderr.flush();
-    settled = true;
+    accepting = false;
     closeLog();
     child = undefined;
 
@@ -158,6 +166,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
       ok: exitCode === 0 && signal === null && !events.some((event) => event.kind === "error"),
       exitCode, signal, sessionId, events, finalMessage, lastEventAt, truncated,
     });
+    resolved = true;
   }
 
   try {
