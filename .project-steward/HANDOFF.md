@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T10:52:11Z
+updated_at: 2026-09-09T11:29:06Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,20 +25,19 @@ this session: `.29`–`.32`. SDD ledger:
 
 ## In flight
 
-The Opus review of Task 3 (`atc-s96.6`): `limits.lockWaitSeconds`,
-`src/reservation.ts`, `src/journal.ts`, `src/gitmutate.ts` on the verified
-git-dir under `git.lock` — six commits 58b90cf..69f3eac, 224 tests. Two
-rulings from its report are in the reviewer's constraints: an `off`
-sandbox reserves (it can write anywhere); `defaultShaBeforeMerge` is
-written once. Task 2c (design amendment) is complete after two rounds
-(faf3a8a, 17a635c, 2395d57). Beads filed by Task 3: `.33`, `.34`, `.35`.
+The Opus re-review of Task 3's fix round (608c89a..53e5e45: `off` reserves;
+write-once `defaultShaBeforeMerge` and journal `branch`; `lockWaitSeconds`
+threaded through every `ledger.update` caller; a git environment allowlist
+for `git_mutate` and `verify_worktree`; `spawn.lock` → `git.lock` around
+`git_mutate`; `lockLost` reported; no throws at the lead — 235 tests;
+beads `.34`/`.35` closed). Task 3d: the `docs/design.md` sweep for T6
+(docs only, in parallel).
 
 ## Next steps
 
-1. Close Task 3's review (fix round if needed); close `.6`.
-2. In parallel: Task 3d (design sweep for T6, docs only — brief at
-   `.superpowers/sdd/.../task-3d-brief.md`) and Task 5 (`.22`, engine
-   contract v2 — brief at `.../task-5-brief.md`).
+1. Close Task 3 (`.6`) on a clean re-review; review Task 3d.
+2. Task 5 (`.22`, engine contract v2 — brief at
+   `.superpowers/sdd/.../task-5-brief.md`).
 3. Adapters `.7/.8/.9`, T10/T11 (`.10/.11`), modes (`.23`), T12, T13,
    engine placement (`.24`, Claude and Codex leads).
 
