@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T12:30:59Z
+updated_at: 2026-09-09T12:47:54Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,24 +25,19 @@ session (`.34`, `.35` closed). SDD ledger:
 
 ## In flight
 
-Task 5's fix round (one construction site `sandboxFor(engine, profile)`;
-the pipeline and reservation re-derive the mode; the erased import cycle
-reversed; small doc items) after an approved Opus review. The Sonnet
-re-review of Task 3d's docs round (eb21b5e: a failed mutation is a
-reconciliation trigger; 38 citations refreshed, `atc-n85` closed; four T10
-rulings written into §2/§4/§7). Bead `atc-2q4` (§3 stale after Task 5 +
-a `tools/check-citations.mjs` run by `npm test`) is the next docs task.
+Task 7 (`.7`, claimed): the Claude adapter — `plan`/`parseLine`/`finalMessage`
+on the contract Task 5 landed (`.22` closed at cfaf2b0, 269 tests). Task 5d
+(`atc-2q4`, claimed): `tools/check-citations.mjs` under `npm test`, the §3
+sweep for the engine contract, three leftovers from the 3d re-review. Both
+on disjoint files.
 
 ## Next steps
 
-1. Close Task 5 (`.22`) and Task 3d on clean reviews.
-2. T7 Claude adapter (`.7`), T8 Codex (`.8`), T9 Grok (`.9`) — briefs under
-   `.superpowers/sdd/.../task-{7,8,9}-brief.md`, confirmed against the
-   landed contract; the adapters remove the throwing stubs.
-3. T10/T11 (`.10/.11` — the bead carries the ancestry, env, lock-order,
-   reservation and journal rulings), modes (`.23`), T12, T13, engine
-   placement (`.24`, Claude and Codex leads). New beads this session:
-   `atc-n85`, `atc-vuu`, `atc-7bj`.
+1. Review T7 and 5d; then T8 (`.8`) and T9 (`.9`) — briefs confirmed
+   against the landed contract.
+2. T10 (`.10`) in two halves — 10a authority resolution and server plumbing,
+   10b the delegation tools (briefs under `.superpowers/sdd/.../`); T11
+   (`.11`); modes (`.23`); T12; T13; engine placement (`.24`).
 
 ## Blockers
 
