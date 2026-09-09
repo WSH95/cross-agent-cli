@@ -37,3 +37,4 @@ Set up Project Steward in this repository.
 2026-09-09T10:52:11Z — claude [auto-checkpoint] Task 2c complete (design current: faf3a8a, 17a635c, 2395d57); Task 3 landed (58b90cf..69f3eac; 224 tests), review in flight; beads .33–.35.
 2026-09-09T11:29:06Z — claude [auto-checkpoint] Task 3 fix round landed (608c89a..53e5e45; 235 tests; .34/.35 closed); re-review and Task 3d design sweep in flight.
 2026-09-09T11:50:09Z — claude [auto-checkpoint] T6 closed (ffbb84d; 237 tests); Task 5 (engine contract) and Task 3d (design sweep) in flight.
+2026-09-09T12:20:49Z — claude [auto-checkpoint] Task 3d sweep landed (7607f69, ee17f96); Task 5 engine contract landed (734e1e9..193b511; 264 tests); reviews in flight; beads atc-n85/atc-vuu/atc-7bj.

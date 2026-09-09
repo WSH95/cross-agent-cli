@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T11:50:09Z
+updated_at: 2026-09-09T12:20:49Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,20 +25,26 @@ session (`.34`, `.35` closed). SDD ledger:
 
 ## In flight
 
-Task 5 (`.22`, claimed): engine contract v2 — adapter-owned
-`sandboxProfiles`/`denyArgs`/`exclusionArgs`/`leadMount`/`finish`, the
-built-in adapter table with the three engines' static parts, profile
-validation at config load, `{mode, profile}` and `scratchDir` on the spawn
-request. Task 3d: the `docs/design.md` sweep for T6 (docs only, in
-parallel).
+The Opus review of Task 5 (`.22`, claimed): engine contract v2 landed in
+734e1e9..193b511 (264 tests) — adapter-owned profiles/deny/exclusion/
+`leadMount`/`finish`, `src/engines/{registry,binaries,claude,codex,grok}.ts`
+with the three engines' static parts, profile validation at config load,
+`{mode, profile}` + `scratchDir` + `lead?` on the spawn request, the
+pipeline's `finish` hook and `plan.files`. Task 3d's docs round (a false
+justification sentence, the `atc-n85` citation refresh, six minors, four
+T10 rulings written into §2/§4/§7). Task 3d's sweep itself landed
+(7607f69, ee17f96; design 1905 lines).
 
 ## Next steps
 
-1. Review Task 5 and Task 3d; close `.22`.
-2. Adapters T7/T8/T9 (`.7/.8/.9` — beads carry the probe facts; briefs
-   under `.superpowers/sdd/.../`), then T10/T11 (`.10/.11` — beads carry
-   the ancestry, env and lock-order notes), modes (`.23`), T12, T13, engine
-   placement (`.24`, Claude and Codex leads).
+1. Close Task 5 (`.22`) and Task 3d on clean reviews.
+2. T7 Claude adapter (`.7`), T8 Codex (`.8`), T9 Grok (`.9`) — briefs under
+   `.superpowers/sdd/.../task-{7,8,9}-brief.md`, confirmed against the
+   landed contract; the adapters remove the throwing stubs.
+3. T10/T11 (`.10/.11` — the bead carries the ancestry, env, lock-order,
+   reservation and journal rulings), modes (`.23`), T12, T13, engine
+   placement (`.24`, Claude and Codex leads). New beads this session:
+   `atc-n85`, `atc-vuu`, `atc-7bj`.
 
 ## Blockers
 
