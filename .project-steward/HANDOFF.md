@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T09:52:38Z
+updated_at: 2026-09-09T10:04:34Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -10,38 +10,36 @@ branch: task/cross-agent
 ## Now
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
-9f85269). Landed: rename; `docs/design.md` as the authority; README;
-`AGENTS.md` by approved diff (Decision 0006); Task 2a (locks, conditional
-`update`, runner ownership) and Task 2b (`src/reconcile.ts` on the group
-scan, stranded-engine adoption by `CROSS_AGENT_TASK`, spawn drain with
-`truncated`, record validation and `scan().invalid`) — 176 tests at 71b2450;
-Task 4's probes (397763c, 649b8e5): P8 adopts `streaming-messages-json` for
-Grok; P9 Claude mounts cleanly, Codex needs a third `-c`
-(`default_tools_approval_mode`), Grok cannot be isolated per run; P10
-`codex exec resume` keeps neither cwd nor sandbox (`-c sandbox_mode=`
-restores it). Ruling: Grok is not an engine-placed lead. Beads: S1 closed;
-S2 `.20` and S4 `.21` claimed; bugs `.29`, `.30`. SDD ledger:
+9f85269). Landed and reviewed: rename; `docs/design.md` as the authority,
+amended by Task 2c (faf3a8a) with the lifecycle rulings, the P8–P10
+outcomes, and the ruling that Grok is not an engine-placed lead; README;
+`AGENTS.md` by approved diff (Decision 0006); the whole lifecycle core —
+S2 (`atc-s96.20`, closed): locks, async conditional `update` with the
+transition table, runner ownership and cancel semantics, `bootId`,
+`src/reconcile.ts` (group scan, single-write adoption, see-vs-signal rule,
+per-record boundary), spawn drain with `truncated`, record validation —
+199 tests at e426f35; probes P8/P9/P10 (S4 `.21`, closed). Beads filed
+this session: `.29`–`.32`. SDD ledger:
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
 (main checkout).
 
 ## In flight
 
-2b fix round 2 (one regression from round 1: the self-exclusion must apply
-to signalling, never to seeing — a reconciler inside an engine's session
-was writing `failed: launch` over that live engine; plus a `killStrays`
-rethrow). Task 2c: `docs/design.md` amendment with the §2 rulings, the
-P8–P10 outcomes, and the ruling that Grok is not an engine-placed lead.
-Task 4 is complete (bead `.21` closed; 397763c, 649b8e5, f40cadb).
+Task 3 (`atc-s96.6`, claimed): `limits.lockWaitSeconds`, reservation
+(`src/reservation.ts`), `git_mutate` on the verified git-dir under
+`git.lock` (`src/gitmutate.ts`), the journal (`src/journal.ts`). The Opus
+review of Task 2c's design amendment.
 
 ## Next steps
 
-1. 2b round-2 re-review; close `.20`. Review Task 2c.
-2. Task 3 (`atc-s96.6`): reservation, `git.lock`, `git_mutate` on the
-   verified git-dir, journal, `lockWaitSeconds` — brief confirmed.
-3. Engine contract (`.22`; adapters' `sandboxProfiles`, `leadMount` with
-   Codex's three `-c` keys, `finish`), adapters (`.7/.8/.9` — beads carry
-   the probe facts), T10/T11, modes (`.23`), T12, T13, engine placement
-   (`.24`, Claude and Codex leads only).
+1. Task 3 review; close `.6`. Close the 2c review (fix round if needed).
+2. Task 5 (`.22`): engine contract v2 — brief at
+   `.superpowers/sdd/.../task-5-brief.md` (adapter files with their static
+   parts, profile validation at config load, `finish` and `plan.files` in
+   the pipeline).
+3. Adapters `.7/.8/.9` (beads carry the probe facts), T10/T11 (`.10/.11`
+   — beads carry the ancestry and env notes), modes (`.23`), T12, T13,
+   engine placement (`.24`, Claude and Codex leads).
 
 ## Blockers
 
