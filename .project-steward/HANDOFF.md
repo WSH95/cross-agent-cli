@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T11:29:06Z
+updated_at: 2026-09-09T11:50:09Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -10,36 +10,35 @@ branch: task/cross-agent
 ## Now
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
-9f85269). Landed and reviewed: rename; `docs/design.md` as the authority,
-amended by Task 2c (faf3a8a) with the lifecycle rulings, the P8–P10
-outcomes, and the ruling that Grok is not an engine-placed lead; README;
-`AGENTS.md` by approved diff (Decision 0006); the whole lifecycle core —
-S2 (`atc-s96.20`, closed): locks, async conditional `update` with the
-transition table, runner ownership and cancel semantics, `bootId`,
-`src/reconcile.ts` (group scan, single-write adoption, see-vs-signal rule,
-per-record boundary), spawn drain with `truncated`, record validation —
-199 tests at e426f35; probes P8/P9/P10 (S4 `.21`, closed). Beads filed
-this session: `.29`–`.32`. SDD ledger:
+9f85269). Landed and reviewed: rename; `docs/design.md` as the authority
+(amended through Task 2c); README; `AGENTS.md` by approved diff (Decision
+0006); the lifecycle core (S2 `.20`, closed; 199 tests); probes P8–P10
+(S4 `.21`, closed); T6 (`.6`, closed at ffbb84d, 237 tests): reservation
+(every profile but read-only/strict reserves; invalid records block),
+`git_mutate` (verified git-dir only, `spawn.lock` → `git.lock`, a git
+environment allowlist, never throws at the lead), the journal (per-step
+`defaultSha`; the `merged` step sets the revert target once),
+`lockWaitSeconds` through every lock. Beads `.29`–`.35` filed this
+session (`.34`, `.35` closed). SDD ledger:
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
 (main checkout).
 
 ## In flight
 
-The Opus re-review of Task 3's fix round (608c89a..53e5e45: `off` reserves;
-write-once `defaultShaBeforeMerge` and journal `branch`; `lockWaitSeconds`
-threaded through every `ledger.update` caller; a git environment allowlist
-for `git_mutate` and `verify_worktree`; `spawn.lock` → `git.lock` around
-`git_mutate`; `lockLost` reported; no throws at the lead — 235 tests;
-beads `.34`/`.35` closed). Task 3d: the `docs/design.md` sweep for T6
-(docs only, in parallel).
+Task 5 (`.22`, claimed): engine contract v2 — adapter-owned
+`sandboxProfiles`/`denyArgs`/`exclusionArgs`/`leadMount`/`finish`, the
+built-in adapter table with the three engines' static parts, profile
+validation at config load, `{mode, profile}` and `scratchDir` on the spawn
+request. Task 3d: the `docs/design.md` sweep for T6 (docs only, in
+parallel).
 
 ## Next steps
 
-1. Close Task 3 (`.6`) on a clean re-review; review Task 3d.
-2. Task 5 (`.22`, engine contract v2 — brief at
-   `.superpowers/sdd/.../task-5-brief.md`).
-3. Adapters `.7/.8/.9`, T10/T11 (`.10/.11`), modes (`.23`), T12, T13,
-   engine placement (`.24`, Claude and Codex leads).
+1. Review Task 5 and Task 3d; close `.22`.
+2. Adapters T7/T8/T9 (`.7/.8/.9` — beads carry the probe facts; briefs
+   under `.superpowers/sdd/.../`), then T10/T11 (`.10/.11` — beads carry
+   the ancestry, env and lock-order notes), modes (`.23`), T12, T13, engine
+   placement (`.24`, Claude and Codex leads).
 
 ## Blockers
 
