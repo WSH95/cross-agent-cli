@@ -3,7 +3,8 @@
 What each engine CLI was observed to do when spawned the way the adapters
 will spawn it (design section 3). Every entry names the command (from
 `tools/probe.mjs`), the date, and the outcome. Versions: Claude Code
-2.1.263, Codex 0.153.4, Grok Build 1.0.13, Node 24.11.0, Ubuntu with
+2.1.263 for P1-P7 and 2.1.266 for P8-P10, Codex 0.153.4, Grok Build 1.0.13
+(build 5e9a58528b76), Node 24.11.0, Ubuntu with
 bubblewrap installed; `socat` was absent for P1's first run and installed on
 2026-09-07 for its rerun, and the `bwrap` AppArmor profile is still pending.
 
@@ -136,6 +137,260 @@ In a throwaway repository with a linked worktree `.worktrees/g` on
 - A second `flock -n` on the same lock file is refused while the first
   holder lives.
 
+## P8: Grok `--output-format streaming-json` (2026-09-09)
+
+`node tools/probe.mjs --engine grok --cwd <probe worktree> --sandbox read-only
+--output-format streaming-json --prompt "Read the file package.json in your
+working directory, then reply with the value of its \"name\" field and nothing
+else."`, which spawns `grok -p <prompt> --cwd <worktree> --sandbox read-only
+--permission-mode bypassPermissions --output-format streaming-json --session-id
+<uuid>` plus one `--deny` per deny-list entry. The harness gained
+`--output-format` for this run; the probe worktree was a fresh linked
+worktree of `~/.cache/agent-team/probe-repo`, removed afterwards.
+
+- One JSON object per line: 57 event lines, exit 0 in 11.7 s, nothing on
+  stderr. The types in order were `available_commands` ×2, `thought` ×22,
+  `available_commands`, `usage`, `tool_call`, `tool_call_update` ×2, `thought`
+  ×22, `text` ×3, `available_commands`, `usage`, `end`.
+- **The session id is on the last line only.** `end` carries `sessionId`; no
+  earlier line carries one, and the first line is `available_commands` (the
+  child's whole tool list). The id equals the `--session-id` uuid the harness
+  passed, so an adapter that supplies the uuid knows it before the run and does
+  not need to read it back — but it cannot emit a `session` event from the
+  first native event, the way design section 3 describes.
+- Activity lines: a tool call is one `tool_call` with `status:"pending"` and
+  the tool's `rawInput`, then `tool_call_update` lines carrying its output and
+  a terminal `status:"completed"`. Text arrives as `{"type":"text","data":…}`
+  token deltas and reasoning as `{"type":"thought","data":…}` deltas.
+- **The final line carries no message text.** `end` has `stopReason`,
+  `sessionId`, `requestId`, `usage`, `num_turns`, `total_cost_usd` and
+  `modelUsage` — there is no `text` field, unlike `--output-format json`. A
+  `finalMessage` for this format has to concatenate the `text` deltas and
+  ignore the `thought` ones.
+- Resume with the same format works: `-r b6388f11-…` and `--output-format
+  streaming-json` returned the earlier answer from context, exit 0 in 8.7 s.
+  The resumed run's first line is again `available_commands`, and its `end`
+  line carries the **same** session id, so resume neither renames nor
+  re-announces the session.
+- Forced failure, `--model no-such-model`: **exit 1** in 5.4 s, one stdout line
+  `{"type":"error","message":"Couldn't set model 'no-such-model': Invalid
+  params: \"unknown model id\". Run 'grok models' to see available models."}`
+  and the same sentence on stderr as `Error: …`. No `end` line, so an adapter
+  must treat a missing `end` as failure rather than waiting for one.
+
+`--output-format streaming-messages-json`, same prompt (exit 0, 11.8 s), is
+NDJSON in the Anthropic Messages API wire format: five lines, opening with
+`{"type":"system","subtype":"init"}` carrying `session_id`, `cwd`, `model`,
+`permissionMode` and `tools`, then whole `assistant` and `user` (tool result)
+messages rather than token deltas, and closing with
+`{"type":"result","subtype":"success",…,"result":"probe-repo"}`. That is
+line-for-line the shape Claude Code's `stream-json` emits (see the samples
+below), and it honours `--session-id` as well.
+
+Three real lines from the `streaming-json` run, shortened:
+
+```
+{"type":"available_commands","tools":["run_terminal_command","read_file","search_replace","list_dir","grep","kill_command_or_subagent","todo_write","get_command_or_subagent_output","spawn_subagent","scheduler_create","…"]}
+{"type":"tool_call","toolCallId":"call-1adf9901-7d80-4a6b-a4b8-b924a34403cf-0","title":"read_file","kind":"read","status":"pending","toolName":"read_file","rawInput":{"target_file":"package.json","limit":50},"content":[],"locations":[]}
+{"type":"end","stopReason":"end_turn","sessionId":"b6388f11-4276-4036-8988-8aea5a48ddac","requestId":"13be70e7-9fce-46fd-a102-ec0de99aad61","usage":{"input_tokens":18967,"cache_read_input_tokens":19072,"output_tokens":75,"reasoning_tokens":65,"total_tokens":38114},"num_turns":2,"total_cost_usd":0.0081464,"modelUsage":{"grok-4.6-build":{…}}}
+```
+
+Adopted format for T9: **`--output-format streaming-messages-json`**, because
+it carries the session id on its first line and the final message in its last
+line's `result`, in the same line shapes the Claude adapter already parses,
+where `streaming-json` carries the session id only in its last line and has no
+final-message field at all; `streaming-json` stays the fallback, and both fix
+the `json` mode's silence that would leave `lastEventAt` null for a whole run.
+
+## P9: per-engine lead mount and instruction delivery (2026-09-09)
+
+Each engine was spawned in the same fresh probe worktree with the current
+`src/server.ts` (`list_roles`, `verify_worktree`) as its only intended MCP
+server, a role file whose one instruction is "Begin every reply with the word
+ROLE-OK, on its own line, before anything else", and this prompt: list every
+MCP tool available, verbatim, then call `list_roles` and paste the result. The
+worktree held the default `.cross-agent/config.json` (four roles), so a
+`list_roles` result that names planner, plan-reviewer, implementer and
+code-reviewer also proves the server resolved **the child's** project root.
+Claude ran with `--sandbox off` (P1: the `bwrap` AppArmor profile is still
+pending), Codex and Grok with their read-only profiles.
+
+| Engine | mount mechanism | child's MCP tools | user's own servers visible? | instruction delivery | instruction honoured? |
+|---|---|---|---|---|---|
+| Claude | `--strict-mcp-config --mcp-config <file>` | `mcp__cross-agent__list_roles`, `mcp__cross-agent__verify_worktree`; init line reports `mcp_servers: [{"name":"cross-agent","status":"connected"}]` | no — exactly one server | `--append-system-prompt-file <role.md>` | yes, every assistant message begins `ROLE-OK` |
+| Claude, control | `--strict-mcp-config`, no config (today's specialist spawn) | none; `mcp_servers: []` | no | `--append-system-prompt-file` | yes |
+| Claude, inheritance | `--mcp-config <file>` with `--strict-mcp-config` **omitted** | the file's server **plus** five of the user's own | yes: `plugin:context7:context7`, `claude-design`, and three `claude.ai` connectors `needs-auth` | `--append-system-prompt-file` | yes |
+| Codex | `--ignore-user-config -c mcp_servers.cross-agent.command="node" -c mcp_servers.cross-agent.args=["<repo>/src/server.ts"] -c mcp_servers.cross-agent.default_tools_approval_mode="approve"` | `mcp__cross_agent__list_roles`, `mcp__cross_agent__verify_worktree` (hyphen folded to `_` in the tool name) **plus** Codex's built-in `codex_apps`, 38 tools in all | the user's own, no; `codex_apps`, always | role text prepended to the prompt, and separately `-c model_instructions_file=<role.md>` | yes for both |
+| Codex, control | `--ignore-user-config` alone | 36 tools, every one `mcp__codex_apps__…` | no | `-c model_instructions_file=<role.md>` only | yes |
+| Grok, user scope | `grok mcp add cross-agent --scope user -- node <repo>/src/server.ts`, then the ordinary spawn | `cross-agent__list_roles`, `cross-agent__verify_worktree`, reached through the built-in `use_tool` dispatcher | **yes** — `probe-other__*` (a second registration added to prove the point) and `context7__*` (a Grok plugin, not in `grok mcp list`) came too | `--rules "<role text>"` | yes for the final message; the interstitial narration does not carry it |
+| Grok, project scope | `grok mcp add cross-agent --scope project` (writes `<cwd>/.grok/config.toml`) | **none of them**; only the plugin's `context7__*` | yes | `--rules` | yes |
+
+- **Claude.** `--append-system-prompt-file <file>` is accepted by the binary
+  and the instruction is obeyed, which settles the open question in design
+  section 3: `claude --help` on 2.1.266 documents only `--append-system-prompt
+  <prompt>` and mentions the `[-file]` form inside another flag's description,
+  but the flag the harness has been emitting (`tools/probe.mjs:54`) works.
+  The mount is clean and exclusive: with `--strict-mcp-config`,
+  `mcp_servers` is exactly
+  `[{"name":"cross-agent","status":"connected"}]` and the only `mcp__` tools
+  are this server's two; dropping `--strict-mcp-config` in an otherwise
+  identical run pulled in five of the operator's own servers, so the flag —
+  not the config file — is what makes the mount exclusive. Exit 0 in 16.3 s,
+  24.1 s and 24.8 s. One wrinkle for the lead loop: the child received both
+  tools as **deferred** tools and had to load `list_roles` through
+  `ToolSearch` before calling it; it did so unprompted.
+- **Codex.** The `-c mcp_servers…` mount works, but on the first run the call
+  failed with `{"error":{"message":"MCP tool call requires approval, but
+  approval policy is never"}}` while the tool was plainly visible. `codex exec`
+  runs with approval policy `never`, and an MCP tool call needs approval unless
+  the server says otherwise, so the mount needs a third setting: `-c
+  mcp_servers.cross-agent.default_tools_approval_mode="approve"` (the field
+  name is `McpServerConfig.default_tools_approval_mode`, whose
+  `AppToolApproval` values in the 0.153.4 binary are `prompt`, `writes` and
+  `approve`). With it
+  the call returned the four roles. `--ignore-user-config` removes the user's
+  servers but never `codex_apps` (P5, reconfirmed: 36 of them). `-c
+  model_instructions_file=<file>` is accepted and obeyed with **no** role text
+  in the prompt, so a Codex lead has a real instruction path and does not have
+  to spend prompt space on the loop; whether that file replaces or appends to
+  Codex's own model instructions was not probed. Exit 0 in 37.0 s, 53.4 s and
+  40.2 s.
+- **Grok.** There is no per-run mount. Registered at user scope, the server was
+  visible and callable, and so was everything else the operator has: `grok
+  inspect` in the probe worktree listed four servers from four sources —
+  `config` (this server and the deliberate second one), `plugin: context7`, and
+  **`~/.claude.json [claude]`**, so Grok reads the operator's *Claude*
+  MCP configuration as well as its own. Registered at project scope instead —
+  `<cwd>/.grok/config.toml`, which would have been a per-project mount that
+  never touches the operator's file — the server was **not started**: `grok mcp
+  doctor` reports "folder untrusted (repo-local (project-scoped) server not
+  started for an untrusted folder) → re-run with `--trust`", and no `--trust`
+  flag exists on `grok`, `grok mcp add` or `grok mcp doctor` in 1.0.13, so a
+  headless Grok run cannot trust a folder. (That doctor listing also
+  miscounts: it credits `~/.grok/config.toml` with the one server that is
+  actually in the project file.) `--rules` takes a **string**, not a path:
+  given the role file's path it put the path into the system prompt as
+  literal text and the agent read the file with its own `read_file` tool
+  before answering — which only worked because the file was inside a readable
+  sandbox. Registration and removal: `grok mcp add cross-agent --scope user --
+  node <repo>/src/server.ts` writes `[mcp_servers.cross-agent]` into
+  `~/.grok/config.toml`; `grok mcp remove cross-agent` removed it, and `grok
+  mcp list` afterwards reports "No MCP servers configured". Exit 0 in 48.1 s,
+  12.2 s, 16.8 s and 40.6 s.
+- The harness's `CROSS_AGENT_LINEAGE` was fixed for these runs: it emitted
+  `probe/<uuid>:<engine>:<cwd>`, which `parseLineage` (`src/guard.ts:51-71`)
+  rejects, and now emits the JSON array `[{"taskId":"probe-<uuid>","role":
+  "probe-<engine>","cwd":"<cwd>"}]`, verified by feeding the value a child
+  actually received back through `parseLineage`. Probe children now see the
+  shape real children will see.
+
+Consequence for engine placement. A Claude lead can be mounted exactly:
+`--strict-mcp-config --mcp-config <file>` gives it this server and nothing
+else, and `--append-system-prompt-file` delivers the loop, so `leadMount` for
+Claude is settled as design section 3 describes it. A Codex lead can be
+mounted exactly too, but its `leadMount` needs a third `-c` —
+`default_tools_approval_mode="approve"` — without which the lead sees the
+tools and is refused every call, and its loop can go through
+`-c model_instructions_file=<file>` instead of the prompt.
+A Grok lead cannot be isolated at all: the only mount that works is the
+operator's own user-scope configuration, which also hands the lead every other
+server the operator has, from `~/.grok/config.toml`, from Grok plugins, and
+from `~/.claude.json` — so `leadMount` for Grok returns `inherited: true`, the
+launcher has to register and unregister the server around the run, and the
+design's answer to a child reaching an inherited server (the specialist row it
+resolves to by ancestry, section 5) is doing all of the work.
+
+## P10: `codex exec resume` keeps the thread, not the workspace (2026-09-09)
+
+A thread was started in the probe worktree with `codex exec --json -o <out> -C
+<worktree> --sandbox workspace-write --ignore-user-config --skip-git-repo-check
+-m gpt-6-astra` (thread `01a0855f-287a-7f32-85ab-0d336bd260a3`), then resumed
+with `codex exec resume <thread id> --json -o <out> --ignore-user-config
+--skip-git-repo-check -m gpt-6-astra` — the flag set the subcommand accepts,
+since it takes neither `-C` nor `--sandbox` (the harness appended both until
+this probe; `tools/probe.mjs:63-68` now omits them on resume). Every turn ran
+the same
+three commands and reported their exit codes: `pwd`; append to a file
+**inside** the worktree; append to a file in the probe repository **root**,
+outside it.
+
+| Variant | process cwd | extra flags | `pwd` | write inside worktree | write outside worktree | exit |
+|---|---|---|---|---|---|---|
+| start (`exec … -C <worktree> --sandbox workspace-write`) | worktree | — | worktree | OK | denied, "Read-only file system" | 0, 28.5 s |
+| resume, as launched | worktree | — | worktree | **denied**, "Read-only file system" | denied | 0, 31.0 s |
+| resume | worktree | `-c sandbox_mode="workspace-write"` | worktree | OK | denied | 0, 27.5 s |
+| resume | **repo root** | `-c sandbox_mode="workspace-write"` | **repo root** | OK | **OK — the write landed** | 0, 28.5 s |
+| resume | **repo root** | `-c cwd="<worktree>"` and `-c sandbox_mode="workspace-write"` | **repo root** | OK | **OK — the write landed** | 0, 24.4 s |
+
+- **The resumed thread does not keep the original run's cwd.** It uses the
+  cwd of the `codex exec resume` process, and the workspace-write sandbox's
+  writable root follows that cwd: resumed one directory up, the child wrote a
+  file into the probe repository root that the original turn had been refused.
+  Verified on disk afterwards, not only from the transcript.
+- **`-c cwd=<dir>` is not honoured.** With it set to the worktree and the
+  process still in the repository root, `pwd` printed the repository root and
+  the outside write still succeeded. The process's own cwd is the only lever.
+- **The resumed thread does not keep the original run's sandbox either**, and
+  the default is the safe direction: the workspace-write thread came back
+  read-only, so the in-worktree write that had succeeded was refused.
+  `-c sandbox_mode="workspace-write"` restores it exactly — inside allowed,
+  outside denied.
+- Every variant exited 0, the failed writes included: a denied write is a
+  non-zero *command* inside a turn that still completes.
+
+Consequence for T8: a Codex resume must be spawned with the process cwd set to
+the role's workspace **and** `-c sandbox_mode=<the role's profile>`
+re-supplied, because resuming from the wrong directory silently moves the
+writable root rather than failing. The two facts together mean
+`SpawnRequest.sandbox` has to be re-applied on resume by the adapter, not
+assumed from the thread.
+
+## CLI flag facts (`--help`, 2026-09-09)
+
+Read from `--help` on this machine, with the CLI version, rather than from
+memory. These are the flags that design section 3's spawn lines depend on and
+that no earlier probe exercised; P8, P9 and P10 above are the runs that used
+them.
+
+- **Grok Build 1.0.13** (`grok --help`). `--output-format <OUTPUT_FORMAT>`,
+  "Output format for headless mode", possible values `plain`, `json`,
+  `streaming-json: NDJSON: one ACP session update per line, the agent's native
+  format`, `streaming-messages-json: NDJSON in the Anthropic Messages API wire
+  format`; default `plain`. `--reasoning-effort <EFFORT>`, "Reasoning effort
+  for reasoning models", `[aliases: --effort]`. `--rules <RULES>`, "Extra rules
+  to append to the system prompt" — a string, as P9 confirmed.
+  `--system-prompt-override <PROMPT>`, "Override the agent's system prompt
+  (compat alias: `--system-prompt`)". `--include-partial-messages` "Only
+  affects `--output-format streaming-messages-json`". There is no per-run MCP
+  flag: `grok mcp` is a subcommand (`list`, `add`, `remove`, `enable`,
+  `disable`, `doctor`), and `grok mcp add` writes to `~/.grok/config.toml`
+  (`--scope user`, the default) or `./.grok/config.toml` (`--scope project`).
+- **Claude Code 2.1.266** (`claude --help`). `--mcp-config <configs...>`, "Load
+  MCP servers from JSON files or strings (space-separated)";
+  `--strict-mcp-config`, "Only use MCP servers from `--mcp-config`, ignoring
+  all other MCP configurations"; `--append-system-prompt <prompt>`, "Append a
+  system prompt to the default system prompt". The `-file` spelling has no
+  entry of its own — it appears only inside another flag's description, as
+  "`--system-prompt[-file]`, `--append-system-prompt[-file]`" — but
+  `--append-system-prompt-file <path>` is accepted and honoured by the binary
+  (P9).
+- **Codex 0.153.4** (`codex exec --help`, `codex exec resume --help`). `codex
+  exec` takes `-c/--config <key=value>`, `-m/--model`, `-C/--cd <DIR>`,
+  `-s/--sandbox <SANDBOX_MODE>`, `--add-dir`, `--json`,
+  `-o/--output-last-message`, `--ignore-user-config`, `--ignore-rules`,
+  `--skip-git-repo-check`, `--ephemeral`, `--strict-config`,
+  `--enable`/`--disable`, `-i/--image`,
+  `--output-schema`, `--thread-source`, `--oss`, `--local-provider`,
+  `-p/--profile`, `--approve-for-me`, `--color`, and the two `--dangerously-*`
+  flags — **no system-prompt flag of any kind**, which is why instructions
+  reach a Codex child through the prompt or through `-c
+  model_instructions_file=<file>` (P9). `codex exec resume [SESSION_ID]
+  [PROMPT]` takes `-c`, `--last`, `--all`, `--enable`, `--disable`, `-i`,
+  `--strict-config`, `-m`, `--thread-source`, `--skip-git-repo-check`,
+  `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`,
+  `--json`, `-o`, and the two `--dangerously-*` flags — **neither `-C` nor
+  `--sandbox`** (P10).
+
 ## Native output samples (2026-09-07)
 
 Real lines from the probe logs above, shortened. The adapters and the fake
@@ -172,9 +427,8 @@ ends the run. The final message is also written to the `-o` file.
 
 Not line-delimited: one pretty-printed JSON object spanning many lines,
 printed at the end, with `text` (the final message) and `sessionId` (the
-resume id). An adapter parses the whole stdout once the process exits;
-`--output-format streaming-json` would give line events instead (not
-probed).
+resume id). An adapter parses the whole stdout once the process exits; the two
+streaming formats give line events instead, and P8 records both.
 
 ```
 {
