@@ -22,21 +22,33 @@ each engine CLI was observed to do.
 Shipped:
 
 - `src/server.ts`: the stdio JSON-RPC (MCP) server and its tool registry.
-- `src/config.ts`: `.cross-agent/config.json` loading and validation.
-- `src/ledger.ts` (task records), `src/process.ts` (process identities,
-  groups, orphan cleanup), `src/worktree.ts` (linked-worktree verification),
+- `src/config.ts`: `.cross-agent/config.json` loading and validation (a
+  role's sandbox profile must belong to its engine).
+- `src/ledger.ts` (task records; async conditional `update` under the
+  record lock), `src/locks.ts` (OS-held `flock` on a pipe), `src/process.ts`
+  (identities, groups, the environ scan, orphan cleanup), `src/reconcile.ts`
+  (reconciliation on the group scan), `src/worktree.ts` (linked-worktree
+  verification), `src/reservation.ts` (workspace reservation),
+  `src/gitmutate.ts` (`git_mutate` on the verified git-dir under
+  `spawn.lock` → `git.lock`), `src/journal.ts` (the per-task git journal),
   `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,
-  lineage, duplicates, deny lists): one file per concern, as in the design.
-- `src/engines/types.ts` (the adapter contract) and `src/engines/spawn.ts`
-  (the spawn pipeline); `tests/fixtures/fake-engine.mjs` stands in for a CLI.
-- `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`.
+  lineage, duplicates, deny targets, child env): one file per concern, as
+  in the design.
+- `src/engines/types.ts` (the adapter contract), `src/engines/spawn.ts`
+  (the pipeline), `src/engines/registry.ts` (the built-in table,
+  `sandboxFor`), `src/engines/binaries.ts`, `src/engines/claude.ts` (the
+  Claude adapter), `src/engines/codex.ts` and `src/engines/grok.ts` (static
+  parts; the Codex and Grok adapters are in progress);
+  `tests/fixtures/fake-engine.mjs` stands in for a CLI.
+- `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;
+  `tests/citations.test.ts` runs `tools/check-citations.mjs`, which fails
+  `npm test` when a doc cites a line past a file's end.
 - `tools/probe.mjs`: a standalone harness for observing a real engine CLI.
   Not product code.
 - `docs/design.md`, `docs/probes.md`.
 
-Planned, in the design's work plan: `src/locks.ts`, `src/reconcile.ts`,
-`src/gitmutate.ts`, `src/cli.ts`; one adapter per engine under
-`src/engines/`; `skills/cross-agent/SKILL.md` (the launcher skill) and
+Planned, in the design's work plan: `src/cli.ts`; the delegation tools;
+`skills/cross-agent/SKILL.md` (the launcher skill) and
 `modes/<name>/{mode.json, SKILL.md, roles/*.md}` (the built-in modes).
 
 ## Conventions

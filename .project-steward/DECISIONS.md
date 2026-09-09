@@ -92,3 +92,20 @@ per engine in config). Managed blocks untouched; `CLAUDE.md` unchanged.
 
 Consequences: Instruction files match the design; the Layout's "planned"
 list is updated as tasks land.
+
+## 0007 — 2026-09-09 — AGENTS.md Layout follows the shipped files (user-approved diff)
+
+Context: Since Decision 0006 the branch shipped `src/locks.ts`,
+`src/reconcile.ts`, `src/reservation.ts`, `src/gitmutate.ts`,
+`src/journal.ts`, the engine registry and adapters, and the citation
+checker; the Layout still listed several as planned.
+
+Decision: The user approved the diff at
+`.superpowers/sdd/the-original-intent-of-rustling-hummingbird/agents-md-proposed-2.diff`
+on 2026-09-09: the Shipped list names every file now present with its concern,
+the citation checker is described under tests, and Planned keeps
+`src/cli.ts`, the delegation tools, the launcher skill and the modes.
+Managed blocks untouched; `CLAUDE.md` unchanged.
+
+Consequences: Instruction files match the tree; the Planned list shrinks
+as T8–T13 land.
