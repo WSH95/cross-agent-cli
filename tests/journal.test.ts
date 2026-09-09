@@ -48,6 +48,17 @@ test("a first step that names no branch is refused rather than invented", (t) =>
   assert.equal(journal.defaultBranch, "trunk");
 });
 
+test("the branch a journal was created on is write-once", (t) => {
+  const root = project(t);
+  appendStep(root, "iota", "worktree-created", { at: 1, branch: "task/iota", defaultBranch: "main" });
+  // A journal belongs to one branch: a later step naming another would silently rewrite
+  // what every earlier step's SHAs were recorded against.
+  const journal = appendStep(root, "iota", "committed", { at: 2, branch: "task/elsewhere" });
+  assert.equal(journal.branch, "task/iota");
+  assert.equal(readJournal(root, "iota")!.branch, "task/iota");
+  assert.equal(journal.steps.length, 2);
+});
+
 test("steps accumulate in the order they were appended, with only the fields they carry", (t) => {
   const root = project(t);
   appendStep(root, "beta", "worktree-created", { at: 1, branch: "task/beta", defaultBranch: "main" });
@@ -82,7 +93,13 @@ test("the merge SHAs and the branch head are journal fields, kept until they are
   const later = appendStep(root, "gamma", "tests-passed", { at: 3 });
   assert.equal(later.defaultShaBeforeMerge, "d".repeat(40), "the revert target survives the next step");
   assert.equal(later.branchHead, "e".repeat(40));
-  assert.equal(appendStep(root, "gamma", "committed", { at: 4, branchHead: "f".repeat(40) }).branchHead, "f".repeat(40));
+  // Write-once: the SHA the default branch had before the merge is what a revert of a bad
+  // merge is aimed at, so a later step offering another value does not move it.
+  const overwritten = appendStep(root, "gamma", "git", { at: 4, defaultShaBeforeMerge: "0".repeat(40) });
+  assert.equal(overwritten.defaultShaBeforeMerge, "d".repeat(40));
+  assert.equal(readJournal(root, "gamma")!.defaultShaBeforeMerge, "d".repeat(40));
+  // The branch head is the opposite: it moves with the branch.
+  assert.equal(appendStep(root, "gamma", "committed", { at: 5, branchHead: "f".repeat(40) }).branchHead, "f".repeat(40));
   assert.deepEqual(Object.keys(readJournal(root, "gamma")!), ["slug", "branch", "defaultBranch", "defaultShaBeforeMerge", "branchHead", "steps"]);
 });
 

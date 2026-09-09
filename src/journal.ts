@@ -108,12 +108,17 @@ export function listJournals(projectRoot: string): string[] {
 export function appendStep(projectRoot: string, slug: string, step: JournalStep, data: StepData = {}): Journal {
   const file = journalFile(projectRoot, slug);
   const existing = readJournal(projectRoot, slug);
-  const branch = data.branch ?? existing?.branch;
+  // A journal belongs to one branch, and the SHA the default branch had before the merge
+  // is what a revert of a bad merge is aimed at: both are written once, by the step that
+  // creates them, and a later step offering another value does not move them. The branch
+  // head is the opposite — it moves with the branch — and the default branch's name
+  // follows the project's config.
+  const branch = existing?.branch ?? data.branch;
   const defaultBranch = data.defaultBranch ?? existing?.defaultBranch;
   if (branch === undefined || defaultBranch === undefined) {
     throw new Error(`journal ${slug}: the step that creates a journal must name its branch and defaultBranch`);
   }
-  const defaultShaBeforeMerge = data.defaultShaBeforeMerge ?? existing?.defaultShaBeforeMerge;
+  const defaultShaBeforeMerge = existing?.defaultShaBeforeMerge ?? data.defaultShaBeforeMerge;
   const branchHead = data.branchHead ?? existing?.branchHead;
   const entry: JournalEntry = {
     step,
