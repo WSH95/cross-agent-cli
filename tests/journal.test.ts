@@ -82,24 +82,33 @@ test("steps accumulate in the order they were appended, with only the fields the
   assert.deepEqual(readJournal(root, "beta")!.steps.map((entry) => entry.at), Array.from({ length: 54 }, (_, index) => index + 1));
 });
 
-test("the merge SHAs and the branch head are journal fields, kept until they are replaced", (t) => {
+test("the revert target and the branch head are set once, and only by the merge", (t) => {
   const root = project(t);
+  // The default branch moves under a task, so what a revert of a bad merge is aimed at is
+  // the SHA it had at the merge — not the one it had at the task's first commit. Every
+  // other step records what it saw in its own step and touches nothing else.
   appendStep(root, "gamma", "worktree-created", { at: 1, branch: "task/gamma", defaultBranch: "main" });
-  const merged = appendStep(root, "gamma", "merged", {
-    at: 2, defaultShaBeforeMerge: "d".repeat(40), branchHead: "e".repeat(40),
+  appendStep(root, "gamma", "git", { at: 2, defaultSha: "a".repeat(40) });
+  appendStep(root, "gamma", "committed", { at: 3, defaultSha: "b".repeat(40) });
+  const generic = appendStep(root, "gamma", "git", { at: 4, defaultShaBeforeMerge: "c".repeat(40), branchHead: "d".repeat(40) });
+  assert.equal(generic.defaultShaBeforeMerge, undefined, "a generic step cannot set the revert target");
+  assert.equal(generic.branchHead, undefined);
+  assert.deepEqual(generic.steps.map((entry) => entry.defaultSha), [undefined, "a".repeat(40), "b".repeat(40), undefined]);
+
+  const merged = appendStep(root, "gamma", "merged", { at: 5, defaultShaBeforeMerge: "e".repeat(40), branchHead: "f".repeat(40) });
+  assert.equal(merged.defaultShaBeforeMerge, "e".repeat(40));
+  assert.equal(merged.branchHead, "f".repeat(40));
+
+  const later = appendStep(root, "gamma", "tests-passed", {
+    at: 6, defaultShaBeforeMerge: "0".repeat(40), branchHead: "1".repeat(40), defaultSha: "2".repeat(40),
   });
-  assert.equal(merged.defaultShaBeforeMerge, "d".repeat(40));
-  assert.equal(merged.branchHead, "e".repeat(40));
-  const later = appendStep(root, "gamma", "tests-passed", { at: 3 });
-  assert.equal(later.defaultShaBeforeMerge, "d".repeat(40), "the revert target survives the next step");
-  assert.equal(later.branchHead, "e".repeat(40));
-  // Write-once: the SHA the default branch had before the merge is what a revert of a bad
-  // merge is aimed at, so a later step offering another value does not move it.
-  const overwritten = appendStep(root, "gamma", "git", { at: 4, defaultShaBeforeMerge: "0".repeat(40) });
-  assert.equal(overwritten.defaultShaBeforeMerge, "d".repeat(40));
-  assert.equal(readJournal(root, "gamma")!.defaultShaBeforeMerge, "d".repeat(40));
-  // The branch head is the opposite: it moves with the branch.
-  assert.equal(appendStep(root, "gamma", "committed", { at: 5, branchHead: "f".repeat(40) }).branchHead, "f".repeat(40));
+  assert.equal(later.defaultShaBeforeMerge, "e".repeat(40), "the revert target survives every later step");
+  assert.equal(later.branchHead, "f".repeat(40));
+  assert.equal(later.steps[later.steps.length - 1].defaultSha, "2".repeat(40));
+
+  // A task merges once, and a second merge would move the target of a revert of the first.
+  assert.throws(() => appendStep(root, "gamma", "merged", { at: 7, defaultShaBeforeMerge: "9".repeat(40) }), /merged/);
+  assert.deepEqual(readJournal(root, "gamma")!.steps.map((entry) => entry.at), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(Object.keys(readJournal(root, "gamma")!), ["slug", "branch", "defaultBranch", "defaultShaBeforeMerge", "branchHead", "steps"]);
 });
 

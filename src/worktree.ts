@@ -16,6 +16,8 @@ const exec = promisify(execFile);
 const passedVariables = [
   "PATH", "HOME", "USER", "LANG", "TZ", "TMPDIR",
   "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SSH_AUTH_SOCK", "GIT_TERMINAL_PROMPT",
+  // git's own documented fallbacks for who is committing and where its helpers live.
+  "EMAIL", "GIT_EXEC_PATH",
 ];
 const passedPrefixes = ["LC_", "GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_SSH"];
 

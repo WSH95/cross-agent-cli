@@ -39,7 +39,11 @@ export function gitLockName(): string {
   return "git.lock";
 }
 
-/** Serializes delegate's validate-and-spawn, so two hosts cannot both pass one check. */
+/**
+ * Serializes what may claim a workspace: `delegate`'s validate-and-spawn and the whole of
+ * `git_mutate`, so no two of them can both pass one reservation check. A caller that takes
+ * both project locks takes this one first and `git.lock` inside it.
+ */
 export function spawnLockName(): string {
   return "spawn.lock";
 }

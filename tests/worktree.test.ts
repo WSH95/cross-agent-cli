@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { verifyWorktree } from "../src/worktree.ts";
+import { gitEnvironment, verifyWorktree } from "../src/worktree.ts";
 import type { WorktreeResult } from "../src/worktree.ts";
 
 const exec = promisify(execFile);
@@ -121,6 +121,31 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
     refusal(await verifyWorktree(root, candidate, branch));
   });
 }
+
+test("gitEnvironment passes what git needs to run as this user, and nothing else", () => {
+  assert.deepEqual(gitEnvironment({
+    PATH: "/usr/bin", HOME: "/home/someone", USER: "someone", LANG: "en_GB.UTF-8", LC_ALL: "C",
+    TZ: "UTC", TMPDIR: "/tmp", XDG_CONFIG_HOME: "/home/someone/.config", XDG_CACHE_HOME: "/home/someone/.cache",
+    SSH_AUTH_SOCK: "/run/agent", GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -F /dev/null",
+    GIT_AUTHOR_NAME: "Someone", GIT_COMMITTER_EMAIL: "someone@example.invalid",
+    // git's documented ident fallback, and the path a relocated install needs to find its
+    // own helpers: both are about who and where git is, not about which repository.
+    EMAIL: "someone@example.invalid", GIT_EXEC_PATH: "/opt/git/libexec/git-core",
+    // Everything below points git at another repository, index, object store or config.
+    GIT_DIR: "/elsewhere/.git", GIT_WORK_TREE: "/elsewhere", GIT_INDEX_FILE: "/elsewhere/index",
+    GIT_OBJECT_DIRECTORY: "/elsewhere/objects", GIT_ALTERNATE_OBJECT_DIRECTORIES: "/elsewhere/alt",
+    GIT_NAMESPACE: "other", GIT_CEILING_DIRECTORIES: "/", GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath", GIT_CONFIG_VALUE_0: "/elsewhere/hooks", GIT_CONFIG_GLOBAL: "/elsewhere/config",
+    CROSS_AGENT_TASK: "the server's own task", UNRELATED: "whatever",
+  }), {
+    PATH: "/usr/bin", HOME: "/home/someone", USER: "someone", LANG: "en_GB.UTF-8", LC_ALL: "C",
+    TZ: "UTC", TMPDIR: "/tmp", XDG_CONFIG_HOME: "/home/someone/.config", XDG_CACHE_HOME: "/home/someone/.cache",
+    SSH_AUTH_SOCK: "/run/agent", GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: "ssh -F /dev/null",
+    GIT_AUTHOR_NAME: "Someone", GIT_COMMITTER_EMAIL: "someone@example.invalid",
+    EMAIL: "someone@example.invalid", GIT_EXEC_PATH: "/opt/git/libexec/git-core",
+  });
+  assert.deepEqual(gitEnvironment({}), {});
+});
 
 test("verifyWorktree ignores what the server's own environment says about a repository", async (t) => {
   const { root, add } = await repository(t);

@@ -15,6 +15,8 @@ export interface JournalEntry {
   at: number;
   before?: string;
   after?: string;
+  /** What the default branch pointed at when this step ran. */
+  defaultSha?: string;
   args?: string[];
 }
 
@@ -22,8 +24,13 @@ export interface Journal {
   slug: string;
   branch: string;
   defaultBranch: string;
-  /** What the default branch pointed at before the merge: the lead's revert target. */
+  /**
+   * What the default branch pointed at before the merge: the lead's revert target. The
+   * default branch moves under a task, so this is not what it pointed at when the task
+   * started — only the `merged` step knows it, and only that step writes it.
+   */
   defaultShaBeforeMerge?: string;
+  /** The task branch as it was merged; written by the `merged` step. */
   branchHead?: string;
   steps: JournalEntry[];
 }
@@ -33,10 +40,13 @@ export interface StepData {
   at?: number;
   before?: string;
   after?: string;
+  /** What the default branch pointed at when this step ran; every step may record it. */
+  defaultSha?: string;
   args?: string[];
   /** The journal's own fields. Both branches are required by the step that creates it. */
   branch?: string;
   defaultBranch?: string;
+  /** Read only from a `merged` step: the revert target and the head it merged. */
   defaultShaBeforeMerge?: string;
   branchHead?: string;
 }
@@ -108,23 +118,30 @@ export function listJournals(projectRoot: string): string[] {
 export function appendStep(projectRoot: string, slug: string, step: JournalStep, data: StepData = {}): Journal {
   const file = journalFile(projectRoot, slug);
   const existing = readJournal(projectRoot, slug);
-  // A journal belongs to one branch, and the SHA the default branch had before the merge
-  // is what a revert of a bad merge is aimed at: both are written once, by the step that
-  // creates them, and a later step offering another value does not move them. The branch
-  // head is the opposite — it moves with the branch — and the default branch's name
-  // follows the project's config.
+  // A journal belongs to one branch: every step's SHAs were recorded against it, so a
+  // later step naming another does not move it. The default branch's name follows the
+  // project's config.
   const branch = existing?.branch ?? data.branch;
   const defaultBranch = data.defaultBranch ?? existing?.defaultBranch;
   if (branch === undefined || defaultBranch === undefined) {
     throw new Error(`journal ${slug}: the step that creates a journal must name its branch and defaultBranch`);
   }
-  const defaultShaBeforeMerge = existing?.defaultShaBeforeMerge ?? data.defaultShaBeforeMerge;
-  const branchHead = data.branchHead ?? existing?.branchHead;
+  // The revert target is the SHA the default branch had **at the merge**, and the merge is
+  // the only step that knows it: the branch moves under a task, so a value recorded by the
+  // task's first commit would aim a revert at a point before other tasks' merges. Every
+  // other step records what it saw in its own step instead, and a task merges once.
+  const merging = step === "merged";
+  if (merging && (existing?.steps ?? []).some((entry) => entry.step === "merged")) {
+    throw new Error(`journal ${slug}: a merged step is already recorded; a task merges once`);
+  }
+  const defaultShaBeforeMerge = merging ? data.defaultShaBeforeMerge ?? existing?.defaultShaBeforeMerge : existing?.defaultShaBeforeMerge;
+  const branchHead = merging ? data.branchHead ?? existing?.branchHead : existing?.branchHead;
   const entry: JournalEntry = {
     step,
     at: data.at ?? Date.now(),
     ...(data.before === undefined ? {} : { before: data.before }),
     ...(data.after === undefined ? {} : { after: data.after }),
+    ...(data.defaultSha === undefined ? {} : { defaultSha: data.defaultSha }),
     ...(data.args === undefined ? {} : { args: [...data.args] }),
   };
   const journal: Journal = {

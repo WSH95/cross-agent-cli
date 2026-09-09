@@ -3,15 +3,13 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { lockWaitSeconds } from "./config.ts";
-import { read, readSpec, update } from "./ledger.ts";
+import { isTerminal, read, readSpec, update } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { findByEnvironment, groupAlive, identityOf, killGroup, terminateGroupByPid } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
 import type { EngineAdapter } from "./engines/types.ts";
-
-const terminal = (record: TaskRecord) => ["done", "failed", "cancelled"].includes(record.status);
 
 async function run(projectRoot: string, id: string): Promise<void> {
   const directory = path.join(projectRoot, ".cross-agent", "tasks");
@@ -46,7 +44,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
     } catch (error) {
       // A write that failed for another reason may still have lost to a settlement.
       const current = read(projectRoot, id);
-      if (terminal(current)) {
+      if (isTerminal(current.status)) {
         log(error);
         return { applied: false, record: current, reason: "terminal" };
       }
@@ -196,11 +194,11 @@ async function run(projectRoot: string, id: string): Promise<void> {
   process.on("SIGTERM", () => settle("cancel"));
   void (async () => {
     record = read(projectRoot, id);
-    if (terminal(record)) return settle("external");
+    if (isTerminal(record.status)) return settle("external");
     const { engine: engineName, adapterModule, ...request } = readSpec(projectRoot, id);
     const imported = await import(pathToFileURL(adapterModule).href);
     if (settling) return;
-    if (terminal(read(projectRoot, id))) return settle("external");
+    if (isTerminal(read(projectRoot, id).status)) return settle("external");
     const adapter = (imported.default ?? imported.adapter) as EngineAdapter;
     // The lock keeps two runners from owning this task at once, but not one after
     // another: a runner killed between its spawn and its acknowledgement leaves the

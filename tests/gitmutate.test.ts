@@ -171,14 +171,17 @@ test("a commit through git_mutate lands on the task branch and is journaled with
   assert.equal(await git(worktree, "status", "--porcelain"), "");
 
   const journal = readJournal(root, "alpha")!;
+  const main = await git(root, "rev-parse", "refs/heads/main");
   assert.equal(journal.slug, "alpha");
   assert.equal(journal.branch, "task/alpha");
   assert.equal(journal.defaultBranch, "main");
-  assert.equal(journal.branchHead, head);
-  assert.equal(journal.defaultShaBeforeMerge, await git(root, "rev-parse", "refs/heads/main"));
+  // Each step records what the default branch was when it ran. The journal's own revert
+  // target belongs to the merge, which happens at the root and long after these.
+  assert.equal(journal.defaultShaBeforeMerge, undefined);
+  assert.equal(journal.branchHead, undefined);
   assert.deepEqual(journal.steps, [
-    { step: "git", at: 100, before: initial, after: initial, args: ["add", "-A"] },
-    { step: "git", at: 200, before: initial, after: head, args: ["commit", "-m", "task work"] },
+    { step: "git", at: 100, before: initial, after: initial, defaultSha: main, args: ["add", "-A"] },
+    { step: "git", at: 200, before: initial, after: head, defaultSha: main, args: ["commit", "-m", "task work"] },
   ]);
   assert.deepEqual(committed.journal, journal.steps[1], "the result carries the step it appended");
 });
@@ -265,8 +268,8 @@ test("git_mutate runs in the worktree the verifier resolved, not the one the slu
 
   const journal = readJournal(root, "a")!;
   assert.equal(journal.branch, "task/b", "the journal records the branch that was verified");
-  assert.equal(journal.branchHead, result.after);
   assert.deepEqual(journal.steps.map((step) => step.after), [result.after]);
+  assert.deepEqual(journal.steps.map((step) => step.defaultSha), [await git(root, "rev-parse", "refs/heads/main")]);
 
   // A journal belongs to one branch, so the next call under this slug has to be on it.
   // The refusal comes before anything runs, not after the branch has moved.
@@ -275,6 +278,26 @@ test("git_mutate runs in the worktree the verifier resolved, not the one the slu
   assert.equal(await git(root, "rev-parse", "refs/heads/task/a"), beforeA, "and task/a still never moved");
   assert.deepEqual(readJournal(root, "a")!.steps.length, 1);
   accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "in b again"] }, { waitSeconds: 5, now: 9 }));
+});
+
+test("two first calls on one slug settle on one branch, and the other is refused", async (t) => {
+  const { root, add } = await repository(t);
+  const a = await add("a");
+  const b = await add("b");
+  // Neither has a journal yet, so the branch a slug belongs to is decided by whichever
+  // call takes spawn.lock first — and the other must find that decision, not race past it.
+  const results = await Promise.all([
+    gitMutate(root, { slug: "shared", path: a, branch: "task/a", args: ["commit", "--allow-empty", "-m", "in a"] }, { waitSeconds: 20, now: 1 }),
+    gitMutate(root, { slug: "shared", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "in b"] }, { waitSeconds: 20, now: 2 }),
+  ]);
+  assert.equal(results.filter((result) => result.ok).length, 1, JSON.stringify(results));
+
+  const journal = readJournal(root, "shared")!;
+  const refused = journal.branch === "task/a" ? "task/b" : "task/a";
+  assert.equal(refusal(results.find((result) => !result.ok)!), `slug shared is journaled on ${journal.branch}; refusing ${refused}`);
+  assert.equal(journal.steps.length, 1);
+  assert.equal(await git(root, "rev-list", "--count", journal.branch), "2");
+  assert.equal(await git(root, "rev-list", "--count", refused), "1", "and the refused branch never moved");
 });
 
 test("git_mutate holds spawn.lock for the whole call and takes git.lock inside it", async (t) => {
@@ -435,6 +458,15 @@ test("a lock lost while the command ran is reported, and the step is still journ
   assert.notEqual(result.after, initial, "the command had already run, so its step is journaled");
   assert.equal(result.after, await git(root, "rev-parse", "refs/heads/task/lost"));
   assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42]);
+
+  // spawn.lock is the one that keeps a delegate out of this workspace, so losing it is
+  // just as much a loss of exclusivity as losing git.lock.
+  const second = gitMutate(root, { slug: "lost", args: ["commit", "--allow-empty", "-m", "slow-marker again"] }, { waitSeconds: 5, now: 43 });
+  const claim = await poll(() => holderOf(lockPath(root, spawnLockName())), (pid) => pid !== null);
+  await poll(async () => (await recorder.argv()).filter((argument) => argument.includes("slow-marker")).length > 1, Boolean);
+  process.kill(claim!, "SIGKILL");
+  assert.equal(accepted(await second).lockLost, true);
+  assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42, 43]);
 });
 
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
@@ -468,7 +500,7 @@ test("a config, a lock, or a git that could not run is refused rather than throw
   assert.equal(readJournal(root, "refused"), null);
 });
 
-test("git_mutate waits on git.lock, and two calls serialize on it", async (t) => {
+test("a mutation waits for git.lock, and two of them take it one after the other", async (t) => {
   const { root, add } = await repository(t);
   await add("serial");
   const initial = await git(root, "rev-parse", "refs/heads/task/serial");

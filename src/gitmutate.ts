@@ -19,7 +19,10 @@ export interface GitMutateRequest {
 }
 
 export interface GitMutateOptions {
-  /** How long to wait for `git.lock`; `limits.lockWaitSeconds` of the loaded config. */
+  /**
+   * How long to wait for each of `spawn.lock` and `git.lock` before refusing;
+   * `limits.lockWaitSeconds` of the loaded config.
+   */
   waitSeconds: number;
   now?: number;
 }
@@ -27,7 +30,7 @@ export interface GitMutateOptions {
 export type GitMutateResult =
   | {
     ok: true; exitCode: 0; stdout: string; stderr: string; before?: string; after?: string;
-    /** `git.lock` was lost while the command ran: the mutation is done, its exclusivity is not. */
+    /** A lock was lost while the command ran: the mutation is done, its exclusivity is not. */
     lockLost?: true;
     journal: JournalEntry;
   }
@@ -117,20 +120,14 @@ export async function gitMutate(
   // The slug names the journal file, and the step this call appends has to be recordable
   // before the command runs: a slug that is not a file name of its own, or a journal that
   // cannot be read, would otherwise be found only once the mutation had happened.
-  let journalled: Journal | null;
   try {
-    journalled = readJournal(projectRoot, request.slug);
+    readJournal(projectRoot, request.slug);
   } catch (error) {
     return { ok: false, reason: message(error) };
   }
   const slug = request.slug;
   const branch = request.branch ?? `task/${slug}`;
   const target = path.resolve(projectRoot, request.path ?? path.join(".worktrees", slug));
-  // A journal belongs to one branch: every step's SHAs were recorded against it, so a call
-  // on another branch under the same slug is refused here, before anything has run.
-  if (journalled !== null && journalled.branch !== branch) {
-    return { ok: false, reason: `slug ${slug} is journaled on ${journalled.branch}; refusing ${branch}` };
-  }
 
   // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
   // around validate-and-spawn (T10), so holding it across this whole call is what keeps
@@ -146,7 +143,7 @@ export async function gitMutate(
     return { ok: false, reason: message(error) };
   }
   try {
-    return await mutate(projectRoot, request, options, { slug, branch, target });
+    return await mutate(projectRoot, request, options, { slug, branch, target, claim });
   } finally {
     await claim.release();
   }
@@ -155,8 +152,22 @@ export async function gitMutate(
 /** The four steps, with `spawn.lock` held for all of them. */
 async function mutate(
   projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,
-  { slug, branch, target }: { slug: string; branch: string; target: string },
+  { slug, branch, target, claim }: { slug: string; branch: string; target: string; claim: Lock },
 ): Promise<GitMutateResult> {
+  // A journal belongs to one branch: every step's SHAs were recorded against it, so a call
+  // on another branch under the same slug is refused before anything runs. The journal is
+  // read here, under the lock, because two first calls on one slug would otherwise both
+  // find no journal and both commit, on two different branches.
+  let journalled: Journal | null;
+  try {
+    journalled = readJournal(projectRoot, slug);
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
+  if (journalled !== null && journalled.branch !== branch) {
+    return { ok: false, reason: `slug ${slug} is journaled on ${journalled.branch}; refusing ${branch}` };
+  }
+
   // 1. A task that may write there owns it until it settles, and a record nobody can read
   // is a task whose workspace nobody can clear (design section 2, E2).
   const known = reservations(projectRoot);
@@ -194,7 +205,7 @@ async function mutate(
   }
   try {
     const before = await revision(gitDir, workTree, verified.branch);
-    const defaultShaBeforeMerge = await revision(gitDir, workTree, defaultBranch);
+    const defaultSha = await revision(gitDir, workTree, defaultBranch);
     const ran = await run(gitDir, workTree, request.args);
     if (ran.exitCode !== 0) {
       return {
@@ -212,10 +223,9 @@ async function mutate(
       journal = appendStep(projectRoot, slug, "git", {
         at: options.now ?? Date.now(), before, after, args: request.args,
         branch: verified.branch, defaultBranch,
-        // git_mutate mutates a worktree and never merges into the default branch, so the
-        // SHA it records is always one from before this journal's merge.
-        ...(defaultShaBeforeMerge === undefined ? {} : { defaultShaBeforeMerge }),
-        ...(after === undefined ? {} : { branchHead: after }),
+        // What the default branch was for this step, and nothing more: the journal's own
+        // revert target is the SHA it has at the merge, which the lead's merge step writes.
+        ...(defaultSha === undefined ? {} : { defaultSha }),
       });
     } catch (error) {
       // The mutation happened; only the record of it did not. Saying `ok` would tell the
@@ -230,10 +240,10 @@ async function mutate(
       ok: true, exitCode: 0, stdout: ran.stdout, stderr: ran.stderr,
       ...(before === undefined ? {} : { before }),
       ...(after === undefined ? {} : { after }),
-      // The command ran and is journaled, but if the kernel dropped this lock while it did,
-      // another mutation may already have started: the caller is told rather than left to
-      // believe the whole call was exclusive.
-      ...(lock.lost ? { lockLost: true as const } : {}),
+      // The command ran and is journaled, but if the kernel dropped either lock while it
+      // did, another mutation or a delegate may already have started: the caller is told
+      // rather than left to believe the whole call was exclusive.
+      ...(lock.lost || claim.lost ? { lockLost: true as const } : {}),
       journal: journal.steps[journal.steps.length - 1],
     };
   } catch (error) {
