@@ -123,23 +123,8 @@ export function denyTargets(config: CrossAgentConfig, repoRoot: string): string[
   ];
 }
 
-export function denyArgs(engine: EngineName, targets: readonly string[]): string[] {
-  switch (engine) {
-    case "claude": return ["--disallowedTools", ...targets.flatMap((target) => [`Bash(${target} *)`, `Bash(${target})`])];
-    case "grok": return targets.flatMap((target) => ["--deny", `Bash(${target} *)`]);
-    // Codex exec ignores rules files; its sandbox's network denial supplies this layer (probes P3/P3b).
-    case "codex": return [];
-  }
-}
-
-export function exclusionArgs(engine: EngineName): string[] {
-  switch (engine) {
-    case "claude": return ["--strict-mcp-config"];
-    case "codex": return ["--ignore-user-config"];
-    // Grok inherits MCP configuration; the depth guard restricts the inherited server.
-    case "grok": return [];
-  }
-}
+// The deny and exclusion argv each engine needs are its adapter's: `denyArgs(targets)`
+// and `exclusionArgs()` on `EngineAdapter` (design section 3).
 
 export function childEnv(
   parentEnv: Readonly<NodeJS.ProcessEnv>, depth: number, taskId: string,

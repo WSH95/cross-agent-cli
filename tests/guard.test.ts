@@ -5,7 +5,7 @@ import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord, TaskStatus } from "../src/ledger.ts";
 import {
   readDepth, toolsAtDepth, parseLineage, formatLineage, childLineage, lineageRefusal,
-  duplicateRefusal, resumeRefusal, denyTargets, denyArgs, exclusionArgs, childEnv,
+  duplicateRefusal, resumeRefusal, denyTargets, childEnv,
 } from "../src/guard.ts";
 
 const now = 1_000_000;
@@ -223,28 +223,8 @@ test("denyTargets includes configured binaries and both entrypoints", () => {
   assert.deepEqual(config, before);
 });
 
-test("denyArgs matches exact Claude, Grok, and Codex arrays", () => {
-  const targets = Object.freeze([
-    "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
-  ]);
-  assert.deepEqual(denyArgs("claude", targets), [
-    "--disallowedTools", "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
-    "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
-    "Bash(node /projects/team/src/server.ts *)", "Bash(node /projects/team/src/server.ts)",
-    "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)", "Bash(cross-agent *)", "Bash(cross-agent)",
-  ]);
-  assert.deepEqual(denyArgs("grok", targets), [
-    "--deny", "Bash(claude *)", "--deny", "Bash(codex *)", "--deny", "Bash(grok *)", "--deny", "Bash(/opt/custom codex *)",
-    "--deny", "Bash(node /projects/team/src/server.ts *)", "--deny", "Bash(node /projects/team/src/cli.ts *)", "--deny", "Bash(cross-agent *)",
-  ]);
-  assert.deepEqual(denyArgs("codex", targets), []);
-});
-
-test("exclusionArgs returns the probed flags for each engine", () => {
-  assert.deepEqual(exclusionArgs("claude"), ["--strict-mcp-config"]);
-  assert.deepEqual(exclusionArgs("codex"), ["--ignore-user-config"]);
-  assert.deepEqual(exclusionArgs("grok"), []);
-});
+// denyArgs and exclusionArgs are each adapter's own, and are tested there:
+// tests/engines/{claude,codex,grok}.test.ts.
 
 const retainedEnv = Object.freeze({
   PATH: "/usr/bin:/bin", HOME: "/home/test", XDG_CONFIG_HOME: "/home/test/.config", XDG_CACHE_HOME: "/home/test/.cache",
