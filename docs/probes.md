@@ -351,7 +351,7 @@ Claude is settled as design section 3 describes it. A Codex lead can be
 mounted exactly too, but its `leadMount` needs a third `-c` —
 `default_tools_approval_mode="approve"` — without which the lead sees the
 tools and is refused every call, and its loop can go through
-`-c model_instructions_file=<file>` instead of the prompt.
+`-c model_instructions_file="<file>"` instead of the prompt.
 A Grok lead cannot be isolated at all: the only mount that works is the
 operator's own user-scope configuration, which also hands the lead every other
 server the operator has, from `~/.grok/config.toml`, from Grok plugins, and
