@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T09:12:54Z
+updated_at: 2026-09-09T09:52:38Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -26,23 +26,22 @@ S2 `.20` and S4 `.21` claimed; bugs `.29`, `.30`. SDD ledger:
 
 ## In flight
 
-2b fix round 1 (19 items from the Opus task review and the Codex gpt-5.6-sol
-milestone review: single-write adoption on a new `launching → orphaned`
-edge, the conditional write as the decision point, no self-signalling,
-per-record error boundary, runner pre-spawn environ check, identity-failure
-group termination, environ scan bound stat→environ→stat, id bound to file
-name, Z/X dead, lock `lost`, `truncated` field) — commits d0993fc, b4eabed so
-far. Task 4's Opus review of the probe rows against the archived logs.
+2b fix round 2 (one regression from round 1: the self-exclusion must apply
+to signalling, never to seeing — a reconciler inside an engine's session
+was writing `failed: launch` over that live engine; plus a `killStrays`
+rethrow). Task 2c: `docs/design.md` amendment with the §2 rulings, the
+P8–P10 outcomes, and the ruling that Grok is not an engine-placed lead.
+Task 4 is complete (bead `.21` closed; 397763c, 649b8e5, f40cadb).
 
 ## Next steps
 
-1. 2b scoped re-review; Task 4 review verdict; close `.21`.
-2. Task 2c: `docs/design.md` amendment (§2 rulings, P8–P10 outcomes, Grok
-   not an engine lead) — brief at `.superpowers/sdd/.../task-2c-brief.md`.
-3. Task 3 (`atc-s96.6`): reservation, `git.lock`, `git_mutate`, journal,
-   `lockWaitSeconds` — brief confirmed against the landed signatures.
-4. Engine contract (`.22`), adapters (`.7/.8/.9` — beads annotated with the
-   probe facts), T10/T11, modes (`.23`), T12, T13, engine placement (`.24`).
+1. 2b round-2 re-review; close `.20`. Review Task 2c.
+2. Task 3 (`atc-s96.6`): reservation, `git.lock`, `git_mutate` on the
+   verified git-dir, journal, `lockWaitSeconds` — brief confirmed.
+3. Engine contract (`.22`; adapters' `sandboxProfiles`, `leadMount` with
+   Codex's three `-c` keys, `finish`), adapters (`.7/.8/.9` — beads carry
+   the probe facts), T10/T11, modes (`.23`), T12, T13, engine placement
+   (`.24`, Claude and Codex leads only).
 
 ## Blockers
 
