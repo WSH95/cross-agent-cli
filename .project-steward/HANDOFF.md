@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T08:21:20Z
+updated_at: 2026-09-09T09:12:54Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -10,35 +10,39 @@ branch: task/cross-agent
 ## Now
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
-9f85269). Landed: the rename; `docs/design.md` as the authority (two review
-rounds closed); README aligned; `AGENTS.md` updated by user-approved diff
-(5a7cd5f, Decision 0006); Task 2a of the lifecycle work — `src/locks.ts`,
-async conditional `ledger.update` under the record lock with `{applied}`,
-the runner acknowledging only from `launching`, treating `cancelling` as a
-cancel (including an engine that completes during a cancel), and holding
-`runner-<id>.lock` for its lifetime; identities carry `bootId`. Tests 161.
-Beads: S1 `atc-s96.19` closed; S2 `.20` claimed (2a done, 2b in progress);
-new `.29` (SIGTERM before the runner's first read), `.30` (a completed
-engine over an orphaned record loses its evidence). SDD ledger:
+9f85269). Landed: rename; `docs/design.md` as the authority; README;
+`AGENTS.md` by approved diff (Decision 0006); Task 2a (locks, conditional
+`update`, runner ownership) and Task 2b (`src/reconcile.ts` on the group
+scan, stranded-engine adoption by `CROSS_AGENT_TASK`, spawn drain with
+`truncated`, record validation and `scan().invalid`) — 176 tests at 71b2450;
+Task 4's probes (397763c, 649b8e5): P8 adopts `streaming-messages-json` for
+Grok; P9 Claude mounts cleanly, Codex needs a third `-c`
+(`default_tools_approval_mode`), Grok cannot be isolated per run; P10
+`codex exec resume` keeps neither cwd nor sandbox (`-c sandbox_mode=`
+restores it). Ruling: Grok is not an engine-placed lead. Beads: S1 closed;
+S2 `.20` and S4 `.21` claimed; bugs `.29`, `.30`. SDD ledger:
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
-in the main checkout.
+(main checkout).
 
 ## In flight
 
-Task 2b (Opus): `src/reconcile.ts` on the group scan with the `cancelling`
-case, stranded-engine adoption by `CROSS_AGENT_TASK` in `/proc/*/environ`,
-the spawn pipeline's bounded stdio drain with `truncated`, record validation
-and `scan().invalid`. Then its Opus review and a Codex gpt-5.6-sol milestone
-review of 2a+2b together, then Task 3 (T6 remainder).
+2b fix round 1 (19 items from the Opus task review and the Codex gpt-5.6-sol
+milestone review: single-write adoption on a new `launching → orphaned`
+edge, the conditional write as the decision point, no self-signalling,
+per-record error boundary, runner pre-spawn environ check, identity-failure
+group termination, environ scan bound stat→environ→stat, id bound to file
+name, Z/X dead, lock `lost`, `truncated` field) — commits d0993fc, b4eabed so
+far. Task 4's Opus review of the probe rows against the archived logs.
 
 ## Next steps
 
-1. Close 2b's reviews; amend the Task 3 brief against the landed signatures;
-   dispatch Task 3 (`atc-s96.6`: reservation, `git.lock`, `git_mutate` on
-   the verified git-dir, journal, `lockWaitSeconds`).
-2. Task 4 (`atc-s96.21`): probe harness flags; probes P8, P9, P10.
-3. Engine contract (`.22`), adapters (`.7/.8/.9`), T10/T11, modes (`.23`),
-   T12, T13, engine placement (`.24`).
+1. 2b scoped re-review; Task 4 review verdict; close `.21`.
+2. Task 2c: `docs/design.md` amendment (§2 rulings, P8–P10 outcomes, Grok
+   not an engine lead) — brief at `.superpowers/sdd/.../task-2c-brief.md`.
+3. Task 3 (`atc-s96.6`): reservation, `git.lock`, `git_mutate`, journal,
+   `lockWaitSeconds` — brief confirmed against the landed signatures.
+4. Engine contract (`.22`), adapters (`.7/.8/.9` — beads annotated with the
+   probe facts), T10/T11, modes (`.23`), T12, T13, engine placement (`.24`).
 
 ## Blockers
 

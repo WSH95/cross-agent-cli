@@ -31,3 +31,4 @@ Set up Project Steward in this repository.
 2026-09-09T06:40:07Z — claude [auto-checkpoint] docs/design.md fix rounds 1 and 2 (59ec7f5, 99d19ce) after Opus + Codex reviews; round-2 re-review in flight; Task 1c next.
 2026-09-09T07:22:59Z — claude [auto-checkpoint] README aligned (9fa1540); Task 2a landed (locks, conditional update, runner ack/cancel/lock; 45ee841..3a28be7; 159 tests); 2a review and 1c fix in flight; bead atc-s96.29 filed.
 2026-09-09T08:21:20Z — claude [auto-checkpoint] 2a fix landed (11a2e7e, 161 tests); README follow-ups (26358c7, 175a37d); AGENTS.md by approved diff (5a7cd5f, Decision 0006); S1 closed; 2b in flight.
+2026-09-09T09:12:54Z — claude [auto-checkpoint] 2b landed (e924893..71b2450; 176 tests); probes P8/P9/P10 recorded (397763c, 649b8e5); Grok ruled out as engine-placed lead; 2b fix round 1 in flight (d0993fc, b4eabed…).
