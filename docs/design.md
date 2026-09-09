@@ -90,8 +90,8 @@ loop. What follows is the target the remaining tasks are measured against.
 
 A lead token carried in the launch spec was considered and rejected. It is
 unsafe here for a structural reason, not a probed one: `LaunchSpec` serializes
-the child environment (`src/ledger.ts:17-20`, `src/engines/types.ts:16`) into
-`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts:157-161`); `.cross-agent/`
+the child environment (`src/ledger.ts:19-22`, `src/engines/types.ts:16`) into
+`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts:237-241`); `.cross-agent/`
 lives inside the project, and every role — read-only ones above all — must
 be able to read the project to do its work. P2 records that the profiles in use
 restrict *writes*, not reads, so nothing stops a specialist from reading a
@@ -182,7 +182,11 @@ fallback are a T10 change.
 A refused tool must be refused at **`tools/call` by name**, not merely omitted
 from `tools/list`: the dispatcher already errors on an unregistered name
 (`src/server.ts:68-70`), and the refusal must additionally name the reason —
-which row the caller was resolved to, and why.
+which row the caller was resolved to, and why. The name a refusal acts on is
+this server's own — `delegate`, `cancel` — never the host's rendering of it: a
+host may prefix and fold it, as Codex does, turning `cross-agent` into
+`mcp__cross_agent__list_roles` (`docs/probes.md:266`). The server never sees
+that spelling, so nothing in the matrix depends on it.
 
 #### Engine placement needs four things the host placement does not
 
@@ -252,20 +256,23 @@ which row the caller was resolved to, and why.
    **Grok is not supported as an engine-placed lead.** P9 found no per-run
    isolation of any kind (`docs/probes.md:268-269`, `:302-339`). A Grok child
    inherits the operator's `~/.grok/config.toml`, the operator's Grok plugins,
-   and the servers the operator declared to *Claude* in `~/.claude.json`; the
-   one mount that is per-project — `grok mcp add --scope project` — is not
-   started for an untrusted folder, and no `--trust` flag exists on `grok`,
-   `grok mcp add` or `grok mcp doctor` in 1.0.13, so a headless run cannot
-   trust one. Mounting a Grok lead would therefore mean registering and
-   unregistering a server in the operator's own global configuration around
-   every run, and the lead would still see every other server the operator
-   has. That is a mutation of the operator's machine as the price of a lead,
-   and this design refuses it. Grok remains a **specialist** engine — held to
-   the specialist row by ancestry, which is exactly the inheritance case
-   section 5 was written for — and a **host**, where the loop runs in the
-   operator's own Grok session and no mount is needed. Under an engine-placed
-   mode, a config that binds the mode's `lead.role` to `grok` is refused at
-   load, naming the reason (section 6).
+   and the servers the operator declared to *Claude* in `~/.claude.json` — that
+   last, the load-bearing half, rests on archived output, while the single
+   `grok inspect` listing that showed all three sources at once is transcribed,
+   not archived (see the probe row). The one mount that is per-project — `grok
+   mcp add --scope project` — is not started for an untrusted folder, and no
+   `--trust` flag exists on `grok`, `grok mcp add` or `grok mcp doctor` in
+   1.0.13, so a headless run cannot trust one; that doctor report is also
+   transcribed, not archived (see the probe row). Mounting a Grok lead would
+   therefore mean registering and unregistering a server in the operator's own
+   global configuration around every run, and the lead would still see every
+   other server the operator has. That is a mutation of the operator's machine
+   as the price of a lead, and this design refuses it. Grok remains a
+   **specialist** engine — held to the specialist row by ancestry, which is
+   exactly the inheritance case section 5 was written for — and a **host**,
+   where the loop runs in the operator's own Grok session and no mount is
+   needed. Under an engine-placed mode, a config that binds the mode's
+   `lead.role` to `grok` is refused at load, naming the reason (section 6).
 
    So "the loop as the lead's system prompt" is settled rather than assumed:
    a file on Claude, a file on Codex, and no lead on Grok.
@@ -351,7 +358,7 @@ directory — the launcher's first call is this one, so a missing mode has to
 fail loudly at step one rather than half-way through a task.
 
 `cross-agent init --mode <name>` writes the bind-time config for a mode.
-`initConfig` already exists (`src/config.ts:137-149`); the CLI entry point
+`initConfig` already exists (`src/config.ts:142-154`); the CLI entry point
 that calls it does not.
 
 ### 1. The `cross-agent` MCP server
@@ -397,16 +404,17 @@ in the work plan.
 
 ### 2. Ledger, runner, locks
 
-Steps 1 and 2 of the work plan built almost all of this section: T1 and T5
-shipped the ledger and the detached runner, and the lifecycle step
-(`atc-s96.20`, commits 45ee841..e426f35) shipped the conditional update, the
-OS-held locks, `src/reconcile.ts`, the environ scan and bounded settlement.
-Two reviews of that step — the task review and the Codex milestone review of
-2a and 2b — ruled on the questions the code raised; each ruling is stated
-below as this design's decision, with the line that implements it. A bullet
-whose lead reads **target** is what nothing has built yet: the `cancel` tool,
-the per-cwd reservation, `git.lock`, and the two record fields section 5 and
-the lead model still need.
+Step 2 of the work plan (S2, `atc-s96.20`, commits `45ee841..e426f35`) built
+almost all of this section on top of what T1 and T5 shipped, the ledger and the
+detached runner: the conditional update, the OS-held locks, `src/reconcile.ts`,
+the environ scan and bounded settlement. Two reviews of that step — the task
+review and the Codex milestone review of 2a and 2b — ruled on the questions the
+code raised; each ruling is stated below as this design's decision, with the
+line that implements it. A bullet whose lead reads **target** is what nothing
+has built yet: the `cancel` tool, the per-cwd reservation, `git.lock`, and the
+two record fields section 5 and the lead model still need. One bullet is split
+rather than led: reconciliation's pass is built and its triggers are not, and
+it says so where it says what the pass decides.
 
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
   writing a temporary file and renaming it (`src/ledger.ts:189-204`);
@@ -482,7 +490,7 @@ the lead model still need.
   this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
-    `release` (`src/locks.ts:11`, `:22`, `:76-86`) — the kernel has already let
+    `release` (`src/locks.ts:11`, `:22`, `:86-96`) — the kernel has already let
     the next waiter in, so a holder that carried on would be acting on
     exclusivity it no longer has. The runner registers `onLost` for
     `runner-<id>.lock` (`src/runner.ts:180-183`): it stops the engine group and
@@ -529,7 +537,7 @@ the lead model still need.
   a caller can act on the state that beat it; the terminal check precedes
   `expect`, so a terminal record is always `reason: "terminal"`
   (`src/ledger.ts:263`); a lock timeout **throws** rather than returning
-  `applied: false` (`src/locks.ts:65-72`), because a caller that could not even
+  `applied: false` (`src/locks.ts:75-82`), because a caller that could not even
   look at the record must not treat that as a refusal it can reason about; and
   the lock is released in `finally` (`src/ledger.ts:277-279`). The legal
   transitions are `launching → running | cancelling | failed | orphaned`,
@@ -551,17 +559,23 @@ the lead model still need.
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
   preserved and no live group — not merely "never returns to `running`".
-- **Reconciliation** runs on server start and on every `list_tasks`. It lives
-  in `src/reconcile.ts`, because it needs both `ledger.ts` and `process.ts`
-  and `src/process.ts` already imports `ledger.ts`; that leaves `ledger.ts` as
-  record I/O. It is asynchronous and returns `{changed, invalid, errors}`
-  (`src/reconcile.ts:12-23`). It judges an engine by the **group scan**
-  (`src/process.ts:43-66`), never by the leader's pid alone: a leader that has
-  been reaped while a descendant lives becomes `orphaned` and is cleaned up,
-  not `failed: runner lost`. It judges the runner, which is one process, by pid
-  and start time, and a runner in state `Z` or `X` has exited and owns nothing
-  (`src/ledger.ts:348-350`), which is the same test the group scan applies to a
-  member (`src/process.ts:28`). Its four cases (`src/reconcile.ts:128-161`):
+- **Reconciliation**: the pass is built, its triggers are a target. The pass
+  lives in `src/reconcile.ts`, because it needs both `ledger.ts` and
+  `process.ts` and `src/process.ts` already imports `ledger.ts`; that leaves
+  `ledger.ts` as record I/O. It is asynchronous and returns `{changed, invalid,
+  errors}` (`src/reconcile.ts:12-23`). Nothing outside that file calls it yet —
+  `projectTools` registers two tools and `list_tasks` is not one of them
+  (`src/server.ts:129-154`) — so **running it on server start and on every
+  `list_tasks` is a T10 target** (Work plan row 7), and until that lands a
+  stranded engine is judged only by a test or an operator invoking the pass
+  directly. What the pass itself decides is built. It judges an engine by the
+  **group scan** (`src/process.ts:43-66`), never by the leader's pid alone: a
+  leader that has been reaped while a descendant lives becomes `orphaned` and
+  is cleaned up, not `failed: runner lost`. It judges the runner, which is one
+  process, by pid and start time, and a runner in state `Z` or `X` has exited
+  and owns nothing (`src/ledger.ts:348-350`), which is the same test the group
+  scan applies to a member (`src/process.ts:28`). Its four cases
+  (`src/reconcile.ts:128-161`):
   - `launching` past its deadline: the environ scan above, then `orphaned` or
     `failed: launch`;
   - `running` or `stalled` with a dead runner: `orphaned` if the engine group
@@ -583,21 +597,32 @@ the lead model still need.
   the scan and the write owns the task, and killing what the scan found would
   then be killing that runner's own engine.
 
-  **A failure is per record, never per pass.** `Reconciled.errors` is
-  `[{id, reason}]`, each record's judgement runs inside its own boundary, and a
-  record that could not be judged keeps its status for the next pass
+  **A failure is per record, never per pass.** `Reconciled.errors` is `[{id,
+  reason}]`, each record's judgement runs inside its own boundary, and a record
+  that could not be judged keeps its status for the next pass
   (`src/reconcile.ts:177-187`): a group that survives SIGKILL, an EPERM from
-  `process.kill`, a decision another writer overtook. Killing the strays is the
-  one step that runs **after** the decision has been written, so it reports the
-  pids it could not signal instead of throwing (`src/reconcile.ts:48-73`,
-  `:125`): losing the write to report a failed signal would drop a settled
-  record from `changed`. Orphan cleanup runs in the **same pass**
-  (`reconcileAndCleanup`, `src/reconcile.ts:197-203`), so no caller can observe
-  an `orphaned` record whose group is still being decided; `terminateOrphans`
-  returns `{changed, skipped}` (`src/process.ts:217-236`) so
-  that an identity the group scan calls invalid or reused is named rather than
-  silently skipped, and `reconcileAndCleanup` surfaces `skipped` beside
-  `errors`.
+  `process.kill`, a decision another writer overtook. Those two are answers,
+  not exceptions, because **the escalation is one helper**: SIGTERM, a grace,
+  SIGKILL, a shorter grace, written once in `src/process.ts` (`terminate`,
+  `:186-197`) and reached through `terminateGroup` (`:200-202`). It never
+  throws — an EPERM or a group that will not die is reported as `false` — and
+  both callers consume that boolean, `terminateOrphans` to skip the record with
+  its identity named and `reconcile.ts:151` to leave a `cancelling` record
+  named for the next pass. A caller judging many records has to be able to
+  report a survivor and carry on. The runner keeps its own escalation for the
+  one case the helper cannot serve, where no identity was ever captured and
+  only `handle.pid` names the group (`src/runner.ts:53-68`); folding that one
+  in, and telling an EPERM apart from a group that would not die, are
+  follow-ups on `atc-s96.31`. Killing the strays is the one step that runs
+  **after** the decision has been written, so it reports the pids it could not
+  signal instead of throwing (`src/reconcile.ts:48-73`, `:125`): losing the
+  write to report a failed signal would drop a settled record from `changed`.
+  Orphan cleanup runs in the **same pass** (`reconcileAndCleanup`,
+  `src/reconcile.ts:197-203`), so no caller can observe an `orphaned` record
+  whose group is still being decided; `terminateOrphans` returns `{changed,
+  skipped}` (`src/process.ts:217-236`) so that an identity the group scan calls
+  invalid or reused is named rather than silently skipped, and
+  `reconcileAndCleanup` surfaces `skipped` beside `errors`.
 
   **A pass sees every engine and signals none of its own.** The MCP server is a
   child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts:158`), and
@@ -656,10 +681,10 @@ the lead model still need.
   while it exists. Refusing every writable delegation is the conservative
   reading of "it never frees a workspace"; a read-only delegation is
   unaffected.
-- **Locks** are OS-held and never reclaimed (`src/locks.ts:44-99`). A lock is
+- **Locks** are OS-held and never reclaimed (`src/locks.ts:54-109`). A lock is
   `flock(2)` on a file under `.cross-agent/locks/`, taken by a helper that
   keeps a util-linux `flock` child alive on a pipe (`flock <file> sh -c 'echo
-  held; read _'`, `src/locks.ts:47`): the helper knows it holds the lock when
+  held; read _'`, `src/locks.ts:57`): the helper knows it holds the lock when
   the child prints, releases it by closing the pipe, and the kernel releases it
   when the holder dies, so a dead holder needs no TTL, no stale detection, and
   no rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
@@ -668,15 +693,21 @@ the lead model still need.
   `spawn.lock` around `delegate`'s validate-and-spawn; `record-<id>.lock`
   around every ledger read-check-rename, taken inside `update`
   (`src/locks.ts:29-31`); `runner-<id>.lock` held by a runner for its lifetime
-  (`src/locks.ts:33-35`); `git.lock` around every lead git mutation. The first
-  and the last are targets, because neither `delegate` nor `git_mutate` exists
-  yet. **One helper, one waiting rule**: every waiter blocks up to
-  `lockWaitSeconds` and then refuses, naming the operation; the helper's own
-  default is 5 seconds (`src/locks.ts:45`) and the config key that overrides it
-  arrives with section 6's remainder. Nothing uses `flock -n`; a caller that
-  wants no wait passes `waitSeconds: 0`. The one exception to the waiting rule
-  is `runner-<id>.lock`, whose whole purpose is an immediate failure, so the
-  second runner takes it with a zero wait and exits.
+  (`src/locks.ts:33-35`); `git.lock` around every lead git mutation. All four
+  names resolve through `lockPath` (`src/locks.ts:38-40`, `:43-45`), but the
+  first and the last are still targets as *locks*, because neither `delegate`
+  nor `git_mutate` takes one yet. **One helper, one waiting rule**: every
+  waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation.
+  The key is in config and validated — a finite number, defaulting to 5 and
+  refused when negative, because `flock -w -1` sets no timer and exits before
+  it looks at the file, which the helper would read as a live holder
+  (`src/config.ts:24`, `:37`, `:117`) — and the helper's own default is the
+  same 5 (`src/locks.ts:55`). Handing the configured value to each caller is
+  still a target: nothing in `src/` loads config to take a lock yet. Nothing
+  uses `flock -n`; a caller that wants no wait passes `waitSeconds: 0`. The one
+  exception to the waiting rule is `runner-<id>.lock`, whose whole purpose is
+  an immediate failure, so the second runner takes it with a zero wait and
+  exits.
 - **Bounded settlement.** `spawnEngine` settles on the child's `exit` plus a
   bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts:191-204`)
   and on `close` if that arrives first (`src/engines/spawn.ts:186`); on timeout
@@ -780,7 +811,7 @@ section is the contract they must meet.
 
 `SpawnRequest.sandbox` becomes `{mode, profile}`, where `profile` is the
 engine's own name for the profile and `mode` is `sandboxProfiles[profile]`.
-`mode !== "off"` drives the fail-closed check (today `src/engines/spawn.ts:56`
+`mode !== "off"` drives the fail-closed check (today `src/engines/spawn.ts:60`
 tests the profile string itself), and `mode === "write"` drives the worktree
 reservation, so neither the pipeline nor the reservation rule has to know any
 engine's vocabulary. `SpawnRequest` also gains `scratchDir` (=
@@ -799,12 +830,13 @@ profiles.
 **The adapter table is a fixed built-in.** One file plus one entry per new
 engine. Config-declared adapter modules are not supported, and the reason is
 in the code: the runner imports the spec's `adapterModule` into its own
-process, unsandboxed (`src/runner.ts:126-127`), and `validateSpec` checks only
-that the path is absolute (`src/ledger.ts:151-155`). Making that path
+process, unsandboxed (`src/runner.ts:197`), and `validateSpec` checks only
+that the path is absolute (`src/ledger.ts:231-235`). Making that path
 config-controlled would turn a config file into arbitrary code execution in
 the orchestrator.
 
-Spawn lines, to be pinned by the Phase 0 probes:
+Spawn lines. Every flag in them is recorded by a Phase 0 probe, except where
+this section says otherwise:
 
 - **Claude**: `claude -p --output-format stream-json --verbose --model <m>
   --session-id <uuid> | --resume <id> --append-system-prompt-file <role.md>
@@ -826,76 +858,86 @@ Spawn lines, to be pinned by the Phase 0 probes:
   prompt needs a file on disk: it goes in `scratchDir`, never inside the
   specialist's own worktree.
 - **Codex**: `codex exec --json -o <out> -C <cwd> --sandbox
-  <read-only|workspace-write> --ignore-user-config --skip-git-repo-check -m
-  <m> -c model_reasoning_effort=<e>`. Resume is a **different flag set**:
-  `codex exec resume <thread id>` accepts `-c/--config`, `--last`, `--all`,
+  <read-only|workspace-write> --ignore-user-config --skip-git-repo-check -m <m>
+  -c model_reasoning_effort=<e>`. Resume is a **different flag set**: `codex
+  exec resume <thread id>` accepts `-c/--config`, `--last`, `--all`,
   `--enable`, `--disable`, `-i/--image`, `--strict-config`, `-m/--model`,
   `--dangerously-bypass-approvals-and-sandbox`,
-  `--dangerously-bypass-hook-trust`, `--thread-source`, `--skip-git-repo-check`,
-  `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`,
-  `--json`, and `-o/--output-last-message`, and **neither `-C` nor
-  `--sandbox`** (`codex exec resume --help`, 0.153.4, read 2026-09-09 and
-  recorded at `docs/probes.md:437-452`). So the
-  resume line is `codex exec resume <thread id> --json -o <out>
-  --ignore-user-config --skip-git-repo-check -m <m> -c
+  `--dangerously-bypass-hook-trust`, `--thread-source`,
+  `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`,
+  `--ignore-rules`, `--output-schema`, `--json`, and
+  `-o/--output-last-message`, and **neither `-C` nor `--sandbox`** (`codex exec
+  resume --help`, 0.153.4, read 2026-09-09 and recorded at
+  `docs/probes.md:437-452`). So the resume line is `codex exec resume <thread
+  id> --json -o <out> --ignore-user-config --skip-git-repo-check -m <m> -c
   model_reasoning_effort=<e> -c sandbox_mode="<the role's Codex profile>"`,
-  spawned with the **resuming process's** cwd set to the role's workspace. P10
-  settled why both halves are the adapter's work (`docs/probes.md:377-399`): a
-  resumed thread keeps neither the cwd nor the sandbox of the original run. The
-  writable root of a workspace-write sandbox follows the resuming process's
-  cwd, so a resume started one directory up wrote a file into the repository
-  root that the original turn had been refused — the failure is silent, not an
-  error. `-c cwd=<dir>` is ignored; the process's own cwd is the only lever.
-  The thread itself comes back read-only, which is the safe direction but not
-  necessarily the role's, and `-c sandbox_mode=` restores it exactly. So
+  spawned with the **resuming process's** cwd set to the role's workspace. The
+  profile is the key of `sandboxProfiles` the role names, so `off` resumes as
+  `-c sandbox_mode="danger-full-access"`, the same value the launch path gives
+  `--sandbox`; there is no unsandboxed resume by omission. P10 settled why both
+  halves are the adapter's work (`docs/probes.md:377-399`): a resumed thread
+  keeps neither the cwd nor the sandbox of the original run. The writable root
+  of a workspace-write sandbox follows the resuming process's cwd, so a resume
+  started one directory up wrote a file into the repository root that the
+  original turn had been refused — the failure is silent, not an error. `-c
+  cwd=<dir>` is ignored; the process's own cwd is the only lever. The thread
+  itself comes back read-only, which is the safe direction but not necessarily
+  the role's, and `-c sandbox_mode=` restores it exactly. So
   `SpawnRequest.sandbox` is re-applied by the adapter on every resume, from
-  `sandbox.profile`, and never assumed from the thread.
-  `--ignore-user-config` keeps auth, raises no trust prompt, and removes the
-  user's MCP servers, leaving only Codex's built-in `codex_apps` (P5; P5 does
-  not speak to plugins or marketplaces). Codex carries **no deny
-  list**: probe P3 showed that execpolicy rules files are not honoured by
-  `codex exec`, so its sandbox's network denial is the layer that holds
-  instead, and a launched engine cannot reach its API (P3b). `codex exec` is
-  chosen over `codex app-server` — the transport `codex-plugin-cc` uses —
-  because `exec` needs no dependency and no second JSON-RPC client inside this
-  server; the cost is execpolicy and a native `review/start`, neither of which
-  this design uses. A Codex lead's mount is the three `-c mcp_servers…`
-  settings above under `--ignore-user-config`, and its instructions reach it
-  through `-c model_instructions_file="<file>"` — accepted and obeyed with no
-  role text in the prompt at all, so a Codex lead spends no prompt space on the
-  loop (P9, `docs/probes.md:266`, `:285-301`).
+  `sandbox.profile`, and never assumed from the thread. `--ignore-user-config`
+  keeps auth, raises no trust prompt, and removes the user's MCP servers,
+  leaving only Codex's built-in `codex_apps` (P5; P5 does not speak to plugins
+  or marketplaces). Codex carries **no deny list**: probe P3 showed that
+  execpolicy rules files are not honoured by `codex exec`, so its sandbox's
+  network denial is the layer that holds instead, and a launched engine cannot
+  reach its API (P3b). `codex exec` is chosen over `codex app-server` — the
+  transport `codex-plugin-cc` uses — because `exec` needs no dependency and no
+  second JSON-RPC client inside this server; the cost is execpolicy and a
+  native `review/start`, neither of which this design uses. A Codex lead's
+  mount is the three `-c mcp_servers…` settings above under
+  `--ignore-user-config`, and its instructions reach it through `-c
+  model_instructions_file="<file>"` — accepted and obeyed with no role text in
+  the prompt at all, so a Codex lead spends no prompt space on the loop (P9,
+  `docs/probes.md:266`, `:285-301`).
 - **Grok**: `grok -p <prompt> --cwd <cwd> --sandbox
   <workspace|read-only|strict> --permission-mode bypassPermissions
-  --output-format streaming-messages-json --session-id <uuid> | -r <id>
-  --model <m> --reasoning-effort <e>` plus one `--deny` per deny-list entry,
-  the same on resume. **P8 chose the format** (`docs/probes.md:187-246`).
-  `streaming-messages-json` is NDJSON in the Anthropic Messages API wire
-  shape — line for line what Claude Code's `stream-json` emits, so one line
-  vocabulary serves both adapters. Its first line is
-  `{"type":"system","subtype":"init"}` carrying `session_id`, on a resumed run
-  (`-r <id>`) as well as a fresh one, which is what lets the adapter emit its
-  `session` event from the first native event as this section requires; its
-  last line is `{"type":"result","subtype":"success",…}` and the final text is
-  that line's `result`. A failed run keeps the shape: `system/init`, then a
-  `result` line whose `subtype` is `error_during_execution`, whose `is_error`
-  is `true`, and whose message is in an `errors` array with no `result` field
-  at all, exit 1. Success and failure therefore settle down one path, and
-  `finalMessage` reads `result` when `is_error` is false and `errors` when it
-  is true. `streaming-json` was **rejected**: it announces the session id only
-  on its final `end` line, that line carries no message text, and a failed run
-  emits a bare `{"type":"error",…}` and never closes, so an adapter would have
-  to read a missing `end` as failure. It stays a fallback beside `json`, which
-  remains the whole-output fallback for an adapter that declares `finish`;
-  neither is sufficient on its own, because Grok's `json` mode prints one
-  object at the end and nothing before it, which leaves `lastEventAt` null for
-  the whole run (`src/engines/spawn.ts:119-125` advances it only on a parsed
-  event) and so makes every Grok task look stalled and `check` show nothing.
-  `--effort` is an alias of `--reasoning-effort`. `--rules` ("extra rules to
-  append to the system prompt") takes a **string**, not a path
-  (`docs/probes.md:302-339`): given a role file's path it puts the path into
-  the system prompt as literal text. It is an alternative to prepending the
-  role prompt to the prompt text, not a way to hand Grok a role file.
-  `--sandbox workspace` is deliberately stricter than
+  --output-format streaming-messages-json --session-id <uuid> | -r <id> --model
+  <m> --reasoning-effort <e> --rules <role text>` plus one `--deny` per
+  deny-list entry, the same on resume. **P8 chose the format**
+  (`docs/probes.md:187-246`). `streaming-messages-json` is NDJSON in the
+  Anthropic Messages API wire shape — line for line what Claude Code's
+  `stream-json` emits, so one line vocabulary serves both adapters. Its first
+  line is `{"type":"system","subtype":"init"}` carrying `session_id`, on a
+  resumed run (`-r <id>`) as well as a fresh one, which is what lets the
+  adapter emit its `session` event from the first native event as this section
+  requires; its last line is `{"type":"result","subtype":"success",…}` and the
+  final text is that line's `result`. A failed run keeps the shape:
+  `system/init`, then a `result` line whose `subtype` is
+  `error_during_execution`, whose `is_error` is `true`, and whose message is in
+  an `errors` array with no `result` field at all, exit 1. Success and failure
+  therefore settle down one path, and `finalMessage` reads `result` when
+  `is_error` is false and `errors` when it is true, joining that array with
+  newlines: it is a list of messages, and an operator reading a failure needs
+  all of them, one per line. `streaming-json` was **rejected**: it announces
+  the session id only on its final `end` line, that line carries no message
+  text, and a failed run emits a bare `{"type":"error",…}` and never closes, so
+  an adapter would have to read a missing `end` as failure. It stays a fallback
+  beside `json`, which remains the whole-output fallback for an adapter that
+  declares `finish`; neither is sufficient on its own, because Grok's `json`
+  mode prints one object at the end and nothing before it, which leaves
+  `lastEventAt` null for the whole run (`src/engines/spawn.ts:119-125` advances
+  it only on a parsed event) and so makes every Grok task look stalled and
+  `check` show nothing. `--effort` is an alias of `--reasoning-effort`. **The
+  role prompt goes through `--rules <role text>`**, which is Grok's
+  system-level path and so the counterpart of Claude's
+  `--append-system-prompt-file` and Codex's `-c model_instructions_file=`: P9
+  honoured both it and a prompt prefix, and the system-level one keeps the role
+  out of the turn's own text (`docs/probes.md:302-339`). It takes a **string**,
+  not a path — given a role file's path it put the path into the system prompt
+  as literal text and the child read the file itself — so the adapter passes
+  the role's *contents*, and falls back to prepending them to the prompt only
+  when the text would exceed the argv limit, which is the one case a flag
+  cannot carry. `--sandbox workspace` is deliberately stricter than
   `grok-build-plugin-cc`'s write mode, which omits `--sandbox` entirely.
 
 Deny list for Claude and Grok, rebuilt from config at spawn
@@ -910,7 +952,7 @@ each target on each engine, including a resumed session.
 
 Sandbox facts from the probes that the adapters must respect: Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
-(`cross-agent init` warns, `src/config.ts:117-135`); Codex refuses to rewrite
+(`cross-agent init` warns, `src/config.ts:122-139`); Codex refuses to rewrite
 the worktree's `.git` pointer, Grok allows it, so tampering is detected by
 `verify_worktree`, not prevented (P2). A Grok child **does** inherit the
 user's MCP configuration — Grok has no per-invocation exclusion flag, only a
@@ -938,15 +980,19 @@ locale settings, proxy settings, and would break silently on the next CLI
 release — but it means the blocklist grows when a new host marker appears, and
 a new marker is a change to this list.
 
-Provenance of the flag facts in this section: every one of them is now a
-recorded run in `docs/probes.md` — P1, P2, P3, P3b, P5 and P7 on 2026-09-07,
-and P8, P9 and P10 on 2026-09-09, which exercised the output formats, both
-lead mounts, all three instruction paths, and `codex exec resume`. The `--help`
-readings behind the flags no run had to exercise are recorded with their CLI
+Provenance, stated once: every flag in this section is backed by a recorded run
+in `docs/probes.md` — P1, P2, P3, P3b, P5 and P7 on 2026-09-07, and P8, P9 and
+P10 on 2026-09-09, which exercised the output formats, both lead mounts, all
+three instruction paths, and `codex exec resume` — with two exceptions, both
+named where they occur. P2 for Claude is **outstanding**, waiting on the
+`bwrap` AppArmor profile (`atc-s96.17`), so the Claude sandbox row of that
+probe is a `--help` and P1 fact rather than a run. And the flags no run had to
+exercise — `codex exec`'s and `codex exec resume`'s full option lists,
+`--reasoning-effort` and its `--effort` alias, `--system-prompt-override`,
+`--include-partial-messages` — are `--help` readings, recorded with their CLI
 versions in the same file (`docs/probes.md:408-452`; Claude Code 2.1.266, Codex
-0.153.4, Grok Build 1.0.13). No flag in this section is waiting on a probe; the
-one probe still outstanding is P2 for Claude, which waits on the `bwrap`
-AppArmor profile (`atc-s96.17`).
+0.153.4, Grok Build 1.0.13). No other claim in this section is waiting on a
+probe.
 
 ### 4. Git ownership
 
@@ -1039,15 +1085,17 @@ tools with no gating at all — so the layers below are the target that step 7
 wires. Layers, each with its own unit test:
 
 1. **Authority by ancestry; depth is a cap, not a second opinion.** Ancestry
-   decides the row a server *may* receive — operator, lead, or specialist —
-   by the nearest matching engine ancestor ("The lead model" above). Depth
-   then caps it: at depth ≥ `maxDepth` the row is forced to specialist
-   whatever the walk found, and so it is when `CROSS_AGENT_DEPTH` is
-   malformed, or absent while `CROSS_AGENT_LINEAGE` is present
-   (`src/guard.ts:31-43` already reads it that way, returning `Infinity` for
-   both). The effective row is the **lower of the two**, and the server
-   offers exactly that row of the permission matrix; a call to a tool outside
-   it is refused at `tools/call` by name, with the reason.
+   decides the row a server *may* receive — operator, lead, or specialist — by
+   the nearest matching engine ancestor ("The lead model" above). Depth then
+   caps it: at depth ≥ `maxDepth` the row is forced to specialist whatever the
+   walk found, and so it is when `CROSS_AGENT_DEPTH` is malformed, or absent
+   while `CROSS_AGENT_LINEAGE` is present (`src/guard.ts:31-43` already reads
+   it that way, returning `Infinity` for both). The effective row is the
+   **lower of the two**, and the server offers exactly that row of the
+   permission matrix; a call to a tool outside it is refused at `tools/call` by
+   name, with the reason — by this server's own tool name, whatever prefix or
+   folding a host applies to it on the way in ("The lead model", the permission
+   matrix).
 
    `maxDepth` comes from the **active mode**, not from a constant: a mode
    with `placement: engine` needs 2, because its lead runs at depth 1 and the
@@ -1060,7 +1108,7 @@ wires. Layers, each with its own unit test:
    is why it fails closed.
 
    Records gain a `depth` field, written by `delegate`; the shipped
-   `TaskRecord` has none (`src/ledger.ts:30-50`). The specialist row is the
+   `TaskRecord` has none (`src/ledger.ts:32-53`). The specialist row is the
    four read tools plus `describe_mode`, which is what `toolsAtDepth`
    approximates today (`src/guard.ts:45-49`).
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
@@ -1080,9 +1128,12 @@ wires. Layers, each with its own unit test:
    reaching any model API (P3, P3b).
 4. **Lineage and duplicates**: `CROSS_AGENT_LINEAGE` is an ordered list of
    `(task id, role, canonical cwd)`, encoded as a JSON array of `{taskId,
-   role, cwd}` objects (`src/guard.ts:51-71`; `tools/probe.mjs:81` writes a
-   colon-joined placeholder instead, because the probe harness never starts a
-   server). A `delegate` whose `(role, cwd)` is already in the lineage is
+   role, cwd}` objects (`src/guard.ts:51-71`), and the probe harness emits the
+   same shape (`tools/probe.mjs:97`), so a probe child sees what a real child
+   will see. It emitted a colon-joined placeholder until P9, which fixed it and
+   verified the fix by feeding a child's received value back through
+   `parseLineage` (`docs/probes.md:340-345`). A `delegate` whose `(role, cwd)`
+   is already in the lineage is
    refused (`src/guard.ts:77-82`). A request identical to a running task in
    `(role, canonical cwd, sha256(brief))` is refused with "already running,
    wait on <id>"; identical to a task finished within
@@ -1096,7 +1147,7 @@ wires. Layers, each with its own unit test:
 ### 6. Config and validation
 
 `<project>/.cross-agent/config.json`, created by `cross-agent init --mode
-<name>`, validated on load (`src/config.ts:53-115`). It carries the
+<name>`, validated on load (`src/config.ts:53-120`). It carries the
 **bind-time layer only**: which mode is active, which engine, model and
 effort each of that mode's roles runs on, plus an optional `sandbox` override
 per role, and, under `engines`, where each engine's binary is
@@ -1132,12 +1183,12 @@ requires the `verify_worktree` checks of section 4 against the branch named in
 the request, and a role whose sandbox mode is `write` reserves the path.
 
 What is a target here and what is not: the `mode` field, the refusal of
-`workspace`, `limits.lockWaitSeconds` (absent from `CrossAgentConfig`,
-`src/config.ts:20-26,36-38`), the per-engine profile check, and the refusal of
-a `grok`-bound `lead.role` under an engine-placed mode (P9: no per-run
-isolation, "The lead model", item 4) all arrive with the tasks that need
-them; `project`, `roles`' engine/model/effort, `engines`,
-the other four limits and `billing` are validated today. The shipped loader
+`workspace`, the per-engine profile check, and the refusal of a `grok`-bound
+`lead.role` under an engine-placed mode (P9: no per-run isolation, "The lead
+model", item 4) all arrive with the tasks that need them. `project`, `roles`'
+engine/model/effort, `engines`, all five limits and `billing` are validated
+today — `limits.lockWaitSeconds` included (`src/config.ts:24`, `:37`, `:117`),
+though no lock caller reads it yet (section 2). The shipped loader
 still carries the role's directory kind as `cwd` (`src/config.ts:16`, `:96`);
 the Work plan says what happens to it in the meantime.
 
@@ -1268,7 +1319,7 @@ planned** and have none, because nothing would trigger them:
   bridges' `/review` and `/critique`; `solo` covers the same ground without a
   second protocol.
 - **An engine `doctor` / preflight** (`atc-s96.28`). The sandbox-or-refuse
-  rule already fails closed at spawn time (`src/engines/spawn.ts:55-59`), so a
+  rule already fails closed at spawn time (`src/engines/spawn.ts:59-63`), so a
   preflight would report the same refusal one step earlier and could go stale
   between the two.
 - **`openmaus.package` as an import format.** Not planned: native modes only,
@@ -1318,7 +1369,12 @@ reason), and the loop-guard scope as a hard requirement.
    `tests/fixtures/fake-engine.mjs` (emits JSONL in a per-engine format
    chosen by `FAKE_ENGINE_FORMAT`; `FAKE_ENGINE_SCRIPT` selects `ok`, `fail`,
    `stall`, or `stall-ignore-term`,
-   `tests/fixtures/fake-engine.mjs:3`); `tools/probe.mjs`, a
+   `tests/fixtures/fake-engine.mjs:3`). Its `grok` format still emits nothing
+   until a final whole-output object — Grok's `json` mode
+   (`tests/fixtures/fake-engine.mjs:39-41`) — so **T9 rewrites it to the
+   `streaming-messages-json` shape**, which is the `claude` case of the same
+   switch; a fixture that cannot produce the adopted format cannot test the
+   adapter that parses it. `tools/probe.mjs`, a
    standalone harness that spawns one engine with the section 3 argv (no
    server, no runner) so the probes do not wait on feature tasks. It stays a
    manual tool; it is not moved onto the adapter interface. `npm test` green.
@@ -1397,20 +1453,22 @@ reason), and the loop-guard scope as a hard requirement.
 ### Phase 1: build order
 
 T1–T5 (ledger, config and `verify_worktree`, guard, adapter interface and
-spawn pipeline, detached runner) are built and green. The remaining order puts
-the five correctness defects in shipped code first, because every later task
-builds on those files; then the probes the adapters depend on; then the
-adapters, the tools, the modes, the skills, and each host's packaging with its
-integration probes and end-to-end run right after it.
+spawn pipeline, detached runner) are built and green, and so are steps 1, 2 and
+4 below: the rename and this document's rewrite, the lifecycle step that closed
+the five correctness defects in shipped code, and the probes the adapters
+depend on. What is left starts at step 3, the T6 remainder, and then runs
+through the engine contract, the adapters, the tools, the modes, the skills,
+and each host's packaging with its integration probes and end-to-end run right
+after it.
 
 | # | Work | Bead | Notes |
 |---|---|---|---|
-| 1 | Rename and design rewrite | `atc-s96.19` | One pass; `npm test` gates the rename. History files untouched. |
-| 2 | Locks primitive, conditional update, lifecycle | `atc-s96.20` | `src/locks.ts` (the `flock` child); `update` with `expect` and `{applied}`; B1 (reconcile on the group scan in `src/reconcile.ts`, the `cancelling` case), B2 (bounded drain, `truncated`), B3, B4, B5 (environ scan, runner lock, `launchToken` removed), A4-a (record validation). |
+| 1 | Rename and design rewrite | `atc-s96.19` | **Done.** One pass; `npm test` gated the rename. History files untouched. |
+| 2 | Locks primitive, conditional update, lifecycle | `atc-s96.20` | **Done** (`45ee841..e426f35`). `src/locks.ts` (the `flock` child); `update` with `expect` and `{applied}`; B1 (reconcile on the group scan in `src/reconcile.ts`, the `cancelling` case), B2 (bounded drain, `truncated`), B3, B4, B5 (environ scan, runner lock, `launchToken` removed), A4-a (record validation); plus the two review rounds' rulings, which section 2 states with the line that implements each. The reconciliation **triggers** are not in this step: they belong to row 7. |
 | 3 | T6 remainder | `atc-s96.6` | Reservation, journal, `git_mutate` on the verified git-dir, `git.lock`. |
 | 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | **Done** (397763c, 649b8e5, f40cadb). `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; the resume argv no longer pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Outcomes in Phase 0 above: `streaming-messages-json` for T9, three `-c` settings for a Codex lead mount, no Grok lead, and a Codex resume that keeps neither cwd nor sandbox. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | A2; the adapter fields of section 3; informed by P8 and P9. |
-| 6 | Adapters | `atc-s96.7`, `.8`, `.9` | T7 Claude, `--append-system-prompt-file` for the role file (P9); T8 Codex, **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10); T9 Grok on `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` (P8). |
+| 6 | Adapters | `atc-s96.7`, `.8`, `.9` | T7 Claude, `--append-system-prompt-file` for the role file (P9); T8 Codex, **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10); T9 Grok on `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape. |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | Ancestry-bound authority, the permission matrix, guard wiring, reconciliation on every `list_tasks`, `tools/call` refusal by name. `describe_mode` registers with step 8, which builds the mode loader it reads. |
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts:16`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
@@ -1427,9 +1485,14 @@ Integration probes after each packaging task, run by the operator:
   engines spawned as a specialist lists its MCP tools and sees **exactly the
   specialist row** of the permission matrix — the four read tools plus
   `describe_mode`, and no `delegate` — including a Grok specialist that
-  inherits the user's MCP configuration and therefore does reach a server. A
-  direct `tools/call delegate` from that session is refused by name, with the
-  reason.
+  inherits the user's MCP configuration and therefore does reach a server. The
+  row is checked **per host, in that host's own spelling**: Claude shows
+  `mcp__cross-agent__<tool>`, Codex folds the hyphen and shows
+  `mcp__cross_agent__<tool>` beside its built-in `codex_apps`
+  (`docs/probes.md:263`, `:266`), and Grok reaches the tools through its
+  `use_tool` dispatcher (`docs/probes.md:268`), so the test compares the set of
+  this server's tools, not a literal string. A direct `tools/call delegate`
+  from that session is refused by name, with the reason.
 - **I2, host × engine isolation.** Each engine spawned by the server launched
   from that host repeats the P2 negative writes, all of which must be denied.
   Claude and Grok children can reach the network; **a Codex child must not** —
@@ -1500,14 +1563,16 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `default_tools_approval_mode="approve"`, without which every call is refused,
   and `-c model_instructions_file="<file>"` obeyed; Grok not isolable — a child
   inherits the operator's servers and a project-scoped mount will not start in
-  an untrusted folder, so there is no Grok lead. What T10 and S11 must still
+  an untrusted folder (that second observation transcribed, not archived — see
+  the probe row), so there is no Grok lead. What T10 and S11 must still
   show is that a mounted lead resolves to the **lead row** of the permission
   matrix, which is authority, not mounting.
 - **P10 (recorded) / T8:** `codex exec resume` takes neither `-C` nor
   `--sandbox`, and keeps neither the cwd nor the sandbox of the original run.
   T8's acceptance follows from that: a resume is spawned with the process cwd
   set to the role's workspace and `-c sandbox_mode=<the role's profile>`
-  re-supplied, and the P2 negative writes are denied on a **resumed** session —
+  re-supplied — `danger-full-access` when the role's profile is `off`, never an
+  omission — and the P2 negative writes are denied on a **resumed** session —
   a write to a root file, into `<root>/.git`, to a sibling path and to `$HOME`
   — not only on the session that launched it.
 - **Engine placement:** end-to-end with the lead on each supported lead engine,
