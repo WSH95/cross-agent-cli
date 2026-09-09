@@ -9,7 +9,7 @@ branch: main
 ## Now
 
 `main` at 45aacf8 holds branch `task/cross-agent`, merged fast-forward
-on 2026-09-09 (51 files, about 10,200 insertions over 9f85269). What it
+on 2026-09-09 (51 files, 10,353 insertions over 9f85269). What it
 contains: the rename from `dev-team` to `cross-agent`; `docs/design.md`
 rewritten as the authority (the lead model with `placement: host | engine`,
 authority by process ancestry, the permission matrix, modes as data, engine
