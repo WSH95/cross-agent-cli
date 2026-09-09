@@ -1,14 +1,24 @@
 # cross-agent
 
-A standalone multi-engine orchestrator for coding agent CLIs. One MCP server
-delegates planning, plan review, implementation, and code review to
-`claude`, `codex`, or `grok` running headless on your own subscriptions,
-each inside its own sandbox; one skill gives the host session (Claude
-Code, Codex, or Grok) the lead's loop: plan, review, implement in a git
-worktree, review, merge, clean up.
+One MCP server plus a launcher skill that run a team of headless `claude`,
+`codex`, and `grok` processes on your own subscriptions, each inside its own
+CLI's sandbox. A host is anything that can attach an MCP server and load a
+skill: Claude Code, Codex, and Grok today. What the team does is a **mode** —
+data, not code: the roles, the loop the lead runs, and a git policy. The
+design builds in two modes: `dev-team`, the four-role worktree team
+(planner, plan reviewer, implementer, code reviewer), and `solo`, one role
+with no git.
 
-Status: scaffold. See `docs/design.md` for the design and the work plan,
-`docs/probes.md` for what each engine CLI was observed to do.
+## Status
+
+Scaffold, plus the core everything else is built on: the task ledger, config
+loading, worktree verification, the loop-guard helpers, the engine adapter
+interface and spawn pipeline, and the detached runner with its orphan
+handling — 146 tests, all passing. The rest is a target, modes included: the
+delegation tools and the authority model that gates them, the three engine
+adapters, the mode loader, the skills, and each host's packaging.
+`docs/design.md` is the design and the work plan; `docs/probes.md` records
+what each engine CLI was observed to do.
 
 ## Run the tests
 
@@ -18,15 +28,38 @@ npm test
 
 No dependencies; Node 24 or later runs the TypeScript sources directly.
 
+## The lead, in one paragraph
+
+The lead is whichever session holds the lead tools and runs the mode's loop,
+and the mode's `placement` decides which process that session is. Under
+`placement: host` it is your own session: it loads the loop and is busy
+between `wait` calls. Under `placement: engine` a spawned engine runs the
+loop, your session stays free to watch it, answer its questions through a
+mailbox, and cancel it, and the run survives closing your session. `host` is
+built first; `engine` follows the first end-to-end run. Either way a server's
+authority comes from process ancestry rather than from depth or a token: it
+walks its own parent chain for the engine that spawned it, matches that
+against the ledger, and serves the operator, lead, or specialist row of the
+permission matrix accordingly, failing closed to specialist. Depth only caps
+that row, never raises it, and no token could grant it — the launch spec
+holding a child's environment sits in the project, where every role can read
+it, so possession must not equal authority.
+
 ## Loop guard, in one paragraph
 
-No delegation loop can form through the `delegate` tool: a specialist runs
-with a depth marker in its environment and the server refuses to offer
-`delegate` at that depth; specialists are spawned so they cannot see this
-server; and direct launches of `claude`, `codex`, `grok`, or this server
-from a specialist are denied at each CLI's own permission layer. A
-specialist that defeats its own CLI's permission rules is outside this
-guarantee.
+The design's guarantee is that no delegation loop can form through
+`delegate`. The ancestry walk resolves a specialist to the specialist row of
+the permission matrix and it gets exactly that row — the four read tools plus
+`describe_mode`, never `delegate` — with a call to any other tool refused at
+`tools/call` by name and told why; and its own direct launches of `claude`,
+`codex`, `grok`, this server, or the CLI are denied at the Claude and Grok
+permission layers, while a Codex child cannot reach a model API at all
+because its sandbox denies the network. None of that is enforced at this
+commit: the depth reader, the lineage and duplicate checks, and the deny-list
+and exclusion argument builders exist in `src/guard.ts` under unit test, but
+the server registers no `delegate` and gates nothing, so the guard is still
+design rather than behaviour. A specialist that defeats its own CLI's
+permission rules is outside the guarantee.
 
 ## License
 
