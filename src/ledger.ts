@@ -333,23 +333,3 @@ export function isProcessAlive(identity?: ProcessIdentity | null): boolean {
   const stat = readProcessStat(identity.pid);
   return stat !== null && stat.startTime === identity.startTime;
 }
-
-export async function reconcile(projectRoot: string, now = Date.now()): Promise<TaskRecord[]> {
-  const changed: TaskRecord[] = [];
-  for (const record of list(projectRoot)) {
-    let patch: TaskPatch | undefined;
-    if (record.status === "launching" && now > record.launchDeadline && !record.runnerIdentity) {
-      patch = { status: "failed", reason: "launch" };
-    } else if ((record.status === "running" || record.status === "stalled") && !isProcessAlive(record.runnerIdentity)) {
-      patch = isProcessAlive(record.engineIdentity)
-        ? { status: "orphaned" }
-        : { status: "failed", reason: "runner lost" };
-    }
-    if (!patch) continue;
-    // A record settled by another writer between the listing and this write is refused,
-    // and a refusal is not a change.
-    const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true });
-    if (result.applied) changed.push(result.record);
-  }
-  return changed;
-}

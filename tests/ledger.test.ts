@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, scan, reconcile, InvalidRecordError, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
+import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 
@@ -284,73 +284,6 @@ test("read and update reject IDs that could escape the task directory", async (t
   assert.equal(fs.existsSync(path.join(root, ".cross-agent", "locks")), false, "no lock is named after an invalid id");
 });
 
-test("reconcile fails unacknowledged launches only after their deadline", async (t) => {
-  const root = project(t);
-  const record = create(root, input(root), now);
-  assert.deepEqual(await reconcile(root, record.launchDeadline - 1), []);
-  assert.deepEqual(read(root, record.id), record);
-  assert.deepEqual(await reconcile(root, record.launchDeadline), []);
-  assert.deepEqual(read(root, record.id), record);
-
-  const after = record.launchDeadline + 1;
-  const expected = { ...record, status: "failed", reason: "launch", updatedAt: after };
-  assert.deepEqual(await reconcile(root, after), [expected]);
-  assert.deepEqual(read(root, record.id), expected);
-  assert.deepEqual(await reconcile(root, after + 1), []);
-});
-
-test("reconcile fails running and stalled tasks when both identities are dead", async (t) => {
-  const root = project(t);
-  const dead = deadIdentity();
-  for (const status of ["running", "stalled"] as const) {
-    for (const identities of [{}, { runnerIdentity: dead, engineIdentity: dead }]) {
-      const record = await started(root, status, now);
-      const active = await change(root, record.id, identities, now + 1);
-      const expected = { ...active, status: "failed", reason: "runner lost", updatedAt: now + 2 };
-      assert.deepEqual(await reconcile(root, now + 2), [expected]);
-      assert.deepEqual(read(root, record.id), expected);
-    }
-  }
-});
-
-test("reconcile skips a record settled between listing and its write", async (t) => {
-  const root = project(t);
-  const dead = deadIdentity();
-  const record = await started(root, "running", now);
-  const active = await change(root, record.id, { runnerIdentity: dead, engineIdentity: dead }, now + 1);
-  const file = path.join(tasks(root), `${record.id}.json`);
-  const original = fs.readFileSync;
-  let reads = 0;
-  const external: TaskRecord = { ...active, status: "failed", reason: "external settlement", updatedAt: now + 2 };
-  // The first read of this record is the listing; the second is the one update makes
-  // inside the record lock. A settlement landing between them must be seen by that
-  // second read. It is written here as another process would: whole file, one rename.
-  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
-    if (target === file && ++reads === 2) {
-      mock.mock.restore();
-      fs.writeFileSync(`${file}.external`, JSON.stringify(external, null, 2) + "\n");
-      fs.renameSync(`${file}.external`, file);
-    }
-    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
-  }) as typeof fs.readFileSync);
-  assert.deepEqual(await reconcile(root, now + 3), []);
-  assert.equal(reads, 2);
-  assert.deepEqual(read(root, record.id), external);
-});
-
-test("reconcile orphans running and stalled tasks with a dead runner and live engine", async (t) => {
-  const root = project(t);
-  const engine = liveIdentity();
-  for (const status of ["running", "stalled"] as const) {
-    const record = await started(root, status, now);
-    const active = await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine }, now + 1);
-    const expected = { ...active, status: "orphaned", updatedAt: now + 2 };
-    assert.deepEqual(await reconcile(root, now + 2), [expected]);
-    assert.deepEqual(read(root, record.id), expected);
-    assert.equal(isProcessAlive(engine), true);
-  }
-});
-
 test("process identity rejects missing processes and reused PIDs", () => {
   assert.equal(isProcessAlive(), false);
   assert.equal(isProcessAlive(null), false);
@@ -388,20 +321,6 @@ test("process identity propagates unexpected proc access errors", (t) => {
   const failure = Object.assign(new Error("proc read refused"), { code: "EACCES" });
   t.mock.method(fs, "readFileSync", () => { throw failure; });
   assert.throws(() => isProcessAlive({ pid: process.pid, startTime: "0", bootId: currentBootId }), (error) => error === failure);
-});
-
-test("reconcile preserves live-runner tasks and all other states", async (t) => {
-  const root = project(t);
-  const live = liveIdentity();
-  const dead = deadIdentity();
-  for (const status of statuses) {
-    const record = await started(root, status, now);
-    const runnerIdentity = status === "running" || status === "stalled" ? live : dead;
-    await change(root, record.id, { runnerIdentity, engineIdentity: dead }, now + 1);
-  }
-  const before = list(root);
-  assert.deepEqual(await reconcile(root, now + 60_000), []);
-  assert.deepEqual(list(root), before);
 });
 
 test("read validates the shape every reader depends on and names the file and the fault", (t) => {
@@ -526,7 +445,7 @@ test("first ledger use appends each missing exclusion once", async (t) => {
     const record = create(root, input(root), now);
     read(root, record.id);
     await change(root, record.id, { status: "running" }, now + 1);
-    await reconcile(root, now + 2);
+    scan(root);
     assert.equal(fs.readFileSync(exclude, "utf8"), first);
   }
 });
