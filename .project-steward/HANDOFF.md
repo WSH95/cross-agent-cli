@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-09-09T14:08:21Z
+updated_at: 2026-09-09T14:58:24Z
 updated_by: claude
-session_status: closed
+session_status: active
 branch: task/cross-agent
 ---
 
@@ -11,35 +11,35 @@ branch: task/cross-agent
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
 9f85269). Landed and reviewed: rename; `docs/design.md` as the authority
-(current through §3 as built; `tools/check-citations.mjs` under `npm
-test`); README; `AGENTS.md` by two approved diffs (Decisions 0006, 0007);
-the lifecycle core (S2, closed); probes P8–P10 (S4, closed); T6 (closed);
-the engine contract v2 (S5, closed); the Claude adapter (T7, closed at
-90fd4d6). Landed, under review: the Codex adapter (T8, aa3e8bc — 323 tests
-+ 1 skipped I2 placeholder). Beads this session: `.29`–`.36`, `atc-n85`
-(closed), `atc-vuu`, `atc-7bj`, `atc-2q4` (closed), `atc-vao`, `atc-6sl`,
-`atc-540`. SDD ledger:
+(`tools/check-citations.mjs` under `npm test`); README; `AGENTS.md` by
+three approved diffs (Decisions 0006, 0007, 0009); the lifecycle core (S2);
+probes P8–P10 (S4); T6; the engine contract v2 (S5); the three adapters —
+Claude (T7, 90fd4d6), Codex (T8, 1a20cc8), Grok (T9, 992a830) — 343 tests
++ 1 skipped (the I2 placeholder). The final whole-branch review (Opus,
+9f85269..fd36d21) found no Critical defect: three Important (the reconcile
+flake `atc-7bj`; the runner's environ check counting itself and ignoring
+unreadable candidates; nothing enforcing `CROSS_AGENT_TASK` in the engine
+env) and six Minor. Residuals beaded: `atc-s96.39`–`.43`, `.10.1`, `.10.2`.
+SDD ledger (rulings):
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
-(main checkout).
+(main checkout); DECISIONS 0008 drafted at the session scratchpad.
 
 ## In flight
 
-T8's fix round (the Codex prompt on stdin with `-`; the mount's files
-folded; a whole-argv `off` case) and T9, the Grok adapter
-(`streaming-messages-json`, `--rules`, the deny list, the fixture
-rewritten), on disjoint files. Bead `atc-s96.37` (per-task `scratchDir`)
-filed for T10 and the design.
+Task 9d, the §3 refresh (`atc-vao`, `atc-6sl`, `atc-540`): `5a70d24`
+committed, `docs/probes.md` still being edited. Queued behind it: the one
+fix dispatch for the final review's I1/I2/I3/M2/M6
+(`task-final-fix-brief.md`) and a scoped re-review; a scoped review of 9d.
 
 ## Next steps
 
-The operator's instruction for this session's close: once T8 and T9 clear
-review — (1) Task 9d, the one §3 refresh (`atc-vao`); (2) a final
-whole-branch review and a full `npm test`; (3) `git merge --ff-only
-task/cross-agent` into `main`, the suite on `main`; (4) the handover
-(HANDOFF, PROGRESS, VERIFY, PLAN, QUESTIONS; beads closed; DECISIONS 0008
-listing every ruling); (5) remove the worktree and delete the branch. No
-push. After that, the next work is T10 (two halves, briefs drafted), T11,
-modes, T12, T13 (needs `.17`), engine placement.
+The operator's close sequence, after the fix and both reviews: a full
+`npm test` on the branch; `git merge --ff-only task/cross-agent` into
+`main` and the suite on `main`; the handover (HANDOFF, PROGRESS, VERIFY,
+PLAN, QUESTIONS; beads closed; DECISIONS 0008 from the scratchpad draft);
+remove the worktree and delete the branch. No push. After that, the next
+work is T10 (two halves briefed; `.10.1`/`.10.2` fold in), T11, modes,
+T12, T13 (needs `.17`), engine placement.
 
 ## Blockers
 
