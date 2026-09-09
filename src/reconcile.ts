@@ -45,15 +45,14 @@ function stillRunning(entry: FoundProcess): boolean {
   return stat !== null && stat.startTime === entry.startTime && stat.state !== "Z" && stat.state !== "X";
 }
 
-async function killStrays(strays: FoundProcess[]): Promise<number[]> {
-  const killed: number[] = [];
+/** SIGTERM, two seconds, SIGKILL, per stray: the escalation a group gets, one pid at a time. */
+async function killStrays(strays: FoundProcess[]): Promise<void> {
   for (const stray of strays) {
     // Verified immediately before the signal, as killGroup verifies a group: a pid that
     // left between the scan and here can already belong to an unrelated process.
     if (!stillRunning(stray)) continue;
     try {
       process.kill(stray.pid, "SIGTERM");
-      killed.push(stray.pid);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
@@ -67,7 +66,6 @@ async function killStrays(strays: FoundProcess[]): Promise<number[]> {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
   }
-  return killed;
 }
 
 /**
@@ -176,7 +174,8 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
 /**
  * Reconciliation and orphan cleanup in one pass, so no caller can observe an `orphaned`
  * record whose group is still being decided. `changed` is what reconciliation wrote,
- * `cleaned` what cleanup settled after it, and `invalid` the files neither could read.
+ * `cleaned` what cleanup settled after it, `invalid` the files neither could read, and
+ * `errors` and `skipped` the records each left for the next pass, with the reason.
  */
 export async function reconcileAndCleanup(
   projectRoot: string, now = Date.now(),
