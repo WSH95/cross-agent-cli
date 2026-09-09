@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T13:32:29Z
+updated_at: 2026-09-09T13:57:55Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -11,35 +11,33 @@ branch: task/cross-agent
 
 Branch `task/cross-agent` (worktree `.worktrees/cross-agent`, base `main` @
 9f85269). Landed and reviewed: rename; `docs/design.md` as the authority
-(amended through Task 2c); README; `AGENTS.md` by approved diff (Decision
-0006); the lifecycle core (S2 `.20`, closed; 199 tests); probes P8–P10
-(S4 `.21`, closed); T6 (`.6`, closed at ffbb84d, 237 tests): reservation
-(every profile but read-only/strict reserves; invalid records block),
-`git_mutate` (verified git-dir only, `spawn.lock` → `git.lock`, a git
-environment allowlist, never throws at the lead), the journal (per-step
-`defaultSha`; the `merged` step sets the revert target once),
-`lockWaitSeconds` through every lock. Beads `.29`–`.35` filed this
-session (`.34`, `.35` closed). SDD ledger:
+(current through §3 as built; `tools/check-citations.mjs` under `npm
+test`); README; `AGENTS.md` by two approved diffs (Decisions 0006, 0007);
+the lifecycle core (S2, closed); probes P8–P10 (S4, closed); T6 (closed);
+the engine contract v2 (S5, closed); the Claude adapter (T7, closed at
+90fd4d6). Landed, under review: the Codex adapter (T8, aa3e8bc — 323 tests
++ 1 skipped I2 placeholder). Beads this session: `.29`–`.36`, `atc-n85`
+(closed), `atc-vuu`, `atc-7bj`, `atc-2q4` (closed), `atc-vao`, `atc-6sl`,
+`atc-540`. SDD ledger:
 `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/progress.md`
 (main checkout).
 
 ## In flight
 
-Scoped re-reviews of two fix rounds: T7's (90fd4d6 — the lead mount emitted
-with `--strict-mcp-config` before `--model` because `--mcp-config` is
-variadic; `canonicalPath` exported and `SpawnRequest.cwd` documented
-canonical; one sandbox-error event per run, latched in the pipeline's
-per-run closure; 305 tests) and 5d's (a3439cf — §7's exit-code fact; the
-checker reports brace-expansion paths and joins wrapped citations).
+The Opus review of T8 (one ruling pending in it: the Codex prompt goes on
+stdin with `-` as the positional, so a brief beginning with `-` cannot be
+read as a flag). T9, the Grok adapter (`streaming-messages-json`,
+`--rules`, the deny list, the fixture rewritten), dispatched in parallel on
+disjoint files.
 
 ## Next steps
 
-1. Close T7 (`.7`) and 5d on clean reviews; T8 Codex (`.8`), T9 Grok
-   (`.9`) — briefs confirmed against the contract; then the one §3
-   citation refresh (`atc-vao`).
+1. Close T8 and T9 on clean reviews; then the one §3 citation refresh
+   (`atc-vao`, with `atc-6sl`/`atc-540` folded in).
 2. T10 in two halves (`.10`: 10a authority + server plumbing, 10b the
-   tools — briefs drafted), T11 (`.11`), modes (`.23`), T12, T13, engine
-   placement (`.24`).
+   tools — briefs drafted), T11 (`.11`), modes (`.23`), T12, T13 (needs
+   `.17`, the Claude P2 probe — AppArmor profile, sudo), engine placement
+   (`.24`).
 
 ## Blockers
 
