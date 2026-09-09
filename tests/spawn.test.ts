@@ -365,21 +365,24 @@ test("stderr becomes an engine event only for an adapter that reads it", async (
   const handle = launch(adapter, {}, { spawn: engine.spawn });
   engine.child.stderr.write("a warning\r\nfatal: the sandbox never started\n");
   engine.child.stdout.write('{"type":"result","text":"done"}\n');
-  engine.child.stderr.write("tail without a terminator");
+  engine.child.stderr.write("fatal: and again\ntail without a terminator");
   await engine.close();
   const result = await handle.result;
-  // Every line, terminators stripped, the final fragment included.
-  assert.deepEqual(seen, ["a warning", "fatal: the sandbox never started", "tail without a terminator"]);
+  // Every line until the first fatal one, terminators stripped — and none after it: a
+  // sandbox that fails every command writes its message once per command, and the run has
+  // already failed, so the repeat belongs to the log and not to the record.
+  assert.deepEqual(seen, ["a warning", "fatal: the sandbox never started"]);
   assert.equal(result.ok, false);
   assert.deepEqual(result.events, [
     { kind: "error", text: "sandbox: fatal: the sandbox never started" }, { kind: "result", text: "done" },
   ]);
   // The engine's own last word still stands; what fails the run is the event beside it.
   assert.equal(result.finalMessage, "done");
-  // And the log is what it always was: stderr prefixed, stdout as the engine wrote it.
+  // And the log is what it always was: every stderr line prefixed, the final fragment
+  // included, stdout as the engine wrote it.
   assert.equal(readFileSync(request.logPath, "utf8"),
     "stderr a warning\r\nstderr fatal: the sandbox never started\n"
-    + '{"type":"result","text":"done"}\nstderr tail without a terminator');
+    + '{"type":"result","text":"done"}\nstderr fatal: and again\nstderr tail without a terminator');
 });
 
 test("a stderr reader that throws is this run's failure, not an escape", async (t) => {

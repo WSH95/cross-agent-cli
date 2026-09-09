@@ -17,11 +17,13 @@ export interface Reservations {
 }
 
 /**
- * The path a reservation is keyed by. A removed worktree still holds its reservation, so
- * the closest existing ancestor is canonicalized and the rest is kept as it was written:
- * a path that cannot be resolved must still compare equal to itself.
+ * The path a reservation is keyed by, and the path a launch spec and a `SpawnRequest`
+ * carry as a workspace (`src/engines/types.ts`): one directory reached two ways is one
+ * workspace, and what the child sees is the resolved name. A removed worktree still holds
+ * its reservation, so the closest existing ancestor is canonicalized and the rest is kept
+ * as it was written: a path that cannot be resolved must still compare equal to itself.
  */
-function canonicalPath(target: string): string {
+export function canonicalPath(target: string): string {
   const resolved = path.resolve(target);
   const missing: string[] = [];
   let head = resolved;

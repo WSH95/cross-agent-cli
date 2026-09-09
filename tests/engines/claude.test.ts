@@ -2,12 +2,13 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import claude from "../../src/engines/claude.ts";
 import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
+import { canonicalPath } from "../../src/reservation.ts";
 import { spawnEngine } from "../../src/engines/spawn.ts";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines/types.ts";
 
@@ -262,20 +263,24 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
   };
   const mount = path.join(dirs.task, "mcp-config.json");
   const plan = claude.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead }));
+  // P9's order: the mount travels with the flag that makes it exclusive.
   assert.deepEqual(plan.argv, [
     "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config",
+    "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
     "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
-    "--mcp-config", mount,
   ]);
+  // `--mcp-config` is variadic, so what follows it has to be a flag, and the argv may end
+  // only in the deny list's values: any other variadic flag left last would swallow them.
+  assert.equal(plan.argv[plan.argv.indexOf("--mcp-config") + 2], "--session-id");
+  assert.equal(plan.argv.at(-1), someDeny.at(-1));
   // One mount, and one flag making it exclusive: a second would be a second server.
   assert.equal(plan.argv.filter((argument) => argument === "--strict-mcp-config").length, 1);
   assert.equal(plan.argv.filter((argument) => argument === "--mcp-config").length, 1);
-  assert.deepEqual(plan.files?.map((file) => file.path), [dirs.role, mount]);
-  assert.deepEqual(JSON.parse(plan.files![1].contents), {
+  assert.deepEqual(plan.files?.map((file) => file.path), [mount, dirs.role]);
+  assert.deepEqual(JSON.parse(plan.files![0].contents), {
     mcpServers: { "cross-agent": { command: lead.command, args: lead.args, env: lead.env } },
   });
   // The adapter names the files; the pipeline is what puts them on disk.
@@ -288,6 +293,24 @@ test("the sandbox settings say disabled for the one profile that means it", (t) 
   assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1], '{"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true}}');
   // `off` is not read-only: an unsandboxed role still edits.
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
+});
+
+test("the writable root is the request's cwd exactly, and that cwd is already canonical", (t) => {
+  const dirs = layout(t);
+  // A workspace reached through a symlink is a second string for one directory. The child
+  // sees the real one, and the reservation is keyed by the real one, so the request carries
+  // the real one — resolved by the same `canonicalPath` T10 will build the request with —
+  // and the adapter passes it through untouched rather than normalising it again.
+  const link = path.join(dirs.root, "link-to-worktree");
+  symlinkSync(dirs.worktree, link);
+  const cwd = canonicalPath(link);
+  assert.notEqual(cwd, link);
+  assert.equal(cwd, canonicalPath(dirs.worktree));
+  const plan = claude.plan(requestFor(dirs, { cwd }));
+  const settings = plan.argv[plan.argv.indexOf("--settings") + 1];
+  assert.equal(plan.cwd, cwd);
+  assert.deepEqual(JSON.parse(settings).sandbox.filesystem.allowWrite, [cwd]);
+  assert.equal(settings.includes(link), false);
 });
 
 test("a configured binary is the one the plan spawns", (t) => {
@@ -348,9 +371,12 @@ test("a result line is the run's verdict: success is a result, anything else is 
   // A failure whose messages are a list: an operator reading it needs all of them.
   assert.deepEqual(claude.parseLine('{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["first","second"]}'),
     { kind: "error", text: "first\nsecond" });
-  // Either half of the verdict alone makes it a failure.
+  // Either half of the verdict alone makes it a failure, and a missing half is a failure
+  // too: a success has to say so, so a line that omits `is_error` fails closed.
   assert.deepEqual(claude.parseLine('{"type":"result","subtype":"success","is_error":true,"result":"contradiction"}'),
     { kind: "error", text: "contradiction" });
+  assert.deepEqual(claude.parseLine('{"type":"result","subtype":"success","result":"no verdict at all"}'),
+    { kind: "error", text: "no verdict at all" });
   assert.deepEqual(claude.parseLine('{"type":"result","subtype":"error_max_turns","is_error":false,"result":"ran out"}'),
     { kind: "error", text: "ran out" });
   const silent = claude.parseLine('{"type":"result","subtype":"error_max_turns","is_error":true}');
@@ -478,4 +504,30 @@ test("a sandbox failure on stderr fails a run the engine itself calls a success 
   assert.ok(result.events.some((event) => event.kind === "result"));
   // The line stays in the log as the engine wrote it, prefixed as stderr evidence.
   assert.match(readFileSync(request.logPath, "utf8"), new RegExp(`^stderr ${warning.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+});
+
+test("a sandbox that fails every command is still one error event, and all of it evidence", async (t) => {
+  const dirs = layout(t);
+  withSandboxPrerequisites(t, dirs.root);
+  // P1's other failure mode: the sandbox engages and every command inside it dies at its
+  // setup, so the message arrives once per command and a long run would emit hundreds.
+  const lines = ["curl", "npm test", "git status"].map((command) =>
+    `${command}: apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`);
+  const request = requestFor(dirs, {
+    env: {
+      FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok", CLAUDE_SHIM_STDERR: lines.join("\n"),
+      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root),
+    },
+  });
+  const handle = spawnEngine(claude, request, {});
+  t.after(() => { handle.kill("SIGKILL"); });
+  const result = await handle.result;
+
+  assert.equal(result.ok, false);
+  // One event: the run has already failed, and the record is not the place for the repeat.
+  assert.deepEqual(result.events.filter((event) => event.kind === "error"),
+    [{ kind: "error", text: `claude sandbox failure: ${lines[0]}` }]);
+  // The log is where the repeat belongs, in full: every line the engine wrote.
+  const log = readFileSync(request.logPath, "utf8");
+  for (const line of lines) assert.ok(log.includes(`stderr ${line}\n`), line);
 });

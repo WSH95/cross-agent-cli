@@ -102,6 +102,9 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   let resolved = false;
   let stopping = false;
   let truncated = false;
+  // Per run, and only here: the adapters are pure functions of one line, so the latch that
+  // keeps one sandbox failure from becoming hundreds of events belongs to the run.
+  let stderrFailed = false;
   let drain: ReturnType<typeof setTimeout> | undefined;
   let resolve!: (result: SpawnResult) => void;
   const result = new Promise<SpawnResult>((done) => { resolve = done; });
@@ -139,6 +142,10 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
         closeLog();
       }
     }
+    // A sandbox that engages and then fails at its own setup writes its message once per
+    // command the engine tries, so the stderr reader is asked only until it reports a
+    // failure: after that the run is already failed and the repetition is the log's alone.
+    if (stderr && stderrFailed) return;
     const parse = stderr ? parseStderrLine : parseLine;
     if (parse === undefined) return;
     if (!stderr && finish !== undefined) rawStdout.push(raw);
@@ -152,6 +159,10 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
       if (event !== null) {
         events.push(event);
         if (event.kind === "session" && sessionId === null) sessionId = event.sessionId;
+        if (stderr && event.kind === "error") stderrFailed = true;
+        // A stderr event advances lastEventAt exactly like a stdout one, deliberately: an
+        // engine whose every command dies in the sandbox is working, not stalled, and the
+        // stall detector must not be the thing that reports a failure the events already do.
         lastEventAt = Date.now();
       }
     } catch (error) {

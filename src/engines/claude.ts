@@ -104,6 +104,15 @@ const claude = {
       "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
       ...claude.exclusionArgs(),
     ];
+    const files: NonNullable<SpawnPlan["files"]> = [];
+    // Beside the flag that makes it exclusive, which is the order P9 ran. `--mcp-config`
+    // is variadic, so nothing variadic may end the line: the last flag is
+    // `--disallowedTools`, whose values end the argv, and the prompt goes on stdin.
+    if (request.lead !== undefined) {
+      const mount = claude.leadMount(request.lead, request.scratchDir);
+      argv.push(...mount.argv);
+      files.push(...(mount.files ?? []));
+    }
     if (request.model) argv.push("--model", request.model);
     if (request.effort) argv.push("--effort", request.effort);
     // Never both: a resumed run is the session it names, and a fresh one is the id the
@@ -112,7 +121,6 @@ const claude = {
       ? ["--resume", request.resumeSessionId]
       : ["--session-id", request.sessionId]));
 
-    const files: NonNullable<SpawnPlan["files"]> = [];
     // A Claude role prompt travels as a file and never as prompt text (P9), and the file
     // is the task's own — never inside the specialist's worktree, which the role may edit.
     if (request.rolePrompt !== "") {
@@ -129,12 +137,8 @@ const claude = {
     if (mode === "read-only") disallowed.push("Edit", "Write", "MultiEdit", "NotebookEdit");
     if (disallowed.length > 1) argv.push(...disallowed);
 
-    if (request.lead !== undefined) {
-      const mount = claude.leadMount(request.lead, request.scratchDir);
-      argv.push(...mount.argv);
-      files.push(...(mount.files ?? []));
-    }
-    // The prompt goes on stdin, so no positional argument follows the variadic flags.
+    // `cwd` is passed through as the request wrote it: it is already canonical, and the
+    // writable root above has to be the name the child sees.
     return { bin: engineBin("claude", request.env), argv, cwd: request.cwd, env: request.env, stdin: request.brief, files };
   },
 
@@ -174,7 +178,9 @@ const claude = {
    * The sandbox failure that no check before the spawn can see (P1). The engine keeps
    * running and can still exit 0, so the line itself is the failure: the pipeline records
    * an `error` event, which is what makes the run fail closed rather than quietly go
-   * unsandboxed.
+   * unsandboxed. It records one — the pipeline stops asking after the first, because the
+   * failure that engages the sandbox and then breaks it repeats once per command — so this
+   * stays a pure function of one line and holds no state of its own.
    */
   parseStderrLine(line: string): EngineEvent | null {
     return sandboxFailure.test(line) ? { kind: "error", text: `claude sandbox failure: ${line}` } : null;

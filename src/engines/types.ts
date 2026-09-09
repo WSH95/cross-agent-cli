@@ -33,6 +33,14 @@ export interface SpawnRequest {
   role: string;
   brief: string;
   rolePrompt: string;
+  /**
+   * The role's workspace, already canonical: the caller resolves it with `canonicalPath`
+   * (`src/reservation.ts`), which is also what keys the reservation. An adapter passes it
+   * through untouched — it is the spawn's own cwd and, where an engine names a writable
+   * root, the name it gives that root — because the child sees the resolved path, and a
+   * sandbox told about a symlink to the same directory would not be told about the
+   * directory.
+   */
   cwd: string;
   /** The engine this request is for, which must be the adapter that runs it. */
   engine: EngineName;
@@ -95,7 +103,9 @@ export interface EngineAdapter {
    * event stream. Claude's sandbox refusals are the case (probe P1): the run continues and
    * can still exit 0, but nothing it did was sandboxed, so the line is an `error` event and
    * the run has failed. The pipeline reads stderr for an adapter that declares this and for
-   * no other, so for every other adapter stderr stays log evidence and nothing more.
+   * no other, so for every other adapter stderr stays log evidence and nothing more; and it
+   * asks only until the first `error`, because a sandbox that fails every command repeats
+   * itself once per command and one such event is the whole verdict.
    */
   parseStderrLine?(line: string): EngineEvent | null;
   /**
