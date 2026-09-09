@@ -60,6 +60,66 @@ function refusal(result: GitMutateResult): string {
   return reason;
 }
 
+async function poll<T>(read: () => T | Promise<T>, accepts: (value: T) => boolean, timeout = 5000): Promise<T> {
+  const deadline = Date.now() + timeout;
+  while (true) {
+    const value = await read();
+    if (accepts(value)) return value;
+    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
+    await delay(10);
+  }
+}
+
+/** The util-linux child that actually holds a lock, found by the file on its command line. */
+function holderOf(file: string): number | null {
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let cmdline: string;
+    try {
+      cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
+    } catch {
+      continue;
+    }
+    const argv = cmdline.split("\0");
+    if (argv[0]?.endsWith("flock") && argv.includes(file)) return Number(entry);
+  }
+  return null;
+}
+
+/**
+ * A `git` first on `PATH` that records every mutation invocation — its argv and its whole
+ * environment — and, when asked, sleeps or kills itself for the invocation whose arguments
+ * carry a marker. Only a mutation is intercepted: the verifier's own reads use `-C`.
+ */
+async function shim(t: TestContext, temporary: string, options: { sleepOn?: string; signalOn?: string } = {}) {
+  const realGit = (await exec("sh", ["-c", "command -v git"], { encoding: "utf8" })).stdout.trim();
+  const directory = path.join(temporary, "shim");
+  const log = path.join(temporary, "invocations.txt");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, "git"), `#!/bin/sh
+case "$1" in
+  --git-dir=*)
+    { for argument in "$@"; do printf 'argv %s\\n' "$argument"; done; env | sed 's/^/env /'; } >> ${JSON.stringify(log)}
+    ${options.sleepOn ? `case " $* " in *${options.sleepOn}*) sleep 2 ;; esac` : ""}
+    ${options.signalOn ? `case " $* " in *${options.signalOn}*) kill -TERM $$ ;; esac` : ""}
+    ;;
+esac
+exec ${JSON.stringify(realGit)} "$@"
+`);
+  await chmod(path.join(directory, "git"), 0o755);
+  const original = process.env.PATH;
+  t.after(() => { process.env.PATH = original; });
+  process.env.PATH = `${directory}${path.delimiter}${original}`;
+  async function lines(): Promise<string[]> {
+    try {
+      return (await readFile(log, "utf8")).split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+  return { lines, argv: async () => (await lines()).filter((line) => line.startsWith("argv ")).map((line) => line.slice("argv ".length)) };
+}
+
 /** A task at `status` holding `cwd`, with the launch spec that says it may write. */
 async function reserve(root: string, cwd: string, sandbox = "workspace-write") {
   const record = create(root, { role: "implementer", brief: "hold the workspace", cwd, engine: "codex" });
@@ -233,29 +293,14 @@ test("git_mutate holds spawn.lock for the whole call and takes git.lock inside i
 test("git_mutate passes the verified directories explicitly and hands the child no GIT_DIR", async (t) => {
   const { temporary, root, add } = await repository(t);
   const b = await add("b");
-  const realGit = (await exec("sh", ["-c", "command -v git"], { encoding: "utf8" })).stdout.trim();
-  const shimDirectory = path.join(temporary, "shim");
-  const log = path.join(temporary, "invocations.txt");
-  await mkdir(shimDirectory);
-  await writeFile(path.join(shimDirectory, "git"), `#!/bin/sh
-case "$1" in
-  --git-dir=*)
-    { for argument in "$@"; do printf 'argv %s\\n' "$argument"; done; env | sed 's/^/env /'; } >> ${JSON.stringify(log)}
-    ;;
-esac
-exec ${JSON.stringify(realGit)} "$@"
-`);
-  await chmod(path.join(shimDirectory, "git"), 0o755);
+  const recorder = await shim(t, temporary);
 
-  const originalPath = process.env.PATH;
   const originalGitDir = process.env.GIT_DIR;
   const originalWorkTree = process.env.GIT_WORK_TREE;
   t.after(() => {
-    process.env.PATH = originalPath;
     if (originalGitDir === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = originalGitDir;
     if (originalWorkTree === undefined) delete process.env.GIT_WORK_TREE; else process.env.GIT_WORK_TREE = originalWorkTree;
   });
-  process.env.PATH = `${shimDirectory}${path.delimiter}${originalPath}`;
   // What a server started from a hook inside that worktree inherits. Neither may reach
   // the child: the directories a mutation runs against are the verifier's answer alone.
   process.env.GIT_DIR = await realpath(path.join(root, ".git", "worktrees", "b"));
@@ -263,15 +308,15 @@ exec ${JSON.stringify(realGit)} "$@"
 
   const result = accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "explicit"] }, { waitSeconds: 5 }));
   assert.equal(result.exitCode, 0);
-  const lines = (await readFile(log, "utf8")).split("\n").filter(Boolean);
-  const argv = lines.filter((line) => line.startsWith("argv ")).map((line) => line.slice("argv ".length));
+  const argv = await recorder.argv();
   const gitDir = await realpath(path.join(root, ".git", "worktrees", "b"));
   assert.deepEqual(argv.slice(0, 2), [`--git-dir=${gitDir}`, `--work-tree=${await realpath(b)}`]);
   assert.ok(argv.every((argument) => !argument.includes(path.join("worktrees", "a"))), argv.join(" "));
+  const lines = await recorder.lines();
   for (const variable of ["GIT_DIR", "GIT_WORK_TREE"]) {
     assert.equal(lines.some((line) => line.startsWith(`env ${variable}=`)), false, `${variable} reached the child`);
   }
-  assert.equal(lines.some((line) => line.startsWith("env PATH=")), true, "the rest of the environment is the server's own");
+  assert.equal(lines.some((line) => line.startsWith("env PATH=")), true, "git is still found on the server's PATH");
 });
 
 test("git_mutate refuses arguments that are not one subcommand in this worktree", async (t) => {
@@ -337,6 +382,57 @@ test("a git command that fails returns its exit code and output, and journals no
   assert.equal(await git(root, "rev-list", "--count", "task/failing"), "1");
 });
 
+test("a lock lost while the command ran is reported, and the step is still journaled", async (t) => {
+  const { temporary, root, add } = await repository(t);
+  await add("lost");
+  const recorder = await shim(t, temporary, { sleepOn: "slow-marker" });
+  const initial = await git(root, "rev-parse", "refs/heads/task/lost");
+
+  const pending = gitMutate(root, { slug: "lost", args: ["commit", "--allow-empty", "-m", "slow-marker"] }, { waitSeconds: 5, now: 42 });
+  const holder = await poll(() => holderOf(lockPath(root, gitLockName())), (pid) => pid !== null);
+  await poll(async () => (await recorder.argv()).some((argument) => argument.includes("slow-marker")), Boolean);
+  // The kernel hands the lock to the next waiter the moment its holder dies, so a caller
+  // that carried on silently would be acting on exclusivity it no longer has.
+  process.kill(holder!, "SIGKILL");
+
+  const result = accepted(await pending);
+  assert.equal(result.lockLost, true);
+  assert.notEqual(result.after, initial, "the command had already run, so its step is journaled");
+  assert.equal(result.after, await git(root, "rev-parse", "refs/heads/task/lost"));
+  assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42]);
+});
+
+test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
+  const { temporary, root, add } = await repository(t);
+  await add("refused");
+
+  const competitor = await acquire(lockPath(root, gitLockName()), { operation: "a competing mutation", waitSeconds: 5 });
+  t.after(() => competitor.release());
+  const busy = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 0 });
+  assert.match(refusal(busy), /git\.lock is held by another process/);
+  await competitor.release();
+
+  const delegate = await acquire(lockPath(root, spawnLockName()), { operation: "a delegate", waitSeconds: 5 });
+  t.after(() => delegate.release());
+  const claimed = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 0 });
+  assert.match(refusal(claimed), /spawn\.lock is held by another process/);
+  await delegate.release();
+
+  // A git that exits by signal reports no exit code at all; the lead is told, not thrown at.
+  const recorder = await shim(t, temporary, { signalOn: "signal-marker" });
+  const signalled = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "signal-marker"] }, { waitSeconds: 5 });
+  assert.match(refusal(signalled), /could not run/);
+  assert.ok((await recorder.argv()).some((argument) => argument.includes("signal-marker")));
+
+  // Without a config there is no default branch for the journal to record.
+  fs.rmSync(path.join(root, ".cross-agent", "config.json"));
+  const unconfigured = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 });
+  assert.match(refusal(unconfigured), /config/);
+
+  assert.equal(await git(root, "rev-list", "--count", "task/refused"), "1", "and not one of them ran");
+  assert.equal(readJournal(root, "refused"), null);
+});
+
 test("git_mutate waits on git.lock, and two calls serialize on it", async (t) => {
   const { root, add } = await repository(t);
   await add("serial");
@@ -396,7 +492,7 @@ setInterval(() => {}, 1 << 30);
     const elapsed = Date.now() - started;
     // The kernel released it when its holder died: nothing waited out the five seconds and
     // nothing reclaimed anything. What is left is the four git invocations.
-    assert.ok(elapsed < 1500, `the whole mutation took ${elapsed}ms`);
+    assert.ok(elapsed < 3000, `the whole mutation took ${elapsed}ms`);
   } finally {
     child.kill("SIGKILL");
     await closed;

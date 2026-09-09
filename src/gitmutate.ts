@@ -5,6 +5,7 @@ import { loadConfig } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
+import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import { verifyWorktree } from "./worktree.ts";
 
@@ -24,8 +25,25 @@ export interface GitMutateOptions {
 }
 
 export type GitMutateResult =
-  | { ok: true; exitCode: 0; stdout: string; stderr: string; before?: string; after?: string; journal: JournalEntry }
+  | {
+    ok: true; exitCode: 0; stdout: string; stderr: string; before?: string; after?: string;
+    /** `git.lock` was lost while the command ran: the mutation is done, its exclusivity is not. */
+    lockLost?: true;
+    journal: JournalEntry;
+  }
   | { ok: false; reason: string; exitCode?: number; stdout?: string; stderr?: string };
+
+/** git could not be run at all — no exit code to report, so there is nothing to judge. */
+class GitRunError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "GitRunError";
+  }
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 const exec = promisify(execFile);
 // One git subcommand's output. Larger than anything a lead's mutation produces, and still
@@ -70,7 +88,9 @@ async function run(gitDir: string, workTree: string, args: string[]): Promise<Ra
     return { exitCode: 0, stdout, stderr };
   } catch (error) {
     const failure = error as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string };
-    if (typeof failure.code !== "number") throw error;
+    // No numeric code means the child never reported one: git was not found, or it died on
+    // a signal. That is not a git failure the lead can read, so it is named as its own.
+    if (typeof failure.code !== "number") throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: ${message(error)}`);
     return { exitCode: failure.code, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
   }
 }
@@ -103,7 +123,7 @@ export async function gitMutate(
   try {
     journalled = readJournal(projectRoot, request.slug);
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+    return { ok: false, reason: message(error) };
   }
   const slug = request.slug;
   const branch = request.branch ?? `task/${slug}`;
@@ -117,9 +137,16 @@ export async function gitMutate(
   // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
   // around validate-and-spawn (T10), so holding it across this whole call is what keeps
   // the reservation check below from racing a delegation about to take this workspace.
-  const claim = await acquire(lockPath(projectRoot, spawnLockName()), {
-    waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
-  });
+  let claim: Lock;
+  try {
+    claim = await acquire(lockPath(projectRoot, spawnLockName()), {
+      waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
+    });
+  } catch (error) {
+    // A caller that could not even take the lock is told so, like every other refusal: the
+    // lead has one thing to read whatever stopped its mutation.
+    return { ok: false, reason: message(error) };
+  }
   try {
     return await mutate(projectRoot, request, options, { slug, branch, target });
   } finally {
@@ -151,12 +178,22 @@ async function mutate(
   const verified = await verifyWorktree(projectRoot, target, branch);
   if ("reason" in verified) return { ok: false, reason: verified.reason };
   const { gitDir, workTree } = verified;
-  const defaultBranch = loadConfig(projectRoot).project.defaultBranch;
+  let defaultBranch: string;
+  try {
+    defaultBranch = loadConfig(projectRoot).project.defaultBranch;
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
 
   // 3. One mutation at a time across the project.
-  const lock = await acquire(lockPath(projectRoot, gitLockName()), {
-    waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
-  });
+  let lock: Lock;
+  try {
+    lock = await acquire(lockPath(projectRoot, gitLockName()), {
+      waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
+    });
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
   try {
     const before = await revision(gitDir, workTree, verified.branch);
     const defaultShaBeforeMerge = await revision(gitDir, workTree, defaultBranch);
@@ -187,7 +224,7 @@ async function mutate(
       // lead its journal is current, and saying nothing would hide a completed commit.
       return {
         ok: false,
-        reason: `git ${request.args.join(" ")} ran in ${workTree}, but its journal step could not be written: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `git ${request.args.join(" ")} ran in ${workTree}, but its journal step could not be written: ${message(error)}`,
         exitCode: ran.exitCode, stdout: ran.stdout, stderr: ran.stderr,
       };
     }
@@ -195,8 +232,15 @@ async function mutate(
       ok: true, exitCode: 0, stdout: ran.stdout, stderr: ran.stderr,
       ...(before === undefined ? {} : { before }),
       ...(after === undefined ? {} : { after }),
+      // The command ran and is journaled, but if the kernel dropped this lock while it did,
+      // another mutation may already have started: the caller is told rather than left to
+      // believe the whole call was exclusive.
+      ...(lock.lost ? { lockLost: true as const } : {}),
       journal: journal.steps[journal.steps.length - 1],
     };
+  } catch (error) {
+    if (error instanceof GitRunError) return { ok: false, reason: error.message };
+    throw error;
   } finally {
     await lock.release();
   }
