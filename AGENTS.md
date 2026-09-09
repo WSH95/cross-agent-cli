@@ -1,10 +1,13 @@
 # agent-team-cli
 
-`dev-team`: a standalone multi-engine dev team (planner, plan reviewer,
-implementer, code reviewer) packaged as one MCP server plus one skill for
-Claude Code, Codex, and Grok. The design in `docs/design.md` is
-authoritative; `docs/probes.md` records what each engine CLI was observed
-to do.
+`cross-agent`: a multi-engine orchestrator — one MCP server plus a launcher
+skill — that runs headless `claude`, `codex`, and `grok` processes as a team
+from any host that can attach an MCP server and a skill (Claude Code, Codex,
+and Grok today). A team is a *mode*: roles, a lead loop, and a git policy,
+kept as data under `modes/`; `dev-team` (planner, plan reviewer,
+implementer, code reviewer, in git worktrees) and `solo` are built in. The
+design in `docs/design.md` is authoritative; `docs/probes.md` records what
+each engine CLI was observed to do.
 
 ## Project facts
 
@@ -16,19 +19,25 @@ to do.
 
 ## Layout
 
+Shipped:
+
 - `src/server.ts`: the stdio JSON-RPC (MCP) server and its tool registry.
-- `src/config.ts`: `.dev-team/config.json` loading and validation.
-- `src/ledger.ts`, `src/runner.ts`, `src/locks.ts`, `src/guard.ts`,
-  `src/gitmutate.ts`, `src/cli.ts`: one file per concern, as in the design.
-- `src/engines/`: one adapter per engine CLI (`claude`, `codex`, `grok`) on
-  the interface in `types.ts`.
-- `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;
-  `tests/fixtures/fake-engine.mjs` stands in for a CLI.
+- `src/config.ts`: `.cross-agent/config.json` loading and validation.
+- `src/ledger.ts` (task records), `src/process.ts` (process identities,
+  groups, orphan cleanup), `src/worktree.ts` (linked-worktree verification),
+  `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,
+  lineage, duplicates, deny lists): one file per concern, as in the design.
+- `src/engines/types.ts` (the adapter contract) and `src/engines/spawn.ts`
+  (the spawn pipeline); `tests/fixtures/fake-engine.mjs` stands in for a CLI.
+- `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`.
 - `tools/probe.mjs`: a standalone harness for observing a real engine CLI.
   Not product code.
-- `skills/dev-team/SKILL.md`, `roles/*.md`: the lead loop and the role
-  prompts (design sections 7 and 8).
 - `docs/design.md`, `docs/probes.md`.
+
+Planned, in the design's work plan: `src/locks.ts`, `src/reconcile.ts`,
+`src/gitmutate.ts`, `src/cli.ts`; one adapter per engine under
+`src/engines/`; `skills/cross-agent/SKILL.md` (the launcher skill) and
+`modes/<name>/{mode.json, SKILL.md, roles/*.md}` (the built-in modes).
 
 ## Conventions
 
@@ -39,11 +48,16 @@ to do.
   `tests/`; the test names the behaviour. Test-only hooks never go into
   `src/`; tests inject through public options (for example a tool list or
   an engine binary path).
-- The loop-guard scope (design section 5) and the deny list and exclusion
-  flags (design section 3) are hard requirements: a change to spawn
-  arguments keeps them and updates the builder tests.
+- The permission matrix and loop-guard scope (design "The lead model" and
+  section 5) and the deny list and exclusion flags (design section 3) are
+  hard requirements: a change to spawn arguments keeps them and updates the
+  builder tests.
 - Specialists never write git metadata (design section 4). Code that runs
-  git in a worktree goes through `git_mutate`.
+  git in a worktree goes through `git_mutate`; root operations for an
+  engine-placed lead go through `git_root`.
+- A role's workspace and sandbox default belong to its mode;
+  `.cross-agent/config.json` binds engine, model, and effort per role and
+  `bin` per engine.
 - Every sentence in prompts, briefs, and docs serves a purpose. No
   artificial length caps.
 

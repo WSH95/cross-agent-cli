@@ -70,3 +70,25 @@ residual, and left the lock to T6. One extra review round was authorized
 beyond the pack's two-round cap.
 
 Consequences: 4f39c71 on `main`, 146 tests; T6 closes the residual.
+
+## 0006 — 2026-09-09 — AGENTS.md follows the cross-agent design (user-approved diff)
+
+Context: The plugin was renamed to `cross-agent` and `docs/design.md`
+rewritten as the authority for the lead model, modes, and ancestry-bound
+authority. `AGENTS.md` is user-owned; agents change it only through an
+approved diff.
+
+Decision: The user approved the diff at
+`.superpowers/sdd/the-original-intent-of-rustling-hummingbird/agents-md-proposed.diff`
+on 2026-09-09: the opening paragraph describes `cross-agent` and modes; the
+Layout section separates shipped files (`src/server.ts`, `config.ts`,
+`ledger.ts`, `process.ts`, `worktree.ts`, `runner.ts`, `guard.ts`,
+`engines/{types,spawn}.ts`) from planned ones (`locks.ts` — since landed —,
+`reconcile.ts`, `gitmutate.ts`, `cli.ts`, the adapters, the launcher skill,
+`modes/`); the Conventions add the permission matrix as a hard requirement,
+`git_root` for an engine-placed lead, and the mode/config split (workspace
+and sandbox default in the mode; engine, model, effort per role and `bin`
+per engine in config). Managed blocks untouched; `CLAUDE.md` unchanged.
+
+Consequences: Instruction files match the design; the Layout's "planned"
+list is updated as tasks land.
