@@ -118,8 +118,63 @@ function recordPath(projectRoot: string, id: string): string {
   return path.join(initialize(projectRoot), `${id}.json`);
 }
 
+export class InvalidRecordError extends Error {
+  file: string;
+  reason: string;
+  constructor(file: string, reason: string) {
+    super(`invalid task record ${file}: ${reason}`);
+    this.name = "InvalidRecordError";
+    this.file = file;
+    this.reason = reason;
+  }
+}
+
+// A missing bootId is not malformed: an identity written before bootId existed can
+// never match this boot, so it is simply dead (design section 2).
+function identityFault(value: unknown, group: boolean): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) return "must be an object";
+  const identity = value as Record<string, unknown>;
+  if (!Number.isInteger(identity.pid)) return "needs an integer pid";
+  if (typeof identity.startTime !== "string") return "needs a string startTime";
+  if (group && !Number.isInteger(identity.pgid)) return "needs an integer pgid";
+  if (identity.bootId !== undefined && typeof identity.bootId !== "string") return "bootId must be a string";
+  return null;
+}
+
+// Every field a reader dereferences without checking, checked once here. Fields this
+// build does not know are kept: a record a later build wrote is not malformed.
+function recordFault(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "not a JSON object";
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(record.id)) return "id must be a [A-Za-z0-9_-] string";
+  if (typeof record.status !== "string" || !statuses.has(record.status as TaskStatus)) {
+    return `status must be one of ${[...statuses].join(", ")}`;
+  }
+  for (const field of ["createdAt", "updatedAt", "launchDeadline"] as const) {
+    if (typeof record[field] !== "number" || !Number.isFinite(record[field])) return `${field} must be a finite number`;
+  }
+  for (const field of ["role", "briefHash", "cwd", "engine", "resultPath", "logPath"] as const) {
+    if (typeof record[field] !== "string") return `${field} must be a string`;
+  }
+  for (const field of ["runnerIdentity", "engineIdentity"] as const) {
+    const fault = identityFault(record[field], field === "engineIdentity");
+    if (fault !== null) return `${field} ${fault}`;
+  }
+  return null;
+}
+
 function readRecord(file: string): TaskRecord {
-  return JSON.parse(fs.readFileSync(file, "utf8")) as TaskRecord;
+  const contents = fs.readFileSync(file, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    throw new InvalidRecordError(file, `unparsable JSON: ${(error as Error).message}`);
+  }
+  const fault = recordFault(parsed);
+  if (fault !== null) throw new InvalidRecordError(file, fault);
+  return parsed as TaskRecord;
 }
 
 function writeRecord(file: string, record: TaskRecord | LaunchSpec): void {
@@ -215,11 +270,38 @@ export async function update(
   }
 }
 
-export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
+export interface InvalidRecord {
+  /** The absolute path, so an operator can repair or remove exactly this file. */
+  file: string;
+  reason: string;
+}
+
+/**
+ * Every candidate record file, with the unreadable ones named instead of thrown, so
+ * one damaged file cannot hide the rest. An entry in `invalid` is an **unknown-active**
+ * task: its cwd cannot be read, so it can never free a workspace, and the reservation
+ * rule T6 must honour is that a writable delegation is refused while any invalid file
+ * exists (design section 2, A4-a and E2). A file that disappeared between the listing
+ * and its read is gone, not invalid.
+ */
+export function scan(projectRoot: string): { records: TaskRecord[]; invalid: InvalidRecord[] } {
   const directory = initialize(projectRoot);
-  return fs.readdirSync(directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^[A-Za-z0-9_-]+\.json$/.test(entry.name))
-    .map((entry) => readRecord(path.join(directory, entry.name)))
+  const records: TaskRecord[] = [];
+  const invalid: InvalidRecord[] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isFile() || !/^[A-Za-z0-9_-]+\.json$/.test(entry.name)) continue;
+    try {
+      records.push(readRecord(path.join(directory, entry.name)));
+    } catch (error) {
+      if (error instanceof InvalidRecordError) invalid.push({ file: error.file, reason: error.reason });
+      else if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return { records, invalid };
+}
+
+export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
+  return scan(projectRoot).records
     .filter((record) => status === undefined || record.status === status)
     .sort((left, right) => right.createdAt - left.createdAt);
 }

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, reconcile, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
+import { create, read, update, list, scan, reconcile, InvalidRecordError, isProcessAlive, readProcessStat, currentBootId } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 
@@ -402,6 +402,92 @@ test("reconcile preserves live-runner tasks and all other states", async (t) => 
   const before = list(root);
   assert.deepEqual(await reconcile(root, now + 60_000), []);
   assert.deepEqual(list(root), before);
+});
+
+test("read validates the shape every reader depends on and names the file and the fault", (t) => {
+  const root = project(t);
+  const record = create(root, input(root), now);
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const complete = { ...record, runnerIdentity: liveIdentity(), engineIdentity: liveIdentity(), reason: "kept" };
+  const put = (value: unknown) => fs.writeFileSync(file, JSON.stringify(value));
+
+  for (const valid of [
+    record as object,
+    complete,
+    { ...complete, runnerIdentity: null, engineIdentity: null },
+    // An identity written before bootId existed is dead, not malformed (design section 2).
+    { ...complete, runnerIdentity: { pid: 7, startTime: "1" }, engineIdentity: { pid: 7, startTime: "1", pgid: 7 } },
+    // A record a later build wrote carries fields this one does not know.
+    { ...complete, depth: 2, truncated: true, parentTaskId: "abc" },
+  ]) {
+    put(valid);
+    assert.deepEqual(read(root, record.id), valid);
+  }
+
+  const faults: [string, Record<string, unknown>][] = [
+    ["id", { id: undefined }], ["id", { id: "" }], ["id", { id: "bad id" }], ["id", { id: "../escape" }], ["id", { id: 5 }],
+    ["status", { status: "wandering" }], ["status", { status: undefined }], ["status", { status: 5 }],
+    ["createdAt", { createdAt: "1000" }], ["createdAt", { createdAt: undefined }],
+    ["updatedAt", { updatedAt: Number.NaN }], ["launchDeadline", { launchDeadline: Infinity }],
+    ...["resultPath", "logPath", "role", "cwd", "engine", "briefHash"].flatMap((field): [string, Record<string, unknown>][] =>
+      [[field, { [field]: undefined }], [field, { [field]: 5 }]]),
+    ["runnerIdentity", { runnerIdentity: 5 }],
+    ["runnerIdentity", { runnerIdentity: { pid: "7", startTime: "1", bootId: "b" } }],
+    ["runnerIdentity", { runnerIdentity: { pid: 7, bootId: "b" } }],
+    ["runnerIdentity", { runnerIdentity: { pid: 7, startTime: 1, bootId: "b" } }],
+    ["runnerIdentity", { runnerIdentity: { pid: 7, startTime: "1", bootId: 5 } }],
+    ["engineIdentity", { engineIdentity: { pid: 7, startTime: "1", bootId: "b" } }],
+    ["engineIdentity", { engineIdentity: { ...liveIdentity(), pgid: "7" } }],
+  ];
+  for (const [field, fault] of faults) {
+    put({ ...complete, ...fault });
+    assert.throws(() => read(root, record.id), (error: unknown) => {
+      assert.ok(error instanceof InvalidRecordError, `${JSON.stringify(fault)} was accepted`);
+      assert.equal(error.file, file);
+      assert.match(error.reason, new RegExp(field));
+      assert.match(error.message, new RegExp(`${file}.*${field}`));
+      return true;
+    }, JSON.stringify(fault));
+  }
+  for (const contents of ['"a string"', "[]", "null", "5", "{", ""]) {
+    fs.writeFileSync(file, contents);
+    assert.throws(() => read(root, record.id), InvalidRecordError, contents);
+  }
+});
+
+test("scan reports every unreadable file by name while list returns the valid records", async (t) => {
+  const root = project(t);
+  const oldest = create(root, input(root), now);
+  const newest = create(root, input(root), now + 10);
+  const running = await change(root, oldest.id, { status: "running" }, now + 20);
+  const directory = tasks(root);
+  const damaged = {
+    "truncated.json": '{"id":"truncated","status":"runn',
+    "unknown-status.json": JSON.stringify({ ...newest, id: "unknown-status", status: "wandering" }),
+    "not-an-object.json": '"a string"',
+  };
+  for (const [name, contents] of Object.entries(damaged)) fs.writeFileSync(path.join(directory, name), contents);
+
+  const scanned = scan(root);
+  const byId = (records: TaskRecord[]) => [...records].sort((left, right) => left.id.localeCompare(right.id));
+  assert.deepEqual(byId(scanned.records), byId([newest, running]));
+  assert.deepEqual(scanned.invalid.map((entry) => entry.file).sort(),
+    Object.keys(damaged).map((name) => path.join(directory, name)).sort());
+  for (const entry of scanned.invalid) assert.ok(entry.reason.length > 0, `${entry.file} has no reason`);
+  assert.match(scanned.invalid.find((entry) => entry.file.endsWith("unknown-status.json"))!.reason, /status/);
+  assert.deepEqual(list(root), [newest, running]);
+  assert.deepEqual(list(root, "running"), [running]);
+
+  // A record removed between the listing and its read is gone, not malformed.
+  const original = fs.readFileSync;
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === path.join(directory, `${newest.id}.json`)) throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  const removed = scan(root);
+  mock.mock.restore();
+  assert.deepEqual(removed.records, [running]);
+  assert.deepEqual(removed.invalid.map((entry) => entry.file).sort(), scanned.invalid.map((entry) => entry.file).sort());
 });
 
 test("list filters statuses, sorts newest first, and ignores output and temporary files", async (t) => {
