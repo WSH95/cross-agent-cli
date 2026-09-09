@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T12:47:54Z
+updated_at: 2026-09-09T13:15:59Z
 updated_by: claude
 session_status: closed
 branch: task/cross-agent
@@ -25,19 +25,23 @@ session (`.34`, `.35` closed). SDD ledger:
 
 ## In flight
 
-Task 7 (`.7`, claimed): the Claude adapter — `plan`/`parseLine`/`finalMessage`
-on the contract Task 5 landed (`.22` closed at cfaf2b0, 269 tests). Task 5d
-(`atc-2q4`, claimed): `tools/check-citations.mjs` under `npm test`, the §3
-sweep for the engine contract, three leftovers from the 3d re-review. Both
-on disjoint files.
+Two Opus reviews: Task 7, the Claude adapter (d8bc672: stream-json parse,
+settings sandbox, deny list, role file, lead mount, a `parseStderrLine?`
+hook for the run-time sandbox failure; 297 tests), and Task 5d
+(77eef9d, fe26d96: `tools/check-citations.mjs` under `npm test` — 364
+citations, 0 range misses — and §3 rewritten as built; `atc-2q4` closed).
+Citation refresh for `src/engines` is held until T9 lands (`atc-vao`,
+with `atc-6sl`/`atc-540` folded in); `atc-s96.36` proposes symbol
+citations so line drift stops.
 
 ## Next steps
 
-1. Review T7 and 5d; then T8 (`.8`) and T9 (`.9`) — briefs confirmed
-   against the landed contract.
-2. T10 (`.10`) in two halves — 10a authority resolution and server plumbing,
-   10b the delegation tools (briefs under `.superpowers/sdd/.../`); T11
-   (`.11`); modes (`.23`); T12; T13; engine placement (`.24`).
+1. Close T7 (`.7`) and 5d on clean reviews; T8 Codex (`.8`), T9 Grok
+   (`.9`) — briefs confirmed against the contract; then the one §3
+   citation refresh (`atc-vao`).
+2. T10 in two halves (`.10`: 10a authority + server plumbing, 10b the
+   tools — briefs drafted), T11 (`.11`), modes (`.23`), T12, T13, engine
+   placement (`.24`).
 
 ## Blockers
 

@@ -40,3 +40,4 @@ Set up Project Steward in this repository.
 2026-09-09T12:20:49Z — claude [auto-checkpoint] Task 3d sweep landed (7607f69, ee17f96); Task 5 engine contract landed (734e1e9..193b511; 264 tests); reviews in flight; beads atc-n85/atc-vuu/atc-7bj.
 2026-09-09T12:30:59Z — claude [auto-checkpoint] 3d docs round landed (eb21b5e; atc-n85 closed); Task 5 approved, fix round in flight; atc-2q4 extended with a citation checker.
 2026-09-09T12:47:54Z — claude [auto-checkpoint] Task 5 closed (cfaf2b0; 269 tests); T7 (Claude adapter) and 5d (citation checker + §3 sweep) in flight.
+2026-09-09T13:15:59Z — claude [auto-checkpoint] 5d landed (citation checker; §3 built); T7 Claude adapter landed (d8bc672; 297 tests); reviews in flight; beads .36, atc-vao/6sl/540.
