@@ -349,6 +349,52 @@ test("stderr is prefixed without becoming an engine event", async (t) => {
     + '{"type":"result","text":"done"}\nstderr fragment');
 });
 
+test("stderr becomes an engine event only for an adapter that reads it", async (t) => {
+  const { launch, request } = task(t);
+  const engine = controlled();
+  const seen: string[] = [];
+  // Claude's sandbox refusals arrive here and nowhere else (probe P1), so an adapter that
+  // can recognise one declares this and the pipeline offers it every stderr line.
+  const adapter: EngineAdapter = {
+    ...generic,
+    parseStderrLine(line) {
+      seen.push(line);
+      return line.startsWith("fatal") ? { kind: "error", text: `sandbox: ${line}` } : null;
+    },
+  };
+  const handle = launch(adapter, {}, { spawn: engine.spawn });
+  engine.child.stderr.write("a warning\r\nfatal: the sandbox never started\n");
+  engine.child.stdout.write('{"type":"result","text":"done"}\n');
+  engine.child.stderr.write("tail without a terminator");
+  await engine.close();
+  const result = await handle.result;
+  // Every line, terminators stripped, the final fragment included.
+  assert.deepEqual(seen, ["a warning", "fatal: the sandbox never started", "tail without a terminator"]);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.events, [
+    { kind: "error", text: "sandbox: fatal: the sandbox never started" }, { kind: "result", text: "done" },
+  ]);
+  // The engine's own last word still stands; what fails the run is the event beside it.
+  assert.equal(result.finalMessage, "done");
+  // And the log is what it always was: stderr prefixed, stdout as the engine wrote it.
+  assert.equal(readFileSync(request.logPath, "utf8"),
+    "stderr a warning\r\nstderr fatal: the sandbox never started\n"
+    + '{"type":"result","text":"done"}\nstderr tail without a terminator');
+});
+
+test("a stderr reader that throws is this run's failure, not an escape", async (t) => {
+  const { launch } = task(t);
+  const engine = controlled();
+  const adapter: EngineAdapter = { ...generic, parseStderrLine() { throw new Error("cannot read the diagnostic"); } };
+  const handle = launch(adapter, {}, { spawn: engine.spawn });
+  engine.child.stderr.write("a diagnostic\n");
+  await engine.close();
+  const result = await handle.result;
+  assert.equal(result.ok, false);
+  assert.ok(result.events.some((event) =>
+    event.kind === "error" && event.text === "claude parsing stderr: cannot read the diagnostic"));
+});
+
 test("error event fails a zero-exit run", async (t) => {
   const { launch } = task(t);
   const engine = controlled();

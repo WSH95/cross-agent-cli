@@ -91,6 +91,14 @@ export interface EngineAdapter {
   /** Receives one stdout line without its terminator; unknown lines return null. */
   parseLine(line: string): EngineEvent | null;
   /**
+   * The same for stderr, for an engine that writes a fatal line there rather than into its
+   * event stream. Claude's sandbox refusals are the case (probe P1): the run continues and
+   * can still exit 0, but nothing it did was sandboxed, so the line is an `error` event and
+   * the run has failed. The pipeline reads stderr for an adapter that declares this and for
+   * no other, so for every other adapter stderr stays log evidence and nothing more.
+   */
+  parseStderrLine?(line: string): EngineEvent | null;
+  /**
    * For an engine whose output is one document at exit rather than a line stream. The
    * pipeline buffers raw stdout only for an adapter that declares it, calls it once at
    * completion before `finalMessage`, and appends its events, so a late `session` or

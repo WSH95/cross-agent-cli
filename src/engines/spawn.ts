@@ -84,8 +84,12 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   // Taken once, before any output can arrive: an engine whose output is one document at
   // exit declares `finish`, and only then is raw stdout kept. Every other adapter buffers
-  // nothing, and its bytes are the log's alone.
+  // nothing, and its bytes are the log's alone. `parseStderrLine` is bound here for the
+  // same reason and read the same way: an engine that writes a fatal line to stderr rather
+  // than into its event stream declares it, and stderr is parsed for no other adapter.
   const finish = adapter.finish?.bind(adapter);
+  const parseLine = adapter.parseLine.bind(adapter);
+  const parseStderrLine = adapter.parseStderrLine?.bind(adapter);
   const rawStdout: Buffer[] = [];
   const events: EngineEvent[] = [];
   let sessionId: string | null = null;
@@ -135,22 +139,23 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
         closeLog();
       }
     }
-    if (stderr) return;
-    if (finish !== undefined) rawStdout.push(raw);
+    const parse = stderr ? parseStderrLine : parseLine;
+    if (parse === undefined) return;
+    if (!stderr && finish !== undefined) rawStdout.push(raw);
     let end = raw.length;
     if (raw[end - 1] === 10) {
       end--;
       if (raw[end - 1] === 13) end--;
     }
     try {
-      const event = adapter.parseLine(raw.toString("utf8", 0, end));
+      const event = parse(raw.toString("utf8", 0, end));
       if (event !== null) {
         events.push(event);
         if (event.kind === "session" && sessionId === null) sessionId = event.sessionId;
         lastEventAt = Date.now();
       }
     } catch (error) {
-      failure("parsing stdout", error);
+      failure(stderr ? "parsing stderr" : "parsing stdout", error);
     }
   }
 
