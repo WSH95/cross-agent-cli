@@ -46,6 +46,23 @@ if (process.env.CHILD_PID_FILE) {
 setInterval(() => {}, 1000);
 `;
 
+// The churn a busy machine makes: a separate process spawning a detached leader every
+// 10 ms, each carrying the task id and each inside execve for the first milliseconds of
+// its life. Every pid is appended to a file, so the test ends what it started however it
+// ends itself.
+const storm = `
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+const [pidFile, taskId] = process.argv.slice(2);
+setInterval(() => {
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 200)"],
+    { detached: true, stdio: "ignore", env: { ...process.env, CROSS_AGENT_TASK: taskId } });
+  child.once("error", () => {});
+  child.unref();
+  if (child.pid !== undefined) fs.appendFileSync(pidFile, String(child.pid) + "\\n");
+}, 10);
+`;
+
 function processes(t: TestContext) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-process-"));
   const tracked: { pid: number; leader: boolean }[] = [];
@@ -206,6 +223,57 @@ test("the environment scan reports what it could not read and binds each match t
   assert.equal(raced.unreadable, 0);
 
   assert.deepEqual(findByEnvironment(taskId, since).found.map((entry) => entry.pid), [leader.pid], "the mocks changed nothing else");
+});
+
+// A detached spawn leads its own group and session before it has execed, and for the few
+// milliseconds it spends inside execve its cmdline is empty and its environ answers
+// EACCES: exactly the shape of a plausible engine this scan may not read. Counting one
+// would make every machine that starts processes look as if it held an engine nobody can
+// see, and every launch, cancel and adoption on it stands down (bead atc-s96.46).
+test("the environment scan does not count a process still inside exec as unreadable", async (t) => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-storm-"));
+  const taskId = `storm-${process.pid}-${Date.now()}`;
+  const since = Date.now() - 1000;
+  const pidFile = path.join(root, "storm.pids");
+  fs.writeFileSync(pidFile, "");
+  const file = path.join(root, "storm.mjs");
+  fs.writeFileSync(file, storm);
+  const spawned = (): number[] => {
+    try { return fs.readFileSync(pidFile, "utf8").split("\n").filter(Boolean).map(Number); }
+    catch { return []; }
+  };
+  // The churn runs in its own process, so the scans below meet children at every stage of
+  // their start rather than only in the gaps between spawns of their own.
+  const spawner = spawn(process.execPath, [file, pidFile, taskId], { detached: true, stdio: "ignore" });
+  spawner.once("error", () => {});
+  t.after(async () => {
+    try { process.kill(-spawner.pid!, "SIGKILL"); } catch { /* already gone */ }
+    const deadline = Date.now() + 8000;
+    while (true) {
+      const alive = spawned().filter(running);
+      for (const pid of alive) {
+        try { process.kill(-pid, "SIGKILL"); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+      }
+      if (alive.length === 0) break;
+      assert.ok(Date.now() < deadline, `cleanup left processes: ${alive}`);
+      await delay(10);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  await poll(() => spawned().length, (count) => count >= 2);
+  let unreadable = 0;
+  let seen = 0;
+  for (let round = 0; round < 50; round++) {
+    const scan = findByEnvironment(taskId, since);
+    unreadable += scan.unreadable;
+    seen += scan.found.length;
+    await delay(5);
+  }
+  assert.ok(seen > 0, "the scans ran while the storm did: children carrying the id were read");
+  assert.equal(unreadable, 0,
+    "a child still inside execve is retried, never counted as an engine this scan may not read");
 });
 
 // The judgement a runner makes about a scan, taken over synthetic ones: the shapes below

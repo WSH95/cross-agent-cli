@@ -802,9 +802,23 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   candidate** is counted: a live process of this user that leads its own group
   and session and started no earlier than the record
   (`src/process.ts#findByEnvironment`), which is the only shape a detached
-  engine spawn can have. The residual is stated rather than hidden: a same-uid
-  non-dumpable leader started during the task holds the record `launching` until
-  it exits, and bounding that hold in time is a later bead (`atc-s96.31`).
+  engine spawn can have. **A process still inside `execve` is waited for, not
+  counted.** Between the kernel's `begin_new_exec` and `setup_new_exec` a
+  starting process has neither its argv nor its dumpable flag, so
+  `/proc/<pid>/cmdline` is empty and `/proc/<pid>/environ` answers EACCES —
+  every detached spawn on the machine wears the plausible candidate's shape for
+  those few milliseconds. So a candidate whose argv is not published yet is
+  re-read in 5-millisecond steps for up to 50 (`src/process.ts#execWaitMs`,
+  `#readEnvironment`) and counted only if it still cannot be read then; a pid
+  that leaves or dies while that waits is no engine to stand down for and is
+  not counted, and a process killed inside `execve` is exactly that — it keeps
+  the empty argv and the unreadable environment for as long as its zombie entry
+  lasts. Without it, a machine that starts processes at any rate holds
+  launches off for engines that are nothing yet (bead `atc-s96.46`): the runner
+  stands down, `cancel` refuses, and reconciliation defers. The residual is
+  stated rather than hidden: a same-uid non-dumpable leader started during the
+  task holds the record `launching` until it exits, and bounding that hold in
+  time is a later bead (`atc-s96.31`).
 - **Malformed records.** `list` returns only valid records
   (`src/ledger.ts#list`); `scan(projectRoot)` returns `{records, invalid:
   [{file, reason}]}` (`src/ledger.ts#scan`, `#InvalidRecord`); reconciliation

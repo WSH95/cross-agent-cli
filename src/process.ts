@@ -110,6 +110,68 @@ export interface EnvironmentScan {
   unreadable: number;
 }
 
+/**
+ * How long a process that may not be read is given to finish starting, and the step the
+ * wait takes. Between the kernel's `begin_new_exec` and `setup_new_exec` a process has
+ * the new image's memory but neither its argv nor its dumpable flag, so
+ * `/proc/<pid>/cmdline` is empty and `/proc/<pid>/environ` answers EACCES: for those few
+ * milliseconds every detached spawn on the machine wears the exact shape of an engine
+ * nobody may read, and counting one stands a launch, a cancel or an adoption down over a
+ * process that is nothing yet (bead atc-s96.46).
+ */
+const execWaitMs = 50;
+const execWaitStepMs = 5;
+
+// The scan is synchronous — every caller reads its answer as a value — so the wait
+// between retries blocks this thread, and `Atomics.wait` is the one sleep that does that
+// without burning the CPU. The value never changes, so its buffer is made once. Only a
+// plausible candidate whose argv the kernel has not published yet ever waits at all.
+const execClock = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * The argv the kernel has published for a process: empty for one still inside `execve`,
+ * and `null` for one that is gone.
+ */
+function publishedArgv(pid: number): string | null {
+  try {
+    return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** A process's environment, `null` when it is gone, and `denied` when it may not be read. */
+type EnvironmentRead = { text: string } | { text: null; denied: boolean };
+
+function readEnvironment(pid: number, plausible: () => boolean): EnvironmentRead {
+  const deadline = performance.now() + execWaitMs;
+  let candidate: boolean | undefined;
+  while (true) {
+    try {
+      return { text: fs.readFileSync(`/proc/${pid}/environ`, "utf8") };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ESRCH") return { text: null, denied: false };
+      if (code !== "EACCES" && code !== "EPERM") throw error;
+      // Decided once, and before anything is waited for: a kernel thread and another
+      // user's process are unreadable for ever, and neither could be this engine.
+      candidate ??= plausible();
+      if (!candidate) return { text: null, denied: false };
+      const argv = publishedArgv(pid);
+      // A pid that left or died while this waited is no engine to stand down for, whatever
+      // its environment would have said — the same answer the scan gives a process that
+      // was already gone or a zombie when it came to it. A process killed inside execve is
+      // the case that makes the check worth its read: it keeps the empty argv and the
+      // unreadable environment for as long as its zombie entry lasts.
+      if (argv === null) return { text: null, denied: false };
+      const current = readProcessStat(pid);
+      if (!current || !live(current.state)) return { text: null, denied: false };
+      if (argv !== "" || performance.now() >= deadline) return { text: null, denied: true };
+      Atomics.wait(execClock, 0, 0, execWaitStepMs);
+    }
+  }
+}
+
 export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
   const assignment = `CROSS_AGENT_TASK=${taskId}`;
   const self = readProcessStat(process.pid);
@@ -120,22 +182,18 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
     const pid = Number(entry);
     const before = readProcessStat(pid);
     if (!before || !live(before.state)) continue;
-    let environ: string;
-    try {
-      environ = fs.readFileSync(`/proc/${pid}/environ`, "utf8");
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(code!)) throw error;
-      // Unreadable environments are ordinary: another user's processes, and this user's
-      // own non-dumpable ones (systemd --user, ssh-agent), can never be read. Only a
-      // process that could be the engine of the task being judged is counted: this
-      // user's, no older than the task, and leading its own group and session, which is
-      // the only shape a detached engine spawn can have.
-      const candidate = before.pgid === pid && before.sid === pid
-        && startedAt(before.startTime) >= since && ownedByThisUser(pid);
-      if (code !== "ENOENT" && code !== "ESRCH" && candidate) unreadable++;
+    // Unreadable environments are ordinary: another user's processes, and this user's own
+    // non-dumpable ones (systemd --user, ssh-agent), can never be read. Only a process
+    // that could be the engine of the task being judged is counted: this user's, no older
+    // than the task, and leading its own group and session, which is the only shape a
+    // detached engine spawn can have.
+    const read = readEnvironment(pid, () => before.pgid === pid && before.sid === pid
+      && startedAt(before.startTime) >= since && ownedByThisUser(pid));
+    if (read.text === null) {
+      if (read.denied) unreadable++;
       continue;
     }
+    const environ = read.text;
     if (!environ.split("\0").includes(assignment)) continue;
     // The identity is read again after the environment: a pid reused between the two
     // reads is a different process, and its start time would bind the record to it.
