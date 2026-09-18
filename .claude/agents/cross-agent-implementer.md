@@ -20,9 +20,11 @@ Standing rules, from AGENTS.md and the design:
 - TypeScript with erasable syntax only (no enums, namespaces, parameter
   properties, decorators); import paths carry `.ts`; Node built-ins only,
   no dependencies, no build step.
-- `npm test` runs `tools/check-citations.mjs` over `docs/`: an edit that
-  moves or removes a cited line or symbol fails the suite until the doc is
-  refreshed. Refresh the citations you drift; do not weaken the checker.
+- `npm test` runs `tools/check-citations.mjs` over `docs/`: it fails the
+  suite on a cited line past the end of its file or a cited symbol that no
+  longer exists. Movement inside a file and semantic drift are not detected,
+  so refresh the citations you drift by reading them; do not weaken the
+  checker.
 - The suite is load-sensitive: rerun a timing test in isolation before
   blaming your change.
 - Specialists never write git metadata; the permission matrix, the deny

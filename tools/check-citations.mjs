@@ -13,7 +13,11 @@
 // `async function`, `const`, `let`, `class`, `interface` or `type`, each
 // optionally after `export ` — or when it carries a comment line
 // `// @anchor <symbol>`, which may be indented to name a spot inside a body.
-// The lookup is a regular expression over the file's lines, not a parse.
+// Neither counts inside a `/* … */` comment or a template literal that spans
+// lines: the scan carries from line to line whether it is in code, a block
+// comment or a template, and skips quotes, line comments and regular
+// expressions within a line. It is a lexical scan over lines, not a parse, so
+// a backtick inside a string inside `${…}` still reads as the template's end.
 //
 // It cannot check that the cited code says what the sentence claims. A
 // citation that still lands inside the file but now points at a different
@@ -67,6 +71,9 @@ const FILE_NAME = /\.[A-Za-z0-9]{1,5}$/;
 // anchor comment names one at any indentation.
 const DECLARATION = new RegExp(`^(?:export )?(?:async function|function|const|let|class|interface|type) (${SYMBOL})`);
 const ANCHOR = new RegExp(`^[ \\t]*// @anchor (${SYMBOL})`);
+// Text before a slash that leaves an operand to come: the slash opens a
+// regular expression rather than dividing.
+const OPERAND = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\b(?:return|typeof|instanceof|case|do|else|in|of|delete|void|throw|yield|await))\s*$/;
 
 const docs = argv.length > 0 ? argv : defaultDocs();
 const files = new Map();
@@ -159,9 +166,13 @@ function fileAt(cited) {
       const text = readFileSync(full, "utf8");
       const lines = text.split("\n");
       const symbols = new Set();
+      let state = "code";
       for (const line of lines) {
-        const named = DECLARATION.exec(line) ?? ANCHOR.exec(line);
-        if (named !== null) symbols.add(named[1]);
+        if (state === "code") {
+          const named = DECLARATION.exec(line) ?? ANCHOR.exec(line);
+          if (named !== null) symbols.add(named[1]);
+        }
+        state = stateAfter(line, state);
       }
       // An empty file has no lines at all. A file ending in a newline has no
       // line after it; one that does not still has its last line.
@@ -171,6 +182,40 @@ function fileAt(cited) {
   }
   files.set(cited, file);
   return file;
+}
+
+// Whether the line after this one starts in code, in a block comment, or in a
+// template literal. Quotes, line comments and regular expressions end with
+// their line, so they are only skipped here. A slash starts a regular
+// expression where an operand is expected and divides anywhere else.
+function stateAfter(line, state) {
+  for (let k = 0; k < line.length; k++) {
+    const c = line[k];
+    if (state === "block") {
+      if (c === "*" && line[k + 1] === "/") { state = "code"; k++; }
+    } else if (state === "template") {
+      if (c === "\\") k++;
+      else if (c === "`") state = "code";
+    } else if (c === "`") state = "template";
+    else if (c === '"' || c === "'") k = closing(line, k) ?? line.length;
+    else if (c === "/" && line[k + 1] === "/") break;
+    else if (c === "/" && line[k + 1] === "*") { state = "block"; k++; }
+    else if (c === "/" && OPERAND.test(line.slice(0, k))) k = closing(line, k) ?? k;
+  }
+  return state;
+}
+
+// The index of the quote or slash that closes the one at `start` on this
+// line, past escapes and, for a regular expression, a `[…]` class; or null.
+function closing(line, start) {
+  let inClass = false;
+  for (let k = start + 1; k < line.length; k++) {
+    if (line[k] === "\\") k++;
+    else if (line[start] === "/" && line[k] === "[") inClass = true;
+    else if (line[start] === "/" && line[k] === "]") inClass = false;
+    else if (line[k] === line[start] && !inClass) return k;
+  }
+  return null;
 }
 
 // The 0-based line a byte offset falls on.

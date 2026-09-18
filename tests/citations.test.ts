@@ -234,6 +234,98 @@ test("a brace-expansion path with a symbol is a miss: a symbol belongs to one fi
   assert.match(out, /doc\.md:1: src\/engines\/\{codex,grok\}\.ts#truncate — brace expansion cannot be checked; cite one file/);
 });
 
+test("only the listed declaration forms name a symbol: not export default, var, function*, declare, abstract class, or a second declarator", async (t) => {
+  const dir = await rootWith(t, {
+    "excluded.ts": [
+      "export default function fallback() {}",
+      "var legacy = 1;",
+      "function* generate() {}",
+      "declare const ambient: number;",
+      "abstract class Shape {}",
+      "const first = 1, second = 2;",
+      "",
+    ].join("\n"),
+    "doc.md": "Cited (`excluded.ts#fallback`, `#legacy`, `#generate`, `#ambient`, `#Shape`, `#first`, `#second`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  assert.deepEqual(out.trim().split("\n").map((line) => line.replace(/^.*doc\.md:1: /, "")), [
+    "excluded.ts#fallback — no such symbol",
+    "excluded.ts#legacy — no such symbol",
+    "excluded.ts#generate — no such symbol",
+    "excluded.ts#ambient — no such symbol",
+    "excluded.ts#Shape — no such symbol",
+    "excluded.ts#second — no such symbol",
+  ]);
+});
+
+test("a declaration inside a block comment names no symbol, and a declaration after the comment still does", async (t) => {
+  const dir = await rootWith(t, {
+    "commented.ts": "/*\nfunction removed() {}\nexport const gone = 1;\n*/\nexport function kept() {}\n",
+    "doc.md": "Removed (`commented.ts#removed`, `#gone`) and kept (`commented.ts#kept`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /doc\.md:1: commented\.ts#removed — no such symbol$/);
+  assert.match(lines[1], /doc\.md:1: commented\.ts#gone — no such symbol$/);
+});
+
+test("an // @anchor inside a block comment does not count", async (t) => {
+  const dir = await rootWith(t, {
+    "anchored.ts": "/*\n  // @anchor buried\n*/\n// @anchor kept\n",
+    "doc.md": "Buried (`anchored.ts#buried`) and kept (`anchored.ts#kept`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /doc\.md:1: anchored\.ts#buried — no such symbol$/);
+});
+
+test("a declaration inside a template literal that spans lines names no symbol, and one after the literal still does", async (t) => {
+  const dir = await rootWith(t, {
+    "templated.ts": [
+      "export const page = `",
+      "function removed() {}",
+      "// @anchor quoted",
+      "`;",
+      "export function after() {}",
+      "",
+    ].join("\n"),
+    "doc.md": "Inside (`templated.ts#removed`, `#quoted`); around (`templated.ts#page`, `#after`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /doc\.md:1: templated\.ts#removed — no such symbol$/);
+  assert.match(lines[1], /doc\.md:1: templated\.ts#quoted — no such symbol$/);
+});
+
+test("a comment marker or backtick inside a string, a line comment or a regular expression opens nothing, and a division is no regular expression", async (t) => {
+  const dir = await rootWith(t, {
+    "markers.ts": [
+      "const glob = \"src/*.ts\";",
+      "export function afterString() {}",
+      "const tick = '`';",
+      "export function afterQuotedTick() {}",
+      "// a ` in a line comment",
+      "export function afterLineComment() {}",
+      "const fence = /^(```|~~~)/;",
+      "export function afterRegex() {}",
+      "const ratio = total / count; // a ` after a division",
+      "export function afterDivision() {}",
+      "",
+    ].join("\n"),
+    "doc.md": "After each (`markers.ts#afterString`, `#afterQuotedTick`, `#afterLineComment`, `#afterRegex`, `#afterDivision`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.match(err, /5 citations in 1 file \(0 by line, 5 by symbol\); 0 misses/);
+});
+
 test("a fenced code block is not scanned, so an example citation is not a miss", async (t) => {
   const doc = await docWith(t, "Example:\n\n```\nsee `src/nowhere.ts:99999`\n```\n\nback to prose.\n");
   const { code, out } = await run([doc]);
