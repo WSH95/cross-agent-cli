@@ -161,6 +161,13 @@ test("check reports the task, what is running it, and the tail of its own event 
   assert.equal(activity.at(-1), fs.readFileSync(running.logPath, "utf8").trim().split("\n").at(-1));
   const one = check(p.root, running.id, { lines: 1 });
   assert.equal(one.ok && one.lastActivity.length, 1);
+  // A count that is not a whole number of lines is refused rather than read as "all of
+  // them": 0, a fraction and an infinity would each hand back the whole window.
+  for (const lines of [0, -1, 2.5, Number.NaN, Infinity]) {
+    const refused = check(p.root, running.id, { lines });
+    assert.equal(refused.ok, false, String(lines));
+    assert.match(refused.ok === false ? refused.reason : "", /lines/, String(lines));
+  }
 
   // A settled task's elapsed time stops at its settlement, and a task nobody has is named.
   assert.equal((await update(p.root, running.id, { status: "cancelling" })).applied, true);
@@ -419,6 +426,10 @@ test("a task a cascade could not write is reported as such, and a later cancel f
   // Another writer holds the child's record lock, and this project waits no time at all,
   // so the cascade cannot write that one task. It must report it rather than abandon the rest.
   const held = await acquire(lockPath(p.root, recordLockName(child.id)), { operation: "the test holds it", waitSeconds: 2 });
+  let releasing: Promise<void> | undefined;
+  // Released here whatever the assertions do, so a failure leaves no lock behind for the
+  // next test of this project to wait on.
+  t.after(() => releasing ?? held.release());
   const partial = cancelled(await cancel(p.root, lead.id));
   const failure = outcomeOf(partial, child.id);
   assert.equal(failure.outcome, "running");
@@ -428,7 +439,8 @@ test("a task a cascade could not write is reported as such, and a later cancel f
   // written would go on working after it was cancelled.
   assert.equal(outcomeOf(partial, lead.id).outcome, "cancelled");
 
-  await held.release();
+  releasing = held.release();
+  await releasing;
   const retry = cancelled(await cancel(p.root, lead.id));
   assert.equal(outcomeOf(retry, child.id).outcome, "cancelled");
   assert.equal(outcomeOf(retry, lead.id).outcome, "already cancelled");

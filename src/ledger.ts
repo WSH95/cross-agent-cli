@@ -57,11 +57,11 @@ export interface TaskRecord {
   logPath: string;
   sessionId?: string | null;
   /**
-   * Written by `delegate` and read by the loop guard's depth cap (design section 5, layer
-   * 1). A record an earlier build wrote carries none, which is why nothing dereferences it
-   * without a default.
+   * Written by `delegate` as its caller's depth plus one, and read by the loop guard's
+   * depth cap (design section 5, layer 1). Optional because a record an earlier build
+   * wrote carries none, which is why every reader takes it with a default.
    */
-  depth: number;
+  depth?: number;
   /**
    * The lead this task belongs to, preserved across `resume`, and what a cascade cancel
    * follows (the lead model, item 2). Null for a task the operator delegated.
@@ -205,8 +205,8 @@ function recordFault(value: unknown, file: string): string | null {
   if (record.truncated !== undefined && typeof record.truncated !== "boolean") return "truncated must be a boolean";
   // The delegation fields. Each is absent from a record an earlier build wrote and null
   // where a task has none, so absence and null are answers and anything else is a fault.
-  if (record.depth !== undefined && (typeof record.depth !== "number" || !Number.isFinite(record.depth))) {
-    return "depth must be a finite number";
+  if (record.depth !== undefined && (!Number.isSafeInteger(record.depth) || (record.depth as number) < 0)) {
+    return "depth must be a whole number of delegations, zero or more";
   }
   for (const field of ["model", "effort", "parentTaskId", "resumedFrom"] as const) {
     if (record[field] !== undefined && record[field] !== null && typeof record[field] !== "string") {

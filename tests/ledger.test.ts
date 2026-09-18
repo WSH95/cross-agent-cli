@@ -607,7 +607,7 @@ test("the delegation fields are patchable, and validated as what a reader derefe
 
   const file = path.join(tasks(root), `${record.id}.json`);
   const faults: [string, Record<string, unknown>][] = [
-    ["depth", { depth: "1" }], ["depth", { depth: null }],
+    ["depth", { depth: "1" }], ["depth", { depth: null }], ["depth", { depth: -1 }], ["depth", { depth: 1.5 }],
     ["parentTaskId", { parentTaskId: 5 }], ["resumedFrom", { resumedFrom: [] }],
     ["model", { model: 5 }], ["effort", { effort: true }],
     ["acknowledgedAt", { acknowledgedAt: "soon" }],

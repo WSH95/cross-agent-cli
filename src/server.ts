@@ -262,6 +262,9 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
       handler: (args, _context) => {
         const values = fields(args, "check");
         const lines = optional(values, "lines", "number", "check") as number | undefined;
+        if (lines !== undefined && (!Number.isSafeInteger(lines) || lines <= 0)) {
+          throw new RpcError(-32602, `check's lines must be a positive whole number, not ${lines}`);
+        }
         return answer(check(projectRoot, requiredString(values, "task_id", "check"), { lines }));
       },
     },

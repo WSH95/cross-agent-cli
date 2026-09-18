@@ -419,17 +419,22 @@ test("a delegation whose spawn lock was lost before the record is written launch
   // true, so the launch is refused rather than spawned onto a workspace someone may have
   // taken meanwhile. The holder is killed the way a dead one dies: the kernel drops it.
   let reason: string | undefined;
-  for (let attempt = 0; attempt < 5 && reason === undefined; attempt++) {
+  for (let attempt = 0; attempt < 8 && reason === undefined; attempt++) {
     const killer = setInterval(() => { killLockHolder(file); }, 1);
     try {
       const result = await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/lost" }), options);
       if (result.ok) {
-        // The race was lost: the record exists, so it is settled and the round retried.
+        // The race was lost the other way: the record exists, so it is settled and the
+        // round retried.
         assert.equal((await update(p.root, result.taskId, { status: "failed", reason: "test" })).applied, true);
-        await delay(20);
+      } else if (/held by another process/.test(result.reason)) {
+        // The killer landed before the helper printed `held`, so this delegation never
+        // took the lock at all — a lost round, not the window under test.
+        assert.match(result.reason, /spawn\.lock/);
       } else {
         reason = result.reason;
       }
+      await delay(20);
     } finally { clearInterval(killer); }
   }
   assert.ok(reason, "the lock holder was never killed inside the validation window");
@@ -466,6 +471,19 @@ test("the engine a request overrides is the engine that runs, and the record say
   const bound = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
   assert.equal(p.record(bound).model, "grok-4.6");
   assert.equal(p.record(bound).effort, "low");
+
+  // A request that names another engine runs that engine's adapter, with that engine's
+  // configured binary: the role's own profile has to be one the new engine declares, and
+  // `off` is declared by both.
+  const crossed = launched(await delegate(p.root, { ...request({ role: "claudish", cwd: p.root, engine: "claude" }), brief: "Run on the other engine." }, {
+    authority: operator, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok" }),
+  }));
+  const ran = await poll(() => p.record(crossed), (value) => value.status === "done");
+  assert.equal(ran.engine, "claude");
+  assert.equal(readSpec(p.root, crossed).adapterModule.endsWith("/engines/claude.ts"), true);
+  assert.equal(readSpec(p.root, crossed).env.CROSS_AGENT_CLAUDE_BIN, claudeBin);
+  assert.equal(readSpec(p.root, crossed).env.CROSS_AGENT_GROK_BIN, undefined, "only the engine that runs is told where its binary is");
+  assert.match(fs.readFileSync(ran.resultPath, "utf8"), /--strict-mcp-config/, "the Claude adapter built the line");
 
   const overridden = launched(await delegate(p.root, request({ role: "claudish", cwd: p.root, model: "other-model", effort: "high" }), options));
   const record = p.record(overridden);

@@ -2285,7 +2285,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/gitmutate.test.ts:208`), for `delegate`, which refuses a writable
   delegation naming the file and leaves a read-only one alone
   (`tests/delegate.test.ts:222`), and for `list_tasks`, which returns the file
-  beside the records it could read (`tests/tasks.test.ts:196`).
+  beside the records it could read (`tests/tasks.test.ts:203`).
 - **Authority (T10a, recorded but for its last two clauses):** a server whose
   nearest engine ancestor is a specialist gets the specialist row even when
   the process also carries a lead's environment (`tests/authority.test.ts:253`),
@@ -2310,7 +2310,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the nearest configured directory, a linked worktree resolving to its main
   project and no config anywhere to a reason (`tests/project.test.ts:24`,
   `:40`, `:50`, `:66`). A resolver that throws is answered `-32603`, lists
-  nothing and runs no handler (`tests/server.test.ts:410`). Still to record: a
+  nothing and runs no handler (`tests/server.test.ts:411`). Still to record: a
   Grok specialist inheriting the user's MCP configuration sees exactly the
   specialist row (this is I1).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,

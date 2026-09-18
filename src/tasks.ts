@@ -135,6 +135,12 @@ export type CheckResult =
  * (`<id>.ndjson`), which is the evidence the runner tees rather than a reading of it.
  */
 export function check(projectRoot: string, taskId: string, options: { lines?: number; now?: number } = {}): CheckResult {
+  const lines = options.lines ?? 10;
+  // A count that is not a whole number of lines has no reading: `tail` would hand back
+  // the whole window for 0 or an infinity, and drop the head for a negative one.
+  if (!Number.isSafeInteger(lines) || lines <= 0) {
+    return { ok: false, reason: `lines must be a positive whole number, not ${JSON.stringify(options.lines)}` };
+  }
   const record = found(projectRoot, taskId);
   if (record === null) return { ok: false, reason: `no task ${taskId}` };
   const now = options.now ?? Date.now();
@@ -142,7 +148,7 @@ export function check(projectRoot: string, taskId: string, options: { lines?: nu
   return {
     ok: true, ...view(record),
     elapsedSeconds: Math.max(0, Math.round((until - record.createdAt) / 1000)),
-    lastActivity: tail(record.logPath, options.lines ?? 10),
+    lastActivity: tail(record.logPath, lines),
   };
 }
 

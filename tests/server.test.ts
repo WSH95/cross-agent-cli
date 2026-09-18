@@ -400,6 +400,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
   for (const [name, args] of [
     ["delegate", {}], ["delegate", { role: "planner", brief: "b", cwd: 5 }], ["delegate", { role: "planner", brief: "b", cwd: root, force: "yes" }],
     ["check", { task_id: "" }], ["check", { task_id: "t", lines: "ten" }], ["result", {}], ["cancel", { task_id: null }],
+    ["check", { task_id: "t", lines: 0 }], ["check", { task_id: "t", lines: -1 }], ["check", { task_id: "t", lines: 1.5 }],
     ["list_tasks", { status: "elsewhere" }],
   ] as const) {
     const reply = await call(name, args as Json);
