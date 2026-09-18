@@ -576,7 +576,7 @@ are named in the launch-protocol bullet.
   (`src/ledger.ts#update`); a lock timeout **throws** rather than returning
   `applied: false` (`src/locks.ts#acquire`), because a caller that could not even
   look at the record must not treat that as a refusal it can reason about; and
-  the lock is released in `finally` (`src/ledger.ts#update`). The legal
+  the lock is released in `finally`. The legal
   transitions are `launching → running | cancelling | failed | orphaned`,
   `running ↔ stalled`, `running | stalled → cancelling | orphaned | done |
   failed`, `orphaned → failed | cancelled`, and `cancelling → cancelled |
@@ -627,8 +627,8 @@ are named in the launch-protocol bullet.
   before it.** The environ scan is read-only; then one `update` writes either
   `{status: "orphaned", engineIdentity}` or `failed: launch`, with an `expect`
   that re-reads all three preconditions — still `launching`, still no
-  `runnerIdentity`, still past the deadline — inside the record lock
-  (`src/reconcile.ts#adopt`); only once that write has applied are the strays
+  `runnerIdentity`, still past the deadline — inside the record lock;
+  only once that write has applied are the strays
   killed (`src/reconcile.ts#adopt`). If the write is refused, the pass
   touches nothing and reports the refusal. A runner that acknowledged between
   the scan and the write owns the task, and killing what the scan found would
@@ -799,7 +799,7 @@ are named in the launch-protocol bullet.
   things hold. **It is not settled**: `done`, `failed` and `cancelled` release
   the workspace and nothing else does (`src/ledger.ts#terminalStatuses`, `#isTerminal`,
   `src/reservation.ts#reservations`). **It may write**: the record carries no sandbox, so
-  the launch spec beside it is read (`src/reservation.ts#reservesWorkspace`), and the rule is
+  the launch spec beside it is read, and the rule is
   that the mode the spec carries and the mode re-derived from the spec's engine
   must **both** say `read-only` — section 3's map is the adapters' own, and
   `sandboxFor` is what turns the engine's profile name into a mode
@@ -1013,7 +1013,7 @@ means (`src/engines/types.ts#SpawnRequest`). The pair is a **claim, not a fact**
 `sandboxFor(engine, profile)` in the registry is the one place in `src/` where
 one is constructed (`src/engines/registry.ts#sandboxFor`), resolving through the
 engine's own map and refusing a name it does not declare as an **own** key, so
-`toString` is nobody's profile (`src/engines/registry.ts#sandboxFor`); and every
+`toString` is nobody's profile; and every
 consumer re-derives rather than trusts. The pipeline refuses a request whose
 `engine` is not the adapter the runner imported — otherwise the map the mode
 comes from would describe one engine while another builds the argv — then
@@ -1023,8 +1023,7 @@ The reservation re-derives the same way and frees a workspace only when the
 carried mode and the derived mode both say `read-only`
 (`src/reservation.ts#reservesWorkspace`, section 2). So neither the pipeline nor the
 reservation rule has to know any engine's vocabulary, and neither takes a
-label's word for it. `SpawnRequest` also carries `engine`
-(`src/engines/types.ts#SpawnRequest`), `scratchDir` (`src/engines/types.ts#SpawnRequest`),
+label's word for it. `SpawnRequest` also carries `engine`, `scratchDir`,
 which is where `leadMount`'s files and a role-prompt file go — never inside
 the specialist's own worktree — and `lead`, set only for an engine-placed lead
 (`src/engines/types.ts#SpawnRequest`).
@@ -1048,8 +1047,7 @@ keep in step.
 The loader takes the union of the adapters' keys as the profile vocabulary
 (`src/engines/registry.ts#sandboxProfiles`, read in `src/config.ts#loadConfig`) and then checks
 the pair: the role's profile must be an own key of *its own engine's* map, or
-load fails naming the engine and the profiles it accepts
-(`src/config.ts#loadConfig`). Nothing type-checks the sources — `package.json`
+load fails naming the engine and the profiles it accepts. Nothing type-checks the sources — `package.json`
 runs `node --test` and there is no `tsconfig.json` — so `{engine: "codex",
 sandbox: "workspace"}` would otherwise reach the Codex adapter unchallenged.
 It is refused instead, which is A2.
@@ -1331,8 +1329,7 @@ no element anywhere may be `--git-dir`, `--work-tree`, `-C` or `-c`, nor the
 attached forms `--git-dir=` and `--work-tree=` (`src/gitmutate.ts#globalOptions`,
 `#argumentFault`), each of which turns a whitelisted verb into an arbitrary one against
 an arbitrary repository; and `slug`'s journal must be readable, so the step it
-will append is known to be recordable before anything runs
-(`src/gitmutate.ts#gitMutate`). The four steps then run with `spawn.lock` held
+will append is known to be recordable before anything runs. The four steps then run with `spawn.lock` held
 for all of them (`src/gitmutate.ts#gitMutate`), which is what stops the
 reservation `git_mutate` reads in step 1 from racing a `delegate` about to take
 the same workspace (section 2). Inside that lock, and only inside it, the
@@ -1364,8 +1361,8 @@ two different branches. It
    <args>`, so the pointer file is never consulted and the paths are never
    re-derived from the slug (`src/gitmutate.ts#run`, `#mutate`). It is
    `execFile` with an argv array, never a shell, with `cwd` the verified work
-   tree (`src/gitmutate.ts#run`) and the **allowlisted** git environment of the
-   paragraph below (`#run`). Output is capped at 16 MB
+   tree and the **allowlisted** git environment of the
+   paragraph below (`src/gitmutate.ts#run`). Output is capped at 16 MB
    (`src/gitmutate.ts#maxBuffer`): exceeding the cap kills the child, which for a
    mutation is worse than a truncated log;
 4. appends the step to the task journal (section 7) with the SHAs around it —
@@ -1411,7 +1408,7 @@ gets one **allowlisted** environment, built in `gitEnvironment`
 `HOME`, `USER`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `SSH_AUTH_SOCK`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`,
 `GIT_SSH*` and `GIT_TERMINAL_PROMPT` pass, and so do git's own two documented
-fallbacks (`src/worktree.ts#passedVariables`): `EMAIL`, which git uses when no author or
+fallbacks: `EMAIL`, which git uses when no author or
 committer address is set, and `GIT_EXEC_PATH`, without which a git installed
 outside its default prefix cannot find its own subcommands. Everything else is
 dropped: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
@@ -1432,9 +1429,9 @@ other mutation then waits `lockWaitSeconds` and refuses.
 
 `git_mutate` never throws for an operational failure. A missing git binary or
 a signal-killed child has no exit code to judge, so it is named as its own
-refusal (`src/gitmutate.ts#GitRunError`, `#run`, `#mutate`); a lock that could
+refusal; a lock that could
 not be taken, and a config that could not be read, are refusals too
-(`#gitMutate`, `#mutate`). The lead's loop reads a result and has
+(`src/gitmutate.ts#GitRunError`, `#run`, `#gitMutate`, `#mutate`). The lead's loop reads a result and has
 no other way to hear one. And a lock **lost** while the command ran (section 2:
 the helper child died, so the kernel let the next waiter in) does not undo the
 command: the step is still journaled, and the result carries `lockLost: true`
