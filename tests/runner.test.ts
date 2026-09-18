@@ -1272,6 +1272,55 @@ test("a runner that cannot acknowledge because another writer owns the record se
   } finally { await h.cleanup(); }
 });
 
+test("a SIGTERM over an orphaned record settles cancelled, the one edge the ledger allows", async () => {
+  const { groupAlive } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
+    // Reconciliation adopting a stranded engine is what writes this status; from here the
+    // ledger allows orphaned -> failed | cancelled and nothing else, so the teardown may
+    // not claim the record with a `cancelling` write of its own.
+    const orphaned = await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
+    child.child.kill("SIGTERM");
+    const cancelled = await poll(h.read, terminal, 6000);
+    assert.equal(cancelled.status, "cancelled");
+    assert.ok(cancelled.updatedAt >= orphaned.updatedAt);
+    assert.equal(groupAlive(running.engineIdentity!), false);
+    assert.deepEqual(cancelled.engineIdentity, running.engineIdentity);
+    assert.deepEqual(cancelled.runnerIdentity, running.runnerIdentity);
+    assert.deepEqual(h.audit().map(({ record }) => record.status), ["running", "cancelled"]);
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0, "a settlement, not a crash");
+    assert.match(h.runnerLog(), /settled cancelled/);
+    assert.doesNotMatch(h.runnerLog(), /cannot change task/);
+  } finally { await h.cleanup(); }
+});
+
+test("a SIGTERM during startup settles the task or leaves it, and never exits through fatal", async () => {
+  // The handler is registered as soon as this runner owns the task, before the record it
+  // settles has been read, so a cancel arriving there must still settle rather than crash
+  // on a record it has not loaded (atc-s96.29). The delay walks the whole startup.
+  for (const delayMs of [0, 1, 2, 3, 5, 8, 13, 21]) {
+    const h = harness();
+    try {
+      const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+      await delay(delayMs);
+      child.child.kill("SIGTERM");
+      await poll(() => child.closed, Boolean, 8000);
+      const record = await poll(h.read, (value) => value.status !== "cancelling", 8000);
+      // Either the signal arrived before this runner had a handler, which is the kernel's
+      // default and leaves the record for reconciliation, or the runner answered it.
+      assert.ok(["launching", "cancelled"].includes(record.status), `${delayMs}ms: ${record.status}`);
+      assert.ok([0, null].includes(child.code), `${delayMs}ms: exit ${child.code}`);
+      if (fs.existsSync(path.join(path.dirname(h.recordFile), `${h.record.id}.runner.log`))) {
+        assert.doesNotMatch(h.runnerLog(), /TypeError/, `${delayMs}ms`);
+      }
+    } finally { await h.cleanup(); }
+  }
+});
+
 test("a SIGTERM after the server has already written cancelling still settles cancelled", async () => {
   const h = harness();
   try {

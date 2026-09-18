@@ -108,17 +108,25 @@ async function run(projectRoot: string, id: string): Promise<void> {
     clearInterval(activity);
     void (async () => {
       if (error !== undefined) log(error);
+      // A cancel, or a lock lost, can reach this before the first record read: the handler
+      // is registered as soon as this runner owns the task, because from that moment there
+      // is something to cancel. The settlement needs the record's own paths, so it reads
+      // the record here rather than crash on one it has not loaded (bead atc-s96.29).
+      record ??= read(projectRoot, id);
       // The acknowledgement is this runner's claim on the record. A settlement that
       // arrives while it is in flight waits for it, so no terminal write can overtake it.
       if (acknowledgement) await acknowledgement.catch(() => undefined);
       if (kind === "cancel") {
         const claimed = await write({ status: "cancelling" }, {
-          expect: (current) => !["cancelling", "done", "failed", "cancelled"].includes(current.status),
+          expect: (current) => !["cancelling", "orphaned", "done", "failed", "cancelled"].includes(current.status),
         });
         // A record already `cancelling` is this same cancel, written by the server, so
-        // the cancel continues. Any other refusal means the task is no longer this
-        // runner's to settle.
-        if (!claimed.applied && claimed.record.status !== "cancelling") kind = "external";
+        // the cancel continues. `orphaned` is the other status this teardown settles
+        // from, and it is skipped rather than claimed: the ledger allows `orphaned ->
+        // cancelled` and not `orphaned -> cancelling`, so claiming it would throw and
+        // strand the record (bead atc-s96.39). Any other refusal means the task is no
+        // longer this runner's to settle.
+        if (!claimed.applied && !["cancelling", "orphaned"].includes(claimed.record.status)) kind = "external";
       }
       let cancelling = kind === "cancel" || kind === "preempted";
       await stopEngine(cancelling ? 5000 : 0);
@@ -164,7 +172,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
         const settled = await write({
           status: "cancelled", ...evidence,
           ...(completedDuringCancel ? { reason: "engine completed during cancel" } : {}),
-        }, { expect: (current) => current.status === "cancelling" });
+        }, { expect: (current) => ["cancelling", "orphaned"].includes(current.status) });
         if (!settled.applied) kind = "external";
       }
       log(kind === "external" ? "someone else settled the task"

@@ -110,7 +110,7 @@ spawned it**. Every engine CLI spawns its MCP servers as children of the
 engine process, and the ledger already records each engine's identity as
 `engineIdentity` — `{pid, startTime, bootId, pgid}`
 (`src/ledger.ts#EngineIdentity`, `#ProcessIdentity`), written at
-`src/runner.ts:233-242`.
+`src/runner.ts:241-250`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` through
 `readProcessStat` (`src/ledger.ts#readProcessStat`), which returns `ppid` —
@@ -465,12 +465,12 @@ launch-protocol bullet.
   diagnostic trail (`src/runner.ts:17`). Ids are 18 random bytes in base64url
   (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
-  (`src/runner.ts:272-280`). `.cross-agent/` and `.worktrees/` are added to
+  (`src/runner.ts:280-288`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` on first use (`src/ledger.ts#initialize`).
 - Launch protocol: `delegate` creates the record as `launching` with a
   `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts#create`); the
   runner, once started, writes `running` with its own identity and the engine's
-  identity in one atomic acknowledgement (`src/runner.ts:233-242`), conditional
+  identity in one atomic acknowledgement (`src/runner.ts:241-250`), conditional
   on the record still being `launching`. Both identities carry `{pid, startTime,
   bootId}`, the engine's with its `pgid` as well
   (`src/ledger.ts#ProcessIdentity`, `#EngineIdentity`); `bootId` is read once
@@ -490,7 +490,7 @@ launch-protocol bullet.
   - **Identifying a stranded engine.** The engine carries
     `CROSS_AGENT_TASK=<id>` in its environment, and it is the **runner** that
     puts it there, from the id of the record it was started for
-    (`src/runner.ts:224-227`), beside the two paths it takes from the same
+    (`src/runner.ts:232-235`), beside the two paths it takes from the same
     record. `guard.childEnv` sets the same assignment in the environment it
     prepares for a spec (`src/guard.ts#childEnv`), but nothing validates a spec
     (`validateSpec` checks only that `adapterModule` is absolute,
@@ -504,7 +504,7 @@ launch-protocol bullet.
     kill.
   - **Exclusive ownership.** The runner holds `runner-<id>.lock` for its whole
     lifetime, and a second runner for the same task takes it with a zero wait,
-    fails, and exits 1 without touching the record (`src/runner.ts:177-189`),
+    fails, and exits 1 without touching the record (`src/runner.ts:185-197`),
     so one task can never own two engines at once.
   - **No sequential duplicate either.** The lock cannot stop one runner
     following another: a runner killed between its spawn and its
@@ -517,7 +517,7 @@ launch-protocol bullet.
     process carrying the id that is not this runner, its own group or its own
     session, and an environment the scan could not read, because one of those
     could be that engine. The runner logs `not launching task <id>: <reason>`
-    and exits 1 without spawning (`src/runner.ts:214-218`); reconciliation then
+    and exits 1 without spawning (`src/runner.ts:222-226`); reconciliation then
     adopts what is already there. Excluding `self` is not optional: the server
     starts the runner with `CROSS_AGENT_TASK` in its own environment
     (`src/guard.ts#childEnv`) and the `flock` child holding `runner-<id>.lock`
@@ -540,30 +540,39 @@ launch-protocol bullet.
   environment. The runner rebuilds the spawn from that file and the record, so
   it never needs the server; three fields of the request come from the record
   rather than the spec — `logPath`, `resultPath`, and `CROSS_AGENT_TASK` in
-  the engine's environment (`src/runner.ts:224-227`) — because the record, not
+  the engine's environment (`src/runner.ts:232-235`) — because the record, not
   the spec, names what this runner spawns. The adapter module path is always an
   entry of the fixed built-in table of section 3; config cannot name one.
 - `src/runner.ts`: a detached process per task (`node src/runner.ts --project
   <root> --task <id>`) that owns the engine child in its own process group,
   tees events, updates `lastEventAt` on a 2-second interval
-  (`src/runner.ts:253-261`), and on engine exit writes the terminal record and
+  (`src/runner.ts:261-269`), and on engine exit writes the terminal record and
   `<id>.out` itself, so completion survives the MCP server. On SIGTERM
-  (`src/runner.ts:194`) it writes `cancelling` itself (`src/runner.ts:115-117`),
+  (`src/runner.ts:202`) it writes `cancelling` itself (`src/runner.ts:120-122`),
   terminates the engine group, and writes `cancelled`
-  (`src/runner.ts:101-172`). Group cleanup always precedes terminal
-  settlement (`src/runner.ts:124`). Three rulings from the reviews attach to
-  this same teardown path:
+  (`src/runner.ts:101-180`). Group cleanup always precedes terminal
+  settlement (`src/runner.ts:132`). The `cancelling` write is a claim the
+  teardown may skip: a record already `cancelling` is the server's own write of
+  this same cancel, and one that is `orphaned` may not pass through `cancelling`
+  at all, because the ledger allows `orphaned → failed | cancelled` and nothing
+  else — so from either the runner settles `cancelled` from where the record is
+  (`src/runner.ts:119-130`, `:172-175`, bead `atc-s96.39`). The settlement also
+  reads the record for itself when it has none (`src/runner.ts:115`), so a
+  cancel or a lost lock arriving before the first read settles rather than
+  exiting through `fatal` (bead `atc-s96.29`); both are recorded
+  (`tests/runner.test.ts:1275`, `:1301`). Three rulings from the reviews attach
+  to this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
     `release` (`src/locks.ts#Lock`, `#AcquireOptions`, `#acquire`) — the
     kernel has already let the next waiter in, so a holder that carried on would
     be acting on exclusivity it no longer has. The runner registers `onLost` for
-    `runner-<id>.lock` (`src/runner.ts:180-183`): it stops the engine group and
+    `runner-<id>.lock` (`src/runner.ts:188-191`): it stops the engine group and
     settles `failed` with the reason `runner lock lost`. `update`'s own short
     lock ignores `lost`; it is released in the same call that took it.
   - **A group with no identity is still terminated.** If the leader exits
     after spawning a descendant and before `identityOf` succeeds, the runner
-    has no `engineIdentity` to name the group with (`src/runner.ts:234-236`).
+    has no `engineIdentity` to name the group with (`src/runner.ts:242-244`).
     But the detached spawn made `handle.pid` both the group and the session id,
     and the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
@@ -572,9 +581,9 @@ launch-protocol bullet.
     task with its descendants still running.
   - **`truncated` on every settlement.** The evidence patch the runner writes
     carries `truncated: outcome.truncated` whether the task ends `done`,
-    `failed` or `cancelled` (`src/runner.ts:133`), because a completed task can
+    `failed` or `cancelled` (`src/runner.ts:141`), because a completed task can
     be missing the tail of its log too; the `; output truncated` suffix on a
-    failure's `reason` stays (`src/runner.ts:147`).
+    failure's `reason` stays (`src/runner.ts:155`).
 - **Target: the other two cancel writers.** The `cancel` tool does not exist —
   `projectTools` registers two tools and neither is it
   (`src/server.ts#projectTools`). The design requires that `cancel` write
@@ -616,9 +625,9 @@ launch-protocol bullet.
   first and `orphaned` second would hand the stranded engine a lead's authority
   for as long as the second write was delayed or refused.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
-  status === "launching"` (`src/runner.ts:241-242`). On `applied: false` with
+  status === "launching"` (`src/runner.ts:249-250`). On `applied: false` with
   `record.status === "cancelling"` it **treats the refusal as a cancel**
-  (`src/runner.ts:244-248`): stop the engine group, then write `cancelled` with
+  (`src/runner.ts:252-256`): stop the engine group, then write `cancelled` with
   both identities, again conditionally. Mapping it to "someone else settled
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
@@ -814,8 +823,8 @@ launch-protocol bullet.
   own caller but never mutates the result the caller already holds
   (`src/engines/spawn.ts:114-116`, `:225`) — a late error cannot rewrite a
   delivered outcome. `SpawnResult.truncated` is persisted on the task record
-  for every settlement (`src/runner.ts:133`) and appended to `reason` when the
-  task failed (`src/runner.ts:147`), so an operator reading a failure knows
+  for every settlement (`src/runner.ts:141`) and appended to `reason` when the
+  task failed (`src/runner.ts:155`), so an operator reading a failure knows
   whether the evidence is complete.
 - **The worktree reservation**: computed, and consulted by `git_mutate`; its
   use in `delegate` is a target. `reservations(projectRoot)` walks one `scan`
@@ -1096,7 +1105,7 @@ no request, that environment variable is the only way a configured
 `engines.<e>.bin` reaches a capability check, and the server or runner has to
 export it before `spawnEngine` (`atc-s96.10`). Config-declared adapter modules
 are not supported, and the reason is in the code: the runner imports the spec's
-`adapterModule` into its own process, unsandboxed (`src/runner.ts:200-201`), and
+`adapterModule` into its own process, unsandboxed (`src/runner.ts:208-209`), and
 `validateSpec` checks only that the path is absolute
 (`src/ledger.ts#validateSpec`). Making that path config-controlled would turn a
 config file into arbitrary code execution in the orchestrator.
