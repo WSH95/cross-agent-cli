@@ -144,7 +144,7 @@ test("check reports the task, what is running it, and the tail of its own event 
   // The runner persists the engine's activity on its own 2-second interval.
   await poll(() => p.record(running.id).lastEventAt, (value) => Boolean(value));
 
-  const answer = check(p.root, running.id, { now: running.createdAt + 90_000 });
+  const answer = await check(p.root, running.id, { now: running.createdAt + 90_000 });
   assert.equal(answer.ok, true);
   assert.equal(answer.ok && answer.status, "running");
   assert.equal(answer.ok && answer.role, "planner");
@@ -159,12 +159,12 @@ test("check reports the task, what is running it, and the tail of its own event 
   assert.ok(activity.length > 0);
   assert.ok(activity.some((line) => line.includes("working")), JSON.stringify(activity));
   assert.equal(activity.at(-1), fs.readFileSync(running.logPath, "utf8").trim().split("\n").at(-1));
-  const one = check(p.root, running.id, { lines: 1 });
+  const one = await check(p.root, running.id, { lines: 1 });
   assert.equal(one.ok && one.lastActivity.length, 1);
   // A count that is not a whole number of lines is refused rather than read as "all of
   // them": 0, a fraction and an infinity would each hand back the whole window.
   for (const lines of [0, -1, 2.5, Number.NaN, Infinity]) {
-    const refused = check(p.root, running.id, { lines });
+    const refused = await check(p.root, running.id, { lines });
     assert.equal(refused.ok, false, String(lines));
     assert.match(refused.ok === false ? refused.reason : "", /lines/, String(lines));
   }
@@ -172,10 +172,31 @@ test("check reports the task, what is running it, and the tail of its own event 
   // A settled task's elapsed time stops at its settlement, and a task nobody has is named.
   assert.equal((await update(p.root, running.id, { status: "cancelling" })).applied, true);
   const done = (await update(p.root, running.id, { status: "cancelled" }, running.createdAt + 5_000)).record;
-  const after = check(p.root, running.id, { now: done.updatedAt + 600_000 });
+  const after = await check(p.root, running.id, { now: done.updatedAt + 600_000 });
   assert.equal(after.ok && after.elapsedSeconds, 5);
-  const missing = check(p.root, "no-such-task");
+  const missing = await check(p.root, "no-such-task");
   assert.deepEqual(missing, { ok: false, reason: "no task no-such-task" });
+});
+
+test("check writes the stall its clock reads, and writes the task back when events resume", async (t) => {
+  // 0.02 of a minute is 1.2 seconds: a fraction is a valid `stallMinutes` and the reading
+  // is the same one a quarter of an hour would give.
+  const p = await projectWithRoles(t, { stallMinutes: 0.02 });
+  const running = await launch(p, { role: "planner", cwd: p.root });
+  const eventAt = await poll(() => p.record(running.id).lastEventAt, (value) => Boolean(value)) as number;
+
+  // Past the threshold the engine has gone quiet, and a stall a reader finds is a stall it
+  // writes: the next reader of this record inherits the reading instead of taking it again.
+  const stalled = await check(p.root, running.id, { now: eventAt + 1_300 });
+  assert.equal(stalled.ok && stalled.status, "stalled");
+  assert.equal(p.record(running.id).status, "stalled");
+
+  // The runner persists a fresh event, and the reader writes the task back to running:
+  // reviving a task is `wait`'s and `check`'s, never the reconciler's (design section 2).
+  assert.equal((await update(p.root, running.id, { lastEventAt: Date.now() })).applied, true);
+  const revived = await check(p.root, running.id);
+  assert.equal(revived.ok && revived.status, "running");
+  assert.equal(p.record(running.id).status, "running");
 });
 
 test("result is the final message in full, and a task still running has only its status", async (t) => {
@@ -288,7 +309,7 @@ test("a cancel inside the launch window ends the engine its environment names be
   // with no identities, and the engine it left is found only by the assignment it carries.
   const record = await seed(p.root, { role: "planner", cwd: p.root });
   assert.equal(record.status, "launching");
-  const engine = strandedEngine(p, record.id);
+  const engine = strandedEngine(t, p, record.id);
   await poll(() => proc(engine.pid), (value) => value !== null);
 
   const outcomes = cancelled(await cancel(p.root, record.id));

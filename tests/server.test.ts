@@ -9,6 +9,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Authority } from "../src/authority.ts";
+import { create } from "../src/ledger.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import type { ServerOptions, ToolContext } from "../src/server.ts";
 
@@ -105,7 +106,7 @@ test("initialize identifies the cross-agent server over stdio", async () => {
 test("tools/list offers each row of the permission matrix exactly its tools", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
-  const delegation = ["delegate", "check", "result", "cancel", "list_tasks"];
+  const delegation = ["delegate", "wait", "check", "result", "cancel", "list_tasks"];
   for (const [row, expected] of [
     ["operator", ["list_roles", "verify_worktree", ...delegation]],
     ["lead", ["list_roles", "verify_worktree", ...delegation]],
@@ -359,7 +360,47 @@ test("ping is answered while a slow tool call is pending", async () => {
   assert.equal(((slow.result as Json).content as Json[])[0].text, "slow done");
 });
 
-test("the specialist row cannot delegate or cancel, and is refused by this server's own name", async (t) => {
+test("notifications/cancelled ends the wait it names within 100ms, and the reply is still sent", async (t) => {
+  const root = await projectWithConfig({ roles: { planner: { engine: "grok", cwd: "root", sandbox: "read-only" } } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  // A record no runner ever picked up: `wait` polls it for its whole timeout, and nothing
+  // this test starts has a process to clean up.
+  const record = create(root, { role: "planner", brief: "b", cwd: root, engine: "grok" });
+  const server = createServer({ tools: projectTools(root), authority: () => operator });
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const replies: Json[] = [];
+  output.setEncoding("utf8");
+  output.on("data", (chunk: string) => {
+    for (const line of chunk.split("\n")) if (line.trim()) replies.push(JSON.parse(line) as Json);
+  });
+  server.connect(input, output);
+  const send = (message: Json) => input.write(JSON.stringify(message) + "\n");
+
+  send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "wait", arguments: { task_id: record.id, timeout_seconds: 600 } } });
+  // An id nothing is running under is ignored: the ping behind it is answered, and the
+  // wait it did not name is still pending.
+  send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 999, reason: "no such request" } });
+  send({ jsonrpc: "2.0", id: 2, method: "ping" });
+  await waitFor(() => replies.some((message) => message.id === 2));
+  assert.equal(replies.some((message) => message.id === 1), false, "the wait must still be pending");
+
+  const cancelled = performance.now();
+  send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1, reason: "the user moved on" } });
+  await waitFor(() => replies.some((message) => message.id === 1));
+  assert.ok(performance.now() - cancelled < 100, "a cancelled wait answers within 100ms");
+
+  // The reply is still sent, and it carries the task as the cancelled call last saw it.
+  const reply = replies.find((message) => message.id === 1) as Json;
+  const result = reply.result as Json;
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(JSON.parse((result.content as Json[])[0].text as string), {
+    ok: true, task_id: record.id, status: "launching", stalled: false, elapsedSeconds: 0,
+    lastActivity: null, resultTail: null, hint: "call wait again", cancelled: true,
+  });
+});
+
+test("the specialist row cannot delegate, wait or cancel, and is refused by this server's own name", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "codex", cwd: "root", sandbox: "read-only" } } });
   t.after(() => rm(root, { recursive: true, force: true }));
   const reason = "specialist by ancestry: task T (implementer, running)";
@@ -369,6 +410,7 @@ test("the specialist row cannot delegate or cancel, and is refused by this serve
   });
   for (const [name, args] of [
     ["delegate", { role: "planner", brief: "do it", cwd: root }],
+    ["wait", { task_id: "T" }],
     ["cancel", { task_id: "T" }],
   ] as const) {
     const refused = await request("tools/call", { name, arguments: args });
@@ -385,7 +427,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
   const request = inProcess({ tools: projectTools(root), authority: () => operator });
   const call = async (name: string, args: Json) => (await request("tools/call", { name, arguments: args }));
 
-  for (const name of ["check", "result", "cancel"]) {
+  for (const name of ["check", "result", "cancel", "wait"]) {
     const reply = await call(name, { task_id: "no-such-task" });
     const result = reply.result as Json;
     assert.equal(result.isError, true, name);
@@ -401,6 +443,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
     ["delegate", {}], ["delegate", { role: "planner", brief: "b", cwd: 5 }], ["delegate", { role: "planner", brief: "b", cwd: root, force: "yes" }],
     ["check", { task_id: "" }], ["check", { task_id: "t", lines: "ten" }], ["result", {}], ["cancel", { task_id: null }],
     ["check", { task_id: "t", lines: 0 }], ["check", { task_id: "t", lines: -1 }], ["check", { task_id: "t", lines: 1.5 }],
+    ["wait", { task_id: "" }], ["wait", { task_id: "t", timeout_seconds: "soon" }], ["wait", { task_id: "t", timeout_seconds: -1 }],
     ["list_tasks", { status: "elsewhere" }],
   ] as const) {
     const reply = await call(name, args as Json);

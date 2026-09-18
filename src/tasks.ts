@@ -2,15 +2,17 @@ import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
-import { currentBootId, isProcessAlive, isTerminal, read, scan, update } from "./ledger.ts";
+import { currentBootId, find, isProcessAlive, isTerminal, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import type { FoundProcess } from "./process.ts";
 import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid } from "./process.ts";
+import { observeStall } from "./wait.ts";
 
-// The read tools and the cascade cancel. Ownership lives here too, because `wait` (T11)
-// and the operator CLI (S11) answer the same question: which tasks are this lead's.
+// The read tools and the cascade cancel. Ownership lives here too, because `wait`
+// (`src/wait.ts`) and the operator CLI (S11) answer the same question: which tasks are
+// this lead's.
 
 /** A task's own id and the ids of the records it continues, nearest first. */
 export function lineageIds(records: readonly TaskRecord[], id: string): string[] {
@@ -91,64 +93,34 @@ function view(record: TaskRecord): TaskView {
   };
 }
 
-function found(projectRoot: string, taskId: string): TaskRecord | null {
-  try {
-    return read(projectRoot, taskId);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-/** The last `count` lines of a file, reading only its tail. */
-function tail(file: string, count: number): string[] {
-  const window = 64 * 1024;
-  let handle: number;
-  try {
-    handle = fs.openSync(file, "r");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  try {
-    const size = fs.fstatSync(handle).size;
-    const length = Math.min(size, window);
-    const buffer = Buffer.alloc(length);
-    fs.readSync(handle, buffer, 0, length, size - length);
-    const lines = buffer.toString("utf8").split("\n").filter((line) => line.length > 0);
-    // The first line of a window that began mid-file is a fragment, so it is dropped
-    // unless the window is the whole file.
-    if (length < size) lines.shift();
-    return lines.slice(-count);
-  } finally {
-    fs.closeSync(handle);
-  }
-}
-
 export type CheckResult =
   | (TaskView & { ok: true; elapsedSeconds: number; lastActivity: string[] })
   | { ok: false; reason: string };
 
 /**
- * What a task is doing, without reconciling anything: an answer a lead may ask for every
- * few seconds has to be a read. The activity is the tail of the engine's own event stream
- * (`<id>.ndjson`), which is the evidence the runner tees rather than a reading of it.
+ * What a task is doing, reconciling nothing: an answer a lead may ask for every few seconds
+ * inspects no processes and judges no runner. The activity is the tail of the engine's own
+ * event stream (`<id>.ndjson`), which is the evidence the runner tees rather than a reading
+ * of it. The one thing this does write is the stall its clock reads, because `wait` and
+ * `check` are the two readers of that clock and a reading nobody records is one every
+ * later reader has to take again (design section 2).
  */
-export function check(projectRoot: string, taskId: string, options: { lines?: number; now?: number } = {}): CheckResult {
+export async function check(projectRoot: string, taskId: string, options: { lines?: number; now?: number } = {}): Promise<CheckResult> {
   const lines = options.lines ?? 10;
-  // A count that is not a whole number of lines has no reading: `tail` would hand back
+  // A count that is not a whole number of lines has no reading: `tailLines` would hand back
   // the whole window for 0 or an infinity, and drop the head for a negative one.
   if (!Number.isSafeInteger(lines) || lines <= 0) {
     return { ok: false, reason: `lines must be a positive whole number, not ${JSON.stringify(options.lines)}` };
   }
-  const record = found(projectRoot, taskId);
-  if (record === null) return { ok: false, reason: `no task ${taskId}` };
+  const found = find(projectRoot, taskId);
+  if (found === null) return { ok: false, reason: `no task ${taskId}` };
   const now = options.now ?? Date.now();
+  const record = await observeStall(projectRoot, found, { now });
   const until = isTerminal(record.status) ? record.updatedAt : now;
   return {
     ok: true, ...view(record),
     elapsedSeconds: Math.max(0, Math.round((until - record.createdAt) / 1000)),
-    lastActivity: tail(record.logPath, lines),
+    lastActivity: tailLines(record.logPath, lines),
   };
 }
 
@@ -159,7 +131,7 @@ export type ResultResult =
 
 /** The final message in full, once there is one. A task still running has only its status. */
 export function result(projectRoot: string, taskId: string): ResultResult {
-  const record = found(projectRoot, taskId);
+  const record = find(projectRoot, taskId);
   if (record === null) return { ok: false, reason: `no task ${taskId}` };
   if (!isTerminal(record.status)) return { ok: true, id: record.id, status: record.status, settled: false };
   let text: string | null = null;

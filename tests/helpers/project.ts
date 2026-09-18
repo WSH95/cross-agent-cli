@@ -58,7 +58,7 @@ function markedProcesses(marker: string): number[] {
   return pids;
 }
 
-export async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 8000): Promise<T> {
+export async function poll<T>(read: () => T | Promise<T>, accepts: (value: T) => boolean, timeout = 8000): Promise<T> {
   const deadline = Date.now() + timeout;
   while (true) {
     const value = await read();
@@ -147,13 +147,13 @@ export function engineEnv(project: TestProject, values: Record<string, string> =
 /**
  * An engine a dead runner left behind: a detached leader of its own group and session
  * carrying `CROSS_AGENT_TASK=<id>`, which is the only thing that identifies one
- * (design section 2, B5-i). It carries the project marker too, so cleanup finds it.
+ * (design section 2, B5-i). It carries the project marker too, so the project's sweep
+ * finds it, and `track` kills its group when the test ends however the test ended.
  */
-export function strandedEngine(project: TestProject, taskId: string): { pid: number; identity: { pid: number; startTime: string; pgid: number; bootId: string } } {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+export function strandedEngine(t: TestContext, project: TestProject, taskId: string): { pid: number; identity: { pid: number; startTime: string; pgid: number; bootId: string } } {
+  const child = track(t, spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     detached: true, stdio: "ignore", env: { ...project.env, CROSS_AGENT_TASK: taskId },
-  });
-  child.once("error", () => {});
+  }));
   child.unref();
   const pid = child.pid!;
   const stat = proc(pid)!;

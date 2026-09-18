@@ -78,7 +78,9 @@ request (`src/authority.ts#resolveAuthority`) — and project discovery
 tools by the row it resolves (`src/server.ts#createServer`). T10b adds the
 delegation rows themselves: `delegate`, `check`, `result`, `cancel` and
 `list_tasks`, each offered to the rows below and each applying its own half of
-the matrix inside itself (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`).
+the matrix inside itself (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`);
+T11 adds `wait`, which shares `cancel`'s row and applies the same lineage check
+before it polls (`src/wait.ts#wait`, `src/server.ts#projectTools`).
 The server's entry point passes no lead role yet, because only a mode names one
 (step 8), so today it resolves to the operator or the specialist row, and
 nothing runs a loop; what is not built below is the target the remaining tasks
@@ -245,8 +247,9 @@ that spelling, so nothing in the matrix depends on it.
    it continues, back along `resumedFrom`, and a lead owns a task whose
    `parentTaskId` chain reaches any of them (`src/tasks.ts#lineageIds`,
    `#ownedBy`). So a lead that has been killed and reattached twice still owns
-   the children its first record delegated, and `wait` (T11) and the operator
-   CLI ask the same question of the same helper. `cancel` on a lead writes
+   the children its first record delegated, and `wait` and the operator CLI ask
+   the same question of the same helper (`src/server.ts#projectTools`).
+   `cancel` on a lead writes
    `cancelling` on the **lead first**, under `spawn.lock` and with the snapshot
    of its descendants taken in the same hold — from that moment `delegate`
    refuses any child of a cancelling parent, so a delegation that races the
@@ -419,10 +422,14 @@ that calls it does not.
 `initialize`, `tools/list`, `tools/call`, `ping`, `notifications/cancelled`;
 no dependencies, so the setup command is `none` and Node 24 runs the `.ts`
 sources directly). Requests are dispatched concurrently: a pending `wait`
-never blocks `check`, `cancel`, or `list_tasks` on the same connection —
-that part is built and tested. Having `notifications/cancelled` abort a
-pending `wait` is a target for T11: the dispatcher accepts the notification
-and ignores it today (`src/server.ts#createServer`). "Registered by" says which
+never blocks `check`, `cancel`, or `list_tasks` on the same connection.
+`notifications/cancelled` aborts the pending `wait` it names: the dispatcher
+holds an `AbortController` per call in flight, keyed by the request id its
+client addressed it with, and the notification aborts exactly that one — an id
+nothing is running under is ignored (`src/server.ts#createServer`). The
+aborted call answers for itself, with the status it last read and
+`cancelled: true`, and its JSON-RPC reply is still written, which a client that
+has moved on may ignore (`src/wait.ts#wait`). "Registered by" says which
 part of the system offers the tool: **core** always; **worktree** only when the
 active mode declares the worktree provider; **engine lead** only under
 `placement: engine`.
@@ -432,7 +439,7 @@ active mode declares the worktree provider; **engine lead** only under
 | `describe_mode` | — | the active mode's loop text, roles, workspace and git policy | core |
 | `list_roles` | — | roles from config with engine, model, workspace kind, sandbox profile | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
-| `wait` | `task_id`, `timeout_seconds` (default 600) | returns when the task settles, the timeout passes, or the stall threshold is crossed: `status`, `stalled`, elapsed, last activity line, result tail | core |
+| `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
 | `check` | `task_id` | non-blocking status and the last activity lines | core |
 | `result` | `task_id` | the final message in full, the engine session id | core |
 | `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups | core |
@@ -449,15 +456,16 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-Today `projectTools` registers seven of these (`src/server.ts#projectTools`):
+Today `projectTools` registers eight of these (`src/server.ts#projectTools`):
 `list_roles`, `check`, `result` and `list_tasks` for every row, `delegate`,
-`cancel` and `verify_worktree` for the operator and lead rows. The server
-offers and refuses each by the row it resolves, and `delegate` and `cancel`
-apply the lead's own half of the matrix inside themselves — a lead delegates
-no lead and no child of a cancelling parent, and cancels only what it delegated
-(`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). `wait` arrives with T11,
-`describe_mode` with the mode loader it reads, and the rest with the tasks named
-in the work plan.
+`wait`, `cancel` and `verify_worktree` for the operator and lead rows. The
+server offers and refuses each by the row it resolves, and `delegate`, `wait`
+and `cancel` apply the lead's own half of the matrix inside themselves — a lead
+delegates no lead and no child of a cancelling parent, and waits on and cancels
+only what it delegated, refused by name with the lead task that did not delegate
+it (`src/delegate.ts#delegate`, `src/server.ts#projectTools`,
+`src/tasks.ts#cancel`). `describe_mode` arrives with the mode loader it reads,
+and the rest with the tasks named in the work plan.
 
 ### 2. Ledger, runner, locks
 
@@ -702,9 +710,14 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     none, so the same environ scan runs first and what it finds is terminated
     and written with the settlement (`src/reconcile.ts#judge`,
     `src/process.ts#strandedEngine`);
-  - anything else: untouched. In particular `stalled → running` when events
-    resume is T11's job, not the reconciler's; the reconciler never revives a
-    task.
+  - anything else: untouched. In particular `running ↔ stalled` is not the
+    reconciler's: it never revives a task. Both directions are written by the
+    two tools that read the stall clock, `wait` and `check`, each through
+    `observeStall` and each conditional on the record still saying inside the
+    lock what it said outside it (`src/wait.ts#observeStall`, `#wait`,
+    `src/tasks.ts#check`). A stall nobody wrote would be a reading every later
+    reader had to take again, and a revival nobody wrote would leave a working
+    engine reported as stalled for the rest of its run.
 
   **The conditional write is the decision point, and nothing is signalled
   before it.** The environ scan is read-only; then one `update` writes either
@@ -1096,7 +1109,7 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   (`src/engines/types.ts#EngineAdapter`), for an engine whose output is one
   document at exit rather than a line stream. **No adapter declares it**, and
   the hook's only exercise is the fake engine's `grok-json` format
-  (`tests/fixtures/fake-engine.mjs:50-53`), which is the shape it exists for:
+  (`tests/fixtures/fake-engine.mjs:56-59`), which is the shape it exists for:
   all three formats below are line streams, and a declared `finish` would only
   make the pipeline buffer raw stdout for a call with nothing to read
   (`tests/engines/claude.test.ts:413`, `tests/engines/codex.test.ts:401`,
@@ -1326,7 +1339,7 @@ which is a property of the line, not of the pipeline.
   leaves `lastEventAt` null for the whole run (`src/engines/spawn.ts:158-166`
   advances it only on a parsed event) and so makes every Grok task look
   stalled and `check` show nothing. That shape is the fake engine's
-  `grok-json` format (`tests/fixtures/fake-engine.mjs:50-53`, `:88-90`,
+  `grok-json` format (`tests/fixtures/fake-engine.mjs:56-59`, `:95-97`,
   `tests/spawn.test.ts:705`), and it is what the pipeline's `finish` tests are
   run against, because it is the case the hook exists for
   (`tests/spawn.test.ts:780`, `:799`). `--effort` is an alias of
@@ -1940,10 +1953,23 @@ already holds that summary, because the host appended it (section 7); under
 ### Time limits, as agreed
 
 No cap on a task. `wait` returns early with `stalled: true` when the engine has
-emitted nothing for `stallMinutes`; the task keeps running and the lead
-decides. `timeout_seconds` bounds one call so the lead's turn never hangs;
-Claude Code's MCP tool timeout defaults to about 28 hours, Codex takes
-`tool_timeout_sec` per server.
+emitted nothing for `stallMinutes`; the task keeps running and the lead decides
+(`src/wait.ts#wait`). The clock that silence is measured from is the engine's
+last event, else the acknowledgement that answered for the engine —
+`lastEventAt ?? acknowledgedAt` (`src/wait.ts#stallClock`) — so a task that has
+emitted nothing yet is read from the moment its runner claimed it, and a
+`launching` record, which has neither, never stalls: its deadline is the
+reconciler's. A stall this call observed is an answer; a stall it arrived to is
+not, or a second `wait` on a stalled task would return the same reading for
+ever, so that one polls on and answers when the task settles, when it stalls
+again after another `stallMinutes` of silence, or at the timeout. A `wait` that
+finds the ledger out of step with the kernel — a launch past its deadline, an
+active task whose runner is gone — runs one reconciliation pass, once per call,
+and reports what it settled, or `orphaned` when the pass left the record there
+(`src/reconcile.ts#reconcileAndCleanup`). `timeout_seconds` bounds one call so
+the lead's turn never hangs and defaults to `limits.waitDefaultSeconds`; the
+upper bound is the caller's. Claude Code's MCP tool timeout defaults to about
+28 hours, Codex takes `tool_timeout_sec` per server.
 
 ### Not built
 
@@ -2021,16 +2047,18 @@ reason), and the loop-guard scope as a hard requirement.
    answers `ping` while a slow tool call is pending;
    `tests/fixtures/fake-engine.mjs` (emits JSONL in a per-engine format
    chosen by `FAKE_ENGINE_FORMAT`; `FAKE_ENGINE_SCRIPT` selects `ok`, `fail`,
-   `stall`, or `stall-ignore-term`,
-   `tests/fixtures/fake-engine.mjs:3`). Its `grok` format emitted nothing
-   until a final whole-output object — Grok's `json` mode — until **T9
+   `stall`, `stall-ignore-term`, or the `quiet-then-active` T11 added for the
+   stall detector — silent, then its format's lines, then alive and silent
+   again before a normal finish (`tests/fixtures/fake-engine.mjs:3-5`, `:28`,
+   `:63`). Its `grok` format emitted nothing until a final whole-output
+   object — Grok's `json` mode — until **T9
    rewrote it to the `streaming-messages-json` shape** P8 adopted, which is the
    `claude` case's lines with a Grok `system/init`
-   (`tests/fixtures/fake-engine.mjs:39-49`, `:79-87`); a fixture that cannot
+   (`tests/fixtures/fake-engine.mjs:45-55`, `:86-94`); a fixture that cannot
    produce the adopted format cannot test the adapter that parses it. The
    whole-output shape stayed, as a fifth format `grok-json`, because the
    pipeline's `finish` tests need an engine that says nothing until exit
-   (`tests/fixtures/fake-engine.mjs:50-53`, `:88-90`). `tools/probe.mjs`, a
+   (`tests/fixtures/fake-engine.mjs:56-59`, `:95-97`). `tools/probe.mjs`, a
    standalone harness that spawns one engine with the section 3 argv (no
    server, no runner) so the probes do not wait on feature tasks. It stays a
    manual tool; it is not moved onto the adapter interface. `npm test` green.
@@ -2128,7 +2156,7 @@ reached by a caller: until then no tool registers `git_mutate` and no
 | 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | **Done** (397763c, 649b8e5, f40cadb). `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; the resume argv no longer pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Outcomes in Phase 0 above: `streaming-messages-json` for T9, three `-c` settings for a Codex lead mount, no Grok lead, and a Codex resume that keeps neither cwd nor sandbox. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | **Done** (`734e1e9..193b511`, with its review's fix round in `cfaf2b0`). A2; the adapter fields of section 3, `sandboxFor` as their one construction site, the built-in table in `src/engines/registry.ts`, `src/engines/binaries.ts`, and `EngineName` moved beside the contract; informed by P8 and P9. The three adapters carried the static half only at this point: `plan`, `parseLine` and `finalMessage` threw, and so did the `finish` stub each declared; row 6 replaced all four. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
-| 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). Left in this row: `wait` with stall detection (`atc-s96.11`). `describe_mode` registers with step 8, which builds the mode loader it reads. |
+| 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registers with step 8, which builds the mode loader it reads. |
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts#RoleConfig`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
@@ -2285,7 +2313,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/gitmutate.test.ts:208`), for `delegate`, which refuses a writable
   delegation naming the file and leaves a read-only one alone
   (`tests/delegate.test.ts:222`), and for `list_tasks`, which returns the file
-  beside the records it could read (`tests/tasks.test.ts:203`).
+  beside the records it could read (`tests/tasks.test.ts:224`).
 - **Authority (T10a, recorded but for its last two clauses):** a server whose
   nearest engine ancestor is a specialist gets the specialist row even when
   the process also carries a lead's environment (`tests/authority.test.ts:253`),
@@ -2303,16 +2331,38 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   cap only ever lowers a row (`:204`). A direct `tools/call` of a tool outside
   the resolved row is refused by name with the reason, the entry point
   refuses by the row it resolves for itself, and both the list and the refusal
-  follow the row from one request to the next (`tests/server.test.ts:127`,
-  `:301`, `:151`); a specialist's `delegate` and `cancel` are refused by this
-  server's own name with the resolver's reason, and its read tools answer
-  (`:362`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
+  follow the row from one request to the next (`tests/server.test.ts:128`,
+  `:302`, `:152`); a specialist's `delegate`, `wait` and `cancel` are refused by
+  this server's own name with the resolver's reason, and its read tools answer
+  (`:403`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
   the nearest configured directory, a linked worktree resolving to its main
   project and no config anywhere to a reason (`tests/project.test.ts:24`,
   `:40`, `:50`, `:66`). A resolver that throws is answered `-32603`, lists
-  nothing and runs no handler (`tests/server.test.ts:411`). Still to record: a
+  nothing and runs no handler (`tests/server.test.ts:454`). Still to record: a
   Grok specialist inheriting the user's MCP configuration sees exactly the
   specialist row (this is I1).
+- **T11 (recorded).** An engine that says nothing from its launch stalls on the
+  acknowledgement clock while its group stays alive, comes back to `running`
+  through `check` when it emits, stalls again on the next silence, and settles
+  with the tail of its result — one fake engine, one task, four readings
+  (`tests/wait.test.ts:62`). A settled task is answered on the first read
+  (`:103`); `check` answers while a `wait` is pending and an aborted `wait`
+  returns the status it found, in under 100 ms, having written nothing (`:122`);
+  a `launching` record never stalls however old its clock (`:145`); the timeout
+  with no argument is the project's `waitDefaultSeconds` (`:159`); a runner
+  SIGKILLed under a pending `wait` is settled by that call's one reconciliation
+  pass, engine group and all (`:170`), while an orphan the pass cannot settle is
+  answered as `orphaned` rather than waited on (`:184`); a second `wait` run in
+  a **fresh process** reads the same stall from the ledger and the task is still
+  running when it does (`:198`); a lead is refused by name for a task it did not
+  delegate and answered for one it did (`:219`); and `observeStall` writes each
+  transition once, leaves a reading it has already written alone, and returns
+  the record that beat it when another writer settled the task (`:246`). The
+  cancellation is recorded at the protocol edge as well: an unknown request id
+  is ignored, and the one the notification names is answered within 100 ms with
+  `cancelled: true` and a reply that is still sent (`tests/server.test.ts:363`).
+  `check` is the other writer of the two transitions, and writes both
+  (`tests/tasks.test.ts:181`).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,
   models and efforts of section 6 and the profiles of the mode's
   `sandboxDefault`; a config carrying a `workspace`

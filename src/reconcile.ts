@@ -1,5 +1,5 @@
 import { lockWaitSeconds } from "./config.ts";
-import { currentBootId, isProcessAlive, readProcessStat, scan, update } from "./ledger.ts";
+import { currentBootId, isProcessAlive, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";

@@ -10,8 +10,10 @@ import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
 import { discoverProject } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
-import { cancel, check, listTasks, result } from "./tasks.ts";
+import { cancel, check, listTasks, ownedBy, result } from "./tasks.ts";
+import { scan } from "./ledger.ts";
 import type { TaskStatus } from "./ledger.ts";
+import { wait } from "./wait.ts";
 import { verifyWorktree } from "./worktree.ts";
 
 // cross-agent MCP server: JSON-RPC 2.0 over stdio, one message per line.
@@ -28,7 +30,7 @@ export interface ToolResult {
 export interface ToolContext {
   /** Who this call was resolved to serve, for this call alone. */
   authority: Authority;
-  /** One per call. `notifications/cancelled` does not abort it yet (T11). */
+  /** One per call, aborted by a `notifications/cancelled` naming that call's request id. */
   signal: AbortSignal;
 }
 
@@ -71,8 +73,12 @@ function packageVersion(): string {
 export function createServer(options: ServerOptions) {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));
   const serverInfo = { name: options.name ?? "cross-agent", version: options.version ?? packageVersion() };
+  // Every tool call in flight, by the request id its client addressed it with, so a
+  // cancellation reaches exactly the call it names and nothing else. The id is matched as
+  // the client spelled it, number or string, because that is what the notification echoes.
+  const inFlight = new Map<unknown, AbortController>();
 
-  async function dispatch(method: string, params: Json): Promise<unknown> {
+  async function dispatch(method: string, params: Json, id: unknown): Promise<unknown> {
     switch (method) {
       case "initialize":
         return {
@@ -98,14 +104,25 @@ export function createServer(options: ServerOptions) {
         if (!tool.rows.includes(authority.row)) {
           throw new RpcError(-32602, `${tool.name} is not available to a ${authority.row} server: ${authority.reason}`);
         }
+        const controller = new AbortController();
+        // A notification carries no id to cancel by, so only a request is registered.
+        if (id !== undefined && id !== null) inFlight.set(id, controller);
         try {
-          return await tool.handler((params.arguments ?? {}) as Json, { authority, signal: new AbortController().signal });
+          return await tool.handler((params.arguments ?? {}) as Json, { authority, signal: controller.signal });
         } catch (error) {
           if (error instanceof RpcError) throw error;
           const message = error instanceof Error ? error.message : String(error);
           return { content: [{ type: "text", text: message }], isError: true } satisfies ToolResult;
+        } finally {
+          inFlight.delete(id);
         }
       }
+      case "notifications/cancelled":
+        // The client has stopped waiting for that request: the call is aborted where it is
+        // and answers for itself, and its reply is still written — a client that has moved
+        // on may ignore it. An id nothing is running under is nothing to abort.
+        inFlight.get(params.requestId)?.abort();
+        return undefined;
       default:
         if (method.startsWith("notifications/")) return undefined;
         throw new RpcError(-32601, `method not found: ${method}`);
@@ -121,7 +138,7 @@ export function createServer(options: ServerOptions) {
       return isNotification ? undefined : { jsonrpc: "2.0", id, error: { code: -32600, message: "invalid request" } };
     }
     try {
-      const result = await dispatch(method, (message.params ?? {}) as Json);
+      const result = await dispatch(method, (message.params ?? {}) as Json, id);
       return isNotification ? undefined : { jsonrpc: "2.0", id, result: result ?? {} };
     } catch (error) {
       if (isNotification) return undefined;
@@ -251,21 +268,47 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
       },
     },
     {
+      name: "wait",
+      description: "Wait for a task to settle, for its engine to go quiet for the configured stall threshold, or for the timeout, and answer with the call to make next. A lead may wait only on a task it delegated.",
+      inputSchema: {
+        type: "object",
+        properties: { task_id: { type: "string" }, timeout_seconds: { type: "number" } },
+        required: ["task_id"],
+      },
+      rows: ["operator", "lead"],
+      handler: async (args, context) => {
+        const values = fields(args, "wait");
+        const taskId = requiredString(values, "task_id", "wait");
+        const timeoutSeconds = optional(values, "timeout_seconds", "number", "wait") as number | undefined;
+        if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0)) {
+          throw new RpcError(-32602, `wait's timeout_seconds must be a finite number of seconds, not ${timeoutSeconds}`);
+        }
+        // A lead waits on the tasks it delegated and no others; the operator waits on any.
+        if (context.authority.row === "lead") {
+          const leadTaskId = context.authority.taskId;
+          if (leadTaskId === undefined || !ownedBy(scan(projectRoot).records, leadTaskId, taskId)) {
+            return answer({ ok: false, reason: `refused wait on task ${taskId}: lead task ${leadTaskId} did not delegate it` });
+          }
+        }
+        return answer(await wait(projectRoot, taskId, { timeoutSeconds, signal: context.signal }));
+      },
+    },
+    {
       name: "check",
-      description: "The status of a task, how long it has been running, and the last lines of its engine's own event stream. Reconciles nothing.",
+      description: "The status of a task, how long it has been running, and the last lines of its engine's own event stream. Reconciles nothing, and records the stall or the revival its clock reads.",
       inputSchema: {
         type: "object",
         properties: { task_id: { type: "string" }, lines: { type: "number" } },
         required: ["task_id"],
       },
       rows: ["operator", "lead", "specialist"],
-      handler: (args, _context) => {
+      handler: async (args) => {
         const values = fields(args, "check");
         const lines = optional(values, "lines", "number", "check") as number | undefined;
         if (lines !== undefined && (!Number.isSafeInteger(lines) || lines <= 0)) {
           throw new RpcError(-32602, `check's lines must be a positive whole number, not ${lines}`);
         }
-        return answer(check(projectRoot, requiredString(values, "task_id", "check"), { lines }));
+        return answer(await check(projectRoot, requiredString(values, "task_id", "check"), { lines }));
       },
     },
     {

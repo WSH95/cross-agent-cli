@@ -284,6 +284,45 @@ export function read(projectRoot: string, id: string): TaskRecord {
   return readRecord(recordPath(projectRoot, id));
 }
 
+/** The record, or null when the project has no task by that id. */
+export function find(projectRoot: string, id: string): TaskRecord | null {
+  try {
+    return read(projectRoot, id);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * The last `count` lines of a file a record names — its engine's event stream, or its
+ * runner's diagnostics — read from the end rather than whole, because a long-running
+ * engine's log is unbounded and every reader of it wants only the tail.
+ */
+export function tailLines(file: string, count: number): string[] {
+  const window = 64 * 1024;
+  let handle: number;
+  try {
+    handle = fs.openSync(file, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  try {
+    const size = fs.fstatSync(handle).size;
+    const length = Math.min(size, window);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(handle, buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8").split("\n").filter((line) => line.length > 0);
+    // The first line of a window that began mid-file is a fragment, so it is dropped
+    // unless the window is the whole file.
+    if (length < size) lines.shift();
+    return lines.slice(-count);
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
 function validateSpec(spec: LaunchSpec): void {
   if (typeof spec?.adapterModule !== "string" || !path.isAbsolute(spec.adapterModule)) {
     throw new Error("adapterModule must be an absolute path");

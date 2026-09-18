@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // A stand-in for a headless engine CLI. Records its invocation and stdin.
-//   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall | stall-ignore-term
+//   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall | stall-ignore-term |
+//     quiet-then-active (silent for FAKE_ENGINE_QUIET_MS, then its format's lines,
+//     then alive for FAKE_ENGINE_LINGER_MS before finishing as `ok` does)
 //   FAKE_ENGINE_FORMAT: generic (default) | claude | codex | grok | grok-json
 //   FAKE_ENGINE_RECORD: path of a JSON file to write {argv, cwd, env, stdin}
 import { writeFileSync } from "node:fs";
@@ -20,6 +22,10 @@ if (process.env.FAKE_ENGINE_RECORD) {
 }
 const emit = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 const sessionId = `fake-${process.pid}`;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Number(ms)));
+// An engine the stall detector can read: nothing at all while a stall threshold passes,
+// then the lines below, then silence again while it is still alive and working.
+if (script === "quiet-then-active") await sleep(process.env.FAKE_ENGINE_QUIET_MS ?? 3000);
 switch (format) {
   case "generic":
     emit({ type: "session", session_id: sessionId });
@@ -54,6 +60,7 @@ switch (format) {
   default:
     throw new Error(`Unknown FAKE_ENGINE_FORMAT: ${format}`);
 }
+if (script === "quiet-then-active") await sleep(process.env.FAKE_ENGINE_LINGER_MS ?? 4000);
 if (script === "stall" || script === "stall-ignore-term") {
   if (script === "stall") process.on("SIGTERM", () => process.exit(143));
   setInterval(() => {}, 1 << 30);
