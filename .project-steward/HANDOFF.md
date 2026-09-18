@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T22:17:42Z
+updated_at: 2026-09-18T23:10:34Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,19 +34,18 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 3 (T11 `wait` with stall detection; `atc-s96.11`) is implemented on
-`task/cross-agent-m3` as `5f31564` (441 pass, 1 skip) and under review:
-task review (Claude Code subagent · claude-opus-5 · max) and second
-opinion (Claude Code subagent · claude-fable-5-1 · max). Tasks 0, 1 and 2
-are complete there (`54ff90a..39bbafc`; Task 2's fix round closed a
-reproduced Critical: a cancel inside the launch window leaked the engine).
-**Codex is paused by the user.** Next: 3b (behavioural beads incl.
-`atc-s96.44`) and 3c (test hygiene), the first fast-forward merge into
-`main`, then Task 4 (S8 modes), 4b (root git tools), 4c (solo without
-ceremony, decision 10). Briefs for all of these are in
+Task 3 (T11 `wait`; `atc-s96.11`) is on `task/cross-agent-m3` at `928ba1e`:
+the task commit `5f31564` plus fix round 1 (`95c55a1`, `5fb2d94`,
+`928ba1e`; 448 pass, 1 skip) after four Important findings; its scoped
+re-review (Claude Code subagent · claude-fable-5-1 · max) is running. Tasks
+0–2 are complete there (`54ff90a..39bbafc`). The suite flakes about one
+full run in three with the `environ unreadable` signature: the Fable review
+traced it to `findByEnvironment` counting a process mid-`execve` as an
+unreadable candidate (a new P2 bead), which Task 3b fixes first, before 3c
+(test hygiene) and the first fast-forward merge into `main`. **Codex is
+paused by the user.** Briefs for 3b, 3c, 4, 4b, 4c are in
 `.superpowers/sdd/the-development-of-this-calm-planet/` beside the ledger
-(`progress.md`), the reports and the review packages. Every dispatch line
-names harness · model · effort.
+(`progress.md`). Every dispatch line names harness · model · effort.
 
 ## Next steps
 

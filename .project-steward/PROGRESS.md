@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T23:10:34Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 3 (T11 wait) fix round 1 landed on task/cross-agent-m3: 95c55a1, 5fb2d94, 928ba1e (448 pass/1 skip; 578 citations/0 misses) after four Important findings (lockWaitSeconds bypassed; a stall crossed during the call not answered; a cancel in the same stdin chunk dropped; a failed pass polled to timeout); scoped re-review (claude-fable-5-1, max) running. New P2 bead: findByEnvironment counts mid-execve processes as unreadable (the real cause of the atc-s96.33 flake), fixed first in Task 3b.
+
 ### 2026-09-18T22:17:42Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 2 (T10b) complete on task/cross-agent-m3 at 39bbafc (fix round 1 re-reviewed clean: Critical cancel leak closed). Task 3 (T11 wait) implemented as 5f31564 (441 pass/1 skip; 565 citations/0 misses) by the cross-agent-implementer subagent (claude-opus-5, max); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running. Briefs written for Tasks 4 (S8), 4b (root git tools), 4c (solo without ceremony), 3b, 3c. Codex paused.
 
