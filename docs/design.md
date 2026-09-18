@@ -236,8 +236,11 @@ that spelling, so nothing in the matrix depends on it.
    `git_root`, one whitelisted verb at a time, journaled, under `git.lock`; and
    `run_command`, which takes a selector rather than a command string.
 2. **Cascade ownership.** A record carries `parentTaskId`, set to the lead's own
-   task when a lead delegated it and preserved across `resume`
-   (`src/ledger.ts#TaskRecord`, `src/delegate.ts#delegate`). **Ownership is by
+   task when a lead delegated it and preserved across `resume`: a continuation
+   takes the parent of the record it continues, not the caller that asked for it,
+   and a lead may continue only a task it owns — one resumed by a stranger would
+   be an engine in the first lead's own workspace that its cascade could never
+   reach (`src/ledger.ts#TaskRecord`, `src/delegate.ts#delegate`). **Ownership is by
    lineage ids**: a task's lineage ids are its own id and the ids of the records
    it continues, back along `resumedFrom`, and a lead owns a task whose
    `parentTaskId` chain reaches any of them (`src/tasks.ts#lineageIds`,

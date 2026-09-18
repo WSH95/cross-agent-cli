@@ -12,6 +12,7 @@ import { create, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
+import { ownedBy } from "./tasks.ts";
 import { sandboxFor } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
@@ -177,11 +178,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
 
     // 0. The caller's own task, re-read under the lock: a cancel that reached the parent
     // first owns the cascade, and a child delegated after it would be outside the snapshot.
-    const parentTaskId = options.authority.row === "lead" ? options.authority.taskId : undefined;
-    if (parentTaskId !== undefined) {
-      const parent = records.find((record) => record.id === parentTaskId);
-      if (!parent) return refuse(`no parent task ${parentTaskId}`);
-      if (!authoritative.has(parent.status)) return refuse(`parent task ${parentTaskId} is ${parent.status}`);
+    const caller = options.authority.row === "lead" ? options.authority.taskId : undefined;
+    if (caller !== undefined) {
+      const parent = records.find((record) => record.id === caller);
+      if (!parent) return refuse(`no parent task ${caller}`);
+      if (!authoritative.has(parent.status)) return refuse(`parent task ${caller} is ${parent.status}`);
     }
 
     // 1. The role, its engine, and the workspace as the reservation will key it.
@@ -222,16 +223,27 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     const repeat = lineageRefusal(lineage, request.role, cwd);
     if (repeat !== null) return { ok: false, reason: repeat };
     let resumeSessionId: string | undefined;
+    let parentTaskId = caller;
     if (request.resume === undefined) {
       const duplicate = duplicateRefusal({ role: request.role, cwd, brief: request.brief, force: request.force }, records, now,
         config.limits.duplicateWindowMinutes);
       if (duplicate !== null) return { ok: false, reason: duplicate };
     } else {
+      // A lead continues its own tasks and no others: a resume launches an engine in the
+      // original's workspace, and a task another lead's cascade could not reach is exactly
+      // the engine this refusal exists to prevent.
+      if (caller !== undefined && !ownedBy(records, caller, request.resume)) {
+        return refuse(`lead task ${caller} did not delegate task ${request.resume}`);
+      }
       const chain = resumeFault(projectRoot, records, request.resume, {
         role: request.role, engine, cwd, sandbox: sandbox.profile as SandboxProfile,
       });
       if (chain !== null) return { ok: false, reason: chain };
-      resumeSessionId = records.find((record) => record.id === request.resume)!.sessionId!;
+      const original = records.find((record) => record.id === request.resume)!;
+      resumeSessionId = original.sessionId!;
+      // Preserved across resume (the lead model, item 2): the continuation belongs to
+      // whoever the original belonged to, not to whoever asked for it.
+      parentTaskId = original.parentTaskId ?? undefined;
     }
 
     // 5. Nothing exists yet, and the checks above were only true while this lock held them

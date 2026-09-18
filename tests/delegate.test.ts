@@ -299,7 +299,7 @@ test("resume is bound to the original task, and one chain never forks", async (t
   const second = launched(await delegate(p.root, { ...first, brief: "Carry on.", resume: id }, options));
   const resumed = p.record(second);
   assert.equal(resumed.resumedFrom, id);
-  assert.equal(resumed.parentTaskId, undefined);
+  assert.equal(resumed.parentTaskId, undefined, "the original had no parent, so neither has its continuation");
   assert.equal(readSpec(p.root, second).resumeSessionId, done.sessionId);
   assert.notEqual(readSpec(p.root, second).sessionId, done.sessionId, "a fresh id of its own, never the resumed session");
   await poll(() => p.record(second), (value) => value.status === "done");
@@ -319,6 +319,38 @@ test("resume is bound to the original task, and one chain never forks", async (t
   assert.equal(refusal(await delegate(p.root, { ...first, resume: second }, options)), `resume the latest: ${successor.id}`);
   const third = launched(await delegate(p.root, { ...first, resume: successor.id }, options));
   assert.equal(p.record(third).resumedFrom, successor.id);
+});
+
+test("a resume keeps the parent of the record it continues, and a lead resumes only its own", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/owned");
+  const first = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
+  const child = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/owned" }), {
+    authority: lead(first.id), env: engineEnv(p),
+  }));
+  await poll(() => p.record(child), (value) => value.status === "done");
+
+  // The operator resumes the lead's child: the task stays the lead's, or a cascade could
+  // never reach the engine this launches in the lead's own worktree.
+  const resumed = launched(await delegate(p.root, {
+    ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: child,
+  }, { authority: operator, env: engineEnv(p) }));
+  assert.equal(p.record(resumed).parentTaskId, first.id, "preserved across resume");
+  assert.equal(p.record(resumed).resumedFrom, child);
+  await poll(() => p.record(resumed), (value) => value.status === "done");
+
+  // A lead that did not delegate it may not continue it either: the refusal is the same
+  // ownership `cancel` applies.
+  const stranger = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
+  const refused = refusal(await delegate(p.root, {
+    ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: resumed,
+  }, { authority: lead(stranger.id), env: engineEnv(p) }));
+  assert.match(refused, new RegExp(`lead task ${stranger.id} did not delegate`));
+  // Its own lead may, and the continuation is still that lead's.
+  const again = launched(await delegate(p.root, {
+    ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: resumed,
+  }, { authority: lead(first.id), env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) }));
+  assert.equal(p.record(again).parentTaskId, first.id);
 });
 
 test("a resume whose original never reached a session is refused rather than launched fresh", async (t) => {
