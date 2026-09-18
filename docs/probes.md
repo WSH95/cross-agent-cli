@@ -6,7 +6,8 @@ will spawn it (design section 3). Every entry names the command (from
 2.1.263 for P1-P7 and 2.1.266 for P8-P10, Codex 0.153.4, Grok Build 1.0.13
 (build 5e9a58528b76), Node 24.11.0, Ubuntu with
 bubblewrap installed; `socat` was absent for P1's first run and installed on
-2026-09-07 for its rerun, and the `bwrap` AppArmor profile is still pending.
+2026-09-07 for its rerun, and the `bwrap` AppArmor profile was settled on
+2026-09-18 (P1's second rerun, which also ran Claude Code 2.1.266).
 
 A first round ran in a repository under `/tmp`; both the Codex and the Grok
 sandboxes treat `/tmp` as writable, so those write checks proved nothing
@@ -46,6 +47,27 @@ stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
   profile; the adapter's sandbox check must detect this failure mode too
   (a command that cannot even start), not only the "Sandbox disabled"
   warning. The P2 row for Claude stays open until the profile is in place.
+- Rerun on 2026-09-18 (`--sandbox read-only`, model sonnet) with the profile
+  written as those docs prescribe. It did nothing: a live `bwrap` read
+  `bwrap//&unpriv_bwrap (enforce)` from `/proc/<pid>/attr/current`, because
+  Ubuntu's stock `bwrap-userns-restrict` declares a profile of the same name
+  and is loaded after it — same name, later load, so the hand-written one is
+  **shadowed** and never applies. Disabling the stock profile (a link in
+  `/etc/apparmor.d/disable/`, then a parser reload) left a live `bwrap`
+  `unconfined`, and the sandboxed `curl` returned 200. So the prerequisite is
+  not "write the profile the docs give" but "be the profile that wins": a
+  check that reads a live `bwrap`'s own confinement is the only one that
+  answers it.
+- The same rerun found what `atc-s96.44` closes. Before the settings changed,
+  a `curl` that failed at the sandbox's setup was retried by the child itself
+  with `dangerouslyDisableSandbox: true` and succeeded (HTTP 200): the
+  engine's own escape hatch for a command the sandbox cannot run, which under
+  `bypassPermissions` nothing prompts for. Claude Code's sandboxing docs
+  document `sandbox.allowUnsandboxedCommands` (default `true`); at `false` the
+  engine ignores that parameter and a command that cannot run sandboxed simply
+  fails. The adapter now sends it, with `failIfUnavailable: true` beside it so
+  that a sandbox which cannot start fails the run instead of warning and
+  running every command unsandboxed (`src/engines/claude.ts:105-115`).
 
 ## P2: implementer inside a linked worktree, writes outside it (2026-09-07)
 
@@ -58,7 +80,7 @@ the worktree's `.git` pointer file with `gitdir: /tmp/elsewhere`.
 |---|---|---|---|---|---|---|
 | Codex: `codex exec --json -o <out> -C <worktree> --sandbox workspace-write --ignore-user-config --skip-git-repo-check -m gpt-6-astra` | success | denied (read-only file system) | denied | denied | denied | denied (Codex protects the `.git` entry even inside the writable cwd) |
 | Grok: `grok -p <prompt> --cwd <worktree> --sandbox workspace --permission-mode bypassPermissions --output-format json --session-id <uuid>` | success | denied (permission denied) | denied | denied | denied | **allowed** (the pointer was rewritten; restored by hand afterwards) |
-| Claude | not run yet: with `socat` installed the sandbox still needs the `bwrap` AppArmor profile (see P1) | | | | | |
+| Claude | not run yet: the sandbox works from P1's 2026-09-18 rerun onwards, and this row is what is still owed | | | | | |
 
 Consequence: the worktree pointer is writable by a Grok implementer, so
 `verify_worktree` and the explicit `--git-dir`/`--work-tree` form (section

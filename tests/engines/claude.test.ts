@@ -202,7 +202,7 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
     "--model", "claude-opus-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}',
+    "--settings", '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}',
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // The prompt is stdin's, so no positional argument follows the variadic flag.
@@ -221,7 +221,7 @@ test("a write role's argv carries the worktree as the only writable root, and th
     "--effort", "high",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools",
     "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
@@ -241,7 +241,7 @@ test("a resumed run carries --resume and never a --session-id beside it", (t) =>
     "--strict-mcp-config",
     "--resume", "138a9c9e-f573-45c5-80fc-fda76dddc834",
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ]);
   assert.equal(plan.argv.includes("--session-id"), false);
@@ -263,7 +263,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
     "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ]);
   // `--mcp-config` is variadic, so what follows it has to be a flag, and the argv may end
@@ -287,6 +287,31 @@ test("the sandbox settings say disabled for the one profile that means it", (t) 
   assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1], '{"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true}}');
   // `off` is not read-only: an unsandboxed role still edits.
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
+});
+
+test("a sandboxed role may neither leave its sandbox nor run without one", (t) => {
+  const dirs = layout(t);
+  const sandboxOf = (profile: string): Record<string, unknown> => {
+    const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", profile) }));
+    return JSON.parse(argv[argv.indexOf("--settings") + 1]).sandbox;
+  };
+
+  // P1's rerun (2026-09-18): a sandboxed child whose `curl` failed at bwrap's setup re-ran
+  // the same command with `dangerouslyDisableSandbox: true` and got its 200. Under
+  // `bypassPermissions` nothing else stands between a specialist and its own sandbox, so
+  // the settings close the escape hatch: the engine ignores that parameter at `false`.
+  assert.equal(sandboxOf("workspace-write").allowUnsandboxedCommands, false);
+  assert.equal(sandboxOf("read-only").allowUnsandboxedCommands, false);
+  // A sandbox that cannot start is a refusal, not a warning and an unsandboxed run.
+  // `sandboxSupport` catches a missing `bwrap` or `socat` before the spawn; this catches
+  // every other way the sandbox fails to come up, which only the run can see.
+  assert.equal(sandboxOf("workspace-write").failIfUnavailable, true);
+  assert.equal(sandboxOf("read-only").failIfUnavailable, true);
+
+  // `off` is the profile that asked for no sandbox: there is no escape hatch to close and
+  // nothing whose absence could fail the run, so neither setting is sent.
+  assert.equal("allowUnsandboxedCommands" in sandboxOf("off"), false);
+  assert.equal("failIfUnavailable" in sandboxOf("off"), false);
 });
 
 test("the writable root is the request's cwd exactly, and that cwd is already canonical", (t) => {
@@ -432,7 +457,7 @@ test("a fake claude run through the pipeline yields the session, the activity an
     "--model", "claude-sonnet-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ];
   // The role prompt is a file the child is pointed at, so it has to be on disk already.

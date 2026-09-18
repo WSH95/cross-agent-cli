@@ -95,8 +95,24 @@ const claude = {
    */
   plan(request: SpawnRequest): SpawnPlan {
     const { mode } = request.sandbox;
-    const settings: { sandbox: { enabled: boolean; autoAllowBashIfSandboxed: true; filesystem?: { allowWrite: string[] } } } =
-      { sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
+    const settings: {
+      sandbox: {
+        enabled: boolean; autoAllowBashIfSandboxed: true;
+        allowUnsandboxedCommands?: false; failIfUnavailable?: true;
+        filesystem?: { allowWrite: string[] };
+      };
+    } = { sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
+    // A sandbox the specialist cannot step out of. `allowUnsandboxedCommands: false` makes
+    // the engine ignore the `dangerouslyDisableSandbox` parameter its own escape hatch
+    // retries a blocked command with — P1's 2026-09-18 rerun watched a child take that
+    // hatch and reach the network — and `failIfUnavailable: true` turns a sandbox that
+    // cannot start into a failed run rather than a warning and an unsandboxed one. Both
+    // belong to a sandbox that is on: with `enabled: false` there is no hatch to close and
+    // nothing whose absence could fail the run.
+    if (mode !== "off") {
+      settings.sandbox.allowUnsandboxedCommands = false;
+      settings.sandbox.failIfUnavailable = true;
+    }
     // A writable role gets exactly one writable root, its own workspace; a read-only one
     // gets no `allowWrite` at all.
     if (mode === "write") settings.sandbox.filesystem = { allowWrite: [request.cwd] };

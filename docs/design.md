@@ -1079,7 +1079,7 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   for exclusion, Codex an empty deny list and `--ignore-user-config`, Grok one
   `--deny` per target and no exclusion flag at all. Every `plan` spreads both
   into its argv whatever its own engine answers today
-  (`src/engines/claude.ts:106`, `:137`, `src/engines/codex.ts:109`,
+  (`src/engines/claude.ts:122`, `:153`, `src/engines/codex.ts:109`,
   `src/engines/grok.ts:131`), so an engine that gains a deny form or an
   exclusion flag gains it by returning one.
 - `leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount`
@@ -1106,7 +1106,7 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
 - `parseStderrLine?(line: string): EngineEvent | null`
   (`src/engines/types.ts#EngineAdapter`), the same as `parseLine` for an engine
   that writes a fatal line to stderr rather than into its event stream. **Claude
-  declares it and no other adapter does** (`src/engines/claude.ts:186-188`;
+  declares it and no other adapter does** (`src/engines/claude.ts:202-204`;
   `tests/engines/codex.test.ts:401`, `tests/engines/grok.test.ts:370`): P1's two
   sandbox failures — the "Sandbox disabled" warning and the `apply-seccomp`
   message every command inside a broken sandbox dies with — are invisible
@@ -1216,7 +1216,7 @@ three bullets below also say **how the prompt reaches the child** — Claude on
 stdin, Codex on stdin behind a `-` positional, Grok as `-p`'s own value —
 which is a property of the line, not of the pipeline.
 
-- **Claude** (`src/engines/claude.ts:96-143`): `claude -p --output-format
+- **Claude** (`src/engines/claude.ts:96-159`): `claude -p --output-format
   stream-json --verbose --permission-mode bypassPermissions
   --strict-mcp-config` — then, for an engine-placed lead only, `--mcp-config
   <file>` — then `--model <m>`, `--effort <e>`, `--session-id <uuid>` or
@@ -1230,14 +1230,26 @@ which is a property of the line, not of the pipeline.
   line: `--mcp-config` takes `<configs...>` (`docs/probes.md:436-437`), so the
   last flag has to be `--disallowedTools`, whose values end the argv. **The
   brief goes on stdin**, so no positional argument follows that variadic
-  flag either (`src/engines/claude.ts:143`). The four cases are pinned byte
+  flag either (`src/engines/claude.ts:159`). The four cases are pinned byte
   for byte — read-only, writable, resumed, and with a lead's mount and its
   config as a plan file (`tests/engines/claude.test.ts:189`, `:213`, `:236`,
   `:251`).
   Sandbox through the settings JSON (`sandbox.enabled`,
-  `filesystem.allowWrite`, `autoAllowBashIfSandboxed`;
-  `src/engines/claude.ts:97-102`). Read-only roles get no `allowWrite` and no
-  `Edit`/`Write` tools (`src/engines/claude.ts:102`, `:138`).
+  `filesystem.allowWrite`, `autoAllowBashIfSandboxed`,
+  `allowUnsandboxedCommands`, `failIfUnavailable`;
+  `src/engines/claude.ts:97-118`). Read-only roles get no `allowWrite` and no
+  `Edit`/`Write` tools (`src/engines/claude.ts:118`, `:154`). **A sandboxed
+  role may neither leave its sandbox nor run without one.** At
+  `allowUnsandboxedCommands: false` the engine ignores the
+  `dangerouslyDisableSandbox` parameter its own escape hatch retries a blocked
+  command with, and at `failIfUnavailable: true` a sandbox that cannot start
+  fails the run instead of warning and running every command unsandboxed
+  (`src/engines/claude.ts:112-115`, `tests/engines/claude.test.ts:292`). P1's
+  rerun on 2026-09-18 is the reason and not a precaution: a sandboxed child
+  whose `curl` died at bubblewrap's setup took that hatch by itself and
+  reached the network, and under `bypassPermissions` nothing prompts
+  (`docs/probes.md:61-70`). Both settings belong to a sandbox that is on, so
+  the `off` profile — the one that asked for none — sends neither.
   `--append-system-prompt-file <role.md>` is **settled by P9**
   (`docs/probes.md:263`, `:271-275`): `claude --help` documents that
   spelling only as the `[-file]` form of `--append-system-prompt`, but the
@@ -1245,7 +1257,7 @@ which is a property of the line, not of the pipeline.
   assistant message, so a Claude role prompt travels as a file and never as
   prompt text. That file is the task's own: it goes in `scratchDir`, never
   inside the specialist's worktree, which the role may edit
-  (`src/engines/claude.ts:127-131`). Prerequisites on Linux are three, all
+  (`src/engines/claude.ts:143-147`). Prerequisites on Linux are three, all
   from P1: `bwrap`, `socat`, and on Ubuntu 24.04 or later an AppArmor profile
   for `/usr/bin/bwrap` with `flags=(unconfined)` and `userns`. The adapter
   answers the two failure modes in the two places each can be seen:
@@ -1254,8 +1266,12 @@ which is a property of the line, not of the pipeline.
   `parseStderrLine` turns the
   "Sandbox disabled" warning and the `apply-seccomp` message of a sandbox that
   engages but cannot start any command into a fatal `error` event during the
-  run (`src/engines/claude.ts#sandboxFailure`, `:186-188`), because that half
-  cannot be seen before it.
+  run (`src/engines/claude.ts#sandboxFailure`, `:202-204`), because that half
+  cannot be seen before it. The profile is a prerequisite with a trap of its
+  own: a profile written from Claude Code's docs is **shadowed** by Ubuntu's
+  stock `bwrap-userns-restrict`, which declares the same profile name and
+  loads later, so only a live `bwrap`'s own confinement says whether the
+  sandbox can work (`docs/probes.md:50-60`).
 - **Codex** (`src/engines/codex.ts:100-150`): `codex exec --json -o <out> -C
   <cwd> --sandbox <read-only|workspace-write|danger-full-access>
   --ignore-user-config --skip-git-repo-check -m <m>
