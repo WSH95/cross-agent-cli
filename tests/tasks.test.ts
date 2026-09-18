@@ -262,8 +262,12 @@ test("a cancel of a running task is settled by its own runner, with both identit
   assert.equal(settled.status, "cancelled");
   assert.deepEqual(settled.engineIdentity, running.engineIdentity);
   assert.deepEqual(settled.runnerIdentity, running.runnerIdentity);
+  // The engine group is dead before the record is written — the runner terminates it
+  // first — so that one is read on the instant. The runner's own exit is not ordered
+  // that way: it writes the record and exits a moment later, and `cancel` returns on
+  // the record it has just seen, so the exit is waited for rather than assumed.
   assert.equal(alive(settled.engineIdentity), false);
-  assert.equal(alive(settled.runnerIdentity), false);
+  await poll(() => alive(settled.runnerIdentity), (value) => value === false);
   // A second cancel of a settled task says so and changes nothing.
   const again = cancelled(await cancel(p.root, running.id));
   assert.deepEqual(again, [{ id: running.id, outcome: "already cancelled" }]);
