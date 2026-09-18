@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T19:49:12Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 2 (T10b) implemented on task/cross-agent-m3: 21c6647, 231694c, e8b3ea0 (delegate, check, result, cancel, list_tasks; sandboxSupport(env); runner SIGTERM edges; record fields depth/parentTaskId/resumedFrom/acknowledgedAt/effort; 421 pass/1 skip; 533 citations/0 misses). Task review (opus, max) and Codex review (gpt-5.6-sol, max, with a hang detector) running. Briefs ready: task-3 (T11 wait), task-3b (behavioural beads incl. atc-s96.44), task-3c (test hygiene).
+
 ### 2026-09-18T18:41:54Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 1 complete (dab83ff; task review approved; the hung Codex job was cancelled and its look at T10a moves to the M1-close cumulative review). Task 2 (T10b) running as a Claude Code subagent (cross-agent-implementer: opus 5, effort max), base dab83ff, with a mid-task amendment (record.effort; check/list_tasks show engine/model/effort). User-approved plan decision 10: built-in consult role in every mode, no-config default to solo, worktree:true one-shots merged by the launcher under mergePolicy, review/critique briefs — new item 4c, atc-s96.27 promoted to P2. Task 3 (T11) briefed.
 

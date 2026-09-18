@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T18:41:54Z
+updated_at: 2026-09-18T19:49:12Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,20 +34,18 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 2 (T10b: `delegate`, `check`, `result`, `cancel`, `list_tasks`;
-`atc-s96.10` second half with `.10.1`, `.10.2`, `.37`, `.39`, `.29`,
-`atc-vuu` folded) runs as a Claude Code subagent (type
-`cross-agent-implementer`: opus 5, effort max) in `.worktrees/cross-agent-m3`
-from base `dab83ff`. Tasks 0 and 1 are complete there (`54ff90a..dab83ff`,
-reviews clean). Briefs, the SDD ledger (`progress.md`, every ruling),
-reports, review packages and the dispatch state live in
-`.superpowers/sdd/the-development-of-this-calm-planet/` (git-ignored). The
-plan gained decision 10 and item 4c on 2026-09-18 (user-approved): a
-built-in `consult` role in every mode, a no-config default to `solo`,
-`worktree: true` one-shots merged by the launcher under `mergePolicy`, and
-`review`/`critique` briefs (`atc-s96.27`, now P2). Steward checkpoints
-commit on `main`; the task branch rebases onto `main` before each
-fast-forward merge.
+Task 2 (T10b) is implemented on `task/cross-agent-m3` as `21c6647`,
+`231694c`, `e8b3ea0` (`src/delegate.ts`, `src/tasks.ts`, the five tools by
+row, `sandboxSupport(env)`, the runner SIGTERM edges, record fields `depth`,
+`parentTaskId`, `resumedFrom`, `acknowledgedAt`, `effort`; 421 pass, 1
+skip) and is under review: a task review (Claude Code subagent, opus 5,
+max) and a Codex review of `dab83ff..e8b3ea0` (gpt-5.6-sol, max). Tasks 0
+and 1 are complete there. Next: Task 3 (T11 `wait`), then 3b (behavioural
+beads, including `atc-s96.44`) and 3c (test hygiene), then the first
+fast-forward merge into `main`. Briefs for all three are in
+`.superpowers/sdd/the-development-of-this-calm-planet/` beside the ledger
+(`progress.md`), the reports and the review packages. Steward checkpoints
+commit on `main`; the task branch rebases onto `main` before each merge.
 
 ## Next steps
 
