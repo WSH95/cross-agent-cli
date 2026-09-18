@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord, TaskStatus } from "../src/ledger.ts";
 import {
-  readDepth, toolsAtDepth, parseLineage, formatLineage, childLineage, lineageRefusal,
+  readDepth, parseLineage, formatLineage, childLineage, lineageRefusal,
   duplicateRefusal, resumeRefusal, denyTargets, childEnv,
 } from "../src/guard.ts";
 
@@ -66,15 +66,6 @@ test("readDepth accepts absent, zero, and one; rejects malformed or missing chil
     assert.match(result.reason!, /CROSS_AGENT_LINEAGE/);
     assert.match(result.reason!, /CROSS_AGENT_DEPTH/);
   }
-});
-
-test("toolsAtDepth returns exact full and restricted tool lists", () => {
-  const full = ["list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks", "verify_worktree", "git_mutate"];
-  const restricted = ["list_roles", "list_tasks", "check", "result"];
-  assert.deepEqual(toolsAtDepth(0, 1), full);
-  assert.deepEqual(toolsAtDepth(1, 2), full);
-  for (const depth of [1, 2, Infinity]) assert.deepEqual(toolsAtDepth(depth, 1), restricted);
-  assert.deepEqual(toolsAtDepth(0, 0), restricted);
 });
 
 test("lineage round-trips ordered entries and appends without mutation", () => {
@@ -245,11 +236,15 @@ const apiKeys = Object.freeze({ ANTHROPIC_API_KEY: "anthropic-test", OPENAI_API_
 const childEntries = Object.freeze([Object.freeze({ taskId: "child", role: request.role, cwd: request.cwd })]);
 
 test("childEnv strips every specified marker and subscription API key", () => {
-  const parent = Object.freeze({ ...retainedEnv, ...strippedEnv, ...apiKeys, CROSS_AGENT_DEPTH: "9", CROSS_AGENT_TASK: "parent", CROSS_AGENT_LINEAGE: "[]" });
+  const parent = Object.freeze({
+    ...retainedEnv, ...strippedEnv, ...apiKeys,
+    CROSS_AGENT_DEPTH: "9", CROSS_AGENT_TASK: "parent", CROSS_AGENT_LINEAGE: "[]", CROSS_AGENT_PROJECT: "/projects/elsewhere",
+  });
   const before = structuredClone(parent);
-  const child = childEnv(parent, 0, "child", childEntries, "subscription");
+  const child = childEnv(parent, 0, "child", childEntries, "subscription", "/projects/team");
   assert.deepEqual(child, {
     ...retainedEnv, CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "child", CROSS_AGENT_LINEAGE: JSON.stringify(childEntries),
+    CROSS_AGENT_PROJECT: "/projects/team",
   });
   for (const key of [...Object.keys(strippedEnv), ...Object.keys(apiKeys)]) assert.equal(Object.hasOwn(child, key), false, key);
   assert.deepEqual(parent, before);
@@ -259,13 +254,14 @@ test("childEnv strips every specified marker and subscription API key", () => {
 test("childEnv preserves API billing credentials and sets all CROSS_AGENT variables without mutation", () => {
   const parent = Object.freeze({ ...retainedEnv, ...strippedEnv, ...apiKeys });
   const before = structuredClone(parent);
-  const child = childEnv(parent, 2, "child", childEntries, "api");
+  const child = childEnv(parent, 2, "child", childEntries, "api", "/projects/space team");
   assert.deepEqual(child, {
     ...retainedEnv, ...apiKeys, CROSS_AGENT_DEPTH: "3", CROSS_AGENT_TASK: "child", CROSS_AGENT_LINEAGE: JSON.stringify(childEntries),
+    CROSS_AGENT_PROJECT: "/projects/space team",
   });
   assert.deepEqual(parseLineage(child.CROSS_AGENT_LINEAGE), childEntries);
   assert.deepEqual(parent, before);
-  assert.deepEqual(childEnv({}, 0, "root-child", [], "subscription"), {
-    CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "root-child", CROSS_AGENT_LINEAGE: "[]",
+  assert.deepEqual(childEnv({}, 0, "root-child", [], "subscription", "/projects/team"), {
+    CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "root-child", CROSS_AGENT_LINEAGE: "[]", CROSS_AGENT_PROJECT: "/projects/team",
   });
 });

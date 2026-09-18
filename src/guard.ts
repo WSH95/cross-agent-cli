@@ -42,12 +42,6 @@ export function readDepth(env: Readonly<NodeJS.ProcessEnv>): { depth: number; re
   return { depth };
 }
 
-export function toolsAtDepth(depth: number, maxDepth: number): string[] {
-  return depth < maxDepth
-    ? ["list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks", "verify_worktree", "git_mutate"]
-    : ["list_roles", "list_tasks", "check", "result"];
-}
-
 export function parseLineage(value: string | undefined): LineageEntry[] {
   if (value === undefined) return [];
   const reason = "CROSS_AGENT_LINEAGE must be a JSON array of {taskId, role, cwd} string entries";
@@ -126,9 +120,10 @@ export function denyTargets(config: CrossAgentConfig, repoRoot: string): string[
 // The deny and exclusion argv each engine needs are its adapter's: `denyArgs(targets)`
 // and `exclusionArgs()` on `EngineAdapter` (design section 3).
 
+/** projectRoot is the canonical project root, so a server the child starts finds this ledger. */
 export function childEnv(
   parentEnv: Readonly<NodeJS.ProcessEnv>, depth: number, taskId: string,
-  lineage: readonly LineageEntry[], billing: CrossAgentConfig["billing"],
+  lineage: readonly LineageEntry[], billing: CrossAgentConfig["billing"], projectRoot: string,
 ): NodeJS.ProcessEnv {
   const exactMarkers = ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"];
   const prefixes = ["CLAUDE_CODE_", "CLAUDE_PLUGIN_", "CODEX_COMPANION_", "GROK_CC_", "MCP_"];
@@ -142,5 +137,6 @@ export function childEnv(
     CROSS_AGENT_DEPTH: String(depth + 1),
     CROSS_AGENT_TASK: taskId,
     CROSS_AGENT_LINEAGE: formatLineage(lineage),
+    CROSS_AGENT_PROJECT: projectRoot,
   };
 }

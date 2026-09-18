@@ -67,10 +67,17 @@ to root git operations. All four are in this document.
 
 ### The lead model
 
-None of this section is built. T1–T5 ship the ledger, the config loader and
+Part of this section is built. T1–T5 ship the ledger, the config loader and
 `verify_worktree`, the guard primitives, the adapter interface and spawn
-pipeline, and the detached runner; nothing yet resolves authority or runs a
-loop. What follows is the target the remaining tasks are measured against.
+pipeline, and the detached runner. T10a adds authority by ancestry — the
+walk, the match, positive operator provenance and revalidation on every
+request (`src/authority.ts#resolveAuthority`) — and project discovery
+(`src/project.ts#discoverProject`), and the server offers and refuses its
+tools by the row it resolves (`src/server.ts#createServer`). The server's
+entry point passes no lead role yet, because only a mode names one (step 8),
+so today it resolves to the operator or the specialist row. The matrix's
+delegation rows wait for T10b and nothing runs a loop yet; what is not built
+below is the target the remaining tasks are measured against.
 
 **A lead is a session holding the lead tools and running the mode's loop.
 `placement` decides which process that session is.**
@@ -105,25 +112,26 @@ engine process, and the ledger already records each engine's identity as
 (`src/ledger.ts#EngineIdentity`, `#ProcessIdentity`), written at
 `src/runner.ts:233-242`.
 
-**The walk.** At each hop the server reads `/proc/<pid>/stat` for `ppid`,
-`startTime`, `state`, `pgid` and `sid`. `readProcessStat`
-(`src/ledger.ts#readProcessStat`) already parses that record and returns the
-last four of those; the walk extends it to return `ppid` as well — stat field
-4, the element before `pgrp` in the suffix it already splits — which is a T10
-change. Starting at its own parent, the walk follows `ppid` for at most **8
-hops** — enough for any `sh -c` wrapper an engine puts in between. The walk
-**fails closed to the specialist row** on any read error, on a cycle, on hop
+**The walk.** At each hop the server reads `/proc/<pid>/stat` through
+`readProcessStat` (`src/ledger.ts#readProcessStat`), which returns `ppid` —
+stat field 4, the element before `pgrp` — beside `startTime`, `state`, `pgid`
+and `sid`. Starting at its own parent, the walk follows `ppid` for at most **8
+hops** — enough for any `sh -c` wrapper an engine puts in between — and ends
+without a match only at a process whose `ppid` is 0, the root. The walk **fails
+closed to the specialist row** on a stat it cannot read, on a cycle, on hop
 exhaustion, and on a parent whose start time is later than its child's, which
 means the chain was reparented and the ancestor is not the one that spawned this
-server.
+server (`src/authority.ts#walk`). An environment it cannot read is not a
+failure of the walk: it is evidence of nothing, and the match below treats it
+so.
 
 **Identity across boots.** `runnerIdentity` and `engineIdentity` carry a
 `bootId`, read once from `/proc/sys/kernel/random/boot_id`
 (`src/ledger.ts#currentBootId`), because a pid and start time from another boot
 can collide with a live process; an identity whose `bootId` differs from the
 current one is dead, full stop (`src/ledger.ts#isProcessAlive`,
-`src/process.ts#inspectGroup`). That field is built (section 2); the authority
-match below is what is not.
+`src/process.ts#inspectGroup`). That field is built (section 2), and the
+authority match below compares it as well.
 
 **What counts as a match.** An ancestor matches a task when all of these hold:
 its `pid`, `startTime` and `bootId` equal that record's `engineIdentity`; its
@@ -131,41 +139,55 @@ its `pid`, `startTime` and `bootId` equal that record's `engineIdentity`; its
 one such record exists in the canonical project; and that record's status is
 `running` or `stalled`. No other status carries authority — `launching` has
 not been acknowledged, `cancelling` is being torn down, `orphaned` has lost
-its runner, and a terminal record is over. The **nearest** matching ancestor
-decides the row, and the row is **lead** only when that record's `role` equals
-the active mode's `lead.role`; otherwise **specialist**. Nearest-match makes a
-server started by a specialist under a lead resolve to the specialist, and a
-Grok specialist that inherits the user's MCP configuration (section 3) resolve
-to itself. No secret exists to copy or replay.
+its runner, and a terminal record is over. The **nearest** engine ancestor
+decides the row: the walk ends at the first ancestor holding any record's
+engine identity, and the row is **lead** only when that ancestor matches and
+its record's `role` equals the active mode's `lead.role`; otherwise
+**specialist** (`src/authority.ts#decide`). An engine whose record left
+`running|stalled`, or whose environment is unreadable or names another task,
+still ends the walk, so its server never reaches the row of a lead above it.
+Nearest-match makes a server started by a specialist under a lead resolve to
+the specialist, and a Grok specialist that inherits the user's MCP
+configuration (section 3) resolve to itself. Until a specialist's runner
+acknowledges its engine, that engine holds no identity and the walk would pass
+it to reach the lead's, so the lead row also requires that the nearest task
+the server carries — its own `CROSS_AGENT_TASK`, else the nearest ancestor's —
+is the lead's own. No secret exists to copy or replay.
 
 **Operator provenance is positive, not the absence of a match.** A server is
 the operator's own only when `CROSS_AGENT_DEPTH`, `CROSS_AGENT_LINEAGE` and
-`CROSS_AGENT_TASK` are all absent from its environment **and** no ancestor
-matches. A server that carries any of those variables but matches no record is
-a **specialist**. That also settles the spawn-versus-acknowledgement race: a
-lead's server that starts before its record reaches `running` is a specialist
-until revalidation sees `running`, which is the safe direction.
+`CROSS_AGENT_TASK` are all absent from its environment **and** the walk
+reached the root without meeting an engine ancestor or an ancestor whose
+environment carries `CROSS_AGENT_TASK`. The ancestors' environments count
+because an engine may start a server in a fresh environment rather than a copy
+of its own, and then only the engine and its runner still carry the task. A
+server that carries any of those variables, or sits under an ancestor that
+does, but matches no record is a **specialist** (`src/authority.ts#unmatched`).
+That also settles the spawn-versus-acknowledgement race: a lead's server that
+starts before its record reaches `running` is a specialist until revalidation
+sees `running`, which is the safe direction.
 
 **Resolution is revalidated on every `tools/list` and `tools/call`**, never
-cached for the connection's lifetime, and the work depends on what the first
-resolution found. A server with a matched ancestor revalidates **that**
-ancestor and its record — one `/proc` read plus one record read — so a lead
-whose record leaves `running|stalled` loses the row on its next call. A server
-that resolved to specialist because the walk found **no** match re-walks in
-full, at most 8 `/proc` reads, so a lead whose record reaches `running` after
-its server started gains the row on its next call. Without the re-walk the
-spawn-versus-acknowledgement race above would be permanent rather than
-transient.
+cached for the connection's lifetime: the server calls the resolver for each
+request (`src/server.ts#createServer`), and every resolution walks in full — at
+most 8 stat reads and as many environment reads, plus one scan of the records.
+So a lead whose record leaves `running|stalled` loses the row on its next call,
+and a lead whose record reaches `running` after its server started gains it on
+its next call; without the re-walk the spawn-versus-acknowledgement race above
+would be permanent rather than transient. Re-reading only a matched ancestor
+and its record would save a few reads, but a full walk cannot go stale when the
+chain above the server changes.
 
 **Which project.** The server takes `--project <root>`, and the lead mount
-spec passes it. `childEnv` also sets `CROSS_AGENT_PROJECT=<canonical root>`,
-so a server a Grok child starts from inherited configuration finds the right
-ledger. For a host session with neither, the fallback is the nearest ancestor
-directory of the working directory containing `.cross-agent/config.json`,
-resolved through `git rev-parse --git-common-dir` so a linked worktree maps
-back to its main project. Today the server binds unconditionally to
-`process.cwd()` (`src/server.ts:156-158`); the flag, the variable and the
-fallback are a T10 change.
+spec passes it. `childEnv` also sets `CROSS_AGENT_PROJECT=<canonical root>`
+(`src/guard.ts#childEnv`), so a server a Grok child starts from inherited
+configuration finds the right ledger. For a host session with neither, the
+fallback is the nearest ancestor directory of the working directory containing
+`.cross-agent/config.json`, resolved through `git rev-parse --git-common-dir`
+so a linked worktree maps back to its main project. `discoverProject` applies
+that order and answers with the canonical root or the reason there is none,
+and the server exits naming that reason rather than guess
+(`src/project.ts#discoverProject`, `src/server.ts#main`).
 
 #### Permission matrix
 
@@ -181,14 +203,19 @@ fallback are a T10 change.
 | `list_asks` | yes | own asks | no |
 | `answer` | yes | no | no |
 
-A refused tool must be refused at **`tools/call` by name**, not merely omitted
-from `tools/list`: the dispatcher already errors on an unregistered name
-(`src/server.ts#createServer`), and the refusal must additionally name the
-reason — which row the caller was resolved to, and why. The name a refusal
-acts on is this server's own — `delegate`, `cancel` — never the host's
-rendering of it: a host may prefix and fold it, as Codex does, turning
-`cross-agent` into `mcp__cross_agent__list_roles` (`docs/probes.md:266`). The
-server never sees that spelling, so nothing in the matrix depends on it.
+A refused tool is refused at **`tools/call` by name**, not merely omitted from
+`tools/list`. Each tool carries the rows it is offered to
+(`src/server.ts#ToolDefinition`); `tools/list` lists those of the resolved
+row, and a call to a registered tool outside it is answered
+`<tool> is not available to a <row> server: <reason>`, the reason being the
+resolver's evidence — the matched engine's task, role and status, the variable
+that made the server a specialist, or the depth cap
+(`src/server.ts#createServer`). A name nothing registers stays `unknown tool`.
+The name a refusal acts on is this server's own — `verify_worktree` today,
+`delegate` and `cancel` from T10b — never the host's rendering of it: a host
+may prefix and fold it, as Codex does, turning `cross-agent` into
+`mcp__cross_agent__list_roles` (`docs/probes.md:266`). The server never sees
+that spelling, so nothing in the matrix depends on it.
 
 #### Engine placement needs four things the host placement does not
 
@@ -398,10 +425,11 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-Today `projectTools` registers exactly two of these, `list_roles` and
-`verify_worktree`, with no authority gating (`src/server.ts#projectTools`). The
-gating, the delegation tools, and the mode tools arrive with the tasks named in
-the work plan.
+Today `projectTools` registers two of these, `list_roles` for every row and
+`verify_worktree` for the operator and lead rows, and the server offers and
+refuses them by the row it resolves (`src/server.ts#projectTools`). The
+delegation tools and the mode tools arrive with the tasks named in the work
+plan.
 
 ### 2. Ledger, runner, locks
 
@@ -905,16 +933,14 @@ the deny and exclusion argv, `leadMount`, the `finish` hook, the
 check at config load. Row 6 then built all three adapters — T7 Claude
 (`d8bc672`, `90fd4d6`), T8 Codex (`aa3e8bc`, `1a20cc8`), T9 Grok (`992a830`) —
 so the spawn lines below are the argv each `plan` emits today rather than the
-line its task was briefed to build. Four things in this section are not
+line its task was briefed to build. Three things in this section are not
 built, each marked where it appears. `scratchDir` is still the shared tasks
 directory rather than the per-task one this section specifies (`atc-s96.37`,
-row 7). `CROSS_AGENT_PROJECT` is not in the child environment yet; the
-blocklist paragraph below says `will add`. And `denyTargets` builds the list
-this section specifies, but nothing in `src/` calls it: the per-adapter
-`denyArgs` that consume its output are tested, and the production caller
-arrives with `delegate` in row 7. And the `CROSS_AGENT_<ENGINE>_BIN` export
-that hands a configured `bin` to `spawnEngine` has no exporter yet
-(`atc-s96.10`, `atc-s96.10.1`).
+row 7). `denyTargets` builds the list this section specifies, but nothing in
+`src/` calls it: the per-adapter `denyArgs` that consume its output are
+tested, and the production caller arrives with `delegate` in row 7. And the
+`CROSS_AGENT_<ENGINE>_BIN` export that hands a configured `bin` to
+`spawnEngine` has no exporter yet (`atc-s96.10`, `atc-s96.10.1`).
 
 `src/engines/{types,spawn,registry,binaries,claude,codex,grok}.ts`: build argv
 and env, capture the session id from the first native event, extract the final
@@ -927,7 +953,7 @@ or spawned (`src/engines/spawn.ts#spawnEngine`, `:79-83`).
 
 **The engine contract is adapter-owned and closed.** Flag knowledge is off
 `src/guard.ts`'s per-engine switches — where the comment that replaced them
-points at the contract instead (`src/guard.ts:126-127`) — and on
+points at the contract instead (`src/guard.ts:120-121`) — and on
 `EngineAdapter` (`src/engines/types.ts#EngineAdapter`), which carries:
 
 - `sandboxProfiles: Record<string, SandboxMode>`
@@ -1279,8 +1305,8 @@ copies the parent environment and removes: the exact names `CLAUDECODE`,
 `CLAUDE_PID`, `CLAUDE_EFFORT`; anything starting with `CLAUDE_CODE_`,
 `CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing`
 is `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
-sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, and `CROSS_AGENT_LINEAGE`, and
-will add `CROSS_AGENT_PROJECT=<canonical root>` so that a server started from
+sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, `CROSS_AGENT_LINEAGE`, and
+`CROSS_AGENT_PROJECT=<canonical root>`, the last so that a server started from
 inherited configuration inside the child finds the right ledger (the lead
 model). The residual is inherent to a blocklist: a host variable that matches no
 listed name or prefix reaches the child. That is a deliberate trade — an
@@ -1312,9 +1338,9 @@ The worktree half of this section is built: `verify_worktree` and
 `src/worktree.ts` from T2, and `gitMutate` from T6 (`src/gitmutate.ts`) with
 the reservation, both locks and the journal. What is left is the wiring and
 the root half — registering the two tools on a mode's worktree provider
-(row 8; `verify_worktree` itself is registered today, ungated,
-`src/server.ts#projectTools`), `git_root` and `run_command` (row 11), and the
-`cross-agent git` CLI (row 13).
+(row 8; `verify_worktree` itself is registered today for the operator and lead
+rows, `src/server.ts#projectTools`), `git_root` and `run_command` (row 11), and
+the `cross-agent git` CLI (row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
@@ -1501,11 +1527,13 @@ direct engine launches from specialists are denied for exactly the deny-list
 forms of section 3 at each CLI's own permission layer (Claude and Grok), or
 cannot reach a model API (Codex, network denied by its sandbox). A specialist
 that defeats its own CLI's permission rules (a copied binary, a wrapper
-script) is outside the guarantee, as it is for OpenMausBot. The builders and
-parsers for layers 1, 3, and 4 exist in `src/guard.ts` with unit tests, but
-nothing in `src/` calls them yet — `src/server.ts#projectTools` registers its
-two tools with no gating at all — so the layers below are the target that step
-7 wires. Layers, each with its own unit test:
+script) is outside the guarantee, as it is for OpenMausBot. Layer 1 is built:
+the server resolves its row by ancestry on every request and offers exactly
+that row (`src/authority.ts#resolveAuthority`, `src/server.ts#createServer`).
+The builders and parsers for layers 3 and 4 exist in `src/guard.ts` with unit
+tests, but nothing in `src/` calls them until `delegate` (T10b) does, so those
+layers are still the target that step 7 wires. Layers, each with its own unit
+test:
 
 1. **Authority by ancestry; depth is a cap, not a second opinion.** Ancestry
    decides the row a server *may* receive — operator, lead, or specialist —
@@ -1530,10 +1558,14 @@ two tools with no gating at all — so the layers below are the target that step
    cap exists to bound a chain whose ancestry the walk could not read, which
    is why it fails closed.
 
-   Records gain a `depth` field, written by `delegate`; the shipped
-   `TaskRecord` has none (`src/ledger.ts#TaskRecord`). The specialist row is the
-   four read tools plus `describe_mode`, which is what `toolsAtDepth`
-   approximates today (`src/guard.ts#toolsAtDepth`).
+   The depth read today is the server's own `CROSS_AGENT_DEPTH`, and until
+   modes exist (step 8) the cap is `limits.maxDepth` as the config states it
+   (`src/server.ts#main`). Records gain a `depth` field, written by `delegate`
+   with T10b; the shipped `TaskRecord` has none (`src/ledger.ts#TaskRecord`).
+   The specialist row is the four read tools plus `describe_mode`; of those
+   only `list_roles` is registered yet (`src/server.ts#projectTools`), and the
+   matrix's rows replaced `toolsAtDepth`, the depth-only tool list that used to
+   approximate it.
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
    specialists **do** reach a server, because Grok has no per-invocation
@@ -2152,15 +2184,30 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
 - **A4-a:** a malformed record file is reported by name and refuses every
   writer until it is repaired or removed. Recorded for `git_mutate`
   (`tests/gitmutate.test.ts:208`); the `delegate` half arrives with row 7.
-- **Authority:** a server whose nearest engine ancestor is a specialist gets
-  the specialist row even when the process also carries a lead's environment;
-  a server carrying `CROSS_AGENT_TASK` that matches no record gets the
-  specialist row, not the operator row; a walk that hits a read error, a
-  cycle, 8 hops, or a parent younger than its child gets the specialist row; a
-  lead's row is lost on the first call after its record leaves
-  `running|stalled`; a direct `tools/call delegate` is refused by name with a
-  reason; a Grok specialist inheriting the user's MCP configuration sees
-  exactly the specialist row (this is I1).
+- **Authority (T10a, recorded but for its last two clauses):** a server whose
+  nearest engine ancestor is a specialist gets the specialist row even when
+  the process also carries a lead's environment (`tests/authority.test.ts:253`),
+  and an engine ancestor whose record grants nothing still ends the walk, so
+  its server never reaches the lead above it (`:267`); a server carrying
+  `CROSS_AGENT_TASK` that matches no record gets the specialist row, not the
+  operator row (`:84`, `:231`), and so does one whose engine passed it no
+  environment while an ancestor carries the task (`:294`); a walk that hits a
+  read error, a cycle, 8 hops, or a parent younger than its child gets the
+  specialist row (`:103`, `:328`), while the operator row takes a clean
+  environment and a walk that reached the root (`:75`); a lead's row is lost
+  on the first call after its record leaves `running|stalled`, and gained on
+  the first after it reaches `running` (`:231`); an identity from another boot,
+  or an engine not carrying its task, matches nothing (`:309`); and the depth
+  cap only ever lowers a row (`:204`). A direct `tools/call` of a tool outside
+  the resolved row is refused by name with the reason, the entry point
+  refuses by the row it resolves for itself, and both the list and the refusal
+  follow the row from one request to the next (`tests/server.test.ts:123`,
+  `:297`, `:147`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
+  the nearest configured directory, a linked worktree resolving to its main
+  project and no config anywhere to a reason (`tests/project.test.ts:24`,
+  `:40`, `:50`, `:66`). Still to record: a direct `tools/call delegate` is
+  refused by name with a reason (T10b); a Grok specialist inheriting the
+  user's MCP configuration sees exactly the specialist row (this is I1).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,
   models and efforts of section 6 and the profiles of the mode's
   `sandboxDefault`; a config carrying a `workspace`

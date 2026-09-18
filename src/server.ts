@@ -3,7 +3,10 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { resolveAuthority } from "./authority.ts";
+import type { Authority, Row } from "./authority.ts";
 import { loadConfig } from "./config.ts";
+import { discoverProject } from "./project.ts";
 import { verifyWorktree } from "./worktree.ts";
 
 // cross-agent MCP server: JSON-RPC 2.0 over stdio, one message per line.
@@ -17,15 +20,26 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+export interface ToolContext {
+  /** Who this call was resolved to serve, for this call alone. */
+  authority: Authority;
+  /** One per call. `notifications/cancelled` does not abort it yet (T11). */
+  signal: AbortSignal;
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Json;
-  handler: (args: Json) => Promise<ToolResult> | ToolResult;
+  /** The rows of the permission matrix (design, "The lead model") this tool is offered to. */
+  rows: Row[];
+  handler: (args: Json, context: ToolContext) => Promise<ToolResult> | ToolResult;
 }
 
 export interface ServerOptions {
   tools: ToolDefinition[];
+  /** Called on every `tools/list` and `tools/call`: nothing is cached across requests. */
+  authority: () => Authority | Promise<Authority>;
   name?: string;
   version?: string;
 }
@@ -63,13 +77,24 @@ export function createServer(options: ServerOptions) {
         };
       case "ping":
         return {};
-      case "tools/list":
-        return { tools: [...tools.values()].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) };
+      case "tools/list": {
+        const { row } = await options.authority();
+        return {
+          tools: [...tools.values()].filter((tool) => tool.rows.includes(row))
+            .map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+        };
+      }
       case "tools/call": {
         const tool = tools.get(String(params.name));
         if (!tool) throw new RpcError(-32602, `unknown tool: ${String(params.name)}`);
+        const authority = await options.authority();
+        // Refused by this server's own name for the tool, never merely left out of the
+        // list, and with the evidence the row rests on.
+        if (!tool.rows.includes(authority.row)) {
+          throw new RpcError(-32602, `${tool.name} is not available to a ${authority.row} server: ${authority.reason}`);
+        }
         try {
-          return await tool.handler((params.arguments ?? {}) as Json);
+          return await tool.handler((params.arguments ?? {}) as Json, { authority, signal: new AbortController().signal });
         } catch (error) {
           if (error instanceof RpcError) throw error;
           const message = error instanceof Error ? error.message : String(error);
@@ -125,13 +150,14 @@ function text(value: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
-/** The tools offered to a lead session for the project at `projectRoot`. Depth gating and the delegation tools arrive with T3 and T10. */
+/** The tools for the project at `projectRoot`, each with its rows. The delegation tools arrive with T10b. */
 export function projectTools(projectRoot: string): ToolDefinition[] {
   return [
     {
       name: "list_roles",
       description: "List the roles configured in .cross-agent/config.json with their engine, model, working directory kind, and sandbox profile.",
       inputSchema: { type: "object", properties: {} },
+      rows: ["operator", "lead", "specialist"],
       handler: () => text({ roles: loadConfig(projectRoot).roles }),
     },
     {
@@ -142,6 +168,7 @@ export function projectTools(projectRoot: string): ToolDefinition[] {
         properties: { path: { type: "string" }, branch: { type: "string" } },
         required: ["path", "branch"],
       },
+      rows: ["operator", "lead"],
       handler: async (args) => {
         if (!args || typeof args !== "object" || Array.isArray(args) || typeof args.path !== "string") {
           throw new RpcError(-32602, "verify_worktree requires a string path");
@@ -153,7 +180,21 @@ export function projectTools(projectRoot: string): ToolDefinition[] {
   ];
 }
 
+/** Serves the project `discoverProject` names, or exits with the reason there is none. */
+async function main(): Promise<void> {
+  const found = await discoverProject(process.argv.slice(2), process.env, process.cwd());
+  if ("reason" in found) throw new Error(found.reason);
+  const { root } = found;
+  const { maxDepth } = loadConfig(root).limits;
+  // No lead role: a host-placed mode has none until its mode binds one (S8).
+  createServer({ tools: projectTools(root), authority: () => resolveAuthority(root, process.env, { maxDepth }) })
+    .connect(process.stdin, process.stdout);
+}
+
 const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  createServer({ tools: projectTools(process.cwd()) }).connect(process.stdin, process.stdout);
+  main().catch((error) => {
+    process.stderr.write(`cross-agent: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
 }

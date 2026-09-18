@@ -338,11 +338,11 @@ test("an identity from another boot is dead however well its pid and start time 
     "a record written before bootId existed is from another boot");
 });
 
-test("process stat reports the process group and session of a live process", () => {
+test("process stat reports the parent, process group and session of a live process", () => {
   const stat = fs.readFileSync(`/proc/${process.pid}/stat`, "utf8");
   const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
   assert.deepEqual(readProcessStat(process.pid), {
-    startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0],
+    startTime: fields[19], ppid: process.ppid, pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0],
   });
   assert.equal(readProcessStat(2_147_483_647), null);
 });

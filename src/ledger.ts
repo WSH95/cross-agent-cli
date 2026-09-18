@@ -330,7 +330,7 @@ export function list(projectRoot: string, status?: TaskStatus): TaskRecord[] {
     .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function readProcessStat(pid: number): { startTime: string; pgid: number; sid: number; state: string } | null {
+export function readProcessStat(pid: number): { startTime: string; ppid: number; pgid: number; sid: number; state: string } | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   let stat: string;
   try {
@@ -344,7 +344,7 @@ export function readProcessStat(pid: number): { startTime: string; pgid: number;
   const end = stat.lastIndexOf(")");
   if (end < 0) return null;
   const fields = stat.slice(end + 1).trim().split(/\s+/);
-  return { startTime: fields[19], pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0] };
+  return { startTime: fields[19], ppid: Number(fields[1]), pgid: Number(fields[2]), sid: Number(fields[3]), state: fields[0] };
 }
 
 // A pid and start time from an earlier boot can collide with a live process, so an
