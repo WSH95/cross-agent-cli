@@ -90,8 +90,8 @@ loop. What follows is the target the remaining tasks are measured against.
 
 A lead token carried in the launch spec was considered and rejected. It is
 unsafe here for a structural reason, not a probed one: `LaunchSpec` serializes
-the child environment (`src/ledger.ts:19-22`, `src/engines/types.ts:58-59`) into
-`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts:247-251`); `.cross-agent/`
+the child environment (`src/ledger.ts#LaunchSpec`, `src/engines/types.ts#SpawnRequest`) into
+`.cross-agent/tasks/<id>.spec.json` (`src/ledger.ts#writeSpec`); `.cross-agent/`
 lives inside the project, and every role — read-only ones above all — must
 be able to read the project to do its work. P2 records that the profiles in use
 restrict *writes*, not reads, so nothing stops a specialist from reading a
@@ -101,12 +101,12 @@ authority.
 The design requires instead that the server derive its authority from **who
 spawned it**. Every engine CLI spawns its MCP servers as children of the
 engine process, and the ledger already records each engine's identity as
-`engineIdentity` — `{pid, startTime, bootId, pgid}` (`src/ledger.ts:9-17`),
-written at `src/runner.ts:231-240`.
+`engineIdentity` — `{pid, startTime, bootId, pgid}` (`src/ledger.ts#EngineIdentity`, `#ProcessIdentity`),
+written at `src/runner.ts:233-242`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` for `ppid`,
 `startTime`, `state`, `pgid` and `sid`. `readProcessStat`
-(`src/ledger.ts:323-338`) already parses that record and returns the last
+(`src/ledger.ts#readProcessStat`) already parses that record and returns the last
 four of those; the walk extends it to return `ppid` as well — stat field 4,
 the element before `pgrp` in the suffix it already splits — which is a T10
 change. Starting at its own parent, the walk follows `ppid` for at most **8
@@ -118,9 +118,9 @@ spawned this server.
 
 **Identity across boots.** `runnerIdentity` and `engineIdentity` carry a
 `bootId`, read once from `/proc/sys/kernel/random/boot_id`
-(`src/ledger.ts:343`), because a pid and start time from another boot can
+(`src/ledger.ts#currentBootId`), because a pid and start time from another boot can
 collide with a live process; an identity whose `bootId` differs from the
-current one is dead, full stop (`src/ledger.ts:346`, `src/process.ts:59`).
+current one is dead, full stop (`src/ledger.ts#isProcessAlive`, `src/process.ts#inspectGroup`).
 That field is built (section 2); the authority match below is what is not.
 
 **What counts as a match.** An ancestor matches a task when all of these hold:
@@ -181,7 +181,7 @@ fallback are a T10 change.
 
 A refused tool must be refused at **`tools/call` by name**, not merely omitted
 from `tools/list`: the dispatcher already errors on an unregistered name
-(`src/server.ts:68-70`), and the refusal must additionally name the reason —
+(`src/server.ts#createServer`), and the refusal must additionally name the reason —
 which row the caller was resolved to, and why. The name a refusal acts on is
 this server's own — `delegate`, `cancel` — never the host's rendering of it: a
 host may prefix and fold it, as Codex does, turning `cross-agent` into
@@ -192,7 +192,7 @@ that spelling, so nothing in the matrix depends on it.
 
 1. **Root git tools.** `git_mutate` operates only on a verified linked
    worktree; `verifyWorktree` rejects the main worktree and subdirectories
-   (`src/worktree.ts:44`). The loop also creates worktrees, merges on the
+   (`src/worktree.ts#verifyWorktree`). The loop also creates worktrees, merges on the
    default branch, runs the tests there, removes worktrees and deletes
    branches (section 4). Under `host` placement the host session performs
    those directly, with its own tools. An engine lead is read-only at the
@@ -230,7 +230,7 @@ that spelling, so nothing in the matrix depends on it.
    auto-deny. It is not built earlier because specialists are
    **unauthorized** to ask, not because they cannot reach the server: a Grok
    specialist can reach an inherited server, since the Grok exclusion list is
-   empty by necessity (`src/guard.ts:135-142`).
+   empty by necessity (`src/engines/grok.ts:72-77`).
 4. **Injection, now probed per engine (P9, `docs/probes.md:248-361`).** Two
    engines can carry a lead and one cannot.
 
@@ -358,7 +358,7 @@ directory — the launcher's first call is this one, so a missing mode has to
 fail loudly at step one rather than half-way through a task.
 
 `cross-agent init --mode <name>` writes the bind-time config for a mode.
-`initConfig` already exists (`src/config.ts:168-180`); the CLI entry point
+`initConfig` already exists (`src/config.ts#initConfig`); the CLI entry point
 that calls it does not.
 
 ### 1. The `cross-agent` MCP server
@@ -370,7 +370,7 @@ sources directly). Requests are dispatched concurrently: a pending `wait`
 never blocks `check`, `cancel`, or `list_tasks` on the same connection —
 that part is built and tested. Having `notifications/cancelled` abort a
 pending `wait` is a target for T11: the dispatcher accepts the notification
-and ignores it today (`src/server.ts:79-81`). "Registered by" says which
+and ignores it today (`src/server.ts#createServer`). "Registered by" says which
 part of the system offers the tool: **core** always; **worktree** only when
 the active mode declares the worktree provider; **engine lead** only under
 `placement: engine`.
@@ -395,10 +395,10 @@ the active mode declares the worktree provider; **engine lead** only under
 
 Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
-`done`, `failed`, `cancelled` (`src/ledger.ts:7`).
+`done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
 Today `projectTools` registers exactly two of these, `list_roles` and
-`verify_worktree`, with no authority gating (`src/server.ts:129-154`). The
+`verify_worktree`, with no authority gating (`src/server.ts#projectTools`). The
 gating, the delegation tools, and the mode tools arrive with the tasks named
 in the work plan.
 
@@ -429,32 +429,32 @@ fields section 5 and the lead model still need — `depth` and `parentTaskId` �
 are named in the launch-protocol bullet.
 
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
-  writing a temporary file and renaming it (`src/ledger.ts:194-214`);
+  writing a temporary file and renaming it (`src/ledger.ts#writeAtomic`);
   `<id>.ndjson` is the engine's native event stream, with lines the engine
   wrote to stderr prefixed `stderr ` (`src/engines/spawn.ts:139`), not a
   verbatim tee; `<id>.out` is the final message; `<id>.runner.log` is the
   runner's own diagnostic trail (`src/runner.ts:17`). Ids are 18 random bytes
-  in base64url (`src/ledger.ts:218`), so an id can begin with `-`, which is
+  in base64url (`src/ledger.ts#create`), so an id can begin with `-`, which is
   why the runner's argument parser consumes each option's value literally
   (`src/runner.ts:272-280`). `.cross-agent/` and `.worktrees/` are added to
-  `.git/info/exclude` on first use (`src/ledger.ts:104-117`).
+  `.git/info/exclude` on first use (`src/ledger.ts#initialize`).
 - Launch protocol: `delegate` creates the record as `launching` with a
-  `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts:216`, `:229`);
+  `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts#create`);
   the runner, once started, writes
   `running` with its own identity and the engine's identity in one atomic
   acknowledgement (`src/runner.ts:233-242`), conditional on the record still
   being `launching`. Both identities carry `{pid, startTime, bootId}`, the
-  engine's with its `pgid` as well (`src/ledger.ts:9-17`); `bootId` is read
-  once from `/proc/sys/kernel/random/boot_id` (`src/ledger.ts:350-353`), because
+  engine's with its `pgid` as well (`src/ledger.ts#ProcessIdentity`, `#EngineIdentity`); `bootId` is read
+  once from `/proc/sys/kernel/random/boot_id` (`src/ledger.ts#currentBootId`), because
   a pid and start time from another boot can collide with a live process, so an
   identity from another boot is dead rather than reused
-  (`src/ledger.ts:355-356`).
+  (`src/ledger.ts#isProcessAlive`).
   `startTime`, `pgid`, `sid` and `state` all come from `/proc/<pid>/stat`
-  (`src/ledger.ts:333-347`). Two record fields the design needs are still
-  absent from `TaskRecord` (`src/ledger.ts:32-53`) and arrive with the tasks
+  (`src/ledger.ts#readProcessStat`). Two record fields the design needs are still
+  absent from `TaskRecord` (`src/ledger.ts#TaskRecord`) and arrive with the tasks
   that use them: `depth`, written by `delegate` (section 5, layer 1), and
   `parentTaskId`, for cascade ownership (the lead model). There is **no launch
-  token**: `create` writes none (`src/ledger.ts:216-235`), and a token on the
+  token**: `create` writes none (`src/ledger.ts#create`), and a token on the
   *runner's* argv could not identify the engine anyway, because the engine is a
   separate detached spawn with adapter-built argv
   (`src/engines/spawn.ts:229`, `:238`). Its two jobs are done instead by two
@@ -464,14 +464,14 @@ are named in the launch-protocol bullet.
     puts it there, from the id of the record it was started for
     (`src/runner.ts:224-227`), beside the two paths it takes from the same
     record. `guard.childEnv` sets the same assignment in the environment it
-    prepares for a spec (`src/guard.ts:143`), but nothing validates a spec
+    prepares for a spec (`src/guard.ts#childEnv`), but nothing validates a spec
     (`validateSpec` checks only that `adapterModule` is absolute,
-    `src/ledger.ts:241-245`), and everything below rests on the assignment, so
+    `src/ledger.ts#validateSpec`), and everything below rests on the assignment, so
     the runner does not take it on trust from a file.
     Reconciliation of a `launching` record past its deadline scans
-    `/proc/*/environ` for that assignment (`src/process.ts:113-153`), adopts
+    `/proc/*/environ` for that assignment (`src/process.ts#findByEnvironment`), adopts
     the identity it finds as `orphaned`, and writes `failed: launch` only when
-    no such process exists (`src/reconcile.ts:90-126`). Without this, a SIGKILL
+    no such process exists (`src/reconcile.ts#adopt`). Without this, a SIGKILL
     between the spawn and the acknowledgement would leave a live engine that
     nothing will ever kill.
   - **Exclusive ownership.** The runner holds `runner-<id>.lock` for its whole
@@ -484,7 +484,7 @@ are named in the launch-protocol bullet.
     replacement that spawned again would give the task a second engine and
     strand the first. So before spawning, the runner runs the same environ scan
     for its own task id and puts what it finds to `foreignEngine`
-    (`src/process.ts:252-259`), which answers with the reason to stand down or
+    (`src/process.ts#foreignEngine`), which answers with the reason to stand down or
     `null`. Two things are reasons, and they are `adopt`'s own: a process
     carrying the id that is not this runner, its own group or its own session,
     and an environment the scan could not read, because one of those could be
@@ -492,7 +492,7 @@ are named in the launch-protocol bullet.
     1 without spawning (`src/runner.ts:214-218`); reconciliation then adopts
     what is already there. Excluding `self` is not optional: the server starts
     the runner with `CROSS_AGENT_TASK` in its own environment
-    (`src/guard.ts:143`) and the `flock` child holding `runner-<id>.lock`
+    (`src/guard.ts#childEnv`) and the `flock` child holding `runner-<id>.lock`
     inherits it and stays in its session, so a stand-down that counted those
     would refuse every launch for an engine that is the runner itself. The
     unreadable case is decided by the asymmetry: standing down costs one failed
@@ -502,10 +502,10 @@ are named in the launch-protocol bullet.
     until it exits — and the same bead bounds it (`atc-s96.31`). Because a task
     has at most one engine, the reconciler adopts the **lowest-pid** leader of
     the processes it finds — the scan returns them in pid order
-    (`src/process.ts:153`) — and treats every other process carrying the id,
-    extra leaders included, as a stray (`src/reconcile.ts:95-100`).
+    (`src/process.ts#findByEnvironment`) — and treats every other process carrying the id,
+    extra leaders included, as a stray (`src/reconcile.ts#adopt`).
 - Launch spec: `delegate` writes `<id>.spec.json` next to the record before
-  starting the runner (`ledger.writeSpec`, `src/ledger.ts:247-251`): role,
+  starting the runner (`ledger.writeSpec`, `src/ledger.ts#writeSpec`): role,
   brief, role prompt,
   cwd, engine, model, effort, sandbox, deny targets, session id, resume
   session id, the adapter module path, and the prepared child environment.
@@ -527,7 +527,7 @@ are named in the launch-protocol bullet.
   this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
-    `release` (`src/locks.ts:11`, `:22`, `:89-100`) — the kernel has already
+    `release` (`src/locks.ts#Lock`, `#AcquireOptions`, `#acquire`) — the kernel has already
     let the next waiter in, so a holder that carried on would be acting on
     exclusivity it no longer has. The runner registers `onLost` for
     `runner-<id>.lock` (`src/runner.ts:180-183`): it stops the engine group and
@@ -539,7 +539,7 @@ are named in the launch-protocol bullet.
     the detached spawn made `handle.pid` both the group and the session id, and
     the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
-    (`src/process.ts:207-210`) before settling `failed`
+    (`src/process.ts#terminateGroupByPid`) before settling `failed`
     (`src/runner.ts:72-77`). Killing the direct child alone would settle the
     task with its descendants still running.
   - **`truncated` on every settlement.** The evidence patch the runner writes
@@ -549,20 +549,20 @@ are named in the launch-protocol bullet.
     failure's `reason` stays (`src/runner.ts:147`).
 - **Target: the other two cancel writers.** The `cancel` tool does not exist —
   `projectTools` registers two tools and neither is it
-  (`src/server.ts:129-154`). The design requires that `cancel` write
+  (`src/server.ts#projectTools`). The design requires that `cancel` write
   `cancelling` and send SIGTERM to the runner, escalating to SIGKILL on both
   groups after a grace period. The third writer is built: reconciliation
   settles a `cancelling` record whose runner is dead by terminating the engine
-  group by identity and then writing `cancelled` (`src/reconcile.ts:147-158`).
+  group by identity and then writing `cancelled` (`src/reconcile.ts#judge`).
   With all three in place the terminal writers are the runner (`done`,
   `failed`, `cancelled`) and, only when the runner is dead and the engine group
   is verified dead, the reconciler (`cancelled` or `failed`).
 - **Conditional update.** `ledger.update` is asynchronous: it takes
   `record-<id>.lock` around one read, one check, and one rename, and returns
   `{applied: true, record}` or `{applied: false, record, reason: "terminal" |
-  "expect"}` (`src/ledger.ts:72-74`, `:260-290`). `create`, `read`, and `list`
+  "expect"}` (`src/ledger.ts#UpdateResult`, `#update`). `create`, `read`, and `list`
   stay synchronous. `options.expect?: (record) => boolean` is evaluated
-  **inside** the lock (`src/ledger.ts:274`); there is no `TerminalTaskError`,
+  **inside** the lock (`src/ledger.ts#update`); there is no `TerminalTaskError`,
   because a caller that must distinguish "I wrote it" from "someone else owns
   it" needs a value, not an exception — any non-throwing return would
   otherwise make the runner's `write()` true (`src/runner.ts:36-51`) and let it
@@ -573,16 +573,16 @@ are named in the launch-protocol bullet.
   returned with `applied: false` is the record as read **inside** the lock, so
   a caller can act on the state that beat it; the terminal check precedes
   `expect`, so a terminal record is always `reason: "terminal"`
-  (`src/ledger.ts:273`); a lock timeout **throws** rather than returning
-  `applied: false` (`src/locks.ts:78-81`), because a caller that could not even
+  (`src/ledger.ts#update`); a lock timeout **throws** rather than returning
+  `applied: false` (`src/locks.ts#acquire`), because a caller that could not even
   look at the record must not treat that as a refusal it can reason about; and
-  the lock is released in `finally` (`src/ledger.ts:287-289`). The legal
+  the lock is released in `finally` (`src/ledger.ts#update`). The legal
   transitions are `launching → running | cancelling | failed | orphaned`,
   `running ↔ stalled`, `running | stalled → cancelling | orphaned | done |
   failed`, `orphaned → failed | cancelled`, and `cancelling → cancelled |
-  failed` (`src/ledger.ts:85-97`); any other transition throws, because it is a
+  failed` (`src/ledger.ts#transitions`); any other transition throws, because it is a
   bug in a writer, not a race to be tolerated. `launching → orphaned`
-  (`src/ledger.ts:86-89`) is the adoption edge, and it exists so that adoption
+  (`src/ledger.ts#transitions`) is the adoption edge, and it exists so that adoption
   never passes through `running`: a record that is `running` with an
   `engineIdentity` satisfies every clause of the authority match (the lead
   model), so an adoption that wrote `running` first and `orphaned` second would
@@ -600,19 +600,19 @@ are named in the launch-protocol bullet.
   lives in `src/reconcile.ts`, because it needs both `ledger.ts` and
   `process.ts` and `src/process.ts` already imports `ledger.ts`; that leaves
   `ledger.ts` as record I/O. It is asynchronous and returns `{changed, invalid,
-  errors}` (`src/reconcile.ts:13-24`). Nothing outside that file calls it yet —
+  errors}` (`src/reconcile.ts#Reconciled`). Nothing outside that file calls it yet —
   `projectTools` registers two tools and `list_tasks` is not one of them
-  (`src/server.ts:129-154`) — so **running it on server start and on every
+  (`src/server.ts#projectTools`) — so **running it on server start and on every
   `list_tasks` is a T10 target** (Work plan row 7), and until that lands a
   stranded engine is judged only by a test or an operator invoking the pass
   directly. What the pass itself decides is built. It judges an engine by the
-  **group scan** (`src/process.ts:43-66`), never by the leader's pid alone: a
+  **group scan** (`src/process.ts#hasMember`, `#inspectGroup`), never by the leader's pid alone: a
   leader that has been reaped while a descendant lives becomes `orphaned` and
   is cleaned up, not `failed: runner lost`. It judges the runner, which is one
   process, by pid and start time, and a runner in state `Z` or `X` has exited
-  and owns nothing (`src/ledger.ts:358-360`), which is the same test the group
-  scan applies to a member (`src/process.ts:29`). Its four cases
-  (`src/reconcile.ts:129-161`):
+  and owns nothing (`src/ledger.ts#isProcessAlive`), which is the same test the group
+  scan applies to a member (`src/process.ts#live`). Its four cases
+  (`src/reconcile.ts#judge`):
   - `launching` past its deadline: the environ scan above, then `orphaned` or
     `failed: launch`;
   - `running` or `stalled` with a dead runner: `orphaned` if the engine group
@@ -628,8 +628,8 @@ are named in the launch-protocol bullet.
   `{status: "orphaned", engineIdentity}` or `failed: launch`, with an `expect`
   that re-reads all three preconditions — still `launching`, still no
   `runnerIdentity`, still past the deadline — inside the record lock
-  (`src/reconcile.ts:92-121`); only once that write has applied are the strays
-  killed (`src/reconcile.ts:122-125`). If the write is refused, the pass
+  (`src/reconcile.ts#adopt`); only once that write has applied are the strays
+  killed (`src/reconcile.ts#adopt`). If the write is refused, the pass
   touches nothing and reports the refusal. A runner that acknowledged between
   the scan and the write owns the task, and killing what the scan found would
   then be killing that runner's own engine.
@@ -637,15 +637,15 @@ are named in the launch-protocol bullet.
   **A failure is per record, never per pass.** `Reconciled.errors` is `[{id,
   reason}]`, each record's judgement runs inside its own boundary, and a record
   that could not be judged keeps its status for the next pass
-  (`src/reconcile.ts:181-191`): a group that survives SIGKILL, an EPERM from
+  (`src/reconcile.ts#reconcile`): a group that survives SIGKILL, an EPERM from
   `process.kill`, a decision another writer overtook. Those two are answers,
   not exceptions, because **the escalation is one helper**: SIGTERM, a grace,
   SIGKILL, a shorter grace, written once as `terminate`
-  (`src/process.ts:185-198`) and reached through `terminateGroup` (`:200-203`).
+  (`src/process.ts#terminate`) and reached through `terminateGroup` (`#terminateGroup`).
   It never
   throws — an EPERM or a group that will not die is reported as `false` — and
   both callers consume that boolean, `terminateOrphans` to skip the record with
-  its identity named and `src/reconcile.ts:152-153` to leave a `cancelling` record
+  its identity named and `src/reconcile.ts#judge` to leave a `cancelling` record
   named for the next pass. A caller judging many records has to be able to
   report a survivor and carry on. One escalation is still written out by hand:
   the runner's identity-captured branch, which sequences `killGroup` and
@@ -654,37 +654,37 @@ are named in the launch-protocol bullet.
   the helper — with telling an EPERM apart from a group that would not die — is
   `atc-s96.31`. The runner's other branch, the one with no identity to name the
   group by, already goes through the helper (`src/runner.ts:72-77` →
-  `src/process.ts:207-210`), as the settlement bullet above states. Killing the
+  `src/process.ts#terminateGroupByPid`), as the settlement bullet above states. Killing the
   strays is the one step that runs **after** the decision has been written, so
   it reports the pids it could not signal instead of throwing
-  (`src/reconcile.ts:49-74`, `:126`): losing the write to report a failed
+  (`src/reconcile.ts#killStrays`, `#adopt`): losing the write to report a failed
   signal would drop a settled record from `changed`. Orphan cleanup runs in the
-  **same pass** (`reconcileAndCleanup`, `src/reconcile.ts:197-203`), so no
+  **same pass** (`reconcileAndCleanup`, `src/reconcile.ts#reconcileAndCleanup`), so no
   caller can observe an `orphaned` record whose group is still being decided;
-  `terminateOrphans` returns `{changed, skipped}` (`src/process.ts:217-236`) so
+  `terminateOrphans` returns `{changed, skipped}` (`src/process.ts#terminateOrphans`) so
   that an identity the group scan calls invalid or reused is named rather than
   silently skipped, and `reconcileAndCleanup` surfaces `skipped` beside
   `errors`.
 
   **A pass sees every engine and signals none of its own.** The MCP server is a
-  child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts:143`), and
+  child of the engine and inherits `CROSS_AGENT_TASK` (`src/guard.ts#childEnv`), and
   reconciliation runs inside that server, so a pass judging its own task meets
   its own process, its own children, and the engine whose session it lives in.
-  The scan reports all of them, each marked `self` (`src/process.ts:84-89`,
-  `:147-150`): exclusion belongs to signalling, never to seeing, because one of
+  The scan reports all of them, each marked `self` (`src/process.ts#FoundProcess`,
+  `#findByEnvironment`): exclusion belongs to signalling, never to seeing, because one of
   those processes may be the very engine the record is waiting for. Adoption
   then takes no `self` process as its leader and puts none in the stray set
-  (`src/reconcile.ts:95-100`). When the **only** engine carrying the id is the
+  (`src/reconcile.ts#adopt`). When the **only** engine carrying the id is the
   one this server runs inside, the pass adopts nothing, settles nothing, and
   reports `engine <pid> shares this reconciler's session; adoption deferred to
-  another server` (`src/reconcile.ts:102-111`) — adopting it would have cleanup
+  another server` (`src/reconcile.ts#adopt`) — adopting it would have cleanup
   kill the group this process lives in, calling it a stray would do so
   directly, and `failed: launch` would leave a terminal record with no identity
   beside a live engine nothing could reach. Adoption also takes only a **group
   leader** (`pid === pgid === sid`), because only a leader can be recorded as
   an `engineIdentity`, and the scan reads `/proc/<pid>/stat` **before and
   after** the environment, keeping the match only when both reads agree on
-  `startTime` (`src/process.ts:121`, `:140-143`): a pid reused between the two
+  `startTime` (`src/process.ts#findByEnvironment`): a pid reused between the two
   reads is a different process, and its start time would bind the record to it.
   A forged `CROSS_AGENT_TASK` on a foreign process can therefore get that
   process killed — the operator's own foot — but it can never grant
@@ -697,24 +697,24 @@ are named in the launch-protocol bullet.
   then if the process is non-dumpable, so the scan counts how many it could not
   read; while that count is non-zero and no leader was found, the record stays
   `launching` and the pass reports `environ unreadable for <n> processes` in
-  `errors` for the next pass to retry (`src/reconcile.ts:112-116`). One of
+  `errors` for the next pass to retry (`src/reconcile.ts#adopt`). One of
   those processes could have been the engine, and calling the launch failed
   would leave it running with no record accounting for it. Only a **plausible
   candidate** is counted: a live process of this user that leads its own group
   and session and started no earlier than the record
-  (`src/process.ts:133-135`), which is the only shape a detached engine spawn
+  (`src/process.ts#findByEnvironment`), which is the only shape a detached engine spawn
   can have. The residual is stated rather than hidden: a same-uid non-dumpable
   leader started during the task holds the record `launching` until it exits,
   and bounding that hold in time is a later bead (`atc-s96.31`).
 - **Malformed records.** `list` returns only valid records
-  (`src/ledger.ts:327-331`); `scan(projectRoot)` returns `{records, invalid:
-  [{file, reason}]}` (`src/ledger.ts:292-325`); reconciliation reports
+  (`src/ledger.ts#list`); `scan(projectRoot)` returns `{records, invalid:
+  [{file, reason}]}` (`src/ledger.ts#scan`, `#InvalidRecord`); reconciliation reports
   `invalid`. A read error is reported in `invalid` rather than thrown — only a
   file that vanished between the listing and its read is skipped, because that
-  file is gone, not invalid (`src/ledger.ts:315-321`) — so one damaged or
+  file is gone, not invalid (`src/ledger.ts#scan`) — so one damaged or
   unreadable `<id>.json` can never hide the rest. Validation also binds a
   record to its own file: `id` must equal the file's base name
-  (`src/ledger.ts:163`), because every writer addresses a record by id and
+  (`src/ledger.ts#recordFault`), because every writer addresses a record by id and
   reaches `<id>.json`, so `foo.json` carrying `"id":"bar"` would be read at one
   path and written at another. The consequence (E2): an invalid file **refuses
   every writer** until the operator repairs or removes it, because its `cwd`
@@ -722,42 +722,42 @@ are named in the launch-protocol bullet.
   exists. Refusing every writable operation is the conservative reading of "it
   never frees a workspace"; a read-only delegation is unaffected. `scan`'s
   `invalid` is carried through `reservations().unknown` verbatim
-  (`src/reservation.ts:16`, `:82`) and `git_mutate` refuses on it, naming each
-  file and the reason it could not be read (`src/gitmutate.ts:178-184`).
+  (`src/reservation.ts#Reservations`, `#reservations`) and `git_mutate` refuses on it, naming each
+  file and the reason it could not be read (`src/gitmutate.ts#mutate`).
   **Target**: the same refusal in `delegate` (row 7) and `cross-agent tasks`
   naming the file (row 13).
-- **Locks** are OS-held and never reclaimed (`src/locks.ts:58-113`). A lock is
+- **Locks** are OS-held and never reclaimed (`src/locks.ts#acquire`). A lock is
   `flock(2)` on a file under `.cross-agent/locks/`, taken by a helper that
   keeps a util-linux `flock` child alive on a pipe (`flock <file> sh -c 'echo
-  held; read _'`, `src/locks.ts:61`): the helper knows it holds the lock when
+  held; read _'`, `src/locks.ts#acquire`): the helper knows it holds the lock when
   the child prints, releases it by closing the pipe, and the kernel releases it
   when the holder dies, so a dead holder needs no TTL, no stale detection, and
   no rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
   reclaim, was refuted in T5's plan review: a reclaim by pathname can rename
   the winner's fresh lock, so two reclaimers could both succeed.) Four locks,
   all four named in one place and resolved through `lockPath`
-  (`src/locks.ts:25-49`): `spawn.lock` around `delegate`'s validate-and-spawn
-  and around the whole of a `git_mutate` call (`src/locks.ts:42-49`,
-  `src/gitmutate.ts:132-150`); `record-<id>.lock` around every ledger
-  read-check-rename, taken inside `update` (`src/locks.ts:29-31`);
-  `runner-<id>.lock` held by a runner for its lifetime (`src/locks.ts:33-35`);
+  (`src/locks.ts#lockPath`): `spawn.lock` around `delegate`'s validate-and-spawn
+  and around the whole of a `git_mutate` call (`src/locks.ts#spawnLockName`,
+  `src/gitmutate.ts#gitMutate`); `record-<id>.lock` around every ledger
+  read-check-rename, taken inside `update` (`src/locks.ts#recordLockName`);
+  `runner-<id>.lock` held by a runner for its lifetime (`src/locks.ts#runnerLockName`);
   and `git.lock` around every lead git mutation, taken by `git_mutate` inside
-  its `spawn.lock` (`src/locks.ts:37-40`, `src/gitmutate.ts:200-202`). Every
+  its `spawn.lock` (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`). Every
   one of the four is taken by built code today; the only holder that does not
   exist yet is `delegate` (row 7). **One helper, one waiting rule**: every
   waiter blocks up to `lockWaitSeconds` and then refuses, naming the
   operation. The key is in config and validated — a finite number, defaulting
   to 5 and refused when negative, because `flock -w -1` sets no timer and exits
   before it looks at the file, which the helper would read as a live holder
-  (`src/config.ts:28`, `:41`, `:128`) — and the helper's own default is the
-  same 5 (`src/locks.ts:59`). Every acquisition but the runner's own claim
+  (`src/config.ts#CrossAgentConfig`, `#limitDefaults`, `#loadConfig`) — and the helper's own default is the
+  same 5 (`src/locks.ts#acquire`). Every acquisition but the runner's own claim
   reads the configured value — that one is `waitSeconds: 0` by design, below.
   `git_mutate` takes it as an argument, so that module stays a function of what
-  it is handed (`src/gitmutate.ts:21-28`); `update`'s
+  it is handed (`src/gitmutate.ts#GitMutateOptions`); `update`'s
   callers read it once per process or per pass through
-  `lockWaitSeconds(projectRoot)` (`src/runner.ts:20`, `src/reconcile.ts:178`,
-  `src/process.ts:222`), a helper that answers with the documented 5 when no
-  config can be read (`src/config.ts:140-145`) — locks are taken on paths that
+  `lockWaitSeconds(projectRoot)` (`src/runner.ts:20`, `src/reconcile.ts#reconcile`,
+  `src/process.ts#terminateOrphans`), a helper that answers with the documented 5 when no
+  config can be read (`src/config.ts#lockWaitSeconds`) — locks are taken on paths that
   run before anyone has a readable config, and a caller whose only question was
   how long to wait should not be thrown at (bead `atc-s96.34`, closed). Nothing
   uses `flock -n`; a caller that wants no wait passes `waitSeconds: 0`. The one
@@ -792,33 +792,33 @@ are named in the launch-protocol bullet.
 - **The worktree reservation**: computed, and consulted by `git_mutate`; its
   use in `delegate` is a target. `reservations(projectRoot)` walks one `scan`
   and returns `{reserved, unknown}` — a map from canonical cwd to the task
-  holding it, and `scan`'s `invalid` verbatim (`src/reservation.ts:7-17`,
-  `:67-83`); `reservedBy(root, target, known)` answers for one path and takes
+  holding it, and `scan`'s `invalid` verbatim (`src/reservation.ts#Reservations`,
+  `#reservations`); `reservedBy(root, target, known)` answers for one path and takes
   an already-computed `Reservations`, so a caller that must also judge
-  `unknown` scans once (`src/reservation.ts:89-91`). A record reserves when two
+  `unknown` scans once (`src/reservation.ts#reservedBy`). A record reserves when two
   things hold. **It is not settled**: `done`, `failed` and `cancelled` release
-  the workspace and nothing else does (`src/ledger.ts:77`, `:80`,
-  `src/reservation.ts:71`). **It may write**: the record carries no sandbox, so
-  the launch spec beside it is read (`src/reservation.ts:56`), and the rule is
+  the workspace and nothing else does (`src/ledger.ts#terminalStatuses`, `#isTerminal`,
+  `src/reservation.ts#reservations`). **It may write**: the record carries no sandbox, so
+  the launch spec beside it is read (`src/reservation.ts#reservesWorkspace`), and the rule is
   that the mode the spec carries and the mode re-derived from the spec's engine
   must **both** say `read-only` — section 3's map is the adapters' own, and
   `sandboxFor` is what turns the engine's profile name into a mode
-  (`src/reservation.ts:59`, `:63`). So `off` reserves too, because
+  (`src/reservation.ts#reservesWorkspace`). So `off` reserves too, because
   an unsandboxed task is the least constrained writer there is, not the most
   constrained. A spec that cannot be read, a `sandbox` this build cannot read
   as that pair, an engine no adapter answers for, a profile that engine does
   not declare, and a pair whose halves disagree all leave the mode unknown, and
   an unknown mode has never been shown to be read-only, so it holds the
   workspace rather than letting a second writer in
-  (`src/reservation.ts:42-63`). Reservations are keyed by a **canonical**
+  (`src/reservation.ts#reservesWorkspace`). Reservations are keyed by a **canonical**
   path: the closest existing ancestor's `realpath` with the
   unresolved remainder appended, so a worktree that has been removed still
   compares equal to itself and still holds its reservation
-  (`src/reservation.ts:26-40`). Two unsettled writable tasks on one path is
+  (`src/reservation.ts#canonicalPath`). Two unsettled writable tasks on one path is
   what the check exists to prevent, but if one is ever seen the map answers
   with the task that took the path first, by `createdAt` then by id, so the
   answer does not depend on the order the directory happened to list
-  (`src/reservation.ts:78-80`).
+  (`src/reservation.ts#reservations`).
 
   **What a reservation refuses, exactly**, since `delegate` is written against
   this and nothing else. A cwd held by an unsettled writable task refuses
@@ -839,7 +839,7 @@ are named in the launch-protocol bullet.
   two tasks writing to `<w>` and `<w>/src` are writing to one tree, and a task
   at the project root would contain every worktree under it. Today
   `reservedBy` matches one exact canonical key
-  (`src/reservation.ts:89-91`), which is enough because a mode's worktree
+  (`src/reservation.ts#reservedBy`), which is enough because a mode's worktree
   provider hands each task a sibling `<dir>/<slug>` and nothing nests; **target
   and bead `atc-vuu`**: the prefix comparison, in `reservedBy`, so row 14's
   arbitrary-path workspaces cannot reach the case unguarded.
@@ -853,22 +853,22 @@ are named in the launch-protocol bullet.
   and its status as `git_mutate` names them; the `unknown` refusal; and the
   containment comparison. `resume` of a task in `launching`, `running`,
   `stalled`, `orphaned`, or `cancelling` is already refused, with `refused
-  resume of task <id>: status <status> is active` (`src/guard.ts:102-115`).
+  resume of task <id>: status <status> is active` (`src/guard.ts#resumeRefusal`).
 - **The git lock.** Every lead git mutation runs while
   `.cross-agent/locks/git.lock` is held: `git_mutate` takes it around the
   command and the journal append and releases it in `finally`
-  (`src/gitmutate.ts:200-202`, `:252-254`); `git_root` and `cross-agent git`
+  (`src/gitmutate.ts#mutate`); `git_root` and `cross-agent git`
   are targets of rows 11 and 13 and take the same lock. What the locks give,
   stated exactly: `spawn.lock` serializes validate-and-spawn, so two hosts
   cannot both pass the reservation check and then both spawn; `git.lock`
   serializes lead git mutations against each other. What keeps a writable task
   and a git mutation off the same worktree is neither lock but the **per-cwd
   reservation** — `git_mutate` refuses while a task reserving that path is
-  unsettled (`src/gitmutate.ts:173-177`). That check is a read of the ledger,
+  unsettled (`src/gitmutate.ts#mutate`). That check is a read of the ledger,
   and a `delegate` running beside it could pass its own check and write its
   record in between, so the reservation is made two-directional by a lock the
   two share: `git_mutate` holds `spawn.lock` for its whole duration, with
-  `git.lock` taken inside it (`src/gitmutate.ts:132-150`), and `delegate` holds
+  `git.lock` taken inside it (`src/gitmutate.ts#gitMutate`), and `delegate` holds
   `spawn.lock` around validate-and-spawn. **The order is always `spawn.lock`
   then `git.lock`**, in both callers, because two orders are a deadlock.
 
@@ -889,7 +889,7 @@ are named in the launch-protocol bullet.
 The process model is Linux-only in these mechanisms: `/proc/<pid>/stat` for
 identities and the group scan, `/proc/*/environ` for the stranded-engine scan,
 `/proc/<pid>`'s owner and `/proc/stat`'s `btime` for the plausible-candidate
-test (`src/process.ts:8-21`), `/proc/sys/kernel/random/boot_id` for the boot
+test (`src/process.ts#ownedByThisUser`, `#bootTimeMs`), `/proc/sys/kernel/random/boot_id` for the boot
 identity, and util-linux `flock` for the locks.
 
 ### 3. Engine adapters
@@ -920,27 +920,27 @@ message, support `resume`. Binaries are overridable through config
 Every adapter must apply the configured sandbox or refuse to spawn (fail
 closed); running without a sandbox requires a profile whose mode is `off`, and
 the refusal is thrown synchronously by the pipeline, before anything is planned
-or spawned (`src/engines/spawn.ts:60`, `:79-83`).
+or spawned (`src/engines/spawn.ts#spawnEngine`, `:79-83`).
 
 **The engine contract is adapter-owned and closed.** Flag knowledge is off
 `src/guard.ts`'s per-engine switches — where the comment that replaced them
 points at the contract instead (`src/guard.ts:126-127`) — and on
-`EngineAdapter` (`src/engines/types.ts:84-119`), which carries:
+`EngineAdapter` (`src/engines/types.ts#EngineAdapter`), which carries:
 
-- `sandboxProfiles: Record<string, SandboxMode>` (`src/engines/types.ts:87`,
-  `:9`) — the profile names this engine accepts, each mapped to a portable
+- `sandboxProfiles: Record<string, SandboxMode>` (`src/engines/types.ts#EngineAdapter`,
+  `#SandboxMode`) — the profile names this engine accepts, each mapped to a portable
   mode. Claude `{"read-only": "read-only", "workspace-write": "write", "off":
   "off"}` and Codex the same, with Codex's `off` spawning `--sandbox
   danger-full-access`; Grok `{"read-only": "read-only", "strict": "read-only",
   "workspace": "write", "off": "off"}`, since `strict` is a read-only profile
   too and so frees a workspace exactly as `read-only` does. Each map is a
   literal in its own adapter file.
-- `sandboxSupport()` (`src/engines/types.ts:88`), answered by each adapter from
+- `sandboxSupport()` (`src/engines/types.ts#EngineAdapter`), answered by each adapter from
   what can be seen before a spawn: Claude checks `bwrap` and `socat` on `PATH`
   on Linux and names whichever is missing, Codex and Grok check that their
   binary resolves and name it. The Ubuntu 24.04 AppArmor half of P1 cannot be
   seen before the run at all, so it stays `atc-s96.17`'s.
-- `denyArgs(targets)` and `exclusionArgs()` (`src/engines/types.ts:89-90`),
+- `denyArgs(targets)` and `exclusionArgs()` (`src/engines/types.ts#EngineAdapter`),
   each engine's own: Claude both deny forms in one appendable
   `--disallowedTools` array and `--strict-mcp-config` for exclusion, Codex an
   empty deny list and `--ignore-user-config`, Grok one `--deny` per target and
@@ -949,7 +949,7 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   `src/engines/codex.ts:109`, `src/engines/grok.ts:131`), so an engine that
   gains a deny form or an exclusion flag gains it by returning one.
 - `leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount`
-  (`src/engines/types.ts:91-97`, `:12-17`, `:26-30`) — the argv that mounts
+  (`src/engines/types.ts#EngineAdapter`, `#LeadMountSpec`, `#LeadMount`) — the argv that mounts
   exactly this server for a lead under `placement: engine`. P9 settled what
   each engine can do (`docs/probes.md:261-269`). Claude writes an MCP-config
   JSON into `scratchDir` and returns `--mcp-config <file>` beside the
@@ -970,7 +970,7 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   Returning the files to write, rather than writing them, keeps the adapter a
   pure argv builder as `plan()` is.
 - `parseStderrLine?(line: string): EngineEvent | null`
-  (`src/engines/types.ts:101-110`), the same as `parseLine` for an engine that
+  (`src/engines/types.ts#EngineAdapter`), the same as `parseLine` for an engine that
   writes a fatal line to stderr rather than into its event stream. **Claude
   declares it and no other adapter does** (`src/engines/claude.ts:185-187`;
   `tests/engines/codex.test.ts:405`, `tests/engines/grok.test.ts:374`):
@@ -991,7 +991,7 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   the adapter's, so `parseStderrLine` stays a pure function of one line and a
   singleton adapter leaks nothing from one run into the next
   (`src/engines/spawn.ts:105-107`, `:148`, `:162`).
-- `finish?(rawStdout: string): EngineEvent[]` (`src/engines/types.ts:111-117`),
+- `finish?(rawStdout: string): EngineEvent[]` (`src/engines/types.ts#EngineAdapter`),
   for an engine whose output is one document at exit rather than a line stream.
   **No adapter declares it**: all three formats below are line streams, and a
   declared `finish` would only make the pipeline buffer raw stdout for a call
@@ -1005,15 +1005,15 @@ points at the contract instead (`src/guard.ts:126-127`) — and on
   are appended, so a late `session` or `result` still counts
   (`src/engines/spawn.ts:193-202`). A throwing `finish` is reported as this
   engine's error and the events parsed before it survive. `finalMessage(events,
-  resultFileText)` then runs exactly as it did (`src/engines/types.ts:118`).
+  resultFileText)` then runs exactly as it did (`src/engines/types.ts#EngineAdapter`).
 
 `SpawnRequest.sandbox` is `{mode, profile}`, where `profile` is the engine's
 own name for the profile and `mode` is what `sandboxProfiles` says that profile
-means (`src/engines/types.ts:47-52`). The pair is a **claim, not a fact**:
+means (`src/engines/types.ts#SpawnRequest`). The pair is a **claim, not a fact**:
 `sandboxFor(engine, profile)` in the registry is the one place in `src/` where
-one is constructed (`src/engines/registry.ts:35-41`), resolving through the
+one is constructed (`src/engines/registry.ts#sandboxFor`), resolving through the
 engine's own map and refusing a name it does not declare as an **own** key, so
-`toString` is nobody's profile (`src/engines/registry.ts:38-40`); and every
+`toString` is nobody's profile (`src/engines/registry.ts#sandboxFor`); and every
 consumer re-derives rather than trusts. The pipeline refuses a request whose
 `engine` is not the adapter the runner imported — otherwise the map the mode
 comes from would describe one engine while another builds the argv — then
@@ -1021,13 +1021,13 @@ re-derives the mode and refuses a pair whose halves disagree, and only then
 keys the fail-closed check on the derived mode (`src/engines/spawn.ts:67-83`).
 The reservation re-derives the same way and frees a workspace only when the
 carried mode and the derived mode both say `read-only`
-(`src/reservation.ts:59`, `:63`, section 2). So neither the pipeline nor the
+(`src/reservation.ts#reservesWorkspace`, section 2). So neither the pipeline nor the
 reservation rule has to know any engine's vocabulary, and neither takes a
 label's word for it. `SpawnRequest` also carries `engine`
-(`src/engines/types.ts:45-46`), `scratchDir` (`src/engines/types.ts:60-61`),
+(`src/engines/types.ts#SpawnRequest`), `scratchDir` (`src/engines/types.ts#SpawnRequest`),
 which is where `leadMount`'s files and a role-prompt file go — never inside
 the specialist's own worktree — and `lead`, set only for an engine-placed lead
-(`src/engines/types.ts:62-63`).
+(`src/engines/types.ts#SpawnRequest`).
 **Target** (`atc-s96.37`, row 7): `scratchDir` is a **per-task** directory
 `<tasks>/<id>.scratch/`, created by `delegate` and written into the launch
 spec. The field says `path.dirname(logPath)` today, which is the shared
@@ -1036,41 +1036,41 @@ spec. The field says `path.dirname(logPath)` today, which is the shared
 instructions file, so the collision outlasts the spawn. The adapters need no
 change for it: each uses `scratchDir` as it is given.
 `SpawnPlan` carries the `files` an adapter's argv points at
-(`src/engines/types.ts:74-75`); the pipeline writes them, parents included and
+(`src/engines/types.ts#SpawnPlan`); the pipeline writes them, parents included and
 mode `0600`, before the spawn, and a file it cannot write is a launch failure
 with nothing spawned (`src/engines/spawn.ts:230-236`, `:269-272`).
 `LaunchSpec` is `Omit<SpawnRequest, "logPath" | "resultPath">`
-(`src/ledger.ts:19-22`), so
+(`src/ledger.ts#LaunchSpec`), so
 every one of those fields reaches the detached runner without a second shape to
 keep in step.
 
 **A role's profile must be a key of its engine's map, checked at config load.**
 The loader takes the union of the adapters' keys as the profile vocabulary
-(`src/engines/registry.ts:21-22`, read at `src/config.ts:101`) and then checks
+(`src/engines/registry.ts#sandboxProfiles`, read in `src/config.ts#loadConfig`) and then checks
 the pair: the role's profile must be an own key of *its own engine's* map, or
 load fails naming the engine and the profiles it accepts
-(`src/config.ts:105-108`). Nothing type-checks the sources — `package.json`
+(`src/config.ts#loadConfig`). Nothing type-checks the sources — `package.json`
 runs `node --test` and there is no `tsconfig.json` — so `{engine: "codex",
 sandbox: "workspace"}` would otherwise reach the Codex adapter unchallenged.
 It is refused instead, which is A2.
 
 **The adapter table is a fixed built-in.** One file plus one entry per new
-engine: `adapters` and `adapterFor(name)` (`src/engines/registry.ts:12`,
-`:24-27`), with `engineNames` and `EngineName` beside the contract rather than
+engine: `adapters` and `adapterFor(name)` (`src/engines/registry.ts#adapters`,
+`#adapterFor`), with `engineNames` and `EngineName` beside the contract rather than
 in the config loader, so nothing an adapter needs imports `src/config.ts`
-(`src/engines/types.ts:5-6`). `src/engines/binaries.ts` holds the two things
+(`src/engines/types.ts#engineNames`, `#EngineName`). `src/engines/binaries.ts` holds the two things
 every adapter needs and none of them owns: `engineBin(engine)`, which reads
 `CROSS_AGENT_<ENGINE>_BIN` and otherwise the engine's name
-(`src/engines/binaries.ts:10-12`), and `commandPath(command)`, which resolves a
+(`src/engines/binaries.ts#engineBin`), and `commandPath(command)`, which resolves a
 bare name on `PATH` and takes anything carrying a separator as a path
-(`src/engines/binaries.ts:18-30`). Because `sandboxSupport()` takes no request,
+(`src/engines/binaries.ts#commandPath`). Because `sandboxSupport()` takes no request,
 that environment variable is the only way a configured `engines.<e>.bin`
 reaches a capability check, and the server or runner has to export it before
 `spawnEngine` (`atc-s96.10`). Config-declared adapter modules are not
 supported, and the reason is in the code: the runner imports the spec's
 `adapterModule` into its own process, unsandboxed
 (`src/runner.ts:200-201`), and `validateSpec` checks only that the path is
-absolute (`src/ledger.ts:241-245`). Making that path config-controlled would
+absolute (`src/ledger.ts#validateSpec`). Making that path config-controlled would
 turn a config file into arbitrary code execution in the orchestrator.
 
 **The spawn lines, as built.** Each is the argv that engine's `plan` emits, in
@@ -1120,7 +1120,7 @@ which is a property of the line, not of the pipeline.
   `parseStderrLine` turns the
   "Sandbox disabled" warning and the `apply-seccomp` message of a sandbox that
   engages but cannot start any command into a fatal `error` event during the
-  run (`src/engines/claude.ts:15`, `:185-187`), because that half cannot be
+  run (`src/engines/claude.ts#sandboxFailure`, `:185-187`), because that half cannot be
   seen before it.
 - **Codex** (`src/engines/codex.ts:100-153`): `codex exec --json -o <out> -C
   <cwd> --sandbox <read-only|workspace-write|danger-full-access>
@@ -1239,14 +1239,14 @@ which is a property of the line, not of the pipeline.
   and falls back to prepending them to the prompt only when the text would
   exceed the argv limit, which is the one case a flag cannot carry. The
   ceiling is 100 KiB, below Linux's 128 KiB cap on a single argument with room
-  for the rest of the line (`src/engines/grok.ts:14`, `:109-110`,
+  for the rest of the line (`src/engines/grok.ts#rulesLimit`, `:109-110`,
   `tests/engines/grok.test.ts:240`, `:253`). So Grok is the one engine whose
   role prompt reaches the child without a file on disk. `--sandbox workspace`
   is deliberately stricter than `grok-build-plugin-cc`'s write mode, which
   omits `--sandbox` entirely.
 
 Deny list for Claude and Grok, rebuilt from config at spawn
-(`src/guard.ts:118-124`): the commands `claude`, `codex`, `grok`, each
+(`src/guard.ts#denyTargets`): the commands `claude`, `codex`, `grok`, each
 configured `engines.<e>.bin` path, `node <absolute path of src/server.ts>`,
 `node <absolute path of src/cli.ts>`, and `cross-agent`. The targets are the
 guard's; the forms are each adapter's `denyArgs`. Claude `Bash(<target> *)` and
@@ -1260,7 +1260,7 @@ session.
 
 Sandbox facts from the probes that the adapters must respect: Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
-(`cross-agent init` warns, `src/config.ts:148-165`); Codex refuses to rewrite
+(`cross-agent init` warns, `src/config.ts#temporaryLocationWarning`); Codex refuses to rewrite
 the worktree's `.git` pointer, Grok allows it, so tampering is detected by
 `verify_worktree`, not prevented (P2). A Grok child **does** inherit the
 user's MCP configuration — Grok has no per-invocation exclusion flag, only a
@@ -1272,7 +1272,7 @@ started by that child is a real, reachable server, and what makes that safe is
 the specialist row it resolves to by ancestry (section 5), not an exclusion
 flag.
 
-**Child env** (`src/guard.ts:129-146`) is a **blocklist**, not an allowlist.
+**Child env** (`src/guard.ts#childEnv`) is a **blocklist**, not an allowlist.
 It copies the parent environment and removes: the exact names `CLAUDECODE`,
 `CLAUDE_PID`, `CLAUDE_EFFORT`; anything starting with `CLAUDE_CODE_`,
 `CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when
@@ -1311,42 +1311,42 @@ The worktree half of this section is built: `verify_worktree` and
 the reservation, both locks and the journal. What is left is the wiring and
 the root half — registering the two tools on a mode's worktree provider
 (row 8; `verify_worktree` itself is registered today, ungated,
-`src/server.ts:137-152`), `git_root` and `run_command` (row 11), and the
+`src/server.ts#projectTools`), `git_root` and `run_command` (row 11), and the
 `cross-agent git` CLI (row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
 `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI) is the
 only way a lead mutates git in a worktree. Its request is `{slug, path?,
-branch?, args}` (`src/gitmutate.ts:12-19`): `path` defaults to
+branch?, args}` (`src/gitmutate.ts#GitMutateRequest`): `path` defaults to
 `<root>/.worktrees/<slug>` and `branch` to `task/<slug>`, the worktree
-provider's own defaults (`src/gitmutate.ts:129-130`), and row 8 makes both the
+provider's own defaults (`src/gitmutate.ts#gitMutate`), and row 8 makes both the
 mode's to configure, since `dir` and `branchPattern` are already the mode's.
 The slug is used for exactly four things — those two defaults, the lock's
 operation label, and the journal file name — and never for the git directory.
 Before the four steps, the **shape of the request** is judged, because it needs
-no lock, no scan and no worktree (`src/gitmutate.ts:117-127`): `args` must be a
+no lock, no scan and no worktree (`src/gitmutate.ts#gitMutate`): `args` must be a
 non-empty array of strings whose first element is a subcommand, not an option;
 no element anywhere may be `--git-dir`, `--work-tree`, `-C` or `-c`, nor the
-attached forms `--git-dir=` and `--work-tree=` (`src/gitmutate.ts:58`,
-`:60-73`), each of which turns a whitelisted verb into an arbitrary one against
+attached forms `--git-dir=` and `--work-tree=` (`src/gitmutate.ts#globalOptions`,
+`#argumentFault`), each of which turns a whitelisted verb into an arbitrary one against
 an arbitrary repository; and `slug`'s journal must be readable, so the step it
 will append is known to be recordable before anything runs
-(`src/gitmutate.ts:120-127`). The four steps then run with `spawn.lock` held
-for all of them (`src/gitmutate.ts:132-150`), which is what stops the
+(`src/gitmutate.ts#gitMutate`). The four steps then run with `spawn.lock` held
+for all of them (`src/gitmutate.ts#gitMutate`), which is what stops the
 reservation `git_mutate` reads in step 1 from racing a `delegate` about to take
 the same workspace (section 2). Inside that lock, and only inside it, the
 journal is read again and its recorded branch must equal the one this call
-names (`src/gitmutate.ts:157-169`, section 7): two first calls on one slug,
+names (`src/gitmutate.ts#mutate`, section 7): two first calls on one slug,
 each reading outside the lock, would both find no journal and both commit, on
 two different branches. It
 
 1. refuses while any task reserving that path is not settled — `<path> is
    reserved by task <id> (<status>); wait or cancel first` — and refuses every
    path at all while any task record cannot be read, naming each file and its
-   reason (`src/gitmutate.ts:171-184`, section 2);
+   reason (`src/gitmutate.ts#mutate`, section 2);
 2. verifies the worktree from the root, with the checks
-   `verifyWorktree` performs (`src/worktree.ts:49-106`): `realpath` of both
+   `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`): `realpath` of both
    paths; the worktree appears in `git worktree list --porcelain -z` as a
    linked worktree, which excludes the main worktree and any subdirectory
    (`:72`); its `.git` is a regular file, not a symlink (`:76-78`); `git
@@ -1358,32 +1358,32 @@ two different branches. It
    resolves to that worktree's `.git` and no other (`:96-102`), which is what
    rejects a pointer redirected at a sibling. On success it returns
    `{gitDir, workTree, branch}` (`:103`); a refusal is returned to the lead as
-   the verifier's own `reason`, verbatim (`src/gitmutate.ts:187-188`);
+   the verifier's own `reason`, verbatim (`src/gitmutate.ts#mutate`);
 3. runs, while `.cross-agent/locks/git.lock` is held, `git --git-dir=<the
    gitDir verify_worktree returned> --work-tree=<the workTree it returned>
    <args>`, so the pointer file is never consulted and the paths are never
-   re-derived from the slug (`src/gitmutate.ts:86`, `:197-209`). It is
+   re-derived from the slug (`src/gitmutate.ts#run`, `#mutate`). It is
    `execFile` with an argv array, never a shell, with `cwd` the verified work
-   tree (`src/gitmutate.ts:88`) and the **allowlisted** git environment of the
-   paragraph below (`:85`). Output is capped at 16 MB
-   (`src/gitmutate.ts:55`): exceeding the cap kills the child, which for a
+   tree (`src/gitmutate.ts#run`) and the **allowlisted** git environment of the
+   paragraph below (`#run`). Output is capped at 16 MB
+   (`src/gitmutate.ts#maxBuffer`): exceeding the cap kills the child, which for a
    mutation is worse than a truncated log;
 4. appends the step to the task journal (section 7) with the SHAs around it —
    `git rev-parse --verify --quiet refs/heads/<branch>` through the same
    explicit form, before and after the command, and the default branch's SHA as
-   this step's own `defaultSha` (`src/gitmutate.ts:100-104`, `:207-208`,
-   `:217`, `:223-229`). It writes no document-level field but the branch names:
+   this step's own `defaultSha` (`src/gitmutate.ts#revision`, `#mutate`). It
+   writes no document-level field but the branch names:
    the pre-merge SHA and the branch head belong to the `merged` step alone, for
    the reason section 7 gives. The append happens **while the lock is still
-   held** (`src/gitmutate.ts:219-220`), so two callers' steps are ordered by the
+   held** (`src/gitmutate.ts#mutate`), so two callers' steps are ordered by the
    same lock that ordered their commands.
 
 The result is `{ok: true, exitCode: 0, stdout, stderr, before?, after?,
 lockLost?, journal}` or `{ok: false, reason, exitCode?, stdout?, stderr?}`
-(`src/gitmutate.ts:30-38`); `journal` is the entry as written, so the lead
+(`src/gitmutate.ts#GitMutateResult`); `journal` is the entry as written, so the lead
 never re-reads the file to learn what it just recorded. A refusal before the
 command carries a reason and nothing else. A non-zero git exit returns the
-exit code and both streams and journals nothing (`src/gitmutate.ts:210-216`),
+exit code and both streams and journals nothing (`src/gitmutate.ts#mutate`),
 and so does a `GitRunError` — but **that is not a claim that nothing
 happened**. A `worktree add` — a root operation, so through `git_root` — that
 failed while checking out has already created the directory and its
@@ -1400,18 +1400,18 @@ and the streams, and reconciles the worktree by section 7's rules —
 `git status --porcelain`, `git worktree list`, the rebase state, the journal —
 before it does anything else with that slug. A journal write that fails
 **after** a successful command returns `ok: false` saying the command ran and
-its step could not be written (`src/gitmutate.ts:230-238`) — `ok: true` would
+its step could not be written (`src/gitmutate.ts#mutate`) — `ok: true` would
 tell the lead its journal is current when it is not, and the result type has no
 honest slot for "it happened but is unrecorded".
 
 **What git works on is decided here, never inherited.** Every git invocation
 in this project — the verifier's reads and `git_mutate`'s command alike —
 gets one **allowlisted** environment, built in `gitEnvironment`
-(`src/worktree.ts:16-36`, used at `:39` and `src/gitmutate.ts:85`): `PATH`,
+(`src/worktree.ts#gitEnvironment`, `#passedVariables`, `#passedPrefixes`, used in `#git` and `src/gitmutate.ts#run`): `PATH`,
 `HOME`, `USER`, `LANG`, `LC_*`, `TZ`, `TMPDIR`, `XDG_CONFIG_HOME`,
 `XDG_CACHE_HOME`, `SSH_AUTH_SOCK`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`,
 `GIT_SSH*` and `GIT_TERMINAL_PROMPT` pass, and so do git's own two documented
-fallbacks (`src/worktree.ts:19-20`): `EMAIL`, which git uses when no author or
+fallbacks (`src/worktree.ts#passedVariables`): `EMAIL`, which git uses when no author or
 committer address is set, and `GIT_EXEC_PATH`, without which a git installed
 outside its default prefix cannot find its own subcommands. Everything else is
 dropped: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
@@ -1432,13 +1432,13 @@ other mutation then waits `lockWaitSeconds` and refuses.
 
 `git_mutate` never throws for an operational failure. A missing git binary or
 a signal-killed child has no exit code to judge, so it is named as its own
-refusal (`src/gitmutate.ts:39-45`, `:92-94`, `:249-251`); a lock that could
+refusal (`src/gitmutate.ts#GitRunError`, `#run`, `#mutate`); a lock that could
 not be taken, and a config that could not be read, are refusals too
-(`:140-144`, `:190-195`, `:203-205`). The lead's loop reads a result and has
+(`#gitMutate`, `#mutate`). The lead's loop reads a result and has
 no other way to hear one. And a lock **lost** while the command ran (section 2:
 the helper child died, so the kernel let the next waiter in) does not undo the
 command: the step is still journaled, and the result carries `lockLost: true`
-(`src/gitmutate.ts:32-34`, `:243-246`), so the lead knows the mutation happened
+(`src/gitmutate.ts#GitMutateResult`, `#mutate`), so the lead knows the mutation happened
 but was not exclusive for all of its life. **Either** lock's loss is reported —
 `spawn.lock` guards the reservation this call passed, `git.lock` the command
 itself, and a caller told about only one would draw the wrong conclusion from
@@ -1501,7 +1501,7 @@ cannot reach a model API (Codex, network denied by its sandbox). A specialist
 that defeats its own CLI's permission rules (a copied binary, a wrapper
 script) is outside the guarantee, as it is for OpenMausBot. The builders and
 parsers for layers 1, 3, and 4 exist in `src/guard.ts` with unit tests, but
-nothing in `src/` calls them yet — `src/server.ts:129-154` registers its two
+nothing in `src/` calls them yet — `src/server.ts#projectTools` registers its two
 tools with no gating at all — so the layers below are the target that step 7
 wires. Layers, each with its own unit test:
 
@@ -1510,7 +1510,7 @@ wires. Layers, each with its own unit test:
    the nearest matching engine ancestor ("The lead model" above). Depth then
    caps it: at depth ≥ `maxDepth` the row is forced to specialist whatever the
    walk found, and so it is when `CROSS_AGENT_DEPTH` is malformed, or absent
-   while `CROSS_AGENT_LINEAGE` is present (`src/guard.ts:31-43` already reads
+   while `CROSS_AGENT_LINEAGE` is present (`src/guard.ts#readDepth` already reads
    it that way, returning `Infinity` for both). The effective row is the
    **lower of the two**, and the server offers exactly that row of the
    permission matrix; a call to a tool outside it is refused at `tools/call` by
@@ -1529,13 +1529,13 @@ wires. Layers, each with its own unit test:
    is why it fails closed.
 
    Records gain a `depth` field, written by `delegate`; the shipped
-   `TaskRecord` has none (`src/ledger.ts:32-53`). The specialist row is the
+   `TaskRecord` has none (`src/ledger.ts#TaskRecord`). The specialist row is the
    four read tools plus `describe_mode`, which is what `toolsAtDepth`
-   approximates today (`src/guard.ts:45-49`).
+   approximates today (`src/guard.ts#toolsAtDepth`).
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
    specialists **do** reach a server, because Grok has no per-invocation
-   exclusion flag (`src/guard.ts:135-142` returns an empty list for it), and P9
+   exclusion flag (`src/engines/grok.ts:72-77` returns an empty list for it), and P9
    recorded exactly what a Grok child inherits: the operator's
    `~/.grok/config.toml`, the operator's Grok plugins, and the servers the
    operator declared to Claude in `~/.claude.json` (`docs/probes.md:302-339`).
@@ -1549,26 +1549,26 @@ wires. Layers, each with its own unit test:
    reaching any model API (P3, P3b).
 4. **Lineage and duplicates**: `CROSS_AGENT_LINEAGE` is an ordered list of
    `(task id, role, canonical cwd)`, encoded as a JSON array of `{taskId,
-   role, cwd}` objects (`src/guard.ts:51-71`), and the probe harness emits the
+   role, cwd}` objects (`src/guard.ts#parseLineage`, `#formatLineage`), and the probe harness emits the
    same shape (`tools/probe.mjs:97`), so a probe child sees what a real child
    will see. It emitted a colon-joined placeholder until P9, which fixed it and
    verified the fix by feeding a child's received value back through
    `parseLineage` (`docs/probes.md:340-345`). A `delegate` whose `(role, cwd)`
    is already in the lineage is
-   refused (`src/guard.ts:77-82`). A request identical to a running task in
+   refused (`src/guard.ts#lineageRefusal`). A request identical to a running task in
    `(role, canonical cwd, sha256(brief))` is refused with "already running,
    wait on <id>"; identical to a task finished within
    `duplicateWindowMinutes` (default 10) is refused unless `force: true`
-   (`src/guard.ts:84-100`). `resume` skips the duplicate check, is refused for
+   (`src/guard.ts#duplicateRefusal`). `resume` skips the duplicate check, is refused for
    active tasks, and is bound to the original task's role, engine, cwd, and
-   sandbox (`src/guard.ts:102-115`).
+   sandbox (`src/guard.ts#resumeRefusal`).
 5. **Prompt**: every role prompt says the specialist cannot delegate and
    reports back instead. Advisory only.
 
 ### 6. Config and validation
 
 `<project>/.cross-agent/config.json`, created by `cross-agent init --mode
-<name>`, validated on load (`src/config.ts:57-131`). It carries the
+<name>`, validated on load (`src/config.ts#loadConfig`). It carries the
 **bind-time layer only**: which mode is active, which engine, model and
 effort each of that mode's roles runs on, plus an optional `sandbox` override
 per role, and, under `engines`, where each engine's binary is
@@ -1609,11 +1609,11 @@ What is a target here and what is not: the `mode` field, the refusal of
 `lead.role` under an engine-placed mode (P9: no per-run isolation, "The lead
 model", item 4) all arrive with the tasks that need them. `project`, `roles`'
 engine/model/effort, `engines`, all five limits and `billing` are validated
-today — `limits.lockWaitSeconds` included (`src/config.ts:28`, `:41`, `:128`),
+today — `limits.lockWaitSeconds` included (`src/config.ts#CrossAgentConfig`, `#limitDefaults`, `#loadConfig`),
 and every lock acquisition but the runner's own claim reads it, through the
 caller's argument or through `lockWaitSeconds(projectRoot)`
-(`src/config.ts:140-145`, section 2). The shipped loader
-still carries the role's directory kind as `cwd` (`src/config.ts:20`, `:100`);
+(`src/config.ts#lockWaitSeconds`, section 2). The shipped loader
+still carries the role's directory kind as `cwd` (`src/config.ts#RoleConfig`, `#loadConfig`);
 the Work plan says what happens to it in the meantime.
 
 ### 7. The skills
@@ -1644,12 +1644,12 @@ on its behalf.
 - Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
   document is `{slug, branch, defaultBranch, defaultShaBeforeMerge?,
   branchHead?, steps}` and each step is `{step, at, before?, after?,
-  defaultSha?, args?}` (`src/journal.ts:13-36`). The step names are the
+  defaultSha?, args?}` (`src/journal.ts#Journal`, `#JournalEntry`). The step names are the
   completed git steps of the loop — `worktree-created`, `committed`, `rebased`,
   `merged`, `tests-passed`, `worktree-removed`, `branch-deleted` — plus `git`,
   which is any other `git_mutate` call and records the arguments it ran instead
-  of a name (`src/journal.ts:9-11`). Today `git_mutate` writes exactly one of
-  them, `git` (`src/gitmutate.ts:223`).
+  of a name (`src/journal.ts#JournalStep`). Today `git_mutate` writes exactly one of
+  them, `git` (`src/gitmutate.ts#mutate`).
 
   **Each named step is written by the tool that performs it**, in the same
   locked call, so nothing has to remember to journal afterwards and no separate
@@ -1678,33 +1678,33 @@ on its behalf.
   Three functions: `appendStep(root, slug, step, data)` reads, appends, and
   writes through the ledger's own atomic write — a temporary file and a
   rename — so a reader sees the whole previous document or the whole new
-  one (`src/journal.ts:118`, `:156-157`, `src/ledger.ts:199`); `readJournal`
+  one (`src/journal.ts#appendStep`, `src/ledger.ts#writeAtomic`); `readJournal`
   returns null when the task has none and **throws, naming the file**, when the
-  document is damaged (`src/journal.ts:74`, `:90-92`), because an append that
+  document is damaged (`src/journal.ts#readJournal`), because an append that
   silently started from an empty journal would drop every step the file still
   holds; `listJournals` returns the slugs, sorted, ignoring temporary files and
-  anything else that is not a journal (`src/journal.ts:97`). A slug names a
+  anything else that is not a journal (`src/journal.ts#listJournals`). A slug names a
   file here, a directory under `.worktrees` and a branch, so it is one path
   segment of the ledger's own alphabet and never `.` or `..`
-  (`src/journal.ts:54-60`).
+  (`src/journal.ts#journalFile`).
 
   Four fields are the document's rather than a step's, and **which writer owns
   each of them is what makes the repair path below trustworthy.** The step that
   *creates* a journal must name both branches rather than have them invented
-  (`src/journal.ts:126-128`). `defaultBranch` follows the project's config.
+  (`src/journal.ts#appendStep`). `defaultBranch` follows the project's config.
   `branch` is **write-once**: a journal belongs to one task branch, and a later
   step naming another would silently rewrite what every earlier step's SHAs were
-  recorded against (`src/journal.ts:121-124`). `defaultShaBeforeMerge` and
+  recorded against (`src/journal.ts#appendStep`). `defaultShaBeforeMerge` and
   `branchHead` are the **merge**'s to write, and only the merge's: an
   `appendStep` reads them from its data only when its step is `merged`, and a
   second `merged` step for one slug is refused — `journal <slug>: a merged step
   is already recorded; a task merges once` — so a task merges once and the pair
   is written
-  once (`src/journal.ts:129-138`). Every other step records the default
+  once (`src/journal.ts#appendStep`). Every other step records the default
   branch's SHA it observed in **its own** step, as `steps[].defaultSha` beside
-  `before` and `after` (`src/journal.ts:18-19`, `:144`), and never touches the
+  `before` and `after` (`src/journal.ts#JournalEntry`, `#appendStep`), and never touches the
   document-level field; `git_mutate` passes exactly that
-  (`src/gitmutate.ts:208`, `:223-229`).
+  (`src/gitmutate.ts#mutate`).
 
   The reason is the repair path. `defaultShaBeforeMerge` is a **revert target**,
   and a revert is only safe if it names the commit this task's merge sat on. A
@@ -1720,7 +1720,7 @@ on its behalf.
   branch differs from the one its journal already records is refused, `slug <a>
   is journaled on <task/b>; refusing <task/c>`, before any git runs. That
   comparison happens **inside** `spawn.lock`, beside the reservation check it
-  belongs with (`src/gitmutate.ts:157-169`): two first calls on one slug read
+  belongs with (`src/gitmutate.ts#mutate`): two first calls on one slug read
   outside the lock would both find no journal and both commit, on two different
   branches.
 - Reconciliation at the start of every task, after any interruption, and after
@@ -1836,7 +1836,7 @@ planned** and have none, because nothing would trigger them:
 - **`openmaus.package` as an import format.** Not planned: native modes only,
   and the converter runs once.
 - **Session transfer between engines.** Not planned: resume is bound to the
-  original task's engine (`src/guard.ts:102-115`), and a transfer would have
+  original task's engine (`src/guard.ts#resumeRefusal`), and a transfer would have
   to reconstruct one engine's session state inside another's.
 
 ## Repository layout (`~/Documents/agent-team-cli`)
@@ -1994,7 +1994,7 @@ reached by a caller: until then no tool registers `git_mutate` and no
 | 5 | Engine contract and profile validation | `atc-s96.22` | **Done** (`734e1e9..193b511`, with its review's fix round in `cfaf2b0`). A2; the adapter fields of section 3, `sandboxFor` as their one construction site, the built-in table in `src/engines/registry.ts`, `src/engines/binaries.ts`, and `EngineName` moved beside the contract; informed by P8 and P9. The three adapters carried the static half only at this point: `plan`, `parseLine` and `finalMessage` threw, and so did the `finish` stub each declared; row 6 replaced all four. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | Ancestry-bound authority, the permission matrix, guard wiring, reconciliation on every `list_tasks`, `tools/call` refusal by name. `describe_mode` registers with step 8, which builds the mode loader it reads. |
-| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts:20`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
+| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts#RoleConfig`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | `git_root`, `run_command`, the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
@@ -2215,8 +2215,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   logs; the journal shows every step; no record's `depth` exceeds the mode's
   `maxDepth`; the specialists' transcripts show no `delegate` and no engine
   launch.
-- **Docs:** every changed claim in this document matches a `file:line` in this
-  repository or a recorded probe.
+- **Docs:** every changed claim in this document matches a checked `file:line`
+  or `file#symbol` in this repository or a recorded probe.
 - For the pack (M7): every task ends with no worktree, no task branch, a clean
   root, and `npm test` green on `main`, as in 0.4.0.
 
