@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-09T15:48:03Z
+updated_at: 2026-09-18T15:07:31Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,11 +34,13 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Nothing. The worktree `.worktrees/cross-agent` and branch
-`task/cross-agent` were removed after the merge. The git-ignored SDD
-workspace `.superpowers/sdd/the-original-intent-of-rustling-hummingbird/`
-holds this session's ledger (`progress.md`, every ruling), briefs,
-reports and reviews; it can be deleted once DECISIONS 0008 has been read.
+Task 0 of the approved plan (`~/.claude/plans/the-development-of-this-calm-planet.md`;
+`atc-s96.36`, cite code by symbol) runs as a headless `claude -p --model
+claude-opus-5 --effort max` session in `.worktrees/cross-agent-m3` (branch
+`task/cross-agent-m3` from `54ff90a`). Its brief, the SDD ledger and every
+review artifact live in `.superpowers/sdd/the-development-of-this-calm-planet/`
+(git-ignored). Steward checkpoints commit on `main`; the task branch rebases
+onto `main` before each fast-forward merge.
 
 ## Next steps
 
@@ -70,6 +72,9 @@ reports and reviews; it can be deleted once DECISIONS 0008 has been read.
    `btime` rounding; P2).
 
 ## Blockers
+
+- The Claude sandbox still fails at bwrap setup: the docs' `/etc/apparmor.d/bwrap` profile is shadowed by Ubuntu's stock `bwrap-userns-restrict` (same profile name, loaded later). Disabling it needs sudo; the script is in this session's scratchpad (`disable-stock-bwrap-profile.sh`). Until then Claude-sandbox rows are conditional (plan, "Needs you").
+- `.claude/agents/cross-agent-implementer.md` (opus, effort max) loads only at session start; restart the session to use it through the Agent tool.
 
 Probe P2 for Claude (`atc-s96.17`) waits on the bwrap AppArmor profile
 from Claude Code's sandboxing docs (needs sudo). T13 depends on it.

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T15:07:31Z — claude
+[auto-checkpoint] [auto-checkpoint] Plan approved (/home/wsh/.claude/plans/the-development-of-this-calm-planet.md, 3 Codex rounds). Worktree .worktrees/cross-agent-m3 on task/cross-agent-m3 from 54ff90a; SDD ledger at .superpowers/sdd/the-development-of-this-calm-planet/progress.md. Task 0 (atc-s96.36, cite by symbol) in flight as a headless claude -p (opus 5, max) session. AppArmor: docs' bwrap profile installed but shadowed by the stock bwrap-userns-restrict profile; the user must run scratchpad/disable-stock-bwrap-profile.sh (sudo). New P1 bead: Claude adapter must set sandbox.allowUnsandboxedCommands=false (a sandboxed child escaped via dangerouslyDisableSandbox). Custom agent type loads only at session start: restart after the next handoff.
+
 ### 2026-09-09T15:48:03Z — claude
 cross-agent T1–T9 series merged to main at 45aacf8 (rename, design as the authority, lifecycle core, T6, engine contract v2, Claude/Codex/Grok adapters, probes P8–P10; 347 tests, 1 skipped); handover written; next T10
 
