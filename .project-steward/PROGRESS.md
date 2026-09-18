@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T16:37:12Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 0 (atc-s96.36) complete on task/cross-agent-m3 at 93da0a1 (5 commits; checker verifies path#symbol, lexer ignores comments/templates, docs re-filled; 360 pass/1 skip); closed. Task 1 (T10a, atc-s96.10 first half) running headless (opus 5, max; session in .superpowers/sdd/the-development-of-this-calm-planet/dispatch/task-1.session). AppArmor fixed: stock bwrap-userns-restrict disabled, P1 rerun passes sandboxed. New beads: atc-s96.44 (allowUnsandboxedCommands=false, P1), atc-s96.45 (anchor citations, P3). AGENTS.md cite-by-symbol sentence proposed as agents-md-cite-by-symbol.diff, awaiting approval.
+
 ### 2026-09-18T15:07:31Z — claude
 [auto-checkpoint] [auto-checkpoint] Plan approved (/home/wsh/.claude/plans/the-development-of-this-calm-planet.md, 3 Codex rounds). Worktree .worktrees/cross-agent-m3 on task/cross-agent-m3 from 54ff90a; SDD ledger at .superpowers/sdd/the-development-of-this-calm-planet/progress.md. Task 0 (atc-s96.36, cite by symbol) in flight as a headless claude -p (opus 5, max) session. AppArmor: docs' bwrap profile installed but shadowed by the stock bwrap-userns-restrict profile; the user must run scratchpad/disable-stock-bwrap-profile.sh (sudo). New P1 bead: Claude adapter must set sandbox.allowUnsandboxedCommands=false (a sandboxed child escaped via dangerouslyDisableSandbox). Custom agent type loads only at session start: restart after the next handoff.
 

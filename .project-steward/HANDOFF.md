@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T15:07:31Z
+updated_at: 2026-09-18T16:37:12Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,13 +34,16 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 0 of the approved plan (`~/.claude/plans/the-development-of-this-calm-planet.md`;
-`atc-s96.36`, cite code by symbol) runs as a headless `claude -p --model
-claude-opus-5 --effort max` session in `.worktrees/cross-agent-m3` (branch
-`task/cross-agent-m3` from `54ff90a`). Its brief, the SDD ledger and every
-review artifact live in `.superpowers/sdd/the-development-of-this-calm-planet/`
-(git-ignored). Steward checkpoints commit on `main`; the task branch rebases
-onto `main` before each fast-forward merge.
+Task 1 (T10a: authority by ancestry, project discovery, tools by row;
+`atc-s96.10` first half) runs as a headless `claude -p --model claude-opus-5
+--effort max` session in `.worktrees/cross-agent-m3` (branch
+`task/cross-agent-m3`, base `93da0a1`). Task 0 (`atc-s96.36`) is complete
+there: five commits `2ef8354..93da0a1`, review clean, one parked lexer
+limit. Briefs, the SDD ledger (`progress.md`, every ruling), reports,
+review packages and the dispatch state (session ids, the launcher) live in
+`.superpowers/sdd/the-development-of-this-calm-planet/` (git-ignored); a
+resumed session continues from that ledger. Steward checkpoints commit on
+`main`; the task branch rebases onto `main` before each fast-forward merge.
 
 ## Next steps
 
@@ -73,11 +76,12 @@ onto `main` before each fast-forward merge.
 
 ## Blockers
 
-- The Claude sandbox still fails at bwrap setup: the docs' `/etc/apparmor.d/bwrap` profile is shadowed by Ubuntu's stock `bwrap-userns-restrict` (same profile name, loaded later). Disabling it needs sudo; the script is in this session's scratchpad (`disable-stock-bwrap-profile.sh`). Until then Claude-sandbox rows are conditional (plan, "Needs you").
-- `.claude/agents/cross-agent-implementer.md` (opus, effort max) loads only at session start; restart the session to use it through the Agent tool.
-
-Probe P2 for Claude (`atc-s96.17`) waits on the bwrap AppArmor profile
-from Claude Code's sandboxing docs (needs sudo). T13 depends on it.
+- None. The Claude sandbox works: the docs' `/etc/apparmor.d/bwrap` profile
+  is loaded and Ubuntu's stock `bwrap-userns-restrict` is disabled (link in
+  `/etc/apparmor.d/disable/`); probe P1's sandboxed `curl` returned 200 on
+  2026-09-18. `atc-s96.17` (Claude P2) is runnable at T13.
+- Pending your approval: `agents-md-cite-by-symbol.diff` in the SDD
+  directory (one Conventions sentence for AGENTS.md).
 
 ## Key files
 
