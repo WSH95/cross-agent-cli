@@ -427,6 +427,10 @@ never blocks `check`, `cancel`, or `list_tasks` on the same connection.
 holds an `AbortController` per call in flight, keyed by the request id its
 client addressed it with, and the notification aborts exactly that one — an id
 nothing is running under is ignored (`src/server.ts#createServer`). The
+controller is registered **before** the row is resolved, because resolving it
+awaits and one stdin chunk reaches the dispatcher line by line: a cancellation
+travelling with its own call would otherwise arrive before there was anything
+to abort. The
 aborted call answers for itself, with the status it last read and
 `cancelled: true`, and its JSON-RPC reply is still written, which a client that
 has moved on may ignore (`src/wait.ts#wait`). "Registered by" says which
@@ -440,7 +444,7 @@ active mode declares the worktree provider; **engine lead** only under
 | `list_roles` | — | roles from config with engine, model, workspace kind, sandbox profile | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
-| `check` | `task_id` | non-blocking status and the last activity lines | core |
+| `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
 | `result` | `task_id` | the final message in full, the engine session id | core |
 | `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups | core |
 | `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported | core |
@@ -856,9 +860,10 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   the configured value — that one is `waitSeconds: 0` by design, below.
   `git_mutate` takes it as an argument, so that module stays a function of what
   it is handed (`src/gitmutate.ts#GitMutateOptions`); `update`'s callers read it
-  once per process or per pass through `lockWaitSeconds(projectRoot)`
-  (`src/runner.ts:20`, `src/reconcile.ts#reconcile`,
-  `src/process.ts#terminateOrphans`), a helper that answers with the documented
+  once per process, per pass or per call, through `lockWaitSeconds(projectRoot)`
+  or the config the call has already loaded (`src/runner.ts:20`,
+  `src/reconcile.ts#reconcile`, `src/process.ts#terminateOrphans`,
+  `src/tasks.ts#check`, `src/wait.ts#wait`), a helper that answers with the documented
   5 when no config can be read (`src/config.ts#lockWaitSeconds`) — locks are
   taken on paths that run before anyone has a readable config, and a caller
   whose only question was how long to wait should not be thrown at (bead
@@ -1957,16 +1962,27 @@ emitted nothing for `stallMinutes`; the task keeps running and the lead decides
 (`src/wait.ts#wait`). The clock that silence is measured from is the engine's
 last event, else the acknowledgement that answered for the engine —
 `lastEventAt ?? acknowledgedAt` (`src/wait.ts#stallClock`) — so a task that has
-emitted nothing yet is read from the moment its runner claimed it, and a
-`launching` record, which has neither, never stalls: its deadline is the
-reconciler's. A stall this call observed is an answer; a stall it arrived to is
-not, or a second `wait` on a stalled task would return the same reading for
-ever, so that one polls on and answers when the task settles, when it stalls
-again after another `stallMinutes` of silence, or at the timeout. A `wait` that
-finds the ledger out of step with the kernel — a launch past its deadline, an
-active task whose runner is gone — runs one reconciliation pass, once per call,
-and reports what it settled, or `orphaned` when the pass left the record there
-(`src/reconcile.ts#reconcileAndCleanup`). `timeout_seconds` bounds one call so
+emitted nothing yet is read from the moment its runner claimed it. The reading
+is taken for two statuses and no others, `running` and `stalled`
+(`src/wait.ts#observeStall`), so a `launching` record never stalls whatever
+clock it carries: an unacknowledged launch is the reconciler's deadline to
+judge, not a silence to measure. A stall that **begins while a call is
+polling** is that call's answer, whoever wrote it — its own reading or another
+reader's, because the crossing is the event and not the write; the stall a call
+arrived on is not, or a second `wait` on a stalled task would return the same
+reading for ever, so that one polls on and answers when the task settles, when
+it stalls again after another `stallMinutes` of silence, or at the timeout. The
+resolution of all of this is the runner's two-second activity interval, which is
+how often a live engine's `lastEventAt` reaches the record
+(`src/runner.ts:279-289`). A `wait` that finds the ledger out of step with the
+kernel — a launch past its deadline, a task whose runner is gone, which is what
+`orphaned` means — runs one reconciliation pass, once per call, and reports what
+it settled (`src/reconcile.ts#reconcileAndCleanup`). Evidence outranks silence:
+the pass runs before a fresh stall is answered, so a quiet task whose runner has
+died is reconciled rather than reported as stalled. A record still adrift after
+that one pass is answered at once, with what the pass could not do as `reason`
+and a hint naming `list_tasks` — polling on would be waiting for a mover that no
+longer exists (`src/wait.ts#passReason`, `#hintFor`). `timeout_seconds` bounds one call so
 the lead's turn never hangs and defaults to `limits.waitDefaultSeconds`; the
 upper bound is the caller's. Claude Code's MCP tool timeout defaults to about
 28 hours, Codex takes `tool_timeout_sec` per server.
@@ -2334,35 +2350,46 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   follow the row from one request to the next (`tests/server.test.ts:128`,
   `:302`, `:152`); a specialist's `delegate`, `wait` and `cancel` are refused by
   this server's own name with the resolver's reason, and its read tools answer
-  (`:403`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
+  (`:433`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
   the nearest configured directory, a linked worktree resolving to its main
   project and no config anywhere to a reason (`tests/project.test.ts:24`,
   `:40`, `:50`, `:66`). A resolver that throws is answered `-32603`, lists
-  nothing and runs no handler (`tests/server.test.ts:454`). Still to record: a
+  nothing and runs no handler (`tests/server.test.ts:484`). Still to record: a
   Grok specialist inheriting the user's MCP configuration sees exactly the
   specialist row (this is I1).
 - **T11 (recorded).** An engine that says nothing from its launch stalls on the
   acknowledgement clock while its group stays alive, comes back to `running`
   through `check` when it emits, stalls again on the next silence, and settles
   with the tail of its result — one fake engine, one task, four readings
-  (`tests/wait.test.ts:62`). A settled task is answered on the first read
-  (`:103`); `check` answers while a `wait` is pending and an aborted `wait`
-  returns the status it found, in under 100 ms, having written nothing (`:122`);
-  a `launching` record never stalls however old its clock (`:145`); the timeout
-  with no argument is the project's `waitDefaultSeconds` (`:159`); a runner
+  (`tests/wait.test.ts:78`). A settled task is answered on the first read
+  (`:119`); `check` answers while a `wait` is pending and an aborted `wait`
+  returns the status it found, in under 100 ms, having written nothing (`:138`);
+  a `launching` record never stalls however old its clock (`:161`); the timeout
+  with no argument is the project's `waitDefaultSeconds` (`:175`); a runner
   SIGKILLed under a pending `wait` is settled by that call's one reconciliation
-  pass, engine group and all (`:170`), while an orphan the pass cannot settle is
-  answered as `orphaned` rather than waited on (`:184`); a second `wait` run in
-  a **fresh process** reads the same stall from the ledger and the task is still
-  running when it does (`:198`); a lead is refused by name for a task it did not
-  delegate and answered for one it did (`:219`); and `observeStall` writes each
-  transition once, leaves a reading it has already written alone, and returns
-  the record that beat it when another writer settled the task (`:246`). The
-  cancellation is recorded at the protocol edge as well: an unknown request id
-  is ignored, and the one the notification names is answered within 100 ms with
-  `cancelled: true` and a reply that is still sent (`tests/server.test.ts:363`).
-  `check` is the other writer of the two transitions, and writes both
-  (`tests/tasks.test.ts:181`).
+  pass, engine group and all (`:186`), while an orphan the pass cannot settle is
+  answered as `orphaned`, with the reason it was skipped, rather than waited on
+  (`:200`); a second `wait` run in a **fresh process** reads the same stall from
+  the ledger and the task is still running when it does (`:214`); a lead is
+  answered for a task it delegated, refused by name for one it did not, and told
+  `no task` for one nobody has (`:235`); and `observeStall` writes each
+  transition once, leaves a reading it has already written alone, and returns the
+  record that beat it when another writer settled the task (`:267`). A stall
+  another reader wrote while a `wait` slept ends that wait too, because the
+  crossing is the event and not the write (`:292`); a quiet task whose runner has
+  died is reconciled rather than reported as stalled (`:312`); a launch past its
+  deadline is adopted and settled by the waiter's own pass (`:332`), and one that
+  pass cannot judge — the engine's environment unreadable — is answered at once
+  with that reason and a `list_tasks` hint, having written and killed nothing
+  (`:343`); a call aborted before it polls answers `cancelled` and runs no pass
+  at all (`:366`); and a project whose `lockWaitSeconds` is zero has both readers
+  refuse the contended record by that rule rather than the helper's own default
+  (`:377`). The cancellation is recorded at the protocol edge as well: an unknown
+  request id is ignored, and the one the notification names is answered within
+  100 ms with `cancelled: true` and a reply that is still sent
+  (`tests/server.test.ts:363`), including when the notification shares one stdin
+  chunk with the call it cancels (`:406`). `check` is the other writer of the two
+  transitions, and writes both (`tests/tasks.test.ts:181`).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,
   models and efforts of section 6 and the profiles of the mode's
   `sandboxDefault`; a config carrying a `workspace`

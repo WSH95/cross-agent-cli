@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
-import { loadConfig } from "./config.ts";
+import { loadConfig, lockWaitSeconds } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
 import { currentBootId, find, isProcessAlive, isTerminal, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
@@ -115,7 +115,14 @@ export async function check(projectRoot: string, taskId: string, options: { line
   const found = find(projectRoot, taskId);
   if (found === null) return { ok: false, reason: `no task ${taskId}` };
   const now = options.now ?? Date.now();
-  const record = await observeStall(projectRoot, found, { now });
+  let record: TaskRecord;
+  try {
+    record = await observeStall(projectRoot, found, { now, waitSeconds: lockWaitSeconds(projectRoot) });
+  } catch (error) {
+    // The stall write is the only thing here that can fail, and a record lock this project
+    // would not wait any longer for is a refusal to report rather than a throw.
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
   const until = isTerminal(record.status) ? record.updatedAt : now;
   return {
     ok: true, ...view(record),

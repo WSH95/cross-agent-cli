@@ -98,23 +98,32 @@ export function createServer(options: ServerOptions) {
       case "tools/call": {
         const tool = tools.get(String(params.name));
         if (!tool) throw new RpcError(-32602, `unknown tool: ${String(params.name)}`);
-        const authority = await options.authority();
-        // Refused by this server's own name for the tool, never merely left out of the
-        // list, and with the evidence the row rests on.
-        if (!tool.rows.includes(authority.row)) {
-          throw new RpcError(-32602, `${tool.name} is not available to a ${authority.row} server: ${authority.reason}`);
-        }
         const controller = new AbortController();
-        // A notification carries no id to cancel by, so only a request is registered.
+        // Registered before the row is resolved, because resolving it awaits: `connect`
+        // hands this dispatcher every line of one stdin chunk in order, so a cancellation
+        // travelling with its own call would otherwise find nothing yet to abort. A
+        // notification carries no id to cancel by, so only a request is registered.
         if (id !== undefined && id !== null) inFlight.set(id, controller);
         try {
-          return await tool.handler((params.arguments ?? {}) as Json, { authority, signal: controller.signal });
-        } catch (error) {
-          if (error instanceof RpcError) throw error;
-          const message = error instanceof Error ? error.message : String(error);
-          return { content: [{ type: "text", text: message }], isError: true } satisfies ToolResult;
+          const authority = await options.authority();
+          // Refused by this server's own name for the tool, never merely left out of the
+          // list, and with the evidence the row rests on.
+          if (!tool.rows.includes(authority.row)) {
+            throw new RpcError(-32602, `${tool.name} is not available to a ${authority.row} server: ${authority.reason}`);
+          }
+          try {
+            return await tool.handler((params.arguments ?? {}) as Json, { authority, signal: controller.signal });
+          } catch (error) {
+            // A tool's own failure is its answer; a row that could not be resolved, above,
+            // is the protocol's, and stays one.
+            if (error instanceof RpcError) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: message }], isError: true } satisfies ToolResult;
+          }
         } finally {
-          inFlight.delete(id);
+          // Only this call's own entry: a client that reused an id in flight would
+          // otherwise have the first call to finish take the survivor's controller away.
+          if (inFlight.get(id) === controller) inFlight.delete(id);
         }
       }
       case "notifications/cancelled":
@@ -284,9 +293,13 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
           throw new RpcError(-32602, `wait's timeout_seconds must be a finite number of seconds, not ${timeoutSeconds}`);
         }
         // A lead waits on the tasks it delegated and no others; the operator waits on any.
+        // A task nobody has is that first, as `cancel` reports it: a lead asking after a
+        // task id that does not exist has not been refused anything.
         if (context.authority.row === "lead") {
+          const { records } = scan(projectRoot);
+          if (!records.some((record) => record.id === taskId)) return answer({ ok: false, reason: `no task ${taskId}` });
           const leadTaskId = context.authority.taskId;
-          if (leadTaskId === undefined || !ownedBy(scan(projectRoot).records, leadTaskId, taskId)) {
+          if (leadTaskId === undefined || !ownedBy(records, leadTaskId, taskId)) {
             return answer({ ok: false, reason: `refused wait on task ${taskId}: lead task ${leadTaskId} did not delegate it` });
           }
         }

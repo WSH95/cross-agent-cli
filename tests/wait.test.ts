@@ -10,10 +10,12 @@ import type { Authority } from "../src/authority.ts";
 import { delegate } from "../src/delegate.ts";
 import { create, update } from "../src/ledger.ts";
 import type { TaskRecord } from "../src/ledger.ts";
+import { acquire, lockPath, recordLockName } from "../src/locks.ts";
+import { findByEnvironment } from "../src/process.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import { check } from "../src/tasks.ts";
 import { observeStall, wait } from "../src/wait.ts";
-import { alive, engineEnv, poll, project, suiteEnv } from "./helpers/project.ts";
+import { alive, engineEnv, poll, project, strandedEngine, suiteEnv } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
@@ -59,6 +61,20 @@ function seed(p: TestProject): TaskRecord {
   return create(p.root, { role: "planner", brief: "seeded", cwd: p.root, engine: "grok" });
 }
 
+/**
+ * A launch nobody ever acknowledged, past its deadline, with the engine a killed runner
+ * would have left. The record is dated a clear five seconds back because a start time read
+ * from `/proc` can name a start up to a second before the real one, and the environ scan
+ * takes only candidates that started after the record did (`tests/reconcile.test.ts`).
+ */
+async function overdueLaunch(t: TestContext, p: TestProject): Promise<{ record: TaskRecord; engine: ReturnType<typeof strandedEngine> }> {
+  const record = create(p.root, { role: "planner", brief: "seeded", cwd: p.root, engine: "grok" }, Date.now() - 5_000);
+  assert.equal((await update(p.root, record.id, { launchDeadline: Date.now() - 1_000 })).applied, true);
+  const engine = strandedEngine(t, p, record.id);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  return { record, engine };
+}
+
 test("a quiet engine stalls and keeps running; check revives it, a second wait stalls again, a third settles", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, {
@@ -66,8 +82,12 @@ test("a quiet engine stalls and keeps running; check revives it, a second wait s
   });
 
   // The engine has emitted nothing at all, so the clock this stall is read from is the
-  // acknowledgement rather than a last event (design section 2).
+  // acknowledgement rather than a last event (design section 2). The assertions below hold
+  // because this answer comes from inside the fixture's 3-second silence: the threshold is
+  // 1.2 s, and the wall time is asserted rather than assumed.
+  const quiet = performance.now();
   const first = await wait(p.root, task.id, { timeoutSeconds: 10, pollMs: 100 });
+  assert.ok(performance.now() - quiet < 3000, `the first wait answered after ${Math.round(performance.now() - quiet)}ms, past the quiet window`);
   assert.equal(first.ok, true, JSON.stringify(first));
   assert.equal(first.ok && first.status, "stalled");
   assert.equal(first.ok && first.stalled, true);
@@ -193,6 +213,8 @@ test("an orphan that cleanup cannot settle is reported as orphaned, not polled f
   assert.equal(answer.ok && answer.status, "orphaned");
   assert.equal(answer.ok && answer.stalled, false);
   assert.equal(answer.ok && answer.hint, "orphaned: list_tasks reconciles; cancel terminates the engine");
+  // And what cleanup would not act on, which is why the record is still there to answer for.
+  assert.equal(answer.ok ? answer.reason : "", "no engine identity");
 });
 
 test("a second wait in a fresh process reads the same clock from the ledger", async (t) => {
@@ -235,6 +257,11 @@ test("a lead waits on the tasks it delegated and is refused by name for any othe
     ok: false, reason: `refused wait on task ${stranger.id}: lead task ${lead.id} did not delegate it`,
   });
 
+  // A task nobody has is that, not a task this lead was not given: existence first.
+  const missing = (await call({ task_id: "no-such-task", timeout_seconds: 0.1 })).result;
+  assert.equal(missing.isError, true, JSON.stringify(missing));
+  assert.deepEqual(JSON.parse((missing.content as Array<{ text: string }>)[0].text), { ok: false, reason: "no task no-such-task" });
+
   const allowed = (await call({ task_id: child.id, timeout_seconds: 0.1 })).result;
   assert.equal(allowed.isError, undefined);
   const payload = JSON.parse((allowed.content as Array<{ text: string }>)[0].text) as { ok: boolean; task_id: string; status: string };
@@ -266,4 +293,112 @@ test("observeStall writes each transition conditionally and returns the record a
   const stale = { ...revived, lastEventAt: Date.now() - stallMs - 1 };
   assert.equal((await update(p.root, record.id, { status: "done" })).applied, true);
   assert.equal((await observeStall(p.root, stale)).status, "done");
+});
+
+test("a stall another reader wrote while this call slept is this call's answer", async (t) => {
+  const p = await waitProject(t);
+  const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
+
+  // A slow poll, so the threshold is crossed while this call is asleep and the reader that
+  // writes the stall is somebody else. The answer is the crossing, not who recorded it.
+  let done = false;
+  const started = performance.now();
+  const pending = wait(p.root, task.id, { timeoutSeconds: 20, pollMs: 2000 })
+    .then((value) => { done = true; return value; });
+  await poll(() => check(p.root, task.id), (answer) => answer.ok && answer.status === "stalled", 6000);
+  assert.equal(done, false, "check wrote the stall while the wait slept");
+
+  const answer = await pending;
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 8000, `answered after ${Math.round(elapsed)}ms, not at the 20s timeout`);
+  assert.equal(answer.ok && answer.status, "stalled");
+  assert.equal(answer.ok && answer.stalled, true);
+});
+
+test("a quiet task whose runner has died is reconciled, not reported as stalled", async (t) => {
+  const p = await waitProject(t);
+  const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
+  process.kill(task.runnerIdentity!.pid, "SIGKILL");
+  await poll(() => alive(task.runnerIdentity), (value) => value === false);
+  // Past the threshold on the record's own clock — the killed runner tees nothing more, so
+  // that clock is the acknowledgement — which puts a readable stall in front of the answer.
+  await poll(() => {
+    const current = p.record(task.id);
+    return Date.now() - (current.lastEventAt ?? current.acknowledgedAt ?? current.createdAt);
+  }, (age) => age > stallMs);
+  assert.equal(p.record(task.id).status, "running");
+
+  const answer = await wait(p.root, task.id, { timeoutSeconds: 15, pollMs: 100 });
+  assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
+  assert.equal(answer.ok && answer.hint, "settled: call result");
+  assert.equal(p.record(task.id).reason, "runner lost");
+  assert.equal(alive(task.engineIdentity), false);
+});
+
+test("a launch past its deadline is adopted and settled by this call's own pass", async (t) => {
+  const p = await waitProject(t);
+  const { record, engine } = await overdueLaunch(t, p);
+
+  const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
+  assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
+  assert.equal(answer.ok && answer.hint, "settled: call result");
+  assert.equal(p.record(record.id).reason, "runner lost");
+  assert.equal(alive(engine.identity), false, "the adopted engine's group was terminated");
+});
+
+test("a record the one pass could not settle is answered with the pass's reason, not polled for", async (t) => {
+  const p = await waitProject(t);
+  const { record, engine } = await overdueLaunch(t, p);
+  // The one environment the pass must read, unreadable: it declines rather than declare a
+  // launch failed over an engine that may be alive (design section 2, B5-i).
+  const original = fs.readFileSync;
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === `/proc/${engine.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+
+  const started = performance.now();
+  const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
+  mock.mock.restore();
+
+  assert.ok(performance.now() - started < 5000, "the pass is the answer, not the timeout");
+  assert.equal(answer.ok && answer.status, "launching");
+  assert.match(answer.ok ? answer.reason ?? "" : "", /environ unreadable for 1 process/);
+  assert.match(answer.ok ? answer.hint : "", /list_tasks/);
+  assert.equal(p.record(record.id).status, "launching", "the pass wrote nothing");
+  assert.equal(alive(engine.identity), true, "and killed nothing");
+});
+
+test("a call aborted before it polls answers cancelled and reconciles nothing", async (t) => {
+  const p = await waitProject(t);
+  const { record, engine } = await overdueLaunch(t, p);
+
+  const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100, signal: AbortSignal.abort() });
+  assert.equal(answer.ok && answer.cancelled, true);
+  assert.equal(answer.ok && answer.status, "launching");
+  assert.equal(p.record(record.id).status, "launching", "no pass ran for a caller that had gone");
+  assert.equal(alive(engine.identity), true);
+});
+
+test("a record lock this project will not wait for refuses both readers by that rule", async (t) => {
+  // Every waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation
+  // (design section 2); zero is a project that refuses at once.
+  const p = await waitProject(t, { lockWaitSeconds: 0 });
+  const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
+  const eventAt = await poll(() => p.record(task.id).lastEventAt, (value) => Boolean(value)) as number;
+  const held = await acquire(lockPath(p.root, recordLockName(task.id)), { operation: "hold for the test", waitSeconds: 0 });
+
+  try {
+    const started = performance.now();
+    const refused = await check(p.root, task.id, { now: eventAt + stallMs + 1 });
+    assert.ok(performance.now() - started < 2000, "check waited its own project's rule, not the helper's default");
+    assert.equal(refused.ok, false, JSON.stringify(refused));
+    assert.match(refused.ok === false ? refused.reason : "", /is held by another process \(waited 0s\)/);
+
+    const waited = await wait(p.root, task.id, { timeoutSeconds: 10, pollMs: 50 });
+    assert.equal(waited.ok, false, JSON.stringify(waited));
+    assert.match(waited.ok === false ? waited.reason : "", /is held by another process \(waited 0s\)/);
+  } finally {
+    await held.release();
+  }
 });

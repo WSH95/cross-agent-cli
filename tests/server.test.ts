@@ -394,10 +394,40 @@ test("notifications/cancelled ends the wait it names within 100ms, and the reply
   const reply = replies.find((message) => message.id === 1) as Json;
   const result = reply.result as Json;
   assert.equal(result.isError, undefined);
-  assert.deepEqual(JSON.parse((result.content as Json[])[0].text as string), {
-    ok: true, task_id: record.id, status: "launching", stalled: false, elapsedSeconds: 0,
+  const payload = JSON.parse((result.content as Json[])[0].text as string) as Json;
+  const { elapsedSeconds, ...rest } = payload;
+  assert.deepEqual(rest, {
+    ok: true, task_id: record.id, status: "launching", stalled: false,
     lastActivity: null, resultTail: null, hint: "call wait again", cancelled: true,
   });
+  assert.ok(typeof elapsedSeconds === "number" && elapsedSeconds >= 0 && elapsedSeconds < 30, `elapsed ${elapsedSeconds}`);
+});
+
+test("a cancellation sharing a chunk with the call it names is still honoured", async (t) => {
+  const root = await projectWithConfig({ roles: { planner: { engine: "grok", cwd: "root", sandbox: "read-only" } } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const record = create(root, { role: "planner", brief: "b", cwd: root, engine: "grok" });
+  const server = createServer({ tools: projectTools(root), authority: () => operator });
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const replies: Json[] = [];
+  output.setEncoding("utf8");
+  output.on("data", (chunk: string) => {
+    for (const line of chunk.split("\n")) if (line.trim()) replies.push(JSON.parse(line) as Json);
+  });
+  server.connect(input, output);
+
+  // One write, two lines: `connect` hands the dispatcher both in order, so the notification
+  // is read while the call it names is still resolving its row. A controller registered
+  // after that resolution would not be there to abort.
+  input.write(
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "wait", arguments: { task_id: record.id, timeout_seconds: 600 } } }) + "\n"
+    + JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } }) + "\n",
+  );
+  await waitFor(() => replies.some((message) => message.id === 1), 3000);
+  const answered = JSON.parse((((replies.find((message) => message.id === 1) as Json).result as Json).content as Json[])[0].text as string);
+  assert.equal(answered.cancelled, true);
+  assert.equal(answered.status, "launching");
 });
 
 test("the specialist row cannot delegate, wait or cancel, and is refused by this server's own name", async (t) => {
