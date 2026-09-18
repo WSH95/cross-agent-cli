@@ -338,11 +338,11 @@ pending), Codex and Grok with their read-only profiles.
   for that prepended-role run, 16.8 s for `--rules <path>` and 40.6 s for the
   project-scope run.
 - The harness's `CROSS_AGENT_LINEAGE` was fixed for these runs: it emitted
-  `probe/<uuid>:<engine>:<cwd>`, which `parseLineage` (`src/guard.ts#parseLineage`)
-  rejects, and now emits the JSON array `[{"taskId":"probe-<uuid>","role":
-  "probe-<engine>","cwd":"<cwd>"}]`, verified by feeding the value a child
-  actually received back through `parseLineage`. Probe children now see the
-  shape real children will see.
+  `probe/<uuid>:<engine>:<cwd>`, which `parseLineage`
+  (`src/guard.ts#parseLineage`) rejects, and now emits the JSON array
+  `[{"taskId":"probe-<uuid>","role": "probe-<engine>","cwd":"<cwd>"}]`, verified
+  by feeding the value a child actually received back through `parseLineage`.
+  Probe children now see the shape real children will see.
 
 Consequence for engine placement. A Claude lead can be mounted exactly:
 `--strict-mcp-config --mcp-config <file>` gives it this server and nothing
