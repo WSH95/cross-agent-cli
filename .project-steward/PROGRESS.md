@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T22:17:42Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 2 (T10b) complete on task/cross-agent-m3 at 39bbafc (fix round 1 re-reviewed clean: Critical cancel leak closed). Task 3 (T11 wait) implemented as 5f31564 (441 pass/1 skip; 565 citations/0 misses) by the cross-agent-implementer subagent (claude-opus-5, max); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running. Briefs written for Tasks 4 (S8), 4b (root git tools), 4c (solo without ceremony), 3b, 3c. Codex paused.
+
 ### 2026-09-18T21:30:10Z — claude
 [auto-checkpoint] [auto-checkpoint] Codex paused by the user (subscription limit): second-opinion code reviews now on Fable 5.1, plan reviews on Opus 5. Task 2 review: task reviewer approved; the Fable review found a reproduced Critical (cancel inside the launch window leaked the engine through judge's cancelling branch) plus three Important; fix round 1 landed d632c83, 1544d28, 39bbafc (429 pass/1 skip); scoped re-review on Fable running.
 
