@@ -1,0 +1,355 @@
+import fs from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { loadConfig } from "./config.ts";
+import { isProcessAlive, isTerminal, read, scan, update } from "./ledger.ts";
+import type { TaskRecord, TaskStatus } from "./ledger.ts";
+import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { reconcileAndCleanup } from "./reconcile.ts";
+import { terminateGroup } from "./process.ts";
+
+// The read tools and the cascade cancel. Ownership lives here too, because `wait` (T11)
+// and the operator CLI (S11) answer the same question: which tasks are this lead's.
+
+/** A task's own id and the ids of the records it continues, nearest first. */
+export function lineageIds(records: readonly TaskRecord[], id: string): string[] {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  // A `resumedFrom` cycle is a damaged ledger, not a reason to hang.
+  for (let current: string | null | undefined = id; current && !seen.has(current); current = byId.get(current)?.resumedFrom) {
+    seen.add(current);
+    ids.push(current);
+  }
+  return ids;
+}
+
+/**
+ * How many `parentTaskId` hops separate `taskId` from a lineage id of `leadId`, or null
+ * when the chain never reaches one. A resumed lead owns what its earlier records were
+ * delegated, because `parentTaskId` is preserved across a resume and the lead's own
+ * lineage is the chain behind it (the lead model, item 2).
+ */
+function generations(records: readonly TaskRecord[], leadId: string, taskId: string): number | null {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const lineage = new Set(lineageIds(records, leadId));
+  const seen = new Set<string>([taskId]);
+  let hops = 0;
+  for (let current = byId.get(taskId)?.parentTaskId; current && !seen.has(current); current = byId.get(current)?.parentTaskId) {
+    seen.add(current);
+    hops++;
+    if (lineage.has(current)) return hops;
+  }
+  return null;
+}
+
+/** Whether `taskId`'s parent chain reaches `leadId` or any record `leadId` continues. */
+export function ownedBy(records: readonly TaskRecord[], leadId: string, taskId: string): boolean {
+  return generations(records, leadId, taskId) !== null;
+}
+
+const activeStatuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling"]);
+/** The statuses a cancel may claim; `orphaned` may only go to `failed | cancelled`. */
+const claimable = new Set<TaskStatus>(["launching", "running", "stalled"]);
+
+/** The tasks `taskId` owns, leaves first, so no task is settled while a child of it runs. */
+function descendants(records: readonly TaskRecord[], taskId: string): TaskRecord[] {
+  return records
+    .filter((record) => record.id !== taskId && ownedBy(records, taskId, record.id))
+    .map((record) => ({ record, hops: generations(records, taskId, record.id)! }))
+    .sort((left, right) => right.hops - left.hops)
+    .map((entry) => entry.record);
+}
+
+export interface TaskView {
+  id: string;
+  role: string;
+  status: TaskStatus;
+  /** Which harness, model and effort is running this task, always, for every listing. */
+  engine: string;
+  model: string | null;
+  effort: string | null;
+  cwd: string;
+  depth: number;
+  parentTaskId: string | null;
+  resumedFrom: string | null;
+  createdAt: number;
+  updatedAt: number;
+  lastEventAt: number | null;
+  reason?: string;
+}
+
+function view(record: TaskRecord): TaskView {
+  return {
+    id: record.id, role: record.role, status: record.status,
+    engine: record.engine, model: record.model ?? null, effort: record.effort ?? null,
+    cwd: record.cwd, depth: record.depth ?? 0,
+    parentTaskId: record.parentTaskId ?? null, resumedFrom: record.resumedFrom ?? null,
+    createdAt: record.createdAt, updatedAt: record.updatedAt, lastEventAt: record.lastEventAt ?? null,
+    ...(record.reason === undefined ? {} : { reason: record.reason }),
+  };
+}
+
+function found(projectRoot: string, taskId: string): TaskRecord | null {
+  try {
+    return read(projectRoot, taskId);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/** The last `count` lines of a file, reading only its tail. */
+function tail(file: string, count: number): string[] {
+  const window = 64 * 1024;
+  let handle: number;
+  try {
+    handle = fs.openSync(file, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  try {
+    const size = fs.fstatSync(handle).size;
+    const length = Math.min(size, window);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(handle, buffer, 0, length, size - length);
+    const lines = buffer.toString("utf8").split("\n").filter((line) => line.length > 0);
+    // The first line of a window that began mid-file is a fragment, so it is dropped
+    // unless the window is the whole file.
+    if (length < size) lines.shift();
+    return lines.slice(-count);
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
+export type CheckResult =
+  | (TaskView & { ok: true; elapsedSeconds: number; lastActivity: string[] })
+  | { ok: false; reason: string };
+
+/**
+ * What a task is doing, without reconciling anything: an answer a lead may ask for every
+ * few seconds has to be a read. The activity is the tail of the engine's own event stream
+ * (`<id>.ndjson`), which is the evidence the runner tees rather than a reading of it.
+ */
+export function check(projectRoot: string, taskId: string, options: { lines?: number; now?: number } = {}): CheckResult {
+  const record = found(projectRoot, taskId);
+  if (record === null) return { ok: false, reason: `no task ${taskId}` };
+  const now = options.now ?? Date.now();
+  const until = isTerminal(record.status) ? record.updatedAt : now;
+  return {
+    ok: true, ...view(record),
+    elapsedSeconds: Math.max(0, Math.round((until - record.createdAt) / 1000)),
+    lastActivity: tail(record.logPath, options.lines ?? 10),
+  };
+}
+
+export type ResultResult =
+  | { ok: true; id: string; status: TaskStatus; sessionId: string | null; result: string | null }
+  | { ok: true; id: string; status: TaskStatus; settled: false }
+  | { ok: false; reason: string };
+
+/** The final message in full, once there is one. A task still running has only its status. */
+export function result(projectRoot: string, taskId: string): ResultResult {
+  const record = found(projectRoot, taskId);
+  if (record === null) return { ok: false, reason: `no task ${taskId}` };
+  if (!isTerminal(record.status)) return { ok: true, id: record.id, status: record.status, settled: false };
+  let text: string | null = null;
+  try {
+    text = fs.readFileSync(record.resultPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return { ok: true, id: record.id, status: record.status, sessionId: record.sessionId ?? null, result: text };
+}
+
+export interface ListResult {
+  ok: true;
+  tasks: TaskView[];
+  /** Record files no reader could judge; each refuses every writable delegation (E2). */
+  invalid: Array<{ file: string; reason: string }>;
+  /** What this pass could not decide, and what orphan cleanup would not act on. */
+  errors: Array<{ id: string; reason: string }>;
+  skipped: Array<{ id: string; reason: string }>;
+}
+
+/**
+ * The ledger, brought back in step with the kernel first: every listing reconciles, so an
+ * operator never reads a `running` task whose runner died an hour ago (design section 2).
+ */
+export async function listTasks(projectRoot: string, status?: TaskStatus): Promise<ListResult> {
+  const pass = await reconcileAndCleanup(projectRoot);
+  const tasks = scan(projectRoot).records
+    .filter((record) => status === undefined || record.status === status)
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .map(view);
+  return { ok: true, tasks, invalid: pass.invalid, errors: pass.errors, skipped: pass.skipped };
+}
+
+export interface Outcome {
+  id: string;
+  /** The status the task reached, or `already <status>` for one that was settled already. */
+  outcome: string;
+  reason?: string;
+}
+
+export interface CancelOptions {
+  /** The lead whose own tasks may be cancelled. Absent for the operator, who may cancel any. */
+  leadTaskId?: string;
+}
+
+export type CancelResult = { ok: true; outcomes: Outcome[] } | { ok: false; reason: string };
+
+async function waitForTerminal(projectRoot: string, id: string, timeout: number): Promise<TaskRecord | null> {
+  const deadline = performance.now() + timeout;
+  while (true) {
+    const record = read(projectRoot, id);
+    if (isTerminal(record.status)) return record;
+    if (performance.now() >= deadline) return null;
+    await delay(Math.min(25, Math.max(1, deadline - performance.now())));
+  }
+}
+
+function signal(pid: number, value: NodeJS.Signals): void {
+  try {
+    process.kill(pid, value);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
+}
+
+/**
+ * One task's termination, from whatever state it is in. The runner owns the engine, so it
+ * is asked first — SIGTERM, then the grace to settle the record itself with both
+ * identities. A runner that is gone or silent leaves the engine group to this caller, by
+ * the identity the record carries and by nothing else.
+ */
+async function terminate(projectRoot: string, taskId: string, grace: number, waitSeconds: number): Promise<Outcome> {
+  let record = read(projectRoot, taskId);
+  if (isTerminal(record.status)) return { id: taskId, outcome: `already ${record.status}` };
+
+  if (claimable.has(record.status)) {
+    // The claim comes first: from this moment `delegate` refuses a child of this task, and
+    // the runner reads the status as its own cancel.
+    const claimed = await update(projectRoot, taskId, { status: "cancelling" }, Date.now(), {
+      waitSeconds, expect: (current) => claimable.has(current.status),
+    });
+    record = claimed.record;
+    if (!claimed.applied && isTerminal(record.status)) return { id: taskId, outcome: `already ${record.status}` };
+  }
+
+  // `orphaned` has no runner by definition; anything else may still have one.
+  if (record.status !== "orphaned") {
+    const runner = record.runnerIdentity;
+    if (isProcessAlive(runner)) signal(runner!.pid, "SIGTERM");
+    // A record that has not been acknowledged names no runner yet, and the runner that is
+    // starting will read the `cancelling` status as its own cancel, so it is waited for.
+    if (isProcessAlive(runner) || !runner) {
+      const settled = await waitForTerminal(projectRoot, taskId, grace);
+      if (settled) return { id: taskId, outcome: settled.status };
+    }
+    if (isProcessAlive(record.runnerIdentity)) signal(record.runnerIdentity!.pid, "SIGKILL");
+  }
+
+  record = read(projectRoot, taskId);
+  if (isTerminal(record.status)) return { id: taskId, outcome: record.status };
+  const identity = record.engineIdentity;
+  if (!identity) {
+    // Settling here would leave a record terminal beside an engine no identity names.
+    // Reconciliation adopts what the environment still carries and settles it then.
+    return { id: taskId, outcome: record.status, reason: "no engine identity to terminate; reconciliation settles it" };
+  }
+  if (!await terminateGroup(identity, { termGrace: grace, killGrace: 500 })) {
+    return { id: taskId, outcome: record.status, reason: `engine group ${identity.pgid} did not terminate` };
+  }
+  const settled = await update(projectRoot, taskId, {
+    status: "cancelled", engineIdentity: identity,
+    reason: record.status === "orphaned" ? "cancelled while orphaned" : "cancelled; the runner did not settle it",
+  }, Date.now(), { waitSeconds, expect: (current) => ["cancelling", "orphaned"].includes(current.status) });
+  return settled.applied
+    ? { id: taskId, outcome: "cancelled" }
+    : { id: taskId, outcome: settled.record.status, reason: `the record is ${settled.record.status}` };
+}
+
+/**
+ * A cancel is a cascade. The parent is claimed first, under `spawn.lock`, so that from
+ * that moment no child may be delegated under it and the descendants this pass will cancel
+ * are already all there are; then the descendants are cancelled leaves first, and the
+ * parent itself last. Every task gets one outcome, and a partial failure is reported as
+ * one so that a later `cancel` retries it (the lead model, item 2).
+ */
+export async function cancel(projectRoot: string, taskId: string, options: CancelOptions = {}): Promise<CancelResult> {
+  const config = loadConfig(projectRoot);
+  const waitSeconds = config.limits.lockWaitSeconds;
+  const grace = Math.max(0, config.limits.cancelGraceSeconds) * 1000;
+
+  let target: TaskRecord;
+  let snapshot: TaskRecord[];
+  const claim = await acquire(lockPath(projectRoot, spawnLockName()), {
+    operation: `cancel task ${taskId}`, waitSeconds,
+  });
+  try {
+    const { records } = scan(projectRoot);
+    const record = records.find((value) => value.id === taskId);
+    if (!record) return { ok: false, reason: `no task ${taskId}` };
+    if (options.leadTaskId !== undefined && !ownedBy(records, options.leadTaskId, taskId)) {
+      return {
+        ok: false,
+        reason: `refused cancel of task ${taskId}: lead task ${options.leadTaskId} did not delegate it`,
+      };
+    }
+    target = record;
+    if (claimable.has(record.status)) {
+      const claimed = await update(projectRoot, taskId, { status: "cancelling" }, Date.now(), {
+        waitSeconds, expect: (current) => claimable.has(current.status),
+      });
+      target = claimed.record;
+    }
+    // Taken after the claim and under the same lock a `delegate` validates under, so a
+    // concurrent delegation either sees this parent cancelling and is refused, or has
+    // already written its record and is in this snapshot.
+    snapshot = descendants(records, taskId);
+  } finally {
+    await claim.release();
+  }
+
+  // One task's trouble is that task's: a record this pass could not even write — a lock it
+  // could not take, a file that has gone — is reported beside the rest rather than left to
+  // abandon the cascade, because the tasks after it are the ones still holding engines.
+  async function attempt(id: string): Promise<Outcome> {
+    try {
+      return await terminate(projectRoot, id, grace, waitSeconds);
+    } catch (error) {
+      const status = scan(projectRoot).records.find((record) => record.id === id)?.status ?? "unknown";
+      return { id, outcome: status, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  const outcomes = new Map<string, Outcome>();
+  let pending = snapshot;
+  // A descendant that was itself delegating when the snapshot was taken can leave a
+  // grandchild behind it, so the ledger is read again until a round finds nothing new.
+  for (let round = 0; round < 4 && pending.length > 0; round++) {
+    for (const record of pending) outcomes.set(record.id, await attempt(record.id));
+    const { records } = scan(projectRoot);
+    pending = descendants(records, taskId).filter((record) => !outcomes.has(record.id) && activeStatuses.has(record.status));
+  }
+
+  // The parent last, and whatever became of its descendants: a lead left running because a
+  // child of it could not be settled would go on working after it was cancelled, and the
+  // child is named in the outcomes for the later cancel that retries it.
+  outcomes.set(taskId, isTerminal(target.status)
+    ? { id: taskId, outcome: `already ${target.status}` }
+    : await attempt(taskId));
+
+  // What is still active is what a later cancel retries, and saying so is the whole
+  // difference between a partial failure and a cascade that reported success over one.
+  for (const record of descendants(scan(projectRoot).records, taskId)) {
+    if (!activeStatuses.has(record.status)) continue;
+    outcomes.set(record.id, {
+      id: record.id, outcome: record.status,
+      reason: outcomes.get(record.id)?.reason ?? "still active after the cascade; cancel again to retry",
+    });
+  }
+  return { ok: true, outcomes: [...outcomes.values()] };
+}

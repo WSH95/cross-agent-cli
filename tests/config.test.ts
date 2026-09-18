@@ -11,7 +11,10 @@ import type { EngineName } from "../src/engines/types.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
-const limitDefaults = { maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5 };
+const limitDefaults = {
+  maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
+  cancelGraceSeconds: 5,
+};
 const sectionSixDefaults = {
   project: projectDefaults,
   roles: {
@@ -97,7 +100,10 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
       workspace: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
     },
     engines: { claude: { bin: "/custom/claude" }, codex: {}, grok: { bin: "custom-grok" } },
-    limits: { maxDepth: 2, stallMinutes: 0.5, waitDefaultSeconds: 0, duplicateWindowMinutes: 0, lockWaitSeconds: 0 },
+    limits: {
+      maxDepth: 2, stallMinutes: 0.5, waitDefaultSeconds: 0, duplicateWindowMinutes: 0, lockWaitSeconds: 0,
+      cancelGraceSeconds: 1.5,
+    },
     billing: "api",
   };
   writeConfig(root, explicit);
@@ -107,6 +113,18 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
   writeConfig(root, JSON.parse('{"roles":{"__proto__":{"engine":"claude"}}}'));
   assert.deepEqual(Object.keys(config.loadConfig(root).roles), ["__proto__"]);
   assert.equal(config.loadConfig(root).roles.__proto__.engine, "claude");
+});
+
+test("a role may bind the prompt its specialist is launched with", (t) => {
+  const root = project(t);
+  writeConfig(root, { roles: { planner: { engine: "codex", prompt: "You are the planner. Report a plan." } } });
+  assert.deepEqual(config.loadConfig(root).roles.planner, {
+    engine: "codex", prompt: "You are the planner. Report a plan.", cwd: "root", sandbox: "read-only",
+  });
+  // Until modes own the role prompts (step 8), a role that binds none is launched with a
+  // one-line default, so the key is optional and nothing fills it in here.
+  writeConfig(root, { roles: { planner: { engine: "codex" } } });
+  assert.equal("prompt" in config.loadConfig(root).roles.planner, false);
 });
 
 test("a role's sandbox profile must be one its own engine accepts", (t) => {
@@ -166,7 +184,7 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
     invalid.push([{ roles: {}, project: { [field]: null } }, `project.${field}`]);
     invalid.push([{ roles: {}, project: { [field]: 1 } }, `project.${field}`]);
   }
-  for (const field of ["model", "effort", "cwd", "sandbox"]) {
+  for (const field of ["model", "effort", "prompt", "cwd", "sandbox"]) {
     invalid.push([{ roles: { planner: { engine: "codex", [field]: null } } }, `roles.planner.${field}`]);
     invalid.push([{ roles: { planner: { engine: "codex", [field]: 1 } } }, `roles.planner.${field}`]);
   }

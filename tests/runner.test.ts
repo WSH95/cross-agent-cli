@@ -418,6 +418,26 @@ test("normal runner records both identities while running and finishes done with
   } finally { await h.cleanup(); }
 });
 
+test("the acknowledgement stamps acknowledgedAt once, and nothing later moves it", async () => {
+  const h = harness();
+  try {
+    assert.equal(h.record.acknowledgedAt, undefined, "a launching record has not been answered yet");
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1", ACTIVITY: "1" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    assert.equal(typeof running.acknowledgedAt, "number");
+    assert.ok(running.acknowledgedAt! >= running.createdAt);
+    assert.ok(running.acknowledgedAt! <= Date.now());
+    // The stall clock measures from this moment, so the activity writes that follow, and
+    // the settlement itself, must leave it exactly where the acknowledgement put it.
+    await poll(h.read, (record) => Boolean(record.lastEventAt && record.lastEventAt > running.acknowledgedAt!));
+    fs.writeFileSync(h.release, "go");
+    const done = await poll(h.read, terminal);
+    assert.equal(done.status, "done");
+    assert.equal(done.acknowledgedAt, running.acknowledgedAt);
+    await poll(() => child.closed, Boolean);
+  } finally { await h.cleanup(); }
+});
+
 test("process helpers reject stale identities and signal only the verified group", async (t) => {
   const helpers = await import("../src/process.ts");
   const h = harness();

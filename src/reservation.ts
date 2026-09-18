@@ -83,9 +83,34 @@ export function reservations(projectRoot: string): Reservations {
 }
 
 /**
- * The task holding `target`, or null. `known` lets a caller that already scanned — one
- * deciding on `unknown` in the same breath — answer both questions from one scan.
+ * Whether `inner` is `outer` or lies beneath it, compared segment by segment: `/a/b` is
+ * not `/a/bc`, which a string prefix would have said it was. Both paths are canonical
+ * already, so this is a comparison and never a filesystem question.
+ */
+function covers(outer: string, inner: string): boolean {
+  if (outer === inner) return true;
+  const relative = path.relative(outer, inner);
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+/**
+ * The task holding `target`, or null. A reservation covers its own path and everything
+ * beneath it, in both directions: two tasks writing to `<w>` and `<w>/src` are writing to
+ * one tree, and a task at the project root would contain every worktree under it (design
+ * section 2, bead `atc-vuu`). Where several reservations cover one path — which the check
+ * exists to prevent, but which a damaged ledger can still hold — the answer is the task
+ * that took its path first, by `createdAt` then by id, as `reservations` decides a single
+ * path. `known` lets a caller that already scanned — one deciding on `unknown` in the same
+ * breath — answer both questions from one scan.
  */
 export function reservedBy(projectRoot: string, target: string, known: Reservations = reservations(projectRoot)): TaskRecord | null {
-  return known.reserved.get(canonicalPath(target)) ?? null;
+  const canonical = canonicalPath(target);
+  let holder: TaskRecord | null = null;
+  for (const [reserved, record] of known.reserved) {
+    if (!covers(reserved, canonical) && !covers(canonical, reserved)) continue;
+    const earlier = holder === null || record.createdAt < holder.createdAt
+      || (record.createdAt === holder.createdAt && record.id < holder.id);
+    if (earlier) holder = record;
+  }
+  return holder;
 }

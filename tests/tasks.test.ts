@@ -1,0 +1,425 @@
+import test from "node:test";
+import type { TestContext } from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
+import type { Authority } from "../src/authority.ts";
+import { delegate } from "../src/delegate.ts";
+import { create, currentBootId, read, update, writeSpec } from "../src/ledger.ts";
+import type { TaskRecord } from "../src/ledger.ts";
+import { acquire, lockPath, recordLockName } from "../src/locks.ts";
+import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
+import type { Outcome } from "../src/tasks.ts";
+import { sandboxFor } from "../src/engines/registry.ts";
+import { alive, engineEnv, poll, project, proc } from "./helpers/project.ts";
+import type { TestProject } from "./helpers/project.ts";
+
+const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
+
+function leadRow(taskId: string, depth = 1): Authority {
+  return { row: "lead", reason: `lead by ancestry: task ${taskId} (lead, running)`, taskId, depth };
+}
+
+function configFor(bin: string, limits: Record<string, number> = {}): Record<string, unknown> {
+  return {
+    roles: {
+      lead: { engine: "grok", cwd: "root", sandbox: "read-only" },
+      planner: { engine: "grok", cwd: "root", sandbox: "read-only" },
+      implementer: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
+    },
+    engines: { grok: { bin } },
+    limits: { maxDepth: 3, lockWaitSeconds: 2, duplicateWindowMinutes: 10, cancelGraceSeconds: 5, ...limits },
+    billing: "subscription",
+  };
+}
+
+async function projectWithRoles(t: TestContext, limits: Record<string, number> = {}): Promise<TestProject> {
+  const created = await project(t, configFor("placeholder", limits));
+  fs.writeFileSync(path.join(created.root, ".cross-agent", "config.json"), JSON.stringify(configFor(created.bin, limits)));
+  return created;
+}
+
+/** A launched task of this project, stalling until it is cancelled. */
+async function launch(
+  p: TestProject,
+  values: { role: string; cwd: string; branch?: string; authority?: Authority; script?: string; brief?: string },
+): Promise<TaskRecord> {
+  const result = await delegate(p.root, {
+    role: values.role, brief: values.brief ?? `work for ${values.role} in ${values.cwd}`, cwd: values.cwd, branch: values.branch,
+  }, {
+    authority: values.authority ?? operator,
+    env: engineEnv(p, { FAKE_ENGINE_SCRIPT: values.script ?? "stall" }),
+  });
+  assert.equal(result.ok, true, `delegate refused: ${JSON.stringify(result)}`);
+  return poll(() => p.record(result.taskId), (record) => record.status === "running");
+}
+
+/** A record written straight to the ledger, with the launch spec a real one would carry. */
+async function seed(
+  root: string,
+  values: { role: string; cwd: string; status?: TaskRecord["status"]; parentTaskId?: string; resumedFrom?: string; identity?: boolean },
+): Promise<TaskRecord> {
+  const record = create(root, {
+    role: values.role, brief: `seeded ${values.role} ${values.cwd}`, cwd: values.cwd, engine: "grok",
+    depth: 1, parentTaskId: values.parentTaskId, resumedFrom: values.resumedFrom,
+  });
+  writeSpec(root, record.id, {
+    role: values.role, brief: "seeded", rolePrompt: "seeded", cwd: values.cwd, engine: "grok",
+    sandbox: sandboxFor("grok", "read-only"), sessionId: "seeded-session", denyTargets: [], env: {},
+    scratchDir: path.dirname(record.logPath),
+    adapterModule: path.join(fs.realpathSync(path.join(import.meta.dirname, "..")), "src", "engines", "grok.ts"),
+  });
+  const patch = values.identity ? { engineIdentity: await deadIdentity() } : {};
+  if (!values.status || values.status === "launching") {
+    if (values.identity) assert.equal((await update(root, record.id, patch)).applied, true);
+    return read(root, record.id);
+  }
+  const moved = await update(root, record.id, { status: values.status, ...patch });
+  assert.equal(moved.applied, true, `seed could not reach ${values.status}`);
+  return moved.record;
+}
+
+/** The identity of a process that has exited and been reaped: dead, and not a reused pid. */
+async function deadIdentity(): Promise<{ pid: number; startTime: string; pgid: number; bootId: string }> {
+  const child = spawn(process.execPath, ["-e", ""], { detached: true, stdio: "ignore" });
+  const pid = child.pid!;
+  const startTime = await poll(() => proc(pid)?.startTime ?? null, (value) => value !== null) as string;
+  await once(child, "close");
+  await poll(() => proc(pid), (value) => value === null);
+  return { pid, startTime, pgid: pid, bootId: currentBootId };
+}
+
+function outcomeOf(outcomes: Outcome[], id: string): Outcome {
+  const found = outcomes.find((entry) => entry.id === id);
+  assert.ok(found, `no outcome for ${id} in ${JSON.stringify(outcomes)}`);
+  return found;
+}
+
+function cancelled(result: Awaited<ReturnType<typeof cancel>>): Outcome[] {
+  assert.equal(result.ok, true, `cancel refused: ${JSON.stringify(result)}`);
+  return result.outcomes;
+}
+
+function record(id: string, values: Partial<TaskRecord> = {}): TaskRecord {
+  return {
+    id, role: "implementer", briefHash: "hash", cwd: "/w", engine: "grok", status: "running",
+    createdAt: 0, updatedAt: 0, launchDeadline: 0, resultPath: `/t/${id}.out`, logPath: `/t/${id}.ndjson`,
+    depth: 1, ...values,
+  };
+}
+
+test("lineage ids are a resume chain, and ownership is the parent chain that reaches one", () => {
+  // A lead resumed twice, a child delegated under the first record, and a grandchild.
+  const records = [
+    record("L1", { role: "lead" }), record("L2", { role: "lead", resumedFrom: "L1" }),
+    record("L3", { role: "lead", resumedFrom: "L2" }),
+    record("C", { parentTaskId: "L1" }), record("C2", { parentTaskId: "L1", resumedFrom: "C" }),
+    record("G", { parentTaskId: "C2" }), record("stranger", {}), record("other", { parentTaskId: "stranger" }),
+  ];
+  assert.deepEqual(lineageIds(records, "L3"), ["L3", "L2", "L1"]);
+  assert.deepEqual(lineageIds(records, "L1"), ["L1"]);
+  assert.deepEqual(lineageIds(records, "unknown"), ["unknown"]);
+
+  // The last record of the chain owns what the earlier ones were delegated, which is what
+  // keeps a cascade complete across a resume (the lead model, item 2).
+  for (const id of ["C", "C2", "G"]) assert.equal(ownedBy(records, "L3", id), true, id);
+  assert.equal(ownedBy(records, "L1", "G"), true, "ownership is transitive through the parent chain");
+  // An earlier record of the chain does not own what a later one was delegated.
+  assert.equal(ownedBy(records, "L2", "L3"), false);
+  assert.equal(ownedBy(records, "L3", "other"), false);
+  assert.equal(ownedBy(records, "L3", "L3"), false, "a task is not its own descendant");
+
+  // A damaged ledger is answered, not hung on.
+  const cycle = [record("A", { resumedFrom: "B", parentTaskId: "B" }), record("B", { resumedFrom: "A", parentTaskId: "A" })];
+  assert.deepEqual(lineageIds(cycle, "A").sort(), ["A", "B"]);
+  assert.equal(ownedBy(cycle, "A", "B"), true);
+});
+
+test("check reports the task, what is running it, and the tail of its own event stream", async (t) => {
+  const p = await projectWithRoles(t);
+  const running = await launch(p, { role: "planner", cwd: p.root });
+  await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes("working"));
+  // The runner persists the engine's activity on its own 2-second interval.
+  await poll(() => p.record(running.id).lastEventAt, (value) => Boolean(value));
+
+  const answer = check(p.root, running.id, { now: running.createdAt + 90_000 });
+  assert.equal(answer.ok, true);
+  assert.equal(answer.ok && answer.status, "running");
+  assert.equal(answer.ok && answer.role, "planner");
+  assert.equal(answer.ok && answer.engine, "grok");
+  assert.equal(answer.ok && answer.model, null);
+  assert.equal(answer.ok && answer.effort, null);
+  assert.equal(answer.ok && answer.elapsedSeconds, 90);
+  assert.equal(answer.ok && answer.depth, 1);
+  assert.ok(answer.ok && answer.lastEventAt, "the runner persists the engine's last event on the record");
+  // The activity is the engine's own lines, as the runner tees them.
+  const activity = answer.ok ? answer.lastActivity : [];
+  assert.ok(activity.length > 0);
+  assert.ok(activity.some((line) => line.includes("working")), JSON.stringify(activity));
+  assert.equal(activity.at(-1), fs.readFileSync(running.logPath, "utf8").trim().split("\n").at(-1));
+  const one = check(p.root, running.id, { lines: 1 });
+  assert.equal(one.ok && one.lastActivity.length, 1);
+
+  // A settled task's elapsed time stops at its settlement, and a task nobody has is named.
+  assert.equal((await update(p.root, running.id, { status: "cancelling" })).applied, true);
+  const done = (await update(p.root, running.id, { status: "cancelled" }, running.createdAt + 5_000)).record;
+  const after = check(p.root, running.id, { now: done.updatedAt + 600_000 });
+  assert.equal(after.ok && after.elapsedSeconds, 5);
+  const missing = check(p.root, "no-such-task");
+  assert.deepEqual(missing, { ok: false, reason: "no task no-such-task" });
+});
+
+test("result is the final message in full, and a task still running has only its status", async (t) => {
+  const p = await projectWithRoles(t);
+  const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root }, {
+    authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+  });
+  assert.equal(started.ok, true);
+  const id = started.ok ? started.taskId : "";
+  const running = await poll(() => p.record(id), (value) => value.status === "running");
+  assert.deepEqual(result(p.root, id), { ok: true, id, status: "running", settled: false });
+
+  // The runner writes the final message itself, which is what `result` reads back.
+  fs.writeFileSync(running.resultPath, "the final message, in full\nwith a second line\n");
+  assert.equal((await update(p.root, id, { status: "done", sessionId: "fake-7" })).applied, true);
+  assert.deepEqual(result(p.root, id), {
+    ok: true, id, status: "done", sessionId: "fake-7", result: "the final message, in full\nwith a second line\n",
+  });
+  // A settled task whose result file never arrived says so rather than inventing one.
+  fs.rmSync(running.resultPath);
+  assert.equal(result(p.root, id).ok && (result(p.root, id) as { result: string | null }).result, null);
+  assert.deepEqual(result(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+});
+
+test("list_tasks reconciles first: an orphan is settled, an unreadable record is named", async (t) => {
+  const p = await projectWithRoles(t);
+  const orphan = await seed(p.root, { role: "planner", cwd: p.root, status: "orphaned", identity: true });
+  // A real task, because a `running` record whose runner is gone is exactly what this pass
+  // settles: the live one has to have a runner for the pass to leave it alone.
+  const live = await launch(p, { role: "planner", cwd: p.root });
+  const broken = path.join(p.root, ".cross-agent", "tasks", "broken.json");
+  fs.writeFileSync(broken, "{not a record");
+
+  const listed = await listTasks(p.root);
+  assert.equal(listed.ok, true);
+  // Cleanup settled the orphan whose group is gone, and the listing shows what it wrote.
+  assert.equal(listed.tasks.find((task) => task.id === orphan.id)?.status, "failed");
+  assert.equal(p.record(orphan.id).reason, "runner lost");
+  assert.equal(listed.tasks.find((task) => task.id === live.id)?.status, "running");
+  assert.deepEqual(listed.invalid.map((entry) => entry.file), [broken]);
+  assert.ok(listed.invalid[0].reason.length > 0);
+  assert.deepEqual(listed.errors, []);
+  assert.deepEqual(listed.skipped, []);
+
+  // Newest first, every task with the engine, model and effort running it, filtered on ask.
+  assert.deepEqual(listed.tasks.map((task) => task.id), [live.id, orphan.id]);
+  for (const task of listed.tasks) {
+    assert.equal(task.engine, "grok");
+    assert.equal(task.model, null);
+    assert.equal(task.effort, null);
+  }
+  assert.deepEqual((await listTasks(p.root, "running")).tasks.map((task) => task.id), [live.id]);
+  assert.deepEqual((await listTasks(p.root, "done")).tasks, []);
+});
+
+test("a cancel of a running task is settled by its own runner, with both identities and no live group", async (t) => {
+  const p = await projectWithRoles(t);
+  const running = await launch(p, { role: "planner", cwd: p.root });
+  const outcomes = cancelled(await cancel(p.root, running.id));
+
+  assert.deepEqual(outcomes, [{ id: running.id, outcome: "cancelled" }]);
+  const settled = p.record(running.id);
+  assert.equal(settled.status, "cancelled");
+  assert.deepEqual(settled.engineIdentity, running.engineIdentity);
+  assert.deepEqual(settled.runnerIdentity, running.runnerIdentity);
+  assert.equal(alive(settled.engineIdentity), false);
+  assert.equal(alive(settled.runnerIdentity), false);
+  // A second cancel of a settled task says so and changes nothing.
+  const again = cancelled(await cancel(p.root, running.id));
+  assert.deepEqual(again, [{ id: running.id, outcome: "already cancelled" }]);
+  assert.equal(p.record(running.id).updatedAt, settled.updatedAt);
+});
+
+test("a cancel whose runner is already dead ends the engine group by the identity the record carries", async (t) => {
+  const p = await projectWithRoles(t);
+  const running = await launch(p, { role: "planner", cwd: p.root });
+  // The runner is gone before the cancel arrives, so nothing will settle the record for it.
+  process.kill(running.runnerIdentity!.pid, "SIGKILL");
+  await poll(() => alive(running.runnerIdentity), (value) => value === false);
+  assert.equal(alive(running.engineIdentity), true, "the engine outlives its runner");
+
+  const outcomes = cancelled(await cancel(p.root, running.id));
+  assert.deepEqual(outcomes, [{ id: running.id, outcome: "cancelled" }]);
+  const settled = p.record(running.id);
+  assert.equal(settled.status, "cancelled");
+  assert.equal(settled.reason, "cancelled; the runner did not settle it");
+  assert.deepEqual(settled.engineIdentity, running.engineIdentity);
+  assert.equal(alive(running.engineIdentity), false);
+});
+
+test("a cancel of an orphaned record terminates its group and settles it from where it is", async (t) => {
+  const p = await projectWithRoles(t);
+  const running = await launch(p, { role: "planner", cwd: p.root });
+  process.kill(running.runnerIdentity!.pid, "SIGKILL");
+  await poll(() => alive(running.runnerIdentity), (value) => value === false);
+  // Reconciliation adopts an engine whose runner is gone; the ledger then allows
+  // `orphaned -> failed | cancelled` and nothing else.
+  assert.equal((await update(p.root, running.id, { status: "orphaned" })).applied, true);
+
+  assert.deepEqual(cancelled(await cancel(p.root, running.id)), [{ id: running.id, outcome: "cancelled" }]);
+  const settled = p.record(running.id);
+  assert.equal(settled.status, "cancelled");
+  assert.equal(settled.reason, "cancelled while orphaned");
+  assert.equal(alive(running.engineIdentity), false);
+});
+
+test("a cascade cancels the leaves first, then the lead, and reports one outcome per task", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  const first = await p.worktree("task/one");
+  const second = await p.worktree("task/two");
+  const lead = await launch(p, { role: "lead", cwd: p.root });
+  const childA = await launch(p, { role: "implementer", cwd: first, branch: "task/one", authority: leadRow(lead.id) });
+  const childB = await launch(p, { role: "implementer", cwd: second, branch: "task/two", authority: leadRow(lead.id) });
+  // A task of a task: ownership is the whole parent chain, not one generation of it.
+  const grandchild = await seed(p.root, { role: "planner", cwd: p.root, status: "running", parentTaskId: childA.id, identity: true });
+
+  const outcomes = cancelled(await cancel(p.root, lead.id));
+  assert.equal(outcomes.length, 4);
+  assert.equal(outcomes[0].id, grandchild.id, "the deepest task is cancelled first");
+  assert.equal(outcomes.at(-1)!.id, lead.id, "and the lead itself last");
+  for (const id of [grandchild.id, childA.id, childB.id, lead.id]) {
+    assert.equal(outcomeOf(outcomes, id).outcome, "cancelled", id);
+    assert.equal(p.record(id).status, "cancelled", id);
+  }
+  for (const identity of [lead, childA, childB].map((value) => value.engineIdentity)) {
+    assert.equal(alive(identity), false);
+  }
+  // The lead was claimed before the descendants were cancelled, so its own settlement is
+  // the last write of the cascade.
+  for (const id of [childA.id, childB.id, grandchild.id]) {
+    assert.ok(p.record(lead.id).updatedAt >= p.record(id).updatedAt, id);
+  }
+});
+
+test("an orphaned lead settles its children first, then its own group, from where it is", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  const worktree = await p.worktree("task/orphaned-lead");
+  const lead = await launch(p, { role: "lead", cwd: p.root });
+  const child = await launch(p, { role: "implementer", cwd: worktree, branch: "task/orphaned-lead", authority: leadRow(lead.id) });
+  // The lead's runner is gone and reconciliation has adopted its engine; from `orphaned`
+  // the ledger allows `failed | cancelled`, so the cascade may not claim it `cancelling`.
+  process.kill(lead.runnerIdentity!.pid, "SIGKILL");
+  await poll(() => alive(lead.runnerIdentity), (value) => value === false);
+  assert.equal((await update(p.root, lead.id, { status: "orphaned" })).applied, true);
+
+  const outcomes = cancelled(await cancel(p.root, lead.id));
+  assert.deepEqual(outcomes.map((outcome) => outcome.id), [child.id, lead.id]);
+  assert.equal(outcomeOf(outcomes, child.id).outcome, "cancelled");
+  assert.equal(outcomeOf(outcomes, lead.id).outcome, "cancelled");
+  assert.equal(p.record(lead.id).reason, "cancelled while orphaned");
+  assert.equal(alive(lead.engineIdentity), false);
+  assert.equal(alive(child.engineIdentity), false);
+  // The child was settled before the lead's own group was ended.
+  assert.ok(p.record(lead.id).updatedAt >= p.record(child.id).updatedAt);
+});
+
+test("a cascade reaches the children of the records a resumed lead continues", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  const worktree = await p.worktree("task/resumed-lead");
+  const first = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
+  const child = await launch(p, { role: "implementer", cwd: worktree, branch: "task/resumed-lead", authority: leadRow(first.id) });
+  // The lead was killed and reattached twice; each resume is a new record of one chain.
+  assert.equal((await update(p.root, first.id, { status: "failed" })).applied, true);
+  const second = await seed(p.root, { role: "lead", cwd: p.root, status: "failed", resumedFrom: first.id });
+  const third = await seed(p.root, { role: "lead", cwd: p.root, status: "running", resumedFrom: second.id });
+
+  // The child was delegated under the first record of the chain; the last record of it is
+  // the lead now, and cancelling that lead has to reach the child all the same.
+  const outcomes = cancelled(await cancel(p.root, third.id));
+  assert.deepEqual(outcomes.map((outcome) => outcome.id), [child.id, third.id]);
+  assert.equal(outcomeOf(outcomes, child.id).outcome, "cancelled");
+  assert.equal(p.record(child.id).status, "cancelled");
+  assert.equal(alive(child.engineIdentity), false);
+});
+
+test("a lead may cancel only what it delegated, and a terminal lead still settles what survives it", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/owned");
+  const lead = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
+  const child = await launch(p, { role: "implementer", cwd: worktree, branch: "task/owned", authority: leadRow(lead.id) });
+  const stranger = await seed(p.root, { role: "planner", cwd: p.root, status: "running" });
+
+  const refused = await cancel(p.root, stranger.id, { leadTaskId: lead.id });
+  assert.equal(refused.ok, false);
+  assert.match(refused.ok === false ? refused.reason : "", new RegExp(`refused cancel of task ${stranger.id}`));
+  assert.match(refused.ok === false ? refused.reason : "", new RegExp(`lead task ${lead.id} did not delegate it`));
+  assert.equal(p.record(stranger.id).status, "running", "a refusal touches nothing");
+  // Its own child it may cancel.
+  assert.equal(outcomeOf(cancelled(await cancel(p.root, child.id, { leadTaskId: lead.id })), child.id).outcome, "cancelled");
+
+  // A lead that has already failed still has a descendant to settle: this is the retry
+  // after a partial failure, and it is what makes a second cancel worth calling.
+  const survivor = await launch(p, { role: "planner", cwd: p.root, authority: leadRow(lead.id) });
+  assert.equal((await update(p.root, lead.id, { status: "failed" })).applied, true);
+  const outcomes = cancelled(await cancel(p.root, lead.id));
+  assert.deepEqual(outcomeOf(outcomes, lead.id), { id: lead.id, outcome: "already failed" });
+  assert.equal(outcomeOf(outcomes, survivor.id).outcome, "cancelled");
+  assert.equal(alive(survivor.engineIdentity), false);
+});
+
+test("a task a cascade could not write is reported as such, and a later cancel finishes it", async (t) => {
+  const p = await projectWithRoles(t, { lockWaitSeconds: 0, cancelGraceSeconds: 1 });
+  const lead = await launch(p, { role: "lead", cwd: p.root });
+  const child = await seed(p.root, { role: "planner", cwd: p.root, status: "running", parentTaskId: lead.id, identity: true });
+
+  // Another writer holds the child's record lock, and this project waits no time at all,
+  // so the cascade cannot write that one task. It must report it rather than abandon the rest.
+  const held = await acquire(lockPath(p.root, recordLockName(child.id)), { operation: "the test holds it", waitSeconds: 2 });
+  const partial = cancelled(await cancel(p.root, lead.id));
+  const failure = outcomeOf(partial, child.id);
+  assert.equal(failure.outcome, "running");
+  assert.match(failure.reason ?? "", /lock/);
+  assert.equal(p.record(child.id).status, "running");
+  // The lead is settled all the same: one left running because a child of it could not be
+  // written would go on working after it was cancelled.
+  assert.equal(outcomeOf(partial, lead.id).outcome, "cancelled");
+
+  await held.release();
+  const retry = cancelled(await cancel(p.root, lead.id));
+  assert.equal(outcomeOf(retry, child.id).outcome, "cancelled");
+  assert.equal(outcomeOf(retry, lead.id).outcome, "already cancelled");
+  assert.equal(p.record(child.id).status, "cancelled");
+  assert.equal(p.record(lead.id).status, "cancelled");
+});
+
+test("a delegation racing a cascade is either refused or cancelled with the rest", async (t) => {
+  const p = await projectWithRoles(t);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const worktree = await p.worktree(`task/race-${attempt}`);
+    const lead = await launch(p, { role: "lead", cwd: p.root, brief: `lead of round ${attempt}` });
+    const [child, outcomes] = await Promise.all([
+      delegate(p.root, { role: "implementer", brief: "race", cwd: worktree, branch: `task/race-${attempt}` }, {
+        authority: leadRow(lead.id), env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+      }),
+      cancel(p.root, lead.id),
+    ]);
+    assert.equal(outcomes.ok, true);
+    if (child.ok) {
+      // It was written under the same lock the cascade snapshots under, so it is in the
+      // cascade; a child the cascade never saw would be an engine nobody cancels.
+      const settled = await poll(() => p.record(child.taskId), (record) => ["cancelled", "failed"].includes(record.status));
+      assert.equal(settled.status, "cancelled", `${attempt}: ${JSON.stringify(outcomes.ok && outcomes.outcomes)}`);
+      assert.ok(outcomes.ok && outcomes.outcomes.some((outcome) => outcome.id === child.taskId));
+    } else {
+      assert.match(child.reason, new RegExp(`parent task ${lead.id} is cancelling`));
+    }
+    assert.equal(p.record(lead.id).status, "cancelled");
+  }
+});
+
+test("a cancel names a task nobody has rather than inventing one", async (t) => {
+  const p = await projectWithRoles(t);
+  assert.deepEqual(await cancel(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+});

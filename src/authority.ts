@@ -48,7 +48,11 @@ function statOf(pid: number): { ppid: number; startTime: string } | string {
     return `cannot read /proc/${pid}/stat: ${error instanceof Error ? error.message : String(error)}`;
   }
   if (stat === null) return `cannot read /proc/${pid}/stat: no such process`;
-  if (!/^\d+$/.test(stat.startTime ?? "")) return `cannot read /proc/${pid}/stat: malformed`;
+  // Both fields the walk goes on to use, checked where the file was read: a malformed line
+  // yields a NaN ppid, and the failure has to name the pid whose stat it was.
+  if (!/^\d+$/.test(stat.startTime ?? "") || !Number.isInteger(stat.ppid) || stat.ppid < 0) {
+    return `cannot read /proc/${pid}/stat: malformed`;
+  }
   return stat;
 }
 

@@ -17,6 +17,12 @@ export interface RoleConfig {
   engine: EngineName;
   model?: string;
   effort?: string;
+  /**
+   * The system-level prompt this role's specialist is launched with. It belongs to the
+   * mode (design section 8), and config carries it until modes exist (step 8); a role
+   * that binds none is launched with a one-line default.
+   */
+  prompt?: string;
   cwd: "root" | "worktree";
   sandbox: SandboxProfile;
 }
@@ -25,7 +31,12 @@ export interface CrossAgentConfig {
   project: { defaultBranch: string; testCommand: string; setupCommand: string; mergePolicy: string };
   roles: Record<string, RoleConfig>;
   engines?: Record<string, { bin?: string }>;
-  limits: { maxDepth: number; stallMinutes: number; waitDefaultSeconds: number; duplicateWindowMinutes: number; lockWaitSeconds: number };
+  limits: {
+    maxDepth: number; stallMinutes: number; waitDefaultSeconds: number; duplicateWindowMinutes: number;
+    lockWaitSeconds: number;
+    /** How long `cancel` gives a runner to settle a task before it terminates the engine group itself. */
+    cancelGraceSeconds: number;
+  };
   billing: "subscription" | "api";
 }
 
@@ -39,6 +50,7 @@ const projectDefaults: CrossAgentConfig["project"] = {
 };
 const limitDefaults: CrossAgentConfig["limits"] = {
   maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
+  cancelGraceSeconds: 5,
 };
 const defaultConfig: CrossAgentConfig = {
   project: projectDefaults,
@@ -97,6 +109,7 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
     const engine = oneOf(role.engine, `${field}.engine`, engineNames);
     optionalString(role, "model", field);
     optionalString(role, "effort", field);
+    optionalString(role, "prompt", field);
     const cwd = oneOf(role.cwd === undefined ? "root" : role.cwd, `${field}.cwd`, ["root", "worktree"] as const);
     const sandbox = oneOf(role.sandbox === undefined ? "read-only" : role.sandbox, `${field}.sandbox`, sandboxProfiles);
     // A profile means nothing apart from the engine that declares it: `workspace` is

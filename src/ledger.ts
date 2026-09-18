@@ -26,7 +26,14 @@ export interface CreateTask {
   brief: string;
   cwd: string;
   engine: string;
-  model?: string;
+  model?: string | null;
+  effort?: string | null;
+  /** The new task's own depth, which is its caller's plus one. A task nobody delegated is 0. */
+  depth?: number;
+  /** The lead whose delegation this is, when a lead delegated it (the lead model, cascade ownership). */
+  parentTaskId?: string | null;
+  /** The record this one continues, when it is a `resume` (design section 2, the reattach rule). */
+  resumedFrom?: string | null;
 }
 
 export interface TaskRecord {
@@ -35,7 +42,9 @@ export interface TaskRecord {
   briefHash: string;
   cwd: string;
   engine: string;
-  model?: string;
+  /** What the delegation resolved to: the request's override, else the role's binding, else null. */
+  model?: string | null;
+  effort?: string | null;
   status: TaskStatus;
   createdAt: number;
   updatedAt: number;
@@ -47,6 +56,24 @@ export interface TaskRecord {
   resultPath: string;
   logPath: string;
   sessionId?: string | null;
+  /**
+   * Written by `delegate` and read by the loop guard's depth cap (design section 5, layer
+   * 1). A record an earlier build wrote carries none, which is why nothing dereferences it
+   * without a default.
+   */
+  depth: number;
+  /**
+   * The lead this task belongs to, preserved across `resume`, and what a cascade cancel
+   * follows (the lead model, item 2). Null for a task the operator delegated.
+   */
+  parentTaskId?: string | null;
+  /** The record this one continues; the chain of them is a resume chain (design section 2). */
+  resumedFrom?: string | null;
+  /**
+   * When the runner's `launching → running` acknowledgement landed, written once and never
+   * again: the stall clock measures from it rather than from a launch nobody answered.
+   */
+  acknowledgedAt?: number | null;
   reason?: string;
   /** The engine's stdio drain expired: this record's evidence may be missing its tail. */
   truncated?: boolean;
@@ -96,8 +123,9 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
   cancelled: [],
 };
 const patchFields = new Set<string>([
-  "role", "briefHash", "cwd", "engine", "model", "status", "launchDeadline", "runnerIdentity", "engineIdentity",
+  "role", "briefHash", "cwd", "engine", "model", "effort", "status", "launchDeadline", "runnerIdentity", "engineIdentity",
   "lastEventAt", "exitCode", "resultPath", "logPath", "sessionId", "reason", "truncated",
+  "depth", "parentTaskId", "resumedFrom", "acknowledgedAt",
 ] satisfies (keyof TaskPatch)[]);
 
 function initialize(projectRoot: string): string {
@@ -175,6 +203,20 @@ function recordFault(value: unknown, file: string): string | null {
     if (fault !== null) return `${field} ${fault}`;
   }
   if (record.truncated !== undefined && typeof record.truncated !== "boolean") return "truncated must be a boolean";
+  // The delegation fields. Each is absent from a record an earlier build wrote and null
+  // where a task has none, so absence and null are answers and anything else is a fault.
+  if (record.depth !== undefined && (typeof record.depth !== "number" || !Number.isFinite(record.depth))) {
+    return "depth must be a finite number";
+  }
+  for (const field of ["model", "effort", "parentTaskId", "resumedFrom"] as const) {
+    if (record[field] !== undefined && record[field] !== null && typeof record[field] !== "string") {
+      return `${field} must be a string or null`;
+    }
+  }
+  if (record.acknowledgedAt !== undefined && record.acknowledgedAt !== null
+    && (typeof record.acknowledgedAt !== "number" || !Number.isFinite(record.acknowledgedAt))) {
+    return "acknowledgedAt must be a finite number or null";
+  }
   return null;
 }
 
@@ -223,12 +265,16 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
     cwd: input.cwd,
     engine: input.engine,
     ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.effort === undefined ? {} : { effort: input.effort }),
     status: "launching",
     createdAt: now,
     updatedAt: now,
     launchDeadline: now + 30_000,
     resultPath: path.join(directory, `${id}.out`),
     logPath: path.join(directory, `${id}.ndjson`),
+    depth: input.depth ?? 0,
+    ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
+    ...(input.resumedFrom === undefined ? {} : { resumedFrom: input.resumedFrom }),
   };
   writeAtomic(path.join(directory, `${id}.json`), record);
   return record;

@@ -46,8 +46,9 @@ function launchSpec(sandbox: LaunchSpec["sandbox"], engine: EngineName = "codex"
 /** A task at `status` on `cwd`, with the launch spec that says whether it may write. */
 async function task(
   root: string, cwd: string, status: TaskStatus, sandbox: LaunchSpec["sandbox"] | null, engine: EngineName = "codex",
+  createdAt = now,
 ): Promise<TaskRecord> {
-  const record = create(root, { role: "implementer", brief: `brief ${cwd} ${status}`, cwd, engine }, now);
+  const record = create(root, { role: "implementer", brief: `brief ${cwd} ${status}`, cwd, engine }, createdAt);
   if (sandbox !== null) writeSpec(root, record.id, launchSpec(sandbox, engine));
   let current = record;
   for (const step of routes[status]) {
@@ -193,4 +194,38 @@ test("a removed workspace is still reserved by the task that has not settled", a
   const record = await task(root, cwd, "running", writable);
   fs.rmSync(cwd, { recursive: true, force: true });
   assert.deepEqual(reservedBy(root, cwd), record);
+});
+
+test("a reservation covers its path, everything beneath it, and everything that contains it", async (t) => {
+  const root = project(t);
+  const held = workspace(root, "held");
+  const record = await task(root, held, "running", writable);
+
+  // Two tasks writing to `<w>` and `<w>/src` are writing to one tree.
+  assert.deepEqual(reservedBy(root, path.join(held, "src")), record);
+  assert.deepEqual(reservedBy(root, path.join(held, "src", "engines")), record);
+  // And a task at a directory above it would contain the whole of it.
+  assert.deepEqual(reservedBy(root, path.join(root, ".worktrees")), record);
+  assert.deepEqual(reservedBy(root, root), record);
+  // Segment by segment, never by string prefix: `/a/b` does not cover `/a/bc`.
+  assert.equal(reservedBy(root, `${held}c`), null);
+  assert.equal(reservedBy(root, path.join(root, ".worktrees", "heldc")), null);
+  assert.equal(reservedBy(root, workspace(root, "other")), null);
+  // Through a symlink and through a path that does not exist, the comparison is the same.
+  const alias = path.join(root, "alias");
+  fs.symlinkSync(path.join(root, ".worktrees"), alias, "dir");
+  assert.deepEqual(reservedBy(root, path.join(alias, "held", "deep", "not-created")), record);
+});
+
+test("the covering reservation answered is the task that took its path first", async (t) => {
+  const root = project(t);
+  const parent = workspace(root, "parent");
+  const child = path.join(parent, "nested");
+  fs.mkdirSync(child, { recursive: true });
+  // Two writable tasks on nested paths is what the check exists to prevent, but if one is
+  // ever seen the answer must not depend on the order the directory happened to list.
+  const first = await task(root, parent, "running", writable, "codex", now);
+  await task(root, child, "running", writable, "codex", now + 1000);
+  assert.deepEqual(reservedBy(root, path.join(child, "src")), first);
+  assert.deepEqual(reservedBy(root, parent), first);
 });

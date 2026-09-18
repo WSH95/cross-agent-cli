@@ -245,8 +245,10 @@ async function run(projectRoot: string, id: string): Promise<void> {
     identities = { runnerIdentity, engineIdentity: engine };
     // The acknowledgement claims a record that is still `launching`; anything else was
     // written by someone else while this runner was starting. Settlement waits for it,
-    // so even an immediate engine exit is not written before both identities are.
-    acknowledgement = write({ status: "running", ...identities, lastEventAt: handle.lastEventAt },
+    // so even an immediate engine exit is not written before both identities are. It is
+    // also the only writer of `acknowledgedAt`: the stall clock measures from the moment
+    // the engine was answered for, not from a launch nobody answered.
+    acknowledgement = write({ status: "running", ...identities, lastEventAt: handle.lastEventAt, acknowledgedAt: Date.now() },
       { expect: (current) => current.status === "launching" });
     const acknowledged = await acknowledgement;
     if (!acknowledged.applied) {

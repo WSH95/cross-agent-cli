@@ -105,8 +105,12 @@ test("initialize identifies the cross-agent server over stdio", async () => {
 test("tools/list offers each row of the permission matrix exactly its tools", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
+  const delegation = ["delegate", "check", "result", "cancel", "list_tasks"];
   for (const [row, expected] of [
-    ["operator", ["list_roles", "verify_worktree"]], ["lead", ["list_roles", "verify_worktree"]], ["specialist", ["list_roles"]],
+    ["operator", ["list_roles", "verify_worktree", ...delegation]],
+    ["lead", ["list_roles", "verify_worktree", ...delegation]],
+    // The specialist row is the read tools and nothing that starts or stops a task.
+    ["specialist", ["list_roles", "check", "result", "list_tasks"]],
   ] as const) {
     const request = inProcess({ tools: projectTools(root), authority: () => ({ row, reason: "test", depth: 0 }) });
     const tools = ((await request("tools/list")).result as Json).tools as Json[];
@@ -300,7 +304,7 @@ test("the entry point resolves its own row: a server carrying a task no record m
   const client = stdioClient(root, { env: { CROSS_AGENT_TASK: "no-such-task" } });
   try {
     const tools = ((await client.request("tools/list")).result as Json).tools as Json[];
-    assert.deepEqual(tools.map((tool) => tool.name), ["list_roles"]);
+    assert.deepEqual(tools.map((tool) => tool.name), ["list_roles", "check", "result", "list_tasks"]);
     const refused = await client.request("tools/call", { name: "verify_worktree", arguments: { path: root, branch: "main" } });
     assert.deepEqual(refused.error, {
       code: -32602,
@@ -353,4 +357,90 @@ test("ping is answered while a slow tool call is pending", async () => {
   await waitFor(() => replies.some((m) => m.id === 1));
   const slow = replies.find((m) => m.id === 1) as Json;
   assert.equal(((slow.result as Json).content as Json[])[0].text, "slow done");
+});
+
+test("the specialist row cannot delegate or cancel, and is refused by this server's own name", async (t) => {
+  const root = await projectWithConfig({ roles: { planner: { engine: "codex", cwd: "root", sandbox: "read-only" } } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const reason = "specialist by ancestry: task T (implementer, running)";
+  const request = inProcess({
+    tools: projectTools(root),
+    authority: () => ({ row: "specialist" as const, reason, taskId: "T", depth: 1 }),
+  });
+  for (const [name, args] of [
+    ["delegate", { role: "planner", brief: "do it", cwd: root }],
+    ["cancel", { task_id: "T" }],
+  ] as const) {
+    const refused = await request("tools/call", { name, arguments: args });
+    assert.deepEqual(refused.error, { code: -32602, message: `${name} is not available to a specialist server: ${reason}` });
+  }
+  // The read tools it does have answer normally, and no task was created by the refusals.
+  const listed = (await request("tools/call", { name: "list_tasks", arguments: {} })).result as Json;
+  assert.deepEqual(JSON.parse(((listed.content as Json[])[0].text as string)).tasks, []);
+});
+
+test("the delegation tools answer a refusal as an error result, and their arguments are checked", async (t) => {
+  const root = await projectWithConfig({ roles: { planner: { engine: "codex", cwd: "root", sandbox: "read-only" } } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const request = inProcess({ tools: projectTools(root), authority: () => operator });
+  const call = async (name: string, args: Json) => (await request("tools/call", { name, arguments: args }));
+
+  for (const name of ["check", "result", "cancel"]) {
+    const reply = await call(name, { task_id: "no-such-task" });
+    const result = reply.result as Json;
+    assert.equal(result.isError, true, name);
+    assert.deepEqual(JSON.parse((result.content as Json[])[0].text as string), { ok: false, reason: "no task no-such-task" }, name);
+  }
+  // A refusal `delegate` decided is the tool's own answer, not a protocol error.
+  const refused = (await call("delegate", { role: "nobody", brief: "b", cwd: root })).result as Json;
+  assert.equal(refused.isError, true);
+  assert.match(JSON.parse((refused.content as Json[])[0].text as string).reason as string, /no role "nobody"/);
+
+  // A request this server cannot read at all is a protocol error instead.
+  for (const [name, args] of [
+    ["delegate", {}], ["delegate", { role: "planner", brief: "b", cwd: 5 }], ["delegate", { role: "planner", brief: "b", cwd: root, force: "yes" }],
+    ["check", { task_id: "" }], ["check", { task_id: "t", lines: "ten" }], ["result", {}], ["cancel", { task_id: null }],
+    ["list_tasks", { status: "elsewhere" }],
+  ] as const) {
+    const reply = await call(name, args as Json);
+    assert.equal((reply.error as Json)?.code, -32602, `${name} ${JSON.stringify(args)}`);
+  }
+});
+
+test("a resolver that throws answers -32603, lists nothing, and runs no handler", async () => {
+  let ran = false;
+  const request = inProcess({
+    tools: [{
+      name: "guarded", description: "never runs", inputSchema: { type: "object", properties: {} }, rows: ["operator", "lead", "specialist"],
+      handler: () => { ran = true; return { content: [{ type: "text", text: "ran" }] }; },
+    }],
+    authority: () => { throw new Error("/proc/1/stat: permission denied"); },
+  });
+  const listed = await request("tools/list");
+  assert.deepEqual(listed.error, { code: -32603, message: "/proc/1/stat: permission denied" });
+  assert.equal(listed.result, undefined);
+  const called = await request("tools/call", { name: "guarded", arguments: {} });
+  assert.deepEqual(called.error, { code: -32603, message: "/proc/1/stat: permission denied" });
+  assert.equal(ran, false, "a row that could not be resolved runs nothing");
+});
+
+test("the server reconciles once before it serves and names on stderr what it could not decide", async (t) => {
+  const root = await projectWithConfig({ roles: {}, limits: { lockWaitSeconds: 0 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { create } = await import("../src/ledger.ts");
+  const { acquire, lockPath, recordLockName } = await import("../src/locks.ts");
+  // A launch nobody acknowledged, past its deadline: the pass has to judge it, and cannot,
+  // because another writer holds its record lock and this project waits no time at all.
+  const record = create(root, { role: "planner", brief: "b", cwd: root, engine: "codex" }, Date.now() - 60_000);
+  const held = await acquire(lockPath(root, recordLockName(record.id)), { operation: "the test holds it", waitSeconds: 2 });
+  t.after(() => held.release());
+
+  const child = spawn(process.execPath, [serverEntry, "--project", root], { stdio: ["pipe", "pipe", "pipe"], env: suiteEnv });
+  t.after(() => { child.kill(); });
+  let stderr = "";
+  child.stderr!.setEncoding("utf8");
+  child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
+  await waitFor(() => stderr.includes(record.id), 8000);
+  assert.match(stderr, new RegExp(`cross-agent: task ${record.id}: .*lock`));
+  assert.equal(record.status, "launching");
 });

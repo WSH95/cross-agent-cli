@@ -566,3 +566,78 @@ test("ledger initialization skips absent git directories and worktree pointer fi
   assert.deepEqual(read(linked, record.id), record);
   assert.equal(fs.readFileSync(path.join(linked, ".git"), "utf8"), pointer);
 });
+
+test("create writes the fields a cascade, a resume and a stall clock read", (t) => {
+  const root = project(t);
+  const child = create(root, {
+    ...input(root), effort: "high", depth: 1, parentTaskId: "lead-task", resumedFrom: "earlier-task",
+  }, now);
+  assert.equal(child.depth, 1);
+  assert.equal(child.parentTaskId, "lead-task");
+  assert.equal(child.resumedFrom, "earlier-task");
+  assert.equal(child.effort, "high");
+  assert.equal(child.acknowledgedAt, undefined, "only the runner's acknowledgement writes it");
+  assert.deepEqual(read(root, child.id), child);
+
+  // A task nobody delegated is at depth 0, has no parent and continues nothing. A null
+  // model or effort is what `delegate` writes when neither the request nor the role binds
+  // one, and it is kept as the answer rather than dropped.
+  const top = create(root, { ...input(root), model: null, effort: null }, now);
+  assert.equal(top.depth, 0);
+  assert.equal("parentTaskId" in top, false);
+  assert.equal("resumedFrom" in top, false);
+  assert.equal(top.model, null);
+  assert.equal(top.effort, null);
+  assert.deepEqual(read(root, top.id), top);
+});
+
+test("the delegation fields are patchable, and validated as what a reader dereferences", async (t) => {
+  const root = project(t);
+  const record = create(root, { ...input(root), depth: 1 }, now);
+  const running = await change(root, record.id, { status: "running", acknowledgedAt: now + 5 }, now + 5);
+  assert.equal(running.acknowledgedAt, now + 5);
+  // The stall clock reads it, so an activity write that says nothing about it keeps it.
+  assert.equal((await change(root, record.id, { lastEventAt: now + 9 }, now + 9)).acknowledgedAt, now + 5);
+  assert.equal((await change(root, record.id, { status: "done", effort: "low", parentTaskId: "p", resumedFrom: "r", depth: 2 }, now + 10)).depth, 2);
+  const settled = read(root, record.id);
+  assert.deepEqual(
+    [settled.effort, settled.parentTaskId, settled.resumedFrom, settled.acknowledgedAt],
+    ["low", "p", "r", now + 5],
+  );
+
+  const file = path.join(tasks(root), `${record.id}.json`);
+  const faults: [string, Record<string, unknown>][] = [
+    ["depth", { depth: "1" }], ["depth", { depth: null }],
+    ["parentTaskId", { parentTaskId: 5 }], ["resumedFrom", { resumedFrom: [] }],
+    ["model", { model: 5 }], ["effort", { effort: true }],
+    ["acknowledgedAt", { acknowledgedAt: "soon" }],
+  ];
+  for (const [field, fault] of faults) {
+    fs.writeFileSync(file, JSON.stringify({ ...settled, ...fault }));
+    assert.throws(() => read(root, record.id), (error: unknown) => {
+      assert.ok(error instanceof InvalidRecordError, `${JSON.stringify(fault)} was accepted`);
+      assert.match(error.reason, new RegExp(field));
+      return true;
+    }, JSON.stringify(fault));
+  }
+  // JSON has no infinity of its own, so the one spelling that reaches a reader is a
+  // literal past the float range, and a clock or a depth that is not finite is a fault.
+  for (const field of ["depth", "acknowledgedAt"]) {
+    fs.writeFileSync(file, JSON.stringify(settled).replace(/}$/, `,"${field}":1e999}`));
+    assert.throws(() => read(root, record.id), (error: unknown) => {
+      assert.ok(error instanceof InvalidRecordError, field);
+      assert.match(error.reason, new RegExp(field));
+      return true;
+    }, field);
+  }
+
+  // Null is an answer, not a fault: it is what a task with no parent, no resume and no
+  // model or effort carries, and a record an earlier build wrote carries none of them.
+  for (const value of [
+    { ...settled, parentTaskId: null, resumedFrom: null, model: null, effort: null, acknowledgedAt: null },
+    { ...settled, depth: undefined, parentTaskId: undefined, resumedFrom: undefined, acknowledgedAt: undefined },
+  ]) {
+    fs.writeFileSync(file, JSON.stringify(value));
+    assert.deepEqual(read(root, record.id), JSON.parse(JSON.stringify(value)));
+  }
+});
