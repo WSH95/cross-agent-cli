@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T19:49:12Z
+updated_at: 2026-09-18T21:30:10Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,18 +34,18 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 2 (T10b) is implemented on `task/cross-agent-m3` as `21c6647`,
-`231694c`, `e8b3ea0` (`src/delegate.ts`, `src/tasks.ts`, the five tools by
-row, `sandboxSupport(env)`, the runner SIGTERM edges, record fields `depth`,
-`parentTaskId`, `resumedFrom`, `acknowledgedAt`, `effort`; 421 pass, 1
-skip) and is under review: a task review (Claude Code subagent, opus 5,
-max) and a Codex review of `dab83ff..e8b3ea0` (gpt-5.6-sol, max). Tasks 0
-and 1 are complete there. Next: Task 3 (T11 `wait`), then 3b (behavioural
-beads, including `atc-s96.44`) and 3c (test hygiene), then the first
-fast-forward merge into `main`. Briefs for all three are in
-`.superpowers/sdd/the-development-of-this-calm-planet/` beside the ledger
-(`progress.md`), the reports and the review packages. Steward checkpoints
-commit on `main`; the task branch rebases onto `main` before each merge.
+Task 2 (T10b) is on `task/cross-agent-m3` at `39bbafc`: the three task
+commits (`21c6647`, `231694c`, `e8b3ea0`) plus fix round 1 (`d632c83`,
+`1544d28`, `39bbafc`) after the Fable 5.1 review found a reproduced
+Critical — a `cancel` inside the launch window leaked the engine through the
+reconciler's `cancelling` branch — and three Important findings (429 pass,
+1 skip). Its scoped re-review (Fable 5.1) is running. **Codex is paused
+by the user** (subscription limit): second-opinion code reviews run on
+Fable 5.1, plan reviews on Opus 5, the task reviewer stays on Opus 5.
+Next: Task 3 (T11 `wait`), 3b (behavioural beads incl. `atc-s96.44`), 3c
+(test hygiene), then the first fast-forward merge into `main`. Briefs,
+ledger (`progress.md`), reports and review packages are in
+`.superpowers/sdd/the-development-of-this-calm-planet/`.
 
 ## Next steps
 

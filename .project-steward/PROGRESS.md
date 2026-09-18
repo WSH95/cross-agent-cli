@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T21:30:10Z — claude
+[auto-checkpoint] [auto-checkpoint] Codex paused by the user (subscription limit): second-opinion code reviews now on Fable 5.1, plan reviews on Opus 5. Task 2 review: task reviewer approved; the Fable review found a reproduced Critical (cancel inside the launch window leaked the engine through judge's cancelling branch) plus three Important; fix round 1 landed d632c83, 1544d28, 39bbafc (429 pass/1 skip); scoped re-review on Fable running.
+
 ### 2026-09-18T19:49:12Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 2 (T10b) implemented on task/cross-agent-m3: 21c6647, 231694c, e8b3ea0 (delegate, check, result, cancel, list_tasks; sandboxSupport(env); runner SIGTERM edges; record fields depth/parentTaskId/resumedFrom/acknowledgedAt/effort; 421 pass/1 skip; 533 citations/0 misses). Task review (opus, max) and Codex review (gpt-5.6-sol, max, with a hang detector) running. Briefs ready: task-3 (T11 wait), task-3b (behavioural beads incl. atc-s96.44), task-3c (test hygiene).
 
