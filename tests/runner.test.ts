@@ -91,8 +91,8 @@ function ownedProcesses(root: string): Inspected[] {
 }
 
 function harness(options: {
-  named?: boolean; delayedImport?: boolean; refusal?: boolean; race?: string; failure?: string; leadingHyphen?: boolean;
-  competitor?: "at-write" | "before-write";
+  named?: boolean; delayedImport?: boolean; delayedPlan?: boolean; refusal?: boolean; race?: string; failure?: string;
+  leadingHyphen?: boolean; competitor?: "at-write" | "before-write";
 } = {}) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-runner-"));
   const token = randomUUID();
@@ -113,6 +113,8 @@ function harness(options: {
   const release = path.join(root, "release");
   const importReady = path.join(root, "import-ready");
   const importRelease = path.join(root, "import-release");
+  const planReady = path.join(root, "plan-ready");
+  const planRelease = path.join(root, "plan-release");
   const invocation = path.join(root, "invocation.json");
   const invocations = path.join(root, "invocations");
   const descendantFile = path.join(root, "descendant.json");
@@ -237,6 +239,10 @@ const adapter = {
   sandboxSupport: () => (${options.refusal ? '{ ok: false, reason: "fixture sandbox missing" }' : "{ ok: true }"}),
   plan(value) {
     request = value;
+    ${options.delayedPlan ? `fs.writeFileSync(${JSON.stringify(planReady)}, "ready");
+    while (!fs.existsSync(${JSON.stringify(planRelease)})) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }` : ""}
     ${["identity", "identity-late"].includes(options.failure!) ? `fs.readFileSync = function(file, ...args) {
       if (typeof file === "string" && /^\\/proc\\/\\d+\\/stat$/.test(file) && file !== "/proc/" + process.pid + "/stat") {
         ${options.failure === "identity-late" ? `while (!fs.existsSync(${JSON.stringify(inheritedFile)})) {
@@ -283,7 +289,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     return tracked;
   }
   return {
-    root, record, spec, recordFile, auditFile, release, importReady, importRelease, invocation, invocations,
+    root, record, spec, recordFile, auditFile, release, importReady, importRelease, planReady, planRelease, invocation, invocations,
     adapterModule, markers, start, track,
     engineLaunches: () => (fs.existsSync(invocations) ? fs.readFileSync(invocations, "utf8").trim().split("\n").filter(Boolean) : []),
     read: () => ledger.read(root, record.id),
@@ -1235,20 +1241,46 @@ test("a second runner for one task takes no lock, touches no record, and exits 1
   } finally { await h.cleanup(); }
 });
 
+test("a runner that starts against a cancelling record settles it and spawns no engine", async (t) => {
+  for (const when of ["before the record read", "during the adapter import"] as const) await t.test(when, async () => {
+    const h = harness(when === "during the adapter import" ? { delayedImport: true } : {});
+    try {
+      // The cancel reached the record first. An engine spawned now would be one the cancel
+      // has already accounted for, and nothing would ever settle it.
+      if (when === "before the record read") await writeAs(h.root, h.record.id, "cancelling");
+      const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
+      if (when === "during the adapter import") {
+        await poll(() => fs.existsSync(h.importReady), Boolean);
+        await writeAs(h.root, h.record.id, "cancelling");
+        fs.writeFileSync(h.importRelease, "go");
+      }
+      const settled = await poll(h.read, terminal);
+      assert.equal(settled.status, "cancelled");
+      assert.equal(settled.engineIdentity ?? null, null, "no engine was spawned, so none is recorded");
+      assert.deepEqual(h.engineLaunches(), []);
+      assert.equal(fs.existsSync(h.invocation), false);
+      await poll(() => child.closed, Boolean);
+      assert.equal(child.code, 0);
+      assert.match(h.runnerLog(), /cancelled before acknowledgement/);
+    } finally { await h.cleanup(); }
+  });
+});
+
 test("a cancel that lands before acknowledgement is a cancel, not a stranger's settlement", async () => {
   const { groupAlive } = await import("../src/process.ts");
-  const h = harness({ delayedImport: true });
+  // The window the runner cannot stand down in: it read the record, found it `launching`,
+  // and is building its spawn when the cancel lands. The fixture holds `plan` there, so
+  // the engine is started and owned by a runner whose acknowledgement is already doomed.
+  const h = harness({ delayedPlan: true });
   try {
     const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
-    await poll(() => fs.existsSync(h.importReady), Boolean);
-    // The server's cancel, written while the runner is still importing its adapter:
-    // by the time the runner has an engine to acknowledge, the record is cancelling.
+    await poll(() => fs.existsSync(h.planReady), Boolean);
     await writeAs(h.root, h.record.id, "cancelling");
-    // Holding the record lock makes the acknowledgement wait, so the engine is fully
-    // up when the runner learns it was cancelled, and the settlement it writes carries
-    // real evidence rather than whatever the engine managed before it was signalled.
+    // Holding the record lock makes the acknowledgement wait, so the engine is fully up
+    // when the runner learns it was cancelled, and the settlement it writes carries real
+    // evidence rather than whatever the engine managed before it was signalled.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
-    fs.writeFileSync(h.importRelease, "go");
+    fs.writeFileSync(h.planRelease, "go");
     await poll(
       () => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
       (log) => log.includes('"working"'),
@@ -1410,10 +1442,12 @@ test("an engine identity from another boot is dead, not a reused pid", async () 
 
 test("an engine that completes while the server is cancelling settles cancelled, not done", async () => {
   const { groupAlive } = await import("../src/process.ts");
-  const h = harness({ delayedImport: true });
+  // The cancel lands while the runner is building its spawn, which is the one window it
+  // cannot stand down in: past that point the engine is this runner's to settle.
+  const h = harness({ delayedPlan: true });
   try {
     const child = h.start();
-    await poll(() => fs.existsSync(h.importReady), Boolean);
+    await poll(() => fs.existsSync(h.planReady), Boolean);
     await writeAs(h.root, h.record.id, "cancelling");
     // Holding the record lock keeps the acknowledgement pending until the engine has
     // already finished, so completion claims the settlement first. That is the order in
@@ -1421,7 +1455,7 @@ test("an engine that completes while the server is cancelling settles cancelled,
     // `cancelling -> done`, which the ledger forbids: the write throws and the record
     // is stranded `cancelling` with no identities.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
-    fs.writeFileSync(h.importRelease, "go");
+    fs.writeFileSync(h.planRelease, "go");
     await poll(() => fs.existsSync(h.record.resultPath), Boolean);
     await held.release();
     const cancelled = await poll(h.read, terminal, 8000);

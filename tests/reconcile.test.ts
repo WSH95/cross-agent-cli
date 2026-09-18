@@ -223,6 +223,51 @@ test("reconcile judges the engine by its group, so a reaped leader with a live m
   assert.equal(read(root, record.id).status, "failed");
 });
 
+test("a cancelling record with no runner is settled only once the engine its environment names is ended", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // The failure this closes: a cancel inside the launch window claims `cancelling` on a
+  // record that never acknowledged, so there is no runner to judge and no identity to
+  // terminate — and the engine a dead runner left behind is found only by the assignment
+  // it carries (design section 2, B5-i).
+  const record = await started(root, "cancelling");
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+
+  const { changed, errors } = await reconcileAndCleanup(root);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "cancelled"]]);
+  const settled = read(root, record.id);
+  assert.deepEqual(settled.engineIdentity, engine.identity, "the record names the group this pass ended");
+  assert.equal(running(engine.pid), false, "the engine is dead before the record is terminal");
+  assert.match(settled.reason ?? "", /cancel/);
+});
+
+test("a cancelling record whose environment names nothing settles, and one it cannot read waits", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // Nothing carries the id: there is no engine, so the record settles with no identity.
+  const alone = await started(root, "cancelling");
+  const first = await reconcileAndCleanup(root);
+  assert.deepEqual(first.errors, []);
+  assert.equal(read(root, alone.id).status, "cancelled");
+  assert.equal(read(root, alone.id).engineIdentity ?? null, null);
+
+  // A stray that is not a leader cannot be an engine identity, but it carries the id and
+  // is killed with the settlement, exactly as adoption kills one.
+  const record = await started(root, "cancelling");
+  const pidFile = path.join(root, "stray.pid");
+  const engine = zoo.leader({ CROSS_AGENT_TASK: record.id, CHILD_PID_FILE: pidFile, CHILD_TASK: record.id });
+  const stray = await zoo.member(pidFile);
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 2);
+
+  const { changed, errors } = await reconcileAndCleanup(root);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => value.status), ["cancelled"]);
+  assert.deepEqual(read(root, record.id).engineIdentity, engine.identity);
+  await poll(() => running(engine.pid) || running(stray), (alive) => !alive);
+});
+
 test("a launching record past its deadline adopts the group leader carrying its task id", async (t) => {
   const root = project(t);
   const zoo = processes(t);

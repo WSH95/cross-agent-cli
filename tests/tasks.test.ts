@@ -13,7 +13,7 @@ import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
 import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
-import { alive, engineEnv, poll, project, proc } from "./helpers/project.ts";
+import { alive, engineEnv, poll, project, proc, strandedEngine } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -273,6 +273,48 @@ test("a cancel of an orphaned record terminates its group and settles it from wh
   assert.equal(settled.status, "cancelled");
   assert.equal(settled.reason, "cancelled while orphaned");
   assert.equal(alive(running.engineIdentity), false);
+});
+
+test("a cancel inside the launch window ends the engine its environment names before it settles", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  // The runner died between its spawn and its acknowledgement: the record is `launching`
+  // with no identities, and the engine it left is found only by the assignment it carries.
+  const record = await seed(p.root, { role: "planner", cwd: p.root });
+  assert.equal(record.status, "launching");
+  const engine = strandedEngine(p, record.id);
+  await poll(() => proc(engine.pid), (value) => value !== null);
+
+  const outcomes = cancelled(await cancel(p.root, record.id));
+  assert.deepEqual(outcomes, [{ id: record.id, outcome: "cancelled" }]);
+  const settled = p.record(record.id);
+  assert.equal(settled.status, "cancelled");
+  assert.deepEqual(settled.engineIdentity, engine.identity, "the record names the group this cancel ended");
+  assert.equal(alive(engine.identity), false, "the engine is dead before the record is terminal");
+
+  // Nothing is left for reconciliation to find, and it changes nothing.
+  const { reconcileAndCleanup } = await import("../src/reconcile.ts");
+  const pass = await reconcileAndCleanup(p.root);
+  assert.deepEqual(pass.changed, []);
+  assert.deepEqual(pass.errors, []);
+});
+
+test("a runner that will not settle in time is SIGKILLed and its engine group ended by identity", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  // The engine ignores SIGTERM, so the runner is still escalating when the grace expires.
+  const running = await launch(p, { role: "planner", cwd: p.root, script: "stall-ignore-term" });
+  // Its first output is what says the handler is registered: a SIGTERM before that would
+  // be the kernel's default and the engine would die at once (tests/fixtures/fake-engine.mjs).
+  await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes("working"));
+  const outcomes = cancelled(await cancel(p.root, running.id));
+
+  assert.deepEqual(outcomeOf(outcomes, running.id), { id: running.id, outcome: "cancelled" });
+  const settled = p.record(running.id);
+  assert.equal(settled.status, "cancelled");
+  assert.equal(settled.reason, "cancelled; the runner did not settle it");
+  assert.deepEqual(settled.engineIdentity, running.engineIdentity, "both identities are on the record");
+  assert.deepEqual(settled.runnerIdentity, running.runnerIdentity);
+  assert.equal(alive(settled.engineIdentity), false);
+  assert.equal(alive(settled.runnerIdentity), false);
 });
 
 test("a cascade cancels the leaves first, then the lead, and reports one outcome per task", async (t) => {

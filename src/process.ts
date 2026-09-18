@@ -153,6 +153,31 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
   return { found: found.sort((left, right) => left.pid - right.pid), unreadable };
 }
 
+/**
+ * What the environment still carries for a task whose record names no engine: the leader
+ * carrying `CROSS_AGENT_TASK=<id>` is the engine (the lowest pid of them, since the scan
+ * is in pid order and a task has at most one), everything else carrying the id is a stray,
+ * and `own` is the engine this very process runs inside — which nothing here may signal.
+ * Two callers read it the same way: reconciliation adopting a stranded engine
+ * (`src/reconcile.ts#adopt`) and a cancel settling a record that never acknowledged
+ * (`src/reconcile.ts#judge`, `src/tasks.ts#terminate`).
+ */
+export function strandedEngine(taskId: string, since: number): {
+  leader?: FoundProcess; strays: FoundProcess[]; own?: FoundProcess; unreadable: number;
+} {
+  const { found, unreadable } = findByEnvironment(taskId, since);
+  const leaders = found.filter((entry) => entry.leader);
+  const [leader] = leaders.filter((entry) => !entry.self);
+  return {
+    leader,
+    // Nothing this process is part of is ever signalled: those pids are its own process,
+    // its own children, or the engine whose session it lives in.
+    strays: found.filter((entry) => entry !== leader && !entry.self),
+    own: leaders.find((entry) => entry.self),
+    unreadable,
+  };
+}
+
 export function killGroup(identity: EngineIdentity, signal: NodeJS.Signals): boolean {
   if (!groupAlive(identity)) return false;
   try {
@@ -195,6 +220,42 @@ async function terminate(pgid: number, alive: () => boolean, options: TerminateO
   if (await waitFor(() => !alive(), options.termGrace ?? 2000)) return true;
   signal("SIGKILL");
   return waitFor(() => !alive(), options.killGrace ?? 500);
+}
+
+// A zombie is not a running process, and its parent may never reap it, so waiting for
+// the /proc entry itself to disappear could wait for ever.
+function stillRunning(entry: FoundProcess): boolean {
+  const stat = readProcessStat(entry.pid);
+  return stat !== null && stat.startTime === entry.startTime && stat.state !== "Z" && stat.state !== "X";
+}
+
+/**
+ * SIGTERM, two seconds, SIGKILL, per stray: the escalation a group gets, one pid at a
+ * time, for the processes carrying a task's id that are not its engine's group. It answers
+ * the strays it could not signal rather than throwing, because both callers run it beside
+ * a record they have already written — reconciliation after its adoption
+ * (`src/reconcile.ts#adopt`) and `cancel` after the settlement — and losing that write to
+ * report a failed signal would drop a settled record from the answer.
+ */
+export async function killStrays(strays: readonly FoundProcess[]): Promise<string[]> {
+  const failed = new Map<number, string>();
+  const signal = (stray: FoundProcess, value: NodeJS.Signals) => {
+    // Verified immediately before the signal, as killGroup verifies a group: a pid that
+    // left between the scan and here can already belong to an unrelated process.
+    if (!stillRunning(stray)) return;
+    try {
+      process.kill(stray.pid, value);
+      failed.delete(stray.pid);
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException;
+      if (failure.code !== "ESRCH") failed.set(stray.pid, `stray ${stray.pid} could not be signalled: ${failure.message}`);
+    }
+  };
+  for (const stray of strays) signal(stray, "SIGTERM");
+  const deadline = performance.now() + 2000;
+  while (strays.some(stillRunning) && performance.now() < deadline) await delay(20);
+  for (const stray of strays) signal(stray, "SIGKILL");
+  return [...failed.values()];
 }
 
 /** The verified group of a recorded engine identity. */

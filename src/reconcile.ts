@@ -1,8 +1,7 @@
-import { setTimeout as delay } from "node:timers/promises";
 import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, isProcessAlive, readProcessStat, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
-import { findByEnvironment, groupAlive, terminateGroup, terminateOrphans } from "./process.ts";
+import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";
 
 export interface TaskError {
@@ -39,40 +38,6 @@ function sameRunner(left?: ProcessIdentity | null, right?: ProcessIdentity | nul
   return left.pid === right.pid && left.startTime === right.startTime && left.bootId === right.bootId;
 }
 
-// A zombie is not a running process, and its parent may never reap it, so waiting for
-// the /proc entry itself to disappear could wait for ever.
-function stillRunning(entry: FoundProcess): boolean {
-  const stat = readProcessStat(entry.pid);
-  return stat !== null && stat.startTime === entry.startTime && stat.state !== "Z" && stat.state !== "X";
-}
-
-/**
- * SIGTERM, two seconds, SIGKILL, per stray: the escalation a group gets, one pid at a
- * time. It answers the strays it could not signal rather than throwing, because it runs
- * after the decision has been written: losing that write to report a failed signal would
- * drop a record from `changed` although it was settled.
- */
-async function killStrays(strays: FoundProcess[]): Promise<string[]> {
-  const failed = new Map<number, string>();
-  const signal = (stray: FoundProcess, value: NodeJS.Signals) => {
-    // Verified immediately before the signal, as killGroup verifies a group: a pid that
-    // left between the scan and here can already belong to an unrelated process.
-    if (!stillRunning(stray)) return;
-    try {
-      process.kill(stray.pid, value);
-      failed.delete(stray.pid);
-    } catch (error) {
-      const failure = error as NodeJS.ErrnoException;
-      if (failure.code !== "ESRCH") failed.set(stray.pid, `stray ${stray.pid} could not be signalled: ${failure.message}`);
-    }
-  };
-  for (const stray of strays) signal(stray, "SIGTERM");
-  const deadline = performance.now() + 2000;
-  while (strays.some(stillRunning) && performance.now() < deadline) await delay(20);
-  for (const stray of strays) signal(stray, "SIGKILL");
-  return [...failed.values()];
-}
-
 /**
  * A `launching` record past its deadline that no runner ever acknowledged. The engine may
  * still exist: a runner killed between the spawn and the acknowledgement leaves one that
@@ -92,13 +57,7 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number, waitS
   // record as it is when it is written, not as it was when it was listed.
   const expect = (current: TaskRecord) =>
     current.status === "launching" && !current.runnerIdentity && now > current.launchDeadline;
-  const { found, unreadable } = findByEnvironment(record.id, record.createdAt);
-  const leaders = found.filter((entry) => entry.leader);
-  const [leader] = leaders.filter((entry) => !entry.self);
-  // Nothing this reconciler is part of is ever signalled: those pids are its own process,
-  // its own children, or the engine whose session it lives in.
-  const strays = found.filter((entry) => entry !== leader && !entry.self);
-  const own = leaders.find((entry) => entry.self);
+  const { leader, strays, own, unreadable } = strandedEngine(record.id, record.createdAt);
 
   if (!leader && own) {
     // The only engine carrying this id is the one this server runs inside. Adopting it
@@ -126,6 +85,21 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number, waitS
   return { changed: [result.record], errors: (await killStrays(strays)).map((reason) => ({ id: record.id, reason })) };
 }
 
+/**
+ * The terminal half of the `cancelling` case: the group is already dead by the time this
+ * runs, so the record is written and whatever else carried the id is killed after it —
+ * losing the write to report a failed signal would drop a settled record from `changed`.
+ */
+async function settleCancelled(
+  projectRoot: string, record: TaskRecord, patch: TaskPatch, strays: readonly FoundProcess[], now: number, waitSeconds: number,
+): Promise<Judgement> {
+  const result = await update(projectRoot, record.id, { status: "cancelled", reason: "runner lost during cancel", ...patch }, now, {
+    unlessTerminal: true, waitSeconds, expect: (current) => current.status === "cancelling",
+  });
+  if (!result.applied) return nothing;
+  return { changed: [result.record], errors: (await killStrays(strays)).map((reason) => ({ id: record.id, reason })) };
+}
+
 async function judge(projectRoot: string, record: TaskRecord, now: number, waitSeconds: number): Promise<Judgement> {
   if (record.status === "launching") {
     if (now <= record.launchDeadline || record.runnerIdentity) return nothing;
@@ -145,17 +119,30 @@ async function judge(projectRoot: string, record: TaskRecord, now: number, waitS
   }
 
   if (record.status === "cancelling" && !runnerAlive(record)) {
-    // The cancel outlives the runner that started it: the group is terminated by the
-    // identity the record carries, and only then is the record settled. A group that
-    // will not die leaves the record cancelling, named, for the next pass.
+    // The cancel outlives the runner that started it: the group is terminated first and
+    // only then is the record settled. A group that will not die leaves the record
+    // cancelling, named, for the next pass.
     const identity = record.engineIdentity;
-    if (identity && !await terminateGroup(identity)) {
-      return { changed: [], errors: [{ id: record.id, reason: `engine group ${identity.pgid} did not terminate` }] };
+    const fail = (reason: string): Judgement => ({ changed: [], errors: [{ id: record.id, reason }] });
+    if (identity) {
+      if (!await terminateGroup(identity)) return fail(`engine group ${identity.pgid} did not terminate`);
+      return settleCancelled(projectRoot, record, {}, [], now, waitSeconds);
     }
-    const result = await update(projectRoot, record.id, { status: "cancelled", reason: "runner lost during cancel" }, now, {
-      unlessTerminal: true, waitSeconds, expect: (current) => current.status === "cancelling",
-    });
-    return result.applied ? { changed: [result.record], errors: [] } : nothing;
+    // A cancel inside the launch window claims a record that never acknowledged, so there
+    // is no identity to terminate and the engine a dead runner left is found the one way a
+    // stranded engine ever is: the assignment it carries (design section 2, B5-i).
+    // Settling without looking would release the workspace over a live engine that no
+    // record could name again.
+    const { leader, strays, own, unreadable } = strandedEngine(record.id, record.createdAt);
+    if (!leader && own) {
+      return fail(`engine ${own.pid} shares this reconciler's session; settlement deferred to another server`);
+    }
+    if (!leader && unreadable > 0) return fail(`environ unreadable for ${unreadable} processes`);
+    if (leader && !await terminateGroupByPid(leader.pid)) return fail(`engine group ${leader.pid} did not terminate`);
+    const adopted: TaskPatch = leader
+      ? { engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } }
+      : {};
+    return settleCancelled(projectRoot, record, adopted, strays, now, waitSeconds);
   }
 
   return nothing;

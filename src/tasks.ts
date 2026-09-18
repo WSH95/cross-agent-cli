@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig } from "./config.ts";
-import { isProcessAlive, isTerminal, read, scan, update } from "./ledger.ts";
-import type { TaskRecord, TaskStatus } from "./ledger.ts";
+import type { CrossAgentConfig } from "./config.ts";
+import { currentBootId, isProcessAlive, isTerminal, read, scan, update } from "./ledger.ts";
+import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
-import { terminateGroup } from "./process.ts";
+import type { FoundProcess } from "./process.ts";
+import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid } from "./process.ts";
 
 // The read tools and the cascade cancel. Ownership lives here too, because `wait` (T11)
 // and the operator CLI (S11) answer the same question: which tasks are this lead's.
@@ -244,31 +246,54 @@ async function terminate(projectRoot: string, taskId: string, grace: number, wai
     if (isProcessAlive(runner)) signal(runner!.pid, "SIGTERM");
     // A record that has not been acknowledged names no runner yet, and the runner that is
     // starting will read the `cancelling` status as its own cancel, so it is waited for.
+    // The wait outlasts the runner's own SIGTERM grace by a second, because a runner that
+    // is escalating on an engine ignoring SIGTERM is working, and killing it there would
+    // throw away the evidence it is about to write.
     if (isProcessAlive(runner) || !runner) {
-      const settled = await waitForTerminal(projectRoot, taskId, grace);
+      const settled = await waitForTerminal(projectRoot, taskId, grace + 1000);
       if (settled) return { id: taskId, outcome: settled.status };
     }
-    if (isProcessAlive(record.runnerIdentity)) signal(record.runnerIdentity!.pid, "SIGKILL");
   }
 
+  // Re-read before escalating: a runner that acknowledged during the grace is a different
+  // process from the one this pass claimed the record against.
   record = read(projectRoot, taskId);
   if (isTerminal(record.status)) return { id: taskId, outcome: record.status };
+  if (record.status !== "orphaned" && isProcessAlive(record.runnerIdentity)) {
+    signal(record.runnerIdentity!.pid, "SIGKILL");
+  }
+
+  const refuse = (reason: string): Outcome => ({ id: taskId, outcome: record.status, reason });
+  const settle = async (patch: TaskPatch, strays: readonly FoundProcess[]): Promise<Outcome> => {
+    const settled = await update(projectRoot, taskId, {
+      status: "cancelled", ...patch,
+      reason: record.status === "orphaned" ? "cancelled while orphaned" : "cancelled; the runner did not settle it",
+    }, Date.now(), { waitSeconds, expect: (current) => ["cancelling", "orphaned"].includes(current.status) });
+    if (!settled.applied) return { id: taskId, outcome: settled.record.status, reason: `the record is ${settled.record.status}` };
+    const failures = await killStrays(strays);
+    return { id: taskId, outcome: "cancelled", ...(failures.length > 0 ? { reason: failures.join("; ") } : {}) };
+  };
+
   const identity = record.engineIdentity;
-  if (!identity) {
-    // Settling here would leave a record terminal beside an engine no identity names.
-    // Reconciliation adopts what the environment still carries and settles it then.
-    return { id: taskId, outcome: record.status, reason: "no engine identity to terminate; reconciliation settles it" };
+  if (identity) {
+    return await terminateGroup(identity, { termGrace: grace, killGrace: 500 })
+      ? settle({ engineIdentity: identity }, [])
+      : refuse(`engine group ${identity.pgid} did not terminate`);
   }
-  if (!await terminateGroup(identity, { termGrace: grace, killGrace: 500 })) {
-    return { id: taskId, outcome: record.status, reason: `engine group ${identity.pgid} did not terminate` };
+  // The record names no engine, which is what a task cancelled inside its launch window
+  // looks like — and an engine may still exist, carrying the assignment its runner put in
+  // its environment. Settling without looking would release the workspace over a live
+  // engine that no record could ever name again (design section 2, B5-i).
+  const { leader, strays, own, unreadable } = strandedEngine(taskId, record.createdAt);
+  if (!leader && own) return refuse(`engine ${own.pid} shares this server's session; reconciliation settles it`);
+  if (!leader && unreadable > 0) return refuse(`environ unreadable for ${unreadable} processes; reconciliation settles it`);
+  if (leader && !await terminateGroupByPid(leader.pid, { termGrace: grace, killGrace: 500 })) {
+    return refuse(`engine group ${leader.pid} did not terminate`);
   }
-  const settled = await update(projectRoot, taskId, {
-    status: "cancelled", engineIdentity: identity,
-    reason: record.status === "orphaned" ? "cancelled while orphaned" : "cancelled; the runner did not settle it",
-  }, Date.now(), { waitSeconds, expect: (current) => ["cancelling", "orphaned"].includes(current.status) });
-  return settled.applied
-    ? { id: taskId, outcome: "cancelled" }
-    : { id: taskId, outcome: settled.record.status, reason: `the record is ${settled.record.status}` };
+  return settle(
+    leader ? { engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } } : {},
+    strays,
+  );
 }
 
 /**
@@ -279,15 +304,24 @@ async function terminate(projectRoot: string, taskId: string, grace: number, wai
  * one so that a later `cancel` retries it (the lead model, item 2).
  */
 export async function cancel(projectRoot: string, taskId: string, options: CancelOptions = {}): Promise<CancelResult> {
-  const config = loadConfig(projectRoot);
+  let config: CrossAgentConfig;
+  try {
+    config = loadConfig(projectRoot);
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
   const waitSeconds = config.limits.lockWaitSeconds;
   const grace = Math.max(0, config.limits.cancelGraceSeconds) * 1000;
 
   let target: TaskRecord;
   let snapshot: TaskRecord[];
-  const claim = await acquire(lockPath(projectRoot, spawnLockName()), {
-    operation: `cancel task ${taskId}`, waitSeconds,
-  });
+  let claim: Awaited<ReturnType<typeof acquire>>;
+  try {
+    claim = await acquire(lockPath(projectRoot, spawnLockName()), { operation: `cancel task ${taskId}`, waitSeconds });
+  } catch (error) {
+    // A caller that could not even take the lock is told so, as `delegate` tells it.
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
   try {
     const { records } = scan(projectRoot);
     const record = records.find((value) => value.id === taskId);

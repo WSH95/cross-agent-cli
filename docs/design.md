@@ -115,7 +115,7 @@ spawned it**. Every engine CLI spawns its MCP servers as children of the
 engine process, and the ledger already records each engine's identity as
 `engineIdentity` — `{pid, startTime, bootId, pgid}`
 (`src/ledger.ts#EngineIdentity`, `#ProcessIdentity`), written at
-`src/runner.ts:241-252`.
+`src/runner.ts:257-268`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` through
 `readProcessStat` (`src/ledger.ts#readProcessStat`), which returns `ppid` —
@@ -485,12 +485,12 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   diagnostic trail (`src/runner.ts:17`). Ids are 18 random bytes in base64url
   (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
-  (`src/runner.ts:282-290`). `.cross-agent/` and `.worktrees/` are added to
+  (`src/runner.ts:298-306`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` on first use (`src/ledger.ts#initialize`).
 - Launch protocol: `delegate` creates the record as `launching` with a
   `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts#create`); the
   runner, once started, writes `running` with its own identity and the engine's
-  identity in one atomic acknowledgement (`src/runner.ts:241-252`), conditional
+  identity in one atomic acknowledgement (`src/runner.ts:257-268`), conditional
   on the record still being `launching`. Both identities carry `{pid, startTime,
   bootId}`, the engine's with its `pgid` as well
   (`src/ledger.ts#ProcessIdentity`, `#EngineIdentity`); `bootId` is read once
@@ -503,7 +503,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   (section 5, layer 1), `parentTaskId` for cascade ownership (the lead model)
   and `resumedFrom` for the resume chain, all three written by `delegate` where
   the task begins, and `acknowledgedAt`, written by the acknowledgement above
-  and by nothing else (`src/runner.ts:249-251`), so a stall clock measures from
+  and by nothing else (`src/runner.ts:265-267`), so a stall clock measures from
   the moment the engine was answered for rather than from a launch nobody
   answered. There is **no launch token**: `create` writes none
   (`src/ledger.ts#create`), and a token on the *runner's* argv could not
@@ -513,7 +513,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   - **Identifying a stranded engine.** The engine carries
     `CROSS_AGENT_TASK=<id>` in its environment, and it is the **runner** that
     puts it there, from the id of the record it was started for
-    (`src/runner.ts:232-235`), beside the two paths it takes from the same
+    (`src/runner.ts:248-251`), beside the two paths it takes from the same
     record. `guard.childEnv` sets the same assignment in the environment it
     prepares for a spec (`src/guard.ts#childEnv`), but nothing validates a spec
     (`validateSpec` checks only that `adapterModule` is absolute,
@@ -545,7 +545,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     own** environment and never the spec's (`src/delegate.ts#startRunner`), so
     the only process carrying `CROSS_AGENT_TASK=<id>` is the engine — the
     runner puts the assignment there itself, on the engine alone
-    (`src/runner.ts:232-235`). Excluding `self` is not optional all the same: a
+    (`src/runner.ts:248-251`). Excluding `self` is not optional all the same: a
     server that runs inside an engine carries that engine's task id, and so do
     the children it starts, so a scan that counted them would have a task stand
     down for itself. The unreadable case is decided by the asymmetry: standing
@@ -565,13 +565,13 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   environment. The runner rebuilds the spawn from that file and the record, so
   it never needs the server; three fields of the request come from the record
   rather than the spec — `logPath`, `resultPath`, and `CROSS_AGENT_TASK` in
-  the engine's environment (`src/runner.ts:232-235`) — because the record, not
+  the engine's environment (`src/runner.ts:248-251`) — because the record, not
   the spec, names what this runner spawns. The adapter module path is always an
   entry of the fixed built-in table of section 3; config cannot name one.
 - `src/runner.ts`: a detached process per task (`node src/runner.ts --project
   <root> --task <id>`) that owns the engine child in its own process group,
   tees events, updates `lastEventAt` on a 2-second interval
-  (`src/runner.ts:263-271`), and on engine exit writes the terminal record and
+  (`src/runner.ts:279-287`), and on engine exit writes the terminal record and
   `<id>.out` itself, so completion survives the MCP server. On SIGTERM
   (`src/runner.ts:202`) it writes `cancelling` itself (`src/runner.ts:120-122`),
   terminates the engine group, and writes `cancelled`
@@ -585,7 +585,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   settlement also reads the record for itself when it has none
   (`src/runner.ts:115`), so a cancel or a lost lock arriving before the first
   read settles rather than exiting through `fatal` (bead `atc-s96.29`); both are
-  recorded (`tests/runner.test.ts:1295`, `:1321`). Three rulings from the
+  recorded (`tests/runner.test.ts:1327`, `:1353`). Three rulings from the
   reviews attach to this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
@@ -597,7 +597,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     lock ignores `lost`; it is released in the same call that took it.
   - **A group with no identity is still terminated.** If the leader exits
     after spawning a descendant and before `identityOf` succeeds, the runner
-    has no `engineIdentity` to name the group with (`src/runner.ts:242-244`).
+    has no `engineIdentity` to name the group with (`src/runner.ts:258-260`).
     But the detached spawn made `handle.pid` both the group and the session id,
     and the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
@@ -610,19 +610,31 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     be missing the tail of its log too; the `; output truncated` suffix on a
     failure's `reason` stays (`src/runner.ts:155`).
 - **The three cancel writers, all built.** `cancel` claims the record
-  `cancelling` and sends SIGTERM to the runner it verified, waits
-  `limits.cancelGraceSeconds` for the runner to settle the task itself, and only
-  then ends the engine group by the identity the record carries, escalating to
-  SIGKILL on both (`src/tasks.ts#terminate`, `src/config.ts#limitDefaults`). A
-  runner it can see is dead is not waited for, and a record with no engine
-  identity is left `cancelling` and named in the outcome rather than settled
-  over an engine nothing could reach again. The second writer is the runner
-  itself, which answers that SIGTERM (`src/runner.ts:119-130`). The third is
-  reconciliation, which settles a `cancelling` record whose runner is dead by
-  terminating the engine group by identity and then writing `cancelled`
-  (`src/reconcile.ts#judge`). So the terminal writers are the runner (`done`,
-  `failed`, `cancelled`) and, only when the runner is dead and the engine group
-  is verified dead, the reconciler (`cancelled` or `failed`).
+  `cancelling` and sends SIGTERM to the runner it verified, then waits
+  `limits.cancelGraceSeconds` **plus a second** for the runner to settle the
+  task itself — a second longer than the runner's own SIGTERM grace, because a
+  runner escalating on an engine that ignores SIGTERM is working, and killing it
+  there would throw away the evidence it is about to write
+  (`src/tasks.ts#terminate`, `src/config.ts#limitDefaults`, `src/runner.ts:132`).
+  A runner it can see is dead is not waited for. Past the grace it re-reads the
+  record — the runner that acknowledged meanwhile is a different process from
+  the one it claimed against — SIGKILLs that runner and ends the engine group by
+  the identity the record carries, escalating to SIGKILL there too. **A record
+  that names no engine is not settled on that account**: a task cancelled inside
+  its launch window has no identity to terminate and may still have an engine, so
+  the same environ scan reconciliation adopts by runs here, what it finds is
+  terminated and written with the settlement, and only a scan that finds nothing
+  settles the record without one (`src/process.ts#strandedEngine`, design
+  section 2, B5-i). An environment it could not read, or an engine that is this
+  server's own, is named in the outcome and left for another pass. The second
+  writer is the runner itself, which answers that SIGTERM
+  (`src/runner.ts:119-130`) and, before it has spawned anything, stands down on
+  a record that is already `cancelling` and settles it without an engine
+  (`src/runner.ts:219-232`). The third is reconciliation, whose `cancelling`
+  case runs the same scan (`src/reconcile.ts#judge`). So the terminal writers are
+  the runner (`done`, `failed`, `cancelled`) and, only when the runner is dead
+  and the engine group is verified dead, the reconciler (`cancelled` or
+  `failed`).
 - **Conditional update.** `ledger.update` is asynchronous: it takes
   `record-<id>.lock` around one read, one check, and one rename, and returns
   `{applied: true, record}` or `{applied: false, record, reason: "terminal" |
@@ -654,9 +666,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   first and `orphaned` second would hand the stranded engine a lead's authority
   for as long as the second write was delayed or refused.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
-  status === "launching"` (`src/runner.ts:249-250`). On `applied: false` with
+  status === "launching"` (`src/runner.ts:265-266`). On `applied: false` with
   `record.status === "cancelling"` it **treats the refusal as a cancel**
-  (`src/runner.ts:254-258`): stop the engine group, then write `cancelled` with
+  (`src/runner.ts:270-274`): stop the engine group, then write `cancelled` with
   both identities, again conditionally. Mapping it to "someone else settled
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
@@ -682,8 +694,11 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     `failed: launch`;
   - `running` or `stalled` with a dead runner: `orphaned` if the engine group
     is alive, otherwise `failed: runner lost`;
-  - `cancelling` with a dead runner: terminate the group by identity, then
-    `cancelled`;
+  - `cancelling` with a dead runner: terminate the group by the identity the
+    record carries, then `cancelled`; a record that never acknowledged carries
+    none, so the same environ scan runs first and what it finds is terminated
+    and written with the settlement (`src/reconcile.ts#judge`,
+    `src/process.ts#strandedEngine`);
   - anything else: untouched. In particular `stalled → running` when events
     resume is T11's job, not the reconciler's; the reconciler never revives a
     task.
@@ -720,7 +735,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   the helper (`src/runner.ts:72-77` → `src/process.ts#terminateGroupByPid`),
   as the settlement bullet above states. Killing the strays is the one step that
   runs **after** the decision has been written, so it reports the pids it could
-  not signal instead of throwing (`src/reconcile.ts#killStrays`, `#adopt`):
+  not signal instead of throwing (`src/process.ts#killStrays`, `src/reconcile.ts#adopt`):
   losing the write to report a failed signal would drop a settled record from
   `changed`. Orphan cleanup runs in the **same pass** (`reconcileAndCleanup`,
   `src/reconcile.ts#reconcileAndCleanup`), so no caller can observe an
@@ -845,7 +860,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   resolve and the task would stay `running` with no engine. Probe P3b records
   the shape of it — a nested `claude -p` still running when its parent's turn
   ended — and the suite exercises both descendants: one that inherits stdout
-  and one that does not (`tests/runner.test.ts:142`, `:146`, `:640`, `:660`).
+  and one that does not (`tests/runner.test.ts:144`, `:148`, `:646`, `:666`).
   The drain timer starts at `exit`, not at the last byte; `truncated` covers
   stdout and stderr together, since a reader cannot tell which stream lost the
   tail; and finalisation happens exactly
@@ -860,8 +875,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   for every settlement (`src/runner.ts:141`) and appended to `reason` when the
   task failed (`src/runner.ts:155`), so an operator reading a failure knows
   whether the evidence is complete.
-- **The worktree reservation**: computed, and consulted by `git_mutate`; its
-  use in `delegate` is a target. `reservations(projectRoot)` walks one `scan`
+- **The worktree reservation**, computed and consulted by both callers that may
+  let something write: `git_mutate` (section 4) and `delegate`
+  (`src/delegate.ts#delegate`). `reservations(projectRoot)` walks one `scan`
   and returns `{reserved, unknown}` — a map from canonical cwd to the task
   holding it, and `scan`'s `invalid` verbatim
   (`src/reservation.ts#Reservations`, `#reservations`); `reservedBy(root,
@@ -1151,7 +1167,7 @@ the engine's name (`src/engines/binaries.ts#engineBin`), and
 spec's, so one binary is judged and spawned and a configured `engines.<e>.bin`
 reaches both (`atc-s96.10.1`, closed). Config-declared adapter modules are not
 supported, and the reason is in the code: the runner imports the spec's
-`adapterModule` into its own process, unsandboxed (`src/runner.ts:208-209`), and
+`adapterModule` into its own process, unsandboxed (`src/runner.ts:224-225`), and
 `validateSpec` checks only that the path is absolute
 (`src/ledger.ts#validateSpec`). Making that path config-controlled would turn a
 config file into arbitrary code execution in the orchestrator.

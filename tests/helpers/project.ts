@@ -144,6 +144,23 @@ export function engineEnv(project: TestProject, values: Record<string, string> =
   return { ...project.env, FAKE_ENGINE_FORMAT: "grok", FAKE_ENGINE_SCRIPT: "ok", ...values };
 }
 
+/**
+ * An engine a dead runner left behind: a detached leader of its own group and session
+ * carrying `CROSS_AGENT_TASK=<id>`, which is the only thing that identifies one
+ * (design section 2, B5-i). It carries the project marker too, so cleanup finds it.
+ */
+export function strandedEngine(project: TestProject, taskId: string): { pid: number; identity: { pid: number; startTime: string; pgid: number; bootId: string } } {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    detached: true, stdio: "ignore", env: { ...project.env, CROSS_AGENT_TASK: taskId },
+  });
+  child.once("error", () => {});
+  child.unref();
+  const pid = child.pid!;
+  const stat = proc(pid)!;
+  const bootId = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+  return { pid, identity: { pid, startTime: stat.startTime, pgid: pid, bootId } };
+}
+
 /** Runs the `flock` helper child of a lock file to death, the way a killed holder dies. */
 export function killLockHolder(file: string): boolean {
   for (const entry of fs.readdirSync("/proc")) {

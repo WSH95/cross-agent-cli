@@ -200,15 +200,31 @@ async function run(projectRoot: string, id: string): Promise<void> {
   // Registered once this runner owns the task, because before that it has nothing to
   // cancel. It also covers a SIGTERM received during an asynchronous import.
   process.on("SIGTERM", () => settle("cancel"));
+  // A record that is terminal was settled by someone else and this runner owns nothing; one
+  // that is already `cancelling` is a cancel that arrived before anything was spawned, and
+  // an engine started now would be one that cancel has already accounted for and nothing
+  // would settle. Both are read again after the import, because it can take a while.
+  function standDown(current: TaskRecord): boolean {
+    if (isTerminal(current.status)) {
+      settle("external");
+      return true;
+    }
+    if (current.status === "cancelling") {
+      settle("preempted");
+      return true;
+    }
+    return false;
+  }
+
   void (async () => {
     record = read(projectRoot, id);
-    if (isTerminal(record.status)) return settle("external");
+    if (standDown(record)) return;
     // Only the adapter module is the runner's own; the engine stays in the request,
     // which is what lets the pipeline check the module against the spec that named it.
     const { adapterModule, ...request } = readSpec(projectRoot, id);
     const imported = await import(pathToFileURL(adapterModule).href);
     if (settling) return;
-    if (isTerminal(read(projectRoot, id).status)) return settle("external");
+    if (standDown(read(projectRoot, id))) return;
     const adapter = (imported.default ?? imported.adapter) as EngineAdapter;
     // The lock keeps two runners from owning this task at once, but not one after
     // another: a runner killed between its spawn and its acknowledgement leaves the
@@ -219,9 +235,9 @@ async function run(projectRoot: string, id: string): Promise<void> {
     // engine — the rule `adopt` applies. What it never stands down for is itself: the
     // server starts it with `CROSS_AGENT_TASK` in its own environment, and the lock child
     // inherits it, so both carry the id and neither is an engine.
-    const standDown = foreignEngine(findByEnvironment(id, record.createdAt));
-    if (standDown) {
-      log(`not launching task ${id}: ${standDown}`);
+    const foreign = foreignEngine(findByEnvironment(id, record.createdAt));
+    if (foreign) {
+      log(`not launching task ${id}: ${foreign}`);
       return process.exit(1);
     }
     log(`launching ${request.engine}`);
