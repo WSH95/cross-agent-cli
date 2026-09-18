@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T17:36:34Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 1 (T10a) implemented on task/cross-agent-m3 as dab83ff (src/authority.ts, src/project.ts, server rows and ToolContext; 379 pass/1 skip; six resolver deviations accepted by ruling in the SDD ledger); task review approved with minors carried into Task 2's brief; Codex review of 93da0a1..dab83ff still running. Session effort set to max: Task 2 onward dispatch through the Agent tool (opus). Task 2 (T10b) brief ready.
+
 ### 2026-09-18T16:37:12Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 0 (atc-s96.36) complete on task/cross-agent-m3 at 93da0a1 (5 commits; checker verifies path#symbol, lexer ignores comments/templates, docs re-filled; 360 pass/1 skip); closed. Task 1 (T10a, atc-s96.10 first half) running headless (opus 5, max; session in .superpowers/sdd/the-development-of-this-calm-planet/dispatch/task-1.session). AppArmor fixed: stock bwrap-userns-restrict disabled, P1 rerun passes sandboxed. New beads: atc-s96.44 (allowUnsandboxedCommands=false, P1), atc-s96.45 (anchor citations, P3). AGENTS.md cite-by-symbol sentence proposed as agents-md-cite-by-symbol.diff, awaiting approval.
 

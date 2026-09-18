@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T16:37:12Z
+updated_at: 2026-09-18T17:36:34Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,16 +34,17 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 1 (T10a: authority by ancestry, project discovery, tools by row;
-`atc-s96.10` first half) runs as a headless `claude -p --model claude-opus-5
---effort max` session in `.worktrees/cross-agent-m3` (branch
-`task/cross-agent-m3`, base `93da0a1`). Task 0 (`atc-s96.36`) is complete
-there: five commits `2ef8354..93da0a1`, review clean, one parked lexer
-limit. Briefs, the SDD ledger (`progress.md`, every ruling), reports,
-review packages and the dispatch state (session ids, the launcher) live in
-`.superpowers/sdd/the-development-of-this-calm-planet/` (git-ignored); a
-resumed session continues from that ledger. Steward checkpoints commit on
-`main`; the task branch rebases onto `main` before each fast-forward merge.
+Task 1 (T10a, `atc-s96.10` first half) is implemented on
+`task/cross-agent-m3` as `dab83ff` (`src/authority.ts`, `src/project.ts`,
+`src/server.ts` rows and `ToolContext`; 379 pass, 1 skip) and approved by
+the task review; the Codex review of `93da0a1..dab83ff` is still running.
+Six resolver deviations from the brief were accepted by ruling (SDD ledger,
+"Task 1: Ruling"). Task 2 (T10b) is briefed
+(`.superpowers/sdd/the-development-of-this-calm-planet/task-2-brief.md`)
+and dispatches through the Agent tool (opus, session effort max) once the
+Codex findings are triaged. Task 0 (`atc-s96.36`) is complete and closed.
+Steward checkpoints commit on `main`; the task branch rebases onto `main`
+before each fast-forward merge.
 
 ## Next steps
 
