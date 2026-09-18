@@ -59,9 +59,10 @@ const claude = {
    * that half is caught. No other platform's sandbox has been observed, so none is refused
    * here; the engine refuses on its own if its sandbox cannot start.
    */
-  sandboxSupport(): { ok: true } | { ok: false; reason: string } {
+  sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
     if (process.platform !== "linux") return { ok: true };
-    const missing = ["bwrap", "socat"].filter((command) => commandPath(command) === null);
+    // The spawn's own PATH, not this process's: the child is what has to find them.
+    const missing = ["bwrap", "socat"].filter((command) => commandPath(command, env) === null);
     return missing.length === 0
       ? { ok: true }
       : { ok: false, reason: `${missing.join(" and ")} not found on PATH; Claude's Linux sandbox needs bwrap and socat (probe P1)` };

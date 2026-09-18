@@ -470,7 +470,7 @@ them.
   double-send: stdin is appended as a `<stdin>` block only when a prompt is
   *also* given as an argument, and `-` is not one. This is a `--help` reading
   of 0.153.4, not a run; the run that confirms a child behaves as the help says
-  is the **I2** placeholder (`tests/engines/codex.test.ts:521`).
+  is the **I2** placeholder (`tests/engines/codex.test.ts:515`).
 
 ## Native output samples (2026-09-07)
 

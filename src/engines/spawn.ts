@@ -78,7 +78,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   }
   // Only a profile that maps to `off` may run without a sandbox.
   if (declared !== "off") {
-    const support = adapter.sandboxSupport();
+    const support = adapter.sandboxSupport(request.env);
     if (!support.ok) throw new Error(`${adapter.name} sandbox refused: ${support.reason}`);
   }
 

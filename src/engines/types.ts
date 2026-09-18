@@ -85,7 +85,13 @@ export interface EngineAdapter {
   name: EngineName;
   /** The profile names this engine accepts, each mapped to its portable mode. */
   sandboxProfiles: Record<string, SandboxMode>;
-  sandboxSupport(): { ok: true } | { ok: false; reason: string };
+  /**
+   * Whether this engine can be sandboxed here, judged against `env`: the environment the
+   * pipeline will spawn with, which is the one carrying `CROSS_AGENT_<ENGINE>_BIN` and the
+   * `PATH` the child will search. Reading this process's own environment instead would
+   * judge a different binary from the one `plan` goes on to spawn.
+   */
+  sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string };
   denyArgs(targets: readonly string[]): string[];
   exclusionArgs(): string[];
   /**
@@ -112,7 +118,10 @@ export interface EngineAdapter {
    * For an engine whose output is one document at exit rather than a line stream. The
    * pipeline buffers raw stdout only for an adapter that declares it, calls it once at
    * completion before `finalMessage`, and appends its events, so a late `session` or
-   * `result` still counts.
+   * `result` still counts. No built-in adapter declares it: all three engines speak line
+   * streams, and the hook's only exercise is the fake engine's `grok-json` format
+   * (`tests/fixtures/fake-engine.mjs`), which is the shape Grok's `json` mode would need
+   * it for (design section 3).
    */
   finish?(rawStdout: string): EngineEvent[];
   finalMessage(events: EngineEvent[], resultFileText: string | null): string;

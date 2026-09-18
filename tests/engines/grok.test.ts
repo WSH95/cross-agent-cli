@@ -30,16 +30,6 @@ const someDeny = [
 const sessionId = "11111111-1111-4111-8111-111111111111";
 const resumeId = "8d718a3f-32eb-4254-b991-acf067cb13d0";
 
-function withBin(t: TestContext, value: string | undefined): void {
-  const previous = process.env.CROSS_AGENT_GROK_BIN;
-  if (value === undefined) delete process.env.CROSS_AGENT_GROK_BIN;
-  else process.env.CROSS_AGENT_GROK_BIN = value;
-  t.after(() => {
-    if (previous === undefined) delete process.env.CROSS_AGENT_GROK_BIN;
-    else process.env.CROSS_AGENT_GROK_BIN = previous;
-  });
-}
-
 function reasonFor(support: ReturnType<EngineAdapter["sandboxSupport"]>): string {
   if (support.ok) assert.fail("expected a refusal");
   return support.reason;
@@ -120,13 +110,19 @@ test("grok's leadMount inherits: there is no per-run mount to build (P9)", () =>
   assert.deepEqual(grok.leadMount({ command: "other", args: ["--project", "/elsewhere"], env: { A: "1" } }, "/scratch"), { argv: [], inherited: true });
 });
 
-test("grok's sandbox support reports the binary it cannot resolve", (t) => {
-  withBin(t, path.join(process.cwd(), "no-such-grok-binary"));
-  const reason = reasonFor(grok.sandboxSupport());
+test("grok's sandbox support reports the binary it cannot resolve, from the spawn's own environment", (t) => {
+  const missing = path.join(process.cwd(), "no-such-grok-binary");
+  const reason = reasonFor(grok.sandboxSupport({ CROSS_AGENT_GROK_BIN: missing }));
   assert.match(reason, /no-such-grok-binary/);
   assert.match(reason, /grok/);
-  withBin(t, process.execPath);
-  assert.deepEqual(grok.sandboxSupport(), { ok: true });
+  assert.deepEqual(grok.sandboxSupport({ CROSS_AGENT_GROK_BIN: process.execPath }), { ok: true });
+  // The environment handed in is the whole of it: a `grok` on this process's own PATH
+  // answers for nothing, because the spawn will run with the environment below.
+  const directory = scratch(t);
+  assert.match(reasonFor(grok.sandboxSupport({ PATH: directory })), /^grok binary "grok" not found/);
+  writeFileSync(path.join(directory, "grok"), "#!/bin/sh\nexit 0\n");
+  chmodSync(path.join(directory, "grok"), 0o755);
+  assert.deepEqual(grok.sandboxSupport({ PATH: directory }), { ok: true });
 });
 
 test("sandboxFor pairs a profile with the mode grok gives it, and refuses any other", () => {
@@ -396,7 +392,6 @@ test("grok's final message is the last result, then the last error, then nothing
 test("a fake grok run through the pipeline yields the session, the activity and the final text", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
-  withBin(t, bin);
   const record = path.join(dirs.task, "record.json");
   const request = requestFor(dirs, {
     model: "grok-4.6", effort: "high",
@@ -440,7 +435,6 @@ test("a fake grok run through the pipeline yields the session, the activity and 
 test("a failed run settles as an error carrying the joined errors of its result line", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
-  withBin(t, bin);
   const request = requestFor(dirs, {
     env: { FAKE_ENGINE_FORMAT: "grok", FAKE_ENGINE_SCRIPT: "fail", CROSS_AGENT_GROK_BIN: bin },
   });

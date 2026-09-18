@@ -24,16 +24,6 @@ const sessionId = "11111111-1111-4111-8111-111111111111";
 // P10's thread, the id a resume names.
 const threadId = "01a0855f-287a-7f32-85ab-0d336bd260a3";
 
-function withBin(t: TestContext, value: string | undefined): void {
-  const previous = process.env.CROSS_AGENT_CODEX_BIN;
-  if (value === undefined) delete process.env.CROSS_AGENT_CODEX_BIN;
-  else process.env.CROSS_AGENT_CODEX_BIN = value;
-  t.after(() => {
-    if (previous === undefined) delete process.env.CROSS_AGENT_CODEX_BIN;
-    else process.env.CROSS_AGENT_CODEX_BIN = previous;
-  });
-}
-
 function reasonFor(support: ReturnType<EngineAdapter["sandboxSupport"]>): string {
   if (support.ok) assert.fail("expected a refusal");
   return support.reason;
@@ -139,13 +129,19 @@ test("codex's leadMount refuses an environment no probed setting can carry", () 
   assert.deepEqual(codex.leadMount({ ...spec, env: {} }, "/scratch").argv, codex.leadMount({ command: spec.command, args: spec.args }, "/scratch").argv);
 });
 
-test("codex's sandbox support reports the binary it cannot resolve", (t) => {
-  withBin(t, path.join(process.cwd(), "no-such-codex-binary"));
-  const reason = reasonFor(codex.sandboxSupport());
+test("codex's sandbox support reports the binary it cannot resolve, from the spawn's own environment", (t) => {
+  const missing = path.join(process.cwd(), "no-such-codex-binary");
+  const reason = reasonFor(codex.sandboxSupport({ CROSS_AGENT_CODEX_BIN: missing }));
   assert.match(reason, /no-such-codex-binary/);
   assert.match(reason, /codex/);
-  withBin(t, process.execPath);
-  assert.deepEqual(codex.sandboxSupport(), { ok: true });
+  assert.deepEqual(codex.sandboxSupport({ CROSS_AGENT_CODEX_BIN: process.execPath }), { ok: true });
+  // The environment handed in is the whole of it: a `codex` on this process's own PATH
+  // answers for nothing, because the spawn will run with the environment below.
+  const directory = scratch(t);
+  assert.match(reasonFor(codex.sandboxSupport({ PATH: directory })), /^codex binary "codex" not found/);
+  writeFileSync(path.join(directory, "codex"), "#!/bin/sh\nexit 0\n");
+  chmodSync(path.join(directory, "codex"), 0o755);
+  assert.deepEqual(codex.sandboxSupport({ PATH: directory }), { ok: true });
 });
 
 test("sandboxFor pairs a profile with the mode codex gives it, and refuses any other", () => {
@@ -428,7 +424,6 @@ test("codex's final message is the -o file's, then the last result, then the las
 test("a fake codex run through the pipeline yields the thread id, the activity and the -o text", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
-  withBin(t, bin);
   const record = path.join(dirs.task, "record.json");
   const last = "the message codex wrote to its -o file\n";
   const request = requestFor(dirs, {
@@ -489,7 +484,6 @@ test("a fake codex run through the pipeline yields the thread id, the activity a
 test("a failed turn settles as an error carrying codex's own message", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
-  withBin(t, bin);
   const request = requestFor(dirs, {
     env: { FAKE_ENGINE_FORMAT: "codex", FAKE_ENGINE_SCRIPT: "fail", CROSS_AGENT_CODEX_BIN: bin },
   });

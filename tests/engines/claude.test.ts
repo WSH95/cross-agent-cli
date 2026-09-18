@@ -64,15 +64,6 @@ function requestFor(dirs: ReturnType<typeof layout>, patch: Partial<SpawnRequest
   };
 }
 
-function withPath(t: TestContext, value: string): void {
-  const previous = process.env.PATH;
-  process.env.PATH = value;
-  t.after(() => {
-    if (previous === undefined) delete process.env.PATH;
-    else process.env.PATH = previous;
-  });
-}
-
 function reasonFor(support: ReturnType<EngineAdapter["sandboxSupport"]>): string {
   if (support.ok) assert.fail("expected a refusal");
   return support.reason;
@@ -86,14 +77,16 @@ function executable(directory: string, name: string): void {
 
 /**
  * A run through the pipeline needs `sandboxSupport` to pass on any machine, not only one
- * with bubblewrap installed, so P1's two prerequisites are put on PATH for the test.
+ * with bubblewrap installed, so P1's two prerequisites are put on the PATH the request
+ * carries — the environment the spawn itself will run with, which is where the adapter
+ * reads them.
  */
-function withSandboxPrerequisites(t: TestContext, directory: string): void {
+function sandboxPrerequisites(directory: string): string {
   const bin = path.join(directory, "sandbox-bin");
   mkdirSync(bin, { recursive: true });
   executable(bin, "bwrap");
   executable(bin, "socat");
-  withPath(t, [bin, process.env.PATH ?? ""].join(path.delimiter));
+  return bin;
 }
 
 /**
@@ -157,24 +150,25 @@ test("claude's leadMount returns the config file and the flag that points at it 
   assert.deepEqual(JSON.parse(bare.files![0].contents), { mcpServers: { "cross-agent": { command: "node", args: [] } } });
 });
 
-test("claude's sandbox support names the Linux prerequisites it cannot find (P1)", (t) => {
+test("claude's sandbox support names the Linux prerequisites it cannot find on the spawn's own PATH (P1)", (t) => {
   const directory = scratch(t);
-  withPath(t, directory);
+  const env = { PATH: directory };
   if (process.platform !== "linux") {
     // P1 probed Linux. Nothing here has observed another platform's sandbox, and the
     // engine refuses on its own if its own sandbox cannot start.
-    assert.deepEqual(claude.sandboxSupport(), { ok: true });
+    assert.deepEqual(claude.sandboxSupport(env), { ok: true });
     return;
   }
-  // The reason names what is missing, not merely what is needed.
-  assert.match(reasonFor(claude.sandboxSupport()), /^bwrap and socat not found on PATH/);
+  // The reason names what is missing, not merely what is needed, and it is the handed-in
+  // PATH that is searched: this process's own may well carry both.
+  assert.match(reasonFor(claude.sandboxSupport(env)), /^bwrap and socat not found on PATH/);
   executable(directory, "bwrap");
-  assert.match(reasonFor(claude.sandboxSupport()), /^socat not found on PATH/);
+  assert.match(reasonFor(claude.sandboxSupport(env)), /^socat not found on PATH/);
   rmSync(path.join(directory, "bwrap"));
   executable(directory, "socat");
-  assert.match(reasonFor(claude.sandboxSupport()), /^bwrap not found on PATH/);
+  assert.match(reasonFor(claude.sandboxSupport(env)), /^bwrap not found on PATH/);
   executable(directory, "bwrap");
-  assert.deepEqual(claude.sandboxSupport(), { ok: true });
+  assert.deepEqual(claude.sandboxSupport(env), { ok: true });
 });
 
 test("sandboxFor pairs a profile with the mode claude gives it, and refuses any other", () => {
@@ -424,11 +418,13 @@ test("claude declares no finish: its output is a line stream, not one document a
 
 test("a fake claude run through the pipeline yields the session, the activity and the final text", async (t) => {
   const dirs = layout(t);
-  withSandboxPrerequisites(t, dirs.root);
   const record = path.join(dirs.task, "record.json");
   const request = requestFor(dirs, {
     model: "claude-sonnet-5",
-    env: { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_RECORD: record, CROSS_AGENT_CLAUDE_BIN: shim(dirs.root) },
+    env: {
+      FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_RECORD: record,
+      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root), PATH: sandboxPrerequisites(dirs.root),
+    },
   });
   const argv = [
     "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
@@ -467,9 +463,11 @@ test("a fake claude run through the pipeline yields the session, the activity an
 
 test("a failed run settles as an error carrying the engine's own message", async (t) => {
   const dirs = layout(t);
-  withSandboxPrerequisites(t, dirs.root);
   const request = requestFor(dirs, {
-    env: { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "fail", CROSS_AGENT_CLAUDE_BIN: shim(dirs.root) },
+    env: {
+      FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "fail",
+      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root), PATH: sandboxPrerequisites(dirs.root),
+    },
   });
   const handle = spawnEngine(claude, request, {});
   t.after(() => { handle.kill("SIGKILL"); });
@@ -484,12 +482,11 @@ test("a failed run settles as an error carrying the engine's own message", async
 
 test("a sandbox failure on stderr fails a run the engine itself calls a success (P1)", async (t) => {
   const dirs = layout(t);
-  withSandboxPrerequisites(t, dirs.root);
   const warning = "Sandbox disabled: sandbox is enabled but dependencies are missing: socat not installed. Commands will run WITHOUT sandboxing.";
   const request = requestFor(dirs, {
     env: {
       FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok", CLAUDE_SHIM_STDERR: warning,
-      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root),
+      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root), PATH: sandboxPrerequisites(dirs.root),
     },
   });
   const handle = spawnEngine(claude, request, {});
@@ -508,7 +505,6 @@ test("a sandbox failure on stderr fails a run the engine itself calls a success 
 
 test("a sandbox that fails every command is still one error event, and all of it evidence", async (t) => {
   const dirs = layout(t);
-  withSandboxPrerequisites(t, dirs.root);
   // P1's other failure mode: the sandbox engages and every command inside it dies at its
   // setup, so the message arrives once per command and a long run would emit hundreds.
   const lines = ["curl", "npm test", "git status"].map((command) =>
@@ -516,7 +512,7 @@ test("a sandbox that fails every command is still one error event, and all of it
   const request = requestFor(dirs, {
     env: {
       FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok", CLAUDE_SHIM_STDERR: lines.join("\n"),
-      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root),
+      CROSS_AGENT_CLAUDE_BIN: shim(dirs.root), PATH: sandboxPrerequisites(dirs.root),
     },
   });
   const handle = spawnEngine(claude, request, {});

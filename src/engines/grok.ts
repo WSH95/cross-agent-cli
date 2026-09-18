@@ -57,9 +57,9 @@ const grok = {
   sandboxProfiles: { "read-only": "read-only", strict: "read-only", workspace: "write", off: "off" },
 
   // Grok's sandbox is the binary's own, so the binary resolving is the whole of the check.
-  sandboxSupport(): { ok: true } | { ok: false; reason: string } {
-    const bin = engineBin("grok");
-    return commandPath(bin) === null
+  sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
+    const bin = engineBin("grok", env);
+    return commandPath(bin, env) === null
       ? { ok: false, reason: `grok binary ${JSON.stringify(bin)} not found; set engines.grok.bin or CROSS_AGENT_GROK_BIN` }
       : { ok: true };
   },

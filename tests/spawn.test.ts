@@ -241,6 +241,26 @@ test("a mode its engine's map contradicts is refused before anything else happen
   assert.equal(existsSync(request.resultPath), false);
 });
 
+test("the capability check is asked about the environment the spawn will use", (t) => {
+  const { request } = task(t);
+  // `sandboxSupport` is where a configured `engines.<e>.bin` is judged, and the binary it
+  // has to judge is the one `plan` will spawn — both read the request's own environment,
+  // never this process's (design section 3).
+  const seen: Array<Readonly<NodeJS.ProcessEnv>> = [];
+  const adapter: EngineAdapter = {
+    ...generic,
+    sandboxSupport: (env) => {
+      seen.push(env);
+      return env.ENGINE_BIN === undefined ? { ok: false, reason: "no ENGINE_BIN in the spawn environment" } : { ok: true };
+    },
+    plan: () => { assert.fail("must refuse before planning"); },
+  };
+  assert.throws(() => spawnEngine(adapter, { ...request, env: { A: "1" } }, {
+    spawn: () => { assert.fail("must refuse before spawning"); },
+  }), /claude sandbox refused: no ENGINE_BIN in the spawn environment/);
+  assert.deepEqual(seen, [{ A: "1" }]);
+});
+
 test("sandbox off permits an unsupported adapter", async (t) => {
   const { launch } = task(t);
   const adapter = { ...generic, sandboxSupport: () => { assert.fail("off must bypass the capability check"); } };

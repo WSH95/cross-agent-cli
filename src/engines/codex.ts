@@ -49,9 +49,9 @@ const codex = {
    * `cross-agent init` warns about that (design section 3, `src/config.ts:148-165`); the
    * adapter does not refuse, because the operator may have meant it.
    */
-  sandboxSupport(): { ok: true } | { ok: false; reason: string } {
-    const bin = engineBin("codex");
-    return commandPath(bin) === null
+  sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
+    const bin = engineBin("codex", env);
+    return commandPath(bin, env) === null
       ? { ok: false, reason: `codex binary ${JSON.stringify(bin)} not found; set engines.codex.bin or CROSS_AGENT_CODEX_BIN` }
       : { ok: true };
   },
@@ -130,12 +130,9 @@ const codex = {
     }
     if (request.lead !== undefined) {
       const mount = codex.leadMount(request.lead, request.scratchDir);
-      // The whole mount, not its argv alone: `files` because an adapter may name a file
-      // its argv points at, and nothing further for `inherited` — a mount that is the
-      // operator's own configuration rather than this run's (Grok's, P9) carries an empty
-      // argv and no files, so folding it in is both right and a no-op. Codex's own mount
-      // is three `-c` settings and no file, but `plan` reads the contract, not this
-      // file's implementation of it.
+      // The whole mount, not its argv alone: an adapter may name a file its argv points
+      // at. Codex's own mount is three `-c` settings and no file, but `plan` reads the
+      // contract, not this file's implementation of it.
       argv.push(...mount.argv);
       files.push(...(mount.files ?? []));
     }
