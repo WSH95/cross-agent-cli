@@ -2384,7 +2384,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`:349`); a call aborted before it polls answers `cancelled` and runs no pass
   at all (`:372`); and a project whose `lockWaitSeconds` is zero has both readers
   refuse the contended record by that rule rather than the helper's own default
-  (`:383`). The cancellation is recorded at the protocol edge as well: an unknown
+  (`:385`). The cancellation is recorded at the protocol edge as well: an unknown
   request id is ignored, and the one the notification names is answered within
   100 ms with `cancelled: true` and a reply that is still sent
   (`tests/server.test.ts:363`), including when the notification shares one stdin

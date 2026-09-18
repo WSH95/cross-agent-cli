@@ -371,13 +371,15 @@ test("a record the one pass could not settle is answered with the pass's reason,
 
 test("a call aborted before it polls answers cancelled and reconciles nothing", async (t) => {
   const p = await waitProject(t);
-  const { record, engine } = await overdueLaunch(t, p);
+  // Overdue, with no engine anywhere: a pass would write `failed: launch` at once, so the
+  // record still being `launching` is the proof that none ran.
+  const record = create(p.root, { role: "planner", brief: "seeded", cwd: p.root, engine: "grok" }, Date.now() - 5_000);
+  assert.equal((await update(p.root, record.id, { launchDeadline: Date.now() - 1_000 })).applied, true);
 
   const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100, signal: AbortSignal.abort() });
   assert.equal(answer.ok && answer.cancelled, true);
   assert.equal(answer.ok && answer.status, "launching");
   assert.equal(p.record(record.id).status, "launching", "no pass ran for a caller that had gone");
-  assert.equal(alive(engine.identity), true);
 });
 
 test("a record lock this project will not wait for refuses both readers by that rule", async (t) => {
