@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T17:36:34Z
+updated_at: 2026-09-18T18:41:54Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,17 +34,20 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 1 (T10a, `atc-s96.10` first half) is implemented on
-`task/cross-agent-m3` as `dab83ff` (`src/authority.ts`, `src/project.ts`,
-`src/server.ts` rows and `ToolContext`; 379 pass, 1 skip) and approved by
-the task review; the Codex review of `93da0a1..dab83ff` is still running.
-Six resolver deviations from the brief were accepted by ruling (SDD ledger,
-"Task 1: Ruling"). Task 2 (T10b) is briefed
-(`.superpowers/sdd/the-development-of-this-calm-planet/task-2-brief.md`)
-and dispatches through the Agent tool (opus, session effort max) once the
-Codex findings are triaged. Task 0 (`atc-s96.36`) is complete and closed.
-Steward checkpoints commit on `main`; the task branch rebases onto `main`
-before each fast-forward merge.
+Task 2 (T10b: `delegate`, `check`, `result`, `cancel`, `list_tasks`;
+`atc-s96.10` second half with `.10.1`, `.10.2`, `.37`, `.39`, `.29`,
+`atc-vuu` folded) runs as a Claude Code subagent (type
+`cross-agent-implementer`: opus 5, effort max) in `.worktrees/cross-agent-m3`
+from base `dab83ff`. Tasks 0 and 1 are complete there (`54ff90a..dab83ff`,
+reviews clean). Briefs, the SDD ledger (`progress.md`, every ruling),
+reports, review packages and the dispatch state live in
+`.superpowers/sdd/the-development-of-this-calm-planet/` (git-ignored). The
+plan gained decision 10 and item 4c on 2026-09-18 (user-approved): a
+built-in `consult` role in every mode, a no-config default to `solo`,
+`worktree: true` one-shots merged by the launcher under `mergePolicy`, and
+`review`/`critique` briefs (`atc-s96.27`, now P2). Steward checkpoints
+commit on `main`; the task branch rebases onto `main` before each
+fast-forward merge.
 
 ## Next steps
 

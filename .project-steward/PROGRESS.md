@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-18T18:41:54Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 1 complete (dab83ff; task review approved; the hung Codex job was cancelled and its look at T10a moves to the M1-close cumulative review). Task 2 (T10b) running as a Claude Code subagent (cross-agent-implementer: opus 5, effort max), base dab83ff, with a mid-task amendment (record.effort; check/list_tasks show engine/model/effort). User-approved plan decision 10: built-in consult role in every mode, no-config default to solo, worktree:true one-shots merged by the launcher under mergePolicy, review/critique briefs — new item 4c, atc-s96.27 promoted to P2. Task 3 (T11) briefed.
+
 ### 2026-09-18T17:36:34Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 1 (T10a) implemented on task/cross-agent-m3 as dab83ff (src/authority.ts, src/project.ts, server rows and ToolContext; 379 pass/1 skip; six resolver deviations accepted by ruling in the SDD ledger); task review approved with minors carried into Task 2's brief; Codex review of 93da0a1..dab83ff still running. Session effort set to max: Task 2 onward dispatch through the Agent tool (opus). Task 2 (T10b) brief ready.
 
