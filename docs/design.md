@@ -2362,29 +2362,29 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   through `check` when it emits, stalls again on the next silence, and settles
   with the tail of its result — one fake engine, one task, four readings
   (`tests/wait.test.ts:78`). A settled task is answered on the first read
-  (`:119`); `check` answers while a `wait` is pending and an aborted `wait`
-  returns the status it found, in under 100 ms, having written nothing (`:138`);
-  a `launching` record never stalls however old its clock (`:161`); the timeout
-  with no argument is the project's `waitDefaultSeconds` (`:175`); a runner
+  (`:123`); `check` answers while a `wait` is pending and an aborted `wait`
+  returns the status it found, in under 100 ms, having written nothing (`:142`);
+  a `launching` record never stalls however old its clock (`:165`); the timeout
+  with no argument is the project's `waitDefaultSeconds` (`:179`); a runner
   SIGKILLed under a pending `wait` is settled by that call's one reconciliation
-  pass, engine group and all (`:186`), while an orphan the pass cannot settle is
+  pass, engine group and all (`:190`), while an orphan the pass cannot settle is
   answered as `orphaned`, with the reason it was skipped, rather than waited on
-  (`:200`); a second `wait` run in a **fresh process** reads the same stall from
-  the ledger and the task is still running when it does (`:214`); a lead is
+  (`:204`); a second `wait` run in a **fresh process** reads the same stall from
+  the ledger and the task is still running when it does (`:220`); a lead is
   answered for a task it delegated, refused by name for one it did not, and told
-  `no task` for one nobody has (`:235`); and `observeStall` writes each
+  `no task` for one nobody has (`:241`); and `observeStall` writes each
   transition once, leaves a reading it has already written alone, and returns the
-  record that beat it when another writer settled the task (`:267`). A stall
+  record that beat it when another writer settled the task (`:273`). A stall
   another reader wrote while a `wait` slept ends that wait too, because the
-  crossing is the event and not the write (`:292`); a quiet task whose runner has
-  died is reconciled rather than reported as stalled (`:312`); a launch past its
-  deadline is adopted and settled by the waiter's own pass (`:332`), and one that
+  crossing is the event and not the write (`:298`); a quiet task whose runner has
+  died is reconciled rather than reported as stalled (`:318`); a launch past its
+  deadline is adopted and settled by the waiter's own pass (`:338`), and one that
   pass cannot judge — the engine's environment unreadable — is answered at once
   with that reason and a `list_tasks` hint, having written and killed nothing
-  (`:343`); a call aborted before it polls answers `cancelled` and runs no pass
-  at all (`:366`); and a project whose `lockWaitSeconds` is zero has both readers
+  (`:349`); a call aborted before it polls answers `cancelled` and runs no pass
+  at all (`:372`); and a project whose `lockWaitSeconds` is zero has both readers
   refuse the contended record by that rule rather than the helper's own default
-  (`:377`). The cancellation is recorded at the protocol edge as well: an unknown
+  (`:383`). The cancellation is recorded at the protocol edge as well: an unknown
   request id is ignored, and the one the notification names is answered within
   100 ms with `cancelled: true` and a reply that is still sent
   (`tests/server.test.ts:363`), including when the notification shares one stdin
