@@ -33,7 +33,15 @@ async function docWith(t: { after: (fn: () => unknown) => void }, body: string):
   return doc;
 }
 
-test("every citation in docs/design.md and docs/probes.md names a line its file has", async () => {
+// A throwaway repository root holding the given files; cite them with `--root`.
+async function rootWith(t: { after: (fn: () => unknown) => void }, files: Record<string, string>): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "citations-root-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (const [name, body] of Object.entries(files)) await writeFile(path.join(dir, name), body, "utf8");
+  return dir;
+}
+
+test("every citation in docs/design.md and docs/probes.md names a line or a symbol its file has", async () => {
   const { code, out, err } = await run([]);
   assert.equal(code, 0, `check-citations reported misses:\n${out}${err}`);
 });
@@ -97,7 +105,133 @@ test("citations inside their files pass, and the run says on stderr how many it 
   const { code, out, err } = await run([doc]);
   assert.equal(code, 0, out);
   assert.equal(out, "");
-  assert.match(err, /3 citations in 1 file; 0 misses/);
+  assert.match(err, /3 citations in 1 file \(3 by line, 0 by symbol\); 0 misses/);
+});
+
+test("the summary on stderr counts line citations and symbol citations separately", async (t) => {
+  const dir = await rootWith(t, {
+    "a.ts": "export function alpha() {}\nexport const beta = 1;\n",
+    "doc.md": "A line (`a.ts:1`), its symbol (`#alpha`), and another (`a.ts#beta`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.match(err, /3 citations in 1 file \(1 by line, 2 by symbol\); 0 misses/);
+});
+
+test("a symbol citation passes when the file declares the symbol at top level, in any declaration form", async (t) => {
+  const dir = await rootWith(t, {
+    "forms.ts": [
+      "function plain() {}",
+      "async function waited() {}",
+      "const fixed = 1;",
+      "let moving = 2;",
+      "class Thing {}",
+      "interface Shape {}",
+      "type Alias = string;",
+      "export function exportedPlain() {}",
+      "export async function exportedWaited() {}",
+      "export const exportedFixed = 1;",
+      "export let exportedMoving = 2;",
+      "export class ExportedThing {}",
+      "export interface ExportedShape {}",
+      "export type ExportedAlias<T> = T[];",
+      "",
+    ].join("\n"),
+    "doc.md": [
+      "Plain (`forms.ts#plain`, `forms.ts#waited`, `forms.ts#fixed`, `forms.ts#moving`,",
+      "`forms.ts#Thing`, `forms.ts#Shape`, `forms.ts#Alias`) and exported",
+      "(`forms.ts#exportedPlain`, `forms.ts#exportedWaited`, `forms.ts#exportedFixed`,",
+      "`forms.ts#exportedMoving`, `forms.ts#ExportedThing`, `forms.ts#ExportedShape`,",
+      "`forms.ts#ExportedAlias`).",
+      "",
+    ].join("\n"),
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.equal(out, "");
+  assert.match(err, /14 citations in 1 file \(0 by line, 14 by symbol\); 0 misses/);
+});
+
+test("a symbol the file does not declare, even the start of one it does, is a miss naming the file and the symbol", async (t) => {
+  const dir = await rootWith(t, {
+    "spawn.ts": "export function spawnEngine() {}\n",
+    "doc.md": "First line.\nThe pipeline refuses (`spawn.ts#spawn`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^.*doc\.md:2: spawn\.ts#spawn — no such symbol$/);
+});
+
+test("a declaration inside a body is not a top-level symbol, so citing it is a miss", async (t) => {
+  const dir = await rootWith(t, {
+    "nested.ts": "export function outer() {\n  function inner() {}\n  const local = 1;\n}\n",
+    "doc.md": "The outer one (`nested.ts#outer`) passes; (`nested.ts#inner`) and (`nested.ts#local`) do not.\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /doc\.md:1: nested\.ts#inner — no such symbol$/);
+  assert.match(lines[1], /doc\.md:1: nested\.ts#local — no such symbol$/);
+});
+
+test("an // @anchor comment names a symbol, at the margin or indented inside a body", async (t) => {
+  const dir = await rootWith(t, {
+    "anchored.ts": [
+      "export function run(retrying: boolean) {",
+      "  if (retrying) {",
+      "    // @anchor retryBranch",
+      "    return 2;",
+      "  }",
+      "  return 1;",
+      "}",
+      "// @anchor tail",
+      "",
+    ].join("\n"),
+    "doc.md": "The retry (`anchored.ts#retryBranch`) and the tail (`anchored.ts#tail`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.match(err, /2 citations in 1 file \(0 by line, 2 by symbol\); 0 misses/);
+});
+
+test("a # continuation cites a symbol in the file of the citation before it, and is a miss before any file", async (t) => {
+  const dir = await rootWith(t, {
+    "a.ts": "export function alpha() {}\nexport const beta = 1;\n",
+    "b.ts": "export function gamma() {}\n",
+    "doc.md": "Too soon (`#alpha`).\nIn a (`a.ts#alpha`, `#beta`); in b (`b.ts:1`, `#gamma`, `#beta`).\n",
+  });
+  const { code, out } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /doc\.md:1: #alpha — continuation cites no file$/);
+  assert.match(lines[1], /doc\.md:2: b\.ts#beta — no such symbol$/);
+});
+
+test("a symbol citation into a file that does not exist is a miss", async (t) => {
+  const doc = await docWith(t, "The mode lives in `src/nowhere.ts#loadMode`.\n");
+  const { code, out } = await run([doc]);
+  assert.equal(code, 1);
+  assert.match(out, /doc\.md:1: src\/nowhere\.ts#loadMode — no such file/);
+});
+
+test("a symbol citation wrapped across a line break is joined and reported where it starts", async (t) => {
+  const doc = await docWith(t, "Line one.\nThe pipeline refuses (`src/engines/spawn.ts\n#noSuchSymbol`) outright.\n");
+  const { code, out } = await run([doc]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /doc\.md:2: src\/engines\/spawn\.ts#noSuchSymbol — no such symbol$/);
+});
+
+test("a brace-expansion path with a symbol is a miss: a symbol belongs to one file", async (t) => {
+  const doc = await docWith(t, "The adapters (`src/engines/{codex,grok}.ts#truncate`) declare it.\n");
+  const { code, out } = await run([doc]);
+  assert.equal(code, 1);
+  assert.match(out, /doc\.md:1: src\/engines\/\{codex,grok\}\.ts#truncate — brace expansion cannot be checked; cite one file/);
 });
 
 test("a fenced code block is not scanned, so an example citation is not a miss", async (t) => {
