@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cross-agent": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/server.ts"]
+    }
+  }
+}

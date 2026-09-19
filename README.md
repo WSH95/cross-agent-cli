@@ -27,9 +27,37 @@ of it: the mode loader and the three built-in modes, the authority model and
 the twelve tools it gates — `delegate`, `wait`, `check`, `result`, `cancel`,
 `list_tasks`, `describe_mode`, `list_roles` and the worktree provider's four —
 and `cross-agent init`, and the launcher skill with each mode's own loop. What
-is left is a target: the mailbox an engine-placed lead needs, and each host's
-packaging. `docs/design.md` is the design and the work plan; `docs/probes.md`
-records what each engine CLI was observed to do.
+is left is a target: the mailbox an engine-placed lead needs, and Codex's and
+Grok's packaging. `docs/design.md` is the design and the work plan;
+`docs/probes.md` records what each engine CLI was observed to do, and
+`VERIFY.md` what each milestone's own runs showed.
+
+## Install it in Claude Code
+
+The repository root is the plugin root: `.claude-plugin/plugin.json` names the
+plugin, `.mcp.json` starts this server from it, and `skills/` is found by
+convention. In development, point a session at the checkout:
+
+```
+claude --plugin-dir ~/Documents/agent-team-cli
+```
+
+Then, once per project the team is to work in, write its bind-time config —
+which mode, and the engine, model and effort each of that mode's roles runs on:
+
+```
+cd ~/code/my-project
+cross-agent init --mode dev-team
+```
+
+`cross-agent` is `package.json`'s `bin`, so it is on `PATH` only where the
+package is linked; everywhere else the same command is `node
+~/Documents/agent-team-cli/src/cli.ts init --mode dev-team`. Either way `init`
+writes `.cross-agent/config.json` with every role bound to a default you then
+edit, adds `.cross-agent/` and the mode's worktree directory to `.gitignore`,
+and leaves an existing config alone. The server discovers that
+project from the host session's working directory, so a session started
+anywhere inside it runs that project's team.
 
 ## Run the tests
 

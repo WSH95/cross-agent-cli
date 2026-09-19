@@ -2504,8 +2504,12 @@ package rather than the devpack's, which lives outside this repository
 
 ### 9. Host packaging
 
-No manifest exists yet; Claude Code packaging is step 10 and the other two are
-step 12.
+Claude Code's two manifests ship (step 10): `.claude-plugin/plugin.json` naming
+the plugin at `package.json`'s version and `.mcp.json` starting this server
+from the plugin root, with `skills/` found by convention and no `skills` key to
+say so (`tests/packaging.test.ts`). `claude plugin validate <repo>` passes on
+them, warning only that the repository's own `CLAUDE.md` is not plugin context,
+which it is not meant to be. The Codex and Grok manifests are step 12.
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three
@@ -2642,7 +2646,8 @@ tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
 `npm test` runs), the two docs, and the root files. From row 9:
 `skills/cross-agent/SKILL.md`, every mode's own `SKILL.md` and every
 `roles/*.md`, with `tools/from-openmaus.mjs` beside the other two harnesses.
-Still to be written: both plugin manifests and `.mcp.json`.
+From row 10: `.claude-plugin/plugin.json` and `.mcp.json`. Still to be written:
+`.codex-plugin/plugin.json`.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
 and `"bin": {"cross-agent": "src/cli.ts"}`.
