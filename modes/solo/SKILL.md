@@ -38,9 +38,14 @@ journal.
 
 The specialist edits files and runs no git. Once its task settles:
 
-1. Commit what it left: `git_mutate {slug, args: ["add", "-A"]}`, then
-   `git_mutate {slug, args: ["commit", "-m", <message>]}`. That is the only path
-   that writes a worktree's git metadata, and it journals the `committed` step.
+1. Commit what it left: `git_mutate {slug, args: ["add", "-A", "--", ".",
+   ":(exclude).cross-agent", ":(exclude).worktrees"]}`, then `git_mutate {slug,
+   args: ["commit", "-m", <message>]}`. That is the only path that writes a
+   worktree's git metadata, and it journals the `committed` step. The two
+   exclusions are not optional: a `.gitignore` the specialist wrote in its
+   worktree outranks the repository's own, and the project's state is never
+   committed to a task branch — `git_root merge --ff-only` refuses a branch that
+   carries either directory anyway, and that refusal costs you the run.
 2. Then apply the project's `project.mergePolicy`. You apply it; nobody merges
    by hand under `auto`.
 

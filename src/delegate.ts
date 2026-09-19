@@ -8,7 +8,7 @@ import { bindingFault, CONFIG_PATH, engineLeadRole, loadConfig, modeDrift } from
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
-import { gitRoot } from "./gitroot.ts";
+import { gitRoot, repositoryAt, trackedStateFault } from "./gitroot.ts";
 import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
@@ -173,6 +173,21 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   if (drift !== null) return refuse(drift);
   const binding = bindingFault(options.mode, config, path.join(projectRoot, CONFIG_PATH));
   if (binding !== null) return refuse(binding);
+  // A tracked `.cross-agent/` is a config a specialist could have committed, and this call
+  // has just read one: the deny targets, the billing mode and `engines.<e>.bin` all reach
+  // the runner from it. Both root tools refuse to work in such a project (design section
+  // 4) and so does the launch boundary. A project that is not a repository of its own
+  // tracks nothing, and has nothing to check.
+  const located = await repositoryAt(projectRoot);
+  if (!("reason" in located)) {
+    let tracked: string | null;
+    try {
+      tracked = await trackedStateFault(located.gitDir, located.workTree);
+    } catch (error) {
+      return refuse(message(error));
+    }
+    if (tracked !== null) return refuse(tracked);
+  }
 
   const leadRole = options.mode.lead.role;
   if (options.authority.row === "lead" && leadRole !== undefined && request.role === leadRole) {

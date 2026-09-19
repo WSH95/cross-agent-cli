@@ -1968,9 +1968,9 @@ is the default branch (`src/gitroot.ts#execute`): `merge` merges into HEAD,
 while both merge fields are read from the default branch, so a merge taken
 anywhere else would journal a revert range that never existed.
 
-**Both root tools refuse to work in a project that tracks its own
+**Both root tools and `delegate` refuse to work in a project that tracks its own
 `.cross-agent/`** (`src/gitroot.ts#trackedStateFault`, `#gitRoot`,
-`src/runcommand.ts#runCommand`). What they run and what they journal are read
+`src/runcommand.ts#runCommand`, `src/delegate.ts#delegate`). What they run and what they journal are read
 from files there — `testCommand`, a slug's journal — and the command string
 being "config only" is safe exactly while a specialist cannot commit a change to
 it. With `.cross-agent/` tracked, an implementer's own commit inside its
@@ -1981,9 +1981,26 @@ the repair. `cross-agent init` writes those entries — `.cross-agent/` and the
 mode's own worktree directory — appending only what the file lacks, so the verb
 that creates the state is the one that ignores it
 (`src/config.ts#ignoreProjectState`, `#initConfig`, `src/cli.ts`).
-`verify_worktree` and `git_mutate` need no such check: neither reads a
-configured command, and a worktree mutation is already confined to the branch
-its journal names.
+`delegate` runs the same check at the launch boundary, because it reads that
+config on every call and hands the deny targets, the billing mode and
+`engines.<e>.bin` from it to the runner: a config that somehow reached the root
+is never acted on. `verify_worktree` and `git_mutate` need no such check:
+neither reads a configured command, and a worktree mutation is already confined
+to the branch its journal names.
+
+**Nothing the project keeps for itself arrives by merge.** Every check above
+reads the **root's** own state, and until the merge nothing reads the tree that
+is about to arrive — which is the one path a specialist has to the root. A
+`.gitignore` it writes in its own worktree outranks the repository's shared
+`info/exclude`, so `git add -A` there stages `.cross-agent/`, the lead's commit
+carries it, and a fast-forward lands it at the root. So `merge --ff-only`
+refuses, before git merges anything, when `git diff --name-only
+<defaultBranch>...<ref> -- .cross-agent <worktreeDir>` names any path, and the
+refusal lists them (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
+up: the loop's own commit step is `git_mutate ["add", "-A", "--", ".",
+":(exclude).cross-agent", ":(exclude).worktrees"]`, so the ordinary case never
+stages either directory (`modes/solo/SKILL.md`, section 7); and `delegate`'s
+check above means a config that did reach the root is still never read as one.
 
 **`run_command`.** `{which: "test" | "setup", where: "root" | <a verified
 worktree path>, slug?, timeout_seconds?}` as the wire spells it,

@@ -198,6 +198,33 @@ test("the whole task loop through git_root journals one named step per verb with
   assert.equal((await state(root)).status, "", "and the merge left nothing behind at the root");
 });
 
+test("a merge carrying the project's own state or its worktree directory is refused before git runs", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "smuggle");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/smuggle", directory, "main"], slug: "smuggle" }, { waitSeconds: 5 }));
+
+  // A `.gitignore` the specialist writes in its own worktree outranks the repository's
+  // shared `info/exclude`, so a plain `add -A` stages the project's state and the lead's
+  // own commit carries it. The merge is the last place that can see it: everything before
+  // it reads the **root's** index, and nothing reads the tree coming in (design section 4).
+  fs.writeFileSync(path.join(directory, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
+  fs.mkdirSync(path.join(directory, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(directory, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+  fs.mkdirSync(path.join(directory, ".worktrees", "nested"), { recursive: true });
+  fs.writeFileSync(path.join(directory, ".worktrees", "nested", "tree.txt"), "another task's tree\n");
+  accepted(await gitMutate(root, { slug: "smuggle", args: ["add", "-A"] }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "smuggle", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.match(await git(directory, "ls-files"), /\.cross-agent\/config\.json/, "the branch does carry it");
+
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/smuggle"], slug: "smuggle" }, { waitSeconds: 5 }));
+  assert.match(reason, /\.cross-agent\/config\.json/);
+  assert.match(reason, /\.worktrees\/nested\/tree\.txt/);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+  assert.equal(readJournal(root, "smuggle")!.steps.some((step) => step.step === "merged"), false);
+  assert.equal(await git(root, "ls-files", "--", ".cross-agent"), "", "and the root tracks none of it");
+});
+
 test("the merge fields are written once and a second merge on one slug is refused", async (t) => {
   const { root } = await repository(t);
   const directory = path.join(root, ".worktrees", "once");

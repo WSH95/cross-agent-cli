@@ -499,6 +499,27 @@ test("a lock lost while the command ran is reported, and the step is still journ
   assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42, 43]);
 });
 
+test("the loop's commit step stages the work and never the project's own state", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await add("guarded");
+  // What a specialist can do to its own worktree: re-include the two directories the
+  // repository's `info/exclude` keeps out, and fill them.
+  await writeFile(path.join(worktree, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
+  await mkdir(path.join(worktree, ".cross-agent"), { recursive: true });
+  await writeFile(path.join(worktree, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+  await mkdir(path.join(worktree, ".worktrees", "nested"), { recursive: true });
+  await writeFile(path.join(worktree, ".worktrees", "nested", "tree.txt"), "another task's tree\n");
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+
+  // The step the loop runs (`modes/solo/SKILL.md`): pathspecs, which `git_mutate` accepts
+  // because none of them is a global option.
+  accepted(await gitMutate(root, {
+    slug: "guarded", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"],
+  }, { waitSeconds: 5 }));
+  const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
+  assert.deepEqual(staged.sort(), [".gitignore", "work.txt"]);
+});
+
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);
   await add("refused");

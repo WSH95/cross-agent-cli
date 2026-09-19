@@ -20,6 +20,7 @@ test("the solo loop names every step a worktree one-shot settles under, and who 
   const loop = soloLoop();
   // The work is committed before anything merges it: a specialist writes no git metadata,
   // so what it left in the worktree is still uncommitted when its task settles.
+  assert.match(loop, /git_mutate \{slug, args: \["add", "-A", "--", "\.", ":\(exclude\)\.cross-agent", ":\(exclude\)\.worktrees"\]\}/);
   assert.match(loop, /git_mutate \{slug, args: \["commit"/);
   // `auto`, in order: the suite in the worktree, the fast-forward merge, the suite at the
   // root, the worktree, the branch, the report (design section 4).

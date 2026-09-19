@@ -463,6 +463,30 @@ interface Held {
   claim?: Lock;
 }
 
+/**
+ * Why this branch may not be merged, or null. Everything else in this file reads the
+ * **root's** own state — `trackedStateFault` reads the root's index — and nothing reads
+ * the tree that is about to arrive. A specialist's `.gitignore` in its own worktree
+ * outranks the repository's shared `info/exclude`, so the loop's own `add -A` can stage
+ * `.cross-agent/` there and a fast-forward would carry the project's own config, journal
+ * and ledger to the root, where `delegate` reads them on the next call. So the merge is
+ * where the incoming tree is read, and the two directories the project keeps for itself
+ * are refused by name (design section 4).
+ */
+async function smuggled(
+  gitDir: string, workTree: string, defaultBranch: string, ref: string, dir: string,
+): Promise<string | null> {
+  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir]);
+  if (ran.exitCode !== 0) {
+    return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
+  }
+  const paths = ran.stdout.split("\n").filter(Boolean);
+  if (paths.length === 0) return null;
+  return `git_root refuses to merge ${ref}: it carries ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ", …" : ""}. `
+    + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there. `
+    + `Remove them from the branch and merge again`;
+}
+
 /** The journal's checks, the command and its step, with `git.lock` held for all of them. */
 async function execute(
   projectRoot: string, request: GitRootRequest, options: GitRootOptions,
@@ -492,6 +516,8 @@ async function execute(
     if (head.exitCode !== 0 || on !== defaultBranch) {
       return { ok: false, reason: `git_root merges into the root's HEAD, which is on ${on || "no branch"}; check out ${defaultBranch} there first` };
     }
+    const carried = await smuggled(gitDir, workTree, defaultBranch, parts.ref!, options.dir ?? ".worktrees");
+    if (carried !== null) return { ok: false, reason: carried };
     // The head this call is about to merge, read inside the same lock as the merge itself.
     branchHead = await revision(gitDir, workTree, parts.ref!);
   }

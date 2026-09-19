@@ -577,11 +577,16 @@ test("a worktree one-shot is refused wherever git_root would refuse it, and leav
   );
   assert.equal((await update(p.root, holder.id, { status: "done" })).applied, true);
 
-  // And `git_root` is what creates it, so its own refusals are this delegation's: a
-  // project that tracks `.cross-agent/` is one where a specialist could commit what the
-  // lead runs at the root.
+  // And a project that tracks `.cross-agent/` is one where a specialist could commit what
+  // the lead runs at the root — including the config this call has just read — so no
+  // delegation of any kind proceeds there, worktree or not (design section 4).
   await git(p.root, "add", "-f", ".cross-agent/config.json");
-  assert.match(refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options)), /\.gitignore/);
+  for (const patch of [{ worktree: true }, {}]) {
+    assert.match(
+      refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, ...patch }), options)),
+      /\.cross-agent\/ is tracked by this repository[\s\S]*\.gitignore/,
+    );
+  }
 
   assert.deepEqual(p.records().map((record) => record.id), [holder.id], "nothing refused leaves a record behind");
   assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), ["task-one"], "or a worktree");
