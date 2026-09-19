@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T14:39:16Z
+updated_at: 2026-09-19T15:14:53Z
 updated_by: claude
 session_status: active
 branch: main
@@ -26,36 +26,27 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 ## In flight
 
 M3's skills half is merged (`main` `3023e30`; `VERIFY.md` M3). Task 6
-(T13; `atc-s96.13`) is on `task/cross-agent-m3` at `39505aa`: nine commits
-over `3023e30`; 602 tests, 601 pass, 1 skipped (the guarded Codex I2 test);
-819 citations, 0 misses; `tools/e2e-verify.mjs` 8/8 on the sample. Fix
-round 2 landed the Grok prompt-file budget (`atc-s96.55`, closed — verified
-by the product: a 76 KB review brief with the diff attached now launches),
-every evidence gap from the Grok review of round 1, `tools/e2e-verify.mjs`,
-and I1's Grok row with the sample folder trusted (`.54` closed; `.17` and
-`.52` closed too). The Opus 5 task reviewer's scoped re-review of rounds 1–2 plus the
-cumulative whole-task review returned: **spec compliance PASS**, every
-runtime fix proven to bite; **task quality needs fixes** for documentation
-truth only (the round-2 commits moved ~50 line citations off their content;
-a deleted Grok init-field caveat; one README word). **Fix round 3**, the
-closing round, is running on the implementer (`task-6-findings-round-3.md`:
-the citation pass with test-file citations converted to `@anchor`s, and a
-`--since <rev>` drift flag for `tools/check-citations.mjs`). The Grok second
-review of round 2 (task `23e32657…`, 76 KB brief with the diff attached —
-the E2BIG fix proven) settled with two Important holes in the new
-`tools/e2e-verify.mjs` (condition 8 cannot read Codex or Grok transcripts and
-counts missing evidence as a pass; the journal check cannot fail) and minors,
-and the Opus reviewer's evidence audit confirmed every pass claim against the
-raw artifacts while adding two record items; all folded into round 3
-(T6-R3-1 … R3-12). The raw evidence of P2/I1/I2/E1 is archived at
-`~/.cache/agent-team/probe-logs/t13-2026-09-19/` (36 files) — the session
-scratchpad it lived in is ephemeral. When both are clean: close `.13`,
-rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md`'s T13
-section (final text with placeholders in
-`.superpowers/sdd/…/dispatch/verify-t13-final.md`), then the full handover
-(`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`, wrap).
-The user leaves after T13; S11 is the next session's first dispatch
-(`task-7-brief.md` with addendum; `dispatch/s11-dispatch.md`).
+(T13; `atc-s96.13`) is on `task/cross-agent-m3` at `052299d`: eleven commits
+over `3023e30`; 610 tests, 609 pass, 1 skipped (the guarded Codex I2 test);
+825 citations, 0 misses; `node tools/check-citations.mjs --since 3023e30`
+reports no drift; `tools/e2e-verify.mjs` 8/8 on the sample. Three fix rounds
+closed everything the reviews found: the containment fixes (protected git
+paths for the writable profile; `denyWrite` of the cwd for the read-only
+profile, both proven by real probes), the Grok prompt-file budget (proven by
+a 76 KB review brief launching through the product), the plugin manifest with
+its inline MCP declaration, the e2e verifier that cannot pass on silence, the
+checker's `--since` drift flag, and every test-file citation as an anchor.
+Beads `.17`, `.52`, `.54`, `.55` closed; `atc-3ub` filed (two unprobed
+facts for T14/T15). **Two closing reviews of round 3 run now:** the Grok seat
+through cross-agent (task under `.cross-agent/tasks/` in the worktree, diff
+attached) and the Opus 5 task reviewer's final scoped re-review. When both
+are clean: close `.13`, rebase onto `main` and fast-forward, root `npm test`,
+`VERIFY.md` T13 section (`dispatch/verify-t13-final.md` with four
+placeholders), the final handover (`HANDOFF.md` from
+`dispatch/handoff-draft-static.md`, `PLAN.md`, `project-steward wrap`). The
+user leaves after T13; S11 is the next session's first dispatch
+(`task-7-brief.md` with addendum; `dispatch/s11-dispatch.md`). Raw evidence
+of P2/I1/I2/E1: `~/.cache/agent-team/probe-logs/t13-2026-09-19/`.
 
 ## Next steps
 
