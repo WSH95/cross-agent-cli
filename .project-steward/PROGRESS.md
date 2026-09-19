@@ -121,3 +121,4 @@ Set up Project Steward in this repository.
 - 2026-09-19T16:01:40Z — claude — [auto-checkpoint] Opus rerun of T13 round 4 folded into round 5 (R5-5..10); round 5 running.
 - 2026-09-19T16:12:09Z — claude — [auto-checkpoint] T13 round 5 landed (cbb412d; 616 pass; both --since 0/0; sample 8/8); two closing reviews running.
 - 2026-09-19T16:25:29Z — claude — [auto-checkpoint] T13 round 5: Opus seat approved; Grok seat holds the launcher regex and one cite → micro-round 6 running; bead .56 filed.
+- 2026-09-19T16:57:19Z — claude — [auto-checkpoint] T13: Grok confirmed round 6 but one regex over-match → micro-round 7 running (passes the controller's probe); QUESTIONS.md/RISKS.md record what is left for the user.
