@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T08:15:34Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 4b (git_root, run_command, journal steps) complete on task/cross-agent-m3 at c057420 after a fix round closing five Important findings (worktree rebase abort; steps name what moved; tests-passed once under the lock; worktree remove honours reservations; a tracked .cross-agent/ refused, init ignores it); 542 pass/1 skip; 760 citations/0 misses. Task 4c (solo without ceremony: consult role, no-config default, worktree:true one-shots, review/critique) running (cross-agent-implementer: claude-opus-5, max). T12 brief drafted. New P4 bead: root tools require the main worktree.
+
 ### 2026-09-19T07:24:03Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4 (S8) complete on task/cross-agent-m3 at 757371f (atc-s96.23 closed). Task 4b (git_root, run_command, journal named steps) implemented as 9cb89bc, 59c26cb (527 pass/1 skip; 738 citations/0 misses); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running; fix round will also add the timed-out run_command tail and git_mutate's mode-drift refusal. 4c brief updated.
 
