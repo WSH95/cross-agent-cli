@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T13:50:44Z
+updated_at: 2026-09-19T14:17:55Z
 updated_by: claude
 session_status: active
 branch: main
@@ -26,44 +26,24 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 ## In flight
 
 M3's skills half is merged (`main` `3023e30`; `VERIFY.md` M3). Task 6
-(T13; `atc-s96.13`, `.17`) is on `task/cross-agent-m3` at `272b51f` (six
-commits over `3023e30`; 599 tests, 598 pass; 814 citations, 0 misses).
-Fix round 1 closed what the two reviews found: the Claude read-only
-profile now sends `denyWrite` of the cwd plus the protected paths (a real
-read-only probe denied `notes.md`, `.cross-agent/`, `git add -A` and
-`/tmp`); a delegated writable task under the fix had every outside write
-denied including `<root>/.git/hooks/pre-commit`; the probe harness takes
-its settings from the adapter's `plan`; a fake-engine test pins the
-by-ancestry refusal naming the task id; the Codex I2 body is written behind
-`CROSS_AGENT_REAL_CODEX=1`; the MCP server is declared inline in
-`.claude-plugin/plugin.json` and the root `.mcp.json` is gone; 61 drifted
-citations re-pointed. The controller's closure check passed.
-
-**Reviewer seats changed by the user today:** the second code review is a
-`consult` delegation through cross-agent's own server to grok · grok-4.6 ·
-xhigh (driver `scratchpad/cross-agent-review.mjs`, launched with `setsid
---fork` from the worktree, which holds a git-ignored `solo` config); the
-task review stays on claude-opus-5. The first such run found a product
-defect — a 150 KB brief (diff attached) fails Grok's launch with `spawn
-E2BIG` because `src/engines/grok.ts` puts the brief on `-p` unless the
-role text is oversize (bead `atc-s96.55`) — and, rerun with the diff read
-from git, settled `done` in 17 min (task `a6efa884…`; text in
-`task-6-grok-review-round-1.md.text.md`): no Critical; the read-only
-builder, the ancestry refusal test and the packaging move verified by
-running the tests; four Important leftovers (the probe harness sets
-`protectedPaths` only for `workspace-write`; the Codex I2 test body sits
-under `$TMPDIR` and reuses the live HOME probe path; the design still tells
-the pre-fix P2/I2 story in five places; three citations still off content)
-and six minors. All folded with the `E2BIG` fix into
-`task-6-findings-round-2.md` (T6-R2-1 … R2-11; rulings: the stderr row
-line moves from startup to the first request resolution; a reusable
-`tools/e2e-verify.mjs`); **fix round 2 is running** on the implementer
-(`cross-agent-implementer` · claude-opus-5 · max). Then: the Grok review
-rerun as R2-1's check, the closure check, close `.13`/`.17`/`.52`/`.55`,
-`VERIFY.md` T13 block (report §7 draft), S11 (`task-7-brief.md` with
-addendum; dispatch draft in the scratchpad), T14, T15, T16, `.42`, `.18`.
-Beaded: `.53` (hop budget), `.54` (Grok I1 half — your call). Pending your
-approval: `agents-md-m3.diff`.
+(T13; `atc-s96.13`) is on `task/cross-agent-m3` at `39505aa`: nine commits
+over `3023e30`; 602 tests, 601 pass, 1 skipped (the guarded Codex I2 test);
+819 citations, 0 misses; `tools/e2e-verify.mjs` 8/8 on the sample. Fix
+round 2 landed the Grok prompt-file budget (`atc-s96.55`, closed — verified
+by the product: a 76 KB review brief with the diff attached now launches),
+every evidence gap from the Grok review of round 1, `tools/e2e-verify.mjs`,
+and I1's Grok row with the sample folder trusted (`.54` closed; `.17` and
+`.52` closed too). **Two reviews run now**, both read-only on the worktree:
+the Grok second review of round 2 through cross-agent (task `23e32657…`,
+diff attached) and — the seat the user caught being skipped — the Opus 5
+task reviewer's scoped re-review of rounds 1–2 plus the cumulative
+whole-task review (3023e30..39505aa). When both are clean: close `.13`,
+rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md`'s T13
+section (final text with placeholders in
+`.superpowers/sdd/…/dispatch/verify-t13-final.md`), then the full handover
+(`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`, wrap).
+The user leaves after T13; S11 is the next session's first dispatch
+(`task-7-brief.md` with addendum; `dispatch/s11-dispatch.md`).
 
 ## Next steps
 
