@@ -601,7 +601,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   settlement also reads the record for itself when it has none
   (`src/runner.ts:105`), so a cancel or a lost lock arriving before the first
   read settles rather than exiting through `fatal` (bead `atc-s96.29`); both are
-  recorded (`tests/runner.test.ts:1374`, `:1403`). Three rulings from the
+  recorded (`tests/runner.test.ts:1354`, `:1379`). Three rulings from the
   reviews attach to this same teardown path:
   - **A lost lock is a lost task.** `acquire` watches its helper child and
     sets `lock.lost`, calling an optional `onLost`, if the child exits before
@@ -877,7 +877,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   past the launch deadline the pass writes `failed: launch` with the count it
   could not read on the record — `launch; environ unreadable for <n>
   processes` (`src/reconcile.ts#unreadableHoldMs`, `#adopt`,
-  `tests/reconcile.test.ts:475`). Nothing is signalled by that decision: the
+  `tests/reconcile.test.ts:478`). Nothing is signalled by that decision: the
   process it could not read is left exactly where it was, and only the strays
   it could read are killed. **A process still inside `execve` is waited for, not
   counted.** Between the kernel's `begin_new_exec` and `setup_new_exec` a
@@ -974,7 +974,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   resolve and the task would stay `running` with no engine. Probe P3b records
   the shape of it — a nested `claude -p` still running when its parent's turn
   ended — and the suite exercises both descendants: one that inherits stdout
-  and one that does not (`tests/runner.test.ts:148`, `:152`, `:727`, `:747`).
+  and one that does not (`tests/runner.test.ts:148`, `:152`, `:727`, `:762`).
   The drain timer starts at `exit`, not at the last byte; `truncated` covers
   stdout and stderr together, since a reader cannot tell which stream lost the
   tail; and finalisation happens exactly
@@ -1464,7 +1464,7 @@ which is a property of the line, not of the pipeline.
   `grok-json` format (`tests/fixtures/fake-engine.mjs:56-59`, `:95-97`,
   `tests/spawn.test.ts:713`), and it is what the pipeline's `finish` tests are
   run against, because it is the case the hook exists for
-  (`tests/spawn.test.ts:788`, `:807`). `--effort` is an alias of
+  (`tests/spawn.test.ts:774`, `:803`). `--effort` is an alias of
   `--reasoning-effort`. **The role prompt goes through `--rules <role
   text>`**, which is Grok's system-level path and so the counterpart of
   Claude's `--append-system-prompt-file` and Codex's `-c
@@ -2498,22 +2498,22 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   SIGKILLed under a pending `wait` is settled by that call's one reconciliation
   pass, engine group and all (`:195`), while an orphan the pass cannot settle is
   answered as `orphaned`, with the reason it was skipped, rather than waited on
-  (`:211`); a second `wait` run in a **fresh process** reads the same stall from
-  the ledger and the task is still running when it does (`:227`); a lead is
+  (`:214`); a second `wait` run in a **fresh process** reads the same stall from
+  the ledger and the task is still running when it does (`:230`); a lead is
   answered for a task it delegated, refused by name for one it did not, and told
-  `no task` for one nobody has (`:248`); and `observeStall` writes each
+  `no task` for one nobody has (`:251`); and `observeStall` writes each
   transition once, leaves a reading it has already written alone, and returns the
-  record that beat it when another writer settled the task (`:280`). A stall
+  record that beat it when another writer settled the task (`:283`). A stall
   another reader wrote while a `wait` slept ends that wait too, because the
-  crossing is the event and not the write (`:305`); a quiet task whose runner has
-  died is reconciled rather than reported as stalled (`:325`); a launch past its
-  deadline is adopted and settled by the waiter's own pass (`:345`), and one that
+  crossing is the event and not the write (`:308`); a quiet task whose runner has
+  died is reconciled rather than reported as stalled (`:328`); a launch past its
+  deadline is adopted and settled by the waiter's own pass (`:348`), and one that
   pass cannot judge — the engine's environment unreadable — is answered at once
   with that reason and a `list_tasks` hint, having written and killed nothing
-  (`:359`); a call aborted before it polls answers `cancelled` and runs no pass
-  at all (`:382`); and a project whose `lockWaitSeconds` is zero has both readers
+  (`:362`); a call aborted before it polls answers `cancelled` and runs no pass
+  at all (`:385`); and a project whose `lockWaitSeconds` is zero has both readers
   refuse the contended record by that rule rather than the helper's own default
-  (`:395`). The cancellation is recorded at the protocol edge as well: an unknown
+  (`:398`). The cancellation is recorded at the protocol edge as well: an unknown
   request id is ignored, and the one the notification names is answered within
   100 ms with `cancelled: true` and a reply that is still sent
   (`tests/server.test.ts:363`), including when the notification shares one stdin
