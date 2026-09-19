@@ -51,7 +51,8 @@ I1 and I2 (rewritten around the permission matrix) and an end-to-end run
 Merged 2026-09-19 as `3023e30` (`VERIFY.md` M3): S8 (`.23`), Task 4b (root git
 tools and the journal's named steps, part of `.24`), 4c (`consult`, the
 no-config `solo` default, `worktree: true` one-shots; `.27`), T12 (`.12`).
-Open: T13 (`.13`, with `.17`), S11 (the rest of `.24`), T14, T15.
+T13 merged 2026-09-19 as `e9cbac0` (`.13`, `.17`, `.52`, `.54`, `.55` closed;
+`VERIFY.md` T13 section). Open: S11 (the rest of `.24`), T14, T15.
 
 ## M4: operator CLI and decision
 
