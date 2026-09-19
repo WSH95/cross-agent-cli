@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T01:57:08Z
+updated_at: 2026-09-19T04:20:31Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,18 +34,18 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 3c (test hygiene, `atc-s96.33`/`.43`, ten consecutive `npm test` runs
-under load as acceptance) runs as a Claude Code subagent
-(`cross-agent-implementer` · claude-opus-5 · max) on `task/cross-agent-m3`
-from `e585f33`. Tasks 0–3 and 3b are complete there (`54ff90a..e585f33`;
-465 pass, 1 skip; the environ-scan and cancel-timing flakes are fixed).
-After 3c's review: rebase the branch onto `main` (steward commits only),
-fast-forward merge, `npm test` at the root, create `VERIFY.md`, mark M1
-in `PLAN.md`, and report the milestone with the two AGENTS.md diffs
-awaiting approval (`agents-md-cite-by-symbol.diff`,
-`task-3b-agents-md.diff`). Then Task 4 (S8 modes), 4b, 4c. **Codex is
-paused by the user.** Ledger, briefs, reports and review packages:
-`.superpowers/sdd/the-development-of-this-calm-planet/`.
+Task 3c (test hygiene, `atc-s96.33`/`.43`) is on `task/cross-agent-m3` at
+`530c757` (467 pass, 1 skip; ten consecutive green `npm test` runs under
+8-core load) and its scoped re-review (Claude Code subagent ·
+claude-fable-5-1 · max) is running. Tasks 0–3, 3b are complete there. On a
+clean verdict the M1 close runs: `git rebase main` in the worktree (only
+steward commits on `main`), fast-forward merge, `npm test` at the root,
+`VERIFY.md` created, `PLAN.md` M1 marked, and the milestone report with
+the combined AGENTS.md proposal
+(`.superpowers/sdd/the-development-of-this-calm-planet/agents-md-m1.diff`)
+for approval. Then Task 4 (S8 modes), 4b, 4c. **Codex is paused by the
+user.** Ledger, briefs, reports and review packages: the SDD directory
+above.
 
 ## Next steps
 

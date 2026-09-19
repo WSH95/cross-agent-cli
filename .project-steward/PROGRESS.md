@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T04:20:31Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 3c (test hygiene) landed 0637a31, ce995c5 + fix round 530c757 on task/cross-agent-m3 (467 pass/1 skip; ten consecutive green npm test runs under 8-core load, 1029 s); scoped re-review (claude-fable-5-1, max) running. New P3 bead: runner stand-down on a transient unreadable candidate. Combined AGENTS.md proposal drafted (agents-md-m1.diff) for the M1 milestone report. Next: rebase onto main, ff-merge, root suite, VERIFY.md, PLAN.md M1.
+
 ### 2026-09-19T01:57:08Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 3b complete on task/cross-agent-m3 at e585f33 (fix round: the runner's outcome sidecar decides an orphan's settlement; cleanup-killed groups never settle from evidence; one exec-wait budget per scan; self-group records judged after cleanup); nine beads closed (.44 .40 atc-1p0 .31 .32 .30 .38 .41 .46); 465 pass/1 skip. Task 3c (test hygiene, ten-run acceptance) running (cross-agent-implementer: claude-opus-5, max). New P4 bead for prune. Next: the first ff-merge to main.
 
