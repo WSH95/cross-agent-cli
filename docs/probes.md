@@ -627,6 +627,54 @@ ten minutes, as the launcher's table says. `cancel` then settled the task
 of I2's last line; Codex's `tool_timeout_sec` and Grok's budget are still
 unmeasured.
 
+## E1: one `dev-team` task end to end under a Claude Code host (2026-09-19)
+
+The host of I1, one prompt: the launcher skill, then the loop `describe_mode`
+serves, on task "T10: slug_words" in the sample repository — add
+`slug_words(text, **options) -> list[str]` beside `slugify`, with tests. The
+session ran 458.8 s over 33 turns and made exactly six `wait` calls, one per
+delegation, and no call it made was refused.
+
+```
+Skill(cross-agent) → describe_mode → list_roles → list_tasks
+git_root status --porcelain --untracked-files=normal   → ""
+git_root worktree list --porcelain                     → "branch refs/heads/main"
+git_root branch --list task/*                          → ""
+delegate planner (claude/claude-sonnet-5/medium)       → wait 600 → done 36 s
+delegate plan-reviewer (grok/grok-4.6/medium)          → wait 600 → done 92 s, "approve"
+git_root worktree add -b task/t10-slug-words .worktrees/t10-slug-words main
+run_command setup                                      → ok, exit 0, nothing run
+delegate implementer (claude, cwd=<worktree>, branch)  → wait 600 → done 27 s, 64→68 tests
+git_mutate add -A -- . :(exclude).cross-agent :(exclude).worktrees
+git_mutate commit -m "Add slug_words(), …"             → 3878466
+delegate code-reviewer (grok, round 1, commit 3878466) → wait 600 → done 83 s, "ready"
+delegate implementer resume f5477ad3 (operator round)  → wait 600 → done 14 s, 68→69 tests
+git_mutate add -A … ; git_mutate commit                → 90473bf
+delegate code-reviewer (grok, round 2, commit 90473bf) → wait 600 → done 59 s, "ready"
+git_root merge --ff-only task/t10-slug-words
+run_command test where=root                            → 69 tests, OK
+git_root worktree remove .worktrees/t10-slug-words
+git_root branch -d task/t10-slug-words
+Bash: append six lines to .cross-agent/log.md
+```
+
+The journal for the slug is the loop's table in order: `worktree-created`,
+`git`, `committed`, `git`, `committed`, `merged`, `tests-passed`,
+`worktree-removed`, `branch-deleted`. The two `git` steps are the two `add -A`
+calls, which stage but move no branch — the table's last row, written with the
+arguments that ran, which is exactly what keeps a later reconciliation from
+reading `committed` for a commit nobody made.
+
+Two things the run did not do. **Step 8 never ran**: with `main` unmoved since
+the branch was cut, the host went from the second "ready" straight to the
+`--ff-only` merge, and the loop spells the rebase as an unconditional step
+rather than one a lead may skip when the base has not moved. And the
+**needs-work round was injected**: both reviews came back `ready`, so the round
+that exercised `resume` was the operator's own amendment, named as such in the
+brief. Its record carries `resumedFrom` and its spec the original's
+`resumeSessionId`, with the same role, cwd, branch and sandbox.
+
+
 ## CLI flag facts (`--help`, 2026-09-09)
 
 Read from `--help` on this machine, with the CLI version, rather than from
