@@ -15,6 +15,16 @@
 //           [--rules F]  installs F as <cwd>/.codex/rules/cross-agent.rules.
 //   grok:   [--output-format json|streaming-json|streaming-messages-json]
 //           (default json); [--rules TEXT]  appended as --rules TEXT.
+//
+// --track runs the spawn through the product instead of this file: it builds the launch
+// spec the way `delegate` does — a non-lead role at depth 1, `CROSS_AGENT_PROJECT` in the
+// child environment, and the `lead` mount field pointing at this server, which is what lets
+// the child see any cross-agent tool at all — writes it with a `launching` record through
+// the public ledger API, and starts the real detached runner. Integration probe I1's
+// second assertion is what needs it: the engine lists exactly the specialist row and its
+// own `delegate` is refused naming the task id.
+//
+//   --track [--project DIR] [--role NAME] [--track-timeout SECONDS]
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
@@ -44,7 +54,13 @@ const sessionId = args["session-id"] ?? randomUUID();
 let bin, argv, stdinText = null;
 if (engine === "claude") {
   bin = bins.claude;
+  // The adapter's own settings, so a probe sees what a real child sees
+  // (`src/engines/claude.ts#claude`, the `plan` member): no escape hatch out of a sandbox
+  // that is on, a sandbox that cannot start fails the run, and a writable role gets exactly
+  // one writable root, its workspace.
   const settings = { sandbox: { enabled: sandbox !== "off", autoAllowBashIfSandboxed: true } };
+  if (sandbox !== "off") { settings.sandbox.allowUnsandboxedCommands = false; settings.sandbox.failIfUnavailable = true; }
+  if (sandbox === "workspace-write") settings.sandbox.filesystem = { allowWrite: [cwd] };
   argv = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", args["permission-mode"] ?? "bypassPermissions"];
   if (!args["no-strict-mcp"]) argv.push("--strict-mcp-config");
   if (args["mcp-config"]) argv.push("--mcp-config", path.resolve(args["mcp-config"]));
@@ -96,6 +112,8 @@ for (const [k, v] of Object.entries(process.env)) {
 }
 Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: `probe-${sessionId}`, role: `probe-${engine}`, cwd }]) });
 
+if (args.track) await track();
+
 const log = args.log ? path.resolve(args.log) : path.join(scratch, `${engine}-${sessionId}.log`);
 const header = { engine, bin, argv, cwd, sandbox, sessionId, stdin: stdinText !== null, deny: denyRules.length, at: new Date().toISOString() };
 console.log("PROBE " + JSON.stringify(header));
@@ -125,13 +143,66 @@ child.on("exit", (code, signal) => {
   console.log("EXIT " + JSON.stringify(footer));
 });
 
+/**
+ * The spec `delegate` would write for this role, the record that owns it, and the runner
+ * that owns the engine from here on — through the product's own modules, so what the child
+ * meets is the adapter's spawn line and not this file's. Nothing here is a test hook: the
+ * ledger API it writes through is the one the server calls.
+ */
+async function track() {
+  const { childEnv, childLineage } = await import("../src/guard.ts");
+  const { create, read, readOutcome, writeSpec } = await import("../src/ledger.ts");
+  const { sandboxFor } = await import("../src/engines/registry.ts");
+  const projectRoot = path.resolve(args.project ?? cwd);
+  const roleKey = args.role ?? "consult";
+  // The engines name the same mode differently, and the spec carries the engine's own name.
+  const profile = engine === "grok" && sandbox === "workspace-write" ? "workspace" : sandbox;
+  const record = create(projectRoot, { role: roleKey, brief: prompt, cwd, engine, ...(model ? { model } : {}), ...(effort ? { effort } : {}), depth: 1 });
+  const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
+  mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
+  writeSpec(projectRoot, record.id, {
+    role: roleKey, brief: prompt, rolePrompt: role,
+    cwd, engine, sandbox: sandboxFor(engine, profile),
+    ...(model ? { model } : {}), ...(effort ? { effort } : {}),
+    sessionId,
+    denyTargets,
+    env: childEnv(process.env, 0, record.id, childLineage([], { taskId: record.id, role: roleKey, cwd }), "subscription", projectRoot),
+    scratchDir,
+    // What an engine-placed lead is given, handed to a specialist on purpose: the run is
+    // about what the server does with a child that *can* reach it, which is authority.
+    lead: { command: process.execPath, args: [path.join(repoRoot, "src", "server.ts")], env: { CROSS_AGENT_PROJECT: projectRoot } },
+    adapterModule: path.join(repoRoot, "src", "engines", `${engine}.ts`),
+  });
+  console.log("TRACK " + JSON.stringify({ taskId: record.id, projectRoot, role: roleKey, engine, sandbox: profile, log: record.logPath }));
+  const runner = spawn(process.execPath, [path.join(repoRoot, "src", "runner.ts"), "--project", projectRoot, "--task", record.id], {
+    cwd: projectRoot, detached: true, stdio: "ignore", env: process.env,
+  });
+  runner.once("error", (error) => fail(`runner: ${error.message}`));
+  runner.unref();
+  const deadline = Date.now() + Number(args["track-timeout"] ?? 300) * 1000;
+  let status = record.status;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const current = read(projectRoot, record.id);
+    if (current.status !== status) console.log(`TRACK ${current.status} at ${new Date().toISOString()}`);
+    status = current.status;
+    if (["done", "failed", "cancelled", "orphaned"].includes(status)) {
+      const outcome = readOutcome(projectRoot, current);
+      console.log("TRACK " + JSON.stringify({ status, exitCode: outcome?.exitCode, finalMessage: outcome?.finalMessage?.slice(0, 4000) }));
+      process.exit(0);
+    }
+  }
+  console.log(`TRACK still ${status} at the timeout; the record and its log are under ${projectRoot}/.cross-agent/tasks/`);
+  process.exit(1);
+}
+
 function parseArgs(list) {
   const out = { "codex-config": [] };
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
     if (!a.startsWith("--")) fail(`unexpected argument ${a}`);
     const key = a.slice(2);
-    if (key === "dry-run" || key === "no-deny" || key === "no-strict-mcp") { out[key] = true; continue; }
+    if (key === "dry-run" || key === "no-deny" || key === "no-strict-mcp" || key === "track") { out[key] = true; continue; }
     if (key === "codex-config") { out[key].push(list[++i]); continue; }
     out[key] = list[++i];
   }
