@@ -45,6 +45,7 @@ function written(root: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(path.join(root, CONFIG_PATH), "utf8")) as Record<string, unknown>;
 }
 
+// @anchor initModeDev
 test("init --mode dev-team writes the section 6 config, bound to the built-in mode", async (t) => {
   const root = scratch(t);
   const ran = await run(["init", "--mode", "dev-team"], root);
@@ -95,6 +96,7 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
   assert.equal(fs.readFileSync(path.join(root, CONFIG_PATH), "utf8"), bytes);
 });
 
+// @anchor initModeBinds
 test("init --mode binds each built-in mode's own roles, and an engine-placed lead raises the cap", async (t) => {
   const engineRoot = scratch(t);
   assert.equal((await run(["init", "--mode", "dev-team-engine"], engineRoot)).code, 0);
@@ -114,6 +116,7 @@ test("init --mode binds each built-in mode's own roles, and an engine-placed lea
   assert.equal(loadConfigWithMode(soloRoot, builtInModesDir()).mode.git, undefined);
 });
 
+// @anchor initProjectWrites
 test("init --project writes to the project it names, in either flag order, and defaults to the working directory", async (t) => {
   const elsewhere = scratch(t);
   const target = scratch(t);
@@ -135,6 +138,7 @@ test("init --project writes to the project it names, in either flag order, and d
   assert.equal(written(here).mode, "dev-team");
 });
 
+// @anchor modeBuildError
 test("a mode this build does not have is an error, and a command line it cannot read is usage", async (t) => {
   const root = scratch(t);
   const unknown = await run(["init", "--mode", "no-such-mode"], root);

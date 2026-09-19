@@ -92,20 +92,24 @@ test("the built-in table answers for codex with this adapter", () => {
   assert.equal(codex.name, "codex");
 });
 
+// @anchor codexDeclaresOwn
 test("codex declares its own profile names and what each one means", () => {
   // `off` is `--sandbox danger-full-access` in argv, which `plan` owns, not this map.
   assert.deepEqual(codex.sandboxProfiles, { "read-only": "read-only", "workspace-write": "write", off: "off" });
 });
 
+// @anchor codexCarriesDeny
 test("codex carries no deny list: its sandbox's network denial is that layer (P3/P3b)", () => {
   assert.deepEqual(codex.denyArgs(targets), []);
   assert.deepEqual(codex.denyArgs([]), []);
 });
 
+// @anchor codexExclusionargsRemoves
 test("codex's exclusionArgs removes the operator's own configuration", () => {
   assert.deepEqual(codex.exclusionArgs(), ["--ignore-user-config"]);
 });
 
+// @anchor codexLeadmountThree
 test("codex's leadMount is the three -c settings P9 recorded, byte for byte", () => {
   const mount = codex.leadMount({ command: "node", args: ["/projects/team/src/server.ts"] }, "/projects/team/.cross-agent/tasks/task");
   assert.deepEqual(mount.argv, [
@@ -146,6 +150,7 @@ test("codex's sandbox support reports the binary it cannot resolve, from the spa
   assert.deepEqual(codex.sandboxSupport({ PATH: directory }), { ok: true });
 });
 
+// @anchor sandboxforPairsProfile
 test("sandboxFor pairs a profile with the mode codex gives it, and refuses any other", () => {
   for (const [profile, mode] of Object.entries(codex.sandboxProfiles)) {
     assert.deepEqual(sandboxFor("codex", profile), { mode, profile });
@@ -161,6 +166,7 @@ test("sandboxFor pairs a profile with the mode codex gives it, and refuses any o
   }
 });
 
+// @anchor readOnlyRole
 test("a read-only role's argv is P2's exec line, and the -o file is the pipeline's own", (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, {
@@ -186,6 +192,7 @@ test("a read-only role's argv is P2's exec line, and the -o file is the pipeline
   assert.equal(plan.argv[plan.argv.indexOf("-o") + 1], request.resultPath);
 });
 
+// @anchor writeRoleArgv
 test("a write role's argv names its worktree as the cwd and workspace-write as the sandbox", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs, { model: "gpt-6-astra", effort: "high" }));
@@ -203,6 +210,7 @@ test("a write role's argv names its worktree as the cwd and workspace-write as t
   for (const argument of plan.argv) assert.equal(argument.includes("execpolicy"), false, argument);
 });
 
+// @anchor offProfileLaunches
 test("the off profile launches as danger-full-access, the name Codex gives no sandbox", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs, { sandbox: sandboxFor("codex", "off") }));
@@ -216,6 +224,7 @@ test("the off profile launches as danger-full-access, the name Codex gives no sa
   assert.equal(plan.argv.includes("off"), false);
 });
 
+// @anchor resumedRunExec
 test("a resumed run is exec resume: no -C, no --sandbox, and the profile restored (P10)", (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, { resumeSessionId: threadId, model: "gpt-6-astra", effort: "high" });
@@ -243,6 +252,7 @@ test("a resumed run is exec resume: no -C, no --sandbox, and the profile restore
   assert.equal(plan.argv.includes(sessionId), false);
 });
 
+// @anchor offRoleResumes
 test("an off role resumes as sandbox_mode=danger-full-access, never by omission (P10)", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs, { resumeSessionId: threadId, sandbox: sandboxFor("codex", "off") }));
@@ -259,6 +269,7 @@ test("an off role resumes as sandbox_mode=danger-full-access, never by omission 
   assert.equal(readOnly.argv[readOnly.argv.indexOf("-c") + 1], 'sandbox_mode="read-only"');
 });
 
+// @anchor rolePromptTravels
 test("the role prompt travels as a file under scratchDir, pointed at by -c (P9)", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs));
@@ -290,6 +301,7 @@ test("a role with no prompt of its own is pointed at no instructions file at all
   assert.equal(plan.files?.some((file) => file.path === dirs.role), false);
 });
 
+// @anchor fileEmptiedRun
 test("the -o file is emptied before the run, so a stale result cannot be read as this one's", (t) => {
   const dirs = layout(t);
   const plan = codex.plan(requestFor(dirs));
@@ -300,6 +312,7 @@ test("the -o file is emptied before the run, so a stale result cannot be read as
   assert.deepEqual(plan.files?.map((file) => file.path), [dirs.result, dirs.role]);
 });
 
+// @anchor enginePlacedLead
 test("an engine-placed lead's argv carries P9's three -c settings before the prompt", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
@@ -400,6 +413,7 @@ test("a line codex's vocabulary does not cover is not an event", () => {
   }
 });
 
+// @anchor codexDeclaresFinish
 test("codex declares no finish and no stderr reader: its output is a line stream", () => {
   const adapter: EngineAdapter = codex;
   assert.equal(adapter.finish, undefined);
@@ -423,6 +437,7 @@ test("codex's final message is the -o file's, then the last result, then the las
   assert.equal(codex.finalMessage([], null), "");
 });
 
+// @anchor fakeCodexRun
 test("a fake codex run through the pipeline yields the thread id, the activity and the -o text", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
@@ -483,6 +498,7 @@ test("a fake codex run through the pipeline yields the thread id, the activity a
   assert.equal(readFileSync(request.resultPath, "utf8"), last);
 });
 
+// @anchor failedTurnSettles
 test("a failed turn settles as an error carrying codex's own message", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);

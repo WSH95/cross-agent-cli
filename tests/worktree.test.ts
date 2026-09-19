@@ -129,6 +129,7 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
   });
 }
 
+// @anchor gitenvironmentPassesGit
 test("gitEnvironment passes what git needs to run as this user, and nothing else", () => {
   assert.deepEqual(gitEnvironment({
     PATH: "/usr/bin", HOME: "/home/someone", USER: "someone", LANG: "en_GB.UTF-8", LC_ALL: "C",
@@ -154,6 +155,7 @@ test("gitEnvironment passes what git needs to run as this user, and nothing else
   assert.deepEqual(gitEnvironment({}), {});
 });
 
+// @anchor verifyworktreeIgnoresServer
 test("verifyWorktree ignores what the server's own environment says about a repository", async (t) => {
   const { root, add } = await repository(t);
   const candidate = await add("inherited");

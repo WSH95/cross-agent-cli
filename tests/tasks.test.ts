@@ -153,6 +153,7 @@ test("lineage ids are a resume chain, and ownership is the parent chain that rea
   assert.equal(ownedBy(cycle, "A", "B"), true);
 });
 
+// @anchor checkReportsTask
 test("check reports the task, what is running it, and the tail of its own event stream", async (t) => {
   const p = await projectWithRoles(t);
   const running = await launch(p, { role: "planner", cwd: p.root });
@@ -215,6 +216,7 @@ test("check writes the stall its clock reads, and writes the task back when even
   assert.equal(p.record(running.id).status, "running");
 });
 
+// @anchor resultFinalMessage
 test("result is the final message in full, and a task still running has only its status", async (t) => {
   const p = await projectWithRoles(t);
   const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root }, {

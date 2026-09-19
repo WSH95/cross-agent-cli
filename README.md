@@ -48,7 +48,7 @@ connected, and offer twelve tools spelled
 `result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles`,
 `verify_worktree`, `git_mutate`, `git_root`, `run_command`. Fewer than twelve
 means the server resolved a row below the operator's, and it says which on its
-own stderr as it starts. To undo the install, drop the flag: nothing was copied
+own stderr the first time a request asks it to resolve one. To undo the install, drop the flag: nothing was copied
 anywhere, no global configuration was touched, and no `.mcp.json` was added to
 any project.
 

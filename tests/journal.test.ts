@@ -48,6 +48,7 @@ test("a first step that names no branch is refused rather than invented", (t) =>
   assert.equal(journal.defaultBranch, "trunk");
 });
 
+// @anchor branchJournalCreated
 test("the branch a journal was created on is write-once", (t) => {
   const root = project(t);
   appendStep(root, "iota", "worktree-created", { at: 1, branch: "task/iota", defaultBranch: "main" });
@@ -59,6 +60,7 @@ test("the branch a journal was created on is write-once", (t) => {
   assert.equal(journal.steps.length, 2);
 });
 
+// @anchor worktreeJournalCreated
 test("the worktree a journal was created on is write-once, like its branch", (t) => {
   const root = project(t);
   const created = appendStep(root, "kappa", "worktree-created", {
@@ -79,6 +81,7 @@ test("the worktree a journal was created on is write-once, like its branch", (t)
   assert.equal(appendStep(root, "lambda", "committed", { at: 2, worktree: "/repo/.worktrees/lambda" }).worktree, "/repo/.worktrees/lambda");
 });
 
+// @anchor stepsAccumulateOrder
 test("steps accumulate in the order they were appended, with only the fields they carry", (t) => {
   const root = project(t);
   appendStep(root, "beta", "worktree-created", { at: 1, branch: "task/beta", defaultBranch: "main" });
@@ -102,6 +105,7 @@ test("steps accumulate in the order they were appended, with only the fields the
   assert.deepEqual(readJournal(root, "beta")!.steps.map((entry) => entry.at), Array.from({ length: 54 }, (_, index) => index + 1));
 });
 
+// @anchor revertTargetBranch
 test("the revert target and the branch head are set once, and only by the merge", (t) => {
   const root = project(t);
   // The default branch moves under a task, so what a revert of a bad merge is aimed at is
@@ -136,6 +140,7 @@ test("the revert target and the branch head are set once, and only by the merge"
   assert.deepEqual(Object.keys(readJournal(root, "gamma")!), ["slug", "branch", "defaultBranch", "defaultShaBeforeMerge", "branchHead", "steps"]);
 });
 
+// @anchor appendReplacesFile
 test("each append replaces the file by rename and leaves no temporary behind", (t) => {
   const root = project(t);
   appendStep(root, "delta", "worktree-created", { at: 1, branch: "task/delta", defaultBranch: "main" });

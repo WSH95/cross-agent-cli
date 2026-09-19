@@ -352,6 +352,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
   };
 }
 
+// @anchor launchSpecsRound
 test("launch specs round-trip atomically and remain separate from task records", async (t) => {
   const h = harness();
   try {
@@ -724,6 +725,7 @@ test("SIGKILL leaves a live engine that reconciliation orphans and cleanup termi
   } finally { await h.cleanup(); }
 });
 
+// @anchor descendantHoldingEngine
 test("a descendant holding the engine's stdout delays settlement by the drain and marks it truncated", async () => {
   const h = harness();
   try {
@@ -759,6 +761,7 @@ test("a task that succeeds with truncated output is done, and says so", async ()
   } finally { await h.cleanup(); }
 });
 
+// @anchor completionKillsDescendants
 test("completion kills descendants the engine left behind in its group", async () => {
   const h = harness();
   try {
@@ -1351,6 +1354,7 @@ test("a second runner for one task takes no lock, touches no record, and exits 1
   } finally { await h.cleanup(); }
 });
 
+// @anchor runnerStartsAgainst
 test("a runner that starts against a cancelling record settles it and spawns no engine", async (t) => {
   for (const when of ["before the record read", "during the adapter import"] as const) await t.test(when, async () => {
     const h = harness(when === "during the adapter import" ? { delayedImport: true } : {});
@@ -1376,6 +1380,7 @@ test("a runner that starts against a cancelling record settles it and spawns no 
   });
 });
 
+// @anchor cancelLandsAcknowledgement
 test("a cancel that lands before acknowledgement is a cancel, not a stranger's settlement", async (t) => {
   const { groupAlive } = await import("../src/process.ts");
   // The window the runner cannot stand down in: it read the record, found it `launching`,

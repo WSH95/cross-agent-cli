@@ -86,6 +86,7 @@ async function overdueLaunch(t: TestContext, p: TestProject): Promise<{ record: 
   return { record, engine };
 }
 
+// @anchor quietEngineStalls
 test("a quiet engine stalls and keeps running; check revives it, a second wait stalls again, a third settles", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, {
@@ -131,6 +132,7 @@ test("a quiet engine stalls and keeps running; check revives it, a second wait s
   assert.ok(third.ok && third.resultTail?.startsWith("DONE"), JSON.stringify(third));
 });
 
+// @anchor settledTaskAnswered
 test("a settled task is answered on the first read, with the tail of its result", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "ok" });
@@ -150,6 +152,7 @@ test("a settled task is answered on the first read, with the tail of its result"
   assert.deepEqual(await wait(p.root, "no-such-task", { timeoutSeconds: 1 }), { ok: false, reason: "no task no-such-task" });
 });
 
+// @anchor checkAnswersWhile
 test("check answers while a wait is pending, and an aborted wait returns the status it found", async (t) => {
   // Nothing stalls in this test: it is about the two calls living side by side.
   const p = await waitProject(t, { stallMinutes: 60 });
@@ -173,6 +176,7 @@ test("check answers while a wait is pending, and an aborted wait returns the sta
   assert.equal(p.record(task.id).status, "running", "an aborted wait settles nothing");
 });
 
+// @anchor launchingRecordStalls
 test("a launching record never stalls: its deadline is the reconciler's", async (t) => {
   const p = await waitProject(t);
   const record = seed(p);
@@ -187,6 +191,7 @@ test("a launching record never stalls: its deadline is the reconciler's", async 
   assert.equal(p.record(record.id).status, "launching");
 });
 
+// @anchor defaultTimeoutProject
 test("the default timeout is the project's waitDefaultSeconds", async (t) => {
   const p = await waitProject(t, { waitDefaultSeconds: 0.4 });
   const record = seed(p);
@@ -198,6 +203,7 @@ test("the default timeout is the project's waitDefaultSeconds", async (t) => {
   assert.equal(answer.ok && answer.hint, "call wait again");
 });
 
+// @anchor runnerKilledDuring
 test("a runner killed during a wait is settled by one reconciliation pass and reported", async (t) => {
   const p = await waitProject(t, { stallMinutes: 60 });
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
@@ -217,6 +223,7 @@ test("a runner killed during a wait is settled by one reconciliation pass and re
   assert.equal(alive(task.engineIdentity), false, "the pass ended the engine the dead runner left");
 });
 
+// @anchor orphanCleanupCannot
 test("an orphan that cleanup cannot settle is reported as orphaned, not polled for", async (t) => {
   const p = await waitProject(t);
   const record = seed(p);
@@ -233,6 +240,7 @@ test("an orphan that cleanup cannot settle is reported as orphaned, not polled f
   assert.equal(answer.ok ? answer.reason : "", "no engine identity");
 });
 
+// @anchor secondWaitFresh
 test("a second wait in a fresh process reads the same clock from the ledger", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
@@ -254,6 +262,7 @@ test("a second wait in a fresh process reads the same clock from the ledger", as
   assert.equal(p.record(task.id).status, "stalled");
 });
 
+// @anchor leadWaitsTasks
 test("a lead waits on the tasks it delegated and is refused by name for any other", async (t) => {
   const p = await waitProject(t);
   const lead = create(p.root, { role: "lead", brief: "lead", cwd: p.root, engine: "grok" });
@@ -286,6 +295,7 @@ test("a lead waits on the tasks it delegated and is refused by name for any othe
   assert.equal(payload.status, "launching");
 });
 
+// @anchor observestallWritesTransition
 test("observeStall writes each transition conditionally and returns the record as it stands", async (t) => {
   const p = await waitProject(t);
   const record = seed(p);
@@ -311,6 +321,7 @@ test("observeStall writes each transition conditionally and returns the record a
   assert.equal((await observeStall(p.root, stale)).status, "done");
 });
 
+// @anchor stallAnotherReader
 test("a stall another reader wrote while this call slept is this call's answer", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
@@ -331,6 +342,7 @@ test("a stall another reader wrote while this call slept is this call's answer",
   assert.equal(answer.ok && answer.stalled, true);
 });
 
+// @anchor quietTaskWhose
 test("a quiet task whose runner has died is reconciled, not reported as stalled", async (t) => {
   const p = await waitProject(t);
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
@@ -351,6 +363,7 @@ test("a quiet task whose runner has died is reconciled, not reported as stalled"
   assert.equal(alive(task.engineIdentity), false);
 });
 
+// @anchor launchPastDeadline
 test("a launch past its deadline is adopted and settled by this call's own pass", async (t) => {
   const p = await waitProject(t);
   const { record, engine } = await overdueLaunch(t, p);
@@ -365,6 +378,7 @@ test("a launch past its deadline is adopted and settled by this call's own pass"
   assert.equal(alive(engine.identity), false, "the adopted engine's group was terminated");
 });
 
+// @anchor recordPassCould
 test("a record the one pass could not settle is answered with the pass's reason, not polled for", async (t) => {
   const p = await waitProject(t);
   const { record, engine } = await overdueLaunch(t, p);
@@ -388,6 +402,7 @@ test("a record the one pass could not settle is answered with the pass's reason,
   assert.equal(alive(engine.identity), true, "and killed nothing");
 });
 
+// @anchor callAbortedPolls
 test("a call aborted before it polls answers cancelled and reconciles nothing", async (t) => {
   const p = await waitProject(t);
   // Overdue, with no engine anywhere: a pass would write `failed: launch` at once, so the

@@ -2,7 +2,14 @@
 
 What each engine CLI was observed to do when spawned the way the adapters
 will spawn it (design section 3). Every entry names the command (from
-`tools/probe.mjs`), the date, and the outcome. Versions: Claude Code
+`tools/probe.mjs`), the date, and the outcome. **The logs of T13's runs — P2's
+three, I1's and I2's host sessions, E1's, the ten-minute wait, and the `grok mcp
+doctor` captures — are archived under
+`~/.cache/agent-team/probe-logs/t13-2026-09-19/`** (36 files), beside the task
+records the runs left in the sample project; one of those, `probe-tasks/
+98330b13….json`, is that task's **journal** rather than its ledger record, which
+was overwritten when the evidence was moved — its status and exit code survive
+in the `.outcome.json` beside it. Versions: Claude Code
 2.1.263 for P1-P7 and 2.1.266 for P8-P10, Codex 0.153.4, Grok Build 1.0.13
 (build 5e9a58528b76), Node 24.11.0, Ubuntu with
 bubblewrap installed; `socat` was absent for P1's first run and installed on
@@ -47,6 +54,7 @@ stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
   profile; the adapter's sandbox check must detect this failure mode too
   (a command that cannot even start), not only the "Sandbox disabled"
   warning. The P2 row for Claude stays open until the profile is in place.
+<!-- @anchor p1ProfileShadowed -->
 - Rerun on 2026-09-18 (`--sandbox read-only`, model sonnet) with the profile
   written as those docs prescribe. It did nothing: a live `bwrap` read
   `bwrap//&unpriv_bwrap (enforce)` from `/proc/<pid>/attr/current`, because
@@ -58,6 +66,7 @@ stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
   not "write the profile the docs give" but "be the profile that wins": a
   check that reads a live `bwrap`'s own confinement is the only one that
   answers it.
+<!-- @anchor p1EscapeHatch -->
 - The same rerun found what `atc-s96.44` closes. Before the settings changed,
   a `curl` that failed at the sandbox's setup was retried by the child itself
   with `dangerouslyDisableSandbox: true` and succeeded (HTTP 200): the
@@ -69,6 +78,7 @@ stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
   that a sandbox which cannot start fails the run instead of warning and
   running every command unsandboxed (`src/engines/claude.ts:71-81`).
 
+<!-- @anchor p2 -->
 ## P2: implementer inside a linked worktree, writes outside it (2026-09-07)
 
 Prompt: append to `notes.md`, run `npm test`, then try to append to
@@ -88,7 +98,8 @@ The Claude row ran on the Python sample repository
 `~/Documents/atw-sample-slugkit`), so step 2 was `python3 -m unittest discover
 -s tests -t .` rather than `npm test`; the settings are the adapter's own
 (`src/engines/claude.ts#claude`, the `plan` member), which `tools/probe.mjs`
-now sends too. 45.1 s, exit 0, one turn per step. An eighth step, `curl -sS -m
+now sends too. 45 s from spawn to exit, of which the engine reported 42.4 s;
+exit 0, one turn per step. An eighth step, `curl -sS -m
 20 https://example.com`, returned 200: a Claude child reaches the network, as
 I2 expects. No `dangerouslyDisableSandbox` appears anywhere in the transcript
 and no sandbox-failure line was printed on stderr — `allowUnsandboxedCommands:
@@ -116,6 +127,7 @@ its refs, index and objects. The fix names the whole directory, and the
 delegated run under it (I2 below) includes `<root>/.git/hooks/pre-commit`
 explicitly, denied. Codex denies this cell; Grok denies it too.
 
+<!-- @anchor p2Rerun -->
 **Rerun, 2026-09-19, with `filesystem.denyWrite` (T6-R0-1).** The same eight
 steps in a fresh linked worktree of the same sample, plus `git status
 --porcelain --untracked-files=normal` and `git diff --stat` as steps 9 and 10.
@@ -129,6 +141,9 @@ steps in a fresh linked worktree of the same sample, plus `git status
  "filesystem":{"allowWrite":["<worktree>"],
                "denyWrite":["<worktree>/.git","<root>/.git"]}}}
 ```
+
+The step lines are the specialist's own; the words after the first four are this
+document's note of what each step ran.
 
 ```
 STEP 1 ALLOWED 0    in-worktree edit
@@ -160,6 +175,9 @@ dozen entries its lead does not, and a brief that asks one to report a clean
 tree has to say so; nothing can commit them, because `git_mutate` runs in the
 server's own process rather than in the sandbox.
 
+All three Claude rows' logs are in the archive named at the top of this file
+(`p2-claude.log`, `p2-claude-rerun.log`, `p2-readonly.log`).
+
 **The read-only row (2026-09-19, T6-R1-20).** A read-only profile sends no
 `allowWrite`, which is not the same as no writable path: Claude Code's sandbox
 writes to the working directory by default, so `read-only` was a claim about the
@@ -176,6 +194,9 @@ STEP 4 DENIED 1 /bin/bash: line 7: /tmp/cross-agent-readonly-probe.txt: Read-onl
 STEP 5 ALLOWED 0    sed -n 1p README.md → "# atw-sample-slugkit"
 STEP 6 ALLOWED 0    git status --porcelain --untracked-files=normal → empty
 ```
+
+(The specialist wrote "(no error)" where this block notes the command; the
+arrows are this document's.)
 
 20.2 s, exit 0. Step 2 is the one design section 4 rests on: `.cross-agent/` is
 the server's to write and no engine may. Step 3 shows it holds for git as well
@@ -194,6 +215,7 @@ alone left `<root>/.git` writable, and naming it in `denyWrite` is what
 prevents rather than detects. Grok has no such rule, so for Grok the sentence
 stands as it is.
 
+<!-- @anchor p3 -->
 ## P3: the deny list (2026-09-07)
 
 Targets: `claude`, `codex`, `grok`, `node <repo>/src/server.ts`,
@@ -267,6 +289,7 @@ In a throwaway repository with a linked worktree `.worktrees/g` on
 - A second `flock -n` on the same lock file is refused while the first
   holder lives.
 
+<!-- @anchor p8 -->
 ## P8: Grok `--output-format streaming-json` (2026-09-09)
 
 `node tools/probe.mjs --engine grok --cwd <probe worktree> --sandbox read-only
@@ -314,6 +337,7 @@ named below.
   and the same sentence on stderr as `Error: …`. No `end` line, so an adapter
   must treat a missing `end` as failure rather than waiting for one.
 
+<!-- @anchor p8Formats -->
 `--output-format streaming-messages-json`, same prompt (exit 0, 11.8 s), is
 NDJSON in the Anthropic Messages API wire format: five lines, opening with
 `{"type":"system","subtype":"init"}` carrying `session_id`, `cwd`, `model`,
@@ -375,6 +399,7 @@ stays the fallback, and both formats fix the `json` mode's silence that would
 leave `lastEventAt` null for a whole run. A `finalMessage` for the adopted
 format reads `result` when `is_error` is false and `errors` when it is true.
 
+<!-- @anchor p9 -->
 ## P9: per-engine lead mount and instruction delivery (2026-09-09)
 
 Each engine was spawned in the same fresh probe worktree with the current
@@ -388,16 +413,22 @@ code-reviewer also proves the server resolved **the child's** project root.
 Claude ran with `--sandbox off` (P1: the `bwrap` AppArmor profile is still
 pending), Codex and Grok with their read-only profiles.
 
+<!-- @anchor p9Mounts -->
 | Engine | mount mechanism | child's MCP tools | user's own servers visible? | instruction delivery | instruction honoured? |
 |---|---|---|---|---|---|
+<!-- @anchor p9Claude -->
 | Claude | `--strict-mcp-config --mcp-config <file>` | `mcp__cross-agent__list_roles`, `mcp__cross-agent__verify_worktree`; init line reports `mcp_servers: [{"name":"cross-agent","status":"connected"}]` | no — exactly one server | `--append-system-prompt-file <role.md>` | yes, every assistant message begins `ROLE-OK` |
 | Claude, control | `--strict-mcp-config`, no config (today's specialist spawn) | none; `mcp_servers: []` | no | `--append-system-prompt-file` | yes |
+<!-- @anchor p9ClaudeInherited -->
 | Claude, inheritance | `--mcp-config <file>` with `--strict-mcp-config` **omitted** | the file's server **plus** five of the user's own | yes: `plugin:context7:context7`, `claude-design`, and three `claude.ai` connectors `needs-auth` | `--append-system-prompt-file` | yes |
+<!-- @anchor p9Codex -->
 | Codex | `--ignore-user-config -c mcp_servers.cross-agent.command="node" -c mcp_servers.cross-agent.args=["<repo>/src/server.ts"] -c mcp_servers.cross-agent.default_tools_approval_mode="approve"` | `mcp__cross_agent__list_roles`, `mcp__cross_agent__verify_worktree` (hyphen folded to `_` in the tool name) **plus** Codex's built-in `codex_apps`, 38 tools in all | the user's own, no; `codex_apps`, always | role text prepended to the prompt, and separately `-c model_instructions_file="<role.md>"` | yes for both |
 | Codex, control | `--ignore-user-config` alone | 36 tools, every one `mcp__codex_apps__…` | no | `-c model_instructions_file="<role.md>"` only | yes |
+<!-- @anchor p9GrokUser -->
 | Grok, user scope | `grok mcp add cross-agent --scope user -- node <repo>/src/server.ts`, then the ordinary spawn | `cross-agent__list_roles`, `cross-agent__verify_worktree`, reached through the built-in `use_tool` dispatcher | **yes** — `probe-other__*` (a second registration added to prove the point) and `context7__*` (a Grok plugin, not in `grok mcp list`) came too | `--rules "<role text>"` | yes for the final message; the interstitial narration does not carry it |
 | Grok, project scope | `grok mcp add cross-agent --scope project` (writes `<cwd>/.grok/config.toml`) | **no cross-agent tool at all**; the run's `available_commands` line lists only `context7__resolve-library-id` and `context7__query-docs`, and the child named `context7` as connected and `claude-design` as failed to connect, auth required | yes, those two | `--rules` | yes |
 
+<!-- @anchor p9ClaudeInstructions -->
 - **Claude.** `--append-system-prompt-file <file>` is accepted by the binary
   and the instruction is obeyed, which settles the open question in design
   section 3: `claude --help` on 2.1.266 documents only `--append-system-prompt
@@ -413,6 +444,7 @@ pending), Codex and Grok with their read-only profiles.
   24.1 s and 24.8 s. One wrinkle for the lead loop: the child received both
   tools as **deferred** tools and had to load `list_roles` through
   `ToolSearch` before calling it; it did so unprompted.
+<!-- @anchor p9CodexMount -->
 - **Codex.** The `-c mcp_servers…` mount works, but on the first run the call
   failed with `{"error":{"message":"MCP tool call requires approval, but
   approval policy is never"}}` while the tool was plainly visible. `codex exec`
@@ -430,6 +462,7 @@ pending), Codex and Grok with their read-only profiles.
   to spend prompt space on the loop; whether that file replaces or appends to
   Codex's own model instructions was not probed. Exit 0 in 37.0 s, 53.4 s and
   40.2 s.
+<!-- @anchor p9GrokInherits -->
 - **Grok.** There is no per-run mount. Registered at user scope, the server was
   visible and callable, and so was everything else the operator has: `grok
   inspect` in the probe worktree listed four servers from **three** sources —
@@ -468,6 +501,7 @@ pending), Codex and Grok with their read-only profiles.
   the model emits. Exit 0 throughout: 48.1 s for the user-scope run, 12.2 s
   for that prepended-role run, 16.8 s for `--rules <path>` and 40.6 s for the
   project-scope run.
+<!-- @anchor p9Lineage -->
 - The harness's `CROSS_AGENT_LINEAGE` was fixed for these runs: it emitted
   `probe/<uuid>:<engine>:<cwd>`, which `parseLineage`
   (`src/guard.ts#parseLineage`) rejects, and now emits the JSON array
@@ -491,6 +525,7 @@ launcher has to register and unregister the server around the run, and the
 design's answer to a child reaching an inherited server (the specialist row it
 resolves to by ancestry, section 5) is doing all of the work.
 
+<!-- @anchor p10 -->
 ## P10: `codex exec resume` keeps the thread, not the workspace (2026-09-09)
 
 A thread was started in the probe worktree with `codex exec --json -o <out> -C
@@ -505,6 +540,7 @@ three commands and reported their exit codes: `pwd`; append to a file
 **inside** the worktree; append to a file in the probe repository **root**,
 outside it.
 
+<!-- @anchor p10Variants -->
 | Variant | process cwd | extra flags | `pwd` | write inside worktree | write outside worktree | exit |
 |---|---|---|---|---|---|---|
 | start (`exec … -C <worktree> --sandbox workspace-write`) | worktree | — | worktree | OK | denied, "Read-only file system" | 0, 28.5 s |
@@ -536,6 +572,7 @@ writable root rather than failing. The two facts together mean
 `SpawnRequest.sandbox` has to be re-applied on resume by the adapter, not
 assumed from the thread.
 
+<!-- @anchor i1 -->
 ## I1: authority under a Claude Code host (2026-09-19)
 
 The host, for I1, I2 and E1 alike:
@@ -552,6 +589,7 @@ scrubbed from its environment the way `src/guard.ts#childEnv` scrubs a child's
 (P1's `CLAUDECODE` guard). Three things the first host run settled before any
 delegation.
 
+<!-- @anchor i1Spelling -->
 **The tool names carry the plugin, not just the server.** Mounted through
 `.mcp.json` under `--plugin-dir`, every tool of this server is
 `mcp__plugin_cross-agent_cross-agent__<tool>`, and the `mcp_servers` line of the
@@ -567,7 +605,8 @@ server offered five tools: `check`, `describe_mode`, `list_roles`, `list_tasks`,
 `result` — the specialist row, failed closed. The chain from that server to pid 1
 is nine hops (server, host `claude`, the wrapper `bash`, the outer session's tool
 `bash`, the outer `claude`, `bash --posix`, `sh -c`, the terminal, `systemd
---user`, `init`), and `src/authority.ts#maxHops` stops at eight with "the walk
+--user`, `init`) — counted with `chain.mjs`, in the archive, which prints a
+`/proc` parent chain and can be run again, and `src/authority.ts#maxHops` stops at eight with "the walk
 found neither an engine nor the root within 8 hops", which `#unmatched` turns
 into the specialist row. `setsid --fork` reparents the host to init and the same
 command then offers all twelve tools: `cancel`, `check`, `delegate`,
@@ -575,6 +614,7 @@ command then offers all twelve tools: `cancel`, `check`, `delegate`,
 `run_command`, `verify_worktree`, `wait`. The limit held a nested host out, not
 an operator at a terminal, whose chain on this machine is seven hops.
 
+<!-- @anchor i1Mount -->
 **The mount is the manifest's own.** After the server's declaration moved inline
 into `.claude-plugin/plugin.json` (T6-R1-5; a repository-root `.mcp.json` is
 Claude Code's *project-scoped* config, offered to every session opened in this
@@ -584,16 +624,22 @@ reports `plugin:cross-agent:cross-agent`, `status: "connected"`, `source:
 "plugin"`, and the same twelve `mcp__plugin_cross-agent_cross-agent__…` tools.
 `claude plugin validate <repo>` passes on the inline form, warning only about
 this repository's own `CLAUDE.md`, which is not plugin context and is not meant
-to be. Whether Grok's `--plugin-dir` reads the inline `mcpServers` is T15's.
+to be. That output was read at the terminal and not archived; the command is a
+static check and can be run again without an engine. Whether Grok's `--plugin-dir` reads the inline `mcpServers` is T15's.
 
 **A host session is not isolated, and is not meant to be.** The host's own
 `mcp_servers` carries every server the user has (`claude-design`, the `claude.ai`
 connectors, another plugin's `context7`) beside this one. Only a specialist is
 launched with `--strict-mcp-config`.
 
+The host transcripts of this section are `i1-operator.log`, `i1-operator2.log`,
+`i1-host.log` and `i1-inline-mount.log` in the archive; the specialists' own
+logs are the task records' `.ndjson` files.
+
 ### (i) Production exclusion
 
-One host session, two `delegate` calls of the built-in `consult` role, each with
+One host session, **four** `delegate` calls of the built-in `consult` role — two
+that ran, one refused and one that failed — each with
 the brief "List every MCP tool you can see, by name … then attempt to call the
 MCP tool named delegate … and report, word for word, whatever comes back".
 
@@ -602,6 +648,7 @@ MCP tool named delegate … and report, word for word, whatever comes back".
 | claude (`claude-sonnet-5`, medium, 11 s) | "I see no MCP tools available in this session — none of the tools listed to me (top-level or deferred) are namespaced as MCP tools, and none is named `delegate`." | `4ffe6405…` |
 | grok (`grok-4.6`, medium, 18 s), before the folder was trusted | "MCP tools I can see: `context7__query-docs`, `context7__resolve-library-id`. No MCP tool named `delegate` is offered to you at all." | `dacd2a10…` |
 | grok (`grok-4.6`, medium, 44 s), after it was | the five `cross-agent__…` tools and no sixth; `delegate` refused by Grok's own dispatcher as a name it has no schema for | `915d1a84…` |
+| grok, the call before it | `delegate {role: "consult", engine: "grok", force: true}` with no `model`: **failed at launch in 5 s** — "Couldn't set model 'claude-sonnet-5': Invalid params: \"unknown model id\"" — because the call named an engine and the role's binding still supplied the other engine's model (T6-R0-2, fixed in the concerns round) | `93f7f085…` |
 | codex | not run: Codex paused by the user (2026-09-18). When the pause lifts: the same `delegate {role: "consult", engine: "codex", model: "gpt-5.6-luna", cwd: <sample>}` with the same brief, expecting no `mcp__cross_agent__` tool beside its built-in `codex_apps`. | — |
 
 One deviation in the run itself: the second `delegate` carried the same brief as
@@ -638,6 +685,12 @@ order. `grok mcp doctor` in the sample, with the project mount present:
     ✓ 5 tools discovered
 ```
 
+A caveat that belongs beside any Grok transcript, and beside this row above
+all: the `system/init` line's `mcp_servers` field is **not** Grok's MCP state —
+Grok's own `events.jsonl` `mcp_config_resolved` is, and the two disagree. What
+this row rests on is therefore the doctor's "5 tools discovered" and the
+specialist's own listing, both of which stand without that field.
+
 Then the row itself: `delegate {role: "consult", engine: "grok", model:
 "grok-4.6", effort: "medium", cwd: <sample>}` through the real server, runner
 and adapter, with I1's own brief. Task `915d1a84…`, 44 s, `done`, exit 0, depth
@@ -663,11 +716,12 @@ word:
 ```
 Tool `cross-agent__delegate` failed via `use_tool`: Tool not found: cross-agent__delegate
 Tool `delegate` failed via `use_tool`: 'delegate' is not a valid MCP tool name.
+Tool names must be qualified as `server__tool` …
 ```
 
 So the refusal reaches this engine the same way it reaches Claude: the tool was
 never in the list, so the dispatcher refuses the name and the server is never
-asked. The reason-bearing refusal is `tests/authority.test.ts:209`'s, as for
+asked. The reason-bearing refusal is `tests/authority.test.ts#engineAncestorGrants`'s, as for
 Claude. The specialist also reported `total_hidden_tools: 7` behind Grok's own
 `search_tool`, and it saw this server's five without searching.
 
@@ -696,7 +750,7 @@ node tools/probe.mjs --engine claude --track --project <sample> --cwd <sample> \
   --sandbox read-only --model claude-sonnet-5 --effort medium --prompt-file <file>
 ```
 
-Task `18cc1a68…`, 16 s, exit 0. The mount the adapter wrote
+Task `18cc1a68…`, 14.4 s by the ledger (16.2 s wall), exit 0. The mount the adapter wrote
 (`<task>.scratch/mcp-config.json`) names this server and nothing else, and the
 child's `system/init` line reports `mcp_servers: [{"name": "cross-agent",
 "status": "connected", "source": "dynamic"}]` with exactly five tools:
@@ -710,7 +764,8 @@ mcp__cross-agent__result
 The specialist row, in the `--mcp-config` spelling, from a child holding a lead's
 own mount. Its answer to the second half: "My harness will not let me call it at
 all — there is no tool named `mcp__cross-agent__delegate` available to me (loaded
-or deferred)." A **rerun** on 2026-09-19 (task `57ca5d6c…`, 22.2 s) whose prompt
+or deferred)." A **rerun** on 2026-09-19 (task `57ca5d6c…`, 21.5 s by the
+ledger, 22.2 s wall) whose prompt
 named the call and its arguments outright answered the same way: "I could not
 send this call at all — the tool doesn't exist in my harness … There is no way to
 invoke a tool whose schema was never registered." So **the refusal naming the
@@ -778,6 +833,11 @@ configuration, through the product pipeline — the real stdio server, `delegate
 {worktree: true, engine: "claude"}`, the real detached runner, the real adapter
 — with the spec and the engine's own argv read back from disk and from
 `/proc/<engine pid>/cmdline`:
+
+The host transcript is `i2-host.log` in the archive, and the ten-minute wait's
+is `wait10.log`. The delegated rerun below was driven by a harness of its own
+rather than a host session, so what it printed — the spec, the argv, the
+outcome — is quoted here and was **not** separately archived:
 
 ```
 spec.protectedPaths ["<worktree>/.git","<root>/.git"]
@@ -863,7 +923,8 @@ delegate implementer (claude, cwd=<worktree>, branch)  → wait 600 → done 27 
 git_mutate add -A -- . :(exclude).cross-agent :(exclude).worktrees
 git_mutate commit -m "Add slug_words(), …"             → 3878466
 delegate code-reviewer (grok, round 1, commit 3878466) → wait 600 → done 83 s, "ready"
-delegate implementer resume f5477ad3 (operator round)  → wait 600 → done 14 s, 68→69 tests
+delegate implementer resume 7fd15e08 (operator round)  → wait 600 → done 14 s, 68→69 tests
+  (that call's own record is f5477ad3)
 git_mutate add -A … ; git_mutate commit                → 90473bf
 delegate code-reviewer (grok, round 2, commit 90473bf) → wait 600 → done 59 s, "ready"
 git_root merge --ff-only task/t10-slug-words
@@ -872,6 +933,9 @@ git_root worktree remove .worktrees/t10-slug-words
 git_root branch -d task/t10-slug-words
 Bash: append six lines to .cross-agent/log.md
 ```
+
+The host transcript is `e1-host.log` in the archive, with `e1-host.txt` beside
+it as the rendered read.
 
 All eight of the Verification list's conditions were checked with
 `tools/e2e-verify.mjs --project <sample>`, which reads the repository and the

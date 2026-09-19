@@ -22,6 +22,7 @@ function project(dir: string): string {
   return dir;
 }
 
+// @anchor projectWinsCross
 test("--project wins over CROSS_AGENT_PROJECT, which wins over the working directory", async (t) => {
   const root = scratch(t);
   const [flagged, exported, walked] = ["flagged", "exported", "walked"].map((name) => project(path.join(root, name)));
@@ -38,6 +39,7 @@ test("--project wins over CROSS_AGENT_PROJECT, which wins over the working direc
   assert.deepEqual(await discoverProject([], { CROSS_AGENT_PROJECT: path.join(root, "link") }, cwd), { root: flagged });
 });
 
+// @anchor workingDirectoryResolves
 test("the working directory resolves to the nearest directory above it holding a config", async (t) => {
   const root = scratch(t);
   const outer = project(path.join(root, "outer"));
@@ -48,6 +50,7 @@ test("the working directory resolves to the nearest directory above it holding a
   assert.deepEqual(await discoverProject([], {}, path.join(root, "shortcut")), { root: inner });
 });
 
+// @anchor workingDirectoryInside
 test("a working directory inside a linked worktree resolves to the main project", async (t) => {
   const root = scratch(t);
   const main = project(path.join(root, "main"));
@@ -64,6 +67,7 @@ test("a working directory inside a linked worktree resolves to the main project"
   assert.deepEqual(await discoverProject([], {}, worktree), { root: main });
 });
 
+// @anchor projectConfigAnywhere
 test("a project with no config anywhere is the git toplevel of the working directory", async (t) => {
   const root = scratch(t);
   const repo = path.join(root, "repo");

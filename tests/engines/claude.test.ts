@@ -110,10 +110,12 @@ test("the built-in table answers for claude with this adapter", () => {
   assert.equal(claude.name, "claude");
 });
 
+// @anchor claudeDeclaresOwn
 test("claude declares its own profile names and what each one means", () => {
   assert.deepEqual(claude.sandboxProfiles, { "read-only": "read-only", "workspace-write": "write", off: "off" });
 });
 
+// @anchor claudeDenyargsAppendable
 test("claude's denyArgs is one appendable --disallowedTools array carrying both forms", () => {
   assert.deepEqual(claude.denyArgs(targets), [
     "--disallowedTools", "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
@@ -123,10 +125,12 @@ test("claude's denyArgs is one appendable --disallowedTools array carrying both 
   ]);
 });
 
+// @anchor claudeExclusionargsFlag
 test("claude's exclusionArgs is the flag that makes a mount exclusive", () => {
   assert.deepEqual(claude.exclusionArgs(), ["--strict-mcp-config"]);
 });
 
+// @anchor claudeLeadmountReturns
 test("claude's leadMount returns the config file and the flag that points at it (P9)", (t) => {
   const directory = scratch(t);
   const spec = {
@@ -150,6 +154,7 @@ test("claude's leadMount returns the config file and the flag that points at it 
   assert.deepEqual(JSON.parse(bare.files![0].contents), { mcpServers: { "cross-agent": { command: "node", args: [] } } });
 });
 
+// @anchor claudeSandboxSupport
 test("claude's sandbox support names the Linux prerequisites it cannot find on the spawn's own PATH (P1)", (t) => {
   const directory = scratch(t);
   const env = { PATH: directory };
@@ -171,6 +176,7 @@ test("claude's sandbox support names the Linux prerequisites it cannot find on t
   assert.deepEqual(claude.sandboxSupport(env), { ok: true });
 });
 
+// @anchor sandboxforPairsProfile
 test("sandboxFor pairs a profile with the mode claude gives it, and refuses any other", () => {
   for (const [profile, mode] of Object.entries(claude.sandboxProfiles)) {
     assert.deepEqual(sandboxFor("claude", profile), { mode, profile });
@@ -186,6 +192,7 @@ test("sandboxFor pairs a profile with the mode claude gives it, and refuses any 
   }
 });
 
+// @anchor readOnlyRole
 test("a read-only role's argv is P1's spawn line with no writable root and no editing tools", (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, {
@@ -210,6 +217,7 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
   assert.deepEqual(plan.files, [{ path: dirs.role, contents: "You are the code reviewer.\n" }]);
 });
 
+// @anchor writeRoleArgv
 test("a write role's argv carries the worktree as the only writable root, and the whole deny list", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { model: "claude-sonnet-5", effort: "high", denyTargets: [...targets] }));
@@ -285,6 +293,7 @@ test("an off-profile role gets no filesystem rules at all", (t) => {
   assert.deepEqual(settings.sandbox, { enabled: false, autoAllowBashIfSandboxed: true });
 });
 
+// @anchor resumedRunCarries
 test("a resumed run carries --resume and never a --session-id beside it", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { resumeSessionId: "138a9c9e-f573-45c5-80fc-fda76dddc834" }));
@@ -300,6 +309,7 @@ test("a resumed run carries --resume and never a --session-id beside it", (t) =>
   assert.equal(plan.argv.includes(sessionId), false);
 });
 
+// @anchor enginePlacedLead
 test("an engine-placed lead's argv mounts this server exclusively, and its config is a plan file", (t) => {
   const dirs = layout(t);
   const lead = {
@@ -333,6 +343,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
   for (const file of plan.files!) assert.equal(existsSync(file.path), false);
 });
 
+// @anchor sandboxSettingsSay
 test("the sandbox settings say disabled for the one profile that means it", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
@@ -341,6 +352,7 @@ test("the sandbox settings say disabled for the one profile that means it", (t) 
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
 });
 
+// @anchor sandboxedRoleMay
 test("a sandboxed role may neither leave its sandbox nor run without one", (t) => {
   const dirs = layout(t);
   const sandboxOf = (profile: string): Record<string, unknown> => {
@@ -366,6 +378,7 @@ test("a sandboxed role may neither leave its sandbox nor run without one", (t) =
   assert.equal("failIfUnavailable" in sandboxOf("off"), false);
 });
 
+// @anchor writableRootRequest
 test("the writable root is the request's cwd exactly, and that cwd is already canonical", (t) => {
   const dirs = layout(t);
   // A workspace reached through a symlink is a second string for one directory. The child
@@ -390,6 +403,7 @@ test("a configured binary is the one the plan spawns", (t) => {
   assert.equal(claude.plan(requestFor(dirs, { env: { CROSS_AGENT_CLAUDE_BIN: bin } })).bin, bin);
 });
 
+// @anchor flagNothingCarry
 test("a flag with nothing to carry is not emitted at all", (t) => {
   const dirs = layout(t);
   // An empty deny list would leave `--disallowedTools` looking for its variadic values,
@@ -413,6 +427,7 @@ test("claude's parseLine reads the session id from the init line and nothing els
   }
 });
 
+// @anchor assistantTurnActivity
 test("an assistant turn is activity: its text, without the thinking, capped at 200 characters", () => {
   const turn = (content: unknown) => claude.parseLine(JSON.stringify({
     type: "assistant", session_id: "x", message: { type: "message", role: "assistant", content },
@@ -434,6 +449,7 @@ test("an assistant turn is activity: its text, without the thinking, capped at 2
   assert.deepEqual(turn([{ type: "text", text: "🌙".repeat(150) }]), { kind: "activity", text: "🌙".repeat(150) });
 });
 
+// @anchor resultLineRun
 test("a result line is the run's verdict: success is a result, anything else is an error", () => {
   assert.deepEqual(claude.parseLine('{"type":"result","subtype":"success","is_error":false,"session_id":"x","result":"the final message"}'),
     { kind: "result", text: "the final message" });
@@ -487,6 +503,7 @@ test("claude's final message is the last result, then the last error, then nothi
   assert.equal(claude.finalMessage([], null), "");
 });
 
+// @anchor claudeDeclaresFinish
 test("claude declares no finish: its output is a line stream, not one document at exit", () => {
   const adapter: EngineAdapter = claude;
   assert.equal(adapter.finish, undefined);
@@ -538,6 +555,7 @@ test("a fake claude run through the pipeline yields the session, the activity an
   assert.equal(JSON.parse(readFileSync(record, "utf8")).stdin, request.brief);
 });
 
+// @anchor failedRunSettles
 test("a failed run settles as an error carrying the engine's own message", async (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, {
@@ -580,6 +598,7 @@ test("a sandbox failure on stderr fails a run the engine itself calls a success 
   assert.match(readFileSync(request.logPath, "utf8"), new RegExp(`^stderr ${warning.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
 });
 
+// @anchor sandboxFailsCommand
 test("a sandbox that fails every command is still one error event, and all of it evidence", async (t) => {
   const dirs = layout(t);
   // P1's other failure mode: the sandbox engages and every command inside it dies at its

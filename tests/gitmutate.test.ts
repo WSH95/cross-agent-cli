@@ -148,6 +148,7 @@ test("git_mutate names the commit and the rebase, and records the work tree the 
   assert.deepEqual(journal.steps[1].args, ["commit", "-m", "task work"], "a named step still carries what it ran");
 });
 
+// @anchor stepNamedBranch
 test("a step is named for the branch it moved, not for the subcommand it ran", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await add("moving");
@@ -169,6 +170,7 @@ test("a step is named for the branch it moved, not for the subcommand it ran", a
   assert.deepEqual(readJournal(root, "moving")!.steps.map((step) => step.step), ["git", "git", "committed", "git"]);
 });
 
+// @anchor rebaseStoppedConflict
 test("a rebase stopped on a conflict is aborted through git_mutate, and nothing else may run detached", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await add("conflicted");
@@ -202,6 +204,7 @@ test("a rebase stopped on a conflict is aborted through git_mutate, and nothing 
   assert.match(refusal(await gitMutate(root, { slug: "conflicted", args: ["rebase", "--abort"] }, { waitSeconds: 5 })), /HEAD does not match/);
 });
 
+// @anchor gitMutateRefuses
 test("git_mutate refuses a work tree that is not the one its journal records", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await realpath(await add("moved"));
@@ -216,6 +219,7 @@ test("git_mutate refuses a work tree that is not the one its journal records", a
   assert.deepEqual(readJournal(root, "moved")!.steps.map((step) => step.step), ["worktree-created"]);
 });
 
+// @anchor gitMutateRefusesWorkspace
 test("git_mutate refuses a workspace an unsettled writable task is holding", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await add("held");
@@ -252,6 +256,7 @@ test("git_mutate refuses every workspace while a task record cannot be read", as
   accepted(await gitMutate(root, { slug: "unknown", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
 });
 
+// @anchor gitMutateRefusesWorktree
 test("git_mutate refuses a worktree the verifier rejects, with the verifier's own reason", async (t) => {
   const { temporary, root, add } = await repository(t);
   const worktree = await add("verified");
@@ -282,6 +287,7 @@ test("git_mutate refuses a worktree the verifier rejects, with the verifier's ow
   assert.equal(await git(root, "rev-list", "--count", "main"), "1", "and the default branch never moved");
 });
 
+// @anchor gitMutateRuns
 test("git_mutate runs in the worktree the verifier resolved, not the one the slug names", async (t) => {
   const { root, add } = await repository(t);
   const a = await add("a");
@@ -310,6 +316,7 @@ test("git_mutate runs in the worktree the verifier resolved, not the one the slu
   accepted(await gitMutate(root, { slug: "a", path: b, branch: "task/b", args: ["commit", "--allow-empty", "-m", "in b again"] }, { waitSeconds: 5, now: 9 }));
 });
 
+// @anchor firstCallsSlug
 test("two first calls on one slug settle on one branch, and the other is refused", async (t) => {
   const { root, add } = await repository(t);
   const a = await add("a");
@@ -330,6 +337,7 @@ test("two first calls on one slug settle on one branch, and the other is refused
   assert.equal(await git(root, "rev-list", "--count", refused), "1", "and the refused branch never moved");
 });
 
+// @anchor gitMutateHolds
 test("git_mutate holds spawn.lock for the whole call and takes git.lock inside it", async (t) => {
   const { root, add } = await repository(t);
   await add("ordered");
@@ -360,6 +368,7 @@ test("git_mutate holds spawn.lock for the whole call and takes git.lock inside i
   assert.equal(await git(root, "rev-list", "--count", "task/ordered"), "3");
 });
 
+// @anchor gitMutatePasses
 test("git_mutate passes the verified directories explicitly and hands the child no GIT_DIR", async (t) => {
   const { temporary, root, add } = await repository(t);
   const b = await add("b");
@@ -407,6 +416,7 @@ test("git_mutate passes the verified directories explicitly and hands the child 
   assert.match(await git(root, "ls-tree", "-r", "--name-only", "task/b"), /notes\.md/);
 });
 
+// @anchor gitMutateRefusesArguments
 test("git_mutate refuses arguments that are not one subcommand in this worktree", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await add("guarded");
@@ -440,6 +450,7 @@ test("git_mutate refuses arguments that are not one subcommand in this worktree"
   }
 });
 
+// @anchor gitMutateRefusesRuns
 test("git_mutate refuses before it runs anything if the step could not be recorded", async (t) => {
   const { root, add } = await repository(t);
   await add("recordable");
@@ -470,6 +481,7 @@ test("a git command that fails returns its exit code and output, and journals no
   assert.equal(await git(root, "rev-list", "--count", "task/failing"), "1");
 });
 
+// @anchor lockLostWhile
 test("a lock lost while the command ran is reported, and the step is still journaled", async (t) => {
   const { temporary, root, add } = await repository(t);
   await add("lost");
@@ -520,6 +532,7 @@ test("the loop's commit step stages the work and never the project's own state",
   assert.deepEqual(staged.sort(), [".gitignore", "work.txt"]);
 });
 
+// @anchor configLockGit
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);
   await add("refused");
@@ -553,6 +566,7 @@ test("a config, a lock, or a git that could not run is refused rather than throw
   assert.equal(readJournal(root, "refused"), null);
 });
 
+// @anchor taskDirectoryCannot
 test("a task directory that cannot be read at all is a refusal, not an exception", async (t) => {
   if (process.getuid!() === 0) {
     t.skip("root reads a directory whatever its mode says, so the fault cannot be staged");
@@ -578,6 +592,7 @@ test("a task directory that cannot be read at all is a refusal, not an exception
   assert.equal(readJournal(root, "faulted"), null);
 });
 
+// @anchor mutationWaitsGit
 test("a mutation waits for git.lock, and two of them take it one after the other", async (t) => {
   const { root, add } = await repository(t);
   await add("serial");
@@ -608,6 +623,7 @@ test("a mutation waits for git.lock, and two of them take it one after the other
   assert.equal(steps[2].after, await git(root, "rev-parse", "refs/heads/task/serial"));
 });
 
+// @anchor gitLockHeld
 test("git.lock held by a killed process is taken by the next mutation with no reclaim", async (t) => {
   const { temporary, root, add } = await repository(t);
   await add("killed");

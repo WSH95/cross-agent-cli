@@ -280,6 +280,7 @@ test("a workspace an unsettled writable task holds refuses every delegation onto
   assert.notEqual(next, id);
 });
 
+// @anchor recordNobodyCan
 test("a record nobody can read refuses a writable delegation and leaves a read-only one alone", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/unknown");
@@ -402,6 +403,7 @@ test("a resume whose original never reached a session is refused rather than lau
   assert.match(reason, new RegExp(`task ${original.id} recorded no engine session`));
 });
 
+// @anchor delegationStartsGrok
 test("no delegation starts a grok engine as the mode's engine-placed lead, whoever names it", async (t) => {
   const p = await projectWithRoles(t);
   const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
@@ -469,6 +471,7 @@ test("a config edited after the server read it is refused at the launch boundary
   assert.deepEqual(p.records(), [], "no refusal wrote a record");
 });
 
+// @anchor leadRowDelegates
 test("the lead row delegates its own children, and is refused a lead, a lineage repeat and a cancelling parent", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/child");
@@ -575,6 +578,7 @@ test("a worktree one-shot is created through git_root, journaled, and the record
   assert.deepEqual(journal?.steps.map((step) => step.step), ["worktree-created"]);
 });
 
+// @anchor worktreeShotRefused
 test("a worktree one-shot is refused wherever git_root would refuse it, and leaves nothing behind", async (t) => {
   const p = await projectWithRoles(t);
   const options = { authority: operator, mode: p.mode, env: engineEnv(p) };

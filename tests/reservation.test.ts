@@ -66,6 +66,7 @@ function workspace(root: string, name: string): string {
   return directory;
 }
 
+// @anchor writableTaskReserves
 test("a writable task reserves its cwd for as long as it is unsettled", async (t) => {
   const root = project(t);
   for (const status of unsettled) {
@@ -85,6 +86,7 @@ test("a writable task reserves its cwd for as long as it is unsettled", async (t
   assert.equal(reservedBy(root, path.join(root, ".worktrees", "never-used")), null);
 });
 
+// @anchor profileReadOnly
 test("every profile but the read-only ones reserves the workspace", async (t) => {
   const root = project(t);
   // Every profile every adapter declares, paired with its own engine. `off` is the least
@@ -101,6 +103,7 @@ test("every profile but the read-only ones reserves the workspace", async (t) =>
   }
 });
 
+// @anchor modeEngineOwn
 test("a mode the engine's own map contradicts holds the workspace", async (t) => {
   const root = project(t);
   // The spec is a claim, not a fact: what the engine does with the profile it names is
@@ -123,6 +126,7 @@ test("a mode the engine's own map contradicts holds the workspace", async (t) =>
   assert.equal(reservedBy(root, unknown)?.id, third.id);
 });
 
+// @anchor launchSpecWhose
 test("a launch spec whose sandbox this build cannot read keeps the workspace", async (t) => {
   const root = project(t);
   // An older spec's profile string, and a spec with no sandbox at all: neither has ever
@@ -136,6 +140,7 @@ test("a launch spec whose sandbox this build cannot read keeps the workspace", a
   }
 });
 
+// @anchor runningTaskWhose
 test("a running task whose launch spec cannot be read keeps its workspace", async (t) => {
   const root = project(t);
   const missing = workspace(root, "no-spec");
@@ -154,6 +159,7 @@ test("a running task whose launch spec cannot be read keeps its workspace", asyn
   assert.equal(reservedBy(root, done), null);
 });
 
+// @anchor unreadableRecordReported
 test("an unreadable record is reported as unknown, verbatim from the ledger scan", async (t) => {
   const root = project(t);
   const cwd = workspace(root, "valid");
@@ -173,6 +179,7 @@ test("an unreadable record is reported as unknown, verbatim from the ledger scan
   assert.deepEqual([...reserved.keys()], [cwd]);
 });
 
+// @anchor reservationsComparePaths
 test("reservations compare paths canonically", async (t) => {
   const root = project(t);
   const real = workspace(root, "canonical");
@@ -188,6 +195,7 @@ test("reservations compare paths canonically", async (t) => {
   assert.equal(reservedBy(root, path.join(alias, "other")), null);
 });
 
+// @anchor removedWorkspaceReserved
 test("a removed workspace is still reserved by the task that has not settled", async (t) => {
   const root = project(t);
   const cwd = workspace(root, "removed");

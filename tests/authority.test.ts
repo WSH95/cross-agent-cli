@@ -72,6 +72,7 @@ function fakeProc(t: TestContext, stats: Map<number, string | Error>) {
   }) as typeof fs.readFileSync);
 }
 
+// @anchor operatorCleanEnvironment
 test("the operator is a clean environment whose walk reaches the root without meeting an engine", (t) => {
   const { project } = workspace(t);
   fakeProc(t, new Map([[process.pid, ownStatWithParent(first)], [first, statLine(first, 0, "100")]]));
@@ -81,6 +82,7 @@ test("the operator is a clean environment whose walk reaches the root without me
     "the depth cap lowers the operator as it lowers a lead");
 });
 
+// @anchor serverCarryingAny
 test("a server carrying any CROSS_AGENT_* variable but matching no record is a specialist, never the operator", (t) => {
   const { project } = workspace(t);
   const cases: [NodeJS.ProcessEnv, Authority][] = [
@@ -100,6 +102,7 @@ test("a server carrying any CROSS_AGENT_* variable but matching no record is a s
   }
 });
 
+// @anchor walkFailsClosed
 test("the walk fails closed on a stat it cannot read, a cycle, and a parent younger than its child", (t) => {
   const { project } = workspace(t);
   const denied = Object.assign(new Error("denied"), { code: "EACCES" });
@@ -268,6 +271,7 @@ test("a specialist's own server refuses delegate by name, with the task its ance
   );
 });
 
+// @anchor engineAncestorGrants
 test("an engine ancestor grants its record's row, and the depth cap can only lower it", async (t) => {
   const { project, exchange } = workspace(t);
   const lead = task(project, "lead");
@@ -295,6 +299,7 @@ test("an engine ancestor grants its record's row, and the depth cap can only low
   });
 });
 
+// @anchor leadHoldsRow
 test("a lead holds its row exactly while its record is running or stalled, re-read on every resolution", async (t) => {
   const { project, exchange } = workspace(t);
   const lead = task(project, "lead");
@@ -358,6 +363,7 @@ test("a specialist engine holding no authority never hands the lead's row above 
     { row: "specialist", reason: `specialist by ancestry: task ${specialist.id} (implementer, orphaned)`, taskId: specialist.id, depth: 2 });
 });
 
+// @anchor serverWhoseEngine
 test("a server whose engine passed it no environment still finds the task in an ancestor's", async (t) => {
   const { project, exchange } = workspace(t);
   const lead = task(project, "lead");
@@ -373,6 +379,7 @@ test("a server whose engine passed it no environment still finds the task in an 
   assert.deepEqual(await ask(options), { row: "lead", reason: `lead by ancestry: task ${lead.id} (lead, running)`, taskId: lead.id, depth: 0 });
 });
 
+// @anchor identityAnotherBoot
 test("an identity from another boot, or an engine not carrying its task, matches nothing", async (t) => {
   const { project, exchange } = workspace(t);
   const foreign = task(project, "lead");
@@ -392,6 +399,7 @@ test("an identity from another boot, or an engine not carrying its task, matches
   });
 });
 
+// @anchor walkReachesEngine
 test("the walk reaches an engine eight hops up and fails closed at nine", async (t) => {
   const { project, exchange } = workspace(t);
   for (const wrappers of [7, 8]) {

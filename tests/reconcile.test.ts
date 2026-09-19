@@ -475,6 +475,7 @@ test("a launching record with an environment it could not read waits for the nex
   assert.deepEqual(seeing.changed.map((value) => value.status), ["orphaned"], "the next pass judges it");
 });
 
+// @anchor recordHeldOpen
 test("a record held open by an environment it could not read is failed once the hold expires", async (t) => {
   const root = project(t);
   const zoo = processes(t);

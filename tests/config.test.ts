@@ -123,6 +123,7 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
   assert.equal(config.loadConfig(root).roles.__proto__.engine, "claude");
 });
 
+// @anchor roleMayBind
 test("a role may bind the prompt its specialist is launched with", (t) => {
   const root = project(t);
   writeConfig(root, { roles: { planner: { engine: "codex", prompt: "You are the planner. Report a plan." } } });
@@ -173,6 +174,7 @@ test("loadConfig rejects an unknown or missing engine naming its path and file",
   }
 });
 
+// @anchor loadconfigRejectsMalformed
 test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types", (t) => {
   const root = project(t);
   const file = writeConfig(root, {});
@@ -218,6 +220,7 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
   validationError(root, "limits.stallMinutes");
 });
 
+// @anchor lockwaitsecondsReadsConfigured
 test("lockWaitSeconds reads the configured wait, and answers even when it cannot", (t) => {
   const root = project(t);
   writeConfig(root, { roles: {} });
@@ -258,6 +261,7 @@ test("a project with no config file loads solo's defaults, bound to nothing and 
   assert.throws(() => config.loadConfig(root), /valid JSON/);
 });
 
+// @anchor initconfigWritesSection
 test("initConfig writes the section 6 defaults once and preserves existing bytes", (t) => {
   const root = project(t);
   assert.equal(config.initConfig(root).wrote, true);
@@ -273,6 +277,7 @@ test("initConfig writes the section 6 defaults once and preserves existing bytes
   assert.equal(readFileSync(file, "utf8"), custom);
 });
 
+// @anchor initconfigIgnoresProject
 test("initConfig ignores the project's own state, once, and leaves a hand-written entry alone", (t) => {
   const root = project(t);
   // `run_command` and `git_root` refuse to work in a project that tracks `.cross-agent/`,
@@ -301,6 +306,7 @@ test("initConfig ignores the project's own state, once, and leaves a hand-writte
   assert.deepEqual(config.initConfig(solo, { mode: "solo" }).ignored, [".cross-agent/", ".worktrees/"]);
 });
 
+// @anchor initconfigLeavesConfig
 test("initConfig leaves the config directory holding the config and nothing else", (t) => {
   const root = project(t);
   assert.equal(config.initConfig(root).wrote, true);
@@ -313,6 +319,7 @@ test("initConfig leaves the config directory holding the config and nothing else
   assert.deepEqual(readdirSync(path.join(root, ".cross-agent")), ["config.json"]);
 });
 
+// @anchor configNamesWhere
 test("a config that names where a role works, rather than binding it, is refused by key and rule", (t) => {
   const root = project(t);
   for (const key of ["workspace", "cwd"]) {
@@ -357,6 +364,7 @@ test("loadConfigWithMode binds every role the mode declares and refuses every ke
   assert.throws(() => config.loadConfigWithMode(root, modes), /one directory/);
 });
 
+// @anchor overrideMayMake
 test("an override may not make a root role writable, and must be a profile its engine accepts", (t) => {
   const root = project(t);
   const modes = modesRoot(t);

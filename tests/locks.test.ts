@@ -42,6 +42,7 @@ test("lock names and paths live under the project's lock directory", (t) => {
   assert.equal(path.isAbsolute(lockPath(path.relative(process.cwd(), root), spawnLockName())), true);
 });
 
+// @anchor acquirersFileSerialize
 test("two acquirers of one file serialize, and the directory is created on demand", async (t) => {
   const root = project(t);
   const file = lockPath(root, recordLockName("serialize"));
@@ -65,6 +66,7 @@ test("two acquirers of one file serialize, and the directory is created on deman
   await (await acquire(file, { operation: "third writer", waitSeconds: 1 })).release();
 });
 
+// @anchor lockHeldSigkilled
 test("a lock held by a SIGKILLed process is taken by the next holder with no reclaim", async (t) => {
   const root = project(t);
   const file = lockPath(root, runnerLockName("killed"));
@@ -96,6 +98,7 @@ setInterval(() => {}, 1 << 30);
   }
 });
 
+// @anchor waiterRefusesWait
 test("a waiter refuses after its wait, naming the operation and the file", async (t) => {
   const root = project(t);
   const file = lockPath(root, recordLockName("busy"));

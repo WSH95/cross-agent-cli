@@ -505,6 +505,7 @@ fs.writeFileSync(process.env.READY_FILE, "ready");
 setInterval(() => {}, 1000);
 `;
 
+// @anchor sharedLadderZero
 test("the shared ladder at a zero grace sends SIGTERM and SIGKILL one after the other", async (t) => {
   const zoo = processes(t);
   const ready = path.join(zoo.root, "stubborn.ready");

@@ -56,6 +56,7 @@ test("loadMode reads a mode's identity, lead, roles, git policy and requirements
   assert.deepEqual(rootOnly.requires, { engines: [] });
 });
 
+// @anchor loadmodeRefusesMode
 test("loadMode refuses a mode nothing can read, naming the mode and its directory", (t) => {
   const modes = modesRoot(t);
   const missing = refusal(modes, "absent");
@@ -71,6 +72,7 @@ test("loadMode refuses a mode nothing can read, naming the mode and its director
   }
 });
 
+// @anchor loadmodeRefusesDocument
 test("loadMode refuses every document it cannot trust, naming the field and the rule", (t) => {
   const modes = modesRoot(t);
   const roles = [{ key: "planner" }, { key: "implementer", workspace: "worktree" as const }];
@@ -159,6 +161,7 @@ test("loadMode refuses every document it cannot trust, naming the field and the 
   }
 });
 
+// @anchor loadmodeRefusesPrompt
 test("loadMode refuses a prompt file that is missing or resolves outside the mode", (t) => {
   const modes = modesRoot(t);
   const outside = path.join(modes, "outside.md");
@@ -180,6 +183,7 @@ test("loadMode refuses a prompt file that is missing or resolves outside the mod
   assert.match(refusal(modes, "m"), /promptFile/);
 });
 
+// @anchor worktreeDirectoryProject
 test("a worktree directory the project needs for itself is not one a role may work in", (t) => {
   const modes = modesRoot(t);
   for (const dir of [".", "./", ".cross-agent", ".cross-agent/trees", ".git", ".git/worktrees"]) {
@@ -194,6 +198,7 @@ test("a worktree directory the project needs for itself is not one a role may wo
   }
 });
 
+// @anchor enginePlacedLead
 test("an engine-placed lead is a role that works at the project root", (t) => {
   const modes = modesRoot(t);
   writeMode(modes, "m", modeDocument("m", [{ key: "lead", workspace: "worktree", sandboxDefault: "read-only" }, { key: "planner" }], {
@@ -211,6 +216,7 @@ test("an engine-placed lead is a role that works at the project root", (t) => {
   assert.equal(loadMode(modes, "ok").lead.role, "lead");
 });
 
+// @anchor loopFileContained
 test("the loop file is contained and readable like every prompt file, at load", (t) => {
   const modes = modesRoot(t);
   const outside = path.join(modes, "outside.md");
@@ -241,6 +247,7 @@ test("the loop file is contained and readable like every prompt file, at load", 
   assert.equal(described.loop, "The loop.\n");
 });
 
+// @anchor promptFileDirectory
 test("a prompt file that is a directory is refused at load, not read at description", (t) => {
   const modes = modesRoot(t);
   writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { prompts: { planner: null } });
@@ -248,6 +255,7 @@ test("a prompt file that is a directory is refused at load, not read at descript
   assert.match(refusal(modes, "m"), /roles\.planner\.promptFile/);
 });
 
+// @anchor modeDirectorySymlink
 test("a mode directory that is a symlink out of the shelf is not a mode of that shelf", (t) => {
   const modes = modesRoot(t);
   const elsewhere = modesRoot(t);
@@ -258,6 +266,7 @@ test("a mode directory that is a symlink out of the shelf is not a mode of that 
   assert.match(refusal(modes, "smuggled"), /modes/);
 });
 
+// @anchor modeCarriesBuilt
 test("every mode carries the built-in consult role, which a mode may retitle and reprompt alone", (t) => {
   const modes = modesRoot(t);
   // A mode that says nothing about it still has it: read-only at the project root, with
@@ -294,6 +303,7 @@ test("every mode carries the built-in consult role, which a mode may retitle and
   assert.equal(describedOwn.roles[0].prompt, "Read this project and answer the brief.\n");
 });
 
+// @anchor declaredConsultRole
 test("a declared consult role that is not read-only at the project root is refused", (t) => {
   const modes = modesRoot(t);
   // The two things a mode may not change about it. Each names the rule rather than the
@@ -320,6 +330,7 @@ test("a mode with no worktree role still has the git policy its one-shots use, m
     "a mode that declares one is held to it, and nothing is implicit about it");
 });
 
+// @anchor devTeamModes
 test("the two dev-team modes carry the same role prompts, byte for byte", () => {
   const modes = builtInModesDir();
   for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {

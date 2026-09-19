@@ -217,6 +217,7 @@ test("unsupported sandbox refuses before planning or spawning", (t) => {
   assert.equal(existsSync(request.resultPath), false);
 });
 
+// @anchor modeEngineMap
 test("a mode its engine's map contradicts is refused before anything else happens", (t) => {
   const { request } = task(t);
   const adapter: EngineAdapter = {
@@ -710,6 +711,7 @@ test("grok format emits init session_id, an assistant message, and a final resul
   assert.equal(lines.at(-1).session_id, lines[0].session_id);
 });
 
+// @anchor grokJsonFormat
 test("grok-json format is the json mode: one multiline object at exit and nothing before", async (t) => {
   const { code, out } = await task(t).fixture("grok-json").result;
   assert.equal(code, 0);
@@ -771,6 +773,7 @@ test("every format preserves fail, stall, and invocation recording", { timeout: 
   }
 });
 
+// @anchor declaredFinishCalled
 test("a declared finish is called once with the whole raw stdout and its events are appended", async (t) => {
   const { launch, request } = task(t);
   const documents: string[] = [];
@@ -800,6 +803,7 @@ test("a declared finish is called once with the whole raw stdout and its events 
   assert.equal(result.ok, true);
 });
 
+// @anchor adapterDeclaresFinish
 test("an adapter that declares no finish is never asked for one, so nothing is buffered", async (t) => {
   const { launch } = task(t);
   const adapter: EngineAdapter = { ...generic, parseLine: () => null };
@@ -816,6 +820,7 @@ test("an adapter that declares no finish is never asked for one, so nothing is b
   assert.equal(result.ok, true);
 });
 
+// @anchor failingFinishReported
 test("a failing finish is reported as this engine's error and does not lose the run", async (t) => {
   const { launch } = task(t);
   const adapter: EngineAdapter = {
@@ -833,6 +838,7 @@ test("a failing finish is reported as this engine's error and does not lose the 
   ]);
 });
 
+// @anchor planFilesWritten
 test("plan files are written, parents included, before the child is spawned", async (t) => {
   const { launch, request } = task(t);
   const mount = path.join(request.cwd, "scratch", "lead", "mcp-config.json");
@@ -854,6 +860,7 @@ test("plan files are written, parents included, before the child is spawned", as
   for (const file of files) assert.equal(statSync(file.path).mode & 0o777, 0o600);
 });
 
+// @anchor planFileCannot
 test("a plan file that cannot be written is a launch failure, and nothing is spawned", async (t) => {
   const { launch, request } = task(t);
   const blocker = path.join(request.cwd, "blocker");

@@ -124,6 +124,7 @@ test("initialize identifies the cross-agent server over stdio", async () => {
   }
 });
 
+// @anchor toolsListOffers
 test("tools/list offers each row of the permission matrix exactly its tools", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -148,6 +149,7 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
   }
 });
 
+// @anchor callToolOutside
 test("a call to a tool outside the resolved row is refused by name with the reason, and never runs", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -387,6 +389,7 @@ test("a server attached to a repository with no config writes nothing to it", as
   }
 });
 
+// @anchor serverWhoseMode
 test("a server whose mode does not load, or whose config does not match it, exits naming the reason", { timeout: 20_000 }, async (t) => {
   const modes = modesRoot(t);
   buildMode(modes, "dev-team", [{ key: "planner" }]);
@@ -419,6 +422,7 @@ test("a server whose mode does not load, or whose config does not match it, exit
   }
 });
 
+// @anchor entryPointResolves
 test("the entry point resolves its own row: a server carrying a task no record matches is a specialist", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -436,6 +440,7 @@ test("the entry point resolves its own row: a server carrying a task no record m
   }
 });
 
+// @anchor unknownMethodsGet
 test("unknown methods get a JSON-RPC method-not-found error", async () => {
   const client = stdioClient(await projectWithConfig({ roles: {} }));
   try {
@@ -446,6 +451,7 @@ test("unknown methods get a JSON-RPC method-not-found error", async () => {
   }
 });
 
+// @anchor pingAnsweredWhile
 test("ping is answered while a slow tool call is pending", async () => {
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -602,6 +608,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
   }
 });
 
+// @anchor worktreeProviderTools
 test("the worktree provider's tools are registered for the operator and the lead under every mode", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -637,6 +644,7 @@ test("the worktree provider's tools are registered for the operator and the lead
   assert.deepEqual(refused.error, { code: -32602, message: "unknown tool: ask" });
 });
 
+// @anchor describeModeServes
 test("describe_mode serves the active mode's loop and roles to every row, and refuses a mode that is not there", async (t) => {
   const modes = modesRoot(t);
   const mode = buildMode(modes, "dev-team", [
@@ -712,6 +720,7 @@ test("list_roles reports the mode's workspace and the profile each role will act
   assert.match((refused.content as Json[])[0].text as string, /declares no role "designer"/);
 });
 
+// @anchor gitMutateTakes
 test("git_mutate takes its worktree directory and branch from the mode's own git policy", async (t) => {
   const modes = modesRoot(t);
   const mode = buildMode(modes, "dev-team", [{ key: "implementer", workspace: "worktree" }], {
@@ -851,6 +860,7 @@ test("run_command is registered beside git_root and runs the project's own comma
   }
 });
 
+// @anchor resolverThrowsAnswers
 test("a resolver that throws answers -32603, lists nothing, and runs no handler", async () => {
   let ran = false;
   const request = inProcess({
