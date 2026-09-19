@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T16:01:40Z
+updated_at: 2026-09-19T16:12:09Z
 updated_by: claude
 session_status: active
 branch: main
@@ -34,16 +34,15 @@ judge instead of staying silent); `tools/e2e-verify.mjs` 8/8 on the sample.
 Four fix rounds closed everything four reviews found; round 4 realigned the
 anchored citations to the tests whose titles state each claim (alignment
 table in `task-6-report.md`), grounded the verifier's Codex handling, and
-fixed the checker's blind spot. The Grok second review of round 4 held the citations and the checker (17 of
-20 sampled realignments right) and found two fail-open paths the verifier
-gained (unknown event types counted as understood; an offence discarded when
-any line is unread), three neighbour citations, and a launcher regex that
-should mirror `denyTargets`. **Fix round 5** (`task-6-findings-round-5.md`)
-is running on the implementer, now also carrying the Opus 5 rerun review
-of round 4 (spec PASS; a handful of citation lines and the flat() JSDoc,
-T6-R5-5 … R5-10). After round 5: both seats on its diff, then the closing
-sequence.
-When both are clean: close `.13`,
+fixed the checker's blind spot. Rounds 4 and 5 realigned every anchored citation to the test whose title
+states its claim (alignment table in `task-6-report.md`), gave the checker's
+`--since` an honest "not judged" for what it cannot compare, and closed the
+verifier's fail-open paths (unknown event types and unread lines answer `?`
+or keep a found offence as FAIL; the launcher regex mirrors `denyTargets`).
+Branch HEAD `cbb412d`: 617 tests, 616 pass, 1 skipped; 824 citations, 0
+misses; `--since` quiet against `3023e30` and `39505aa`; sample 8/8.
+**Two closing reviews of round 5 run now** (the Grok seat through
+cross-agent; the Opus 5 scoped re-review). When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
 section (`dispatch/verify-t13-final.md`, four placeholders), the final
 handover (`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`,
