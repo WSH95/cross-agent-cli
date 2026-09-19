@@ -38,9 +38,9 @@ ask for a restart instead of working around it.
 ## Starting a task
 
 `delegate {role, brief, cwd}` launches one specialist and answers with its task
-id. Add `branch` when the role works in a worktree — the mode's loop creates
-that worktree and tells you the path and the branch — and `engine`, `model` or
-`effort` to override the binding for this call alone. `worktree: true` gives a
+id. Add `branch` when the role works in a worktree — the mode's loop says where
+that worktree comes from and on what branch — and `engine`, `model` or `effort`
+to override the binding for this call alone. `worktree: true` gives a
 role that works at the project root a writable task worktree of its own instead;
 the record then carries `worktree: {path, branch, slug}` and the slug is the
 task id.
@@ -72,8 +72,8 @@ when the ledger turns out to be out of step with the kernel, or at your timeout,
 and it carries `status`, `elapsedSeconds`, `lastActivity`, the `resultTail` of a
 settled task, and a `hint` naming the call to make next. Act on the status:
 
-- `running` — call `wait` again. So is a record still `launching` or
-  `cancelling`: both are in motion.
+- `running` — call `wait` again; a record still `launching` or `cancelling` is
+  in motion too, and answers the same way.
 - `stalled` — the engine has emitted nothing for the configured threshold; the
   task is still alive. Read the log the hint names, then keep waiting or
   `cancel`.
@@ -99,7 +99,7 @@ task costs you many short waits, not one long one:
 | host | its MCP tool timeout | `timeout_seconds` to pass |
 | --- | --- | --- |
 | Claude Code | about 28 hours by default | 600 |
-| Codex | `tool_timeout_sec` per server, 3600 in this repository's manifest | 600 |
+| Codex | `tool_timeout_sec` per server, 3600 in the manifest of design section 9 | 600 |
 | Grok | not settled until probe I2 of T15 | 300 |
 
 Those are the budgets of the design's "Time limits": there is no cap on a task,
@@ -140,7 +140,7 @@ Read, in this order: `list_tasks`, which reconciles the ledger and names any
 record file no reader could judge; the task's journal at
 `.cross-agent/journal/<slug>.json`, whose steps are the git steps that actually
 completed; `git_root {args: ["worktree", "list", "--porcelain"]}`; `git_root
-{args: ["branch", "--list", "task/*"]}`; `git_root {args: ["status",
+{args: ["branch", "--list", <the mode's `git.branchPattern`>]}`; `git_root {args: ["status",
 "--porcelain", "--untracked-files=normal"]}`; and the rebase state of each task
 worktree, which is a `rebase-merge` or `rebase-apply` directory under
 `.git/worktrees/<slug>`. `verify_worktree {path, branch}` settles whether a

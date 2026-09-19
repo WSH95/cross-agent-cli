@@ -14,8 +14,10 @@ this mode, written `<branch>` below), the journal file every git step appends
 to, and the `slug` that `git_mutate`, `git_root` and `run_command` all take.
 `<default>` is `project.defaultBranch`, and `<worktree path>` is
 `<git.worktreeDir>/<slug>`. `describe_mode` gives you the policy those come
-from; `list_roles` gives you the engine, model and effort behind each role name
-below, and you announce each of them as you dispatch it.
+from, and each role's own prompt; `list_roles` gives you the engine, model and
+effort behind each role name below, and you announce each of them as you
+dispatch it. Until `delegate` launches a role with the mode's prompt rather than
+the config's, every brief below carries what its role has to produce.
 
 ## 1. Root check
 
@@ -26,8 +28,9 @@ dead task is not a repository that is ready for another one.
 
 Then `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`
 must print nothing; if it prints, show the user and stop. The root must also sit
-on `<default>` — step 9 refuses to merge anywhere else, and reading the current
-branch now costs nothing and saves a task. Choose a `<slug>` that neither
+on `<default>`: step 9 refuses to merge anywhere else, and `git_root`'s
+whitelist has no verb that prints the current branch, so read it yourself — it
+costs nothing here and a whole task there. Choose a `<slug>` that neither
 `git_root {args: ["branch", "--list", "task/*"]}` nor `git_root {args:
 ["worktree", "list"]}` already shows.
 
