@@ -116,7 +116,10 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
   launching: ["running", "cancelling", "failed", "orphaned"],
   running: ["stalled", "cancelling", "orphaned", "done", "failed"],
   stalled: ["running", "cancelling", "orphaned", "done", "failed"],
-  orphaned: ["failed", "cancelled"],
+  // orphaned -> done is reconciliation settling a record from the result file an engine
+  // that finished left behind: the runner that would have written the outcome was gone,
+  // the work was not (bead atc-s96.30).
+  orphaned: ["done", "failed", "cancelled"],
   cancelling: ["cancelled", "failed"],
   done: [],
   failed: [],

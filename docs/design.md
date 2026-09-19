@@ -672,7 +672,8 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   record must not treat that as a refusal it can reason about; and the lock is
   released in `finally`. The legal transitions are `launching → running |
   cancelling | failed | orphaned`, `running ↔ stalled`, `running | stalled →
-  cancelling | orphaned | done | failed`, `orphaned → failed | cancelled`, and
+  cancelling | orphaned | done | failed`, `orphaned → done | failed |
+  cancelled`, and
   `cancelling → cancelled | failed` (`src/ledger.ts#transitions`); any other
   transition throws, because it is a bug in a writer, not a race to be
   tolerated. `launching → orphaned` (`src/ledger.ts#transitions`) is the
@@ -704,8 +705,8 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   `failed: runner lost`. It judges the runner, which is one process, by pid and
   start time, and a runner in state `Z` or `X` has exited and owns nothing
   (`src/ledger.ts#isProcessAlive`), which is the same test the group scan
-  applies to a member (`src/process.ts#live`). Its four cases
-  (`src/reconcile.ts#judge`):
+  applies to a member (`src/process.ts#live`). Its five cases
+  (`src/reconcile.ts#judge`, `src/process.ts#terminateOrphans`):
   - `launching` past its deadline: the environ scan above, then `orphaned` or
     `failed: launch`;
   - `running` or `stalled` with a dead runner: `orphaned` if the engine group
@@ -715,6 +716,20 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     none, so the same environ scan runs first and what it finds is terminated
     and written with the settlement (`src/reconcile.ts#judge`,
     `src/process.ts#strandedEngine`);
+  - an `orphaned` record whose group is dead, in the cleanup half of the same
+    pass: `failed: runner lost` — unless the engine finished first. The
+    pipeline writes the engine's final message to the result file as it exits
+    (`src/engines/spawn.ts`), and a runner that found its record already
+    `orphaned` settled `external` and wrote nothing to the ledger, so a result
+    file with something in it is an engine that ran to the end and a runner
+    that was no longer allowed to say so. That evidence wins: the record
+    settles `done`, or `failed` when the engine finished with nothing to say,
+    both with the reason `settled by reconciliation from the engine's result`
+    and with `exitCode: null`, because no process was left to report one
+    (`src/process.ts#settlement`, `#terminateOrphans`, bead `atc-s96.30`).
+    `orphaned → done` is a legal transition for this one writer
+    (`src/ledger.ts#transitions`); no result file at all is still `failed:
+    runner lost`;
   - anything else: untouched. In particular `running ↔ stalled` is not the
     reconciler's: it never revives a task. Both directions are written by the
     two tools that read the stall clock, `wait` and `check`, each through

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, list, readProcessStat, update } from "./ledger.ts";
-import type { EngineIdentity, ProcessIdentity, TaskRecord } from "./ledger.ts";
+import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 
 // Process start times are ticks since boot, at Linux's fixed USER_HZ of 100, and btime
 // is the wall clock of that boot. Both are constant for this boot, so both are read once.
@@ -375,6 +375,30 @@ export function selfLast<T extends { engineIdentity?: EngineIdentity | null }>(r
   return [...marked.filter((entry) => !entry.own), ...marked.filter((entry) => entry.own)].map((entry) => entry.record);
 }
 
+/**
+ * What an orphaned record whose group is gone settles as. `runner lost` is the truth
+ * when nothing else is known, but the engine may have finished and said its last word
+ * first: the pipeline writes the final message to the result file as the engine exits
+ * (`src/engines/spawn.ts`), and a runner that found its record already orphaned wrote
+ * nothing to the ledger. That evidence beats the lost runner — the task ran to the end,
+ * whatever became of the process watching it — and the one thing it cannot supply is the
+ * exit code, which stays unknown rather than being invented (bead atc-s96.30).
+ */
+function settlement(record: TaskRecord): TaskPatch {
+  let result: string;
+  try {
+    result = fs.readFileSync(record.resultPath, "utf8");
+  } catch {
+    // No result file: no engine ever finished here, and the lost runner is the whole story.
+    return { status: "failed", reason: "runner lost" };
+  }
+  const reason = "settled by reconciliation from the engine's result";
+  return result.trim() === ""
+    // An engine that ended with nothing to say is the runner's own rule for a failure.
+    ? { status: "failed", reason: `${reason}: it wrote none`, exitCode: null }
+    : { status: "done", reason, exitCode: null };
+}
+
 // Each call judges every orphaned record on the current kernel state: an invalid or
 // reused identity is left alone, a live group is terminated, and a dead group, one
 // with no live member, is settled. A stale identity is therefore skipped while its
@@ -401,7 +425,7 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
       continue;
     }
     // A record settled by another writer since the listing is refused: not changed.
-    const result = await update(projectRoot, record.id, { status: "failed", reason: "runner lost" }, Date.now(), { unlessTerminal: true, waitSeconds });
+    const result = await update(projectRoot, record.id, settlement(record), Date.now(), { unlessTerminal: true, waitSeconds });
     if (result.applied) changed.push(result.record);
   }
   return { changed, skipped };

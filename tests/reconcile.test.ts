@@ -795,6 +795,48 @@ test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
   assert.equal(groupAlive(engine.identity), false, "no caller can see an orphan whose group is still being decided");
 });
 
+test("an orphan whose engine finished is settled from that result, not as a lost runner", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // The engine ran to the end and its last word is on disk — the pipeline writes the
+  // final message to the result file as the engine exits — and what was lost is the
+  // runner's claim on the record, not the work. Settling that `failed: runner lost`
+  // throws away a task that was done.
+  const finished = await started(root, "orphaned", now);
+  const gone = zoo.leader();
+  await zoo.reap(gone);
+  fs.writeFileSync(finished.resultPath, "the brief is implemented\n");
+  await change(root, finished.id, { runnerIdentity: deadIdentity(), engineIdentity: gone.identity }, now + 1);
+
+  // An engine that finished with nothing to say is the other half of the same evidence:
+  // it ended, and it ended with no result, which is the runner's own rule for a failure.
+  const empty = await started(root, "orphaned", now);
+  const alsoGone = zoo.leader();
+  await zoo.reap(alsoGone);
+  fs.writeFileSync(empty.resultPath, "");
+  await change(root, empty.id, { runnerIdentity: deadIdentity(), engineIdentity: alsoGone.identity }, now + 1);
+
+  // And an engine that left no result file at all never got that far: nothing beats
+  // "runner lost" there, because there is no evidence of an engine that finished.
+  const silent = await started(root, "orphaned", now);
+  const thirdGone = zoo.leader();
+  await zoo.reap(thirdGone);
+  await change(root, silent.id, { runnerIdentity: deadIdentity(), engineIdentity: thirdGone.identity }, now + 1);
+
+  const { changed, skipped } = await terminateOrphans(root);
+  assert.deepEqual(skipped, []);
+  const byId = new Map(changed.map((value) => [value.id, value]));
+  assert.deepEqual([byId.get(finished.id)!.status, byId.get(finished.id)!.reason],
+    ["done", "settled by reconciliation from the engine's result"]);
+  assert.deepEqual([byId.get(empty.id)!.status, byId.get(empty.id)!.reason],
+    ["failed", "settled by reconciliation from the engine's result: it wrote none"]);
+  assert.deepEqual([byId.get(silent.id)!.status, byId.get(silent.id)!.reason], ["failed", "runner lost"]);
+  // No process was left to say how the two that finished ended, so the record says the
+  // exit code is unknown rather than inventing one to go with the result it read.
+  assert.equal(byId.get(finished.id)!.exitCode, null);
+  assert.equal(byId.get(empty.id)!.exitCode, null);
+});
+
 test("a pass waits the configured lockWaitSeconds for a record it cannot write", async (t) => {
   const root = project(t);
   configure(root, 0);
