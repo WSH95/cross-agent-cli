@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T08:15:34Z
+updated_at: 2026-09-19T09:05:04Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -25,17 +25,20 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 4c (solo without ceremony, plan decision 10; `atc-s96.27`) runs as a
-Claude Code subagent (`cross-agent-implementer` · claude-opus-5 · max) on
-`task/cross-agent-m3` from `c057420`. Complete there since the M1 merge:
-Task 4 (S8 modes, `atc-s96.23` closed) and Task 4b (`git_root`,
-`run_command`, the journal's `worktree` field and named steps — the
-`git_root`/`run_command` half of `atc-s96.24`, noted on the bead); 542
-pass, 1 skip; 760 citations, 0 misses. Next: T12 (skills; brief drafted as
-`task-5-brief.md`), T13 (Claude Code packaging, I1/I2, E1), S11 (mailbox,
-lead delegation, E2/E3). **Codex is paused by the user.** Pending your
-approval: `agents-md-m1.diff` (plus the Layout diffs Tasks 4 and 4b
-proposed) in `.superpowers/sdd/the-development-of-this-calm-planet/`.
+Task 4c (solo without ceremony, plan decision 10; `atc-s96.27`) is
+implemented on `task/cross-agent-m3` as `d09efc4` over `c057420` (553
+pass, 1 skip; 776 citations, 0 misses) and under review: the task review
+(Claude Code subagent · claude-opus-5 · max) is in with two Important
+items plus the controller's three rulings (every mode registers the four
+provider tools; a verification refusal after creation removes the one-shot
+worktree; `list_roles` lists unbound mode roles; `worktree: true` refused
+for an engine-placed lead); the second opinion (· claude-fable-5-1 · max)
+is running; one fix round follows. Complete there since M1: Task 4 (S8),
+Task 4b (`git_root`, `run_command`, journal steps). Next: T12 (skills;
+`task-5-brief.md` ready), T13 (Claude Code packaging, I1/I2, E1), S11.
+**Codex is paused by the user.** Pending your approval: `agents-md-m1.diff`
+(plus the Layout diffs Tasks 4 and 4b proposed) in
+`.superpowers/sdd/the-development-of-this-calm-planet/`.
 
 ## Next steps
 

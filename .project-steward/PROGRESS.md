@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T09:05:04Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 4c (solo without ceremony) implemented on task/cross-agent-m3 as d09efc4 (553 pass/1 skip; 776 citations/0 misses): consult role, no-config default, worktree:true one-shots, merge-policy and review/critique text in modes/solo/SKILL.md. Rulings for its fix round: every mode registers the four provider tools; a verification refusal after creation removes the one-shot worktree; list_roles lists unbound mode roles; worktree:true refused for an engine-placed lead. Task review (claude-opus-5, max) done (two Importants: a stale §7 sentence; the at-the-root escape hatch to delete); second opinion (claude-fable-5-1, max) running. T12 brief drafted with the rulings.
+
 ### 2026-09-19T08:15:34Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4b (git_root, run_command, journal steps) complete on task/cross-agent-m3 at c057420 after a fix round closing five Important findings (worktree rebase abort; steps name what moved; tests-passed once under the lock; worktree remove honours reservations; a tracked .cross-agent/ refused, init ignores it); 542 pass/1 skip; 760 citations/0 misses. Task 4c (solo without ceremony: consult role, no-config default, worktree:true one-shots, review/critique) running (cross-agent-implementer: claude-opus-5, max). T12 brief drafted. New P4 bead: root tools require the main worktree.
 
