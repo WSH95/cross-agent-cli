@@ -124,9 +124,10 @@ carries every key a first call does: the same `role` and `cwd` as the original,
 and `branch` for a role that works in a worktree. They are not optional and they
 are not defaults — the schema requires `role`, `brief` and `cwd`, and the resume
 binding compares the role, the engine, the cwd and the sandbox with the original
-and refuses any difference. The engine, the model and the sandbox come from the
-original; a task that was given a worktree is continued in that worktree, so a
-review round reaches the same branch.
+and refuses any difference. The engine and the sandbox are the original's; the
+model is not — it is resolved again on every call, from the `model` the call
+names or the one config binds now. A task that was given a worktree is continued
+in that worktree, so a review round reaches the same branch.
 
 Resume the **latest** id of the chain: an id that already has a successor is
 refused with `resume the latest: <id>`, and a chain with an active member is

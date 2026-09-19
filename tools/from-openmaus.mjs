@@ -77,7 +77,8 @@ const keyByTitle = new Map([
 
 // Rule 2: the devpack's own machinery.
 const MACHINERY = /\b(delegate_bot|ask_bot|post_to_room|create_bot|list_bots|list_rooms|ListAgents|bots?|teammates?|rooms?|cards?|wake|woken|Project facts)\b/i;
-// Rule 3: the specialist running git, which is the lead's job here.
+// Rule 3: any sentence mentioning git, a commit, a rebase, a merge, a push or worktrees,
+// which is broader than "the specialist runs git" on purpose; the header says why.
 const GIT_WRITE = /\b(git|commits?|rebases?|pushe?s?|merges?|worktrees)\b/i;
 
 // Rule 4: this runtime's own rule for each role, appended verbatim.

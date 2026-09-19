@@ -320,7 +320,7 @@ test("a mode with no worktree role still has the git policy its one-shots use, m
     "a mode that declares one is held to it, and nothing is implicit about it");
 });
 
-test("the two dev-team modes carry the same role prompts until the converter generates both", () => {
+test("the two dev-team modes carry the same role prompts, byte for byte", () => {
   const modes = builtInModesDir();
   for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
     assert.equal(

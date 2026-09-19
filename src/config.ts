@@ -20,9 +20,10 @@ export interface RoleConfig {
   model?: string;
   effort?: string;
   /**
-   * The system-level prompt this role's specialist is launched with. It belongs to the
-   * mode (design section 8), and config carries it until the mode's own role prompts are
-   * written (step 9); a role that binds none is launched with a one-line default.
+   * An override for the system-level prompt this role's specialist is launched with. The
+   * prompt itself belongs to the mode (design section 8): a role that binds none here is
+   * launched with the mode's own text for it (`src/modes.ts#rolePrompt`), and this key is
+   * how one project adjusts one role without editing a portable mode.
    */
   prompt?: string;
   /**

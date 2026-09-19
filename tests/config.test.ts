@@ -129,8 +129,8 @@ test("a role may bind the prompt its specialist is launched with", (t) => {
   assert.deepEqual(config.loadConfig(root).roles.planner, {
     engine: "codex", prompt: "You are the planner. Report a plan.",
   });
-  // A role that binds none is launched with a one-line default until the mode's own role
-  // prompts are written (step 9), so the key is optional and nothing fills it in here.
+  // A role that binds none is launched with the mode's own prompt for that role
+  // (`src/modes.ts#rolePrompt`), so the key is optional and nothing fills it in here.
   writeConfig(root, { roles: { planner: { engine: "codex" } } });
   assert.equal("prompt" in config.loadConfig(root).roles.planner, false);
 });
