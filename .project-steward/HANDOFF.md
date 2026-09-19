@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T11:20:59Z
+updated_at: 2026-09-19T12:08:03Z
 updated_by: claude
 session_status: active
 branch: main
@@ -25,25 +25,28 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-M3's skills half is merged: `main` at `3023e30` (fast-forward of
-`task/cross-agent-m3`, 20 commits) holds S8 modes, Task 4b's root git
-tools, 4c's `consult`/`solo`/`worktree: true`, and T12 (the launcher skill,
-the `dev-team` loop, the role prompts, `delegate` launching a role with the
-mode's own prompt; two fix rounds, closed by a Fable 5.1 re-review;
-`atc-s96.12` closed). Root suite 586 tests, 585 pass, 1 skipped; 795
-citations, 0 misses; `VERIFY.md` M3 and `PLAN.md` record it (`aa3f8ef`).
-Task 6 (T13: Claude Code packaging, I1, I2 for Claude and Grok, E1 on the
-Python slugkit sample cloned to `~/.cache/agent-team/cross-agent-e2e/`;
-`atc-s96.13` and `.17`) runs as a Claude Code subagent
-(`cross-agent-implementer` · claude-opus-5 · max) from `3023e30`, brief
-`task-6-brief.md` with two addenda: the sample is Python; **Codex is paused
-by the user (2026-09-18)**, so planner/implementer bind to
-claude-sonnet-5, reviewers to grok-4.6, and the Codex I1/I2 rows are
-recorded as not run with their commands. After T13: S11
-(`task-7-brief.md`), T14, T15, T16 (`task-10-brief.md`), docs nits
-(`.42`), the go/no-go (`.18`). Pending your approval: the combined
-AGENTS.md proposal `agents-md-m3.diff` in the SDD directory (Layout as
-shipped, the cite-by-symbol convention, the `init` Run line).
+M3's skills half is merged: `main` at `3023e30` (S8, Task 4b, 4c, T12;
+`atc-s96.12` closed; 586 tests, 585 pass; `VERIFY.md` M3, `aa3f8ef`).
+Task 6 (T13: `.claude-plugin/plugin.json`, `.mcp.json`, P2 for Claude,
+I1, I2, E1; `atc-s96.13`, `.17`) came back DONE_WITH_CONCERNS on
+`task/cross-agent-m3` (`cc25f30`, `1c6678b`, `744c767`; 589 tests, 588
+pass). E1 passed all eight conditions on the Python slugkit sample. Its
+concerns became a pre-review fix round now running on the same implementer
+(`cross-agent-implementer` · claude-opus-5 · max), brief
+`task-6-findings-round-0.md`: **T6-R0-1 Critical** — a `workspace-write`
+Claude specialist in a linked worktree wrote `<root>/.git/<file>` (bead
+`atc-s96.52`); the fix is `protectedPaths` in the launch spec (the
+workspace's `.git` pointer and the common git dir, now returned by
+`verifyWorktree`) mapped to Claude's `filesystem.denyWrite`, then the P2 row
+rerun; R0-2 a call naming another engine drops the binding's model and
+effort; R0-3 `denyTargets` takes this repository's root; R0-4/5 text.
+Beaded: `.53` (hop budget under other hosts: a nested host is 9 hops,
+`maxHops` 8), `.54` (I1's Grok half needs the sample trusted in
+`~/.grok/trusted_folders.toml` — the user's call). Codex rows recorded not
+run (pause). After the round: task review + second opinion, fix rounds,
+`VERIFY.md` T13 block (report §7 has the draft), then S11
+(`task-7-brief.md`), T14, T15, T16, `.42`, `.18`. Pending your approval:
+`agents-md-m3.diff`.
 
 ## Next steps
 
@@ -76,12 +79,15 @@ shipped, the cite-by-symbol convention, the `init` Run line).
 
 ## Blockers
 
-- None. The Claude sandbox works: the docs' `/etc/apparmor.d/bwrap` profile
-  is loaded and Ubuntu's stock `bwrap-userns-restrict` is disabled (link in
-  `/etc/apparmor.d/disable/`); probe P1's sandboxed `curl` returned 200 on
-  2026-09-18. `atc-s96.17` (Claude P2) is runnable at T13.
-- Pending your approval: `agents-md-cite-by-symbol.diff` in the SDD
-  directory (one Conventions sentence for AGENTS.md).
+- None hard. Two items wait on you, nothing else waits on them:
+  `agents-md-m3.diff` (the combined AGENTS.md proposal, applies cleanly to
+  `main`) and `atc-s96.54` (trusting the e2e sample folder in your Grok
+  config so I1's Grok row can close).
+- The Claude sandbox works (docs' `/etc/apparmor.d/bwrap` profile loaded,
+  stock `bwrap-userns-restrict` disabled); P2 for Claude ran at T13 and
+  found the `<root>/.git` write (`atc-s96.52`), being fixed.
+- Codex is paused by the user (2026-09-18): every Codex row is recorded
+  with the command that runs it later.
 
 ## Key files
 

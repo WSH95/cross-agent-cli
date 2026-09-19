@@ -104,3 +104,4 @@ Set up Project Steward in this repository.
 2026-09-09T14:58:24Z — claude [auto-checkpoint] T9 landed and closed (992a830); AGENTS.md diff 3 (fd36d21, Decision 0009); final whole-branch review done (0 Critical, 3 Important, 6 Minor; beads .39–.43, .10.1, .10.2); 9d in flight (5a70d24); fix dispatch queued.
 - 2026-09-19T11:04:35Z — claude — [auto-checkpoint] T12 fix round 1 landed (4157a91, 8a7604b; 585 pass, 795 citations clean); scoped re-review running; T13 brief gained the Codex-pause addendum; AGENTS.md proposal consolidation in flight.
 - 2026-09-19T11:20:59Z — claude — [auto-checkpoint] T12 complete and merged (main 3023e30; 585 pass; VERIFY.md M3); T13 dispatched from 3023e30; AGENTS.md proposal agents-md-m3.diff awaiting approval.
+- 2026-09-19T12:08:03Z — claude — [auto-checkpoint] T13 done with concerns (E1 passed; P2 Claude found a <root>/.git write, bead .52); concerns round running; beads .53/.54 filed.
