@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:58:45Z
+updated_at: 2026-09-19T16:01:40Z
 updated_by: claude
 session_status: active
 branch: main
@@ -39,8 +39,10 @@ fixed the checker's blind spot. The Grok second review of round 4 held the citat
 gained (unknown event types counted as understood; an offence discarded when
 any line is unread), three neighbour citations, and a launcher regex that
 should mirror `denyTargets`. **Fix round 5** (`task-6-findings-round-5.md`)
-is running on the implementer; the Opus 5 rerun review of round 4 is in
-flight and folds in by follow-up. After round 5: both seats on its diff.
+is running on the implementer, now also carrying the Opus 5 rerun review
+of round 4 (spec PASS; a handful of citation lines and the flat() JSDoc,
+T6-R5-5 … R5-10). After round 5: both seats on its diff, then the closing
+sequence.
 When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
 section (`dispatch/verify-t13-final.md`, four placeholders), the final
