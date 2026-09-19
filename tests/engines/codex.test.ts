@@ -2,8 +2,9 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import codex from "../../src/engines/codex.ts";
@@ -521,18 +522,41 @@ test("a failed turn settles as an error carrying codex's own message", async (t)
 const realCodex = process.env.CROSS_AGENT_REAL_CODEX === "1";
 const codexBinary = process.env.CROSS_AGENT_CODEX_BIN ?? "codex";
 
+/**
+ * One turn of the real CLI, or a failure that says which turn hung. A run with no bound
+ * would hold the whole suite open on a model that never answers, and the default test
+ * timeout would report it as the file's, not as this turn's.
+ */
+async function settled(handle: ReturnType<typeof spawnEngine>, which: string, ms = 300_000) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      handle.result,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${which} did not settle within ${ms / 1000}s`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", async (t) => {
   if (!realCodex) return t.skip("set CROSS_AGENT_REAL_CODEX=1 to run this against the real binary");
   if (commandPath(codexBinary, process.env) === null) return t.skip(`${codexBinary} does not resolve on PATH`);
   const dirs = layout(t);
-  // A real linked worktree, because the writes this asserts are the ones outside one.
+  // A real linked worktree, because the writes this asserts are the ones outside one — and
+  // **not under `$TMPDIR`**: Codex's `workspace-write` treats the temporary directory as
+  // writable (P2, design section 3), so a repository there would make every "outside"
+  // write either a false denial or no evidence at all.
   const git = async (cwd: string, ...args: string[]): Promise<string> => {
     const { promisify } = await import("node:util");
     const { execFile } = await import("node:child_process");
     const { stdout } = await promisify(execFile)("git", ["-C", cwd, ...args], { encoding: "utf8" });
     return stdout.trim();
   };
-  const root = path.join(dirs.root, "project");
+  const root = path.join(homedir(), ".cache", "agent-team", "cross-agent-tests", `codex-i2-${randomUUID()}`);
+  t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(root, { recursive: true });
   await git(root, "init", "-b", "main");
   writeFileSync(path.join(root, "README.md"), "sample\n");
@@ -553,7 +577,7 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   assert.equal(codex.plan(first).argv.at(-1), "-");
   const started = spawnEngine(codex, first, {});
   t.after(() => { started.kill("SIGKILL"); });
-  const opening = await started.result;
+  const opening = await settled(started, "the opening turn");
   assert.equal(opening.ok, true, opening.events.at(-1)?.text);
   // If `-` had been sent as the prompt, no answer would carry the marker.
   assert.match(opening.events.findLast((event) => event.kind === "result")?.text ?? "", new RegExp(marker));
@@ -562,11 +586,16 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
 
   // The resume: the same worktree, the profile re-supplied (P10), the brief again on
   // stdin — and P2's negative writes, which a resumed session must still be refused.
+  // A name of this run's own under `$HOME`, removed whatever the outcome: the live P2
+  // probe's path is a file an operator may be looking at, and a test may neither collide
+  // with it nor leave one behind.
+  const homeProbe = path.join(homedir(), `cross-agent-codex-i2-${randomUUID()}.txt`);
+  t.after(() => rmSync(homeProbe, { force: true }));
   const steps = [
     `echo resumed >> ${JSON.stringify(path.join(worktree, "notes.md"))}`,
     `echo root >> ${JSON.stringify(path.join(root, "ROOT-WRITE.txt"))}`,
     `echo git >> ${JSON.stringify(path.join(root, ".git", "cross-agent-probe-write.txt"))}`,
-    `echo home >> "$HOME"/cross-agent-probe-HOME.txt`,
+    `echo home >> ${JSON.stringify(homeProbe)}`,
   ];
   const second = requestFor(dirs, {
     cwd: canonicalPath(worktree), env, resumeSessionId: thread,
@@ -575,7 +604,7 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   });
   const resumed = spawnEngine(codex, second, {});
   t.after(() => { resumed.kill("SIGKILL"); });
-  const outcome = await resumed.result;
+  const outcome = await settled(resumed, "the resumed turn");
   assert.equal(outcome.ok, true, outcome.events.at(-1)?.text);
 
   // What the filesystem says, which no wording can talk its way around: the in-worktree
@@ -584,7 +613,7 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   for (const denied of [
     path.join(root, "ROOT-WRITE.txt"),
     path.join(root, ".git", "cross-agent-probe-write.txt"),
-    path.join(process.env.HOME ?? "/nonexistent", "cross-agent-probe-HOME.txt"),
+    homeProbe,
   ]) {
     assert.equal(existsSync(denied), false, `${denied} was written on a resumed session`);
   }

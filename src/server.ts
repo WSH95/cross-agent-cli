@@ -561,12 +561,22 @@ async function main(): Promise<void> {
   }
   // A host-placed mode names no lead role, so nothing an ancestry walk finds resolves to
   // the lead row under one. Resolved again on every request — nothing here is cached — and
-  // said once on stderr before serving, because a row and its evidence are what a
-  // transcript otherwise cannot show: a session that never calls a tool outside its row
-  // looks the same whether ancestry granted it or the walk failed closed (I1(ii)).
-  const authority = () => resolveAuthority(root, process.env, { leadRole: mode.lead.role, maxDepth });
-  const resolved = authority();
-  process.stderr.write(`cross-agent: serving the ${resolved.row} row: ${resolved.reason}\n`);
+  // said on stderr the first time each answer is reached, because a row and its evidence
+  // are what a transcript otherwise cannot show: a session that never calls a tool outside
+  // its row looks the same whether ancestry granted it or the walk failed closed (I1(ii)).
+  // At the **first resolution a request asked for**, never at startup: a specialist's own
+  // record is usually still `launching` when its engine starts this server, so a line
+  // written then would report a fail-closed reason that the first `tools/call` contradicts.
+  // Once per distinct reason, so a long session says it again only when the answer changes.
+  const said = new Set<string>();
+  const authority = () => {
+    const resolved = resolveAuthority(root, process.env, { leadRole: mode.lead.role, maxDepth });
+    if (!said.has(resolved.reason)) {
+      said.add(resolved.reason);
+      process.stderr.write(`cross-agent: serving the ${resolved.row} row: ${resolved.reason}\n`);
+    }
+    return resolved;
+  };
   createServer({ tools: projectTools(root, { mode }), authority }).connect(process.stdin, process.stdout);
 }
 

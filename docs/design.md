@@ -1336,8 +1336,8 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   for exclusion, Codex an empty deny list and `--ignore-user-config`, Grok one
   `--deny` per target and no exclusion flag at all. Every `plan` spreads both
   into its argv whatever its own engine answers today
-  (`src/engines/claude.ts:104`, `:135`, `src/engines/codex.ts:104`,
-  `src/engines/grok.ts:100`), so an engine that gains a deny form or an
+  (`src/engines/claude.ts:104`, `:137`, `src/engines/codex.ts:105`,
+  `src/engines/grok.ts:133`), so an engine that gains a deny form or an
   exclusion flag gains it by returning one.
 - `leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount`
   (`src/engines/types.ts#EngineAdapter`, `#LeadMountSpec`, `#LeadMount`) — the
@@ -1733,7 +1733,9 @@ flag.
 
 **Child env** (`src/guard.ts#childEnv`) is a **blocklist**, not an allowlist. It
 copies the parent environment and removes: the exact names `CLAUDECODE`,
-`CLAUDE_PID`, `CLAUDE_EFFORT`; anything starting with `CLAUDE_CODE_`,
+`CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_PROJECT_DIR` — Claude Code sets that last
+one for every MCP server it starts, and a child inheriting it would be told it
+works where the operator does; anything starting with `CLAUDE_CODE_`,
 `CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing`
 is `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
 sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, `CROSS_AGENT_LINEAGE`, and
@@ -1751,9 +1753,10 @@ Provenance, stated once: every flag in this section is backed by a recorded run
 in `docs/probes.md` — P1, P2, P3, P3b, P5 and P7 on 2026-09-07, and P8, P9 and
 P10 on 2026-09-09, which exercised the output formats, both lead mounts, all
 three instruction paths, and `codex exec resume` — with three exceptions, each
-named where it occurs. P2 for Claude is **outstanding**, waiting on the
-`bwrap` AppArmor profile (`atc-s96.17`), so the Claude sandbox row of that
-probe is a `--help` and P1 fact rather than a run. And the flags no run had to
+named where it occurs. P2 for Claude ran on 2026-09-19 (`atc-s96.17`) in three
+rows — the first, its rerun under `filesystem.denyWrite`, and a read-only row —
+so nothing in the Claude sandbox line is a `--help` fact any more. And the flags
+no run had to
 exercise — `codex exec`'s and `codex exec resume`'s full option lists, the `-`
 positional each of those two heads reads stdin behind, Claude's `--effort`,
 Grok's `--reasoning-effort` and its `--effort` alias,
@@ -2563,8 +2566,10 @@ names commands and not tools. A test of either compares the set of this server's
 tools, never a prefix (I1,
 `docs/probes.md:555-567`). And the exclusion flag excludes **MCP servers**: a
 specialist's session still loads the host installation's hooks, slash commands
-and skills, which is why I1's pass condition is a scan of the tool calls a
-transcript holds rather than a grep of its text (`docs/probes.md:707-718`).
+and skills, (`docs/probes.md:707-718`). That is why an end-to-end run's last condition is a
+scan of the tool calls and shell commands a transcript holds rather than a grep
+of its text — a Grok session's inherited slash commands include one called
+`delegate`, and the word proves nothing (`tools/e2e-verify.mjs`).
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three
@@ -2685,6 +2690,7 @@ src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
 tests/fixtures/fake-engine.mjs
 tools/probe.mjs   tools/check-citations.mjs   tools/from-openmaus.mjs
+tools/e2e-verify.mjs
 docs/design.md    docs/probes.md
 AGENTS.md         README.md         package.json      .gitignore
 LICENSE (Apache-2.0)
@@ -2698,7 +2704,8 @@ and all seven of
 `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
-`npm test` runs), the two docs, and the root files. From row 9:
+`npm test` runs), `tools/e2e-verify.mjs` (row 10's, which every end-to-end run
+is judged by), the two docs, and the root files. From row 9:
 `skills/cross-agent/SKILL.md`, every mode's own `SKILL.md` and every
 `roles/*.md`, with `tools/from-openmaus.mjs` beside the other two harnesses.
 From row 10: `.claude-plugin/plugin.json`, which carries the server as well. Still to be written:
@@ -2752,9 +2759,12 @@ reason), and the loop-guard scope as a hard requirement.
      three; the rewrite of the worktree's `.git` pointer is denied by Codex
      and Claude and **allowed by Grok**; a write into `<root>/.git` is denied
      by Codex and Grok and **allowed by Claude**. **Done for all three**
-     (`atc-s96.17` closes with the Claude row, `docs/probes.md:72-108`), and
-     the Claude cell is a containment failure that blocks that adapter's
-     writable row until it is answered. Outstanding variants, not yet
+     (`atc-s96.17` closes with the Claude row, `docs/probes.md:72-196`). The
+     Claude cell was a containment failure and is **answered**: the adapter
+     names the workspace's `.git` pointer and the repository's git directory in
+     `filesystem.denyWrite`, the rerun denies the write, and a third row shows a
+     read-only role refused its own workspace as well. Outstanding variants, not
+     yet
      recorded: a write into another *registered* worktree, a write to
      `<root>/.git/refs/heads/<default>` specifically, the whole set on a resumed
      session, and `$TMPDIR`/`/tmp` for a **writable** Claude role — the
@@ -2849,7 +2859,7 @@ registered by the mode that declares the worktree provider.
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
 | 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `answer`, `report`, and the rest of section 10, over a seeded ledger. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
-| — | Claude P2 | `atc-s96.17` | Waiting on the bwrap AppArmor profile (needs sudo). |
+| — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
 Integration probes after each packaging task, run by the operator:
 
@@ -2871,8 +2881,12 @@ Integration probes after each packaging task, run by the operator:
   own plugin mount spells them `mcp__plugin_cross-agent_cross-agent__<tool>`,
   which is why the set and not the prefix is the test. The refusal by name was
   not reached from an engine: a client that honours `tools/list` never sends a
-  call for a tool that is not in it, so that path stays the unit test's
-  (`tests/server.test.ts:553`).
+  call for a tool that is not in it — two runs said so in those words — so that
+  path is a test's: a server started by a fake engine whose record the ledger
+  holds, sent a raw `tools/call delegate`, answers `-32602` with the reason
+  naming the matched task id (`tests/authority.test.ts:209`). A server also
+  writes its row and that reason to stderr at its first resolution
+  (`src/server.ts#main`), which is what a future transcript carries.
 - **I2, host × engine isolation.** Each engine spawned by the server launched
   from that host repeats the P2 negative writes, all of which must be denied.
   Claude and Grok children can reach the network; **a Codex child must not** —
@@ -2883,11 +2897,13 @@ Integration probes after each packaging task, run by the operator:
   reaching the network, Grok's `.git` pointer rewrite allowed and answered by
   `verify_worktree` and `git_mutate` refusing with git's own words and mutating
   nothing, and a 600-second `wait` returning at 602 s with the task still
-  running. Claude's `<root>/.git` cell was not repeated here: P2 had just
-  recorded it as allowed, and a containment failure is recorded once. It was
-  answered instead, in P2's own rerun with `filesystem.denyWrite` carrying the
-  spec's `protectedPaths` (`docs/probes.md:119-186`), where the same write is
-  denied and nothing else about the row changes.
+  running. Claude's `<root>/.git` cell was not repeated in that first pair: P2
+  had just recorded it as allowed, and a containment failure is recorded once.
+  It is answered twice over now — in P2's own rerun with `filesystem.denyWrite`
+  carrying the spec's `protectedPaths` (`docs/probes.md:119-186`), and in a
+  **delegated** writable Claude task through the server, the runner and the
+  adapter, whose nine steps include `<root>/.git/hooks/pre-commit` and whose
+  engine argv was read from `/proc` while it ran (`docs/probes.md:741-773`).
 
 ### Phase 2: evidence and decisions
 
@@ -3142,7 +3158,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `:301`); and through `spawnEngine`, where the fake engine records the stdin
   and argv it was actually given (`:425`, `:485`). Two halves need the real
   binary and wait for **I2**, a skipped placeholder that names them
-  (`tests/engines/codex.test.ts:515`): that `codex exec … -` and `codex exec
+  (`tests/engines/codex.test.ts:544`, written and guarded behind
+  `CROSS_AGENT_REAL_CODEX=1` rather than empty): that `codex exec … -` and `codex exec
   resume <id> … -` each take the brief from stdin rather than send the literal
   `-` as the prompt — `--help` settles the flag on both heads
   (`docs/probes.md:927-938`), so what is left is that a run behaves as the help
@@ -3171,10 +3188,13 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `main`; `.cross-agent/tasks/` holds one record per delegation with native
   logs; the journal shows every step; no record's `depth` exceeds the mode's
   `maxDepth`; the specialists' transcripts show no `delegate` and no engine
-  launch. **E1 met all eight under Claude Code** — six records at depth 1, a
-  journal of nine steps, 69 tests green on `main` — and is recorded in
-  `VERIFY.md` (M2) with its transcript in `docs/probes.md:812-866`. Codex's and
-  Grok's hosts are step 12.
+  launch. The eight are checked by `tools/e2e-verify.mjs`, which reads the
+  project and its ledger and prints `pass`, `FAIL` or `?` — evidence missing is
+  not evidence of a pass — so every host's run is judged the same way rather
+  than by whatever a report greps that day. **E1 met all eight under Claude
+  Code** — six records at depth 1, a journal of nine steps, 69 tests green on
+  `main` — and is recorded in `VERIFY.md` (M2) with its transcript in
+  `docs/probes.md:812-870`. Codex's and Grok's hosts are step 12.
 - **Docs:** every changed claim in this document matches a checked `file:line`
   or `file#symbol` in this repository or a recorded probe.
 - For the pack (M7): every task ends with no worktree, no task branch, a clean

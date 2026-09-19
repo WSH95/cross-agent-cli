@@ -46,16 +46,17 @@ const prompt = args["prompt-file"] ? readFileSync(args["prompt-file"], "utf8") :
 const role = args["role-file"] ? readFileSync(args["role-file"], "utf8") : "";
 const model = args.model;
 const effort = args.effort;
-const bins = { claude: process.env.CROSS_AGENT_CLAUDE_BIN ?? "claude", codex: process.env.CROSS_AGENT_CODEX_BIN ?? "codex", grok: process.env.CROSS_AGENT_GROK_BIN ?? "grok" };
-
-// Deny list (design section 3): the three CLIs, this server, this CLI, cross-agent.
+// Deny list (design section 3): the three CLIs, this server, this CLI, cross-agent. The
+// adapter's own `denyArgs` turns it into that engine's flags.
 const denyTargets = ["claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent"];
-const denyRules = args["no-deny"] ? [] : denyTargets.flatMap((t) => [`Bash(${t} *)`, `Bash(${t})`]);
 
-// What `delegate` puts in a writable spec's `protectedPaths` (`src/delegate.ts#delegate`):
-// the workspace's own `.git` pointer file and the repository's common git directory, which
-// probe P2's Claude row wrote into. Empty for anything that is not a linked worktree.
-const protectedPaths = sandbox === "workspace-write" ? worktreeGitPaths(cwd) : [];
+// What `delegate` puts in the spec of a task that runs in a worktree
+// (`src/delegate.ts#delegate`): the workspace's own `.git` pointer file and the
+// repository's common git directory, which probe P2's Claude row wrote into. Every
+// profile gets them — a read-only role that could rewrite its own pointer would be as far
+// outside design section 4 as a writable one — and anything that is not a linked worktree
+// gets none.
+const protectedPaths = worktreeGitPaths(cwd);
 
 const scratch = path.join(cwd, ".cross-agent", "probe");
 mkdirSync(scratch, { recursive: true });
@@ -64,7 +65,10 @@ const sessionId = args["session-id"] ?? randomUUID();
 // Child env (design section 3): inherit the basics, strip host markers, bill the subscription, mark the depth.
 const env = {};
 for (const [k, v] of Object.entries(process.env)) {
-  if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY)/.test(k)) continue;
+  // The same list as `src/guard.ts#childEnv`, `CLAUDE_PROJECT_DIR` included: Claude Code
+  // sets it for every MCP server it starts, and a child that inherited it would be told it
+  // works where the operator does rather than where its own role does.
+  if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY)$|^(CLAUDE_CODE_|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_)/.test(k)) continue;
   env[k] = v;
 }
 Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: `probe-${sessionId}`, role: `probe-${engine}`, cwd }]) });

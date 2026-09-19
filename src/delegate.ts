@@ -461,10 +461,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         sessionId: randomUUID(),
         ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
         denyTargets: denyTargets(config, repositoryRoot),
-        // The git metadata of a worktree workspace, which a writable sandbox has to refuse
-        // however its engine names the rule: the pointer file the specialist could redirect
-        // and the repository's own git directory every worktree shares (probe P2, Claude).
-        // A root workspace is read-only by rule, so it has none.
+        // The git metadata of a worktree workspace, which a sandbox has to refuse however
+        // its engine names the rule and whatever profile runs there: the pointer file the
+        // specialist could redirect and the repository's own git directory every worktree
+        // shares (probe P2, Claude). A root workspace has no worktree of its own to
+        // protect, and its own read-only rule is the adapter's.
         ...(verifiedWorktree === undefined ? {} : {
           protectedPaths: [path.join(verifiedWorktree.workTree, ".git"), verifiedWorktree.commonDir],
         }),

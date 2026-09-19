@@ -1,0 +1,174 @@
+#!/usr/bin/env node
+// The Verification section's "End-to-end under each host" list, checked against a project
+// an end-to-end run has just finished in. Not product code and not a test: it reads a
+// repository and a ledger and says what it found, so E1 under Claude Code, E2 under Codex
+// and E3 under Grok are judged by the same eight checks rather than by whatever a report
+// happened to grep that day.
+//
+//   node tools/e2e-verify.mjs --project <sample root> [--default-branch main]
+//       [--slug <journal slug>] [--worktree-dir .worktrees] [--branch-pattern 'task/*']
+//       [--test-command <command>] [--since <ISO date or task id>]
+//
+// `--slug` names the journal to read; with none, every journal in the project is read.
+// `--since` narrows the records to one run: a task id counts every record created at or
+// after that record's own `createdAt`. The test command defaults to the project's
+// `.cross-agent/config.json` (`project.testCommand`).
+//
+// One line per check: `pass`, `FAIL`, or `?` where the evidence is missing rather than
+// contradicted (no journal, no records), which is not the same thing and never counted as
+// a pass. Exit 0 when nothing failed, 1 when anything did, 2 when the project cannot be
+// read.
+import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+
+const args = parse(process.argv.slice(2));
+const project = path.resolve(args.project ?? ".");
+if (!existsSync(path.join(project, ".git"))) fail(`${project} is not a git repository`);
+
+const config = readJson(path.join(project, ".cross-agent", "config.json")) ?? {};
+const defaultBranch = args["default-branch"] ?? config.project?.defaultBranch ?? "main";
+const worktreeDir = args["worktree-dir"] ?? ".worktrees";
+const branchPattern = args["branch-pattern"] ?? "task/*";
+const testCommand = args["test-command"] ?? config.project?.testCommand;
+const maxDepth = config.limits?.maxDepth ?? 1;
+
+const results = [];
+function check(name, verdict, detail) {
+  results.push({ name, verdict, detail });
+  console.log(`${verdict === "pass" ? "pass" : verdict === "FAIL" ? "FAIL" : "?   "}  ${name}${detail ? `: ${detail}` : ""}`);
+}
+
+// 1-3. What git says about the repository the run left behind.
+const worktrees = git("worktree", "list", "--porcelain").split("\n\n").filter(Boolean);
+check("only the root worktree", worktrees.length === 1 ? "pass" : "FAIL",
+  worktrees.length === 1 ? `${project}` : worktrees.map((entry) => entry.split("\n")[0]).join(", "));
+const leftoverBranches = git("branch", "--list", branchPattern).split("\n").map((line) => line.trim()).filter(Boolean);
+check(`no ${branchPattern} branch remains`, leftoverBranches.length === 0 ? "pass" : "FAIL", leftoverBranches.join(", "));
+const status = git("status", "--porcelain", "--untracked-files=normal");
+check("the working tree is clean", status.trim() === "" ? "pass" : "FAIL", status.trim().split("\n").slice(0, 5).join(" | "));
+
+// 4. The suite on the default branch, where the merge put the work.
+const head = git("rev-parse", "--abbrev-ref", "HEAD");
+if (testCommand === undefined || testCommand === "none") {
+  check(`the suite on ${defaultBranch}`, "?", "no project.testCommand to run");
+} else if (head !== defaultBranch) {
+  check(`the suite on ${defaultBranch}`, "FAIL", `HEAD is on ${head}`);
+} else {
+  try {
+    execFileSync("sh", ["-c", testCommand], { cwd: project, stdio: "pipe", encoding: "utf8" });
+    check(`the suite on ${defaultBranch}`, "pass", testCommand);
+  } catch (error) {
+    check(`the suite on ${defaultBranch}`, "FAIL", `${testCommand}: ${String(error.stderr ?? error.message).trim().split("\n").slice(-3).join(" | ")}`);
+  }
+}
+
+// 5-7. The ledger: one record per delegation with its native log, every depth under the
+// cap, and the journal of the run's own git steps.
+const tasksDir = path.join(project, ".cross-agent", "tasks");
+const records = (existsSync(tasksDir) ? readdirSync(tasksDir) : [])
+  .filter((name) => name.endsWith(".json") && !name.endsWith(".spec.json") && !name.endsWith(".outcome.json"))
+  .map((name) => readJson(path.join(tasksDir, name)))
+  .filter((record) => record !== null && typeof record.id === "string")
+  .sort((a, b) => a.createdAt - b.createdAt);
+const floor = since(records);
+const run = records.filter((record) => record.createdAt >= floor);
+if (run.length === 0) {
+  check("one record per delegation, each with its native log", "?", `no records under ${tasksDir}`);
+  check(`every record at depth <= ${maxDepth}`, "?", "no records");
+} else {
+  const logless = run.filter((record) => !(existsSync(record.logPath) && statSync(record.logPath).size > 0));
+  check("one record per delegation, each with its native log", logless.length === 0 ? "pass" : "FAIL",
+    logless.length === 0 ? `${run.length} records` : logless.map((record) => record.id.slice(0, 8)).join(", "));
+  const deep = run.filter((record) => (record.depth ?? 0) > maxDepth);
+  check(`every record at depth <= ${maxDepth}`, deep.length === 0 ? "pass" : "FAIL",
+    deep.length === 0 ? `${run.length} records` : deep.map((record) => `${record.id.slice(0, 8)}=${record.depth}`).join(", "));
+}
+
+const journalDir = path.join(project, ".cross-agent", "journal");
+const journals = (existsSync(journalDir) ? readdirSync(journalDir) : [])
+  .filter((name) => name.endsWith(".json") && (args.slug === undefined || name === `${args.slug}.json`))
+  .map((name) => ({ name, journal: readJson(path.join(journalDir, name)) }))
+  .filter((entry) => entry.journal !== null);
+if (journals.length === 0) {
+  check("the journal shows every git step", "?", `no journal under ${journalDir}`);
+} else {
+  const lines = journals.map(({ name, journal }) => `${name.replace(/\.json$/, "")}: ${(journal.steps ?? []).map((step) => step.step).join(", ")}`);
+  check("the journal shows every git step", "pass", lines.join(" | "));
+}
+
+// 8. Every specialist transcript, by what it called rather than by what its text mentions:
+// a tool named `delegate`, any `mcp__` tool, or a shell command that starts an engine.
+const launcher = /(^|[|&;`(\s])(claude|codex|grok|cross-agent)(\s|$)/;
+const offences = [];
+for (const record of run) {
+  const log = record.logPath;
+  if (!existsSync(log)) continue;
+  const calls = new Set();
+  const commands = [];
+  for (const line of readFileSync(log, "utf8").split("\n")) {
+    if (line.trim() === "") continue;
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+    const message = event.message;
+    if (typeof message !== "object" || message === null) continue;
+    for (const block of message.content ?? []) {
+      if (block?.type !== "tool_use") continue;
+      calls.add(block.name);
+      for (const key of ["command", "cmd"]) {
+        if (typeof block.input?.[key] === "string") commands.push(block.input[key]);
+      }
+    }
+  }
+  for (const name of calls) {
+    if (typeof name === "string" && (name === "delegate" || name.endsWith("__delegate") || name.startsWith("mcp__"))) {
+      offences.push(`${record.id.slice(0, 8)} called ${name}`);
+    }
+  }
+  for (const command of commands) {
+    if (launcher.test(command)) offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`);
+  }
+}
+check("no delegate call and no engine launch in any specialist transcript",
+  run.length === 0 ? "?" : offences.length === 0 ? "pass" : "FAIL", offences.slice(0, 5).join(" | "));
+
+const failed = results.filter((result) => result.verdict === "FAIL").length;
+const unknown = results.filter((result) => result.verdict === "?").length;
+console.log(`\n${results.length - failed - unknown} pass, ${failed} fail, ${unknown} without evidence`);
+process.exit(failed === 0 ? 0 : 1);
+
+/** The `createdAt` every record of this run is at or after. */
+function since(all) {
+  if (args.since === undefined) return 0;
+  const named = all.find((record) => record.id === args.since || record.id.startsWith(args.since));
+  if (named !== undefined) return named.createdAt;
+  const parsed = Date.parse(args.since);
+  if (Number.isNaN(parsed)) fail(`--since ${args.since} is neither a task id of this project nor a date`);
+  return parsed;
+}
+
+function git(...argv) {
+  try {
+    return execFileSync("git", ["-C", project, ...argv], { encoding: "utf8" }).replace(/\n$/, "");
+  } catch (error) {
+    fail(`git ${argv.join(" ")}: ${String(error.stderr ?? error.message).trim()}`);
+  }
+}
+
+function readJson(file) {
+  try { return JSON.parse(readFileSync(file, "utf8")); } catch { return null; }
+}
+
+function parse(list) {
+  const out = {};
+  for (let i = 0; i < list.length; i++) {
+    if (!list[i].startsWith("--")) fail(`unexpected argument ${list[i]}`);
+    out[list[i].slice(2)] = list[++i];
+  }
+  return out;
+}
+
+function fail(reason) {
+  console.error(`e2e-verify: ${reason}`);
+  process.exit(2);
+}

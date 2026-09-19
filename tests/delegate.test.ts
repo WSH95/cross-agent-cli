@@ -842,7 +842,7 @@ test("the settings a delegated Claude task is launched with deny what the spec p
   const p = await projectWithRoles(t);
   fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
     ...configFor(p.bin),
-    roles: { planner: { engine: "claude" }, implementer: { engine: "claude", sandbox: "workspace-write" } },
+    roles: { planner: { engine: "claude" }, implementer: { engine: "claude", sandbox: "workspace-write" }, reviewer: { engine: "claude" } },
     engines: { claude: { bin: p.bin } },
   }));
   const commonDir = fs.realpathSync(path.join(p.root, ".git"));
@@ -863,6 +863,19 @@ test("the settings a delegated Claude task is launched with deny what the spec p
   assert.deepEqual(readSpec(p.root, writable).protectedPaths, [path.join(worktree, ".git"), commonDir]);
   assert.deepEqual((await settingsOf(writable, writableRecord)).sandbox.filesystem, {
     allowWrite: [worktree], denyWrite: [path.join(worktree, ".git"), commonDir],
+  });
+
+  // A read-only role **in a worktree**: no writable root, and three denied paths — its own
+  // workspace, its `.git` pointer and the repository's git directory. A read-only role
+  // that could rewrite its own pointer would be as far outside design section 4 as a
+  // writable one, which is why the spec carries them for every profile.
+  const readerRecord = path.join(p.root, "reader.json");
+  const reader = launched(await delegate(p.root, request({ role: "reviewer", cwd: worktree, branch: "task/settings", brief: "Read the branch." }), {
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_RECORD: readerRecord, FAKE_ENGINE_FORMAT: "claude" }),
+  }));
+  assert.deepEqual(readSpec(p.root, reader).protectedPaths, [path.join(worktree, ".git"), commonDir]);
+  assert.deepEqual((await settingsOf(reader, readerRecord)).sandbox.filesystem, {
+    denyWrite: [worktree, path.join(worktree, ".git"), commonDir],
   });
 
   // A read-only role at the project root: no writable root, and its own workspace denied

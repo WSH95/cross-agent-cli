@@ -775,7 +775,7 @@ I2 for the configuration that ships.
 The Codex column is not run: Codex is paused by the user (2026-09-18). When the
 pause lifts it is the same call with `"engine": "codex"`, and its network row is
 a **failure** if it succeeds, because that denial is loop-guard layer 3; the
-un-skip of `tests/engines/codex.test.ts:515` behind `CROSS_AGENT_REAL_CODEX=1`
+run of `tests/engines/codex.test.ts:544` behind `CROSS_AGENT_REAL_CODEX=1`
 belongs to the same run.
 
 The pointer rewrite is what design section 4 was built for, and the two calls
@@ -839,6 +839,11 @@ git_root worktree remove .worktrees/t10-slug-words
 git_root branch -d task/t10-slug-words
 Bash: append six lines to .cross-agent/log.md
 ```
+
+All eight of the Verification list's conditions were checked with
+`tools/e2e-verify.mjs --project <sample>`, which reads the repository and the
+ledger and prints one line per condition: eight `pass`, no `FAIL`, nothing
+without evidence. The same command judges E2 and E3.
 
 The journal for the slug is the loop's table in order: `worktree-created`,
 `git`, `committed`, `git`, `committed`, `merged`, `tests-passed`,
@@ -935,7 +940,8 @@ them.
   double-send: stdin is appended as a `<stdin>` block only when a prompt is
   *also* given as an argument, and `-` is not one. This is a `--help` reading
   of 0.153.4, not a run; the run that confirms a child behaves as the help says
-  is the **I2** placeholder (`tests/engines/codex.test.ts:515`).
+  is **I2**'s own test, written and guarded rather than run
+  (`tests/engines/codex.test.ts:544`).
 
 ## Native output samples (2026-09-07)
 

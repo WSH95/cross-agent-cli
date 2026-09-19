@@ -220,12 +220,21 @@ test("a specialist's own server refuses delegate by name, with the task its ance
   // The shape I1(ii) puts a real engine in: a specialist holding a lead's own mount, so
   // the server is reachable and ancestry is the only thing deciding what it may do.
   const pid = chain(t, [engine(env), client(project, answer, "delegate", { role: "consult", brief: "reply OK", cwd: project }, env)]);
+  // The server starts while the record is still `launching`, which is the ordinary case:
+  // a runner acknowledges its engine after the engine has started its own servers, so what
+  // the row rests on is not knowable at startup.
+  fs.writeFileSync(`${answer}.go`, "");
+  const ready = Date.now() + 20_000;
+  while (!fs.existsSync(`${answer}.ready`)) {
+    assert.ok(Date.now() < ready, "the server never came up");
+    await delay(20);
+  }
   // A live runner as well as a live engine: the server reconciles before it answers, and
   // a record whose runner is gone would be adopted as `orphaned` before the walk read it.
   await update(project, specialist.id, {
     status: "running", runnerIdentity: identityOf(process.pid)!, engineIdentity: engineIdentity(pid),
   });
-  fs.writeFileSync(`${answer}.go`, "");
+  fs.writeFileSync(`${answer}.call`, "");
 
   const deadline = Date.now() + 20_000;
   while (!fs.existsSync(answer)) {
@@ -233,7 +242,7 @@ test("a specialist's own server refuses delegate by name, with the task its ance
     await delay(20);
   }
   const replied = JSON.parse(fs.readFileSync(answer, "utf8")) as
-    { tools?: string[]; reply?: { error?: { code: number; message: string } }; error?: string; stderr?: string };
+    { tools?: string[]; reply?: { error?: { code: number; message: string } }; error?: string; stderr?: string; stderrBeforeRequest?: string };
   assert.equal(replied.error, undefined, replied.stderr);
 
   // Exactly the specialist row, and `delegate` refused by this server's own name with the
@@ -242,12 +251,16 @@ test("a specialist's own server refuses delegate by name, with the task its ance
   // tool list ("CROSS_AGENT_TASK present and no record matches", "the walk found neither
   // an engine nor the root within 8 hops").
   assert.deepEqual(replied.tools?.slice().sort(), ["check", "describe_mode", "list_roles", "list_tasks", "result"]);
-  // And the same sentence on stderr before it served anything, so a transcript that never
-  // called a tool outside the row still says which row this server resolved and why.
-  assert.match(
-    replied.stderr ?? "",
-    new RegExp(`^cross-agent: serving the specialist row: specialist by ancestry: task ${specialist.id} \\(implementer, running\\)$`, "m"),
-  );
+  // And the same sentence on stderr, so a transcript that never called a tool outside the
+  // row still says which row this server resolved and why. It is written at the **first
+  // resolution a request asked for**, not at startup: at startup this record was still
+  // `launching`, and the honest answer then would have been a fail-closed reason that this
+  // very call contradicts. Once per distinct reason, so two requests do not say it twice.
+  const stderr = replied.stderr ?? "";
+  assert.equal(replied.stderrBeforeRequest?.includes("serving the"), false, replied.stderrBeforeRequest);
+  const line = `cross-agent: serving the specialist row: specialist by ancestry: task ${specialist.id} (implementer, running)`;
+  assert.equal(stderr.split("\n").filter((entry) => entry === line).length, 1, stderr);
+  assert.equal(stderr.includes("no record matches"), false, stderr);
   assert.equal(replied.reply?.error?.code, -32602);
   assert.equal(
     replied.reply?.error?.message,

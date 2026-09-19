@@ -50,7 +50,14 @@ function call(method, params) {
 
 const result = {};
 try {
+  // `initialize` resolves no row — the dispatcher only resolves for `tools/list` and
+  // `tools/call` — so its reply is proof the server is up without being a request that
+  // could have made it resolve. The test changes the ledger between this and `.call`, and
+  // `stderrBeforeRequest` is what the server had said by then.
   await call("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "mcp-call", version: "1" } });
+  writeFileSync(`${answer}.ready`, "");
+  while (!existsSync(`${answer}.call`)) await delay(10);
+  result.stderrBeforeRequest = stderr;
   const listed = await call("tools/list", {});
   result.tools = (listed.result?.tools ?? []).map((entry) => entry.name);
   result.reply = await call("tools/call", { name: tool, arguments: JSON.parse(argumentsJson) });

@@ -5,10 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Claude Code packaging (design section 9). The attach contract is a stdio MCP server plus
-// the launcher skill; for this host that is `.claude-plugin/plugin.json` beside `.mcp.json`
-// with `skills/` discovered by convention, all three at the repository root, which is the
-// plugin root `claude --plugin-dir <repo>` names. These tests pin the shape a host reads,
-// not behaviour: what the manifests claim has to still be true of this repository.
+// the launcher skill; for this host that is one file — `.claude-plugin/plugin.json`, which
+// names the plugin and declares the server under `mcpServers` — with `skills/` discovered
+// by convention, both at the repository root, which is the plugin root `claude
+// --plugin-dir <repo>` names. There is deliberately no `.mcp.json` beside it: that file is
+// Claude Code's project-scoped config for this repository, not a plugin's. These tests pin
+// the shape a host reads, not behaviour: what the manifest claims has to still be true of
+// this repository.
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
