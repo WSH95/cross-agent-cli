@@ -79,10 +79,12 @@ Shipped:
   the MCP server inline under `mcpServers` (a repository-root `.mcp.json`
   would double as this repository's own project config); `tests/packaging.test.ts`
   pins it. A host attaches with `claude --plugin-dir <this repository>`.
-- `tools/probe.mjs`: a standalone harness for observing a real engine CLI.
-  Not product code. `tools/from-openmaus.mjs` is the same kind of thing: the
-  one-off that carried the devpack's dev-team text into `modes/`, run once,
-  kept as history.
+- `tools/probe.mjs`: a standalone harness for observing a real engine CLI
+  (`--track` spawns the real runner from a delegate-shaped spec).
+  `tools/e2e-verify.mjs` judges an end-to-end run by the design's eight
+  conditions. `tools/from-openmaus.mjs` is the one-off that carried the
+  devpack's dev-team text into `modes/`, run once, kept as history. None of
+  `tools/` is product code.
 - `docs/design.md`, `docs/probes.md`.
 
 Planned, in the design's work plan: the Codex and Grok packaging (T14, T15);

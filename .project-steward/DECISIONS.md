@@ -301,3 +301,5 @@ costs if the ruling is wrong.
 - **Grok trusted folder (user, 2026-09-19).** The e2e sample folder is
   trusted in `~/.grok/trusted_folders.toml` (backup beside it) so I1's Grok
   row can close.
+- **AGENTS.md refresh under the same approval (T13 round 2):** the `tools/`
+  bullet names `probe.mjs --track` and `e2e-verify.mjs`.
