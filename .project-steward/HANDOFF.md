@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T13:32:08Z
+updated_at: 2026-09-19T13:50:44Z
 updated_by: claude
 session_status: active
 branch: main
@@ -28,29 +28,38 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 M3's skills half is merged (`main` `3023e30`; `VERIFY.md` M3). Task 6
 (T13; `atc-s96.13`, `.17`) is on `task/cross-agent-m3` at `272b51f` (six
 commits over `3023e30`; 599 tests, 598 pass; 814 citations, 0 misses).
-Fix round 1 closed everything the two reviews found: the Claude read-only
+Fix round 1 closed what the two reviews found: the Claude read-only
 profile now sends `denyWrite` of the cwd plus the protected paths (a real
-read-only probe: `notes.md`, `.cross-agent/`, `git add -A` and `/tmp` all
-denied while reads answer); a delegated writable task under the fix had
-every outside write denied including `<root>/.git/hooks/pre-commit`; the
-probe harness takes its settings from the adapter's `plan`; a fake-engine
-test pins the by-ancestry refusal naming the task id, and the server says
-its row and reason on stderr at startup; the Codex I2 test body is written
-behind `CROSS_AGENT_REAL_CODEX=1`; the MCP server is declared inline in
+read-only probe denied `notes.md`, `.cross-agent/`, `git add -A` and
+`/tmp`); a delegated writable task under the fix had every outside write
+denied including `<root>/.git/hooks/pre-commit`; the probe harness takes
+its settings from the adapter's `plan`; a fake-engine test pins the
+by-ancestry refusal naming the task id; the Codex I2 body is written behind
+`CROSS_AGENT_REAL_CODEX=1`; the MCP server is declared inline in
 `.claude-plugin/plugin.json` and the root `.mcp.json` is gone; 61 drifted
 citations re-pointed. The controller's closure check passed.
 
-**Reviewer seats changed by the user today:** the second code review is now
-a `consult` delegation through cross-agent's own server to grok ·
-grok-4.6 · xhigh (driver `scratchpad/cross-agent-review.mjs`, launched
-with `setsid --fork` from the worktree, which holds a git-ignored `solo`
-config); the task review stays on claude-opus-5. The first such run found
-a product defect: a 150 KB brief (diff attached) fails Grok's launch with
-`spawn E2BIG` because `src/engines/grok.ts` puts the brief on `-p` unless
-the *role text* is oversize (bead `atc-s96.55`; fix brief
-`task-6-findings-round-2.md`, dispatched after the review settles). The
-review is running now with the diff read from git instead. Then: fix round
-2, the Grok review rerun as its check, close `.13`/`.17`/`.52`/`.55`,
+**Reviewer seats changed by the user today:** the second code review is a
+`consult` delegation through cross-agent's own server to grok · grok-4.6 ·
+xhigh (driver `scratchpad/cross-agent-review.mjs`, launched with `setsid
+--fork` from the worktree, which holds a git-ignored `solo` config); the
+task review stays on claude-opus-5. The first such run found a product
+defect — a 150 KB brief (diff attached) fails Grok's launch with `spawn
+E2BIG` because `src/engines/grok.ts` puts the brief on `-p` unless the
+role text is oversize (bead `atc-s96.55`) — and, rerun with the diff read
+from git, settled `done` in 17 min (task `a6efa884…`; text in
+`task-6-grok-review-round-1.md.text.md`): no Critical; the read-only
+builder, the ancestry refusal test and the packaging move verified by
+running the tests; four Important leftovers (the probe harness sets
+`protectedPaths` only for `workspace-write`; the Codex I2 test body sits
+under `$TMPDIR` and reuses the live HOME probe path; the design still tells
+the pre-fix P2/I2 story in five places; three citations still off content)
+and six minors. All folded with the `E2BIG` fix into
+`task-6-findings-round-2.md` (T6-R2-1 … R2-11; rulings: the stderr row
+line moves from startup to the first request resolution; a reusable
+`tools/e2e-verify.mjs`); **fix round 2 is running** on the implementer
+(`cross-agent-implementer` · claude-opus-5 · max). Then: the Grok review
+rerun as R2-1's check, the closure check, close `.13`/`.17`/`.52`/`.55`,
 `VERIFY.md` T13 block (report §7 draft), S11 (`task-7-brief.md` with
 addendum; dispatch draft in the scratchpad), T14, T15, T16, `.42`, `.18`.
 Beaded: `.53` (hop budget), `.54` (Grok I1 half — your call). Pending your
