@@ -114,7 +114,7 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
   const delegation = ["delegate", "wait", "check", "result", "cancel", "list_tasks"];
-  const provider = ["verify_worktree", "git_mutate", "git_root"];
+  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command"];
   for (const [row, expected] of [
     ["operator", ["describe_mode", "list_roles", ...delegation, ...provider]],
     ["lead", ["describe_mode", "list_roles", ...delegation, ...provider]],
@@ -539,7 +539,7 @@ test("the worktree provider's tools are registered only when the active mode dec
     // The specialist row is the four read tools plus describe_mode, whatever the mode is.
     specialist: ["describe_mode", "list_roles", "check", "result", "list_tasks"],
   };
-  const provider = ["verify_worktree", "git_mutate", "git_root"];
+  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command"];
 
   const team = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
   const solo = buildMode(modesRoot(t), "solo", [{ key: "solo" }]);
@@ -723,6 +723,36 @@ test("git_root is the worktree provider's own, for the operator and the lead, un
   // The shape of the request is this server's to check.
   for (const args of [{}, { args: "status" }, { args: [] }, { args: ["status"], slug: 1 }]) {
     const reply = await request("tools/call", { name: "git_root", arguments: args as Json });
+    assert.equal((reply.error as Json)?.code, -32602, JSON.stringify(args));
+  }
+});
+
+test("run_command is registered beside git_root and runs the project's own command", async (t) => {
+  const mode = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
+  const root = await projectWithConfig({ mode: "dev-team", roles: {}, project: { testCommand: "echo the suite ran; pwd" } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const request = inProcess({ tools: projectTools(root, { mode }), authority: () => operator });
+  const call = async (args: Json) => {
+    const reply = await request("tools/call", { name: "run_command", arguments: args });
+    return JSON.parse(((((reply.result as Json).content as Json[])[0].text) as string)) as Json;
+  };
+
+  const ran = await call({ which: "test", where: "root" });
+  assert.equal(ran.ok, true, JSON.stringify(ran));
+  assert.match(ran.tail as string, /the suite ran/);
+  assert.match(ran.tail as string, new RegExp(await realpath(root)), "it ran at the project root");
+  assert.equal(ran.journal, undefined);
+
+  // A config pointed at another mode after this server started: a restart, not a run.
+  await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "solo", roles: {} }));
+  const drifted = await call({ which: "test", where: "root" });
+  assert.equal(drifted.ok, false);
+  assert.match(drifted.reason as string, /restart the server/);
+
+  // The shape of the request is this server's to check, the enum included.
+  for (const args of [{}, { which: "test" }, { where: "root" }, { which: "build", where: "root" },
+    { which: "test", where: "root", timeout_seconds: 0 }, { which: "test", where: "root", slug: 1 }]) {
+    const reply = await request("tools/call", { name: "run_command", arguments: args as Json });
     assert.equal((reply.error as Json)?.code, -32602, JSON.stringify(args));
   }
 });

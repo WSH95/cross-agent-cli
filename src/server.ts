@@ -12,6 +12,8 @@ import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
 import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
+import { runCommand } from "./runcommand.ts";
+import type { RunCommandRequest } from "./runcommand.ts";
 import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
@@ -222,6 +224,8 @@ function stringList(args: Json, key: string, name: string): string[] {
 }
 
 const statuses = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
+/** `run_command` runs one of the project's two configured commands, and nothing else. */
+const selectors = ["test", "setup"];
 
 /** The `delegate` request as the wire spells it, checked before anything reads it. */
 function delegateRequest(args: Json): DelegateRequest {
@@ -332,6 +336,39 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
           waitSeconds: lockWaitSeconds(projectRoot),
           ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
         }));
+      },
+    },
+    {
+      name: "run_command",
+      description: "Run this project's configured test or setup command — by selector, never as a command string — at the project root or in a verified worktree, returning the exit code and the last 64 KB of its output. A passing test run at the root after the merge journals the slug's tests-passed step.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          which: { type: "string", enum: [...selectors] }, where: { type: "string" },
+          slug: { type: "string" }, timeout_seconds: { type: "number" },
+        },
+        required: ["which", "where"],
+      },
+      rows: ["operator", "lead"],
+      handler: async (args, context) => {
+        const values = fields(args, "run_command");
+        const which = requiredString(values, "which", "run_command");
+        if (!selectors.includes(which)) throw new RpcError(-32602, `run_command's which must be one of ${selectors.join(", ")}`);
+        const request: RunCommandRequest = { which: which as "test" | "setup", where: requiredString(values, "where", "run_command") };
+        const slug = optional(values, "slug", "string", "run_command");
+        if (slug !== undefined) request.slug = slug as string;
+        const timeoutSeconds = optional(values, "timeout_seconds", "number", "run_command") as number | undefined;
+        if (timeoutSeconds !== undefined) {
+          if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+            throw new RpcError(-32602, `run_command's timeout_seconds must be a positive number of seconds, not ${timeoutSeconds}`);
+          }
+          request.timeoutSeconds = timeoutSeconds;
+        }
+        const drift = driftFault(projectRoot, mode);
+        if (drift !== null) return answer({ ok: false, reason: drift });
+        // The command runs one step below the caller in the delegation chain, so a server
+        // it starts is a specialist and never the operator (design section 5, layer 2).
+        return answer(await runCommand(projectRoot, request, { depth: context.authority.depth }));
       },
     },
   ];
