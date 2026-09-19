@@ -1,15 +1,7 @@
 import path from "node:path";
 import { commandPath, engineBin } from "./binaries.ts";
+import { truncate } from "./text.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
-
-/** How much of a turn is kept as evidence of progress: enough to read, not a transcript. */
-const activityLimit = 200;
-
-/** Whole code points: cutting UTF-16 units could leave a lone surrogate in the ledger. */
-function truncate(text: string): string {
-  if (text.length <= activityLimit) return text;
-  return Array.from(text).slice(0, activityLimit).join("");
-}
 
 /** A field Codex declares as a string, as the string it is or as nothing at all. */
 function asText(value: unknown): string {

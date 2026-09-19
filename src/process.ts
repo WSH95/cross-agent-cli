@@ -334,8 +334,9 @@ export async function killStrays(strays: readonly FoundProcess[]): Promise<strin
     }
   };
   for (const stray of strays) signal(stray, "SIGTERM");
-  const deadline = performance.now() + 2000;
-  while (strays.some(stillRunning) && performance.now() < deadline) await delay(20);
+  // The same wait the group ladder uses, for the same reason: a grace measured once,
+  // polled in small steps, and no longer than it says.
+  await waitFor(() => !strays.some(stillRunning), 2000);
   for (const stray of strays) signal(stray, "SIGKILL");
   return [...failed.values()];
 }

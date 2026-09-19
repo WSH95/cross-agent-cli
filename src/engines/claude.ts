@@ -1,9 +1,7 @@
 import path from "node:path";
 import { commandPath, engineBin } from "./binaries.ts";
+import { assistantText, failureText, truncate } from "./text.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
-
-/** How much of an assistant turn is kept as evidence of progress: enough to read, not a transcript. */
-const activityLimit = 200;
 
 /**
  * P1's two sandbox failures, neither of which the engine reports as an error of its own:
@@ -13,38 +11,6 @@ const activityLimit = 200;
  * run is where the refusal happens.
  */
 const sandboxFailure = /Sandbox disabled|apply-seccomp/;
-
-/** Whole code points: cutting UTF-16 units could leave a lone surrogate in the ledger. */
-function truncate(text: string): string {
-  if (text.length <= activityLimit) return text;
-  return Array.from(text).slice(0, activityLimit).join("");
-}
-
-/** The text blocks of an assistant turn, joined. Thinking and tool calls are not text. */
-function assistantText(message: unknown): string {
-  const content = (message as { content?: unknown } | null | undefined)?.content;
-  // The wire shape is the Anthropic Messages API's, where content is blocks or a string.
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const texts: string[] = [];
-  for (const block of content as Array<{ type?: unknown; text?: unknown } | null>) {
-    if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
-  }
-  return texts.join("\n");
-}
-
-/**
- * What a failed run says. `result` carries the message when the run produced one at all;
- * `errors` is a list, and an operator reading a failure needs every line of it. A result
- * line with neither still has to say something, so it says which failure it was.
- */
-function failureText(event: { subtype?: unknown; result?: unknown; errors?: unknown }): string {
-  if (typeof event.result === "string" && event.result !== "") return event.result;
-  if (Array.isArray(event.errors) && event.errors.length > 0) {
-    return event.errors.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).join("\n");
-  }
-  return `claude reported ${typeof event.subtype === "string" ? event.subtype : "a failure"} with no message`;
-}
 
 /** Claude Code, on the spawn line P1 recorded and the output shape the probe logs sampled. */
 const claude = {
@@ -185,7 +151,7 @@ const claude = {
         // Both halves of the verdict have to agree before a run counts as a success.
         return event.is_error === false && event.subtype === "success"
           ? { kind: "result", text: typeof event.result === "string" ? event.result : "" }
-          : { kind: "error", text: failureText(event) };
+          : { kind: "error", text: failureText(event, "result", "claude") };
       default:
         return null;
     }

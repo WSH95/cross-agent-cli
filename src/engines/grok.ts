@@ -1,9 +1,7 @@
 import path from "node:path";
 import { commandPath, engineBin } from "./binaries.ts";
+import { assistantText, failureText, truncate } from "./text.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
-
-/** How much of an assistant turn is kept as evidence of progress: enough to read, not a transcript. */
-const activityLimit = 200;
 
 /**
  * How much role text `--rules` may carry as one argument. The kernel's exec limit caps a
@@ -14,40 +12,6 @@ const activityLimit = 200;
  * limit it was fleeing (design section 3).
  */
 const rulesLimit = 100 * 1024;
-
-/** Whole code points: cutting UTF-16 units could leave a lone surrogate in the ledger. */
-function truncate(text: string): string {
-  if (text.length <= activityLimit) return text;
-  return Array.from(text).slice(0, activityLimit).join("");
-}
-
-/** The text blocks of an assistant turn, joined. Thinking and tool calls are not text. */
-function assistantText(message: unknown): string {
-  const content = (message as { content?: unknown } | null | undefined)?.content;
-  // The wire shape is the Anthropic Messages API's, where content is blocks or a string.
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const texts: string[] = [];
-  for (const block of content as Array<{ type?: unknown; text?: unknown } | null>) {
-    if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
-  }
-  return texts.join("\n");
-}
-
-/**
- * What a failed run says. In this format the message is in an `errors` array and a failed
- * turn carries no `result` field at all (P8), and `errors` is a list: an operator reading
- * a failure needs every line of it, so it is joined one per line. A `result` beside it is
- * unprobed, so it is read second rather than dropped, and a failure with neither still has
- * to say something — so it says which failure it was.
- */
-function failureText(event: { subtype?: unknown; result?: unknown; errors?: unknown }): string {
-  if (Array.isArray(event.errors) && event.errors.length > 0) {
-    return event.errors.map((entry) => typeof entry === "string" ? entry : JSON.stringify(entry)).join("\n");
-  }
-  if (typeof event.result === "string" && event.result !== "") return event.result;
-  return `grok reported ${typeof event.subtype === "string" ? event.subtype : "a failure"} with no message`;
-}
 
 /**
  * Grok Build, on the spawn line P2 and P8 recorded and the `streaming-messages-json`
@@ -74,6 +38,7 @@ const grok = {
   // Grok has no per-invocation exclusion flag, only the persistent `grok mcp` subcommand.
   // A Grok child inherits the operator's servers, and what makes that safe is the
   // specialist row it resolves to by ancestry (design section 5), not a flag.
+  // @anchor exclusionArgs
   exclusionArgs(): string[] {
     return [];
   },
@@ -185,7 +150,7 @@ const grok = {
         // so a line disagreeing with itself is still read by its verdict field.
         return event.is_error === false
           ? { kind: "result", text: typeof event.result === "string" ? event.result : "" }
-          : { kind: "error", text: failureText(event) };
+          : { kind: "error", text: failureText(event, "errors", "grok") };
       default:
         return null;
     }

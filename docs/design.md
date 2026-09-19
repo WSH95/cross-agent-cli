@@ -223,7 +223,7 @@ that made the server a specialist, or the depth cap
 The name a refusal acts on is this server's own — `verify_worktree` today,
 `delegate` and `cancel` from T10b — never the host's rendering of it: a host
 may prefix and fold it, as Codex does, turning `cross-agent` into
-`mcp__cross_agent__list_roles` (`docs/probes.md:266`). The server never sees
+`mcp__cross_agent__list_roles` (`docs/probes.md:288`). The server never sees
 that spelling, so nothing in the matrix depends on it.
 
 #### Engine placement needs four things the host placement does not
@@ -285,18 +285,18 @@ that spelling, so nothing in the matrix depends on it.
    auto-deny. It is not built earlier because specialists are
    **unauthorized** to ask, not because they cannot reach the server: a Grok
    specialist can reach an inherited server, since the Grok exclusion list is
-   empty by necessity (`src/engines/grok.ts:72-77`).
-4. **Injection, now probed per engine (P9, `docs/probes.md:248-361`).** Two
+   empty by necessity (`src/engines/grok.ts#exclusionArgs`).
+4. **Injection, now probed per engine (P9, `docs/probes.md:270-383`).** Two
    engines can carry a lead and one cannot.
 
    **Claude.** `--strict-mcp-config --mcp-config <file>` mounts exactly this
    server and nothing else: the child's `mcp_servers` is
    `[{"name":"cross-agent","status":"connected"}]` and the only `mcp__` tools
-   are this server's (`docs/probes.md:263`). The strict flag is what makes it
+   are this server's (`docs/probes.md:285`). The strict flag is what makes it
    exclusive — an otherwise identical run without it saw five of the
-   operator's own servers (`docs/probes.md:265`). Instructions go through
+   operator's own servers (`docs/probes.md:287`). Instructions go through
    `--append-system-prompt-file <file>`, accepted and obeyed, which closes the
-   spelling question this design carried (`docs/probes.md:271-275`).
+   spelling question this design carried (`docs/probes.md:293-297`).
 
    **Codex.** `-c mcp_servers.cross-agent.command`, `…args` and
    `…default_tools_approval_mode="approve"`, all three under
@@ -304,12 +304,12 @@ that spelling, so nothing in the matrix depends on it.
    `codex_apps` and nothing of the operator's. The third setting is not
    optional: `codex exec` runs with approval policy `never`, so without it the
    lead sees the tools and every call is refused
-   (`docs/probes.md:266`, `:285-301`). Instructions go through `-c
+   (`docs/probes.md:288`, `:307-323`). Instructions go through `-c
    model_instructions_file="<file>"`, accepted and obeyed with no role text in
    the prompt, so the loop costs a Codex lead no prompt space.
 
    **Grok is not supported as an engine-placed lead.** P9 found no per-run
-   isolation of any kind (`docs/probes.md:268-269`, `:302-339`). A Grok child
+   isolation of any kind (`docs/probes.md:290-291`, `:324-361`). A Grok child
    inherits the operator's `~/.grok/config.toml`, the operator's Grok plugins,
    and the servers the operator declared to *Claude* in `~/.claude.json` —
    that last, the load-bearing half, rests on archived output, while the single
@@ -765,7 +765,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   with its identity and the outcome named, `src/reconcile.ts#judge` leaves a
   `cancelling` record named for the next pass, and `src/tasks.ts#terminate`
   refuses the cancel with it. A caller judging many records has to be able to
-  report a survivor and carry on. The runner runs the same ladder from the same
+  report a survivor and carry on. Its wait is `waitFor`
+  (`src/process.ts#waitFor`), and `killStrays` waits with the same one. The
+  runner runs the same ladder from the same
   place in both its branches — `terminateGroup` when it captured an identity
   and `terminateGroupByPid` when it did not (`src/runner.ts:54-68`) — and
   differs only in throwing where the reconciler reports, because a terminal
@@ -1124,23 +1126,23 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   for exclusion, Codex an empty deny list and `--ignore-user-config`, Grok one
   `--deny` per target and no exclusion flag at all. Every `plan` spreads both
   into its argv whatever its own engine answers today
-  (`src/engines/claude.ts:122`, `:153`, `src/engines/codex.ts:109`,
-  `src/engines/grok.ts:131`), so an engine that gains a deny form or an
+  (`src/engines/claude.ts:88`, `:119`, `src/engines/codex.ts:101`,
+  `src/engines/grok.ts:95`), so an engine that gains a deny form or an
   exclusion flag gains it by returning one.
 - `leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount`
   (`src/engines/types.ts#EngineAdapter`, `#LeadMountSpec`, `#LeadMount`) — the
   argv that mounts exactly this server for a lead under `placement: engine`. P9
-  settled what each engine can do (`docs/probes.md:261-269`). Claude writes an
+  settled what each engine can do (`docs/probes.md:283-291`). Claude writes an
   MCP-config JSON into `scratchDir` and returns `--mcp-config <file>` beside the
   `--strict-mcp-config` its `exclusionArgs` already emits; the strict flag, not
   the config file, is what makes the mount exclusive, since dropping it from an
   otherwise identical run pulled in five of the operator's own servers
-  (`docs/probes.md:265`). Codex returns **three** settings — `-c
+  (`docs/probes.md:287`). Codex returns **three** settings — `-c
   mcp_servers.cross-agent.command=…`, `…args=…`, and `-c
   mcp_servers.cross-agent.default_tools_approval_mode="approve"` — because
   `codex exec` runs with approval policy `never`, so without the third the lead
-  sees the tools and is refused every call (`docs/probes.md:285-301`); it
-  refuses a non-empty `spec.env` (`src/engines/codex.ts:79-81`), because no
+  sees the tools and is refused every call (`docs/probes.md:307-323`); it
+  refuses a non-empty `spec.env` (`src/engines/codex.ts:71-73`), because no
   probed setting carries a server environment and a lead's project reaches it
   through `args`. Grok returns an empty argv with `inherited: true`, because it
   has no per-invocation mount at all; that value describes the specialist path
@@ -1151,8 +1153,8 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
 - `parseStderrLine?(line: string): EngineEvent | null`
   (`src/engines/types.ts#EngineAdapter`), the same as `parseLine` for an engine
   that writes a fatal line to stderr rather than into its event stream. **Claude
-  declares it and no other adapter does** (`src/engines/claude.ts:202-204`;
-  `tests/engines/codex.test.ts:401`, `tests/engines/grok.test.ts:370`): P1's two
+  declares it and no other adapter does** (`src/engines/claude.ts:168-170`;
+  `tests/engines/codex.test.ts:401`, `tests/engines/grok.test.ts:378`): P1's two
   sandbox failures — the "Sandbox disabled" warning and the `apply-seccomp`
   message every command inside a broken sandbox dies with — are invisible
   before the spawn and are not errors the engine reports of itself, so the line
@@ -1176,8 +1178,8 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   (`tests/fixtures/fake-engine.mjs:56-59`), which is the shape it exists for:
   all three formats below are line streams, and a declared `finish` would only
   make the pipeline buffer raw stdout for a call with nothing to read
-  (`tests/engines/claude.test.ts:413`, `tests/engines/codex.test.ts:401`,
-  `tests/engines/grok.test.ts:370`). The hook and the pipeline's half of it are
+  (`tests/engines/claude.test.ts:438`, `tests/engines/codex.test.ts:401`,
+  `tests/engines/grok.test.ts:378`). The hook and the pipeline's half of it are
   built and tested all the same, because Grok's `json` mode is the fallback an
   adapter would need it for. The pipeline binds it once, before the spawn, and
   buffers raw stdout only for an adapter that declares it
@@ -1242,7 +1244,15 @@ holds the two things every adapter needs and none of them owns:
 the engine's name (`src/engines/binaries.ts#engineBin`), and
 `commandPath(command, env)`, which resolves a bare name on that environment's
 `PATH` and takes anything carrying a separator as a path
-(`src/engines/binaries.ts#commandPath`). Neither falls back to `process.env`:
+(`src/engines/binaries.ts#commandPath`). `src/engines/text.ts` is the same
+arrangement for reading an engine's output: `truncate` and `activityLimit`
+(all three adapters), `assistantText` (Claude and Grok both read the Anthropic
+Messages API wire shape) and `failureText(event, first, engine)`, whose `first`
+is which field that engine puts a failure's message in — `result` for Claude,
+`errors` for Grok — because that is the one thing the two dialects disagree
+about (`src/engines/text.ts#failureText`, bead `atc-s96.41`). Each adapter's
+`parseLine` stays its own: one engine's format changing must not retune
+another's. Neither falls back to `process.env`:
 `plan` and `sandboxSupport` are handed the same environment, which is the
 spec's, so one binary is judged and spawned and a configured `engines.<e>.bin`
 reaches both (`atc-s96.10.1`, closed). Config-declared adapter modules are not
@@ -1261,7 +1271,7 @@ three bullets below also say **how the prompt reaches the child** — Claude on
 stdin, Codex on stdin behind a `-` positional, Grok as `-p`'s own value —
 which is a property of the line, not of the pipeline.
 
-- **Claude** (`src/engines/claude.ts:96-159`): `claude -p --output-format
+- **Claude** (`src/engines/claude.ts:62-125`): `claude -p --output-format
   stream-json --verbose --permission-mode bypassPermissions
   --strict-mcp-config` — then, for an engine-placed lead only, `--mcp-config
   <file>` — then `--model <m>`, `--effort <e>`, `--session-id <uuid>` or
@@ -1269,66 +1279,66 @@ which is a property of the line, not of the pipeline.
   `--settings <sandbox json>`, and last `--disallowedTools <deny list>`. cwd =
   the role's workspace, passed through as the request wrote it because it is
   already canonical and the writable root has to name the directory the child
-  sees (`tests/engines/claude.test.ts:292`). **The mount goes immediately after
+  sees (`tests/engines/claude.test.ts:317`). **The mount goes immediately after
   the flag that makes it exclusive and before `--model`**, which is the order
   P9 ran and the one that leaves only one variadic flag at the end of the
-  line: `--mcp-config` takes `<configs...>` (`docs/probes.md:436-437`), so the
+  line: `--mcp-config` takes `<configs...>` (`docs/probes.md:464-465`), so the
   last flag has to be `--disallowedTools`, whose values end the argv. **The
   brief goes on stdin**, so no positional argument follows that variadic
-  flag either (`src/engines/claude.ts:159`). The four cases are pinned byte
+  flag either (`src/engines/claude.ts:125`). The four cases are pinned byte
   for byte — read-only, writable, resumed, and with a lead's mount and its
   config as a plan file (`tests/engines/claude.test.ts:189`, `:213`, `:236`,
   `:251`).
   Sandbox through the settings JSON (`sandbox.enabled`,
   `filesystem.allowWrite`, `autoAllowBashIfSandboxed`,
   `allowUnsandboxedCommands`, `failIfUnavailable`;
-  `src/engines/claude.ts:97-118`). Read-only roles get no `allowWrite` and no
-  `Edit`/`Write` tools (`src/engines/claude.ts:118`, `:154`). **A sandboxed
+  `src/engines/claude.ts:63-84`). Read-only roles get no `allowWrite` and no
+  `Edit`/`Write` tools (`src/engines/claude.ts:84`, `:120`). **A sandboxed
   role may neither leave its sandbox nor run without one.** At
   `allowUnsandboxedCommands: false` the engine ignores the
   `dangerouslyDisableSandbox` parameter its own escape hatch retries a blocked
   command with, and at `failIfUnavailable: true` a sandbox that cannot start
   fails the run instead of warning and running every command unsandboxed
-  (`src/engines/claude.ts:112-115`, `tests/engines/claude.test.ts:292`). P1's
+  (`src/engines/claude.ts:78-81`, `tests/engines/claude.test.ts:292`). P1's
   rerun on 2026-09-18 is the reason and not a precaution: a sandboxed child
   whose `curl` died at bubblewrap's setup took that hatch by itself and
   reached the network, and under `bypassPermissions` nothing prompts
   (`docs/probes.md:61-70`). Both settings belong to a sandbox that is on, so
   the `off` profile — the one that asked for none — sends neither.
   `--append-system-prompt-file <role.md>` is **settled by P9**
-  (`docs/probes.md:263`, `:271-275`): `claude --help` documents that
+  (`docs/probes.md:285`, `:293-297`): `claude --help` documents that
   spelling only as the `[-file]` form of `--append-system-prompt`, but the
   binary accepts the flag and the child obeys the instruction in every
   assistant message, so a Claude role prompt travels as a file and never as
   prompt text. That file is the task's own: it goes in `scratchDir`, never
   inside the specialist's worktree, which the role may edit
-  (`src/engines/claude.ts:143-147`). Prerequisites on Linux are three, all
+  (`src/engines/claude.ts:109-113`). Prerequisites on Linux are three, all
   from P1: `bwrap`, `socat`, and on Ubuntu 24.04 or later an AppArmor profile
   for `/usr/bin/bwrap` with `flags=(unconfined)` and `userns`. The adapter
   answers the two failure modes in the two places each can be seen:
   `sandboxSupport()` names whichever of `bwrap` and `socat` is missing from
-  `PATH` before the spawn (`src/engines/claude.ts:62-69`), and
+  `PATH` before the spawn (`src/engines/claude.ts:28-35`), and
   `parseStderrLine` turns the
   "Sandbox disabled" warning and the `apply-seccomp` message of a sandbox that
   engages but cannot start any command into a fatal `error` event during the
-  run (`src/engines/claude.ts#sandboxFailure`, `:202-204`), because that half
+  run (`src/engines/claude.ts#sandboxFailure`, `:168-170`), because that half
   cannot be seen before it. The profile is a prerequisite with a trap of its
   own: a profile written from Claude Code's docs is **shadowed** by Ubuntu's
   stock `bwrap-userns-restrict`, which declares the same profile name and
   loads later, so only a live `bwrap`'s own confinement says whether the
   sandbox can work (`docs/probes.md:50-60`).
-- **Codex** (`src/engines/codex.ts:100-150`): `codex exec --json -o <out> -C
+- **Codex** (`src/engines/codex.ts:92-142`): `codex exec --json -o <out> -C
   <cwd> --sandbox <read-only|workspace-write|danger-full-access>
   --ignore-user-config --skip-git-repo-check -m <m>
   -c model_reasoning_effort="<e>" -c model_instructions_file="<role.md>"` —
   then, for an engine-placed lead only, the three `-c mcp_servers…` settings
   — and last the positional `-`. **The brief goes on stdin and `-` holds its
-  place** (`src/engines/codex.ts:140-145`, `:150`): a bare positional is
+  place** (`src/engines/codex.ts:132-137`, `:142`): a bare positional is
   misread as a flag the moment a brief begins with `-`, and a brief is prose a
   lead composes, not a string this file controls. Both heads document the
-  spelling (`codex-cli` 0.153.4 `--help`, `docs/probes.md:462-473`), and the
+  spelling (`codex-cli` 0.153.4 `--help`, `docs/probes.md:490-501`), and the
   `-o` file is emptied before the spawn so a dead run cannot report the
-  previous one's last message as its own (`src/engines/codex.ts:119`,
+  previous one's last message as its own (`src/engines/codex.ts:111`,
   `tests/engines/codex.test.ts:291`). The launch, write, `off` and resumed
   lines are pinned byte for byte (`tests/engines/codex.test.ts:162`, `:187`,
   `:204`, `:217`, `:244`, `:301`). Resume is a **different flag set**: `codex
@@ -1340,18 +1350,18 @@ which is a property of the line, not of the pipeline.
   `--ignore-rules`, `--output-schema`, `--json`, and
   `-o/--output-last-message`, and **neither `-C` nor `--sandbox`** (`codex exec
   resume --help`, 0.153.4, read 2026-09-09 and recorded at
-  `docs/probes.md:457-462`). So the resume line is `codex exec resume <thread
+  `docs/probes.md:485-490`). So the resume line is `codex exec resume <thread
   id> --json -o <out> --ignore-user-config --skip-git-repo-check -m <m> -c
   model_reasoning_effort="<e>" -c sandbox_mode="<the role's Codex profile>" -c
   model_instructions_file="<role.md>" -`, spawned with the **resuming
   process's** cwd set to the role's workspace
-  (`src/engines/codex.ts:106-108`, `:114`, `:150`). The instructions file is
+  (`src/engines/codex.ts:98-100`, `:106`, `:142`). The instructions file is
   re-supplied for the same reason the sandbox is: a `-c` setting belongs to the
   process, and the resumed thread is a new one. The
   profile is the key of `sandboxProfiles` the role names, so `off` resumes as
   `-c sandbox_mode="danger-full-access"`, the same value the launch path gives
   `--sandbox`; there is no unsandboxed resume by omission. P10 settled why both
-  halves are the adapter's work (`docs/probes.md:377-399`): a resumed thread
+  halves are the adapter's work (`docs/probes.md:399-421`): a resumed thread
   keeps neither the cwd nor the sandbox of the original run. The writable root
   of a workspace-write sandbox follows the resuming process's cwd, so a resume
   started one directory up wrote a file into the repository root that the
@@ -1374,28 +1384,28 @@ which is a property of the line, not of the pipeline.
   `--ignore-user-config`, and its instructions reach it through `-c
   model_instructions_file="<file>"` — accepted and obeyed with no role text in
   the prompt at all, so a Codex lead spends no prompt space on the loop (P9,
-  `docs/probes.md:266`, `:285-301`). Every role's instructions travel that way,
+  `docs/probes.md:288`, `:307-323`). Every role's instructions travel that way,
   lead or specialist, in a `role.md` under `scratchDir`
-  (`src/engines/codex.ts:126-130`, `tests/engines/codex.test.ts:260`).
-- **Grok** (`src/engines/grok.ts:97-151`): `grok -p <prompt> --cwd <cwd>
+  (`src/engines/codex.ts:118-122`, `tests/engines/codex.test.ts:260`).
+- **Grok** (`src/engines/grok.ts:61-115`): `grok -p <prompt> --cwd <cwd>
   --sandbox <workspace|read-only|strict|off> --permission-mode
   bypassPermissions --output-format streaming-messages-json --session-id
   <uuid> | -r <id> --model <m> --reasoning-effort <e> --rules <role text>`
   plus one `--deny` per deny-list entry, ending the argv, the same on resume.
   There is **no lead head at all**: `plan` refuses a request carrying `lead`,
   because P9 found no per-run mount it could build one from, and that is the
-  gate no configuration can reach around (`src/engines/grok.ts:103-105`,
+  gate no configuration can reach around (`src/engines/grok.ts:67-69`,
   `tests/engines/grok.test.ts:279`). **The prompt is `-p`'s own value**, so
   nothing goes on stdin and the plan names no files: Grok reads none that this
   adapter writes, until an oversize role prompt makes the one file below
-  (`src/engines/grok.ts:151`, `tests/engines/grok.test.ts:143`). `strict` and `off` are the two
+  (`src/engines/grok.ts:115`, `tests/engines/grok.test.ts:143`). `strict` and `off` are the two
   `--sandbox` values no run has exercised: P2 ran `workspace` and `read-only`,
-  and `--help` does not enumerate the profiles (`docs/probes.md:428-435`).
+  and `--help` does not enumerate the profiles (`docs/probes.md:456-463`).
   Every flag takes exactly one value, which is what lets the deny list end the
   line without swallowing anything (`tests/engines/grok.test.ts:224`); the
   writable, read-only, every-profile and resumed lines are pinned byte for
   byte (`tests/engines/grok.test.ts:143`, `:168`, `:190`, `:205`). **P8 chose
-  the format** (`docs/probes.md:187-246`). `streaming-messages-json` is NDJSON
+  the format** (`docs/probes.md:209-268`). `streaming-messages-json` is NDJSON
   in the Anthropic Messages API wire shape — line for line what Claude Code's
   `stream-json` emits, so one line vocabulary serves both adapters. Its first
   line is `{"type":"system","subtype":"init"}` carrying `session_id`, on a
@@ -1428,13 +1438,13 @@ which is a property of the line, not of the pipeline.
   Claude's `--append-system-prompt-file` and Codex's `-c
   model_instructions_file=`: P9 honoured both it and a prompt prefix, and the
   system-level one keeps the role out of the turn's own text
-  (`docs/probes.md:302-339`). It takes a **string**, not a path — given a role
+  (`docs/probes.md:324-361`). It takes a **string**, not a path — given a role
   file's path it put the path into the system prompt as literal text and the
   child read the file itself — so the adapter passes the role's *contents*,
   and only when the text would exceed the argv limit, which is the one case a
   flag cannot carry, does the delivery change. The ceiling is 100 KiB, below
   Linux's 128 KiB cap on a single argument with room for the rest of the line
-  (`src/engines/grok.ts#rulesLimit`, `:114`, `tests/engines/grok.test.ts:236`,
+  (`src/engines/grok.ts#rulesLimit`, `:78`, `tests/engines/grok.test.ts:236`,
   `:249`). Past it the role text, a blank line and the brief go to
   `<scratchDir>/rules.md` through the plan's `files`, and the argv carries
   `--prompt-file <path>` in place of `-p <prompt>` (`grok --help`, 1.0.34:
@@ -1468,7 +1478,7 @@ refuses to rewrite the worktree's `.git` pointer, Grok allows it, so tampering
 is detected by `verify_worktree`, not prevented (P2). A Grok child **does**
 inherit the user's MCP configuration — Grok has no per-invocation exclusion
 flag, only a persistent `grok mcp` subcommand — and P9 recorded how far that
-reaches (`docs/probes.md:268-269`, `:302-339`): a Grok child sees the servers in
+reaches (`docs/probes.md:290-291`, `:324-361`): a Grok child sees the servers in
 `~/.grok/config.toml`, the servers Grok plugins bring, and the servers the
 operator declared to *Claude* in `~/.claude.json`. So a `cross-agent` server
 started by that child is a real, reachable server, and what makes that safe is
@@ -1503,7 +1513,7 @@ positional each of those two heads reads stdin behind, Claude's `--effort`,
 Grok's `--reasoning-effort` and its `--effort` alias,
 `--system-prompt-override` and `--include-partial-messages` — are `--help`
 readings, recorded with their CLI
-versions in the same file (`docs/probes.md:408-465`; Claude Code 2.1.266, Codex
+versions in the same file (`docs/probes.md:430-493`; Claude Code 2.1.266, Codex
 0.153.4, Grok Build 1.0.13). No other claim in this section is waiting on a
 probe.
 
@@ -1751,10 +1761,10 @@ each with its own unit test:
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
    specialists **do** reach a server, because Grok has no per-invocation
-   exclusion flag (`src/engines/grok.ts:72-77` returns an empty list for it),
+   exclusion flag (`src/engines/grok.ts#exclusionArgs` returns an empty list),
    and P9 recorded exactly what a Grok child inherits: the operator's
    `~/.grok/config.toml`, the operator's Grok plugins, and the servers the
-   operator declared to Claude in `~/.claude.json` (`docs/probes.md:302-339`).
+   operator declared to Claude in `~/.claude.json` (`docs/probes.md:324-361`).
    They are held to the specialist row by ancestry, not by exclusion — that is
    why layer 1 had to become a capability model, and it is the same finding that
    rules Grok out as a lead ("The lead model", item 4). Under `placement:
@@ -1774,7 +1784,7 @@ each with its own unit test:
    `src/guard.ts#childLineage`, `#childEnv`). The harness emitted a colon-joined
    placeholder until P9, which fixed it and verified the fix by feeding a
    child's received value back through `parseLineage`
-   (`docs/probes.md:340-345`). A `delegate` whose `(role, cwd)` is already in
+   (`docs/probes.md:362-367`). A `delegate` whose `(role, cwd)` is already in
    the lineage is refused (`src/guard.ts#lineageRefusal`). A request identical
    to a running task in `(role, canonical cwd, sha256(brief))` is refused with
    "already running, wait on <id>"; identical to a task finished within
@@ -2172,7 +2182,7 @@ reason), and the loop-guard scope as a hard requirement.
      scrubbed env (the binary carries a `CLAUDECODE` guard). **Done**; the
      Claude sandbox needs `bwrap`, `socat`, and the bwrap AppArmor profile.
    - P2 each engine as implementer inside a linked worktree under its
-     sandbox. Recorded (`docs/probes.md:48-63`): an in-worktree edit and the
+     sandbox. Recorded (`docs/probes.md:72-85`): an in-worktree edit and the
      tests succeed, and writes to a root file, to a path inside `<root>/.git`,
      to a sibling path, and to `$HOME` are all denied; the rewrite of the
      worktree's `.git` pointer is denied by Codex and **allowed by Grok**.
@@ -2181,7 +2191,7 @@ reason), and the loop-guard scope as a hard requirement.
      another *registered* worktree, a write to
      `<root>/.git/refs/heads/<default>` specifically, and the whole set on a
      resumed session.
-   - P3 the deny list. Recorded (`docs/probes.md:65-87`): four targets
+   - P3 the deny list. Recorded (`docs/probes.md:87-109`): four targets
      (`claude`, `codex`, `grok`, `node <repo>/src/server.ts`) attempted on
      each engine, with `node --version` as the control. **Done** — Claude and
      Grok deny all four and allow the control; Codex ignores an execpolicy
@@ -2197,7 +2207,7 @@ reason), and the loop-guard scope as a hard requirement.
      `--ff-only` merge, cleanup. **Done.**
    - P8 Grok streaming output, in both NDJSON formats, after `tools/probe.mjs`
      gained an `--output-format` flag. **Recorded 2026-09-09**
-     (`docs/probes.md:140-246`): `streaming-json` announces its session id only
+     (`docs/probes.md:162-268`): `streaming-json` announces its session id only
      on the last line, carries no final message text at all, and emits no
      closing line when the run fails; `streaming-messages-json` announces the
      session id on its **first** line — on a resumed run as well as a fresh
@@ -2206,7 +2216,7 @@ reason), and the loop-guard scope as a hard requirement.
      `errors`. **Adopted for T9: `streaming-messages-json`** (§3).
    - P9 lead mount and instruction delivery, per engine, each CLI spawned with
      only this server intended. **Recorded 2026-09-09**
-     (`docs/probes.md:248-361`): Claude mounts exactly this server under
+     (`docs/probes.md:270-383`): Claude mounts exactly this server under
      `--strict-mcp-config --mcp-config <file>` and obeys
      `--append-system-prompt-file`; Codex mounts it with three `-c
      mcp_servers…` settings under `--ignore-user-config`, the third being
@@ -2215,9 +2225,9 @@ reason), and the loop-guard scope as a hard requirement.
      kind, and a child inherits the operator's Grok configuration, Grok plugins
      and `~/.claude.json` servers. Ruling: **no Grok lead** ("The lead model",
      item 4). The run also recorded the `--help` facts of section 3
-     (`docs/probes.md:408-465`).
+     (`docs/probes.md:430-493`).
    - P10 `codex exec resume`. **Recorded 2026-09-09**
-     (`docs/probes.md:363-406`): the subcommand takes neither `-C` nor
+     (`docs/probes.md:385-428`): the subcommand takes neither `-C` nor
      `--sandbox`, and a resumed thread keeps neither the cwd nor the sandbox of
      the original run — the writable root follows the resuming process's cwd,
      a resume one directory up wrote where the original turn had been refused,
@@ -2279,8 +2289,8 @@ Integration probes after each packaging task, run by the operator:
   row is checked **per host, in that host's own spelling**: Claude shows
   `mcp__cross-agent__<tool>`, Codex folds the hyphen and shows
   `mcp__cross_agent__<tool>` beside its built-in `codex_apps`
-  (`docs/probes.md:263`, `:266`), and Grok reaches the tools through its
-  `use_tool` dispatcher (`docs/probes.md:268`), so the test compares the set of
+  (`docs/probes.md:285`, `:288`), and Grok reaches the tools through its
+  `use_tool` dispatcher (`docs/probes.md:290`), so the test compares the set of
   this server's tools, not a literal string. A direct `tools/call delegate`
   from that session is refused by name, with the reason.
 - **I2, host × engine isolation.** Each engine spawned by the server launched
@@ -2325,9 +2335,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   taken by the next holder in under a second, with the lock file never deleted
   (`:68`) — no TTL, no stale detection, no reclaim. The same over `git.lock`:
   two mutations take it one after the other, and their journal steps chain
-  `before` to the previous `after` (`tests/gitmutate.test.ts:503`), while a
+  `before` to the previous `after` (`tests/gitmutate.test.ts:528`), while a
   mutation behind a SIGKILLed holder completes well inside the five-second wait
-  (`:533`); `spawn.lock` is held for the whole call with `git.lock` inside it
+  (`:558`); `spawn.lock` is held for the whole call with `git.lock` inside it
   (`:303`). `limits.lockWaitSeconds` is read where a config is loadable and
   answers with the default where none is (`tests/config.test.ts:209`).
   Reservation: a writable task holds its cwd until it settles, every profile
@@ -2364,15 +2374,15 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/engines/claude.test.ts:189`, `:213`, `:236`, `:251`). The brief is
   `plan.stdin` and appears nowhere in the argv; the writable root is
   `request.cwd` exactly, even when the worktree was reached through a symlink
-  (`:292`); a flag with nothing to carry is not emitted (`:316`); and the
+  (`:317`); a flag with nothing to carry is not emitted (`:341`); and the
   sandbox check names whichever of `bwrap` and `socat` it cannot find on `PATH`
   (`:153`). P1's two stderr failures become **one** fatal `error` event: a run
-  the engine itself calls a success fails on it (`:483`), and a sandbox that
+  the engine itself calls a success fails on it (`:508`), and a sandbox that
   fails at its own setup once per command still yields exactly one event with
-  every line still in the log (`:506`). A whole run through `spawnEngine`
+  every line still in the log (`:531`). A whole run through `spawnEngine`
   against the fake engine's `claude` format settles with the session, the
   activity and the final text in order, and a failed one with the engine's own
-  message (`:419`, `:464`).
+  message (`:444`, `:489`).
 - **A1 / P8 (T9, recorded):** the Grok adapter runs `--output-format
   streaming-messages-json`; per-line events arrive before the final one; the
   session id is read from the first line's `system/init`, on a resumed run as
@@ -2381,9 +2391,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   down the same path as a successful one. Recorded through a `spawnEngine` run
   against the rewritten fixture — the session, the activity and the final text
   in order on a success, and the joined `errors` with exit 1 on a failure
-  (`tests/engines/grok.test.ts:392`, `:435`) — and at the parser, where a
+  (`tests/engines/grok.test.ts:400`, `:443`) — and at the parser, where a
   `result` line that omits `is_error` fails closed rather than passing as a
-  success (`:304`, `:336`, `:380`).
+  success (`:312`, `:344`, `:388`).
 - **A2 (recorded):** `{engine: "codex", sandbox: "workspace"}` is refused at
   config load, naming the engine and the profiles it does accept
   (`tests/config.test.ts:130`). The same rule holds past config: `sandboxFor`
@@ -2513,7 +2523,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/engines/codex.test.ts:515`): that `codex exec … -` and `codex exec
   resume <id> … -` each take the brief from stdin rather than send the literal
   `-` as the prompt — `--help` settles the flag on both heads
-  (`docs/probes.md:462-473`), so what is left is that a run behaves as the help
+  (`docs/probes.md:490-501`), so what is left is that a run behaves as the help
   says — and the resumed-session negative writes above.
 - **Engine placement:** end-to-end with the lead on each supported lead engine,
   Claude and Codex (P9 rules Grok out); cancelling
