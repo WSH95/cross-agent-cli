@@ -7,6 +7,7 @@ import type { Journal, JournalEntry } from "./journal.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
+import type { Reservations } from "./reservation.ts";
 import { gitEnvironment, verifyWorktree } from "./worktree.ts";
 
 export interface GitMutateRequest {
@@ -170,7 +171,20 @@ async function mutate(
 
   // 1. A task that may write there owns it until it settles, and a record nobody can read
   // is a task whose workspace nobody can clear (design section 2, E2).
-  const known = reservations(projectRoot);
+  let known: Reservations;
+  try {
+    known = reservations(projectRoot);
+  } catch (error) {
+    // The scan names a fault in one record file and carries on; the directory holding them
+    // faults as a whole — a mode nothing may read, a file where the directory belongs —
+    // and nothing below it can read a single record. `mutate` promises the lead a refusal
+    // for everything that stops a mutation, so this is one too, and it carries the
+    // operating system's own words about the path.
+    return {
+      ok: false,
+      reason: `no workspace can be cleared while no task record can be read: ${message(error)}; repair the task directory first`,
+    };
+  }
   const holder = reservedBy(projectRoot, target, known);
   if (holder !== null) {
     return { ok: false, reason: `${target} is reserved by task ${holder.id} (${holder.status}); wait or cancel first` };

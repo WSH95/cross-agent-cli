@@ -500,6 +500,31 @@ test("a config, a lock, or a git that could not run is refused rather than throw
   assert.equal(readJournal(root, "refused"), null);
 });
 
+test("a task directory that cannot be read at all is a refusal, not an exception", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root reads a directory whatever its mode says, so the fault cannot be staged");
+    return;
+  }
+  const { root, add } = await repository(t);
+  await add("faulted");
+  // The reservation read reports a fault in one record file; the directory holding them
+  // can fault too — a mode nothing may read, a file where the directory belongs — and
+  // `mutate` answers the lead with every refusal it has, never with an exception.
+  const tasks = path.join(root, ".cross-agent", "tasks");
+  await mkdir(tasks, { recursive: true });
+  await chmod(tasks, 0o000);
+  // Restored however the test ends, and only while it is still there: the repository's own
+  // cleanup runs first and an empty directory is removable whatever its mode says.
+  t.after(async () => { try { await chmod(tasks, 0o755); } catch { /* gone with the repository */ } });
+
+  const refused = await gitMutate(root, { slug: "faulted", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 });
+  const reason = refusal(refused);
+  assert.match(reason, /task record/, "the refusal says what could not be read");
+  assert.match(reason, new RegExp(tasks.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "and names the directory");
+  assert.equal(await git(root, "rev-list", "--count", "task/faulted"), "1", "and nothing ran");
+  assert.equal(readJournal(root, "faulted"), null);
+});
+
 test("a mutation waits for git.lock, and two of them take it one after the other", async (t) => {
   const { root, add } = await repository(t);
   await add("serial");

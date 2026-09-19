@@ -1494,7 +1494,11 @@ different branches. It
 1. refuses while any task reserving that path is not settled — `<path> is
    reserved by task <id> (<status>); wait or cancel first` — and refuses every
    path at all while any task record cannot be read, naming each file and its
-   reason (`src/gitmutate.ts#mutate`, section 2);
+   reason (`src/gitmutate.ts#mutate`, section 2). A fault in the directory
+   holding those records rather than in one of them — a mode nothing may read,
+   a file where the directory belongs — refuses the same way and carries the
+   operating system's own words: every stop a mutation can meet reaches the
+   lead as a reason, and none of them as an exception (bead `atc-s96.40`);
 2. verifies the worktree from the root, with the checks
    `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`): `realpath` of
    both paths; the worktree appears in `git worktree list --porcelain -z` as a
