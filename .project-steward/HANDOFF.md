@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T12:28:47Z
+updated_at: 2026-09-19T12:53:09Z
 updated_by: claude
 session_status: active
 branch: main
@@ -25,28 +25,31 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-M3's skills half is merged: `main` at `3023e30` (S8, Task 4b, 4c, T12;
-`atc-s96.12` closed; `VERIFY.md` M3, `aa3f8ef`). Task 6 (T13:
-`.claude-plugin/plugin.json`, `.mcp.json`, P2 for Claude, I1, I2, E1;
-`atc-s96.13`, `.17`) is complete on `task/cross-agent-m3` and under review:
-`cc25f30`, `1c6678b`, `744c767`, then the concerns round `69780db` (593
-tests, 592 pass; 815 citations, 0 misses). E1 passed all eight conditions
-on the Python slugkit sample. The concerns round closed the Critical
-containment gap P2 found — a `workspace-write` Claude specialist in a
-linked worktree could write into `<root>/.git` (bead `atc-s96.52`); now the
-launch spec carries `protectedPaths` (the workspace's `.git` pointer and the
-common git dir from `verifyWorktree`) and the Claude adapter sends them as
-`filesystem.denyWrite`; the P2 rerun shows the write refused — and fixed the
-model carried across an engine switch and `denyTargets`' root. Two reviews
-run now: the task review (general-purpose · claude-opus-5 · max) and an
-evidence-lens second opinion (general-purpose · claude-fable-5-1 · max).
-After them: fix rounds if any, close `.13`/`.17`/`.52`, `VERIFY.md` T13
-block (report §7 has the draft), then S11 from `task-7-brief.md` (addendum
-written: E2 not run under the Codex pause, E3 with a Claude lead is the run;
-dispatch draft in the scratchpad), T14, T15, T16, `.42`, `.18`. Beaded:
-`.53` (hop budget under other hosts), `.54` (I1's Grok half needs the sample
-trusted in the user's Grok config). Pending your approval:
-`agents-md-m3.diff`; your call on `.54`.
+M3's skills half is merged (`main` `3023e30`; `VERIFY.md` M3). Task 6
+(T13; `atc-s96.13`, `.17`) is on `task/cross-agent-m3` at `69780db` (four
+commits; 593 tests, 592 pass) and in **fix round 1** on the same
+implementer (`cross-agent-implementer` · claude-opus-5 · max), brief
+`task-6-findings-round-1.md`. The task review (claude-opus-5) passed spec
+compliance and verified the runtime fixes bite; its Important item is 61
+doc line citations this task moved off their content (candidate list in
+`task-6-cite-drift.txt`). The second opinion (claude-fable-5-1) found the
+Critical-unproven **T6-R1-20**: the Claude read-only profile sends no
+filesystem rule and Claude's sandbox writes to the cwd by default, so a
+read-only root role could write through Bash — fix is `denyWrite` of the
+cwd plus the protected paths on the read-only builder, proven by one real
+read-only probe; plus R1-21 (no delegated Claude task ran under the
+containment fix; the probe harness built its own settings — now through the
+adapter's `plan`, a fake-engine argv test, one real delegated writable
+task including `<root>/.git/hooks`), R1-22 (a fake-engine test that the
+refusal names the matched task id, plus one tracked rerun), R1-23 (the
+Grok half's text vs archived evidence), R1-25 (the Codex I2 placeholder
+was an empty `test.skip`; the guarded body is written now, not run), and
+R1-5 (the MCP declaration moves inline into `plugin.json`; the root
+`.mcp.json` goes — a repository-root `.mcp.json` is Claude Code's
+project-scoped config). After the round: scoped re-review, close
+`.13`/`.17`/`.52`, `VERIFY.md` T13 block, then S11 (`task-7-brief.md`
+with its addendum; dispatch draft in the scratchpad), T14, T15, T16, `.42`,
+`.18`. Pending your approval: `agents-md-m3.diff`; your call on `.54`.
 
 ## Next steps
 

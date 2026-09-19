@@ -106,3 +106,4 @@ Set up Project Steward in this repository.
 - 2026-09-19T11:20:59Z — claude — [auto-checkpoint] T12 complete and merged (main 3023e30; 585 pass; VERIFY.md M3); T13 dispatched from 3023e30; AGENTS.md proposal agents-md-m3.diff awaiting approval.
 - 2026-09-19T12:08:03Z — claude — [auto-checkpoint] T13 done with concerns (E1 passed; P2 Claude found a <root>/.git write, bead .52); concerns round running; beads .53/.54 filed.
 - 2026-09-19T12:28:47Z — claude — [auto-checkpoint] T13 concerns round landed (69780db): <root>/.git write now denied on the P2 rerun; 592 pass; T13 under two reviews; S11 brief addendum written.
+- 2026-09-19T12:53:09Z — claude — [auto-checkpoint] T13 reviewed (spec pass; read-only Claude write denial unproven → fix round 1 with three short probes; 61 citations drifted; .mcp.json moves inline); fix round running.
