@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T04:20:31Z
+updated_at: 2026-09-19T04:45:14Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -8,44 +8,34 @@ branch: main
 
 ## Now
 
-`main` at 45aacf8 holds branch `task/cross-agent`, merged fast-forward
-on 2026-09-09 (51 files, 10,353 insertions over 9f85269). What it
-contains: the rename from `dev-team` to `cross-agent`; `docs/design.md`
-rewritten as the authority (the lead model with `placement: host | engine`,
-authority by process ancestry, the permission matrix, modes as data, engine
-placement's four requirements), checked by `tools/check-citations.mjs`
-under `npm test` (456 citations, 0 misses); the lifecycle core — OS-held
-`flock` locks, async conditional `ledger.update` with a transition table,
-runner ownership and cancel semantics, `bootId`, reconciliation on the
-group scan with adoption by `CROSS_AGENT_TASK`, the spawn drain, record
-validation; T6 — workspace reservation, `git_mutate` on the verified
-git-dir under `spawn.lock` then `git.lock`, the per-task journal; the
-engine contract v2 with `sandboxFor` as the one place a `{mode, profile}`
-pair is built; the Claude, Codex and Grok adapters; probes P8, P9, P10.
-`npm test`: 346 pass, 1 skipped (`tests/engines/codex.test.ts`, the I2
-placeholder that needs a real `codex` binary). The final whole-branch
-review (Opus, 9f85269..fd36d21) found no Critical defect; its three
-Important findings were fixed in `ff18caa` and `da3fc1b` (a second
-pre-existing reconcile flake was fixed test-side on the way; its product
-residual is `atc-1p0`), its Minor findings are beads (`atc-s96.39` to
-`.43`, `.10.1`, `.10.2`), and the 9d review's minors landed as `45aacf8`. Nothing in `src/` yet
-builds a spawn request: the server registers `list_roles` and
-`verify_worktree` only; delegation and authority arrive with T10.
+`main` at `a3ac875` holds M1 complete: the M0/M2 core plus, merged
+2026-09-19 as `bd37e0e` (33 commits from `task/cross-agent-m3`), the
+citation checker's symbol form, authority by process ancestry and tools by
+permission-matrix row (T10a), `delegate`/`check`/`result`/`cancel`/
+`list_tasks` with the runner's outcome sidecar (T10b), `wait` with stall
+detection and `notifications/cancelled` (T11), the M1-close beads (Claude
+sandbox settings, the environ-scan mid-exec retry, the gitmutate refusal,
+the btime margin, the reconciler refinements, the Grok prompt-file
+fallback, the text-helper and ladder consolidation) and the test-hygiene
+pass. `npm test` at the root: 468 tests, 467 pass, 0 fail, 1 skipped (the
+I2 placeholder). `VERIFY.md` records it; `DECISIONS.md` 0010 holds every
+ruling of the run. The plan is
+`~/.claude/plans/the-development-of-this-calm-planet.md` (three Codex
+review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 3c (test hygiene, `atc-s96.33`/`.43`) is on `task/cross-agent-m3` at
-`530c757` (467 pass, 1 skip; ten consecutive green `npm test` runs under
-8-core load) and its scoped re-review (Claude Code subagent ·
-claude-fable-5-1 · max) is running. Tasks 0–3, 3b are complete there. On a
-clean verdict the M1 close runs: `git rebase main` in the worktree (only
-steward commits on `main`), fast-forward merge, `npm test` at the root,
-`VERIFY.md` created, `PLAN.md` M1 marked, and the milestone report with
-the combined AGENTS.md proposal
-(`.superpowers/sdd/the-development-of-this-calm-planet/agents-md-m1.diff`)
-for approval. Then Task 4 (S8 modes), 4b, 4c. **Codex is paused by the
-user.** Ledger, briefs, reports and review packages: the SDD directory
-above.
+Task 4 (S8: the mode loader, `describe_mode`, the worktree provider
+registration, the built-in modes `dev-team`, `solo`, `dev-team-engine`,
+`cross-agent init --mode`; `atc-s96.23`) runs as a Claude Code subagent
+(`cross-agent-implementer` · claude-opus-5 · max) in
+`.worktrees/cross-agent-m3` from `a3ac875`. Brief:
+`.superpowers/sdd/the-development-of-this-calm-planet/task-4-brief.md`;
+the ledger `progress.md` beside it holds every ruling and dispatch. Next:
+4b (root git tools and journal steps), 4c (solo without ceremony), T12
+(skills), T13 (Claude Code packaging, I1/I2, E1), S11, T14, T15, T16.
+**Codex is paused by the user.** Pending your approval: the combined
+AGENTS.md proposal `agents-md-m1.diff` in the SDD directory.
 
 ## Next steps
 

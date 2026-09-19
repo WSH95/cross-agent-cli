@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T04:45:14Z — claude
+[auto-checkpoint] M1 closed: task/cross-agent-m3 rebased onto main and fast-forward merged (main bd37e0e, 33 commits); root npm test 467 pass/1 skip/0 fail; 609 citations/0 misses; VERIFY.md created, PLAN.md M1 done, DECISIONS 0010 (a3ac875). Task 4 (S8 modes) dispatched (cross-agent-implementer: claude-opus-5, max). AGENTS.md proposal agents-md-m1.diff awaits the user's approval.
+
 ### 2026-09-19T04:20:31Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 3c (test hygiene) landed 0637a31, ce995c5 + fix round 530c757 on task/cross-agent-m3 (467 pass/1 skip; ten consecutive green npm test runs under 8-core load, 1029 s); scoped re-review (claude-fable-5-1, max) running. New P3 bead: runner stand-down on a transient unreadable candidate. Combined AGENTS.md proposal drafted (agents-md-m1.diff) for the M1 milestone report. Next: rebase onto main, ff-merge, root suite, VERIFY.md, PLAN.md M1.
 
