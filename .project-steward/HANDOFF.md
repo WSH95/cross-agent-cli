@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T14:35:59Z
+updated_at: 2026-09-19T14:39:16Z
 updated_by: claude
 session_status: active
 branch: main
@@ -41,8 +41,15 @@ a deleted Grok init-field caveat; one README word). **Fix round 3**, the
 closing round, is running on the implementer (`task-6-findings-round-3.md`:
 the citation pass with test-file citations converted to `@anchor`s, and a
 `--since <rev>` drift flag for `tools/check-citations.mjs`). The Grok second
-review of round 2 (task `23e32657…`, diff attached) is still running through
-cross-agent; its findings fold into round 3 or a short round 4. When both are clean: close `.13`,
+review of round 2 (task `23e32657…`, 76 KB brief with the diff attached —
+the E2BIG fix proven) settled with two Important holes in the new
+`tools/e2e-verify.mjs` (condition 8 cannot read Codex or Grok transcripts and
+counts missing evidence as a pass; the journal check cannot fail) and minors,
+and the Opus reviewer's evidence audit confirmed every pass claim against the
+raw artifacts while adding two record items; all folded into round 3
+(T6-R3-1 … R3-12). The raw evidence of P2/I1/I2/E1 is archived at
+`~/.cache/agent-team/probe-logs/t13-2026-09-19/` (36 files) — the session
+scratchpad it lived in is ephemeral. When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md`'s T13
 section (final text with placeholders in
 `.superpowers/sdd/…/dispatch/verify-t13-final.md`), then the full handover
