@@ -117,3 +117,4 @@ Set up Project Steward in this repository.
 - 2026-09-19T15:28:19Z — claude — [auto-checkpoint] Opus re-review of T13 round 3 folded into round 4 (checker blind spot; wrong anchors); round 4 running.
 - 2026-09-19T15:48:05Z — claude — [auto-checkpoint] T13 round 4 landed (aa5edc8; 613 pass; both --since quiet; alignment table); two closing reviews running.
 - 2026-09-19T15:50:17Z — claude — [auto-checkpoint] Opus re-review of T13 round 4 stopped by the user; controller spot-check of anchors passed; Grok review of round 4 running.
+- 2026-09-19T15:58:45Z — claude — [auto-checkpoint] Grok review of T13 round 4: two verifier fail-open paths, three cites → fix round 5 dispatched; Opus rerun of round 4 in flight.

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:52:25Z
+updated_at: 2026-09-19T15:58:45Z
 updated_by: claude
 session_status: active
 branch: main
@@ -34,11 +34,14 @@ judge instead of staying silent); `tools/e2e-verify.mjs` 8/8 on the sample.
 Four fix rounds closed everything four reviews found; round 4 realigned the
 anchored citations to the tests whose titles state each claim (alignment
 table in `task-6-report.md`), grounded the verifier's Codex handling, and
-fixed the checker's blind spot. **Closing reviews of round 4:** the Grok seat runs through cross-agent
-(diff attached); the Opus 5 scoped re-review's first run was terminated by the
-harness before a verdict (reported as "stopped by user"; the user did not
-stop it) and is rerunning; the controller's own spot-check of the realigned
-anchors passed. When both are clean: close `.13`,
+fixed the checker's blind spot. The Grok second review of round 4 held the citations and the checker (17 of
+20 sampled realignments right) and found two fail-open paths the verifier
+gained (unknown event types counted as understood; an offence discarded when
+any line is unread), three neighbour citations, and a launcher regex that
+should mirror `denyTargets`. **Fix round 5** (`task-6-findings-round-5.md`)
+is running on the implementer; the Opus 5 rerun review of round 4 is in
+flight and folds in by follow-up. After round 5: both seats on its diff.
+When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
 section (`dispatch/verify-t13-final.md`, four placeholders), the final
 handover (`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`,
