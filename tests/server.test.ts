@@ -579,11 +579,23 @@ test("list_roles reports the mode's workspace and the profile each role will act
     },
   });
 
+  // Which tools exist was decided when the server loaded its mode, so a config since
+  // pointed at another mode is answered with the roles it now names **and** the drift.
+  const other = buildMode(path.dirname(mode.dir), "other-team", [{ key: "only" }]);
+  await writeFile(path.join(root, ".cross-agent", "config.json"),
+    JSON.stringify({ mode: "other-team", roles: { only: { engine: "codex" } } }));
+  const drifted = JSON.parse(((((await request("tools/call", { name: "list_roles", arguments: {} })).result as Json).content as Json[])[0].text as string)) as Json;
+  assert.deepEqual(drifted.roles, { only: { engine: "codex", workspace: { kind: "root" }, sandbox: "read-only" } });
+  assert.match(drifted.warning as string, /"other-team" in \.cross-agent\/config\.json/);
+  assert.match(drifted.warning as string, /"dev-team" served/);
+  assert.match(drifted.warning as string, /restart/);
+  assert.equal(other.id, "other-team");
+
   // A config the mode no longer matches is the loader's refusal, reported as the tool's answer.
   await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles: { designer: { engine: "codex" } } }));
-  const drifted = (await request("tools/call", { name: "list_roles", arguments: {} })).result as Json;
-  assert.equal(drifted.isError, true);
-  assert.match((drifted.content as Json[])[0].text as string, /declares no role "designer"/);
+  const refused = (await request("tools/call", { name: "list_roles", arguments: {} })).result as Json;
+  assert.equal(refused.isError, true);
+  assert.match((refused.content as Json[])[0].text as string, /declares no role "designer"/);
 });
 
 test("git_mutate takes its worktree directory and branch from the mode's own git policy", async (t) => {

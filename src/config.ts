@@ -196,12 +196,23 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
 export function loadConfigWithMode(projectRoot: string, modesDir: string = builtInModesDir()): BoundConfig {
   const config = loadConfig(projectRoot);
   const mode = loadMode(modesDir, config.mode);
-  const file = path.join(projectRoot, CONFIG_PATH);
+  const fault = bindingFault(mode, config, path.join(projectRoot, CONFIG_PATH));
+  if (fault !== null) throw new Error(fault);
+  return { config, mode };
+}
+
+/**
+ * Every rule that needs the config and the mode together, as a reason or null. It is a
+ * value rather than a throw because the server reads these files at start and `delegate`
+ * reads them again at the launch boundary: a file can change under a running server, and
+ * a launch is a refusal to report, not an exception to raise (design section 6).
+ */
+export function bindingFault(mode: Mode, config: CrossAgentConfig, file: string): string | null {
   for (const [name, role] of Object.entries(config.roles)) {
     const field = `roles.${name}`;
     const declared = findRole(mode, name);
     if (declared === undefined) {
-      throw new Error(`${file}: ${field}: mode ${mode.id} declares no role ${JSON.stringify(name)}; it declares ${mode.roles.map((each) => each.key).join(", ")}`);
+      return `${file}: ${field}: mode ${mode.id} declares no role ${JSON.stringify(name)}; it declares ${mode.roles.map((each) => each.key).join(", ")}`;
     }
     const profile = role.sandbox ?? declared.sandboxDefault;
     let sandbox: ReturnType<typeof sandboxFor>;
@@ -210,20 +221,36 @@ export function loadConfigWithMode(projectRoot: string, modesDir: string = built
       // override does: a portable profile name is not every engine's name for it.
       sandbox = sandboxFor(role.engine, profile);
     } catch (error) {
-      throw new Error(`${file}: ${field}${role.sandbox === undefined ? "" : ".sandbox"}: ${error instanceof Error ? error.message : String(error)}`);
+      return `${file}: ${field}${role.sandbox === undefined ? "" : ".sandbox"}: ${error instanceof Error ? error.message : String(error)}`;
     }
     if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
-      throw new Error(`${file}: ${field}.sandbox: role ${JSON.stringify(name)} works at the project root, which only the server may write — the ledger, the mailbox and the journal live there; ${JSON.stringify(profile)} is ${sandbox.mode} under ${role.engine}`);
+      return `${file}: ${field}.sandbox: role ${JSON.stringify(name)} works at the project root, which only the server may write — the ledger, the mailbox and the journal live there; ${JSON.stringify(profile)} is ${sandbox.mode} under ${role.engine}`;
     }
   }
   // P9: a Grok child inherits the operator's own configuration and has no per-run
   // isolation of any kind, so there is no Grok lead — only a Grok specialist, which
   // ancestry holds to its row ("The lead model", item 4).
-  const leadRole = mode.lead.placement === "engine" ? mode.lead.role : undefined;
+  const leadRole = engineLeadRole(mode);
   if (leadRole !== undefined && Object.hasOwn(config.roles, leadRole) && config.roles[leadRole].engine === "grok") {
-    throw new Error(`${file}: roles.${leadRole}.engine: mode ${mode.id} places its lead in an engine, and grok cannot carry one (P9: no per-run isolation); bind ${leadRole} to claude or codex`);
+    return `${file}: roles.${leadRole}.engine: mode ${mode.id} places its lead in an engine, and grok cannot carry one (P9: no per-run isolation); bind ${leadRole} to claude or codex`;
   }
-  return { config, mode };
+  return null;
+}
+
+/** The role a spawned engine runs the loop as, or undefined under host placement. */
+export function engineLeadRole(mode: Mode): string | undefined {
+  return mode.lead.placement === "engine" ? mode.lead.role : undefined;
+}
+
+/**
+ * Whether the config now names a different mode than the one being served, as a reason or
+ * null. Which tools exist is decided once, when the server loads its mode, so a config
+ * that has since been pointed at another mode is answered with a restart rather than
+ * served half from each.
+ */
+export function modeDrift(served: Mode, config: CrossAgentConfig): string | null {
+  return config.mode === served.id ? null
+    : `mode ${JSON.stringify(config.mode)} in ${CONFIG_PATH}, ${JSON.stringify(served.id)} served; restart the server to change modes`;
 }
 
 /** The sandbox profile a role runs under: its mode's default unless config overrides it. */

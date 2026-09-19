@@ -5,7 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { resolveAuthority } from "./authority.ts";
 import type { Authority, Row } from "./authority.ts";
-import { effectiveMaxDepth, loadConfig, loadConfigWithMode, lockWaitSeconds, roleProfile } from "./config.ts";
+import { effectiveMaxDepth, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, roleProfile } from "./config.ts";
 import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
 import { gitMutate } from "./gitmutate.ts";
@@ -323,6 +323,10 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         // Both files, checked against each other: a config naming a role the mode does not
         // declare is the loader's refusal, and this tool is where an operator reads it.
         const bound = loadConfigWithMode(projectRoot, modesDir);
+        // Which tools exist was decided when this server loaded its mode, so a config
+        // since pointed at another one is answered with the roles it names and the drift
+        // beside them: everything below is true of a mode this server is not serving.
+        const drift = modeDrift(mode, bound.config);
         return text({
           roles: Object.fromEntries(Object.entries(bound.config.roles).map(([key, role]) => [key, {
             engine: role.engine,
@@ -331,6 +335,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
             workspace: findRole(bound.mode, key)!.workspace,
             sandbox: roleProfile(bound.mode, bound.config, key),
           }])),
+          ...(drift === null ? {} : { warning: drift }),
         });
       },
     },

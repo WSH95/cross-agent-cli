@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "./authority.ts";
-import { CONFIG_PATH, loadConfig } from "./config.ts";
+import { bindingFault, CONFIG_PATH, engineLeadRole, loadConfig, modeDrift } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
@@ -147,6 +147,16 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   } catch (error) {
     return refuse(message(error));
   }
+  // The mode and the config are checked against each other **again** here. The server read
+  // both when it started, and a file can change under a running server: a config that
+  // binds a role the mode does not declare, makes a root role writable, or hands an
+  // engine-placed lead to Grok is refused at the launch boundary too, because this is
+  // where an engine would actually start (design section 6).
+  const drift = modeDrift(options.mode, config);
+  if (drift !== null) return refuse(drift);
+  const binding = bindingFault(options.mode, config, path.join(projectRoot, CONFIG_PATH));
+  if (binding !== null) return refuse(binding);
+
   const leadRole = options.mode.lead.role;
   if (options.authority.row === "lead" && leadRole !== undefined && request.role === leadRole) {
     // `delegate (another lead)` is the operator's row alone in the permission matrix: a
@@ -199,6 +209,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (!engineNames.includes(engine)) {
       return refuse(`no engine ${JSON.stringify(request.engine)}; this build has ${engineNames.join(", ")}`);
     }
+    // P9 once more, against the engine this call will actually start rather than the one
+    // config binds: a request may name its own, and a Grok lead has no per-run isolation —
+    // the server an inherited configuration hands it would resolve to the **lead row**.
+    if (engineLeadRole(options.mode) === request.role && engine === "grok") {
+      return refuse(`role ${JSON.stringify(request.role)} is mode ${options.mode.id}'s engine-placed lead, and grok cannot carry one (P9: no per-run isolation)`);
+    }
     const model = request.model ?? role.model ?? null;
     const effort = request.effort ?? role.effort ?? null;
     if (!path.isAbsolute(request.cwd)) return refuse(`cwd ${JSON.stringify(request.cwd)} must be an absolute path`);
@@ -212,9 +228,10 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     } catch (error) {
       return refuse(message(error));
     }
-    // The root rule again at the one place an engine is actually started: `.cross-agent/`
-    // is the server's to write, and a config that drifted from the mode after this server
-    // read it would otherwise launch the engine that could edit it.
+    // The root rule against the **resolved** engine: `bindingFault` above checked the one
+    // config binds, and this call may name another whose profile map reads the same name
+    // differently. `.cross-agent/` is the server's to write, and no engine starts at the
+    // root that could edit it.
     if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
       return refuse(`role ${JSON.stringify(request.role)} works at the project root, which only the server may write; ${JSON.stringify(sandbox.profile)} is ${sandbox.mode} under ${engine}`);
     }

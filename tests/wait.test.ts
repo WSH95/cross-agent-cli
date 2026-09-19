@@ -34,10 +34,12 @@ const modePatch = { lead: { placement: "engine", role: "lead" } };
 function configFor(bin: string, limits: Record<string, number> = {}): Record<string, unknown> {
   return {
     roles: {
-      lead: { engine: "grok" },
+      // The mode places its lead in an engine, and grok cannot carry one (P9), so the
+      // fixture binds it to codex, whose sandbox check is its binary resolving.
+      lead: { engine: "codex" },
       planner: { engine: "grok" },
     },
-    engines: { grok: { bin } },
+    engines: { grok: { bin }, codex: { bin } },
     // The two wall-clock budgets these tools ride on, set far past anything the tests
     // below need: how long a write waits for a record another writer holds, and how long
     // a cancel gives a runner to settle. Left small they are margins a loaded machine can

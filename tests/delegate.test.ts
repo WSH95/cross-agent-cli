@@ -41,9 +41,12 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
       planner: { engine: "grok", prompt: "You are the planner. Report a plan." },
       implementer: { engine: "grok" },
       reviewer: { engine: "grok" },
-      lead: { engine: "grok" },
+      // The mode places its lead in an engine, and grok cannot carry one (P9), so the
+      // fixture binds it to codex — whose sandbox check is its binary resolving, which
+      // keeps this suite off the host's bwrap and socat.
+      lead: { engine: "codex" },
     },
-    engines: { grok: { bin } },
+    engines: { grok: { bin }, codex: { bin } },
     // The two wall-clock budgets these tools ride on, set far past anything the tests
     // below need: how long a write waits for a record another writer holds, and how long
     // a cancel gives a runner to settle. Left small they are margins a loaded machine can
@@ -383,6 +386,73 @@ test("a resume whose original never reached a session is refused rather than lau
   assert.match(reason, new RegExp(`task ${original.id} recorded no engine session`));
 });
 
+test("no delegation starts a grok engine as the mode's engine-placed lead, whoever names it", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+
+  // P9: a Grok child inherits the operator's own servers and has no per-run isolation, so
+  // the server it reaches resolves to the **lead row** by ancestry. The config binds this
+  // mode's lead to codex; the request names grok for it.
+  const overridden = refusal(await delegate(p.root, request({ role: "lead", cwd: p.root, engine: "grok" }), options));
+  assert.match(overridden, /P9/);
+  assert.match(overridden, /grok/);
+
+  // The same hole through the other door: the server read this config at start, and a
+  // config can be edited under a running server.
+  fs.writeFileSync(configFile, JSON.stringify({
+    ...configFor(p.bin), roles: { ...(configFor(p.bin).roles as Record<string, unknown>), lead: { engine: "grok" } },
+  }));
+  const bound = refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), options));
+  assert.match(bound, /P9/);
+  // A config that cannot be trusted stops every launch, not only the lead's.
+  assert.match(refusal(await delegate(p.root, request({ role: "planner", cwd: p.root }), options)), /P9/);
+  assert.deepEqual(p.records(), [], "nothing was written and nothing was spawned");
+
+  // The rule is the engine placement's: a host-placed mode names no lead, so a role that
+  // happens to be called `lead` is an ordinary specialist and grok may run it.
+  const hostPlaced = buildMode(p.modesDir, "host-placed-lead", modeRoles);
+  fs.writeFileSync(configFile, JSON.stringify({ ...configFor(p.bin), mode: "host-placed-lead" }));
+  assert.ok(launched(await delegate(p.root, request({ role: "lead", cwd: p.root, engine: "grok" }), {
+    ...options, mode: hostPlaced, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+  })));
+});
+
+test("a config edited after the server read it is refused at the launch boundary, by field and rule", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+  const base = configFor(p.bin);
+  const rebind = (roles: Record<string, unknown>) => fs.writeFileSync(configFile, JSON.stringify({ ...base, roles }));
+
+  // A root role turned writable: `.cross-agent/` is the server's to write, and the ledger,
+  // the mailbox and the journal live there.
+  rebind({ planner: { engine: "grok", sandbox: "off" } });
+  const writable = refusal(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  assert.match(writable, /roles\.planner\.sandbox/);
+  assert.match(writable, /project root/);
+
+  // A role key this mode does not declare.
+  rebind({ designer: { engine: "grok" } });
+  assert.match(refusal(await delegate(p.root, request({ role: "planner", cwd: p.root }), options)), /declares no role "designer"/);
+
+  // A profile the bound engine does not have — `workspace-write` is Claude's and Codex's
+  // name for it, and this role is bound to grok.
+  rebind({ implementer: { engine: "grok", sandbox: "workspace-write" } });
+  const foreign = refusal(await delegate(p.root, request({ role: "implementer", cwd: p.root }), options));
+  assert.match(foreign, /roles\.implementer\.sandbox/);
+  assert.match(foreign, /grok profiles/);
+
+  // And the mode itself changing under the server, whose tools were registered for the one
+  // it loaded: a restart is the only honest answer.
+  fs.writeFileSync(configFile, JSON.stringify({ ...base, mode: "host-placed-lead" }));
+  buildMode(p.modesDir, "host-placed-lead", modeRoles);
+  const drifted = refusal(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  assert.match(drifted, /host-placed-lead/);
+  assert.match(drifted, /restart/);
+  assert.deepEqual(p.records(), [], "no refusal wrote a record");
+});
+
 test("the lead row delegates its own children, and is refused a lead, a lineage repeat and a cancelling parent", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/child");
@@ -406,10 +476,13 @@ test("the lead row delegates its own children, and is refused a lead, a lineage 
   // Its own (role, cwd) pair is already in the lineage it carries. Under a host-placed
   // mode there is no lead role to refuse first, so the lineage is what answers.
   const hostPlaced = buildMode(p.modesDir, "host-placed", modeRoles);
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+  fs.writeFileSync(configFile, JSON.stringify({ ...configFor(p.bin), mode: "host-placed" }));
   assert.match(
     refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), { ...options, mode: hostPlaced })),
     /already has this pair in CROSS_AGENT_LINEAGE/,
   );
+  fs.writeFileSync(configFile, JSON.stringify(configFor(p.bin)));
 
   const id = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/child" }), options));
   const child = p.record(id);
