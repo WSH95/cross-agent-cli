@@ -167,8 +167,8 @@ const knownEvents = new Set([
 // What counts as a launch is exactly what the deny list denies (`src/guard.ts#denyTargets`):
 // the command **word** `claude`, `codex`, `grok`, `cross-agent` or any binary this
 // project configured under `engines.<e>.bin`, bare or path-qualified; and `node` followed
-// by a path ending in `src/server.ts` or `src/cli.ts`, relative or absolute, which is how
-// AGENTS.md itself spells running them. A command word is what **opens** a command — the
+// by a path ending in `src/server.ts` or `src/cli.ts`, relative or absolute — AGENTS.md
+// spells the server `node src/server.ts`, and the CLI is `package.json`'s `bin`. A command word is what **opens** a command — the
 // start of the line, or what follows a separator or an opening quote, since Codex wraps
 // everything in `/bin/bash -lc '…'` (P9, P10) and the engine's name then sits behind a
 // quote. The opener is never optional: without it `not-claude`, `FOO=claude`, `ls
@@ -180,10 +180,15 @@ const configuredBins = Object.values(config.engines ?? {})
   .filter((bin) => typeof bin === "string" && bin !== "");
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const OPENS = "(?:^|[|&;`(\\s'\"])";
+// `node` gets an opener of its own that is never a bare space: `grep node src/cli.ts`
+// searches for the word and then names a file, which is reading. An engine name keeps
+// whitespace as an opener, because `sudo claude` is running it; `node` only opens a
+// command at the start, after a separator, or behind a quote.
+const NODE_OPENS = "(?:^|[|&;`(]\\s*|['\"]\\s*)";
 const NAMES = ["claude", "codex", "grok", "cross-agent", ...configuredBins].map(escape).join("|");
 const launcher = new RegExp(
   `${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?(?:${NAMES})(?=[\\s'"]|$)`
-  + `|${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?node\\s+['"]?(?:[^\\s'"]*\\/)?src\\/(?:server|cli)\\.(?:ts|js)(?=[\\s'"]|$)`,
+  + `|${NODE_OPENS}(?:[^\\s'"|&;]*\\/)?node\\s+['"]?(?:[^\\s'"]*\\/)?src\\/(?:server|cli)\\.(?:ts|js)(?=[\\s'"]|$)`,
 );
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];

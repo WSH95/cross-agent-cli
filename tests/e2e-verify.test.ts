@@ -212,11 +212,14 @@ test("a shell command that starts an engine is an offence through a shell's own 
     { codex: codexLog("/bin/bash -lc 'grok -p hello'") },
     { codex: codexLog(`/bin/bash -lc 'echo "DEPTH=\${CROSS_AGENT_DEPTH:-NONE}"; claude --version'`) },
     { grok: grokBash("codex exec 'do the work'") },
-    // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`),
-    // and AGENTS.md documents both as relative paths from the repository root.
+    // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`).
+    // AGENTS.md documents the server as `node src/server.ts`, and `package.json`'s `bin`
+    // is the CLI's entry point, so both are launches however the path is spelled.
     { claude: claudeLog("node /home/op/agent-team-cli/src/cli.ts init --mode solo") },
     { claude: claudeLog("node src/cli.ts init --mode solo") },
     { claude: claudeLog("node ./src/server.ts") },
+    { claude: claudeLog("cd x && node src/cli.ts init") },
+    { codex: codexLog("/bin/bash -lc 'node src/server.ts'") },
     // And the binary this project configured, which is the fourth kind of deny target.
     { claude: claudeLog("/opt/wrapper -p hello") },
   ]) {
@@ -258,6 +261,11 @@ test("reading a file that happens to be named like one of them is not a launch",
     "ls ~/.claude",
     "rm -rf .grok",
     "echo pre-grok",
+    // `node` as an argument is a word being searched for or printed, not a command: the
+    // path after it then names a file, which is reading and not running.
+    "rg node src/cli.ts",
+    "grep node src/server.ts",
+    "echo node src/cli.ts",
   ]) {
     const root = await project(t, { claude: claudeLog(command) });
     const { code, out } = await run(root);
