@@ -28,9 +28,9 @@ test("the plugin manifest names this plugin at package.json's version", () => {
   assert.notEqual(manifest.description, "");
 });
 
-test("the plugin's .mcp.json starts this server from the plugin root", () => {
-  const mcp = json(".mcp.json");
-  const servers = mcp.mcpServers as Record<string, { command?: unknown; args?: unknown }>;
+test("the plugin manifest starts this server from the plugin root", () => {
+  const manifest = json(".claude-plugin/plugin.json");
+  const servers = manifest.mcpServers as Record<string, { command?: unknown; args?: unknown }>;
   assert.deepEqual(Object.keys(servers), ["cross-agent"]);
   const server = servers["cross-agent"];
   assert.equal(server.command, "node");
@@ -40,6 +40,14 @@ test("the plugin's .mcp.json starts this server from the plugin root", () => {
   const args = server.args as string[];
   const entry = path.join(repoRoot, args[0].replace("${CLAUDE_PLUGIN_ROOT}/", ""));
   assert.ok(fs.statSync(entry).isFile(), `${entry} is not a file`);
+});
+
+test("no .mcp.json sits at the repository root, where it would be this project's own config", () => {
+  // A repository-root `.mcp.json` is Claude Code's **project-scoped** MCP config: every
+  // session opened in this repository is prompted to enable what it declares, and there
+  // `${CLAUDE_PLUGIN_ROOT}` expands to nothing, so the offer is a server that cannot
+  // start. The plugin's own manifest is the only place this server is declared.
+  assert.equal(fs.existsSync(path.join(repoRoot, ".mcp.json")), false);
 });
 
 test("the skills directory the plugin ships by convention holds the launcher skill", () => {

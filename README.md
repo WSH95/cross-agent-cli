@@ -35,12 +35,22 @@ Grok's packaging. `docs/design.md` is the design and the work plan;
 ## Install it in Claude Code
 
 The repository root is the plugin root: `.claude-plugin/plugin.json` names the
-plugin, `.mcp.json` starts this server from it, and `skills/` is found by
+plugin and declares this server under `mcpServers`, and `skills/` is found by
 convention. In development, point a session at the checkout:
 
 ```
 claude --plugin-dir ~/Documents/agent-team-cli
 ```
+
+The session should report the server as `plugin:cross-agent:cross-agent`,
+connected, and offer twelve tools spelled
+`mcp__plugin_cross-agent_cross-agent__<tool>` — `delegate`, `wait`, `check`,
+`result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles`,
+`verify_worktree`, `git_mutate`, `git_root`, `run_command`. Fewer than twelve
+means the server resolved a row below the operator's, and it says which on its
+own stderr as it starts. To undo the install, drop the flag: nothing was copied
+anywhere, no global configuration was touched, and no `.mcp.json` was added to
+any project.
 
 Then, once per project the team is to work in, write its bind-time config —
 which mode, and the engine, model and effort each of that mode's roles runs on:

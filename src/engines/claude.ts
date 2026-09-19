@@ -65,7 +65,7 @@ const claude = {
       sandbox: {
         enabled: boolean; autoAllowBashIfSandboxed: true;
         allowUnsandboxedCommands?: false; failIfUnavailable?: true;
-        filesystem?: { allowWrite: string[]; denyWrite?: string[] };
+        filesystem?: { allowWrite?: string[]; denyWrite?: string[] };
       };
     } = { sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
     // A sandbox the specialist cannot step out of. `allowUnsandboxedCommands: false` makes
@@ -79,17 +79,24 @@ const claude = {
       settings.sandbox.allowUnsandboxedCommands = false;
       settings.sandbox.failIfUnavailable = true;
     }
-    // A writable role gets exactly one writable root, its own workspace; a read-only one
-    // gets no `allowWrite` at all. `allowWrite` is not the whole rule: probe P2's Claude
-    // row wrote into the repository's common git directory from inside a worktree whose
-    // pointer file the same sandbox refused, so the paths the guard protects are named
-    // here as well, and a deny rule wins over an allow one.
+    // Both profiles name what may not be written, because neither the allow rule nor the
+    // absent one is the whole story. A writable role gets exactly one writable root, its
+    // own workspace, and probe P2 watched such a role write the repository's common git
+    // directory from inside a worktree whose pointer file the same sandbox refused — so
+    // the paths the guard protects are named here too, and a deny rule wins over an allow
+    // one. A read-only role gets no `allowWrite`, which is **not** the same as no writable
+    // path: Claude Code's sandbox writes to the working directory by default, so a
+    // read-only role at the project root could write the project through `Bash` however
+    // many editing tools were taken away. Its own workspace is therefore denied by name,
+    // with the protected paths after it.
+    const protectedPaths = request.protectedPaths ?? [];
     if (mode === "write") {
-      const protectedPaths = request.protectedPaths ?? [];
       settings.sandbox.filesystem = {
         allowWrite: [request.cwd],
         ...(protectedPaths.length === 0 ? {} : { denyWrite: protectedPaths }),
       };
+    } else if (mode === "read-only") {
+      settings.sandbox.filesystem = { denyWrite: [request.cwd, ...protectedPaths] };
     }
 
     const argv = [

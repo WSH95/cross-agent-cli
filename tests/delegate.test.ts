@@ -838,6 +838,101 @@ test("a worktree workspace carries the paths a writable sandbox must refuse", as
   );
 });
 
+test("the settings a delegated Claude task is launched with deny what the spec protects", async (t) => {
+  const p = await projectWithRoles(t);
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
+    ...configFor(p.bin),
+    roles: { planner: { engine: "claude" }, implementer: { engine: "claude", sandbox: "workspace-write" } },
+    engines: { claude: { bin: p.bin } },
+  }));
+  const commonDir = fs.realpathSync(path.join(p.root, ".git"));
+  /** The `--settings` JSON the fake engine records as its own argv, which is the adapter's. */
+  async function settingsOf(id: string, file: string): Promise<{ sandbox: Record<string, unknown> }> {
+    await waitForRecord(p, id, (value) => value.status === "done");
+    const invocation = JSON.parse(fs.readFileSync(file, "utf8")) as { argv: string[] };
+    return JSON.parse(invocation.argv[invocation.argv.indexOf("--settings") + 1]) as { sandbox: Record<string, unknown> };
+  }
+
+  // A writable worktree role: one writable root, and the two paths the guard protects
+  // denied inside it (probe P2's Claude row, 2026-09-19).
+  const worktree = fs.realpathSync(await p.worktree("task/settings"));
+  const writableRecord = path.join(p.root, "writable.json");
+  const writable = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/settings" }), {
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_RECORD: writableRecord, FAKE_ENGINE_FORMAT: "claude" }),
+  }));
+  assert.deepEqual(readSpec(p.root, writable).protectedPaths, [path.join(worktree, ".git"), commonDir]);
+  assert.deepEqual((await settingsOf(writable, writableRecord)).sandbox.filesystem, {
+    allowWrite: [worktree], denyWrite: [path.join(worktree, ".git"), commonDir],
+  });
+
+  // A read-only role at the project root: no writable root, and its own workspace denied
+  // by name, because the sandbox would otherwise write there by default.
+  const readOnlyRecord = path.join(p.root, "read-only.json");
+  const readOnly = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, brief: "Read the project." }), {
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_RECORD: readOnlyRecord, FAKE_ENGINE_FORMAT: "claude" }),
+  }));
+  assert.equal(readSpec(p.root, readOnly).protectedPaths, undefined);
+  assert.deepEqual((await settingsOf(readOnly, readOnlyRecord)).sandbox.filesystem, { denyWrite: [fs.realpathSync(p.root)] });
+});
+
+test("a continuation of a worktree task carries that worktree's protected paths", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const commonDir = fs.realpathSync(path.join(p.root, ".git"));
+
+  // A role that works in a worktree, resumed where it ran.
+  const worktree = fs.realpathSync(await p.worktree("task/continued"));
+  const first = request({ role: "implementer", cwd: worktree, branch: "task/continued" });
+  const id = launched(await delegate(p.root, first, options));
+  await waitForRecord(p, id, (value) => value.status === "done");
+  const resumed = launched(await delegate(p.root, { ...first, brief: "Carry on.", resume: id }, options));
+  assert.deepEqual(readSpec(p.root, resumed).protectedPaths, [path.join(worktree, ".git"), commonDir]);
+
+  // A one-shot, whose role works at the root: the continuation runs in the worktree the
+  // record carries, so it is that worktree's metadata the sandbox has to refuse.
+  const shot = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options));
+  await waitForRecord(p, shot, (value) => value.status === "done");
+  const shotPath = fs.realpathSync(path.join(p.root, ".worktrees", shot));
+  const continued = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief: "Carry on.", resume: shot }, options));
+  assert.deepEqual(readSpec(p.root, continued).protectedPaths, [path.join(shotPath, ".git"), commonDir]);
+});
+
+test("a resume keeps the original's model and effort when nothing else names them", async (t) => {
+  const p = await projectWithRoles(t);
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
+    ...configFor(p.bin),
+    roles: { planner: { engine: "claude", model: "claude-sonnet-5", effort: "high" } },
+    engines: { claude: { bin: p.bin }, grok: { bin: p.bin } },
+  }));
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+
+  // The case R0-2 created: the call named the engine, so the binding's model does not
+  // apply, and the call named its own. A continuation that names neither would have had
+  // none at all — and `claude --resume` with no `--model` continues on the engine's
+  // default, so a chain would change model halfway through one session.
+  const started = request({ role: "planner", cwd: p.root, engine: "grok", model: "grok-4.6", effort: "low" });
+  const id = launched(await delegate(p.root, started, options));
+  await waitForRecord(p, id, (value) => value.status === "done");
+  const second = launched(await delegate(p.root, { role: "planner", cwd: p.root, engine: "grok", brief: "Carry on.", resume: id }, options));
+  assert.equal(p.record(second).model, "grok-4.6");
+  assert.equal(p.record(second).effort, "low");
+  assert.equal(readSpec(p.root, second).model, "grok-4.6");
+
+  // A continuation that names its own still gets its own, and what it does not name
+  // still comes from the record.
+  await waitForRecord(p, second, (value) => value.status === "done");
+  const third = launched(await delegate(p.root, { role: "planner", cwd: p.root, engine: "grok", brief: "Once more.", resume: second, model: "grok-4.6-fast" }, options));
+  assert.equal(readSpec(p.root, third).model, "grok-4.6-fast");
+  assert.equal(readSpec(p.root, third).effort, "low");
+
+  // The record is the last fallback, not the first: a binding for the engine that runs
+  // is still resolved on every call, which is what the launcher says about a resume.
+  const bound = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, brief: "On the bound engine." }), options));
+  await waitForRecord(p, bound, (value) => value.status === "done");
+  const continued = launched(await delegate(p.root, { role: "planner", cwd: p.root, brief: "Carry on.", resume: bound }, options));
+  assert.equal(readSpec(p.root, continued).model, "claude-sonnet-5");
+});
+
 test("a call that names another engine drops the binding's model and effort", async (t) => {
   const p = await projectWithRoles(t);
   fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({

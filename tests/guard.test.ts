@@ -221,11 +221,14 @@ const retainedEnv = Object.freeze({
   PATH: "/usr/bin:/bin", HOME: "/home/test", XDG_CONFIG_HOME: "/home/test/.config", XDG_CACHE_HOME: "/home/test/.cache",
   CODEX_HOME: "/home/test/.codex", LANG: "en_US.UTF-8", OTHER: "keep", UNSET: undefined,
   CLAUDECODE_EXTRA: "keep", CLAUDE_PID_EXTRA: "keep", CLAUDE_EFFORT_EXTRA: "keep",
-  CLAUDE_CODE: "keep", CLAUDE_PLUGIN: "keep", CODEX_COMPANION: "keep", GROK_CC: "keep", MCP: "keep",
+  CLAUDE_CODE: "keep", CLAUDE_PLUGIN: "keep", CLAUDE_PROJECT_DIR_EXTRA: "keep", CODEX_COMPANION: "keep", GROK_CC: "keep", MCP: "keep",
   OTHER_MCP_SERVER: "keep", OPENAI_API_KEY_BACKUP: "keep",
 });
 const strippedEnv = Object.freeze({
   CLAUDECODE: "nested", CLAUDE_PID: "123", CLAUDE_EFFORT: "high",
+  // Claude Code sets this for every MCP server it starts, so a server's own environment
+  // carries the host's project and would tell a child it works somewhere it does not.
+  CLAUDE_PROJECT_DIR: "/home/operator/another-project",
   CLAUDE_CODE_: "marker", CLAUDE_CODE_SESSION: "session", CLAUDE_CODE_OTHER: "other",
   CLAUDE_PLUGIN_: "marker", CLAUDE_PLUGIN_ROOT: "/plugins", CLAUDE_PLUGIN_OTHER: "other",
   CODEX_COMPANION_: "marker", CODEX_COMPANION_SESSION: "session", CODEX_COMPANION_OTHER: "other",

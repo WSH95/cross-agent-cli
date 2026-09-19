@@ -559,12 +559,15 @@ async function main(): Promise<void> {
   for (const { id, reason } of [...pass.errors, ...pass.skipped]) {
     process.stderr.write(`cross-agent: task ${id}: ${reason}\n`);
   }
-  createServer({
-    tools: projectTools(root, { mode }),
-    // A host-placed mode names no lead role, so nothing an ancestry walk finds resolves to
-    // the lead row under one.
-    authority: () => resolveAuthority(root, process.env, { leadRole: mode.lead.role, maxDepth }),
-  }).connect(process.stdin, process.stdout);
+  // A host-placed mode names no lead role, so nothing an ancestry walk finds resolves to
+  // the lead row under one. Resolved again on every request — nothing here is cached — and
+  // said once on stderr before serving, because a row and its evidence are what a
+  // transcript otherwise cannot show: a session that never calls a tool outside its row
+  // looks the same whether ancestry granted it or the walk failed closed (I1(ii)).
+  const authority = () => resolveAuthority(root, process.env, { leadRole: mode.lead.role, maxDepth });
+  const resolved = authority();
+  process.stderr.write(`cross-agent: serving the ${resolved.row} row: ${resolved.reason}\n`);
+  createServer({ tools: projectTools(root, { mode }), authority }).connect(process.stdin, process.stdout);
 }
 
 const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

@@ -202,7 +202,7 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
     "--model", "claude-opus-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}',
+    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}}}`,
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // The prompt is stdin's, so no positional argument follows the variadic flag.
@@ -252,16 +252,37 @@ test("a writable role's protected paths are deny-listed beside the writable root
   );
 });
 
-test("a read-only role gets no filesystem rules at all, protected paths or not", (t) => {
+test("a read-only role's own workspace is deny-listed, because the sandbox grants it by default", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, {
     sandbox: sandboxFor("claude", "read-only"),
     cwd: dirs.root,
-    protectedPaths: [path.join(dirs.root, ".git")],
+    protectedPaths: [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")],
   }));
+  // Claude Code's sandbox writes to the working directory unless told otherwise, so
+  // "read-only" is a claim this builder has to make true: removing `Edit` and `Write`
+  // leaves `Bash`, and a role at the project root could write the project — including
+  // `.cross-agent/` — which design section 4 rests on being impossible.
+  assert.deepEqual(
+    JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
+    {
+      sandbox: {
+        enabled: true, autoAllowBashIfSandboxed: true,
+        allowUnsandboxedCommands: false, failIfUnavailable: true,
+        filesystem: { denyWrite: [dirs.root, path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")] },
+      },
+    },
+  );
+  assert.equal(plan.argv.includes("allowWrite"), false);
+});
+
+test("an off-profile role gets no filesystem rules at all", (t) => {
+  const dirs = layout(t);
+  const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off"), protectedPaths: [path.join(dirs.root, ".git")] }));
   const settings = JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]) as { sandbox: Record<string, unknown> };
-  // Nothing is writable under `read-only`, so there is nothing for a deny rule to subtract.
-  assert.equal("filesystem" in settings.sandbox, false);
+  // The profile that asked for no sandbox gets none, and a rule inside a sandbox that is
+  // off would say something the run does not mean.
+  assert.deepEqual(settings.sandbox, { enabled: false, autoAllowBashIfSandboxed: true });
 });
 
 test("a resumed run carries --resume and never a --session-id beside it", (t) => {

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import codex from "../../src/engines/codex.ts";
 import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
+import { commandPath } from "../../src/engines/binaries.ts";
 import { canonicalPath } from "../../src/reservation.ts";
 import { spawnEngine } from "../../src/engines/spawn.ts";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines/types.ts";
@@ -512,4 +513,79 @@ test("a failed turn settles as an error carrying codex's own message", async (t)
 // And the P2 negative writes on a *resumed* session: a resume with `-c
 // sandbox_mode="workspace-write"`, spawned in the role's worktree, must still be refused
 // the repository root that P10 saw a resume one directory up write to.
-test.skip("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", () => {});
+//
+// Written and guarded rather than skipped empty: it runs only under
+// `CROSS_AGENT_REAL_CODEX=1` with a resolvable binary, so `npm test` is unchanged here and
+// the row can be closed by one command when the user's Codex pause lifts —
+// `CROSS_AGENT_REAL_CODEX=1 node --test tests/engines/codex.test.ts`.
+const realCodex = process.env.CROSS_AGENT_REAL_CODEX === "1";
+const codexBinary = process.env.CROSS_AGENT_CODEX_BIN ?? "codex";
+
+test("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", async (t) => {
+  if (!realCodex) return t.skip("set CROSS_AGENT_REAL_CODEX=1 to run this against the real binary");
+  if (commandPath(codexBinary, process.env) === null) return t.skip(`${codexBinary} does not resolve on PATH`);
+  const dirs = layout(t);
+  // A real linked worktree, because the writes this asserts are the ones outside one.
+  const git = async (cwd: string, ...args: string[]): Promise<string> => {
+    const { promisify } = await import("node:util");
+    const { execFile } = await import("node:child_process");
+    const { stdout } = await promisify(execFile)("git", ["-C", cwd, ...args], { encoding: "utf8" });
+    return stdout.trim();
+  };
+  const root = path.join(dirs.root, "project");
+  mkdirSync(root, { recursive: true });
+  await git(root, "init", "-b", "main");
+  writeFileSync(path.join(root, "README.md"), "sample\n");
+  await git(root, "add", "-A");
+  await git(root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "-m", "initial");
+  const worktree = path.join(root, ".worktrees", "i2");
+  await git(root, "worktree", "add", "-b", "task/i2", worktree);
+
+  const marker = "CROSS-AGENT-I2-STDIN";
+  const env = { ...process.env, CROSS_AGENT_CODEX_BIN: codexBinary };
+  const first = requestFor(dirs, {
+    cwd: canonicalPath(worktree), env,
+    brief: `Reply with exactly ${marker} and nothing else. Do not run any command.`,
+    protectedPaths: [path.join(worktree, ".git"), path.join(root, ".git")],
+  });
+  // The brief is stdin's on both heads, and the literal `-` is the only positional.
+  assert.equal(codex.plan(first).stdin, first.brief);
+  assert.equal(codex.plan(first).argv.at(-1), "-");
+  const started = spawnEngine(codex, first, {});
+  t.after(() => { started.kill("SIGKILL"); });
+  const opening = await started.result;
+  assert.equal(opening.ok, true, opening.events.at(-1)?.text);
+  // If `-` had been sent as the prompt, no answer would carry the marker.
+  assert.match(opening.events.findLast((event) => event.kind === "result")?.text ?? "", new RegExp(marker));
+  const thread = opening.events.find((event) => event.kind === "session")?.sessionId;
+  assert.ok(thread, "the run reported no thread id to resume");
+
+  // The resume: the same worktree, the profile re-supplied (P10), the brief again on
+  // stdin — and P2's negative writes, which a resumed session must still be refused.
+  const steps = [
+    `echo resumed >> ${JSON.stringify(path.join(worktree, "notes.md"))}`,
+    `echo root >> ${JSON.stringify(path.join(root, "ROOT-WRITE.txt"))}`,
+    `echo git >> ${JSON.stringify(path.join(root, ".git", "cross-agent-probe-write.txt"))}`,
+    `echo home >> "$HOME"/cross-agent-probe-HOME.txt`,
+  ];
+  const second = requestFor(dirs, {
+    cwd: canonicalPath(worktree), env, resumeSessionId: thread,
+    brief: `Run each of these commands in order, reporting each outcome, and never work around a denial:\n${steps.join("\n")}`,
+    protectedPaths: first.protectedPaths,
+  });
+  const resumed = spawnEngine(codex, second, {});
+  t.after(() => { resumed.kill("SIGKILL"); });
+  const outcome = await resumed.result;
+  assert.equal(outcome.ok, true, outcome.events.at(-1)?.text);
+
+  // What the filesystem says, which no wording can talk its way around: the in-worktree
+  // write landed and none of the three outside it did.
+  assert.equal(existsSync(path.join(worktree, "notes.md")), true, "the in-worktree write was refused too");
+  for (const denied of [
+    path.join(root, "ROOT-WRITE.txt"),
+    path.join(root, ".git", "cross-agent-probe-write.txt"),
+    path.join(process.env.HOME ?? "/nonexistent", "cross-agent-probe-HOME.txt"),
+  ]) {
+    assert.equal(existsSync(denied), false, `${denied} was written on a resumed session`);
+  }
+});

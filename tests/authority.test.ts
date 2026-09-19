@@ -138,6 +138,11 @@ function resolver(project: string, exchange: string, env: NodeJS.ProcessEnv): Li
   return { argv: [process.execPath, path.join(fixtures, "resolve-authority.mjs"), exchange, project], env };
 }
 
+/** An engine's own MCP client: it starts the server as a child and makes one `tools/call`. */
+function client(project: string, answer: string, tool: string, args: unknown, env: NodeJS.ProcessEnv): Link {
+  return { argv: [process.execPath, path.join(fixtures, "mcp-call.mjs"), answer, project, tool, JSON.stringify(args)], env };
+}
+
 function groupMembers(pgid: number): number[] {
   return fs.readdirSync("/proc").filter((entry) => /^\d+$/.test(entry)).map(Number).filter((pid) => {
     const stat = readProcessStat(pid);
@@ -200,6 +205,55 @@ function asker(exchange: string) {
     return reply.authority!;
   };
 }
+
+test("a specialist's own server refuses delegate by name, with the task its ancestry matched", async (t) => {
+  const { project, exchange } = workspace(t);
+  // A server starts against a project that has a config, so this one is the smallest that
+  // loads: the built-in `solo` mode, its one role bound to an engine.
+  fs.mkdirSync(path.join(project, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(project, ".cross-agent", "config.json"), JSON.stringify({
+    mode: "solo", roles: { consult: { engine: "claude" } }, billing: "subscription",
+  }));
+  const specialist = task(project, "implementer");
+  const env = taskEnv(specialist.id, 1);
+  const answer = path.join(exchange, "refusal.json");
+  // The shape I1(ii) puts a real engine in: a specialist holding a lead's own mount, so
+  // the server is reachable and ancestry is the only thing deciding what it may do.
+  const pid = chain(t, [engine(env), client(project, answer, "delegate", { role: "consult", brief: "reply OK", cwd: project }, env)]);
+  // A live runner as well as a live engine: the server reconciles before it answers, and
+  // a record whose runner is gone would be adopted as `orphaned` before the walk read it.
+  await update(project, specialist.id, {
+    status: "running", runnerIdentity: identityOf(process.pid)!, engineIdentity: engineIdentity(pid),
+  });
+  fs.writeFileSync(`${answer}.go`, "");
+
+  const deadline = Date.now() + 20_000;
+  while (!fs.existsSync(answer)) {
+    assert.ok(Date.now() < deadline, "the server never answered");
+    await delay(20);
+  }
+  const replied = JSON.parse(fs.readFileSync(answer, "utf8")) as
+    { tools?: string[]; reply?: { error?: { code: number; message: string } }; error?: string; stderr?: string };
+  assert.equal(replied.error, undefined, replied.stderr);
+
+  // Exactly the specialist row, and `delegate` refused by this server's own name with the
+  // reason the walk resolved — which names the task the ancestry matched, so a transcript
+  // can tell "specialist by ancestry" from the fail-closed paths that look the same in a
+  // tool list ("CROSS_AGENT_TASK present and no record matches", "the walk found neither
+  // an engine nor the root within 8 hops").
+  assert.deepEqual(replied.tools?.slice().sort(), ["check", "describe_mode", "list_roles", "list_tasks", "result"]);
+  // And the same sentence on stderr before it served anything, so a transcript that never
+  // called a tool outside the row still says which row this server resolved and why.
+  assert.match(
+    replied.stderr ?? "",
+    new RegExp(`^cross-agent: serving the specialist row: specialist by ancestry: task ${specialist.id} \\(implementer, running\\)$`, "m"),
+  );
+  assert.equal(replied.reply?.error?.code, -32602);
+  assert.equal(
+    replied.reply?.error?.message,
+    `delegate is not available to a specialist server: specialist by ancestry: task ${specialist.id} (implementer, running)`,
+  );
+});
 
 test("an engine ancestor grants its record's row, and the depth cap can only lower it", async (t) => {
   const { project, exchange } = workspace(t);

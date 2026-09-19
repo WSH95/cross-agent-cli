@@ -132,7 +132,10 @@ export function childEnv(
   parentEnv: Readonly<NodeJS.ProcessEnv>, depth: number, taskId: string,
   lineage: readonly LineageEntry[], billing: CrossAgentConfig["billing"], projectRoot: string,
 ): NodeJS.ProcessEnv {
-  const exactMarkers = ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"];
+  // `CLAUDE_PROJECT_DIR` is the host's project, which Claude Code sets for every MCP
+  // server it starts: a child that inherited it would be told it works where the operator
+  // does rather than where its own role does.
+  const exactMarkers = ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_PROJECT_DIR"];
   const prefixes = ["CLAUDE_CODE_", "CLAUDE_PLUGIN_", "CODEX_COMPANION_", "GROK_CC_", "MCP_"];
   const apiKeys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"];
   const env = Object.fromEntries(Object.entries(parentEnv).filter(([key]) =>

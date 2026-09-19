@@ -265,9 +265,9 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // A binding's model and effort belong to the engine it binds: `grok --model
     // claude-sonnet-5` is an unknown model id, not a cross-engine default (I1,
     // 2026-09-19). A call that names another engine therefore carries its own or none.
+    // Resolved below, once the record a resume continues is in hand: a continuation with
+    // no model of its own keeps the original's.
     const binding = bound?.engine === engine ? bound : undefined;
-    const model = request.model ?? binding?.model ?? null;
-    const effort = request.effort ?? binding?.effort ?? null;
     if (!path.isAbsolute(request.cwd)) return refuse(`cwd ${JSON.stringify(request.cwd)} must be an absolute path`);
     const cwd = canonicalPath(request.cwd);
     if (!directory(cwd)) return refuse(`no directory at ${cwd}`);
@@ -312,6 +312,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // launch back at the root under a read-only profile.
     const original = request.resume === undefined ? undefined : records.find((record) => record.id === request.resume);
     const continued = original?.worktree;
+    // A chain runs on one model unless a call changes it: `claude --resume` with no
+    // `--model` continues on the engine's default, so a continuation that names none
+    // takes the record's own rather than silently changing model halfway through.
+    const model = request.model ?? binding?.model ?? original?.model ?? null;
+    const effort = request.effort ?? binding?.effort ?? original?.effort ?? null;
     let continuedProfile: string | undefined;
     if (continued !== undefined) {
       try {
