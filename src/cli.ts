@@ -45,6 +45,9 @@ export function runCli(argv: readonly string[], cwd: string, write: CliOutput): 
     write.out(result.wrote
       ? `cross-agent: wrote ${file} for mode ${mode}\n`
       : `cross-agent: ${file} already exists; nothing was written\n`);
+    if (result.ignored.length > 0) {
+      write.out(`cross-agent: added ${result.ignored.join(", ")} to ${path.join(root, ".gitignore")}\n`);
+    }
     if (result.warning !== undefined) write.err(`cross-agent: ${result.warning}\n`);
     return 0;
   } catch (error) {

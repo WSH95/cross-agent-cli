@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises";
 import { constants } from "node:os";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
+import { repositoryAt, trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
@@ -163,13 +164,21 @@ export async function runCommand(
     if (journal === null) return { ok: false, reason: `slug ${slug} has no journal; there is no task to run this against` };
   }
 
+  // The command this tool runs is read from `.cross-agent/config.json`, which is safe
+  // exactly while a specialist cannot commit a change to it (design section 4).
+  const located = await repositoryAt(projectRoot);
+  if ("reason" in located) return { ok: false, reason: located.reason };
+  let tracked: string | null;
+  try {
+    tracked = await trackedStateFault(located.gitDir, located.workTree);
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
+  if (tracked !== null) return { ok: false, reason: tracked };
+
   let cwd: string;
   if (atRoot) {
-    try {
-      cwd = await realpath(projectRoot);
-    } catch (error) {
-      return { ok: false, reason: `cannot resolve the project root ${projectRoot}: ${message(error)}` };
-    }
+    cwd = located.workTree;
   } else {
     // Verified exactly as `git_mutate` verifies it, on the branch the journal records: the
     // lead does not get to say which branch a directory is on (design section 4).

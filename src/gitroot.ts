@@ -4,8 +4,9 @@ import { loadConfig } from "./config.ts";
 import { GitRunError, globalOptions, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
-import { acquire, gitLockName, lockPath } from "./locks.ts";
+import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
+import { reservations, reservedBy } from "./reservation.ts";
 
 export interface GitRootRequest {
   args: string[];
@@ -274,11 +275,34 @@ function journalFault(slug: string, journal: Journal | null, verb: Verb, parts: 
 }
 
 /**
+ * Whether a task is holding the workspace this call would remove, in `git_mutate`'s own
+ * words (design section 2): git removes a clean worktree whatever is running in it, so
+ * the reservation is the only thing between a lead's cleanup and a specialist's own
+ * directory. Read while `spawn.lock` is held, so it cannot race a `delegate` about to
+ * take the same workspace.
+ */
+function reservationFault(projectRoot: string, target: string): string | null {
+  let known;
+  try {
+    known = reservations(projectRoot);
+  } catch (error) {
+    return `no workspace can be cleared while no task record can be read: ${message(error)}; repair the task directory first`;
+  }
+  const holder = reservedBy(projectRoot, target, known);
+  if (holder !== null) return `${target} is reserved by task ${holder.id} (${holder.status}); wait or cancel first`;
+  if (known.unknown.length > 0) {
+    const files = known.unknown.map((entry) => `${entry.file} (${entry.reason})`).join(", ");
+    return `no workspace can be cleared while a task record cannot be read: ${files}; repair or remove it first`;
+  }
+  return null;
+}
+
+/**
  * The repository `git_root` works on: the project root's own git directory. It is the
  * repository's main worktree, so `.git` is a real directory — a pointer file or a symlink
  * there is the redirection the verifier refuses inside a worktree (design section 4).
  */
-async function repositoryAt(projectRoot: string): Promise<{ gitDir: string; workTree: string } | { reason: string }> {
+export async function repositoryAt(projectRoot: string): Promise<{ gitDir: string; workTree: string } | { reason: string }> {
   let workTree: string;
   try {
     workTree = await realpath(projectRoot);
@@ -294,6 +318,21 @@ async function repositoryAt(projectRoot: string): Promise<{ gitDir: string; work
     return { reason: `cannot read ${gitDir}: ${message(error)}` };
   }
   return { gitDir, workTree };
+}
+
+/**
+ * Whether the project's own `.cross-agent/` is tracked by this repository, as a reason or
+ * null. What a root tool runs and what it journals are read from files there, so tracking
+ * them hands a specialist a way to reach the root: a change to `testCommand`, or a forged
+ * journal, committed inside its own worktree and carried to the default branch by the
+ * lead's own merge (design section 4). The refusal names `.gitignore`, because that is
+ * the repair.
+ */
+export async function trackedStateFault(gitDir: string, workTree: string): Promise<string | null> {
+  const ran = await run(gitDir, workTree, ["ls-files", "--error-unmatch", "--", ".cross-agent"]);
+  const tracked = ran.exitCode === 0 ? ran.stdout.split("\n").filter(Boolean) : [];
+  if (tracked.length === 0) return null;
+  return `.cross-agent/ is tracked by this repository (${tracked.slice(0, 3).join(", ")}${tracked.length > 3 ? ", …" : ""}): a specialist could then commit what the lead runs at the root. Add .cross-agent/ to .gitignore and "git rm -r --cached .cross-agent" first`;
 }
 
 /**
@@ -341,24 +380,50 @@ export async function gitRoot(
   const located = await repositoryAt(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
   const { gitDir, workTree } = located;
-  const parts = await judge(parsed, workTree, defaultBranch, options.dir ?? ".worktrees", options.branchPattern ?? "task/*");
-  if ("reason" in parts) return { ok: false, reason: parts.reason };
-
-  let lock: Lock;
+  let tracked: string | null;
   try {
-    lock = await acquire(lockPath(projectRoot, gitLockName()), {
-      waitSeconds: options.waitSeconds, operation: `git_root ${verb.head.join(" ")}${slug === undefined ? "" : ` ${slug}`}`,
-    });
-  } catch (error) {
-    return { ok: false, reason: message(error) };
-  }
-  try {
-    return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, defaultBranch, slug, lock });
+    tracked = await trackedStateFault(gitDir, workTree);
   } catch (error) {
     if (error instanceof GitRunError) return { ok: false, reason: error.message };
     throw error;
+  }
+  if (tracked !== null) return { ok: false, reason: tracked };
+  const parts = await judge(parsed, workTree, defaultBranch, options.dir ?? ".worktrees", options.branchPattern ?? "task/*");
+  if ("reason" in parts) return { ok: false, reason: parts.reason };
+
+  const operation = `git_root ${verb.head.join(" ")}${slug === undefined ? "" : ` ${slug}`}`;
+  // Only the verb that takes a workspace away reads a reservation, and only it needs the
+  // lock that orders that read against `delegate` (design section 2). The order is always
+  // spawn.lock and then git.lock.
+  let claim: Lock | undefined;
+  if (verb.step === "worktree-removed") {
+    try {
+      claim = await acquire(lockPath(projectRoot, spawnLockName()), { waitSeconds: options.waitSeconds, operation });
+    } catch (error) {
+      return { ok: false, reason: message(error) };
+    }
+  }
+  try {
+    if (claim !== undefined) {
+      const held = reservationFault(projectRoot, parts.dir!);
+      if (held !== null) return { ok: false, reason: held };
+    }
+    let lock: Lock;
+    try {
+      lock = await acquire(lockPath(projectRoot, gitLockName()), { waitSeconds: options.waitSeconds, operation });
+    } catch (error) {
+      return { ok: false, reason: message(error) };
+    }
+    try {
+      return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim });
+    } catch (error) {
+      if (error instanceof GitRunError) return { ok: false, reason: error.message };
+      throw error;
+    } finally {
+      await lock.release();
+    }
   } finally {
-    await lock.release();
+    await claim?.release();
   }
 }
 
@@ -370,12 +435,14 @@ interface Held {
   defaultBranch: string;
   slug?: string;
   lock: Lock;
+  /** `spawn.lock`, held for the verb that removes a workspace. */
+  claim?: Lock;
 }
 
 /** The journal's checks, the command and its step, with `git.lock` held for all of them. */
 async function execute(
   projectRoot: string, request: GitRootRequest, options: GitRootOptions,
-  { parsed, parts, gitDir, workTree, defaultBranch, slug, lock }: Held,
+  { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim }: Held,
 ): Promise<GitRootResult> {
   const { verb } = parsed;
   // Read under the lock, because two first calls on one slug would otherwise both find no
@@ -446,10 +513,10 @@ async function execute(
     ok: true, exitCode: 0, stdout: ran.stdout, stderr: ran.stderr,
     ...(before === undefined ? {} : { before }),
     ...(after === undefined ? {} : { after }),
-    // The command ran and is journaled, but if the kernel dropped the lock while it did,
-    // another mutation may already have started: the caller is told rather than left to
-    // believe the whole call was exclusive.
-    ...(lock.lost ? { lockLost: true as const } : {}),
+    // The command ran and is journaled, but if the kernel dropped either lock while it
+    // did, another mutation or a delegate may already have started: the caller is told
+    // rather than left to believe the whole call was exclusive.
+    ...(lock.lost || claim?.lost === true ? { lockLost: true as const } : {}),
     ...(written === undefined ? {} : { journal: written }),
   };
 }

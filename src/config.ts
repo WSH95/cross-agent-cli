@@ -1,4 +1,4 @@
-import { linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { adapterFor, sandboxFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
@@ -50,6 +50,8 @@ export interface CrossAgentConfig {
 
 export interface InitConfigResult {
   wrote: boolean;
+  /** The `.gitignore` entries this call added; empty when the file already had them. */
+  ignored: string[];
   warning?: string;
 }
 
@@ -316,6 +318,31 @@ function temporaryLocationWarning(projectRoot: string): string | undefined {
 }
 
 /**
+ * The project's own state, added to `.gitignore` when it is not already there, and the
+ * entries added. A tracked `.cross-agent/` would let a specialist commit a change to
+ * `testCommand` or a journal inside its worktree and have the lead's own merge carry it
+ * to the root, which is why `run_command` and `git_root` refuse to work in a project that
+ * tracks it (design section 4) and why the verb that creates one writes the ignore. An
+ * entry spelled without its trailing slash is the same entry, and a file that does not
+ * end in a newline is not joined onto.
+ */
+function ignoreProjectState(projectRoot: string, mode: Mode): string[] {
+  const wanted = [".cross-agent/", ...(mode.git === undefined ? [] : [`${mode.git.worktreeDir.replace(/\/+$/, "")}/`])];
+  const file = path.join(projectRoot, ".gitignore");
+  let existing = "";
+  try {
+    existing = readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const present = new Set(existing.split("\n").map((line) => line.trim().replace(/\/+$/, "")));
+  const missing = wanted.filter((entry) => !present.has(entry.replace(/\/+$/, "")));
+  if (missing.length === 0) return [];
+  appendFileSync(file, `${existing === "" || existing.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`);
+  return missing;
+}
+
+/**
  * Creates the section 6 config for a mode, exclusively, without reading or replacing an
  * existing file. The mode is loaded first, so an unknown or invalid one is refused before
  * anything is written, and its roles are bound in the order it declares them.
@@ -361,5 +388,8 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
   } finally {
     rmSync(temporary, { force: true });
   }
-  return warning === undefined ? { wrote } : { wrote, warning };
+  // Written whether or not the config was: a project whose config already exists may
+  // still be tracking it, and both tools refuse to work in one that does.
+  const ignored = ignoreProjectState(projectRoot, mode);
+  return warning === undefined ? { wrote, ignored } : { wrote, ignored, warning };
 }

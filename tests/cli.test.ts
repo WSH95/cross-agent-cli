@@ -50,6 +50,10 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
   const ran = await run(["init", "--mode", "dev-team"], root);
   assert.equal(ran.code, 0, ran.stderr);
   assert.match(ran.stdout, /dev-team/);
+  // The project's own state is ignored by the same verb that creates it: both root tools
+  // refuse to work in a project that tracks `.cross-agent/`.
+  assert.match(ran.stdout, /\.gitignore/);
+  assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
   assert.match(ran.stdout, new RegExp(path.join(root, CONFIG_PATH).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
   assert.deepEqual(written(root), {

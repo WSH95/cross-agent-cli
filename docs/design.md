@@ -1138,8 +1138,10 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   `.cross-agent/locks/git.lock` is held: `git_mutate` takes it around the
   command and the journal append and releases it in `finally`
   (`src/gitmutate.ts#mutate`); `git_root` takes the same lock around its own
-  command and step and takes no `spawn.lock`, because it reads no reservation
-  (`src/gitroot.ts#gitRoot`, section 4); `cross-agent git` is row 13's target
+  command and step, and `spawn.lock` before it for the one verb that reads a
+  reservation, `worktree remove` (`src/gitroot.ts#gitRoot`, section 4);
+  `run_command` takes `git.lock` for its journal append alone and never for the
+  suite (`src/runcommand.ts#runCommand`); `cross-agent git` is row 13's target
   and takes both as `git_mutate` does. What the locks give, stated exactly:
   `spawn.lock` serializes validate-and-spawn, so two hosts cannot both pass the
   reservation check and then both spawn; `git.lock` serializes lead git
@@ -1819,8 +1821,7 @@ so it is a fixed list in code, never config (`src/gitroot.ts#whitelist`), and it
 carries each verb's own grammar: the options it accepts — `--porcelain`,
 `--untracked-files=<mode>`, `-z`, `--oneline`, `--max-count=<n>`, `--verify` —
 and the positionals it takes, so `worktree add` without `-b` is not this verb
-and `--force` belongs to none of them, which is why a worktree that still holds
-work refuses to be removed on git's own terms (`src/gitroot.ts#parse`). No
+and `--force` belongs to none of them (`src/gitroot.ts#parse`). No
 global git option is accepted anywhere in `args` — `-c`, `--git-dir`,
 `--work-tree` and `-C`, and the attached forms — because each of them turns a
 whitelisted verb into an arbitrary one against an arbitrary repository
@@ -1852,13 +1853,19 @@ allowlisted environment as `git_mutate`'s — `git --git-dir=<root>/.git
 capped at 16 MB (`src/gitmutate.ts#run`, `src/gitroot.ts#repositoryAt`); the
 root is the repository's own main worktree, so a `.git` there that is a pointer
 file or a symlink is the redirection the verifier refuses inside a worktree and
-is refused here too. It runs under `.cross-agent/locks/git.lock` and **not**
-under `spawn.lock`: that lock exists to keep `git_mutate`'s reservation read
-from racing a `delegate` about to take the same workspace (section 2), and
-nothing here reads a reservation — the project root is no task's workspace to
-clear (`src/gitroot.ts#gitRoot`). The journal's own checks, the command and the
-step all happen inside that one lock, so two first calls on one slug cannot both
-find no journal and both create a worktree (`src/gitroot.ts#execute`).
+is refused here too. It runs under `.cross-agent/locks/git.lock`, and the
+journal's own checks, the command and the step all happen inside that one lock,
+so two first calls on one slug cannot both find no journal and both create a
+worktree (`src/gitroot.ts#execute`). **One verb takes `spawn.lock` first**, in
+the standing order: `worktree remove` takes a workspace away, and git removes a
+clean worktree whatever is running in it, so that verb reads the reservation
+`git_mutate` reads and refuses in the same words — `<path> is reserved by task
+<id> (<status>); wait or cancel first`, and every path at all while any task
+record cannot be read (`src/gitroot.ts#reservationFault`, `#gitRoot`, section
+2). It is held across the reservation read and the removal, which is what stops
+a `delegate` from taking that workspace in between. Every other verb reads no
+reservation and takes no `spawn.lock`, because it takes no workspace away: the
+project root is no task's to clear.
 
 The result is `{ok: true, exitCode: 0, stdout, stderr, before?, after?,
 journal?, lockLost?}` or `{ok: false, reason, exitCode?, stdout?, stderr?}`
@@ -1874,6 +1881,23 @@ read in that same locked call. That merge is refused unless the root's own HEAD
 is the default branch (`src/gitroot.ts#execute`): `merge` merges into HEAD,
 while both merge fields are read from the default branch, so a merge taken
 anywhere else would journal a revert range that never existed.
+
+**Both root tools refuse to work in a project that tracks its own
+`.cross-agent/`** (`src/gitroot.ts#trackedStateFault`, `#gitRoot`,
+`src/runcommand.ts#runCommand`). What they run and what they journal are read
+from files there — `testCommand`, a slug's journal — and the command string
+being "config only" is safe exactly while a specialist cannot commit a change to
+it. With `.cross-agent/` tracked, an implementer's own commit inside its
+worktree reaches the default branch through the lead's merge, and the lead then
+runs it at the root. The check is `git ls-files --error-unmatch --
+.cross-agent` at the root, and the refusal names `.gitignore`, because that is
+the repair. `cross-agent init` writes those entries — `.cross-agent/` and the
+mode's own worktree directory — appending only what the file lacks, so the verb
+that creates the state is the one that ignores it
+(`src/config.ts#ignoreProjectState`, `#initConfig`, `src/cli.ts`).
+`verify_worktree` and `git_mutate` need no such check: neither reads a
+configured command, and a worktree mutation is already confined to the branch
+its journal names.
 
 **`run_command`.** `{which: "test" | "setup", where: "root" | <a verified
 worktree path>, slug?, timeout_seconds?}` as the wire spells it,

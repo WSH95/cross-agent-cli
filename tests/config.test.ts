@@ -260,6 +260,33 @@ test("initConfig writes the section 6 defaults once and preserves existing bytes
   assert.equal(readFileSync(file, "utf8"), custom);
 });
 
+test("initConfig ignores the project's own state, once, and leaves a hand-written entry alone", (t) => {
+  const root = project(t);
+  // `run_command` and `git_root` refuse to work in a project that tracks `.cross-agent/`,
+  // so the verb that creates one is where the ignore belongs (design section 4).
+  assert.deepEqual(config.initConfig(root).ignored, [".cross-agent/", ".worktrees/"]);
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
+  assert.deepEqual(config.initConfig(root).ignored, [], "a second run adds nothing");
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
+
+  // An existing file keeps its bytes, gains only what it lacks, and a spelling without
+  // the trailing slash is the same entry.
+  const other = project(t);
+  writeFileSync(path.join(other, ".gitignore"), "node_modules/\n.worktrees\n");
+  assert.deepEqual(config.initConfig(other).ignored, [".cross-agent/"]);
+  assert.equal(readFileSync(path.join(other, ".gitignore"), "utf8"), "node_modules/\n.worktrees\n.cross-agent/\n");
+
+  // A file with no final newline is not joined onto.
+  const third = project(t);
+  writeFileSync(path.join(third, ".gitignore"), "node_modules/");
+  config.initConfig(third);
+  assert.equal(readFileSync(path.join(third, ".gitignore"), "utf8"), "node_modules/\n.cross-agent/\n.worktrees/\n");
+
+  // A mode with no worktree of its own ignores only the project's own directory.
+  const solo = project(t);
+  assert.deepEqual(config.initConfig(solo, { mode: "solo" }).ignored, [".cross-agent/"]);
+});
+
 test("initConfig leaves the config directory holding the config and nothing else", (t) => {
   const root = project(t);
   assert.equal(config.initConfig(root).wrote, true);
@@ -458,6 +485,6 @@ test("initConfig respects temporary directory boundaries", (t) => {
   mkdirSync(designated);
   mkdirSync(sibling);
   setTmpdir(t, designated);
-  assert.deepEqual(config.initConfig(sibling), { wrote: true });
-  assert.deepEqual(config.initConfig(sibling), { wrote: false });
+  assert.deepEqual(config.initConfig(sibling), { wrote: true, ignored: [".cross-agent/", ".worktrees/"] });
+  assert.deepEqual(config.initConfig(sibling), { wrote: false, ignored: [] });
 });

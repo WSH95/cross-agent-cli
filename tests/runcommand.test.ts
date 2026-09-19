@@ -214,6 +214,22 @@ test("two passing root runs at once record one tests-passed step, and the second
   assert.equal(readJournal(root, "alpha")!.steps.filter((step) => step.step === "tests-passed").length, 1);
 });
 
+test("a tracked .cross-agent/ is refused, because the command it would run is config", async (t) => {
+  const { root } = await repository(t, { testCommand: "echo the suite ran" });
+  await git(root, "add", "-f", ".cross-agent/config.json");
+  await git(root, "commit", "-m", "track the project's own configuration");
+
+  // The command string is config only, which is safe exactly while a specialist cannot
+  // commit a change to it.
+  const reason = refusal(await runCommand(root, { which: "test", where: "root" }));
+  assert.match(reason, /\.cross-agent/);
+  assert.match(reason, /\.gitignore/);
+
+  await git(root, "rm", "-r", "--cached", ".cross-agent");
+  await git(root, "commit", "-m", "stop tracking it");
+  assert.match(accepted(await runCommand(root, { which: "test", where: "root" })).tail, /the suite ran/);
+});
+
 test("the tests-passed step is written under git.lock, and the suite runs outside it", async (t) => {
   const { root } = await repository(t);
   const marker = path.join(root, "the-suite-ran");

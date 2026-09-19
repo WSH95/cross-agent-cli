@@ -13,11 +13,11 @@ import { initConfig } from "../src/config.ts";
 import { gitMutate } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
-import { create, update, writeSpec } from "../src/ledger.ts";
-import type { LaunchSpec } from "../src/ledger.ts";
+import { update } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { gitShim, holderOf } from "./helpers/git.ts";
+import { reserve } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../", import.meta.url));
@@ -86,18 +86,6 @@ function poison(t: TestContext, values: Record<string, string>): void {
     });
     process.env[name] = value;
   }
-}
-
-/** A task at `status` holding `cwd`, with the launch spec that says it may write. */
-async function reserve(root: string, cwd: string, sandbox: LaunchSpec["sandbox"] = { mode: "write", profile: "workspace-write" }) {
-  const record = create(root, { role: "implementer", brief: "hold the workspace", cwd, engine: "codex" });
-  writeSpec(root, record.id, {
-    role: "implementer", brief: "hold the workspace", rolePrompt: "prompt", cwd,
-    sandbox, sessionId: "session", denyTargets: [], env: {}, scratchDir: cwd,
-    engine: "codex", adapterModule: "/adapters/codex.ts",
-  });
-  assert.equal((await update(root, record.id, { status: "running" })).applied, true);
-  return record;
 }
 
 test("a commit through git_mutate lands on the task branch and is journaled with its SHAs", async (t) => {

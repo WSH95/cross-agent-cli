@@ -7,8 +7,8 @@ import type { TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { scan } from "../../src/ledger.ts";
-import type { TaskRecord } from "../../src/ledger.ts";
+import { create, scan, update, writeSpec } from "../../src/ledger.ts";
+import type { LaunchSpec, TaskRecord } from "../../src/ledger.ts";
 import type { Mode } from "../../src/modes.ts";
 import { buildMode } from "./mode.ts";
 import type { RoleSpec } from "./mode.ts";
@@ -230,6 +230,24 @@ export function killLockHolder(file: string): boolean {
     }
   }
   return false;
+}
+
+/**
+ * A task holding `cwd`, running, with the launch spec that says it may write: what the
+ * reservation of design section 2 is read from, and what `git_mutate` and `git_root
+ * worktree remove` refuse a workspace for.
+ */
+export async function reserve(
+  root: string, cwd: string, sandbox: LaunchSpec["sandbox"] = { mode: "write", profile: "workspace-write" },
+): Promise<TaskRecord> {
+  const record = create(root, { role: "implementer", brief: "hold the workspace", cwd, engine: "codex" });
+  writeSpec(root, record.id, {
+    role: "implementer", brief: "hold the workspace", rolePrompt: "prompt", cwd,
+    sandbox, sessionId: "session", denyTargets: [], env: {}, scratchDir: cwd,
+    engine: "codex", adapterModule: "/adapters/codex.ts",
+  });
+  assert.equal((await update(root, record.id, { status: "running" })).applied, true);
+  return record;
 }
 
 /** A detached child of this test process, tracked so nothing survives the test. */

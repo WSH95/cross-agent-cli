@@ -731,6 +731,10 @@ test("run_command is registered beside git_root and runs the project's own comma
   const mode = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
   const root = await projectWithConfig({ mode: "dev-team", roles: {}, project: { testCommand: "echo the suite ran; pwd" } });
   t.after(() => rm(root, { recursive: true, force: true }));
+  // A real repository: this tool refuses a project whose `.cross-agent/` is tracked, so
+  // it reads the repository at the root before it runs anything.
+  const exec = promisify(execFile);
+  await exec("git", ["-C", root, "init", "-b", "main"]);
   const request = inProcess({ tools: projectTools(root, { mode }), authority: () => operator });
   const call = async (args: Json) => {
     const reply = await request("tools/call", { name: "run_command", arguments: args });

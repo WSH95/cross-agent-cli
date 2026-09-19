@@ -8,9 +8,10 @@ import { gitMutate } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import type { GitRootResult } from "../src/gitroot.ts";
 import { readJournal } from "../src/journal.ts";
+import { update } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
 import { git, gitShim, holderOf } from "./helpers/git.ts";
-import { poll, project } from "./helpers/project.ts";
+import { poll, project, reserve } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 // `git_root` is the root half of design section 4: one whitelisted verb at the project
@@ -340,6 +341,28 @@ test("the read-only verbs answer from the root and journal nothing", async (t) =
   assert.equal((aborted as Extract<GitRootResult, { ok: false }>).exitCode, 128);
 });
 
+test("a tracked .cross-agent/ is refused by every verb, naming .gitignore", async (t) => {
+  const { root } = await repository(t);
+  // What runs and what is journaled are config: with `.cross-agent/` tracked, a
+  // specialist's commit inside its worktree reaches the root through the lead's own
+  // merge, and `testCommand` is what the lead then runs there.
+  await git(root, "add", "-f", ".cross-agent/config.json");
+  await git(root, "commit", "-m", "track the project's own configuration");
+
+  for (const args of [["status", "--porcelain"], ["worktree", "list"]]) {
+    const reason = refusal(await gitRoot(root, { args }, { waitSeconds: 5 }));
+    assert.match(reason, /\.cross-agent/, args.join(" "));
+    assert.match(reason, /\.gitignore/, args.join(" "));
+  }
+  refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", path.join(root, ".worktrees", "x"), "main"], slug: "x" }, { waitSeconds: 5 }));
+  assert.equal(fs.existsSync(path.join(root, ".worktrees", "x")), false);
+
+  // Untracked again — the lead's own repair — and the tools work.
+  await git(root, "rm", "-r", "--cached", ".cross-agent");
+  await git(root, "commit", "-m", "stop tracking it");
+  accepted(await gitRoot(root, { args: ["status", "--porcelain", "--untracked-files=no"] }, { waitSeconds: 5 }));
+});
+
 test("git_root holds git.lock for the call and takes no spawn.lock", async (t) => {
   const { root } = await repository(t);
   const directory = path.join(root, ".worktrees", "locked");
@@ -363,6 +386,67 @@ test("git_root holds git.lock for the call and takes no spawn.lock", async (t) =
   const held = await acquire(lockPath(root, gitLockName()), { operation: "a competing mutation", waitSeconds: 5 });
   t.after(() => held.release());
   assert.match(refusal(await gitRoot(root, { args: ["status", "--porcelain"] }, { waitSeconds: 0 })), /held by another process/);
+});
+
+test("worktree remove refuses a workspace an unsettled task is holding", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "held");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/held", directory, "main"], slug: "held" }, { waitSeconds: 5 }));
+  const resolved = fs.realpathSync(directory);
+
+  // Git removes a clean worktree whatever is running in it, so the reservation is what
+  // stops a task's own directory being taken out from under it (design section 2).
+  const record = await reserve(root, resolved);
+  assert.equal(refusal(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "held" }, { waitSeconds: 5 })),
+    `${resolved} is reserved by task ${record.id} (running); wait or cancel first`);
+  assert.equal(fs.existsSync(directory), true);
+  assert.deepEqual(readJournal(root, "held")!.steps.map((step) => step.step), ["worktree-created"]);
+
+  // A settled task has let it go — but a record nobody can read clears no workspace at
+  // all, because its own cwd is unknown.
+  assert.equal((await update(root, record.id, { status: "done" })).applied, true);
+  const damaged = path.join(root, ".cross-agent", "tasks", "damaged.json");
+  fs.writeFileSync(damaged, "{not json");
+  assert.match(refusal(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "held" }, { waitSeconds: 5 })), /damaged\.json/);
+  fs.rmSync(damaged);
+
+  accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "held" }, { waitSeconds: 5 }));
+  assert.equal(fs.existsSync(directory), false);
+  assert.deepEqual(readJournal(root, "held")!.steps.map((step) => step.step), ["worktree-created", "worktree-removed"]);
+});
+
+test("worktree remove takes spawn.lock and then git.lock; the other verbs take neither", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "ordered");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/ordered", directory, "main"], slug: "ordered" }, { waitSeconds: 5 }));
+
+  // `delegate` holds spawn.lock around validate-and-spawn, so a removal that holds it too
+  // cannot have its reservation check race a delegation taking the same workspace.
+  const claim = await acquire(lockPath(root, spawnLockName()), { operation: "a delegate", waitSeconds: 5 });
+  t.after(() => claim.release());
+  const blocked = gitRoot(root, { args: ["worktree", "remove", directory], slug: "ordered" }, { waitSeconds: 20 });
+  await delay(400);
+  assert.equal(fs.existsSync(directory), true, "nothing ran while spawn.lock was held");
+  // A verb that touches no workspace reads no reservation and waits for nothing.
+  accepted(await gitRoot(root, { args: ["worktree", "list"] }, { waitSeconds: 20 }));
+  await claim.release();
+  accepted(await blocked);
+  assert.equal(fs.existsSync(directory), false);
+
+  // And the order is always spawn.lock then git.lock: a removal waiting for git.lock is
+  // already holding spawn.lock, which is why no delegate can slip in behind it.
+  const second = path.join(root, ".worktrees", "second");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/second", second, "main"], slug: "second" }, { waitSeconds: 5 }));
+  const competitor = await acquire(lockPath(root, gitLockName()), { operation: "a competing mutation", waitSeconds: 5 });
+  t.after(() => competitor.release());
+  const waiting = gitRoot(root, { args: ["worktree", "remove", second], slug: "second" }, { waitSeconds: 20 });
+  await delay(400);
+  await assert.rejects(
+    acquire(lockPath(root, spawnLockName()), { operation: "a delegate", waitSeconds: 0 }),
+    /held by another process/,
+  );
+  await competitor.release();
+  accepted(await waiting);
 });
 
 test("a root command that fails returns its exit code and output, and journals nothing", async (t) => {
