@@ -97,7 +97,7 @@ is the target the remaining tasks are measured against.
 | Your session while it runs | busy between `wait` calls | free — `status`, `watch`, `answer`, `cancel` |
 | Survives closing the session | tasks yes, loop no | yes; exclusive reattach by task id |
 | Lead asks you a question | natively | `ask`/`answer` mailbox |
-| Root git operations | host runs them directly | `git_root` (whitelisted verbs) |
+| Root git operations | `git_root` and `run_command` | the same two tools, the lead's only reach at the root |
 | Loop-guard layer 2 | intact | relaxed for the lead's server only |
 | Cost per task | one engine per specialist | one more, for the lead |
 
@@ -233,11 +233,12 @@ that spelling, so nothing in the matrix depends on it.
    worktree; `verifyWorktree` rejects the main worktree and subdirectories
    (`src/worktree.ts#verifyWorktree`). The loop also creates worktrees, merges
    on the default branch, runs the tests there, removes worktrees and deletes
-   branches (section 4). Under `host` placement the host session performs those
-   directly, with its own tools. An engine lead is read-only at the root, so the
-   design gives it two tools whose contracts section 4 states in full:
-   `git_root`, one whitelisted verb at a time, journaled, under `git.lock`; and
-   `run_command`, which takes a selector rather than a command string.
+   branches (section 4). An engine lead is read-only at the root, so the design
+   gives it two tools whose contracts section 4 states in full: `git_root`, one
+   whitelisted verb at a time, journaled, under `git.lock`; and `run_command`,
+   which takes a selector rather than a command string. A host-placed lead has
+   its own tools and uses these two anyway, because the journal is one document
+   and a step nobody wrote is a gap in it (plan decision 4).
 2. **Cascade ownership.** A record carries `parentTaskId`, set to the lead's own
    task when a lead delegated it and preserved across `resume`: a continuation
    takes the parent of the record it continues, not the caller that asked for it,
@@ -360,8 +361,8 @@ serves its text, and `describe_mode` answers from the mode the config names
 (`src/modes.ts#loadMode`, `#describeMode`, `src/server.ts#projectTools`). Two
 things inside them are still targets, and each is named where it is: the loop in
 every `SKILL.md` and every role prompt under `modes/*/roles/` is a skeleton
-until step 9 writes them, and `git_root` and `run_command` join the worktree
-provider with step 11.
+until step 9 writes them, and `run_command` joins the worktree provider, where
+`git_root` already is, with the rest of step 11.
 
 A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
@@ -515,8 +516,8 @@ active mode declares the worktree provider; **engine lead** only under
 | `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
 | `git_mutate` | `slug`, `args[]`, optional `path`, `branch` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
-| `git_root` | `args[]` | one whitelisted git verb at the project root, journaled, under `git.lock` (section 4) | engine lead |
-| `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `timeout_seconds` | the configured command, by selector rather than by string (section 4) | engine lead |
+| `git_root` | `args[]`, optional `slug` | one whitelisted git verb at the project root, journaled under the slug it names, under `git.lock` (section 4) | worktree |
+| `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `timeout_seconds` | the configured command, by selector rather than by string (section 4) | worktree |
 | `ask` | `question`, optional `id` (to keep waiting on an earlier ask), `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered or the timeout | engine lead |
 | `list_asks` | optional `status` | this lead's open and answered asks; every ask for the operator | engine lead |
 | `answer` | `ask_id`, `text` | the operator's reply; persisted, so it survives a killed lead | engine lead |
@@ -525,19 +526,23 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-Today `projectTools` registers ten of these (`src/server.ts#projectTools`):
+Today `projectTools` registers eleven of these (`src/server.ts#projectTools`):
 `describe_mode`, `list_roles`, `check`, `result` and `list_tasks` for every row,
 `delegate`, `wait` and `cancel` for the operator and lead rows, and
-`verify_worktree` and `git_mutate` for those two rows **and only under a mode
-that declares the worktree provider** (`src/server.ts#worktreeTools`). The
+`verify_worktree`, `git_mutate` and `git_root` for those two rows **and only
+under a mode that declares the worktree provider**
+(`src/server.ts#worktreeTools`). The
 server offers and refuses each by the row it resolves, and `delegate`, `wait`
 and `cancel` apply the lead's own half of the matrix inside themselves — a lead
 delegates no lead and no child of a cancelling parent, and waits on and cancels
 only what it delegated, refused by name with the lead task that did not delegate
 it (`src/delegate.ts#delegate`, `src/server.ts#projectTools`,
-`src/tasks.ts#cancel`). The five engine-lead rows — `git_root`, `run_command`
-and the mailbox — arrive with row 11, and `git_root` and `run_command` join the
-worktree provider's own list when they do.
+`src/tasks.ts#cancel`). `git_root` and `run_command` are the worktree
+provider's rather than engine placement's, because the journal is the same
+document under both placements and a host-placed lead writes its root steps
+through them too (plan decision 4): `git_root` is built and registered
+(`src/server.ts#worktreeTools`), `run_command` joins it, and the three mailbox
+rows arrive with row 11.
 
 ### 2. Ledger, runner, locks
 
@@ -1133,8 +1138,10 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
 - **The git lock.** Every lead git mutation runs while
   `.cross-agent/locks/git.lock` is held: `git_mutate` takes it around the
   command and the journal append and releases it in `finally`
-  (`src/gitmutate.ts#mutate`); `git_root` and `cross-agent git` are targets of
-  rows 11 and 13 and take the same lock. What the locks give, stated exactly:
+  (`src/gitmutate.ts#mutate`); `git_root` takes the same lock around its own
+  command and step and takes no `spawn.lock`, because it reads no reservation
+  (`src/gitroot.ts#gitRoot`, section 4); `cross-agent git` is row 13's target
+  and takes both as `git_mutate` does. What the locks give, stated exactly:
   `spawn.lock` serializes validate-and-spawn, so two hosts cannot both pass the
   reservation check and then both spawn; `git.lock` serializes lead git
   mutations against each other. What keeps a writable task and a git mutation
@@ -1624,8 +1631,9 @@ The worktree half of this section is built and wired: `verify_worktree` and
 reservation, both locks and the journal, and from row 8 both tools registered on
 the mode's worktree provider, for the operator and lead rows, with `path` and
 `branch` defaulting from that mode's own git policy
-(`src/server.ts#worktreeTools`). What is left is the root half: `git_root` and
-`run_command` (row 11), and the `cross-agent git` CLI (row 13).
+(`src/server.ts#worktreeTools`). `git_root` is built on that same provider
+(`src/gitroot.ts#gitRoot`, `src/server.ts#worktreeTools`). What is left of the
+root half is `run_command` (row 11) and the `cross-agent git` CLI (row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
@@ -1690,10 +1698,14 @@ different branches. It
 4. appends the step to the task journal (section 7) with the SHAs around it —
    `git rev-parse --verify --quiet refs/heads/<branch>` through the same
    explicit form, before and after the command, and the default branch's SHA as
-   this step's own `defaultSha` (`src/gitmutate.ts#revision`, `#mutate`). It
-   writes no document-level field but the branch names: the pre-merge SHA and
-   the branch head belong to the `merged` step alone, for the reason section 7
-   gives. The append happens **while the lock is still held**
+   this step's own `defaultSha` (`src/gitmutate.ts#revision`, `#mutate`). The
+   step is named for what it completed — `committed` for a `commit`, `rebased`
+   for a `rebase`, and `git` with the arguments it ran for anything else
+   (`src/gitmutate.ts#stepName`, section 7's table). Of the document's own
+   fields it writes the branch names and, on a journal this call creates, the
+   work tree the verifier resolved (`src/gitmutate.ts#mutate`): the pre-merge
+   SHA and the branch head belong to the `merged` step alone, for the reason
+   section 7 gives. The append happens **while the lock is still held**
    (`src/gitmutate.ts#mutate`), so two callers' steps are ordered by the same
    lock that ordered their commands.
 
@@ -1772,32 +1784,84 @@ validated conflict-edit mode is a later enhancement). The flow per task: plan
 needs-work round through `resume`, lead commit, ready, merge. Branch-scoped
 metadata grants are not part of this plan.
 
-Under `placement: host` the host session performs every root operation
-directly — create the worktree, merge, run the tests, remove the worktree,
-delete the branch — with its own tools; `git_mutate` covers only the worktree.
-Under `placement: engine` the lead has no write access at the root, and the
-same operations run through `git_root` and `run_command`, under the same
-`git.lock` and the same reservation rule. Under a Codex host the lead's own
+Every root operation — create the worktree, merge, run the tests, remove the
+worktree, delete the branch — runs through `git_root` and `run_command` under
+**both** placements, so the journal is complete under both (plan decision 4):
+the two tools are the worktree provider's, registered whenever the mode
+declares a worktree role and offered to the operator and lead rows alike
+(`src/server.ts#worktreeTools`, `#projectTools`). Under `placement: engine`
+that is also the lead's only reach at the root, because it has no write access
+there. Under a Codex host the lead's own
 sandbox protects `.git` too, so `git_mutate` calls made by a Codex lead need
 that host's approval escalation, as EVIDENCE.md recorded for the 0.4.0 Codex
 lead.
 
-**`git_root`.** `args[0]` is the verb, and it must be one of `worktree add -b
+**`git_root`.** `gitRoot(root, {args, slug?}, options)`
+(`src/gitroot.ts#gitRoot`, `#GitRootRequest`, `#GitRootOptions`). `args` is one
+whitelisted verb **in the shape it is whitelisted in**: `worktree add -b
 <branch> <dir> <base>`, `worktree remove <dir>`, `branch -d <branch>`, `merge
---ff-only <branch>`, `rebase --abort`, or the read-only set `status`, `log`,
-`rev-parse`, `merge-base`, `branch --list`, `worktree list`. No global git
-option is accepted — `-c`, `--git-dir`, `--work-tree` and `-C` are refused,
-because each of them turns a whitelisted verb into an arbitrary one against an
-arbitrary repository. Every path argument must resolve under the project root
-or its `.worktrees/`, and every branch argument must match the mode's
-`branchPattern` or be the default branch. The result is `{exitCode, stdout,
-stderr, before, after}`, where `before` and `after` are the default branch's
-SHA around the call, and each verb appends its own named step under the same
-lock — section 7's table says which, and `merge --ff-only` is the one that
-also writes the journal's two merge fields, from `before` and from `rev-parse
-<branch>` taken in that same locked call. The whitelist is the whole security
-argument for handing an engine any root git
-access at all, so it is a fixed list in code, never config.
+--ff-only <branch>`, `rebase --abort`, or the read-only `status`, `log`,
+`rev-parse`, `merge-base`, `branch --list`, `worktree list`. The whitelist is
+the whole security argument for handing an engine any root git access at all,
+so it is a fixed list in code, never config (`src/gitroot.ts#whitelist`), and it
+carries each verb's own grammar: the options it accepts — `--porcelain`,
+`--untracked-files=<mode>`, `-z`, `--oneline`, `--max-count=<n>`, `--verify` —
+and the positionals it takes, so `worktree add` without `-b` is not this verb
+and `--force` belongs to none of them, which is why a worktree that still holds
+work refuses to be removed on git's own terms (`src/gitroot.ts#parse`). No
+global git option is accepted anywhere in `args` — `-c`, `--git-dir`,
+`--work-tree` and `-C`, and the attached forms — because each of them turns a
+whitelisted verb into an arbitrary one against an arbitrary repository
+(`src/gitroot.ts#argumentFault`, `src/gitmutate.ts#globalOptions`). Every path
+argument resolves under the mode's own worktree directory, which itself resolves
+under the project root, with what exists of the path resolved through
+`realpath` first, so a symlinked worktree directory is the same escape as a `..`
+and is refused as one (`src/gitroot.ts#within`, `#resolveExisting`). A new task
+branch matches the mode's `branchPattern`, a `<base>` is the default branch and
+nothing else, and a branch a read names matches the pattern or is the default
+branch (`src/gitroot.ts#judge`, `#matchesPattern`).
+
+**The journal is selected by `slug`, never inferred**, and it is authoritative
+for its own branch and path (`src/gitroot.ts#journalFault`): `worktree add`
+takes a slug with no journal yet, or one with no `worktree-created` step, and
+creates the journal on that branch and that directory; `merge --ff-only
+<branch>` and `branch -d <branch>` require `<branch>` to equal the slug's
+recorded `branch`, and `worktree remove <dir>` requires `<dir>` to resolve to
+its recorded `worktree` — which is how a journal `git_mutate` bound to a
+worktree carrying another name's branch is still merged and cleaned up under
+the name it recorded. A second `merged` step is refused before git runs, as the
+journal itself refuses one after (section 7). A verb that journals nothing —
+the read-only set and `rebase --abort` — takes **no** slug, because silence
+would let a lead believe its read was recorded (`src/gitroot.ts#gitRoot`).
+
+The verb runs from the project root, in the same explicit form and the same
+allowlisted environment as `git_mutate`'s — `git --git-dir=<root>/.git
+--work-tree=<root> <args>`, `execFile` with an argv array and never a shell,
+capped at 16 MB (`src/gitmutate.ts#run`, `src/gitroot.ts#repositoryAt`); the
+root is the repository's own main worktree, so a `.git` there that is a pointer
+file or a symlink is the redirection the verifier refuses inside a worktree and
+is refused here too. It runs under `.cross-agent/locks/git.lock` and **not**
+under `spawn.lock`: that lock exists to keep `git_mutate`'s reservation read
+from racing a `delegate` about to take the same workspace (section 2), and
+nothing here reads a reservation — the project root is no task's workspace to
+clear (`src/gitroot.ts#gitRoot`). The journal's own checks, the command and the
+step all happen inside that one lock, so two first calls on one slug cannot both
+find no journal and both create a worktree (`src/gitroot.ts#execute`).
+
+The result is `{ok: true, exitCode: 0, stdout, stderr, before?, after?,
+journal?, lockLost?}` or `{ok: false, reason, exitCode?, stdout?, stderr?}`
+(`src/gitroot.ts#GitRootResult`), with `before` and `after` the default branch's
+SHA around the call and `journal` the step as written. A non-zero git exit
+journals nothing and is a reconciliation trigger like any other `ok: false`, and
+a journal write that fails after a successful command returns `ok: false`
+saying the command ran and its step could not be written
+(`src/gitroot.ts#execute`). Each journaled verb appends its own named step —
+section 7's table says which — and `merge --ff-only` is the one that also
+writes the journal's two merge fields, from `before` and from the branch head
+read in that same locked call. That merge is refused unless the root's own HEAD
+is the default branch (`src/gitroot.ts#execute`): `merge` merges into HEAD,
+while both merge fields are read from the default branch, so a merge taken
+anywhere else would journal a revert range that never existed.
 
 **`run_command`.** `run_command({which: "test" | "setup", where: "root" | <a
 verified worktree path>, timeout_seconds?})` — a **selector, never a command
@@ -2019,39 +2083,38 @@ itself; the ledger, the journal and the mailbox are all written by the server
 on its behalf.
 
 - Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
-  document is `{slug, branch, defaultBranch, defaultShaBeforeMerge?,
+  document is `{slug, branch, worktree?, defaultBranch, defaultShaBeforeMerge?,
   branchHead?, steps}` and each step is `{step, at, before?, after?,
   defaultSha?, args?}` (`src/journal.ts#Journal`, `#JournalEntry`). The step
   names are the completed git steps of the loop — `worktree-created`,
   `committed`, `rebased`, `merged`, `tests-passed`, `worktree-removed`,
   `branch-deleted` — plus `git`, which is any other `git_mutate` call and
   records the arguments it ran instead of a name (`src/journal.ts#JournalStep`).
-  Today `git_mutate` writes exactly one of them, `git`
-  (`src/gitmutate.ts#mutate`).
 
   **Each named step is written by the tool that performs it**, in the same
   locked call, so nothing has to remember to journal afterwards and no separate
   journal verb exists for the lead to forget or misuse:
 
-  | step | written by |
-  | --- | --- |
-  | `worktree-created` | `git_root worktree add -b <branch> <dir> <base>` |
-  | `committed` | `git_mutate` whose `args[0]` is `commit` |
-  | `rebased` | `git_mutate` whose `args[0]` is `rebase` |
-  | `merged` | `git_root merge --ff-only <branch>` |
-  | `tests-passed` | `run_command {which: "test", where: "root"}` succeeding
-  after the merge | | `worktree-removed` | `git_root worktree remove <dir>` | |
-  `branch-deleted` | `git_root branch -d <branch>` | | `git` | any other
-  `git_mutate` call, with its `args` |
+  | step | written by | built |
+  | --- | --- | --- |
+  | `worktree-created` | `git_root worktree add -b <branch> <dir> <base>` | `src/gitroot.ts#whitelist`, `#execute` |
+  | `committed` | `git_mutate` whose `args[0]` is `commit` | `src/gitmutate.ts#stepName` |
+  | `rebased` | `git_mutate` whose `args[0]` is `rebase` | `src/gitmutate.ts#stepName` |
+  | `merged` | `git_root merge --ff-only <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
+  | `tests-passed` | `run_command {which: "test", where: "root"}` succeeding after the merge | row 11 |
+  | `worktree-removed` | `git_root worktree remove <dir>` | `src/gitroot.ts#whitelist`, `#execute` |
+  | `branch-deleted` | `git_root branch -d <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
+  | `git` | any other `git_mutate` call, with its `args` | `src/gitmutate.ts#mutate` |
 
   The `merged` step is the one that carries the document's two merge fields,
   and `git_root` takes both values **inside the same `git.lock` it holds for
   the merge**: `defaultShaBeforeMerge` is the default branch's `before` SHA,
-  the one `git_root` already reads to report `before`, and `branchHead` is
-  `rev-parse <branch>` on the branch it is about to merge. Taken anywhere else
-  they would be a different repository's state. **Target**: `git_root` (row 11)
-  and the lead loop that calls it (rows 7 and 9); of this table only the `git`
-  row is built.
+  the one `git_root` already reads to report `before`, and `branchHead` is the
+  head of the branch it is about to merge, read through the same explicit form
+  (`src/gitroot.ts#execute`, `src/gitmutate.ts#revision`). Taken anywhere else
+  they would be a different repository's state. Every row but `tests-passed` is
+  built; what is left of this table is that row and the lead loop that calls
+  these tools (rows 9 and 11).
 
   Three functions: `appendStep(root, slug, step, data)` reads, appends, and
   writes through the ledger's own atomic write — a temporary file and a
@@ -2066,13 +2129,19 @@ on its behalf.
   path segment of the ledger's own alphabet and never `.` or `..`
   (`src/journal.ts#journalFile`).
 
-  Four fields are the document's rather than a step's, and **which writer owns
+  Five fields are the document's rather than a step's, and **which writer owns
   each of them is what makes the repair path below trustworthy.** The step that
   *creates* a journal must name both branches rather than have them invented
   (`src/journal.ts#appendStep`). `defaultBranch` follows the project's config.
   `branch` is **write-once**: a journal belongs to one task branch, and a later
   step naming another would silently rewrite what every earlier step's SHAs were
-  recorded against (`src/journal.ts#appendStep`). `defaultShaBeforeMerge` and
+  recorded against (`src/journal.ts#appendStep`). `worktree` is write-once for
+  the same reason and holds the work tree every step ran in — the directory
+  `git_root worktree add` created or the one the verifier resolved for
+  `git_mutate`'s first call (`src/journal.ts#Journal`, `#appendStep`,
+  `src/gitmutate.ts#mutate`, `src/gitroot.ts#execute`) — and it is what holds a
+  later `worktree remove` to this task's own directory.
+  `defaultShaBeforeMerge` and
   `branchHead` are the **merge**'s to write, and only the merge's: an
   `appendStep` reads them from its data only when its step is `merged`, and a
   second `merged` step for one slug is refused — `journal <slug>: a merged
@@ -2094,13 +2163,18 @@ on its behalf.
   of what the default branch looked like while the task ran — without letting
   it masquerade as the merge point.
 
-  `git_mutate` enforces the branch rule from its own side as well: a call whose
-  branch differs from the one its journal already records is refused, `slug <a>
-  is journaled on <task/b>; refusing <task/c>`, before any git runs. That
-  comparison happens **inside** `spawn.lock`, beside the reservation check it
-  belongs with (`src/gitmutate.ts#mutate`): two first calls on one slug read
+  Both tools enforce those two rules from their own side as well, because the
+  document keeping the first value is not a refusal a lead can read. A
+  `git_mutate` call whose branch differs from the one its journal records is
+  refused, `slug <a> is journaled on <task/b>; refusing <task/c>`, and one whose
+  verified work tree differs is refused the same way, both before any git runs.
+  That comparison happens **inside** `spawn.lock`, beside the reservation check
+  it belongs with (`src/gitmutate.ts#mutate`): two first calls on one slug read
   outside the lock would both find no journal and both commit, on two different
-  branches.
+  branches. `git_root` compares the same two fields inside `git.lock`, and adds
+  the rules only it can apply — a slug whose journal already has a
+  `worktree-created` step takes no second worktree, and a slug already merged
+  takes no second merge (`src/gitroot.ts#journalFault`).
 - Reconciliation at the start of every task, after any interruption, and after
   **any** `git_mutate` or `git_root` call that came back `ok: false` — with an
   exit code or without one. A `GitRunError` carries none, and it is the answer
@@ -2421,7 +2495,7 @@ registered by the mode that declares the worktree provider.
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (row 11), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
-| 11 | Engine placement | `atc-s96.24` | `git_root`, `run_command`, the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
+| 11 | Engine placement | `atc-s96.24` | **Split.** `git_root` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run; `run_command` follows in that task. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
 | 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `answer`, `report`, and the rest of section 10, over a seeded ledger. |
 | 14 | Backlog | `atc-s96.25`–`.28` | Arbitrary-path workspaces; config-declared adapters; review and critique verbs; engine `doctor`. |

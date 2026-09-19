@@ -12,11 +12,12 @@ import { promisify } from "node:util";
 import { initConfig } from "../src/config.ts";
 import { gitMutate } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
-import { readJournal } from "../src/journal.ts";
+import { appendStep, readJournal } from "../src/journal.ts";
 import { create, update, writeSpec } from "../src/ledger.ts";
 import type { LaunchSpec } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
+import { gitShim, holderOf } from "./helpers/git.ts";
 
 const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../", import.meta.url));
@@ -75,56 +76,6 @@ async function poll<T>(read: () => T | Promise<T>, accepts: (value: T) => boolea
   }
 }
 
-/** The util-linux child that actually holds a lock, found by the file on its command line. */
-function holderOf(file: string): number | null {
-  for (const entry of fs.readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) continue;
-    let cmdline: string;
-    try {
-      cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
-    } catch {
-      continue;
-    }
-    const argv = cmdline.split("\0");
-    if (argv[0]?.endsWith("flock") && argv.includes(file)) return Number(entry);
-  }
-  return null;
-}
-
-/**
- * A `git` first on `PATH` that records every mutation invocation — its argv and its whole
- * environment — and, when asked, sleeps or kills itself for the invocation whose arguments
- * carry a marker. Only a mutation is intercepted: the verifier's own reads use `-C`.
- */
-async function shim(t: TestContext, temporary: string, options: { sleepOn?: string; signalOn?: string } = {}) {
-  const realGit = (await exec("sh", ["-c", "command -v git"], { encoding: "utf8" })).stdout.trim();
-  const directory = path.join(temporary, "shim");
-  const log = path.join(temporary, "invocations.txt");
-  await mkdir(directory, { recursive: true });
-  await writeFile(path.join(directory, "git"), `#!/bin/sh
-case "$1" in
-  --git-dir=*)
-    { for argument in "$@"; do printf 'argv %s\\n' "$argument"; done; env | sed 's/^/env /'; } >> ${JSON.stringify(log)}
-    ${options.sleepOn ? `case " $* " in *${options.sleepOn}*) sleep 2 ;; esac` : ""}
-    ${options.signalOn ? `case " $* " in *${options.signalOn}*) kill -TERM $$ ;; esac` : ""}
-    ;;
-esac
-exec ${JSON.stringify(realGit)} "$@"
-`);
-  await chmod(path.join(directory, "git"), 0o755);
-  const original = process.env.PATH;
-  t.after(() => { process.env.PATH = original; });
-  process.env.PATH = `${directory}${path.delimiter}${original}`;
-  async function lines(): Promise<string[]> {
-    try {
-      return (await readFile(log, "utf8")).split("\n").filter(Boolean);
-    } catch {
-      return [];
-    }
-  }
-  return { lines, argv: async () => (await lines()).filter((line) => line.startsWith("argv ")).map((line) => line.slice("argv ".length)) };
-}
-
 /** Sets environment variables for one test and puts the process's own back afterwards. */
 function poison(t: TestContext, values: Record<string, string>): void {
   for (const [name, value] of Object.entries(values)) {
@@ -181,9 +132,43 @@ test("a commit through git_mutate lands on the task branch and is journaled with
   assert.equal(journal.branchHead, undefined);
   assert.deepEqual(journal.steps, [
     { step: "git", at: 100, before: initial, after: initial, defaultSha: main, args: ["add", "-A"] },
-    { step: "git", at: 200, before: initial, after: head, defaultSha: main, args: ["commit", "-m", "task work"] },
+    { step: "committed", at: 200, before: initial, after: head, defaultSha: main, args: ["commit", "-m", "task work"] },
   ]);
   assert.deepEqual(committed.journal, journal.steps[1], "the result carries the step it appended");
+});
+
+test("git_mutate names the commit and the rebase, and records the work tree the verifier resolved", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await realpath(await add("named"));
+  await writeFile(path.join(worktree, "notes.md"), "the implementer's edit\n");
+
+  // Each named step of section 7's table is written by the tool that performs it: for
+  // `git_mutate` that is `committed` and `rebased`, by the subcommand it was given.
+  accepted(await gitMutate(root, { slug: "named", args: ["add", "-A"] }, { waitSeconds: 5, now: 1 }));
+  assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["commit", "-m", "task work"] }, { waitSeconds: 5, now: 2 })).journal.step, "committed");
+  assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["rebase", "main"] }, { waitSeconds: 5, now: 3 })).journal.step, "rebased");
+  assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["status", "--porcelain"] }, { waitSeconds: 5, now: 4 })).journal.step, "git");
+
+  const journal = readJournal(root, "named")!;
+  assert.deepEqual(journal.steps.map((step) => step.step), ["git", "committed", "rebased", "git"]);
+  // The path the verifier returned, so `git_root worktree remove` and `run_command` can
+  // hold a later call to the work tree this task's steps actually ran in.
+  assert.equal(journal.worktree, worktree);
+  assert.deepEqual(journal.steps[1].args, ["commit", "-m", "task work"], "a named step still carries what it ran");
+});
+
+test("git_mutate refuses a work tree that is not the one its journal records", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await realpath(await add("moved"));
+  // The journal is authoritative for its own path as it is for its own branch: a step
+  // naming another work tree is refused before git runs, and nothing is journaled.
+  appendStep(root, "moved", "worktree-created", {
+    at: 1, branch: "task/moved", defaultBranch: "main", worktree: path.join(root, ".worktrees", "elsewhere"),
+  });
+  const reason = refusal(await gitMutate(root, { slug: "moved", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+  assert.equal(reason, `slug moved is journaled on worktree ${path.join(root, ".worktrees", "elsewhere")}; refusing ${worktree}`);
+  assert.equal(await git(root, "rev-list", "--count", "task/moved"), "1");
+  assert.deepEqual(readJournal(root, "moved")!.steps.map((step) => step.step), ["worktree-created"]);
 });
 
 test("git_mutate refuses a workspace an unsettled writable task is holding", async (t) => {
@@ -333,7 +318,7 @@ test("git_mutate holds spawn.lock for the whole call and takes git.lock inside i
 test("git_mutate passes the verified directories explicitly and hands the child no GIT_DIR", async (t) => {
   const { temporary, root, add } = await repository(t);
   const b = await add("b");
-  const recorder = await shim(t, temporary);
+  const recorder = await gitShim(t);
 
   // What a server started from a hook, or from `git rebase --exec`, inherits. None of it
   // may reach the child: the directories a mutation runs against are the verifier's answer
@@ -443,7 +428,7 @@ test("a git command that fails returns its exit code and output, and journals no
 test("a lock lost while the command ran is reported, and the step is still journaled", async (t) => {
   const { temporary, root, add } = await repository(t);
   await add("lost");
-  const recorder = await shim(t, temporary, { sleepOn: "slow-marker" });
+  const recorder = await gitShim(t, { sleepOn: "slow-marker" });
   const initial = await git(root, "rev-parse", "refs/heads/task/lost");
 
   const pending = gitMutate(root, { slug: "lost", args: ["commit", "--allow-empty", "-m", "slow-marker"] }, { waitSeconds: 5, now: 42 });
@@ -486,7 +471,7 @@ test("a config, a lock, or a git that could not run is refused rather than throw
   await delegate.release();
 
   // A git that exits by signal reports no exit code at all; the lead is told, not thrown at.
-  const recorder = await shim(t, temporary, { signalOn: "signal-marker" });
+  const recorder = await gitShim(t, { signalOn: "signal-marker" });
   const signalled = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "signal-marker"] }, { waitSeconds: 5 });
   assert.match(refusal(signalled), /could not run/);
   assert.ok((await recorder.argv()).some((argument) => argument.includes("signal-marker")));

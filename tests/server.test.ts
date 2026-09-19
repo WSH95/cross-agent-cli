@@ -114,7 +114,7 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
   const delegation = ["delegate", "wait", "check", "result", "cancel", "list_tasks"];
-  const provider = ["verify_worktree", "git_mutate"];
+  const provider = ["verify_worktree", "git_mutate", "git_root"];
   for (const [row, expected] of [
     ["operator", ["describe_mode", "list_roles", ...delegation, ...provider]],
     ["lead", ["describe_mode", "list_roles", ...delegation, ...provider]],
@@ -539,7 +539,7 @@ test("the worktree provider's tools are registered only when the active mode dec
     // The specialist row is the four read tools plus describe_mode, whatever the mode is.
     specialist: ["describe_mode", "list_roles", "check", "result", "list_tasks"],
   };
-  const provider = ["verify_worktree", "git_mutate"];
+  const provider = ["verify_worktree", "git_mutate", "git_root"];
 
   const team = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
   const solo = buildMode(modesRoot(t), "solo", [{ key: "solo" }]);
@@ -662,7 +662,7 @@ test("git_mutate takes its worktree directory and branch from the mode's own git
   assert.equal(added.ok, true, JSON.stringify(added));
   const committed = await call({ slug: "one", args: ["commit", "-m", "add a file"] });
   assert.equal(committed.ok, true, JSON.stringify(committed));
-  assert.equal((committed.journal as Json).step, "git", "every git_mutate call journals the one built step");
+  assert.equal((committed.journal as Json).step, "committed", "the step a commit completes, by its own name");
   const { stdout } = await exec("git", ["-C", path.join(root, "trees", "one"), "log", "-1", "--format=%s %d"]);
   assert.match(stdout, /add a file/);
   assert.match(stdout, /work\/one/);
@@ -670,6 +670,59 @@ test("git_mutate takes its worktree directory and branch from the mode's own git
   // The shape of the request is still this server's to check.
   for (const args of [{}, { slug: "one" }, { slug: "one", args: "status" }, { slug: 1, args: ["status"] }, { slug: "one", args: [1] }]) {
     const reply = await request("tools/call", { name: "git_mutate", arguments: args as Json });
+    assert.equal((reply.error as Json)?.code, -32602, JSON.stringify(args));
+  }
+});
+
+test("git_root is the worktree provider's own, for the operator and the lead, under either placement", async (t) => {
+  const modes = modesRoot(t);
+  // Plan decision 4: the root verbs are registered whenever the mode declares a worktree
+  // role, so a host-placed lead journals its own root steps too.
+  const hosted = buildMode(modes, "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
+  const placed = buildMode(modes, "dev-team-engine", [{ key: "lead" }, { key: "implementer", workspace: "worktree" }], {
+    lead: { placement: "engine", role: "lead" },
+  });
+  const root = await projectWithConfig({ mode: "dev-team", roles: {} });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const exec = promisify(execFile);
+  const git = (...args: string[]) => exec("git", ["-C", root, "-c", "user.name=Cross Agent Test",
+    "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", ...args]);
+  await git("init", "-b", "main");
+  await git("commit", "--allow-empty", "-m", "initial");
+
+  for (const mode of [hosted, placed]) {
+    const names = async (row: Authority["row"]) => {
+      const request = inProcess({ tools: projectTools(root, { mode }), authority: () => ({ row, reason: "test", depth: 0 }) });
+      return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
+    };
+    for (const row of ["operator", "lead"] as const) assert.ok((await names(row)).includes("git_root"), `${mode.id} ${row}`);
+    assert.equal((await names("specialist")).includes("git_root"), false, mode.id);
+  }
+
+  const request = inProcess({ tools: projectTools(root, { mode: hosted }), authority: () => operator });
+  const call = async (args: Json) => {
+    const reply = await request("tools/call", { name: "git_root", arguments: args });
+    return JSON.parse(((((reply.result as Json).content as Json[])[0].text) as string)) as Json;
+  };
+  const directory = path.join(root, ".worktrees", "one");
+  const created = await call({ args: ["worktree", "add", "-b", "task/one", directory, "main"], slug: "one" });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  assert.equal((created.journal as Json).step, "worktree-created");
+  // The mode's own policy reached the tool: another mode's directory is refused.
+  const outside = await call({ args: ["worktree", "add", "-b", "task/two", path.join(root, "trees", "two"), "main"], slug: "two" });
+  assert.equal(outside.ok, false);
+
+  // A config pointed at another mode after this server started is answered with a restart
+  // rather than served under a policy this server is not serving.
+  await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "solo", roles: {} }));
+  const drifted = await call({ args: ["status", "--porcelain"] });
+  assert.equal(drifted.ok, false);
+  assert.match(drifted.reason as string, /restart the server/);
+  await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "dev-team", roles: {} }));
+
+  // The shape of the request is this server's to check.
+  for (const args of [{}, { args: "status" }, { args: [] }, { args: ["status"], slug: 1 }]) {
+    const reply = await request("tools/call", { name: "git_root", arguments: args as Json });
     assert.equal((reply.error as Json)?.code, -32602, JSON.stringify(args));
   }
 });

@@ -23,6 +23,12 @@ export interface JournalEntry {
 export interface Journal {
   slug: string;
   branch: string;
+  /**
+   * The work tree every step of this task ran in, as the verifier resolved it or as
+   * `git_root worktree add` created it. Write-once like `branch`, and absent only until a
+   * step names one.
+   */
+  worktree?: string;
   defaultBranch: string;
   /**
    * What the default branch pointed at before the merge: the lead's revert target. The
@@ -45,6 +51,8 @@ export interface StepData {
   args?: string[];
   /** The journal's own fields. Both branches are required by the step that creates it. */
   branch?: string;
+  /** The work tree this step ran in; kept from the first step that names one. */
+  worktree?: string;
   defaultBranch?: string;
   /** Read only from a `merged` step: the revert target and the head it merged. */
   defaultShaBeforeMerge?: string;
@@ -122,6 +130,10 @@ export function appendStep(projectRoot: string, slug: string, step: JournalStep,
   // later step naming another does not move it. The default branch's name follows the
   // project's config.
   const branch = existing?.branch ?? data.branch;
+  // The same rule for the path: a journal belongs to one work tree, and its steps' SHAs
+  // were read there. The tool that took the call refuses a step naming another before git
+  // runs (`src/gitmutate.ts#mutate`, `src/gitroot.ts#journalFault`); here the first wins.
+  const worktree = existing?.worktree ?? data.worktree;
   const defaultBranch = data.defaultBranch ?? existing?.defaultBranch;
   if (branch === undefined || defaultBranch === undefined) {
     throw new Error(`journal ${slug}: the step that creates a journal must name its branch and defaultBranch`);
@@ -147,6 +159,7 @@ export function appendStep(projectRoot: string, slug: string, step: JournalStep,
   const journal: Journal = {
     slug,
     branch,
+    ...(worktree === undefined ? {} : { worktree }),
     defaultBranch,
     ...(defaultShaBeforeMerge === undefined ? {} : { defaultShaBeforeMerge }),
     ...(branchHead === undefined ? {} : { branchHead }),

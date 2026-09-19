@@ -59,6 +59,26 @@ test("the branch a journal was created on is write-once", (t) => {
   assert.equal(journal.steps.length, 2);
 });
 
+test("the worktree a journal was created on is write-once, like its branch", (t) => {
+  const root = project(t);
+  const created = appendStep(root, "kappa", "worktree-created", {
+    at: 1, branch: "task/kappa", defaultBranch: "main", worktree: "/repo/.worktrees/kappa",
+  });
+  assert.equal(created.worktree, "/repo/.worktrees/kappa");
+  // A journal belongs to one work tree as it belongs to one branch: every step's SHAs were
+  // read there, so a later step naming another does not move it. The tool that took the
+  // call refuses the mismatch before git runs; the document simply keeps the first path.
+  const later = appendStep(root, "kappa", "committed", { at: 2, worktree: "/repo/.worktrees/elsewhere" });
+  assert.equal(later.worktree, "/repo/.worktrees/kappa");
+  assert.equal(readJournal(root, "kappa")!.worktree, "/repo/.worktrees/kappa");
+
+  // A journal whose creating step named no work tree has none, and the first step that
+  // names one fills it: only `git_root worktree add` and `git_mutate` know the path.
+  appendStep(root, "lambda", "committed", { at: 1, branch: "task/lambda", defaultBranch: "main" });
+  assert.equal(readJournal(root, "lambda")!.worktree, undefined);
+  assert.equal(appendStep(root, "lambda", "committed", { at: 2, worktree: "/repo/.worktrees/lambda" }).worktree, "/repo/.worktrees/lambda");
+});
+
 test("steps accumulate in the order they were appended, with only the fields they carry", (t) => {
   const root = project(t);
   appendStep(root, "beta", "worktree-created", { at: 1, branch: "task/beta", defaultBranch: "main" });

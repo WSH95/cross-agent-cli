@@ -10,6 +10,8 @@ import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
 import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
+import { gitRoot } from "./gitroot.ts";
+import type { GitRootRequest } from "./gitroot.ts";
 import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
@@ -243,9 +245,25 @@ export interface ToolOptions {
 }
 
 /**
+ * A config pointed at another mode after this server started: which tools exist was
+ * decided when the mode was loaded, so a tool that acts on the mode's own git policy
+ * refuses rather than act under a policy this server is not serving (design section 6).
+ * `delegate` applies the same check at the launch boundary.
+ */
+function driftFault(projectRoot: string, mode: Mode): string | null {
+  try {
+    return modeDrift(mode, loadConfig(projectRoot));
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/**
  * The tools the worktree provider registers, and only when the active mode declares a
- * role that works in one (design, "Modes"): a `solo` project's `tools/list` holds
- * neither. `git_root` and `run_command` join this list with engine placement (row 11).
+ * role that works in one (design, "Modes"): a `solo` project's `tools/list` holds none of
+ * them. The root verbs are here rather than behind `placement: engine`, because the
+ * journal is the same document under either placement and a host-placed lead writes it
+ * through these too (plan decision 4).
  */
 function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
   return [
@@ -289,6 +307,28 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
           if (value !== undefined) request[key] = value as string;
         }
         return answer(await gitMutate(projectRoot, request, {
+          waitSeconds: lockWaitSeconds(projectRoot),
+          ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
+        }));
+      },
+    },
+    {
+      name: "git_root",
+      description: "Run one whitelisted git verb at the project root, under the project's git lock, and journal the step it completes. The verbs are worktree add -b, worktree remove, branch -d, merge --ff-only, rebase --abort, and the read-only status, log, rev-parse, merge-base, branch --list and worktree list; a verb that journals a step names the slug whose journal it belongs to.",
+      inputSchema: {
+        type: "object",
+        properties: { args: { type: "array", items: { type: "string" } }, slug: { type: "string" } },
+        required: ["args"],
+      },
+      rows: ["operator", "lead"],
+      handler: async (args) => {
+        const values = fields(args, "git_root");
+        const request: GitRootRequest = { args: stringList(values, "args", "git_root") };
+        const slug = optional(values, "slug", "string", "git_root");
+        if (slug !== undefined) request.slug = slug as string;
+        const drift = driftFault(projectRoot, mode);
+        if (drift !== null) return answer({ ok: false, reason: drift });
+        return answer(await gitRoot(projectRoot, request, {
           waitSeconds: lockWaitSeconds(projectRoot),
           ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
         }));

@@ -3,7 +3,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
-import type { Journal, JournalEntry } from "./journal.ts";
+import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
@@ -46,7 +46,7 @@ export type GitMutateResult =
   | { ok: false; reason: string; exitCode?: number; stdout?: string; stderr?: string };
 
 /** git could not be run at all — no exit code to report, so there is nothing to judge. */
-class GitRunError extends Error {
+export class GitRunError extends Error {
   constructor(reason: string) {
     super(reason);
     this.name = "GitRunError";
@@ -63,8 +63,9 @@ const exec = promisify(execFile);
 // truncation would be.
 const maxBuffer = 16 * 1024 * 1024;
 // Each of these turns a whitelisted verb into an arbitrary one against an arbitrary
-// repository, which is exactly what this tool exists to prevent (design section 4).
-const globalOptions = new Set(["--git-dir", "--work-tree", "-C", "-c"]);
+// repository, which is exactly what this tool exists to prevent (design section 4). Both
+// git tools refuse them; `git_root` reads this same set (`src/gitroot.ts#argumentFault`).
+export const globalOptions = new Set(["--git-dir", "--work-tree", "-C", "-c"]);
 
 function argumentFault(args: unknown): string | null {
   if (!Array.isArray(args) || args.length === 0) return "git_mutate needs a git subcommand: args is empty";
@@ -87,10 +88,24 @@ interface Ran {
   stderr: string;
 }
 
+/**
+ * Section 7's table: the step a subcommand completes is written under its own name, by
+ * the tool that performed it. Everything else this tool runs is a `git` step carrying the
+ * arguments it ran instead of a name — and a named one carries both, because the lead
+ * composed those arguments and the message or the upstream they name is evidence.
+ */
+function stepName(args: readonly string[]): JournalStep {
+  if (args[0] === "commit") return "committed";
+  if (args[0] === "rebase") return "rebased";
+  return "git";
+}
+
 // The explicit form of probe P7: the pointer file is never consulted, and the paths are
 // the ones the verifier resolved. The child's environment is the allowlist every git
 // invocation in this project gets, so nothing the server inherited can redirect it.
-async function run(gitDir: string, workTree: string, args: string[]): Promise<Ran> {
+// `git_root` runs through this too, with the root's own directories, so there is one
+// place where this project decides what git works on (design section 4).
+export async function run(gitDir: string, workTree: string, args: string[]): Promise<Ran> {
   const env = gitEnvironment();
   const argv = [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args];
   try {
@@ -106,7 +121,7 @@ async function run(gitDir: string, workTree: string, args: string[]): Promise<Ra
 }
 
 /** A branch's SHA, or undefined when there is no such branch to record. */
-async function revision(gitDir: string, workTree: string, branch: string): Promise<string | undefined> {
+export async function revision(gitDir: string, workTree: string, branch: string): Promise<string | undefined> {
   const ran = await run(gitDir, workTree, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
   const sha = ran.stdout.trim();
   return ran.exitCode === 0 && sha.length > 0 ? sha : undefined;
@@ -209,6 +224,12 @@ async function mutate(
   const verified = await verifyWorktree(projectRoot, target, branch);
   if ("reason" in verified) return { ok: false, reason: verified.reason };
   const { gitDir, workTree } = verified;
+  // The journal is authoritative for its own path as it is for its own branch (section 7):
+  // a call on another work tree is refused here, where the verifier's own resolution of
+  // this one is in hand, and before anything runs.
+  if (journalled?.worktree !== undefined && journalled.worktree !== workTree) {
+    return { ok: false, reason: `slug ${slug} is journaled on worktree ${journalled.worktree}; refusing ${workTree}` };
+  }
   let defaultBranch: string;
   try {
     defaultBranch = loadConfig(projectRoot).project.defaultBranch;
@@ -242,9 +263,11 @@ async function mutate(
     // are ordered by the same lock that ordered their commands.
     let journal;
     try {
-      journal = appendStep(projectRoot, slug, "git", {
+      journal = appendStep(projectRoot, slug, stepName(request.args), {
         at: options.now ?? Date.now(), before, after, args: request.args,
-        branch: verified.branch, defaultBranch,
+        // The work tree is the verifier's answer, so a journal this call creates binds the
+        // slug to the directory its steps actually ran in, not to the one the slug names.
+        branch: verified.branch, worktree: workTree, defaultBranch,
         // What the default branch was for this step, and nothing more: the journal's own
         // revert target is the SHA it has at the merge, which the lead's merge step writes.
         ...(defaultSha === undefined ? {} : { defaultSha }),
