@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T12:08:03Z
+updated_at: 2026-09-19T12:28:47Z
 updated_by: claude
 session_status: active
 branch: main
@@ -26,27 +26,27 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 ## In flight
 
 M3's skills half is merged: `main` at `3023e30` (S8, Task 4b, 4c, T12;
-`atc-s96.12` closed; 586 tests, 585 pass; `VERIFY.md` M3, `aa3f8ef`).
-Task 6 (T13: `.claude-plugin/plugin.json`, `.mcp.json`, P2 for Claude,
-I1, I2, E1; `atc-s96.13`, `.17`) came back DONE_WITH_CONCERNS on
-`task/cross-agent-m3` (`cc25f30`, `1c6678b`, `744c767`; 589 tests, 588
-pass). E1 passed all eight conditions on the Python slugkit sample. Its
-concerns became a pre-review fix round now running on the same implementer
-(`cross-agent-implementer` · claude-opus-5 · max), brief
-`task-6-findings-round-0.md`: **T6-R0-1 Critical** — a `workspace-write`
-Claude specialist in a linked worktree wrote `<root>/.git/<file>` (bead
-`atc-s96.52`); the fix is `protectedPaths` in the launch spec (the
-workspace's `.git` pointer and the common git dir, now returned by
-`verifyWorktree`) mapped to Claude's `filesystem.denyWrite`, then the P2 row
-rerun; R0-2 a call naming another engine drops the binding's model and
-effort; R0-3 `denyTargets` takes this repository's root; R0-4/5 text.
-Beaded: `.53` (hop budget under other hosts: a nested host is 9 hops,
-`maxHops` 8), `.54` (I1's Grok half needs the sample trusted in
-`~/.grok/trusted_folders.toml` — the user's call). Codex rows recorded not
-run (pause). After the round: task review + second opinion, fix rounds,
-`VERIFY.md` T13 block (report §7 has the draft), then S11
-(`task-7-brief.md`), T14, T15, T16, `.42`, `.18`. Pending your approval:
-`agents-md-m3.diff`.
+`atc-s96.12` closed; `VERIFY.md` M3, `aa3f8ef`). Task 6 (T13:
+`.claude-plugin/plugin.json`, `.mcp.json`, P2 for Claude, I1, I2, E1;
+`atc-s96.13`, `.17`) is complete on `task/cross-agent-m3` and under review:
+`cc25f30`, `1c6678b`, `744c767`, then the concerns round `69780db` (593
+tests, 592 pass; 815 citations, 0 misses). E1 passed all eight conditions
+on the Python slugkit sample. The concerns round closed the Critical
+containment gap P2 found — a `workspace-write` Claude specialist in a
+linked worktree could write into `<root>/.git` (bead `atc-s96.52`); now the
+launch spec carries `protectedPaths` (the workspace's `.git` pointer and the
+common git dir from `verifyWorktree`) and the Claude adapter sends them as
+`filesystem.denyWrite`; the P2 rerun shows the write refused — and fixed the
+model carried across an engine switch and `denyTargets`' root. Two reviews
+run now: the task review (general-purpose · claude-opus-5 · max) and an
+evidence-lens second opinion (general-purpose · claude-fable-5-1 · max).
+After them: fix rounds if any, close `.13`/`.17`/`.52`, `VERIFY.md` T13
+block (report §7 has the draft), then S11 from `task-7-brief.md` (addendum
+written: E2 not run under the Codex pause, E3 with a Claude lead is the run;
+dispatch draft in the scratchpad), T14, T15, T16, `.42`, `.18`. Beaded:
+`.53` (hop budget under other hosts), `.54` (I1's Grok half needs the sample
+trusted in the user's Grok config). Pending your approval:
+`agents-md-m3.diff`; your call on `.54`.
 
 ## Next steps
 
