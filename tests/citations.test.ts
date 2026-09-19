@@ -79,11 +79,38 @@ test("--since reports a citation whose cited line moved under it, and nothing on
   assert.match(lines[1], /^ {4}was: export function second\(\) \{\}$/);
   assert.match(lines[2], /^ {4}now: export function first\(\) \{\}$/);
 
-  // Re-pointed at the line the sentence means, the same command says nothing.
+  // Re-pointed at the line the sentence means, the drift is gone — and what is left is
+  // the honest answer that the revision's file never had a third line, so this citation
+  // is one the comparison cannot judge rather than one it has cleared.
   await writeFile(doc, "The second one (`code.ts:3`) is what this sentence is about.\n", "utf8");
   const repointed = await run(["--root", dir, "--since", "HEAD", doc]);
-  assert.equal(repointed.code, 0, repointed.out);
-  assert.equal(repointed.out, "");
+  assert.equal(repointed.code, 1);
+  assert.match(repointed.out, /doc\.md:1: code\.ts:3 — not judged: the revision's file had 2 lines/);
+  assert.equal(repointed.out.includes("drifted"), false, repointed.out);
+});
+
+test("--since says so when a cited line is past what the revision had, and walks a range's interior", async (t) => {
+  const dir = await repositoryWith(t, {
+    "code.ts": "export function first() {}\nexport function second() {}\n",
+    "doc.md": "The pair (`code.ts:1-2`) and a line past the end (`code.ts:4`).\n",
+  });
+  const doc = path.join(dir, "doc.md");
+  // At HEAD the file has two lines, so `:4` is a citation the comparison cannot judge —
+  // and silence about it is what let a whole document's pointers go stale unnoticed.
+  await writeFile(path.join(dir, "code.ts"), "export function first() {}\nexport function second() {}\nexport function third() {}\nexport function fourth() {}\n", "utf8");
+  const answered = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(answered.code, 1);
+  assert.match(answered.out, /doc\.md:1: code\.ts:4 — not judged: the revision's file had 2 lines/);
+
+  // A range is its interior too: an insertion inside one moves what the range covers,
+  // even when both ends still say what they said.
+  await writeFile(path.join(dir, "code.ts"), "export function first() {}\nconst between = 1;\nexport function second() {}\n", "utf8");
+  await writeFile(doc, "The pair (`code.ts:1-3`).\n", "utf8");
+  const interior = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(interior.code, 1);
+  assert.match(interior.out, /doc\.md:1: code\.ts:1-3 — drifted since HEAD/);
+  assert.match(interior.out, /was: export function second\(\) \{\}/);
+  assert.match(interior.out, /now: const between = 1;/);
 });
 
 test("--since ignores whitespace, a file the revision does not have, and every symbol citation", async (t) => {

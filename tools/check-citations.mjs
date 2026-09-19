@@ -24,10 +24,15 @@
 // statement passes here and is caught only by a reader — checking the claim
 // against the code stays a review duty.
 //
-//   node tools/check-citations.mjs [--root DIR] [FILE...]
+//   node tools/check-citations.mjs [--root DIR] [--since REV] [FILE...]
 //
 // With no file argument it reads every `.md` under `docs/`. `--root` resolves
-// citations against DIR instead of this repository. It prints one line per
+// citations against DIR instead of this repository. `--since REV` adds the
+// check this one cannot make on its own: for every line citation it compares
+// the cited line's text at REV with the text now and reports each one that
+// differs, or says it could not judge the citation — a line past REV's end of
+// file, in a file that has grown since, is reported rather than skipped. A
+// symbol or anchor citation moves with what it names and is never compared. It prints one line per
 // miss on stdout,
 //
 //   docs/design.md:924: src/engines/spawn.ts:999 — file has 264 lines
@@ -139,7 +144,10 @@ for (const doc of docs) {
     // text now, which is exactly the drift a passing checker hides.
     else if (since !== null && numbers !== undefined) {
       const moved = driftOf(target, numbers);
-      if (moved !== null) drifts.push(`${at}: ${target}${ref} — drifted since ${since}\n    was: ${moved.was}\n    now: ${moved.now}`);
+      if (moved === null) continue;
+      drifts.push(moved.unjudged !== undefined
+        ? `${at}: ${target}${ref} — not judged: ${moved.unjudged}`
+        : `${at}: ${target}${ref} — drifted since ${since}\n    was: ${moved.was}\n    now: ${moved.now}`);
     }
   }
 }
@@ -164,16 +172,31 @@ function flat(line) {
   return line.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The first line of this citation whose text has changed since `--since`, with both
+ * texts — or the reason it could not be judged, which is never silence: a citation past
+ * the revision's end of file is exactly the case that hid a whole document's stale
+ * pointers, because the file had grown and nothing compared them. Whitespace is
+ * normalised, because reindenting a line is not moving the content out from under a
+ * sentence; a file the revision does not hold at all has nothing to compare against, and
+ * a symbol citation never reaches here.
+ */
 function driftOf(cited, numbers) {
   const before = fileAtRevision(cited);
   if (before === null) return null;
   const now = fileAt(cited);
   if (now === null) return null;
-  // A file ending in a newline leaves an empty last element, which is no line: comparing
-  // against it would report every citation past the old end as drift.
+  // A file ending in a newline leaves an empty last element, which is no line.
   const had = before.length > 0 && before[before.length - 1] === "" ? before.length - 1 : before.length;
-  for (const n of numbers.split(/[-,]/).map(Number)) {
-    if (n > had || n > now.count) continue;
+  // Every line the citation covers, the interior of a range included: an insertion inside
+  // one moves what it covers even when both ends still say what they said.
+  const parts = numbers.split(/[-,]/).map(Number);
+  const lines = numbers.includes("-")
+    ? Array.from({ length: parts[parts.length - 1] - parts[0] + 1 }, (_value, index) => parts[0] + index)
+    : parts;
+  for (const n of lines) {
+    if (n > had) return { unjudged: `the revision's file had ${had} line${had === 1 ? "" : "s"}` };
+    if (n > now.count) continue;
     const was = before[n - 1];
     const text = now.lines[n - 1];
     if (flat(was) !== flat(text)) return { was: was.trim(), now: text.trim() };

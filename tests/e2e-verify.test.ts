@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,8 +18,12 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const verify = path.join(repoRoot, "tools", "e2e-verify.mjs");
 
 async function run(project: string): Promise<{ code: number; out: string }> {
+  return runWith(project, []);
+}
+
+async function runWith(project: string, extra: string[]): Promise<{ code: number; out: string }> {
   try {
-    const { stdout } = await exec(process.execPath, [verify, "--project", project], { encoding: "utf8" });
+    const { stdout } = await exec(process.execPath, [verify, "--project", project, ...extra], { encoding: "utf8" });
     return { code: 0, out: stdout };
   } catch (error) {
     const failure = error as { code?: number; stdout?: string };
@@ -44,17 +48,29 @@ const claudeDelegate = [
   JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "mcp__cross-agent__delegate", input: { role: "consult" } }] } }),
 ].join("\n") + "\n";
 
+/** A Grok turn that runs a shell command, which is `run_terminal_command` for that engine. */
+const grokBash = (command: string) => [
+  JSON.stringify({ type: "system", subtype: "init", session_id: "g" }),
+  JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "run_terminal_command", input: { command } }] } }),
+].join("\n") + "\n";
+
 /** Grok reaches an MCP tool through its `use_tool` dispatcher, which names the tool inside. */
 const grokLog = (toolName: string) => [
   JSON.stringify({ type: "system", subtype: "init", session_id: "g" }),
   JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "use_tool", input: { tool_name: toolName, tool_input: {} } }] } }),
 ].join("\n") + "\n";
 
-/** Codex's own shape: items, not Anthropic content blocks. */
-const codexLog = (command: string, mcpTool?: string) => [
+/**
+ * Codex's own shape, as `docs/probes.md` records it: items, not Anthropic content blocks,
+ * and a command that is `/bin/bash -lc '…'` with the real command inside the quotes.
+ * `extraItem` stands for an item type no archived Codex JSON has shown.
+ */
+const codexLog = (command: string, extraItem?: Record<string, unknown>) => [
   JSON.stringify({ type: "thread.started", thread_id: "t" }),
-  JSON.stringify({ type: "item.completed", item: { type: "command_execution", command } }),
-  ...(mcpTool === undefined ? [] : [JSON.stringify({ type: "item.completed", item: { type: "mcp_tool_call", tool: mcpTool } })]),
+  JSON.stringify({ type: "turn.started" }),
+  JSON.stringify({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "I will run it." } }),
+  JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "command_execution", command, aggregated_output: "", exit_code: 0, status: "completed" } }),
+  ...(extraItem === undefined ? [] : [JSON.stringify({ type: "item.completed", item: extraItem })]),
   JSON.stringify({ type: "turn.completed" }),
 ].join("\n") + "\n";
 
@@ -67,23 +83,35 @@ const journalSteps = ["worktree-created", "git", "committed", "merged", "tests-p
 async function project(
   t: TestContext,
   logs: Record<string, string>,
-  options: { steps?: unknown; journal?: string } = {},
+  options: { steps?: unknown; journal?: string; others?: Record<string, unknown> } = {},
 ): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "e2e-verify-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, "README.md"), "sample\n");
+  // What `cross-agent init` puts there, so the ledger the run leaves behind does not make
+  // the working tree dirty — the condition this tool checks two rows above.
+  await writeFile(path.join(root, ".gitignore"), ".cross-agent/\n.worktrees/\n");
   await exec("git", ["-C", root, "init", "-b", "main"]);
   await exec("git", ["-C", root, "add", "-A"]);
   await exec("git", ["-C", root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "-m", "initial"]);
   await mkdir(path.join(root, ".cross-agent", "tasks"), { recursive: true });
   await mkdir(path.join(root, ".cross-agent", "journal"), { recursive: true });
   await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({
-    mode: "dev-team", project: { defaultBranch: "main", testCommand: "none" }, limits: { maxDepth: 1 },
+    // A command that runs and exits zero, so the suite row is a pass and the exit status
+    // is about the rows this file is testing.
+    mode: "dev-team", project: { defaultBranch: "main", testCommand: "true" }, limits: { maxDepth: 1 },
   }));
   await writeFile(
     path.join(root, ".cross-agent", "journal", "slug.json"),
     options.journal ?? JSON.stringify({ slug: "slug", branch: "task/slug", steps: (options.steps ?? journalSteps.map((step) => ({ step }))) }),
   );
+  // Older journals of the same project: a consult that never took a worktree, a run that
+  // was interrupted. A later complete run is not judged by them.
+  for (const [name, body] of Object.entries(options.others ?? {})) {
+    const file = path.join(root, ".cross-agent", "journal", `${name}.json`);
+    await writeFile(file, JSON.stringify(body));
+    await utimes(file, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  }
   let n = 0;
   for (const [engine, body] of Object.entries(logs)) {
     const id = `task${++n}`;
@@ -104,18 +132,19 @@ test("a clean transcript in each engine's own shape passes the scan", async (t) 
   const root = await project(t, {
     claude: claudeLog("python3 -m unittest discover -s tests -t ."),
     grok: grokLog("cross-agent__describe_mode"),
-    codex: codexLog("npm test", "mcp__cross_agent__check"),
+    codex: codexLog("/bin/bash -lc 'python3 -m unittest discover -s tests -t .'"),
   });
-  const { out } = await run(root);
+  const { code, out } = await run(root);
   // The specialist row's own tools are not offences, whatever a host spells them.
   assert.equal(verdict(out, scan), "pass", out);
+  // Every row passing is the only exit 0 there is.
+  assert.equal(code, 0, out);
 });
 
 test("a delegate call is an offence in every host's spelling, including Grok's dispatcher", async (t) => {
   for (const logs of [
     { claude: claudeDelegate },
     { grok: grokLog("cross-agent__delegate") },
-    { codex: codexLog("true", "mcp__cross_agent__delegate") },
   ]) {
     const root = await project(t, logs);
     const { code, out } = await run(root);
@@ -124,14 +153,50 @@ test("a delegate call is an offence in every host's spelling, including Grok's d
   }
 });
 
-test("a shell command that starts an engine is an offence in each engine's own log shape", async (t) => {
+test("a Codex item type no archived run has shown makes the scan answer, not guess", async (t) => {
+  // The only Codex items any archived `--json` transcript holds are `agent_message` and
+  // `command_execution` (`docs/probes.md`, the native samples). How Codex names an MCP
+  // call is unknown until I1's Codex row runs, so a log carrying any other item type is
+  // evidence this tool cannot read — never a pass, and never an invented offence either.
+  const root = await project(t, { codex: codexLog("/bin/bash -lc 'true'", { id: "item_2", type: "mcp_tool_call", tool: "mcp__cross_agent__delegate" }) });
+  const { code, out } = await run(root);
+  assert.equal(verdict(out, scan), "?", out);
+  assert.equal(code, 2, out);
+});
+
+test("a shell command that starts an engine is an offence through a shell's own quoting", async (t) => {
   for (const logs of [
     { claude: claudeLog("claude -p 'do the work'") },
-    { codex: codexLog("grok -p hello") },
+    // A path is still that engine, and this server's own entry point is a launch too: the
+    // deny list names both (design section 3), so the scan has to see both.
+    { claude: claudeLog("/usr/bin/claude -p hello") },
+    { claude: claudeLog("node /home/op/agent-team-cli/src/server.ts --project /tmp/x") },
+    // The shape the probes recorded: Codex wraps everything in `/bin/bash -lc '…'`, so the
+    // engine's name is preceded by a quote and not by whitespace.
+    { codex: codexLog("/bin/bash -lc 'grok -p hello'") },
+    { codex: codexLog(`/bin/bash -lc 'echo "DEPTH=\${CROSS_AGENT_DEPTH:-NONE}"; claude --version'`) },
+    { grok: grokBash("codex exec 'do the work'") },
   ]) {
     const root = await project(t, logs);
-    assert.equal(verdict((await run(root)).out, scan), "FAIL");
+    const { code, out } = await run(root);
+    assert.equal(verdict(out, scan), "FAIL", out);
+    assert.equal(code, 1, out);
   }
+});
+
+test("the exit status says which of the three verdicts the run reached", async (t) => {
+  // A controller that reads only the status has to be able to tell silence from success:
+  // 0 when every row passed, 1 when any failed, 2 when any row had no evidence.
+  const clean = await project(t, { claude: claudeLog("true") });
+  assert.equal((await run(clean)).code, 0);
+  const failing = await project(t, { claude: claudeDelegate });
+  assert.equal((await run(failing)).code, 1);
+  // A log that exists but says nothing this tool can read: every other row passes, so the
+  // only thing between the caller and a green run is the verdict it cannot judge.
+  const silent = await project(t, { claude: "not json at all\n" });
+  const answered = await run(silent);
+  assert.equal(verdict(answered.out, scan), "?", answered.out);
+  assert.equal(answered.code, 2, answered.out);
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
@@ -143,12 +208,45 @@ test("a transcript the parser cannot read is answered with a question mark, neve
   assert.equal(verdict((await run(empty)).out, scan), "?");
 });
 
+test("with no slug the newest journal that opened a worktree is the one judged", async (t) => {
+  // A project accumulates journals: a `consult` one-shot that was cancelled, an earlier
+  // interrupted run. The documented command names no slug, so a later complete run must
+  // not be failed by an older file — and the others are named rather than hidden.
+  const logs = { claude: claudeLog("true") };
+  const others = {
+    stale: { slug: "stale", branch: "task/stale", steps: [{ step: "worktree-created" }] },
+    consult: { slug: "consult", branch: "task/consult", steps: [{ step: "git" }] },
+  };
+  const root = await project(t, logs, { others });
+  const { code, out } = await run(root);
+  assert.equal(verdict(out, journal), "pass", out);
+  assert.equal(code, 0, out);
+  const line = out.split("\n").find((entry) => entry.includes(journal))!;
+  assert.match(line, /slug:/);
+  assert.match(line, /not judged: consult, stale|not judged: stale, consult/);
+
+  // Named with `--slug`, that one is judged whatever its age.
+  const named = await runWith(root, ["--slug", "stale"]);
+  assert.equal(verdict(named.out, journal), "FAIL", named.out);
+});
+
 test("the journal has to hold the loop's steps in order, and an empty one fails", async (t) => {
   const complete = await project(t, { claude: claudeLog("true") });
   assert.equal(verdict((await run(complete)).out, journal), "pass");
 
+  // A run that opened its worktree and stopped: every later step is missing, which is a
+  // failure and not a silence.
+  const stopped = await project(t, { claude: claudeLog("true") }, { steps: [{ step: "worktree-created" }] });
+  assert.equal(verdict((await run(stopped)).out, journal), "FAIL");
+
+  // A journal that never opened a worktree is not this run's, so with no slug there is
+  // nothing to judge — and saying so is not the same as passing.
   const empty = await project(t, { claude: claudeLog("true") }, { steps: [] });
-  assert.equal(verdict((await run(empty)).out, journal), "FAIL");
+  const answered = await run(empty);
+  assert.equal(verdict(answered.out, journal), "?", answered.out);
+  assert.equal(answered.code, 2, answered.out);
+  // Named outright, the same file is judged and fails.
+  assert.equal(verdict((await runWith(empty, ["--slug", "slug"])).out, journal), "FAIL");
 
   const missing = await project(t, { claude: claudeLog("true") }, {
     steps: journalSteps.filter((step) => step !== "merged").map((step) => ({ step })),

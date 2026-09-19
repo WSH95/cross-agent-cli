@@ -15,9 +15,10 @@
 // `.cross-agent/config.json` (`project.testCommand`).
 //
 // One line per check: `pass`, `FAIL`, or `?` where the evidence is missing rather than
-// contradicted (no journal, no records), which is not the same thing and never counted as
-// a pass. Exit 0 when nothing failed, 1 when anything did, 2 when the project cannot be
-// read.
+// contradicted (no journal, no records, a log in a shape this cannot read), which is not
+// the same thing and is never counted as a pass. Exit 0 only when every row passed, 1
+// when any failed, 2 when any row had no evidence and none failed; a project that cannot
+// be read at all exits 2 as well, with the reason on stderr.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -85,17 +86,30 @@ if (run.length === 0) {
 }
 
 const journalDir = path.join(project, ".cross-agent", "journal");
-const journals = (existsSync(journalDir) ? readdirSync(journalDir) : [])
-  .filter((name) => name.endsWith(".json") && (args.slug === undefined || name === `${args.slug}.json`))
-  .map((name) => ({ name, journal: readJson(path.join(journalDir, name)) }))
-  .filter((entry) => entry.journal !== null);
+const allJournals = (existsSync(journalDir) ? readdirSync(journalDir) : [])
+  .filter((name) => name.endsWith(".json"))
+  .map((name) => ({ name, at: statSync(path.join(journalDir, name)).mtimeMs, journal: readJson(path.join(journalDir, name)) }))
+  .filter((entry) => entry.journal !== null)
+  .sort((a, b) => b.at - a.at);
+// A project accumulates journals — a cancelled one-shot, an interrupted run — and the
+// documented command names no slug. So `--slug` judges the one it names, and without it
+// the newest journal that opened a worktree is the run being judged; the rest are named
+// in the row rather than failing it.
+const opened = (entry) => Array.isArray(entry.journal.steps)
+  && entry.journal.steps.some((step) => step?.step === "worktree-created");
+const journals = args.slug === undefined
+  ? allJournals.filter(opened).slice(0, 1)
+  : allJournals.filter((entry) => entry.name === `${args.slug}.json`);
+const setAside = allJournals.filter((entry) => !journals.includes(entry)).map((entry) => entry.name.replace(/\.json$/, ""));
 // The loop's own table, in the order a finished task writes it. `git` and `rebased` may
 // fall between any two — a commit that moved nothing and a rebase that replayed nothing
 // are journaled as `git` — but a missing or out-of-order named step means the run did not
 // do what the record claims.
 const required = ["worktree-created", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"];
 if (journals.length === 0) {
-  check("the journal shows every git step", "?", `no journal under ${journalDir}`);
+  check("the journal shows every git step", "?", allJournals.length === 0
+    ? `no journal under ${journalDir}`
+    : `no journal opened a worktree (${allJournals.map((entry) => entry.name.replace(/\.json$/, "")).join(", ")})`);
 } else {
   const judged = journals.map(({ name, journal }) => {
     const slug = name.replace(/\.json$/, "");
@@ -115,7 +129,8 @@ if (journals.length === 0) {
   });
   const worst = judged.some((entry) => entry.verdict === "FAIL") ? "FAIL"
     : judged.some((entry) => entry.verdict === "?") ? "?" : "pass";
-  check("the journal shows every git step", worst, judged.map((entry) => `${entry.slug}: ${entry.detail}`).join(" | "));
+  const aside = setAside.length === 0 ? "" : ` | not judged: ${setAside.join(", ")}`;
+  check("the journal shows every git step", worst, judged.map((entry) => `${entry.slug}: ${entry.detail}`).join(" | ") + aside);
 }
 
 // 8. Every specialist transcript, by what it **called** rather than by what its text
@@ -124,10 +139,22 @@ if (journals.length === 0) {
 // Claude and Grok emit Anthropic-shaped `tool_use` blocks (Grok reaching an MCP tool
 // through its `use_tool` dispatcher, which names the tool inside), and Codex emits items.
 // An offence is `delegate` in any host's spelling or a shell command starting one of the
-// engines, this CLI or this server. The specialist row's own tools are not offences,
-// whatever prefix a host gives them. A log no parser here understands is evidence of
-// nothing, and evidence of nothing is never a pass.
-const launcher = /(^|[|&;`(\s])(claude|codex|grok|cross-agent)(\s|$)/;
+// three CLIs or `cross-agent`. The specialist row's own tools are not offences, whatever
+// prefix a host gives them. A log no parser here understands is evidence of nothing, and
+// evidence of nothing is never a pass.
+//
+// **Codex's MCP items are not parsed, because no archived Codex run has shown one.** Its
+// `--json` transcripts hold `agent_message` and `command_execution` items and nothing
+// else (`docs/probes.md`, the native samples); how it names an MCP call is I1's Codex row
+// to record. Until then a Codex log carrying any other item type is answered `?` rather
+// than guessed at, and one carrying only those two is judged on its commands.
+const codexItems = new Set(["agent_message", "command_execution"]);
+// A quote is a delimiter like any other: Codex wraps every command in `/bin/bash -lc '…'`
+// (P9, P10), so the engine's own name is preceded by `'` and not by whitespace. A path is
+// still that engine — the deny list names `/opt/custom codex` as readily as `codex` — and
+// this server's own entry point is a launch of its own, so a `src/server.ts` or
+// `server.js` argument counts however it is reached.
+const launcher = /(^|[|&;`('"()\s/])(claude|codex|grok|cross-agent)(\s|$|['"])|(^|[\s'"])[^\s'"]*\/server\.(?:ts|js)(\s|$|['"])/;
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
 const unreadable = [];
@@ -140,6 +167,7 @@ for (const record of run) {
   }
   const calls = [];
   const commands = [];
+  const unknownItems = [];
   let understood = 0;
   let unparsable = 0;
   for (const line of readFileSync(log, "utf8").split("\n")) {
@@ -165,20 +193,25 @@ for (const record of run) {
       }
       continue;
     }
-    // Codex: items, one per completed step.
+    // Codex: items, one per completed step. An item type no archived run has shown is the
+    // one thing this scan must not shrug at — it could be the very call it looks for.
     if (typeof event.type === "string" && event.type.startsWith("item.")) {
-      understood++;
       const item = event.item ?? {};
+      if (!codexItems.has(item.type)) { unknownItems.push(String(item.type)); continue; }
+      understood++;
       if (item.type === "command_execution" && typeof item.command === "string") commands.push(item.command);
-      if (typeof item.tool === "string") calls.push(item.tool);
-      if (typeof item.name === "string") calls.push(item.name);
       continue;
     }
-    if (["thread.started", "turn.completed", "turn.failed", "system", "result", "user", "error"].includes(event.type)) understood++;
+    // Everything else an engine says about itself — a hook, a rate-limit notice, a
+    // session line, a result — carries no tool call and no command, so an unfamiliar
+    // `type` here is noise rather than evidence withheld.
+    if (typeof event.type === "string") understood++;
     else unparsable++;
   }
-  if (understood === 0) {
-    unreadable.push(`${record.id.slice(0, 8)}: ${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`);
+  if (understood === 0 || unparsable > 0 || unknownItems.length > 0) {
+    unreadable.push(unknownItems.length > 0
+      ? `${record.id.slice(0, 8)}: Codex item${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`
+      : `${record.id.slice(0, 8)}: ${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`);
     continue;
   }
   scanned++;
@@ -198,7 +231,9 @@ check("no delegate call and no engine launch in any specialist transcript",
 const failed = results.filter((result) => result.verdict === "FAIL").length;
 const unknown = results.filter((result) => result.verdict === "?").length;
 console.log(`\n${results.length - failed - unknown} pass, ${failed} fail, ${unknown} without evidence`);
-process.exit(failed === 0 ? 0 : 1);
+// Three verdicts, three statuses: a caller that reads only the status must not be able to
+// mistake silence for success, which is the whole rule this tool is built on.
+process.exit(failed > 0 ? 1 : unknown > 0 ? 2 : 0);
 
 /** The `createdAt` every record of this run is at or after. */
 function since(all) {
