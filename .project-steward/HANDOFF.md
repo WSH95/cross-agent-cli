@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T14:17:55Z
+updated_at: 2026-09-19T14:35:59Z
 updated_by: claude
 session_status: active
 branch: main
@@ -33,11 +33,16 @@ round 2 landed the Grok prompt-file budget (`atc-s96.55`, closed — verified
 by the product: a 76 KB review brief with the diff attached now launches),
 every evidence gap from the Grok review of round 1, `tools/e2e-verify.mjs`,
 and I1's Grok row with the sample folder trusted (`.54` closed; `.17` and
-`.52` closed too). **Two reviews run now**, both read-only on the worktree:
-the Grok second review of round 2 through cross-agent (task `23e32657…`,
-diff attached) and — the seat the user caught being skipped — the Opus 5
-task reviewer's scoped re-review of rounds 1–2 plus the cumulative
-whole-task review (3023e30..39505aa). When both are clean: close `.13`,
+`.52` closed too). The Opus 5 task reviewer's scoped re-review of rounds 1–2 plus the
+cumulative whole-task review returned: **spec compliance PASS**, every
+runtime fix proven to bite; **task quality needs fixes** for documentation
+truth only (the round-2 commits moved ~50 line citations off their content;
+a deleted Grok init-field caveat; one README word). **Fix round 3**, the
+closing round, is running on the implementer (`task-6-findings-round-3.md`:
+the citation pass with test-file citations converted to `@anchor`s, and a
+`--since <rev>` drift flag for `tools/check-citations.mjs`). The Grok second
+review of round 2 (task `23e32657…`, diff attached) is still running through
+cross-agent; its findings fold into round 3 or a short round 4. When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md`'s T13
 section (final text with placeholders in
 `.superpowers/sdd/…/dispatch/verify-t13-final.md`), then the full handover
