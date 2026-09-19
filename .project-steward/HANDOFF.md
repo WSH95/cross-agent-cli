@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-09-19T10:03:57Z
+updated_at: 2026-09-19T11:04:35Z
 updated_by: claude
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
@@ -26,17 +26,26 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 ## In flight
 
 Task 5 (T12: the launcher skill, the `dev-team` loop and role prompts
-through the one-off devpack converter, the skill tests; `atc-s96.12`)
-runs as a Claude Code subagent (`cross-agent-implementer` · claude-opus-5
-· max) on `task/cross-agent-m3` from `3859410`. Complete there since M1:
-Task 4 (S8), 4b (root git tools), 4c (solo without ceremony; its fix
-round closed a Critical merge-smuggling hole); 561 pass, 1 skip. Next:
-T13 (`task-6-brief.md`: packaging, P2 for Claude, I1/I2, E1 on the
-slugkit sample), S11 (`task-7-brief.md`), T14/T15, T16
-(`task-10-brief.md`). **Codex is paused by the user.** Pending your
-approval: `agents-md-m1.diff` plus the Layout diffs of Tasks 4, 4b, 4c in
-`.superpowers/sdd/the-development-of-this-calm-planet/` (to be merged
-into one proposal at the M3 report).
+through the one-off devpack converter, the skill tests; `atc-s96.12`,
+claimed) is on `task/cross-agent-m3`: first pass `3859410..03a1d48`, two
+reviews (Opus 5 task review: Needs fixes, 4 Important; Fable 5.1
+executability second opinion: 3 Important), fix round 1 landed as
+`4157a91` (`delegate` now launches a specialist with the mode's own
+`roles/<role>.md`; the one-line default is gone) and `8a7604b` (every
+`resume` call spelled with `cwd`/`branch` and the latest id, `consult`
+named by `review`/`critique`, the false `git_root` branch claim, the
+duplicate-window re-review, 16 minors, two new skills tests). 585 pass, 1
+skip; 795 citations, 0 misses. The scoped re-review (Fable 5.1, with the
+cumulative check of `3859410..8a7604b`) is running. On a clean verdict:
+`bd close atc-s96.12`, rebase onto `main` (its 7 newer commits touch only
+`.project-steward/`), fast-forward merge, root `npm test`, `VERIFY.md`,
+then T13 from `task-6-brief.md`, whose 2026-09-19 addendum rebinds the
+Codex rows (planner/implementer → claude-sonnet-5, reviewers → grok-4.6)
+and records the Codex I1/I2 rows as not run while the user's Codex pause
+holds. A sonnet helper is consolidating the five AGENTS.md proposal diffs
+into `agents-md-m3.diff` for your approval at the M3 report. Then S11
+(`task-7-brief.md`), T14/T15, T16 (`task-10-brief.md`). **Codex is paused
+by the user.** Pending your approval: the combined AGENTS.md proposal.
 
 ## Next steps
 
