@@ -530,8 +530,8 @@ test("notifications/cancelled ends the wait it names within 100ms, and the reply
   });
   assert.ok(typeof elapsedSeconds === "number" && elapsedSeconds >= 0 && elapsedSeconds < 30, `elapsed ${elapsedSeconds}`);
 });
-// @anchor cancellationSharingChunk
 
+// @anchor cancellationSharingChunk
 test("a cancellation sharing a chunk with the call it names is still honoured", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -1023,8 +1023,8 @@ test("the engine a request overrides is the engine that runs, and the record say
   const bare = await seed(p.root, { role: "claudish", cwd: p.root, status: "failed" });
   assert.equal(bare.model, undefined);
 });
-// @anchor profileSpecialistRuns
 
+// @anchor profileSpecialistRuns
 test("the profile a specialist runs under is the mode's default unless config overrides it", async (t) => {
   const p = await projectWithRoles(t);
   const configFile = path.join(p.root, ".cross-agent", "config.json");
