@@ -78,7 +78,7 @@ test("loadMode refuses every document it cannot trust, naming the field and the 
     [modeDocument("other", roles) as Record<string, unknown>, /id/],
     [modeDocument("m", roles, { unexpected: "field" }), /unexpected/],
     [modeDocument("m", roles, { roles: [] }), /roles/],
-    [modeDocument("m", [{ key: "planner" }, { key: "planner" }]), /planner/],
+    [modeDocument("m", [{ key: "planner" }, { key: "planner" }]), /declared twice/],
     [modeDocument("m", roles, {
       roles: [{ key: "planner", title: "P", promptFile: "roles/planner.md", workspace: { kind: "root" }, sandboxDefault: "read-only", extra: 1 }],
     }), /extra/],
@@ -119,6 +119,37 @@ test("loadMode refuses every document it cannot trust, naming the field and the 
     [modeDocument("m", [{ key: "k".repeat(65) }]), /key/],
     [modeDocument("m", roles, { lead: null }), /lead/],
     [modeDocument("m", roles, { roles: "planner" }), /roles/],
+    // A role key names a config entry, a prompt file and a record's role, so it is one
+    // path segment of a small alphabet.
+    [modeDocument("m", [{ key: "Planner" }]), /roles\.Planner\.key/],
+    [modeDocument("m", [{ key: "plan reviewer" }]), /key/],
+    [modeDocument("m", [{ key: "../escape" }]), /key/],
+    [modeDocument("m", roles, {
+      git: { worktreeDir: ".worktrees", branchPattern: "task /*" },
+      roles: [{ key: "i", title: "I", promptFile: "roles/i.md", workspace: { kind: "worktree", branchPattern: "task /*", dir: ".worktrees" }, sandboxDefault: "read-only" }],
+    }), /branchPattern/],
+    // A worktree directory that climbs out of the project by another spelling.
+    [modeDocument("m", roles, {
+      git: { worktreeDir: "trees/../..", branchPattern: "task/*" },
+      roles: [{ key: "i", title: "I", promptFile: "roles/i.md", workspace: { kind: "worktree", branchPattern: "task/*", dir: "trees/../.." }, sandboxDefault: "read-only" }],
+    }), /dir/],
+    // Unknown fields inside every object the document nests, not only at its top.
+    [modeDocument("m", roles, { lead: { placement: "host", extra: 1 } }), /lead\.extra/],
+    [modeDocument("m", roles, { requires: { engines: [], extra: 1 } }), /requires\.extra/],
+    [modeDocument("m", roles, { git: { worktreeDir: ".worktrees", branchPattern: "task/*", extra: 1 } }), /git\.extra/],
+    [modeDocument("m", roles, {
+      roles: [{ key: "p", title: "P", promptFile: "roles/p.md", workspace: { kind: "root", dir: "x" }, sandboxDefault: "read-only" }],
+    }), /workspace\.dir/],
+    // The two text caps no other case reaches.
+    [modeDocument("m", roles, {
+      // Long as a path rather than as one name, so the cap is what refuses it and not the
+      // file system's own limit on a single component.
+      roles: [{ key: "p", title: "P", promptFile: `roles/${"p".repeat(200)}/${"p".repeat(50)}.md`, workspace: { kind: "root" }, sandboxDefault: "read-only" }],
+    }), /promptFile/],
+    [modeDocument("m", roles, {
+      git: { worktreeDir: "w".repeat(201), branchPattern: "task/*" },
+      roles: [{ key: "i", title: "I", promptFile: "roles/i.md", workspace: { kind: "worktree", branchPattern: "task/*", dir: "w".repeat(201) }, sandboxDefault: "read-only" }],
+    }), /dir/],
   ];
   for (const [document, expected] of cases) {
     writeMode(modes, "m", document);
@@ -146,6 +177,95 @@ test("loadMode refuses a prompt file that is missing or resolves outside the mod
   writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { prompts: { planner: null } });
   fs.symlinkSync(outside, path.join(modes, "m", "roles", "planner.md"));
   assert.match(refusal(modes, "m"), /promptFile/);
+});
+
+test("a worktree directory the project needs for itself is not one a role may work in", (t) => {
+  const modes = modesRoot(t);
+  for (const dir of [".", "./", ".cross-agent", ".cross-agent/trees", ".git", ".git/worktrees"]) {
+    writeMode(modes, "m", modeDocument("m", [{ key: "i", workspace: "worktree" }], {
+      git: { worktreeDir: dir, branchPattern: "task/*" },
+      roles: [{ key: "i", title: "I", promptFile: "roles/i.md", workspace: { kind: "worktree", branchPattern: "task/*", dir }, sandboxDefault: "read-only" }],
+    }));
+    // The project root itself holds the ledger and the config, and `.git` is the
+    // repository: a worktree the implementer can write must be neither.
+    assert.match(refusal(modes, "m"), /dir/, dir);
+    fs.rmSync(path.join(modes, "m"), { recursive: true, force: true });
+  }
+});
+
+test("an engine-placed lead is a role that works at the project root", (t) => {
+  const modes = modesRoot(t);
+  writeMode(modes, "m", modeDocument("m", [{ key: "lead", workspace: "worktree", sandboxDefault: "read-only" }, { key: "planner" }], {
+    lead: { placement: "engine", role: "lead" },
+  }));
+  // The lead model gives an engine lead `git_root` and `run_command` precisely because it
+  // is read-only at the root; a lead inside one task's worktree could not run the loop.
+  const reason = refusal(modes, "m");
+  assert.match(reason, /lead\.role/);
+  assert.match(reason, /root/);
+
+  writeMode(modes, "ok", modeDocument("ok", [{ key: "lead" }, { key: "planner" }], {
+    lead: { placement: "engine", role: "lead" },
+  }));
+  assert.equal(loadMode(modes, "ok").lead.role, "lead");
+});
+
+test("the loop file is contained and readable like every prompt file, at load", (t) => {
+  const modes = modesRoot(t);
+  const outside = path.join(modes, "outside.md");
+  fs.writeFileSync(outside, "A loop the mode does not own.\n");
+
+  // Missing: a mode with no loop would load at start and fail only at the launcher's
+  // first call, which is the one call that must not fail half-way.
+  writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { loop: null });
+  assert.match(refusal(modes, "m"), /SKILL\.md/);
+
+  // A symlink out of the mode is the same escape as a `..` in a prompt file name.
+  fs.symlinkSync(outside, path.join(modes, "m", "SKILL.md"));
+  assert.match(refusal(modes, "m"), /SKILL\.md/);
+
+  // A directory where the file belongs.
+  fs.rmSync(path.join(modes, "m"), { recursive: true, force: true });
+  writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { loop: null });
+  fs.mkdirSync(path.join(modes, "m", "SKILL.md"));
+  assert.match(refusal(modes, "m"), /SKILL\.md/);
+
+  // The resolved path is kept on the mode, and it is the file `describeMode` reads.
+  fs.rmSync(path.join(modes, "m"), { recursive: true, force: true });
+  writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { loop: "The loop.\n" });
+  const mode = loadMode(modes, "m");
+  assert.equal(mode.loopFile, path.join(mode.dir, "SKILL.md"));
+  const described = describeMode(modes, "m");
+  assert.ok(!("reason" in described));
+  assert.equal(described.loop, "The loop.\n");
+});
+
+test("a prompt file that is a directory is refused at load, not read at description", (t) => {
+  const modes = modesRoot(t);
+  writeMode(modes, "m", modeDocument("m", [{ key: "planner" }]), { prompts: { planner: null } });
+  fs.mkdirSync(path.join(modes, "m", "roles", "planner.md"));
+  assert.match(refusal(modes, "m"), /roles\.planner\.promptFile/);
+});
+
+test("a mode directory that is a symlink out of the shelf is not a mode of that shelf", (t) => {
+  const modes = modesRoot(t);
+  const elsewhere = modesRoot(t);
+  writeMode(elsewhere, "smuggled", modeDocument("smuggled", [{ key: "planner" }]));
+  fs.symlinkSync(path.join(elsewhere, "smuggled"), path.join(modes, "smuggled"));
+  // The shelf is what `describe_mode` serves from, and a mode outside it is not text this
+  // build ships whatever the directory entry says.
+  assert.match(refusal(modes, "smuggled"), /modes/);
+});
+
+test("the two dev-team modes carry the same role prompts until the converter generates both", () => {
+  const modes = builtInModesDir();
+  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
+    assert.equal(
+      fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
+      fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
+      `${key}: the engine-placed team's specialists are the host-placed team's; step 9 generates both from one source`,
+    );
+  }
 });
 
 test("the three built-in modes validate, and each declares what its loop needs", () => {

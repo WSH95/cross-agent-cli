@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxProfiles } from "./engines/registry.ts";
@@ -63,6 +63,8 @@ export interface Mode {
   requires: { engines: EngineName[] };
   /** The canonical mode directory: where `SKILL.md` and every prompt file were resolved. */
   dir: string;
+  /** The loop file, resolved and contained at load: what `describeMode` reads. */
+  loopFile: string;
 }
 
 export interface ModeDescription {
@@ -106,13 +108,20 @@ export function loadMode(modesDir: string, name: string): Mode {
   const file = path.join(dir, MODE_FILE);
   let raw: string;
   let canonicalDir: string;
+  let canonicalShelf: string;
   try {
+    canonicalShelf = realpathSync(modesDir);
     canonicalDir = realpathSync(dir);
     raw = readFileSync(file, "utf8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || code === "ENOTDIR") throw new Error(`no mode ${JSON.stringify(name)} at ${dir}: it holds no ${MODE_FILE}`);
     throw new Error(`${file}: cannot read the mode: ${message(error)}`);
+  }
+  // The shelf is what this build serves from, so a directory entry that is a symlink to a
+  // mode somewhere else is not a mode of this shelf, whatever it is called.
+  if (path.dirname(canonicalDir) !== canonicalShelf) {
+    throw new Error(`mode ${JSON.stringify(name)} resolves to ${canonicalDir}, which is not a directory of the modes at ${canonicalShelf}`);
   }
 
   function reject(field: string, problem: string): never {
@@ -144,9 +153,18 @@ export function loadMode(modesDir: string, name: string): Mode {
   /** A directory a worktree may live in: inside the project, named relative to its root. */
   function relativeDir(value: unknown, field: string): string {
     const dirValue = text(value, field, caps.dir);
-    const normalized = path.normalize(dirValue);
+    // Normalized and without a trailing separator, so one directory has one spelling here:
+    // `.` and `./` are the same place, and so are `trees` and `trees/`.
+    const normalized = path.normalize(dirValue).replace(new RegExp(`\\${path.sep}+$`), "");
     if (path.isAbsolute(dirValue) || normalized === ".." || normalized.startsWith(`..${path.sep}`)) {
       reject(field, `a worktree directory is relative to the project root and inside it, not ${JSON.stringify(dirValue)}`);
+    }
+    // Three directories the project keeps for itself: the root, where the ledger, the
+    // mailbox and the journal live and only the server writes; and the repository, which
+    // `verify_worktree` exists to stop a specialist from reaching.
+    const first = normalized.split(path.sep)[0];
+    if (normalized === "" || normalized === "." || first === ".cross-agent" || first === ".git") {
+      reject(field, `a worktree directory is a directory of its own; ${JSON.stringify(dirValue)} is the project root or a directory the project keeps for itself`);
     }
     return dirValue;
   }
@@ -227,6 +245,7 @@ export function loadMode(modesDir: string, name: string): Mode {
     if (!resolved.startsWith(canonicalDir + path.sep)) {
       reject(`${field}.promptFile`, `${promptFile} resolves to ${resolved}, outside the mode directory ${canonicalDir}`);
     }
+    if (!statSync(resolved).isFile()) reject(`${field}.promptFile`, `${promptFile} is not a file`);
     return { key, title, promptFile, workspace, sandboxDefault };
   });
   for (const [index, role] of roles.entries()) {
@@ -243,8 +262,15 @@ export function loadMode(modesDir: string, name: string): Mode {
     // An engine-placed mode cannot resolve the lead's own row without it; a host-placed
     // one has no lead role to name, because the loop runs in the operator's session.
     const role = text(leadRecord.role, "lead.role", caps.key);
-    if (!roles.some((declared) => declared.key === role)) {
-      reject("lead.role", `${JSON.stringify(role)} names no role of this mode; it declares ${roles.map((declared) => declared.key).join(", ")}`);
+    const declared = roles.find((each) => each.key === role);
+    if (declared === undefined) {
+      reject("lead.role", `${JSON.stringify(role)} names no role of this mode; it declares ${roles.map((each) => each.key).join(", ")}`);
+    }
+    // An engine lead runs the loop: it creates worktrees, merges and runs the tests
+    // through `git_root` and `run_command` precisely because it is read-only at the
+    // project root ("The lead model"). A lead inside one task's worktree could not.
+    if (declared.workspace.kind !== "root") {
+      reject("lead.role", `${JSON.stringify(role)} works in a ${declared.workspace.kind}; an engine-placed lead is read-only at the project root`);
     }
     lead = { placement, role };
   } else {
@@ -288,7 +314,25 @@ export function loadMode(modesDir: string, name: string): Mode {
     }
   }
 
-  return { id, release, name: modeName, summary, lead, roles, ...(git === undefined ? {} : { git }), requires, dir: canonicalDir };
+  // The loop is the mode's own text, so it is held to the rule its prompt files are held
+  // to and read here rather than at the launcher's first call: a mode with no `SKILL.md`,
+  // or one whose `SKILL.md` leaves the mode directory, is not a mode this build serves.
+  const loopFile = path.join(canonicalDir, LOOP_FILE);
+  let resolvedLoop: string;
+  try {
+    resolvedLoop = realpathSync(loopFile);
+  } catch (error) {
+    reject(LOOP_FILE, `cannot read the mode's loop: ${message(error)}`);
+  }
+  if (!resolvedLoop.startsWith(canonicalDir + path.sep)) {
+    reject(LOOP_FILE, `resolves to ${resolvedLoop}, outside the mode directory ${canonicalDir}`);
+  }
+  if (!statSync(resolvedLoop).isFile()) reject(LOOP_FILE, "is not a file");
+
+  return {
+    id, release, name: modeName, summary, lead, roles, ...(git === undefined ? {} : { git }), requires,
+    dir: canonicalDir, loopFile: resolvedLoop,
+  };
 }
 
 /**
@@ -305,7 +349,7 @@ export function describeMode(modesDir: string, name: string): ModeDescription | 
     return { reason: message(error) };
   }
   try {
-    const loop = readFileSync(path.join(mode.dir, LOOP_FILE), "utf8");
+    const loop = readFileSync(mode.loopFile, "utf8");
     const roles = mode.roles.map(({ key, title, workspace, sandboxDefault, promptFile }) => ({
       key, title, workspace, sandboxDefault, prompt: readFileSync(path.join(mode.dir, promptFile), "utf8"),
     }));

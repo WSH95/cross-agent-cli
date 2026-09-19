@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { adapterFor, sandboxFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
@@ -183,6 +183,12 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
   // read as "held by another process": a negative wait would refuse every lock in the
   // project and blame a holder that does not exist.
   if (limits.lockWaitSeconds < 0) invalid("limits.lockWaitSeconds", "a finite number of seconds, not negative");
+  // A cap is a whole number of hops: every depth it is compared against is one, and a
+  // negative cap would refuse a row to the operator at depth 0. Zero is legal — it is the
+  // fail-closed cap, offering the specialist row to everyone (design section 5, layer 1).
+  if (!Number.isInteger(limits.maxDepth) || limits.maxDepth < 0) {
+    invalid("limits.maxDepth", "a whole number of delegation hops, not negative");
+  }
   const billing = oneOf(document.billing === undefined ? "subscription" : document.billing, "billing", ["subscription", "api"] as const);
   return { ...document, mode, project, roles, limits, billing } as CrossAgentConfig;
 }
@@ -340,12 +346,20 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
   const file = path.join(projectRoot, CONFIG_PATH);
   mkdirSync(path.dirname(file), { recursive: true });
   const warning = temporaryLocationWarning(projectRoot);
+  // Written whole, then linked into place: `link` fails with EEXIST when a config is
+  // already there, which is the exclusivity this has always had, and a crash before it
+  // leaves a temporary file rather than an empty `config.json` that the next run would
+  // call "already exists" and never repair.
+  const temporary = `${file}.${process.pid}.tmp`;
   let wrote = false;
   try {
-    writeFileSync(file, JSON.stringify(document, null, 2) + "\n", { flag: "wx" });
+    writeFileSync(temporary, JSON.stringify(document, null, 2) + "\n", { flag: "wx" });
+    linkSync(temporary, file);
     wrote = true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  } finally {
+    rmSync(temporary, { force: true });
   }
   return warning === undefined ? { wrote } : { wrote, warning };
 }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -203,6 +203,10 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
   }
   // A wait cannot run backwards, and flock would take -1 as an argument it never refuses.
   for (const value of [-1, -0.5]) invalid.push([{ roles: {}, limits: { lockWaitSeconds: value } }, "limits.lockWaitSeconds"]);
+  // A depth cap is a whole number of hops and cannot be negative: `readDepth` compares a
+  // record's own depth against it, and 1.5 or -3 is a cap no walk can be judged by. Zero
+  // stays legal — it is the fail-closed cap that offers the specialist row to everyone.
+  for (const value of [-1, -3, 1.5, 0.5]) invalid.push([{ roles: {}, limits: { maxDepth: value } }, "limits.maxDepth"]);
   for (const value of [null, "unknown", 1]) invalid.push([{ roles: {}, billing: value }, "billing"]);
   for (const [value, field] of invalid) {
     writeConfig(root, value);
@@ -254,6 +258,18 @@ test("initConfig writes the section 6 defaults once and preserves existing bytes
   writeFileSync(file, custom);
   assert.equal(config.initConfig(root).wrote, false);
   assert.equal(readFileSync(file, "utf8"), custom);
+});
+
+test("initConfig leaves the config directory holding the config and nothing else", (t) => {
+  const root = project(t);
+  assert.equal(config.initConfig(root).wrote, true);
+  // The file appears whole or not at all, and the temporary it was written through is
+  // gone: a leftover would be a half-written config a re-run calls "already exists".
+  assert.deepEqual(readdirSync(path.join(root, ".cross-agent")), ["config.json"]);
+  assert.equal(config.initConfig(root).wrote, false);
+  assert.deepEqual(readdirSync(path.join(root, ".cross-agent")), ["config.json"]);
+  assert.throws(() => config.initConfig(root, { mode: "no-such-mode" }), /no-such-mode/);
+  assert.deepEqual(readdirSync(path.join(root, ".cross-agent")), ["config.json"]);
 });
 
 test("a config that names where a role works, rather than binding it, is refused by key and rule", (t) => {
