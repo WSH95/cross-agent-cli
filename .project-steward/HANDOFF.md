@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T16:12:09Z
+updated_at: 2026-09-19T16:25:29Z
 updated_by: claude
 session_status: active
 branch: main
@@ -41,8 +41,13 @@ verifier's fail-open paths (unknown event types and unread lines answer `?`
 or keep a found offence as FAIL; the launcher regex mirrors `denyTargets`).
 Branch HEAD `cbb412d`: 617 tests, 616 pass, 1 skipped; 824 citations, 0
 misses; `--since` quiet against `3023e30` and `39505aa`; sample 8/8.
-**Two closing reviews of round 5 run now** (the Grok seat through
-cross-agent; the Opus 5 scoped re-review). When both are clean: close `.13`,
+The Opus 5 seat **approved** the task on round 5 (spec pass; three minors
+filed as `atc-s96.56`); the Grok seat found the launcher regex regressed
+(its opener matches the empty string, so engine names match as suffixes;
+configured bins not mirrored) and one `describe_mode` clause on the wrong
+test — **micro-round 6** (`task-6-findings-round-6.md`) is running on the
+implementer; the controller verifies it and the Grok seat takes one short
+pass, then the closing sequence. When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
 section (`dispatch/verify-t13-final.md`, four placeholders), the final
 handover (`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`,
