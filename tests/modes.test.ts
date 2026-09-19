@@ -349,7 +349,7 @@ test("the three built-in modes validate, and each declares what its loop needs",
   const solo = loadMode(modes, "solo");
   assert.deepEqual(solo.roles.map((role) => [role.key, role.workspace.kind, role.sandboxDefault]), [["consult", "root", "read-only"]]);
   assert.equal(solo.git, undefined);
-  assert.equal(declaresWorktreeProvider(solo), false, "solo yields a tools/list without the worktree tools");
+  assert.equal(declaresWorktreeProvider(solo), false, "no role of it works in a worktree, which is what git.implicit reports");
 
   const engine = loadMode(modes, "dev-team-engine");
   assert.deepEqual(engine.lead, { placement: "engine", role: "lead" });

@@ -295,9 +295,10 @@ test("initConfig ignores the project's own state, once, and leaves a hand-writte
   config.initConfig(third);
   assert.equal(readFileSync(path.join(third, ".gitignore"), "utf8"), "node_modules/\n.cross-agent/\n.worktrees/\n");
 
-  // A mode with no worktree of its own ignores only the project's own directory.
+  // A mode that declares no worktree role ignores the directory its own `worktree: true`
+  // one-shots would create, which is the implicit policy's (design, "Modes").
   const solo = project(t);
-  assert.deepEqual(config.initConfig(solo, { mode: "solo" }).ignored, [".cross-agent/"]);
+  assert.deepEqual(config.initConfig(solo, { mode: "solo" }).ignored, [".cross-agent/", ".worktrees/"]);
 });
 
 test("initConfig leaves the config directory holding the config and nothing else", (t) => {

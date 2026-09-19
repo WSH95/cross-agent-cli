@@ -14,7 +14,7 @@ import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
-import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole } from "./modes.ts";
+import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
@@ -265,13 +265,19 @@ function driftFault(projectRoot: string, mode: Mode): string | null {
 }
 
 /**
- * The tools the worktree provider registers, and only when the active mode declares a
- * role that works in one (design, "Modes"): a `solo` project's `tools/list` holds none of
- * them. The root verbs are here rather than behind `placement: engine`, because the
- * journal is the same document under either placement and a host-placed lead writes it
- * through these too (plan decision 4).
+ * The worktree provider's four tools, registered under **every** mode: every mode carries
+ * the `consult` role, every root role can be given a worktree of its own by `delegate
+ * {worktree: true}`, and the branch that leaves behind has to be testable, mergeable and
+ * removable through the journal like any other (design, "Modes"). What differs between
+ * modes is the policy they act under, and `describe_mode`'s `git.implicit` is what tells a
+ * launcher whether that policy is the mode's own. The root verbs are here rather than
+ * behind `placement: engine`, because the journal is the same document under either
+ * placement and a host-placed lead writes it through these too (plan decision 4).
  */
 function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
+  // The mode's own policy, or the implicit one its one-shots use: what `git_mutate` and
+  // `git_root` judge a path and a branch against, and never undefined.
+  const policy = gitPolicy(mode);
   return [
     {
       name: "verify_worktree",
@@ -318,7 +324,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
         if (drift !== null) return answer({ ok: false, reason: drift });
         return answer(await gitMutate(projectRoot, request, {
           waitSeconds: lockWaitSeconds(projectRoot),
-          ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
+          dir: policy.worktreeDir, branchPattern: policy.branchPattern,
         }));
       },
     },
@@ -340,7 +346,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
         if (drift !== null) return answer({ ok: false, reason: drift });
         return answer(await gitRoot(projectRoot, request, {
           waitSeconds: lockWaitSeconds(projectRoot),
-          ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
+          dir: policy.worktreeDir, branchPattern: policy.branchPattern,
         }));
       },
     },
@@ -401,7 +407,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "list_roles",
-      description: "The roles this project binds: each one's engine, model and effort from .cross-agent/config.json, with the workspace and the sandbox profile it will run under from the active mode.",
+      description: "The roles the active mode has: each one's workspace and the sandbox profile it will run under, with the engine, model and effort .cross-agent/config.json binds it to — or binding: null where it binds none, which is the engine a delegate call must name itself.",
       inputSchema: { type: "object", properties: {} },
       rows: ["operator", "lead", "specialist"],
       handler: () => {
@@ -412,14 +418,22 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         // since pointed at another one is answered with the roles it names and the drift
         // beside them: everything below is true of a mode this server is not serving.
         const drift = modeDrift(mode, bound.config);
+        // The **mode's** roles, not the config's: a role nothing binds is still a role
+        // this project can delegate, with the engine named in the call, and a launcher
+        // that could not see it would not know to name one (design, "Modes").
         return text({
-          roles: Object.fromEntries(Object.entries(bound.config.roles).map(([key, role]) => [key, {
-            engine: role.engine,
-            ...(role.model === undefined ? {} : { model: role.model }),
-            ...(role.effort === undefined ? {} : { effort: role.effort }),
-            workspace: findRole(bound.mode, key)!.workspace,
-            sandbox: roleProfile(bound.mode, bound.config, key),
-          }])),
+          roles: Object.fromEntries(bound.mode.roles.map((role) => {
+            const binding = Object.hasOwn(bound.config.roles, role.key) ? bound.config.roles[role.key] : undefined;
+            return [role.key, {
+              ...(binding === undefined ? { binding: null } : {
+                engine: binding.engine,
+                ...(binding.model === undefined ? {} : { model: binding.model }),
+                ...(binding.effort === undefined ? {} : { effort: binding.effort }),
+              }),
+              workspace: role.workspace,
+              sandbox: roleProfile(bound.mode, bound.config, role.key),
+            }];
+          })),
           ...(drift === null ? {} : { warning: drift }),
         });
       },
@@ -524,7 +538,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         return answer(await listTasks(projectRoot, status as TaskStatus | undefined));
       },
     },
-    ...(declaresWorktreeProvider(mode) ? worktreeTools(projectRoot, mode) : []),
+    ...worktreeTools(projectRoot, mode),
   ];
 }
 

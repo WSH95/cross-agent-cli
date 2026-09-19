@@ -275,6 +275,17 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       if (request.resume !== undefined) {
         return refuse(`task ${request.resume} is resumed in the workspace it ran in, so worktree: true would take another`);
       }
+      // Not the mode's own lead: it is read-only at the project root because that is what
+      // makes `git_root` and `run_command` its way of reaching git at all, and a lead in
+      // a worktree of its own could run neither ("The lead model").
+      if (engineLeadRole(options.mode) === request.role) {
+        return refuse(`role ${JSON.stringify(request.role)} is mode ${options.mode.id}'s engine-placed lead, which works read-only at the project root; worktree: true is for a specialist it delegates`);
+      }
+      // The flag is what creates this task's branch, so a branch named beside it is
+      // either this one, redundantly, or another task's.
+      if (request.branch !== undefined) {
+        return refuse(`worktree: true creates this task's own branch, so the request names none; ${JSON.stringify(request.branch)} would have to exist already`);
+      }
       const slug = newTaskId();
       oneShot = {
         path: canonicalPath(path.join(projectRoot, policy.worktreeDir, slug)),

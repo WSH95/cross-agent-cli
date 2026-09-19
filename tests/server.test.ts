@@ -74,6 +74,20 @@ function stdioClient(cwd: string, options: { args?: string[]; env?: NodeJS.Proce
 }
 
 const operator: Authority = { row: "operator", reason: "test", depth: 0 };
+const rootWorkspace = { kind: "root" };
+const worktreeWorkspace = { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" };
+/**
+ * Every role of the built-in `dev-team` mode as `list_roles` shows one nothing binds:
+ * the mode decides the workspace and the profile, and `binding: null` is the engine a
+ * `delegate` call would have to name itself. A test that binds a role overrides its entry.
+ */
+const unbound = {
+  planner: { binding: null, workspace: rootWorkspace, sandbox: "read-only" },
+  "plan-reviewer": { binding: null, workspace: rootWorkspace, sandbox: "read-only" },
+  implementer: { binding: null, workspace: worktreeWorkspace, sandbox: "workspace-write" },
+  "code-reviewer": { binding: null, workspace: worktreeWorkspace, sandbox: "read-only" },
+  consult: { binding: null, workspace: rootWorkspace, sandbox: "read-only" },
+};
 // The mode a server loads once at start and hands its tools. These servers bind the
 // built-in `dev-team` roles, which is what a config with no `mode` key names.
 const devTeam: Mode = loadMode(builtInModesDir(), "dev-team");
@@ -218,8 +232,9 @@ test("list_roles returns the roles from .cross-agent/config.json", async () => {
     // The bindings are config's; the workspace and the profile come from the built-in
     // `dev-team` mode the server loaded at start.
     assert.deepEqual(JSON.parse(content[0].text as string), { roles: {
-      planner: { ...roles.planner, workspace: { kind: "root" }, sandbox: "read-only" },
-      implementer: { ...roles.implementer, workspace: { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" }, sandbox: "workspace-write" },
+      ...unbound,
+      planner: { ...roles.planner, workspace: rootWorkspace, sandbox: "read-only" },
+      implementer: { ...roles.implementer, workspace: worktreeWorkspace, sandbox: "workspace-write" },
     } });
   } finally {
     client.close();
@@ -235,9 +250,10 @@ test("list_roles applies the mode's defaults and a role's own override over stdi
     const content = (reply.result as Json).content as Json[];
     assert.equal(content[0].type, "text");
     assert.deepEqual(JSON.parse(content[0].text as string), { roles: {
-      planner: { engine: "codex", workspace: { kind: "root" }, sandbox: "read-only" },
+      ...unbound,
+      planner: { engine: "codex", workspace: rootWorkspace, sandbox: "read-only" },
       // Grok's own read-only profile, overriding the mode's portable name for one.
-      "code-reviewer": { engine: "grok", workspace: { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" }, sandbox: "strict" },
+      "code-reviewer": { engine: "grok", workspace: worktreeWorkspace, sandbox: "strict" },
     } });
   } finally {
     client.close();
@@ -295,7 +311,7 @@ test("--project and CROSS_AGENT_PROJECT choose the project over stdio", async (t
       const reply = await client.request("tools/call", { name: "list_roles", arguments: {} });
       const content = (reply.result as Json).content as Json[];
       assert.deepEqual(JSON.parse(content[0].text as string), {
-        roles: { planner: { engine: "codex", workspace: { kind: "root" }, sandbox: "read-only" } },
+        roles: { ...unbound, planner: { engine: "codex", workspace: rootWorkspace, sandbox: "read-only" } },
       }, JSON.stringify(options));
     } finally {
       client.close();
@@ -339,6 +355,17 @@ test("a server attached to a repository with no config writes nothing to it", as
     assert.equal((described.mode as Json).id, "solo");
     assert.deepEqual(described.git, { worktreeDir: ".worktrees", branchPattern: "task/*", implicit: true });
     assert.deepEqual((described.roles as Json[]).map((role) => role.key), ["consult"]);
+
+    // The one role this project has, listed with the binding it does not have.
+    const roles = JSON.parse(((((await client.request("tools/call", { name: "list_roles", arguments: {} })).result as Json).content as Json[])[0].text as string)) as Json;
+    assert.deepEqual(roles.roles, { consult: { binding: null, workspace: { kind: "root" }, sandbox: "read-only" } });
+    // Every row this server can resolve holds those two; which row this suite's own
+    // process depth earns is `resolveAuthority`'s own test, and the registry a project
+    // with no config gets is asserted below, where the row is this test's to choose.
+    const listed = (((await client.request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
+    for (const name of ["describe_mode", "list_roles", "check", "result", "list_tasks"]) {
+      assert.ok(listed.includes(name), `${name} is served`);
+    }
   } finally {
     client.close();
   }
@@ -347,6 +374,13 @@ test("a server attached to a repository with no config writes nothing to it", as
   // `delegate` writes the ledger — a read of a project creates neither (T4c-F6).
   assert.deepEqual((await readdir(repo)).sort(), before);
   assert.equal(await excluded(), wasExcluded);
+
+  // What an operator of this project is offered: the provider's four among them, because
+  // the mode it runs has a role that can be given a worktree like every other mode's.
+  const offered = projectTools(repo, { mode: loadMode(builtInModesDir(), "solo") }).map((tool) => tool.name);
+  for (const name of ["delegate", "verify_worktree", "git_mutate", "git_root", "run_command"]) {
+    assert.ok(offered.includes(name), `${name} is registered`);
+  }
 });
 
 test("a server whose mode does not load, or whose config does not match it, exits naming the reason", { timeout: 20_000 }, async (t) => {
@@ -564,7 +598,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
   }
 });
 
-test("the worktree provider's tools are registered only when the active mode declares a worktree role", async (t) => {
+test("the worktree provider's tools are registered for the operator and the lead under every mode", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));
   const rows = {
@@ -576,7 +610,11 @@ test("the worktree provider's tools are registered only when the active mode dec
 
   const team = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
   const solo = buildMode(modesRoot(t), "solo", [{ key: "solo" }]);
-  for (const [mode, expected] of [[team, provider], [solo, []]] as const) {
+  // Every mode registers them, because every mode has a role that can take `worktree:
+  // true` and the branch it leaves has to be testable, mergeable and removable through
+  // the journal. What differs is the policy they act under, which `describe_mode`'s
+  // `git.implicit` names (design, "Modes").
+  for (const [mode, expected] of [[team, provider], [solo, provider]] as const) {
     const names = async (row: Authority["row"]) => {
       const request = inProcess({ tools: projectTools(root, { mode }), authority: () => ({ row, reason: "test", depth: 0 }) });
       return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
@@ -588,12 +626,11 @@ test("the worktree provider's tools are registered only when the active mode dec
     assert.deepEqual(await names("specialist"), rows.specialist, mode.id);
   }
 
-  // Not merely absent from the list: a call to a tool this mode registers nothing for is
-  // unknown, and one the row does not hold is refused by name.
-  const soloTools = projectTools(root, { mode: solo });
-  const refused = await inProcess({ tools: soloTools, authority: () => operator })(
-    "tools/call", { name: "git_mutate", arguments: { slug: "s", args: ["status"] } });
-  assert.deepEqual(refused.error, { code: -32602, message: "unknown tool: git_mutate" });
+  // A tool no server registers is unknown rather than refused; every one this server has
+  // is offered by row, which the two lists above are.
+  const refused = await inProcess({ tools: projectTools(root, { mode: solo }), authority: () => operator })(
+    "tools/call", { name: "ask", arguments: {} });
+  assert.deepEqual(refused.error, { code: -32602, message: "unknown tool: ask" });
 });
 
 test("describe_mode serves the active mode's loop and roles to every row, and refuses a mode that is not there", async (t) => {
@@ -643,6 +680,9 @@ test("list_roles reports the mode's workspace and the profile each role will act
       implementer: {
         engine: "claude", workspace: { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" }, sandbox: "off",
       },
+      // The mode's roles, not the config's: a role nothing binds is listed with the
+      // binding it does not have, because a `delegate` may name the engine itself.
+      consult: { binding: null, workspace: { kind: "root" }, sandbox: "read-only" },
     },
   });
 
@@ -652,7 +692,10 @@ test("list_roles reports the mode's workspace and the profile each role will act
   await writeFile(path.join(root, ".cross-agent", "config.json"),
     JSON.stringify({ mode: "other-team", roles: { only: { engine: "codex" } } }));
   const drifted = JSON.parse(((((await request("tools/call", { name: "list_roles", arguments: {} })).result as Json).content as Json[])[0].text as string)) as Json;
-  assert.deepEqual(drifted.roles, { only: { engine: "codex", workspace: { kind: "root" }, sandbox: "read-only" } });
+  assert.deepEqual(drifted.roles, {
+    only: { engine: "codex", workspace: { kind: "root" }, sandbox: "read-only" },
+    consult: { binding: null, workspace: { kind: "root" }, sandbox: "read-only" },
+  });
   assert.match(drifted.warning as string, /"other-team" in \.cross-agent\/config\.json/);
   assert.match(drifted.warning as string, /"dev-team" served/);
   assert.match(drifted.warning as string, /restart/);

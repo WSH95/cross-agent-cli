@@ -61,10 +61,3 @@ The specialist edits files and runs no git. Once its task settles:
    repair path of design section 4 — `git revert --no-edit
    <defaultShaBeforeMerge>..<branchHead>` from the journal's `merged` step — and
    never a merge to retry.
-
-A mode that declares no worktree role registers none of the four provider tools,
-which is this mode's own case: `tools/list` here holds no `git_mutate`,
-`git_root`, `run_command` or `verify_worktree`. Under `placement: host` your own
-session owns every root git operation, so run those same steps yourself, in that
-order, at the project root — and report the same way, including where the branch
-was left when you stopped.

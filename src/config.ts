@@ -4,7 +4,7 @@ import { adapterFor, sandboxFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName } from "./engines/types.ts";
-import { builtInModesDir, findRole, loadMode } from "./modes.ts";
+import { builtInModesDir, findRole, gitPolicy, loadMode } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 
 export const CONFIG_PATH = ".cross-agent/config.json";
@@ -353,7 +353,9 @@ function temporaryLocationWarning(projectRoot: string): string | undefined {
  * end in a newline is not joined onto.
  */
 function ignoreProjectState(projectRoot: string, mode: Mode): string[] {
-  const wanted = [".cross-agent/", ...(mode.git === undefined ? [] : [`${mode.git.worktreeDir.replace(/\/+$/, "")}/`])];
+  // The policy a one-shot would use where the mode declares none, so a `solo` project
+  // ignores the directory its own `worktree: true` calls create (design, "Modes").
+  const wanted = [".cross-agent/", `${gitPolicy(mode).worktreeDir.replace(/\/+$/, "")}/`];
   const file = path.join(projectRoot, ".gitignore");
   let existing = "";
   try {

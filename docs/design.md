@@ -464,12 +464,16 @@ file, so a project stays unconfigured until someone configures it.
 
 **Workspace is policy, with two kinds.** A role declares `workspace:
 {kind:"root"}` or `workspace: {kind:"worktree", branchPattern, dir}`
-(`src/modes.ts#Workspace`). The worktree provider registers `verify_worktree`
-and `git_mutate`, and only when a mode declares a role that works in one
-(`src/server.ts#worktreeTools`, `src/modes.ts#declaresWorktreeProvider`); `solo`
-therefore yields a `tools/list` without them, and a call to one of them there is
-`unknown tool` rather than a refusal. Arbitrary-path workspace providers are
-deferred (see "Not built").
+(`src/modes.ts#Workspace`). The worktree provider's four tools register under
+**every** mode (`src/server.ts#worktreeTools`, `#projectTools`): every mode
+carries the `consult` role, every root role can be given a worktree of its own
+by `delegate {worktree: true}` (section 1), and the branch that leaves behind
+has to be testable, mergeable and removable through the journal like any other.
+What a mode decides is the policy they act under, and `describe_mode`'s
+`git.implicit` is what tells a launcher whether that policy is the mode's own or
+this build's — which is the same question as "does this mode declare a role that
+works in a worktree" (`src/modes.ts#declaresWorktreeProvider`, `#gitPolicy`).
+Arbitrary-path workspace providers are deferred (see "Not built").
 
 **No role may combine `{kind: "root"}` with a writable sandbox**, and mode
 validation refuses one that does. A writable root role could edit
@@ -544,14 +548,15 @@ to abort. The
 aborted call answers for itself, with the status it last read and
 `cancelled: true`, and its JSON-RPC reply is still written, which a client that
 has moved on may ignore (`src/wait.ts#wait`). "Registered by" says which
-part of the system offers the tool: **core** always; **worktree** only when the
-active mode declares the worktree provider; **engine lead** only under
-`placement: engine`.
+part of the system offers the tool: **core** always; **worktree** the worktree
+provider's four, which every mode registers because every mode has a role that
+can be given a worktree ("Modes"); **engine lead** only under `placement:
+engine`.
 
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
 | `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt, and its git policy | core |
-| `list_roles` | — | each bound role: engine, model and effort from config, with the workspace and the sandbox profile the mode gives it; plus a `warning` when the config now names a mode other than the one served | core |
+| `list_roles` | — | each role **the mode has**: the workspace and the sandbox profile it gives that role, with the engine, model and effort config binds it to, or `binding: null` where config binds none — the engine a `delegate` call must then name itself; plus a `warning` when the config now names a mode other than the one served | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `worktree` (a task worktree of its own, for a role that works at the root), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), creates the task's worktree through `git_root` when `worktree: true`, writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
 | `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
@@ -574,8 +579,7 @@ Today `projectTools` registers twelve of these (`src/server.ts#projectTools`):
 `describe_mode`, `list_roles`, `check`, `result` and `list_tasks` for every row,
 `delegate`, `wait` and `cancel` for the operator and lead rows, and
 `verify_worktree`, `git_mutate`, `git_root` and `run_command` for those two rows
-**and only under a mode that declares the worktree provider**
-(`src/server.ts#worktreeTools`). The
+under every mode (`src/server.ts#worktreeTools`). The
 four worktree tools refuse on **mode drift** as `delegate` does at the launch
 boundary: which tools exist was decided when this server loaded its mode, so a
 config since pointed at another one is answered with a restart rather than
@@ -612,7 +616,11 @@ never does. A `git_root` refusal is the delegation's refusal; the reservation is
 read against the new path before anything is created, so a task holding that
 directory refuses the one-shot rather than losing it; and a `resume` takes no
 new worktree, because it continues in the one its original was given (section
-5, layer 4). **Every failure from the `worktree add` to the runner discards
+5, layer 4). Two roles of a request are refused with it: an engine-placed
+mode's own `lead`, which is read-only at the project root because that is how it
+reaches git at all ("The lead model"), and a `branch`, since the flag is what
+creates this task's branch and one named beside it could only be another
+task's. **Every failure from the `worktree add` to the runner discards
 what exists** — the worktree, its branch and its journal, through the explicit
 git form inside the `spawn.lock` this call already holds rather than through
 `git_root worktree remove`, which takes that same lock
@@ -1991,7 +1999,8 @@ worktree reaches the default branch through the lead's merge, and the lead then
 runs it at the root. The check is `git ls-files --error-unmatch --
 .cross-agent` at the root, and the refusal names `.gitignore`, because that is
 the repair. `cross-agent init` writes those entries — `.cross-agent/` and the
-mode's own worktree directory — appending only what the file lacks, so the verb
+worktree directory this mode's tasks use, its own where it declares one and this
+build's where it does not — appending only what the file lacks, so the verb
 that creates the state is the one that ignores it
 (`src/config.ts#ignoreProjectState`, `#initConfig`, `src/cli.ts`).
 `delegate` runs the same check at the launch boundary, because it reads that
@@ -2281,9 +2290,7 @@ closing report. Under `manual`, or after any failure anywhere in that order, it
 stops where it is, leaves the branch and its worktree standing, and reports the
 reason together with the commands that finish the job by hand; a suite that
 fails at the root after the merge is the repair path below and never a merge to
-retry. A mode with no worktree role registers none of those four tools, which is
-`solo`'s own case: under `placement: host` the launcher's session owns every
-root git operation and runs the same steps there itself. Those paragraphs live
+retry. Those paragraphs live
 in `modes/solo/SKILL.md` until step 9 writes the launcher skill that carries
 them for every mode, and `tests/skills.test.ts` holds them to that order.
 

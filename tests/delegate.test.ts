@@ -568,6 +568,17 @@ test("a worktree one-shot is refused wherever git_root would refuse it, and leav
     refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true, resume: "whatever" }), options)),
     /resume/,
   );
+  // Nor the mode's own engine-placed lead, which is read-only at the project root
+  // because that is how it reaches git at all, and never with a branch: the flag is what
+  // creates this task's branch, so one named here could only be another task's.
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "lead", cwd: p.root, worktree: true }), options)),
+    /engine-placed lead/,
+  );
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true, branch: "task/named" }), options)),
+    /branch/,
+  );
   // The reservation is read against the path the one-shot would take, before git creates
   // it: a task holding the worktree directory holds every worktree under it.
   const holder = await reserve(p.root, path.join(p.root, ".worktrees"));
