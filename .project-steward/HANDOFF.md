@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:14:53Z
+updated_at: 2026-09-19T15:25:42Z
 updated_by: claude
 session_status: active
 branch: main
@@ -37,9 +37,17 @@ a 76 KB review brief launching through the product), the plugin manifest with
 its inline MCP declaration, the e2e verifier that cannot pass on silence, the
 checker's `--since` drift flag, and every test-file citation as an anchor.
 Beads `.17`, `.52`, `.54`, `.55` closed; `atc-3ub` filed (two unprobed
-facts for T14/T15). **Two closing reviews of round 3 run now:** the Grok seat
-through cross-agent (task under `.cross-agent/tasks/` in the worktree, diff
-attached) and the Opus 5 task reviewer's final scoped re-review. When both
+facts for T14/T15). The Grok second review of round 3 (task `2932a349…`) found the anchor
+mechanism sound but the conversion wrong in about twenty-five places (design
+sentences pointed at neighbouring tests whose titles do not state the claim),
+leftover line citations (`--since 39505aa` reports 17 drifts), a guessed
+Codex item shape and a quote-blind launcher regex in the verifier, HTML
+anchors splitting the P9 table, and a journal check that fails any unfinished
+journal. **Fix round 4** is running on the implementer
+(`task-6-findings-round-4.md`; rulings: Codex items answer `?` until I1 Codex
+records the shape; verifier exit codes 0/1/2; newest complete journal by
+default; an alignment table in the report). The Opus 5 scoped re-review of
+round 3 is still running; its spot checks fold into round 4 by follow-up. When both
 are clean: close `.13`, rebase onto `main` and fast-forward, root `npm test`,
 `VERIFY.md` T13 section (`dispatch/verify-t13-final.md` with four
 placeholders), the final handover (`HANDOFF.md` from
