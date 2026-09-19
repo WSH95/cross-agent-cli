@@ -122,11 +122,17 @@ const stormCapMs = 60_000;
 
 function processes(t: TestContext) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-process-"));
-  const tracked: { pid: number; leader: boolean }[] = [];
+  const tracked: { pid: number; leader: boolean; startTime: string }[] = [];
   t.after(async () => {
-    const deadline = Date.now() + 4000;
+    const deadline = Date.now() + pollDeadlineMs;
     while (true) {
-      const alive = tracked.filter((entry) => running(entry.pid));
+      // By identity, never by pid alone: this file spawns and kills enough processes —
+      // the storm beside it spawns one every 20 ms — that a pid one of them has left can
+      // belong to something else by the time the sweep reaches it, and signalling a group
+      // by that number would be signalling a stranger's. The start time is what tells
+      // them apart.
+      const alive = tracked.filter((entry) => readProcessStat(entry.pid)?.startTime === entry.startTime
+        && running(entry.pid));
       for (const entry of alive) {
         try { process.kill(entry.leader ? -entry.pid : entry.pid, "SIGKILL"); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
@@ -143,14 +149,16 @@ function processes(t: TestContext) {
       const child = spawn(process.execPath, ["-e", script], { detached: true, stdio: "ignore", env });
       child.once("error", () => {});
       const pid = child.pid!;
-      tracked.push({ pid, leader: true });
       const stat = readProcessStat(pid)!;
+      tracked.push({ pid, leader: true, startTime: stat.startTime });
       return { pid, identity: { pid, startTime: stat.startTime, pgid: pid, bootId: currentBootId }, child };
     },
     async member(pidFile: string): Promise<number> {
       const text = await poll(() => (fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8") : ""), (value) => value.length > 0);
       const pid = Number(text);
-      tracked.push({ pid, leader: false });
+      // A member already gone is nothing to clean up, and its pid is no longer its own.
+      const stat = readProcessStat(pid);
+      if (stat) tracked.push({ pid, leader: false, startTime: stat.startTime });
       return pid;
     },
     async reap(leader: { pid: number; child: ChildProcess }): Promise<void> {
@@ -344,7 +352,9 @@ test("the environment scan does not count a process still inside exec as unreada
       // Signalled by the identity that was recorded, never by a pid alone: this storm
       // leaves pids behind faster than anything else in the suite, and a group killed by
       // number could be a stranger's by the time the sweep reaches it. The start time is
-      // what tells them apart, as the suite's own sweep checks (`tests/helpers/project.ts`).
+      // what tells them apart here; the project sweep in `tests/helpers/project.ts` tells
+      // them apart by the environment marker its own processes carry, which this storm's
+      // children do not.
       const alive = spawned().flatMap((child) => {
         const stat = readProcessStat(child.pid);
         return stat !== null && stat.startTime === child.startTime && stat.state !== "Z" && stat.state !== "X"
@@ -387,6 +397,11 @@ test("the environment scan does not count a process still inside exec as unreada
   // beside this one ("one scan waits once for everything it cannot read"). Each wait
   // still ends: a storm child either finishes its exec or dies inside `stormChildMs`,
   // and a candidate that left is gone rather than unreadable.
+  //
+  // The freeze is process-wide for as long as the rounds run — `src/process.ts#waitFor`
+  // and node:test's own durations read the same clock — so nothing inside it may wait on
+  // an elapsed time, and the `finally` below puts the real clock back whatever happens.
+  // The rounds themselves only scan and `delay`, which is a timer and not this clock.
   const clock = performance as { now: () => number };
   const realNow = clock.now.bind(performance);
   clock.now = () => 0;

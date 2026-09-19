@@ -406,7 +406,12 @@ test("a record lock this project will not wait for refuses both readers by that 
   try {
     const started = performance.now();
     const refused = await check(p.root, task.id, { now: eventAt + stallMs + 1 });
-    assert.ok(performance.now() - started < 3500, "check waited its own project's rule of 0s, not the helper's 5s default");
+    // The tightest margin left in this suite: 3.5 s against the 5 s default it has to be
+    // told apart from, so there is no room to widen it further without the assertion
+    // meaning nothing. A `check` that took longer than this under load is the reconcile
+    // pass ahead of it, not the lock wait, and the refusal below still says which.
+    assert.ok(performance.now() - started < 3500,
+      "check waited its own project's rule of 0s, not the helper's 5s default");
     assert.equal(refused.ok, false, JSON.stringify(refused));
     assert.match(refused.ok === false ? refused.reason : "", /is held by another process \(waited 0s\)/);
 

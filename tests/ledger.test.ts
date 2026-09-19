@@ -262,6 +262,10 @@ test("update takes the record lock, refuses to guess when it cannot, and release
   const holder = spawn("flock", ["-w", "30", file, "sh", "-c", "echo held; read _"],
     { stdio: ["pipe", "pipe", "pipe"] });
   t.after(() => { holder.kill("SIGKILL"); });
+  // A holder that died before the write below would otherwise surface as an unhandled
+  // stream error rather than as this test failing, which is what `src/locks.ts#acquire`
+  // attaches its own listener for.
+  holder.stdin.on("error", (error) => { assert.fail(`the lock holder's stdin failed: ${error.message}`); });
   let noise = "";
   holder.stderr.on("data", (chunk: Buffer) => { noise += chunk.toString("utf8"); });
   let granted = "";

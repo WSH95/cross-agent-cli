@@ -515,16 +515,21 @@ function openFds(target: string): string[] {
 
 test("a descendant holding the engine's stdout cannot block settlement", { timeout: 30000 }, async (t) => {
   const { launch, request } = task(t);
-  // The drain is the production default, not a margin this test could outrun: the
-  // descendant never closes the pipe, so what proves the bound is that the result arrives
-  // at all — a settlement that waited for `close` would wait for ever and this test would
-  // end on its own timeout. What the shorter drain risked instead was the engine's own
-  // output not being in by the time it expired, which is this test's other assertion.
-  const handle = launch(holder(request.cwd, true), {}, { drainMs: 2000 });
+  // The drain is the production default rather than a margin this test could outrun: at
+  // 100 ms the engine's own output could still be in flight when it expired, and keeping
+  // that output is this test's other assertion. The descendant never closes the pipe, so
+  // the settlement can only have come from the drain — and the bound below is what says
+  // it came from *this* drain rather than from some other wait: it is scaled to the
+  // 2 s drain, not to how fast an idle machine spawns a process.
+  const drainMs = 2000;
+  const handle = launch(holder(request.cwd, true), {}, { drainMs });
   const pid = handle.pid!;
   t.after(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+  const started = Date.now();
   const result = await handle.result;
+  const elapsed = Date.now() - started;
 
+  assert.ok(elapsed < 15_000, `settled after ${elapsed}ms, which is no ${drainMs}ms drain`);
   assert.equal(result.truncated, true, "the tail of the evidence may be missing and the result says so");
   assert.equal(result.exitCode, 7, "the exit values captured at exit are the ones reported");
   assert.equal(result.signal, null);

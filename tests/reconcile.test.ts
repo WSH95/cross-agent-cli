@@ -139,7 +139,9 @@ function processes(t: TestContext) {
       while (true) {
         // By identity, never by pid alone: these tests spawn and kill enough processes
         // that a pid one of them has left can belong to something else by now, and the
-        // start time is what tells them apart (`tests/helpers/project.ts#project`).
+        // start time is what tells them apart. The project sweep in
+        // `tests/helpers/project.ts` tells them apart by the environment marker its own
+        // processes carry; nothing here carries one.
         const alive = tracked.filter((entry) => readProcessStat(entry.pid)?.startTime === entry.startTime
           && running(entry.pid));
         for (const entry of alive) {
