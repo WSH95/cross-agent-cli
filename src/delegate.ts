@@ -14,7 +14,7 @@ import { removeJournal } from "./journal.ts";
 import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
-import { findRole, gitPolicy } from "./modes.ts";
+import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
 import { ownedBy } from "./tasks.ts";
@@ -82,11 +82,6 @@ function message(error: unknown): string {
 export const writableProfiles: Record<EngineName, SandboxProfile> = {
   claude: "workspace-write", codex: "workspace-write", grok: "workspace",
 };
-
-/** Until a mode brings the role's own prompt (design section 8), this is what a role says. */
-function defaultPrompt(role: string): string {
-  return `You are the ${role} for this project: do what the brief asks in the working directory you were given, report the outcome in your final message, and do not delegate — report back instead.`;
-}
 
 function directory(target: string): boolean {
   return fs.statSync(target, { throwIfNoEntry: false })?.isDirectory() ?? false;
@@ -428,10 +423,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
       fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
       spec = {
-        // The prompt config binds, else the text a built-in role carries, else the
-        // one-line default; a mode's own prompt files reach `delegate` with row 9.
+        // The prompt config binds, else the mode's own text for the role — its
+        // `roles/<key>.md`, or the text a built-in role carries — which is the same
+        // string `describe_mode` serves (design section 8, `src/modes.ts#rolePrompt`).
         role: request.role, brief: request.brief,
-        rolePrompt: bound?.prompt ?? declared.prompt ?? defaultPrompt(request.role),
+        rolePrompt: bound?.prompt ?? rolePrompt(options.mode, declared),
         cwd: workspace, engine, sandbox,
         ...(model === null ? {} : { model }),
         ...(effort === null ? {} : { effort }),

@@ -878,15 +878,27 @@ test("the profile a specialist runs under is the mode's default unless config ov
   assert.match(refusal(await delegate(p.root, request({ role: "nobody", cwd: p.root }), options)), /no role "nobody" in mode/);
 });
 
-test("a role that binds no prompt is launched with a one-line default that forbids delegating", async (t) => {
+test("a role that binds no prompt is launched with the mode's prompt file", async (t) => {
   const p = await projectWithRoles(t);
   const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const worktree = await p.worktree("task/prompt");
   const id = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/prompt" }), options));
   const spec: LaunchSpec = readSpec(p.root, id);
-  assert.match(spec.rolePrompt, /implementer/);
-  assert.match(spec.rolePrompt, /not delegate/);
-  assert.equal(spec.rolePrompt.trim().split("\n").length, 1, "one line until a mode brings the real prompt");
+  // The mode's own text for the role, verbatim: the file `describe_mode` serves is the
+  // file the engine is launched with, or the prompts a mode ships reach nothing
+  // (design section 8, `src/modes.ts#rolePrompt`).
+  assert.equal(spec.rolePrompt, fs.readFileSync(path.join(p.mode.dir, "roles", "implementer.md"), "utf8"));
+});
+
+test("a configured prompt overrides the mode's prompt file", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  // The bind-time layer still wins where a project sets one, which is how an operator
+  // adjusts a role without editing the mode (design section 6).
+  const id = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  const spec: LaunchSpec = readSpec(p.root, id);
+  assert.equal(spec.rolePrompt, "You are the planner. Report a plan.");
+  assert.notEqual(spec.rolePrompt, fs.readFileSync(path.join(p.mode.dir, "roles", "planner.md"), "utf8"));
 });
 
 test("every delegation of a project gets its own scratch directory and nothing else shares it", async (t) => {
