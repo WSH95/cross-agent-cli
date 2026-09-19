@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T05:34:12Z
+updated_at: 2026-09-19T06:31:15Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -25,17 +25,16 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 4 (S8: mode loader, `describe_mode`, provider-gated worktree tools,
-the built-in modes `dev-team`, `solo`, `dev-team-engine`, `cross-agent init
---mode`; `atc-s96.23`) is implemented on `task/cross-agent-m3` as
-`ad06631` over `a3ac875` (489 pass, 1 skip; 659 citations, 0 misses) and
-under review: task review (Claude Code subagent · claude-opus-5 · max)
-and second opinion (· claude-fable-5-1 · max). One of five runs hit the
-reconcile session-defer flake (`atc-s96.33`, closed; reopen if it
-recurs). Next: 4b (root git tools, journal steps), 4c (solo without
-ceremony), T12 (skills), T13 (Claude Code packaging, I1/I2, E1). **Codex
-is paused by the user.** Pending your approval: `agents-md-m1.diff` (and
-Task 4's `task-4-agents-md.diff`) in the SDD directory.
+Task 4 (S8 modes; `atc-s96.23`) is on `task/cross-agent-m3` at `757371f`:
+the task commit `ad06631` plus fix round 1 (`28e5a54`, `22853d2`,
+`757371f`; 500 pass, 1 skip) after the Fable review found a Critical — a
+Grok engine accepted for the engine-placed lead role at the launch
+boundary — and the loop file's missing containment; its scoped re-review
+(Claude Code subagent · claude-fable-5-1 · max) is running. Next: 4b (root
+git tools and journal steps; brief updated with the S8 seams), 4c (solo
+without ceremony), T12, T13. **Codex is paused by the user.** Pending
+your approval: `agents-md-m1.diff` (and Task 4's `task-4-agents-md.diff`)
+in `.superpowers/sdd/the-development-of-this-calm-planet/`.
 
 ## Next steps
 

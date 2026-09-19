@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T06:31:15Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 4 (S8) fix round 1 landed on task/cross-agent-m3: 28e5a54, 22853d2, 757371f (500 pass/1 skip; 678 citations/0 misses) after a Critical from the Fable review (delegate accepted a Grok engine for the engine-placed lead role via per-call override or a post-start config edit; now bindingFault at the launch boundary) and the SKILL.md containment gap; scoped re-review (claude-fable-5-1, max) running. 4b brief updated with the S8 seams.
+
 ### 2026-09-19T05:34:12Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4 (S8 modes) implemented on task/cross-agent-m3 as ad06631 (489 pass/1 skip; 659 citations/0 misses; loadConfigWithMode, describe_mode, provider-gated worktree tools, three built-in modes, cross-agent init --mode); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running. One reconcile session-defer flake seen in five runs (atc-s96.33 territory) — watching.
 
