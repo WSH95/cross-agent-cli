@@ -87,10 +87,12 @@ test("the built-in table answers for grok with this adapter", () => {
   assert.equal(grok.name, "grok");
 });
 
+// @anchor grokDeclaresFour
 test("grok declares four profile names, two of which cannot write", () => {
   assert.deepEqual(grok.sandboxProfiles, { "read-only": "read-only", strict: "read-only", workspace: "write", off: "off" });
 });
 
+// @anchor grokDenyargsDeny
 test("grok's denyArgs is one --deny per target, in the enforced form (P3)", () => {
   assert.deepEqual(grok.denyArgs(targets), [
     "--deny", "Bash(claude *)", "--deny", "Bash(codex *)", "--deny", "Bash(grok *)", "--deny", "Bash(/opt/custom codex *)",
@@ -99,10 +101,12 @@ test("grok's denyArgs is one --deny per target, in the enforced form (P3)", () =
   assert.deepEqual(grok.denyArgs([]), []);
 });
 
+// @anchor grokPerInvocation
 test("grok has no per-invocation exclusion flag at all", () => {
   assert.deepEqual(grok.exclusionArgs(), []);
 });
 
+// @anchor grokLeadmountInherits
 test("grok's leadMount inherits: there is no per-run mount to build (P9)", () => {
   const mount = grok.leadMount({ command: "node", args: ["/projects/team/src/server.ts"] }, "/scratch");
   assert.deepEqual(mount, { argv: [], inherited: true });
@@ -125,6 +129,7 @@ test("grok's sandbox support reports the binary it cannot resolve, from the spaw
   assert.deepEqual(grok.sandboxSupport({ PATH: directory }), { ok: true });
 });
 
+// @anchor sandboxforPairsProfile
 test("sandboxFor pairs a profile with the mode grok gives it, and refuses any other", () => {
   for (const [profile, mode] of Object.entries(grok.sandboxProfiles)) {
     assert.deepEqual(sandboxFor("grok", profile), { mode, profile });
@@ -140,6 +145,7 @@ test("sandboxFor pairs a profile with the mode grok gives it, and refuses any ot
   }
 });
 
+// @anchor writeRoleArgv
 test("a write role's argv is design section 3's Grok line, in the order P8 ran it", (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, { model: "grok-4.6", effort: "high" });
@@ -165,6 +171,7 @@ test("a write role's argv is design section 3's Grok line, in the order P8 ran i
   assert.equal(plan.files, undefined);
 });
 
+// @anchor readOnlyRole
 test("a read-only role's argv differs from a writing one only in the profile it names", (t) => {
   const dirs = layout(t);
   const request = requestFor(dirs, {
@@ -187,6 +194,7 @@ test("a read-only role's argv differs from a writing one only in the profile it 
   for (const flag of ["--model", "--reasoning-effort", "--rules"]) assert.equal(bare.argv.includes(flag), false);
 });
 
+// @anchor profileReachesSandbox
 test("every profile reaches --sandbox under the name grok gives it, off included", (t) => {
   const dirs = layout(t);
   const plans = Object.keys(grok.sandboxProfiles).map((profile) =>
@@ -202,6 +210,7 @@ test("every profile reaches --sandbox under the name grok gives it, off included
   }
 });
 
+// @anchor resumedRunCarries
 test("a resumed run carries -r and never a --session-id beside it", (t) => {
   const dirs = layout(t);
   const plan = grok.plan(requestFor(dirs, { resumeSessionId: resumeId }));
@@ -221,6 +230,7 @@ test("a resumed run carries -r and never a --session-id beside it", (t) => {
   assert.equal(plan.argv.includes(sessionId), false);
 });
 
+// @anchor wholeDenyList
 test("the whole deny list ends the argv, one --deny per target, and a configured bin runs", (t) => {
   const dirs = layout(t);
   const bin = "/opt/custom/grok";
@@ -233,6 +243,7 @@ test("the whole deny list ends the argv, one --deny per target, and a configured
   assert.equal(grok.plan(requestFor(dirs, { denyTargets: [] })).argv.includes("--deny"), false);
 });
 
+// @anchor rolePromptTravels
 test("the role prompt travels as the --rules string itself, never as a path (P9)", (t) => {
   const dirs = layout(t);
   const rolePrompt = "You are the implementer.\nBegin every reply with ROLE-OK.\n";
@@ -246,6 +257,7 @@ test("the role prompt travels as the --rules string itself, never as a path (P9)
   assert.equal(plan.files, undefined);
 });
 
+// @anchor rolePromptPast
 test("a role prompt past the 100 KB argv limit goes to a file, never into another argument", (t) => {
   const dirs = layout(t);
   const limit = 100 * 1024;
@@ -276,6 +288,7 @@ test("a role prompt past the 100 KB argv limit goes to a file, never into anothe
   assert.equal(overByOneMoon.argv.includes("--prompt-file"), true);
 });
 
+// @anchor briefTooLarge
 test("a brief too large for the command line travels as the prompt file", (t) => {
   const dirs = layout(t);
   const rolePrompt = "You are the reviewer.\n";
@@ -292,8 +305,14 @@ test("a brief too large for the command line travels as the prompt file", (t) =>
   // still travels that way; the file is the turn's own text.
   assert.equal(plan.argv[plan.argv.indexOf("--rules") + 1], rolePrompt);
   assert.equal(existsSync(file), false, "the adapter names the file; the pipeline writes it");
+  // A change to the spawn line keeps the deny list and the exclusion flags: the argv still
+  // ends with one `--deny` per target, as it does on the `-p` path.
+  const targets = requestFor(dirs).denyTargets;
+  assert.deepEqual(plan.argv.slice(plan.argv.length - targets.length * 2), grok.denyArgs(targets));
+  assert.equal(plan.argv.filter((argument) => argument === "--deny").length, targets.length);
 });
 
+// @anchor promptBudgetRole
 test("the prompt budget is the role text and the brief together, counted in bytes", (t) => {
   const dirs = layout(t);
   const budget = 64 * 1024;
@@ -322,6 +341,7 @@ test("a role prompt of nothing puts the brief alone in the prompt file", (t) => 
   assert.equal(plan.argv.includes("--rules"), false);
 });
 
+// @anchor planRefusesEngine
 test("plan refuses an engine-placed lead: Grok cannot be isolated as one (P9)", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
@@ -339,6 +359,7 @@ test("plan refuses an engine-placed lead: Grok cannot be isolated as one (P9)", 
   assert.deepEqual(grok.exclusionArgs(), []);
 });
 
+// @anchor cwdRequestCwd
 test("--cwd is the request's cwd exactly, and that cwd is already canonical", (t) => {
   const dirs = layout(t);
   // A workspace reached through a symlink is a second string for one directory. The child
@@ -355,6 +376,7 @@ test("--cwd is the request's cwd exactly, and that cwd is already canonical", (t
   assert.equal(plan.argv.includes(link), false);
 });
 
+// @anchor grokParselineReads
 test("grok's parseLine reads the session id from the init line and nothing else", () => {
   // P8's own first line, shortened: it arrives on a resumed turn as well as a fresh one.
   assert.deepEqual(grok.parseLine(JSON.stringify({
@@ -387,6 +409,7 @@ test("an assistant turn is activity: its text, without the thinking, capped at 2
   assert.deepEqual(turn([{ type: "text", text: "🌙".repeat(250) }]), { kind: "activity", text: "🌙".repeat(200) });
 });
 
+// @anchor resultLineRun
 test("a result line is the run's verdict, and a failed one's message is its joined errors", () => {
   assert.deepEqual(grok.parseLine('{"type":"result","subtype":"success","is_error":false,"duration_ms":11800,"num_turns":2,"result":"probe-repo","session_id":"x"}'),
     { kind: "result", text: "probe-repo" });
@@ -421,6 +444,7 @@ test("a line grok's vocabulary does not cover is not an event", () => {
   }
 });
 
+// @anchor grokDeclaresFinish
 test("grok declares no finish and no stderr reader: its output is a line stream", () => {
   const adapter: EngineAdapter = grok;
   assert.equal(adapter.finish, undefined);
@@ -431,6 +455,7 @@ test("grok declares no finish and no stderr reader: its output is a line stream"
   assert.equal(Object.hasOwn(grok, "parseStderrLine"), false);
 });
 
+// @anchor grokFinalMessage
 test("grok's final message is the last result, then the last error, then nothing", () => {
   const events: EngineEvent[] = [
     { kind: "session", sessionId: "x" }, { kind: "activity", text: "working" },
@@ -443,6 +468,7 @@ test("grok's final message is the last result, then the last error, then nothing
   assert.equal(grok.finalMessage([], null), "");
 });
 
+// @anchor fakeGrokRun
 test("a fake grok run through the pipeline yields the session, the activity and the final text", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);
@@ -486,6 +512,7 @@ test("a fake grok run through the pipeline yields the session, the activity and 
   assert.equal(readFileSync(request.resultPath, "utf8"), result.finalMessage);
 });
 
+// @anchor failedRunSettles
 test("a failed run settles as an error carrying the joined errors of its result line", async (t) => {
   const dirs = layout(t);
   const bin = shim(dirs.root);

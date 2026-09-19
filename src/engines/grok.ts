@@ -104,9 +104,11 @@ const grok = {
       prompt.push("-p", request.brief);
     } else {
       const promptPath = path.join(request.scratchDir, "rules.md");
-      // The role text, a blank line, then the brief — P9's own comparison run — unless
-      // `--rules` is already carrying the role, in which case the file is the turn's text
-      // and repeating the role there costs the run nothing but tokens.
+      // The role text, a blank line, then the brief — P9's own comparison delivery — and
+      // the role goes in whether or not `--rules` is also carrying it: a file that held
+      // the brief alone would drop the role for an oversize one, and repeating it for a
+      // role that fits costs the run nothing but tokens. A brief with no role text is the
+      // brief alone rather than two leading blank lines.
       files.push({ path: promptPath, contents: request.rolePrompt === "" ? request.brief : `${request.rolePrompt}\n\n${request.brief}` });
       prompt.push("--prompt-file", promptPath);
     }

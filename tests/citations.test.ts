@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -40,6 +41,70 @@ async function rootWith(t: { after: (fn: () => unknown) => void }, files: Record
   for (const [name, body] of Object.entries(files)) await writeFile(path.join(dir, name), body, "utf8");
   return dir;
 }
+
+// A repository of its own, so `--since` has a revision to compare against.
+async function repositoryWith(t: { after: (fn: () => unknown) => void }, files: Record<string, string>): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "citations-git-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (const [name, body] of Object.entries(files)) await writeFile(path.join(dir, name), body, "utf8");
+  const git = promisify(execFile);
+  await git("git", ["-C", dir, "init", "-b", "main"]);
+  await git("git", ["-C", dir, "add", "-A"]);
+  await git("git", ["-C", dir, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "-m", "base"]);
+  return dir;
+}
+
+test("--since reports a citation whose cited line moved under it, and nothing once it is re-pointed", async (t) => {
+  const dir = await repositoryWith(t, {
+    "code.ts": "export function first() {}\nexport function second() {}\n",
+    "doc.md": "The second one (`code.ts:2`) is what this sentence is about.\n",
+  });
+  const doc = path.join(dir, "doc.md");
+
+  // Nothing has moved yet: the line still says what it said at the revision.
+  const clean = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(clean.code, 0, clean.out);
+  assert.equal(clean.out, "");
+
+  // An insertion above the cited line leaves the citation in range, so the checker's own
+  // pass still sees nothing wrong — and the sentence now points at the wrong function.
+  await writeFile(path.join(dir, "code.ts"), "// a new line\nexport function first() {}\nexport function second() {}\n", "utf8");
+  const blind = await run(["--root", dir, doc]);
+  assert.equal(blind.code, 0, blind.out);
+  const drifted = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(drifted.code, 1);
+  const lines = drifted.out.trim().split("\n");
+  assert.equal(lines.length, 3, drifted.out);
+  assert.match(lines[0], /doc\.md:1: code\.ts:2 — drifted since HEAD$/);
+  assert.match(lines[1], /^ {4}was: export function second\(\) \{\}$/);
+  assert.match(lines[2], /^ {4}now: export function first\(\) \{\}$/);
+
+  // Re-pointed at the line the sentence means, the same command says nothing.
+  await writeFile(doc, "The second one (`code.ts:3`) is what this sentence is about.\n", "utf8");
+  const repointed = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(repointed.code, 0, repointed.out);
+  assert.equal(repointed.out, "");
+});
+
+test("--since ignores whitespace, a file the revision does not have, and every symbol citation", async (t) => {
+  const dir = await repositoryWith(t, {
+    "code.ts": "export function only() {}\n",
+    "doc.md": "Here (`code.ts:1`) and by name (`code.ts#only`).\n",
+  });
+  const doc = path.join(dir, "doc.md");
+  // Respaced, not moved: a line whose text differs only in whitespace has not drifted.
+  await writeFile(path.join(dir, "code.ts"), "export function only() {}   \n", "utf8");
+  const reindented = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(reindented.code, 0, reindented.out);
+
+  // A file the revision does not hold has nothing to compare against, and a symbol
+  // citation moves with its own declaration, which is the whole reason to prefer one.
+  await writeFile(path.join(dir, "added.ts"), "export const fresh = 1;\n", "utf8");
+  await writeFile(doc, "New (`added.ts:1`), by name (`code.ts#only`), and respaced (`code.ts:1`).\n", "utf8");
+  const mixed = await run(["--root", dir, "--since", "HEAD", doc]);
+  assert.equal(mixed.code, 0, mixed.out);
+  assert.equal(mixed.out, "");
+});
 
 test("every citation in docs/design.md and docs/probes.md names a line or a symbol its file has", async () => {
   const { code, out, err } = await run([]);
@@ -195,6 +260,31 @@ test("an // @anchor comment names a symbol, at the margin or indented inside a b
   const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
   assert.equal(code, 0, out);
   assert.match(err, /2 citations in 1 file \(0 by line, 2 by symbol\); 0 misses/);
+});
+
+test("a markdown anchor names a symbol, so a section can be cited by name rather than by line", async (t) => {
+  const dir = await rootWith(t, {
+    "record.md": [
+      "# Probes",
+      "",
+      "<!-- @anchor grokRow -->",
+      "## The Grok row",
+      "",
+      "What it did.",
+      "",
+    ].join("\n"),
+    "doc.md": "The row (`record.md#grokRow`) and a line of it (`record.md:6`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.match(err, /2 citations in 1 file \(1 by line, 1 by symbol\); 0 misses/);
+
+  // A prose file declares nothing, so only its anchors name anything — and an anchor a
+  // document does not carry is a miss like any other.
+  await writeFile(path.join(dir, "doc.md"), "A section that is not there (`record.md#noSuchSection`).\n", "utf8");
+  const missing = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(missing.code, 1);
+  assert.match(missing.out, /record\.md#noSuchSection — no such symbol/);
 });
 
 test("a # continuation cites a symbol in the file of the citation before it, and is a miss before any file", async (t) => {

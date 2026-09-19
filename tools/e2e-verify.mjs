@@ -6,7 +6,7 @@
 // happened to grep that day.
 //
 //   node tools/e2e-verify.mjs --project <sample root> [--default-branch main]
-//       [--slug <journal slug>] [--worktree-dir .worktrees] [--branch-pattern 'task/*']
+//       [--slug <journal slug>] [--branch-pattern 'task/*']
 //       [--test-command <command>] [--since <ISO date or task id>]
 //
 // `--slug` names the journal to read; with none, every journal in the project is read.
@@ -28,7 +28,6 @@ if (!existsSync(path.join(project, ".git"))) fail(`${project} is not a git repos
 
 const config = readJson(path.join(project, ".cross-agent", "config.json")) ?? {};
 const defaultBranch = args["default-branch"] ?? config.project?.defaultBranch ?? "main";
-const worktreeDir = args["worktree-dir"] ?? ".worktrees";
 const branchPattern = args["branch-pattern"] ?? "task/*";
 const testCommand = args["test-command"] ?? config.project?.testCommand;
 const maxDepth = config.limits?.maxDepth ?? 1;
@@ -90,47 +89,111 @@ const journals = (existsSync(journalDir) ? readdirSync(journalDir) : [])
   .filter((name) => name.endsWith(".json") && (args.slug === undefined || name === `${args.slug}.json`))
   .map((name) => ({ name, journal: readJson(path.join(journalDir, name)) }))
   .filter((entry) => entry.journal !== null);
+// The loop's own table, in the order a finished task writes it. `git` and `rebased` may
+// fall between any two — a commit that moved nothing and a rebase that replayed nothing
+// are journaled as `git` — but a missing or out-of-order named step means the run did not
+// do what the record claims.
+const required = ["worktree-created", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"];
 if (journals.length === 0) {
   check("the journal shows every git step", "?", `no journal under ${journalDir}`);
 } else {
-  const lines = journals.map(({ name, journal }) => `${name.replace(/\.json$/, "")}: ${(journal.steps ?? []).map((step) => step.step).join(", ")}`);
-  check("the journal shows every git step", "pass", lines.join(" | "));
+  const judged = journals.map(({ name, journal }) => {
+    const slug = name.replace(/\.json$/, "");
+    if (!Array.isArray(journal.steps) || journal.steps.some((step) => typeof step?.step !== "string")) {
+      return { slug, verdict: "?", detail: "not the journal schema" };
+    }
+    const written = journal.steps.map((step) => step.step);
+    let at = -1;
+    const missing = [];
+    for (const step of required) {
+      const found = written.indexOf(step, at + 1);
+      if (found === -1) missing.push(step); else at = found;
+    }
+    return missing.length === 0
+      ? { slug, verdict: "pass", detail: written.join(", ") }
+      : { slug, verdict: "FAIL", detail: `missing or out of order: ${missing.join(", ")} (has ${written.join(", ") || "nothing"})` };
+  });
+  const worst = judged.some((entry) => entry.verdict === "FAIL") ? "FAIL"
+    : judged.some((entry) => entry.verdict === "?") ? "?" : "pass";
+  check("the journal shows every git step", worst, judged.map((entry) => `${entry.slug}: ${entry.detail}`).join(" | "));
 }
 
-// 8. Every specialist transcript, by what it called rather than by what its text mentions:
-// a tool named `delegate`, any `mcp__` tool, or a shell command that starts an engine.
+// 8. Every specialist transcript, by what it **called** rather than by what its text
+// mentions — a Grok session's inherited slash commands include one named `delegate`, so
+// the word proves nothing. Three shapes, because three engines write their own logs:
+// Claude and Grok emit Anthropic-shaped `tool_use` blocks (Grok reaching an MCP tool
+// through its `use_tool` dispatcher, which names the tool inside), and Codex emits items.
+// An offence is `delegate` in any host's spelling or a shell command starting one of the
+// engines, this CLI or this server. The specialist row's own tools are not offences,
+// whatever prefix a host gives them. A log no parser here understands is evidence of
+// nothing, and evidence of nothing is never a pass.
 const launcher = /(^|[|&;`(\s])(claude|codex|grok|cross-agent)(\s|$)/;
+const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
+const unreadable = [];
+let scanned = 0;
 for (const record of run) {
   const log = record.logPath;
-  if (!existsSync(log)) continue;
-  const calls = new Set();
+  if (!existsSync(log) || statSync(log).size === 0) {
+    unreadable.push(`${record.id.slice(0, 8)}: no log`);
+    continue;
+  }
+  const calls = [];
   const commands = [];
+  let understood = 0;
+  let unparsable = 0;
   for (const line of readFileSync(log, "utf8").split("\n")) {
     if (line.trim() === "") continue;
     let event;
-    try { event = JSON.parse(line); } catch { continue; }
-    const message = event.message;
-    if (typeof message !== "object" || message === null) continue;
-    for (const block of message.content ?? []) {
-      if (block?.type !== "tool_use") continue;
-      calls.add(block.name);
-      for (const key of ["command", "cmd"]) {
-        if (typeof block.input?.[key] === "string") commands.push(block.input[key]);
+    try { event = JSON.parse(line); } catch { unparsable++; continue; }
+    if (typeof event !== "object" || event === null) { unparsable++; continue; }
+    // Claude and Grok: `assistant` turns carrying content blocks.
+    const content = event.message?.content;
+    if (Array.isArray(content)) {
+      understood++;
+      for (const block of content) {
+        if (block?.type !== "tool_use") continue;
+        if (block.name === "use_tool") {
+          // Grok's dispatcher: the tool it is dispatching to is the call.
+          calls.push(block.input?.tool_name ?? block.input?.tool ?? block.input?.name);
+          continue;
+        }
+        calls.push(block.name);
+        for (const key of ["command", "cmd"]) {
+          if (typeof block.input?.[key] === "string") commands.push(block.input[key]);
+        }
       }
+      continue;
     }
+    // Codex: items, one per completed step.
+    if (typeof event.type === "string" && event.type.startsWith("item.")) {
+      understood++;
+      const item = event.item ?? {};
+      if (item.type === "command_execution" && typeof item.command === "string") commands.push(item.command);
+      if (typeof item.tool === "string") calls.push(item.tool);
+      if (typeof item.name === "string") calls.push(item.name);
+      continue;
+    }
+    if (["thread.started", "turn.completed", "turn.failed", "system", "result", "user", "error"].includes(event.type)) understood++;
+    else unparsable++;
   }
+  if (understood === 0) {
+    unreadable.push(`${record.id.slice(0, 8)}: ${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`);
+    continue;
+  }
+  scanned++;
   for (const name of calls) {
-    if (typeof name === "string" && (name === "delegate" || name.endsWith("__delegate") || name.startsWith("mcp__"))) {
-      offences.push(`${record.id.slice(0, 8)} called ${name}`);
-    }
+    if (isDelegate(name)) offences.push(`${record.id.slice(0, 8)} called ${name}`);
   }
   for (const command of commands) {
     if (launcher.test(command)) offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`);
   }
 }
 check("no delegate call and no engine launch in any specialist transcript",
-  run.length === 0 ? "?" : offences.length === 0 ? "pass" : "FAIL", offences.slice(0, 5).join(" | "));
+  offences.length > 0 ? "FAIL" : unreadable.length > 0 || scanned === 0 ? "?" : "pass",
+  offences.length > 0 ? offences.slice(0, 5).join(" | ")
+    : unreadable.length > 0 ? `${scanned} scanned; ${unreadable.slice(0, 3).join(" | ")}`
+      : `${scanned} transcripts`);
 
 const failed = results.filter((result) => result.verdict === "FAIL").length;
 const unknown = results.filter((result) => result.verdict === "?").length;

@@ -45,6 +45,7 @@
 // than a skip: a line number or a symbol belongs to one file, and there is no
 // way to tell which. Fenced code blocks are not scanned, so an example inside
 // one is not a citation.
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,8 @@ const rootFlag = argv.indexOf("--root");
 const repoRoot = rootFlag === -1
   ? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
   : path.resolve(argv.splice(rootFlag, 2)[1] ?? ".");
+const sinceFlag = argv.indexOf("--since");
+const since = sinceFlag === -1 ? null : argv.splice(sinceFlag, 2)[1];
 
 // group 1: the path, absent on a continuation. group 2: the line numbers of a
 // line citation; group 3: the symbol of a symbol citation. A line wrap may
@@ -71,13 +74,19 @@ const FILE_NAME = /\.[A-Za-z0-9]{1,5}$/;
 // anchor comment names one at any indentation.
 const DECLARATION = new RegExp(`^(?:export )?(?:async function|function|const|let|class|interface|type) (${SYMBOL})`);
 const ANCHOR = new RegExp(`^[ \\t]*// @anchor (${SYMBOL})`);
+// A document declares nothing, so the only name it can offer is one it puts there: an
+// HTML comment above the section, which moves with the section when the file grows. It is
+// what lets a doc cite another doc's passage without a line number to go stale.
+const MARKDOWN_ANCHOR = new RegExp(`^[ \\t]*<!--[ \\t]*@anchor (${SYMBOL})[ \\t]*-->`);
 // Text before a slash that leaves an operand to come: the slash opens a
 // regular expression rather than dividing.
 const OPERAND = /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\b(?:return|typeof|instanceof|case|do|else|in|of|delete|void|throw|yield|await))\s*$/;
 
 const docs = argv.length > 0 ? argv : defaultDocs();
 const files = new Map();
+const historical = new Map();
 const misses = [];
+const drifts = [];
 let lineCitations = 0;
 let symbolCitations = 0;
 
@@ -124,16 +133,66 @@ for (const doc of docs) {
     }
     const miss = numbers !== undefined ? checkLines(target, numbers) : checkSymbol(target, symbol);
     if (miss !== null) misses.push(`${at}: ${target}${ref} — ${miss}`);
+    // A citation that still lands inside its file may have stopped landing on what the
+    // sentence claims: an insertion above it moves the content down and nothing here can
+    // see that. Given a revision, the text of each cited line then is compared with the
+    // text now, which is exactly the drift a passing checker hides.
+    else if (since !== null && numbers !== undefined) {
+      const moved = driftOf(target, numbers);
+      if (moved !== null) drifts.push(`${at}: ${target}${ref} — drifted since ${since}\n    was: ${moved.was}\n    now: ${moved.now}`);
+    }
   }
 }
 
 for (const miss of misses) console.log(miss);
+for (const drift of drifts) console.log(drift);
 process.stderr.write(
   `${lineCitations + symbolCitations} citations in ${docs.length} file${docs.length === 1 ? "" : "s"}` +
     ` (${lineCitations} by line, ${symbolCitations} by symbol);` +
-    ` ${misses.length} miss${misses.length === 1 ? "" : "es"}\n`,
+    ` ${misses.length} miss${misses.length === 1 ? "" : "es"}` +
+    (since === null ? "" : `; ${drifts.length} drifted since ${since}`) + "\n",
 );
-process.exit(misses.length > 0 ? 1 : 0);
+process.exit(misses.length + drifts.length > 0 ? 1 : 0);
+
+/**
+ * The first line of this citation whose text has changed since `--since`, with both
+ * texts, or null when none has. Whitespace is normalised, because reindenting a line is
+ * not moving the content out from under a sentence; a file the revision does not hold has
+ * nothing to compare against, and a symbol citation never reaches here at all.
+ */
+function flat(line) {
+  return line.replace(/\s+/g, " ").trim();
+}
+
+function driftOf(cited, numbers) {
+  const before = fileAtRevision(cited);
+  if (before === null) return null;
+  const now = fileAt(cited);
+  if (now === null) return null;
+  // A file ending in a newline leaves an empty last element, which is no line: comparing
+  // against it would report every citation past the old end as drift.
+  const had = before.length > 0 && before[before.length - 1] === "" ? before.length - 1 : before.length;
+  for (const n of numbers.split(/[-,]/).map(Number)) {
+    if (n > had || n > now.count) continue;
+    const was = before[n - 1];
+    const text = now.lines[n - 1];
+    if (flat(was) !== flat(text)) return { was: was.trim(), now: text.trim() };
+  }
+  return null;
+}
+
+/** The cited file's lines at `--since`, or null when the revision does not hold it. */
+function fileAtRevision(cited) {
+  if (historical.has(cited)) return historical.get(cited);
+  let lines = null;
+  try {
+    lines = execFileSync("git", ["-C", repoRoot, "show", `${since}:${cited}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split("\n");
+  } catch {
+    // Added since, or not tracked, or not a repository: nothing to compare.
+  }
+  historical.set(cited, lines);
+  return lines;
+}
 
 // The first thing wrong with one line citation, or null when nothing is.
 function checkLines(cited, numbers) {
@@ -166,18 +225,29 @@ function fileAt(cited) {
       const text = readFileSync(full, "utf8");
       const lines = text.split("\n");
       const symbols = new Set();
-      let state = "code";
-      for (const line of lines) {
-        if (state === "code") {
-          const named = DECLARATION.exec(line) ?? ANCHOR.exec(line);
+      if (cited.endsWith(".md")) {
+        // Prose, not code: the code state machine's quotes and backticks mean nothing
+        // here, and the only names are the anchors the document writes down.
+        for (const line of lines) {
+          const named = MARKDOWN_ANCHOR.exec(line);
           if (named !== null) symbols.add(named[1]);
         }
-        state = stateAfter(line, state);
+      } else {
+        let state = "code";
+        for (const line of lines) {
+          if (state === "code") {
+            const named = DECLARATION.exec(line) ?? ANCHOR.exec(line);
+            if (named !== null) symbols.add(named[1]);
+          }
+          state = stateAfter(line, state);
+        }
       }
       // An empty file has no lines at all. A file ending in a newline has no
       // line after it; one that does not still has its last line.
       const count = text === "" ? 0 : text.endsWith("\n") ? lines.length - 1 : lines.length;
-      file = { count, symbols };
+      // `lines` for `--since`, which compares a cited line's text with its text at a
+      // revision; the checker's own pass needs only the count and the symbols.
+      file = { count, symbols, lines };
     } catch { file = null; }
   }
   files.set(cited, file);
