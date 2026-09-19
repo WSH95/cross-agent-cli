@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-18T23:10:34Z
+updated_at: 2026-09-19T01:02:04Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,18 +34,20 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 3 (T11 `wait`; `atc-s96.11`) is on `task/cross-agent-m3` at `928ba1e`:
-the task commit `5f31564` plus fix round 1 (`95c55a1`, `5fb2d94`,
-`928ba1e`; 448 pass, 1 skip) after four Important findings; its scoped
-re-review (Claude Code subagent · claude-fable-5-1 · max) is running. Tasks
-0–2 are complete there (`54ff90a..39bbafc`). The suite flakes about one
-full run in three with the `environ unreadable` signature: the Fable review
-traced it to `findByEnvironment` counting a process mid-`execve` as an
-unreadable candidate (a new P2 bead), which Task 3b fixes first, before 3c
-(test hygiene) and the first fast-forward merge into `main`. **Codex is
-paused by the user.** Briefs for 3b, 3c, 4, 4b, 4c are in
-`.superpowers/sdd/the-development-of-this-calm-planet/` beside the ledger
-(`progress.md`). Every dispatch line names harness · model · effort.
+Task 3b (the M1-close behavioural beads: `atc-s96.44`, `.40`, `atc-1p0`,
+`.31`, `.32`, `.30`, `.38`, `.41`, `.46`) landed eleven commits
+`6840da8..4c6ae45` on `task/cross-agent-m3` (456 pass, 1 skip; the
+`environ unreadable` load flake is gone after the mid-exec retry in
+`findByEnvironment`) and is under review: task review (Claude Code
+subagent · claude-opus-5 · max) and second opinion (· claude-fable-5-1 ·
+max). Tasks 0–3 are complete there (`54ff90a..928ba1e`; T10 and T11 beads
+closed). Next: 3c (test hygiene, ten-run acceptance under load), then the
+first fast-forward merge into `main` (rebase the branch onto `main`'s
+steward commits first), then Task 4 (S8 modes), 4b, 4c. **Codex is paused
+by the user.** Briefs, the ledger (`progress.md`), reports and review
+packages are in `.superpowers/sdd/the-development-of-this-calm-planet/`;
+two AGENTS.md diffs await your approval there
+(`agents-md-cite-by-symbol.diff`, `task-3b-agents-md.diff`).
 
 ## Next steps
 

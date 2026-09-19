@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T01:02:04Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 3 (T11) complete and re-reviewed clean; atc-s96.10/.11 and their folds closed. Task 3b (behavioural beads incl. atc-s96.44 sandbox settings and atc-s96.46 environ-scan mid-exec retry) landed 11 commits 6840da8..4c6ae45 on task/cross-agent-m3 (456 pass/1 skip; the environ flake is gone); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running. New P4 bead: killGroup/probe.mjs settings out of step. Next: 3c test hygiene, then the first ff-merge to main.
+
 ### 2026-09-18T23:10:34Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 3 (T11 wait) fix round 1 landed on task/cross-agent-m3: 95c55a1, 5fb2d94, 928ba1e (448 pass/1 skip; 578 citations/0 misses) after four Important findings (lockWaitSeconds bypassed; a stall crossed during the call not answered; a cancel in the same stdin chunk dropped; a failed pass polled to timeout); scoped re-review (claude-fable-5-1, max) running. New P2 bead: findByEnvironment counts mid-execve processes as unreadable (the real cause of the atc-s96.33 flake), fixed first in Task 3b.
 
