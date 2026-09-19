@@ -347,9 +347,13 @@ that spelling, so nothing in the matrix depends on it.
 
 #### Two skills, and how the loop is delivered
 
-`skills/cross-agent/SKILL.md` is the **launcher**: select the mode, start,
-watch, answer, cancel, reconcile, report. It is short and host-independent.
-`modes/<name>/SKILL.md` is that mode's **loop**. Hosts discover only `skills/`,
+`skills/cross-agent/SKILL.md` is the **launcher**, and it is written: select
+the mode, start, watch, answer, cancel, reconcile, report, and the paragraphs
+every mode shares — the merge policy a `worktree: true` task settles under, the
+`review` and `critique` verbs, the reconciliation pass. It is host-independent,
+and `tests/skills.test.ts` holds every tool it names to the row that may call it
+(`src/server.ts#projectTools`). `modes/<name>/SKILL.md` is that mode's **loop**,
+written for each of the three. Hosts discover only `skills/`,
 and Codex's documented fallback copies that one directory (section 9), so a
 mode's loop cannot be found by convention on any host. The server serves it
 instead: `describe_mode` returns the active mode's loop text, its roles, and its
@@ -364,13 +368,13 @@ the loop to keep in step.
 
 Modes are built. `modes/` holds three of them, `src/modes.ts` validates one and
 serves its text, and `describe_mode` answers from the mode the config names
-(`src/modes.ts#loadMode`, `#describeMode`, `src/server.ts#projectTools`). Two
-things inside them are still targets, and each is named where it is: every role
-prompt under `modes/dev-team*/roles/` and both dev-team `SKILL.md` files are
-skeletons until step 9 writes them, and the dev-team loop that calls the
-provider's four tools arrives with them. `modes/solo/` is written: its loop is
-the zero-ceremony one of section 7, and its consultant's prompt is this build's
-own text.
+(`src/modes.ts#loadMode`, `#describeMode`, `src/server.ts#projectTools`). All
+three are written through: each mode's loop in its own `SKILL.md` and each
+role's prompt under `roles/`, the dev-team text carried over from the devpack by
+`tools/from-openmaus.mjs` and edited for this runtime (section 8). What is still
+a target inside them is named where it is: `modes/dev-team-engine/` states the
+placement delta and waits on row 11 for the mount and the mailbox a lead needs
+to run it.
 
 A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
@@ -2272,10 +2276,14 @@ there, this key is how an operator binds one.
 
 ### 7. The skills
 
-The launcher skill is not written and arrives with step 9 of the work plan, and
-so do the two dev-team loops. `modes/solo/SKILL.md` is written: it is the loop
-below, and the paragraphs the launcher will carry for every mode are in it
-already.
+Both skills are written. `skills/cross-agent/SKILL.md` is the launcher, with
+the paragraphs every mode shares; `modes/dev-team/SKILL.md` is the ten-step loop
+below, `modes/solo/SKILL.md` the zero-ceremony one, and
+`modes/dev-team-engine/SKILL.md` the placement delta row 11 completes. Which
+tools a loop may call is a test rather than a promise: every backticked name in
+the launcher and in each loop is checked against the tools that mode registers
+for the row its placement runs it in (`tests/skills.test.ts`,
+`src/server.ts#projectTools`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
 loads: read the config, call `describe_mode` **first** to get the active
@@ -2293,9 +2301,10 @@ closing report. Under `manual`, or after any failure anywhere in that order, it
 stops where it is, leaves the branch and its worktree standing, and reports the
 reason together with the commands that finish the job by hand; a suite that
 fails at the root after the merge is the repair path below and never a merge to
-retry. Those paragraphs live
-in `modes/solo/SKILL.md` until step 9 writes the launcher skill that carries
-them for every mode, and `tests/skills.test.ts` holds them to that order.
+retry. Those paragraphs live in
+`skills/cross-agent/SKILL.md`, which carries them for every mode — `solo`
+hands a one-shot that wrote straight to them — and `tests/skills.test.ts` holds
+them to that order.
 
 **`review` and `critique` are verbs of that loop, not tools.** Each is one
 `delegate` of the `consult` role that names its own engine, because a second
@@ -2304,16 +2313,17 @@ under review — `git diff <base>...HEAD`, or the working tree where nothing is
 committed — and asks for findings by severity, each with `file:line` and what to
 do about it; `critique` names a plan or a design file and asks for the
 adversarial reading, what it assumes without saying so and where it would fail
-first (`modes/solo/SKILL.md`). Composing them costs no second protocol, which is
+first (`skills/cross-agent/SKILL.md`). Composing them costs no second protocol, which is
 why the diff-scoped verbs of the vendor bridges are not built ("Not built").
 
 `modes/<name>/SKILL.md` is that mode's loop, served by `describe_mode` and
 never copied into a host's skill directory. For `dev-team` it is the devpack's
 `worktree-workflow` with the verbs remapped (`delegate_bot` and `ask_bot`
-become `delegate` then `wait`; "end your turn, you are woken" becomes "call
+became `delegate` then `wait`; "end your turn, you are woken" became "call
 `wait` again while it reports running"; roles are names; the closing room post
-becomes the task's closing report), plus the git ownership and ordering of
-section 4, and:
+became the task's closing report), plus the git ownership and ordering of
+section 4 — ten steps, from the root check to the record
+(`modes/dev-team/SKILL.md`), and:
 
 Where that closing report goes depends on placement. Under `host` the host
 session appends one line to `.cross-agent/log.md` itself, as it appends
@@ -2361,7 +2371,9 @@ on its behalf.
   head of the branch it is about to merge, read through the same explicit form
   (`src/gitroot.ts#execute`, `src/gitmutate.ts#revision`). Taken anywhere else
   they would be a different repository's state. Every row of this table is
-  built; what is left is the lead loop that calls these tools (rows 9 and 11).
+  built, and the loop that calls it names the step each of its own calls
+  completes (`modes/dev-team/SKILL.md`); what is left is the engine-placed lead
+  (row 11).
 
   Three functions: `appendStep(root, slug, step, data)` reads, appends, and
   writes through the ledger's own atomic write — a temporary file and a
@@ -2610,9 +2622,10 @@ and all seven of
 `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
-`npm test` runs), the two docs, and the root files. Still to be written: both
-plugin manifests, `.mcp.json`, `skills/`, and the real text of every mode's
-`SKILL.md` and `roles/*.md`.
+`npm test` runs), the two docs, and the root files. From row 9:
+`skills/cross-agent/SKILL.md` and every mode's own `SKILL.md`. Still to be
+written: both plugin manifests, `.mcp.json`, and the real text of every mode's
+`roles/*.md`.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
 and `"bin": {"cross-agent": "src/cli.ts"}`.

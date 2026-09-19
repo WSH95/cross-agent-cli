@@ -1,16 +1,163 @@
 # The dev-team loop
 
-Step 9 of the work plan writes this loop in full; what is here says what it
-will be, and `describe_mode` already serves it, so whatever lands in this file
-is what a lead reads on every host. The loop is one task at a time: delegate
-`planner` at the project root and `wait`; delegate `plan-reviewer` on the plan
-and `wait`; create the worktree and its `task/<slug>` branch yourself, because
-under `placement: host` your own session owns every root git operation;
-delegate `implementer` into that worktree with the branch named, `wait`, and
-commit its work with `git_mutate`, which is the only path that writes git
-metadata for a worktree; delegate `code-reviewer` on the committed branch and
-send a needs-work round back through `resume`; then merge on the default
-branch, run the test command there, remove the worktree and delete the branch,
-and append the task's closing line to `.cross-agent/log.md`. Every git step of
-that order, and the repair path when the suite fails after a merge, is design
-section 4; the journal each step writes is section 7.
+One task at a time, through four specialists: the planner and the plan reviewer
+read the project at its root, the implementer works in a linked worktree on its
+own branch, and the code reviewer reads what it committed there. `lead.placement`
+is `host`, so the session reading this runs the loop and owns every root git
+operation. No specialist runs a git command that writes — a worktree's `.git` is
+a writable file inside the implementer's sandbox, which is exactly why nothing
+here trusts it.
+
+`<slug>` is the short name you choose in step 1: the directory under the mode's
+`git.worktreeDir`, the branch its `git.branchPattern` makes (`task/<slug>` for
+this mode, written `<branch>` below), the journal file every git step appends
+to, and the `slug` that `git_mutate`, `git_root` and `run_command` all take.
+`<default>` is `project.defaultBranch`, and `<worktree path>` is
+`<git.worktreeDir>/<slug>`. `describe_mode` gives you the policy those come
+from; `list_roles` gives you the engine, model and effort behind each role name
+below, and you announce each of them as you dispatch it.
+
+## 1. Root check
+
+`list_tasks` first: it reconciles the ledger and names any record file no reader
+could judge. Settle what it and the journals show by the launcher's
+reconciliation rules before starting anything new — an unmerged branch from a
+dead task is not a repository that is ready for another one.
+
+Then `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`
+must print nothing; if it prints, show the user and stop. The root must also sit
+on `<default>` — step 9 refuses to merge anywhere else, and reading the current
+branch now costs nothing and saves a task. Choose a `<slug>` that neither
+`git_root {args: ["branch", "--list", "task/*"]}` nor `git_root {args:
+["worktree", "list"]}` already shows.
+
+## 2. Plan
+
+`delegate {role: "planner", cwd: <project root>, brief}`, with the task text and
+its acceptance criteria verbatim, `<default>`, the test command, and the
+instruction to check the task's claims about the repository before planning
+anything. `wait`, then `result`. A planner that answers `Premise fails: …` has
+found the task wrong about the repository: report the claim and what it found,
+and stop until the user corrects the task.
+
+## 3. Plan review
+
+`delegate {role: "plan-reviewer", cwd: <project root>, brief}` with the task text
+and the plan verbatim. `wait`, then `result`, then act on the verdict. `approve`
+— step 4. `revise` — `delegate {role: "planner", resume: <the planner's task
+id>, brief: <the findings verbatim>}`, then review the revision; at most two
+rounds, and then you stop and show the user both texts. `human decision` — put
+the reviewer's question to the user in plain words, and resume the planner with
+the answer once you have it.
+
+## 4. The worktree
+
+`git_root {args: ["worktree", "add", "-b", <branch>, <worktree path>, <default>], slug}`
+creates the branch and its work tree in one call and opens the task's journal on
+both, which is the `worktree-created` step. The base is `<default>` and nothing
+else, and the directory sits directly under the mode's worktree directory. Then
+run the project's setup command in it unless the config says `none`:
+`run_command {which: "setup", where: <worktree path>, slug}`.
+
+## 5. Implement
+
+`delegate {role: "implementer", cwd: <worktree path>, branch: <branch>, brief}`.
+The brief carries the task text, the approved plan verbatim, the test command,
+`<default>`, the branch and the worktree path, and the closing report you need
+back: what changed, what ran, what the result was, and the one-line summary you
+will commit under. `wait`, then `result`. A `BLOCKED` report caused by a plan
+step naming a path that does not exist is a correction you send back with
+`resume`; any other `BLOCKED` ends the task with its worktree standing and goes
+to the user.
+
+## 6. Commit what it left
+
+The implementer wrote no git metadata, so its work is uncommitted when the task
+settles. Commit it yourself, in two calls:
+
+`git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}`
+
+`git_mutate {slug, args: ["commit", "-m", <the implementer's summary>]}`
+
+which journals the `committed` step. The two exclusions are not optional: a
+`.gitignore` the specialist wrote in its own worktree outranks the repository's
+own, and step 9 refuses a branch that carries either directory at all.
+
+## 7. Code review
+
+`delegate {role: "code-reviewer", cwd: <worktree path>, branch: <branch>, brief}`
+with the task text, the plan, the branch, `<default>`, and the four verdicts you
+will act on: ready, needs work, needs rebase, discard. It reads the committed
+branch under a read-only sandbox and runs nothing that writes. Needs work —
+`delegate {role: "implementer", resume: <the implementer's task id>, brief: <the
+findings verbatim>}`, then step 6 again; at most two rounds before you stop and
+report. Needs rebase — step 8, then review again. Discard — stop and report,
+worktree standing. Ready — step 8.
+
+## 8. Rebase
+
+`git_mutate {slug, args: ["rebase", <default>]}` journals `rebased` when the
+branch moved. A conflict leaves the worktree mid-rebase with HEAD detached:
+`git_mutate {slug, args: ["rebase", "--abort"]}` — the one argv the worktree
+verifier accepts with a detached HEAD, and the reason the abort runs here rather
+than at the root — and then escalate to the user with the file names. You do not
+resolve the conflict yourself, and you do not send it to the implementer as a
+plan. A rebase that moved the branch has put the work on commits the suite never
+saw, so run `run_command {which: "test", where: <worktree path>, slug}` before
+you merge.
+
+## 9. Merge, and the suite on the default branch
+
+`git_root {args: ["merge", "--ff-only", <branch>], slug}` journals `merged`
+together with the two SHAs the repair path needs. It refuses unless the root's
+HEAD is `<default>`, and unless the branch carries nothing from `.cross-agent`
+or the worktree directory. Then `run_command {which: "test", where: "root",
+slug}`, which journals `tests-passed` when it exits zero.
+
+A failing suite here is an answer rather than a refusal, and it is the repair
+path: stop, report it, and offer `git revert --no-edit
+<defaultShaBeforeMerge>..<branchHead>` — the two SHAs from the journal's
+`merged` step — as a new commit. Never reset `<default>` and never rewrite it,
+and dispatch no further task until the repository is reconciled.
+
+## 10. Clean up and record
+
+`git_root {args: ["worktree", "remove", <worktree path>], slug}`, then `git_root
+{args: ["branch", "-d", <branch>], slug}`, journalling `worktree-removed` and
+`branch-deleted`. Both refuse the shortcut that would lose work: the removal
+waits for a workspace no live task reserves, and `-d` refuses a branch git does
+not see as merged, which is this loop's cleanup gate. Stop at the first failure
+and report exactly what was removed and what is still standing.
+
+Then record the task: one line per specialist appended to `.cross-agent/log.md`
+— role, engine, model, effort, duration, outcome, task id — the bead closed if
+the task named one, and the closing report to the user: the task, the files the
+plan touched, the branch and the commit it merged as, where the suite ran and
+what it said, every verdict, the cleanup result, and anything nobody verified.
+
+## The journal, and what a refusal means
+
+| step | the call that writes it |
+| --- | --- |
+| `worktree-created` | step 4's `git_root worktree add -b` |
+| `committed` | step 6's `git_mutate commit`, when it moved the branch |
+| `rebased` | step 8's `git_mutate rebase`, when it moved the branch |
+| `merged` | step 9's `git_root merge --ff-only` |
+| `tests-passed` | step 9's `run_command` at the root, exiting zero |
+| `worktree-removed` | step 10's `git_root worktree remove` |
+| `branch-deleted` | step 10's `git_root branch -d` |
+| `git` | any other `git_mutate` call, recorded with the arguments it ran |
+
+Each step is written by the tool that performed it, while it still holds the
+lock that ordered it, so no step of this loop has to remember to journal
+afterwards and no journal verb exists for you to misuse. A step is named for
+what it **moved**: a commit that committed nothing and a rebase that replayed
+nothing leave none behind, which is what keeps a reconciliation pass from
+looking for a commit that was never made.
+
+Any `ok: false` from `git_mutate` or `git_root`, with an exit code or without
+one, is a reconciliation trigger — a refusal is not a claim that nothing
+happened. Stop the loop, run the launcher's reconciliation pass over this slug,
+and only then decide whether the step can be repeated. An `ok: true` carrying
+`lockLost: true` says the command ran but was not exclusive for all of its life:
+reconcile that slug too before you trust the next step.

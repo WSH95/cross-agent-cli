@@ -26,8 +26,8 @@ on `main`; one test stays skipped until a real `codex` binary runs it. On top
 of it: the mode loader and the three built-in modes, the authority model and
 the twelve tools it gates — `delegate`, `wait`, `check`, `result`, `cancel`,
 `list_tasks`, `describe_mode`, `list_roles` and the worktree provider's four —
-and `cross-agent init`. What is left is a target: the launcher skill, the two
-dev-team loops, the mailbox an engine-placed lead needs, and each host's
+and `cross-agent init`, and the launcher skill with each mode's own loop. What
+is left is a target: the mailbox an engine-placed lead needs, and each host's
 packaging. `docs/design.md` is the design and the work plan; `docs/probes.md`
 records what each engine CLI was observed to do.
 

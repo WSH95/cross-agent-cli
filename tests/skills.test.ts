@@ -2,60 +2,282 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
+import { projectTools } from "../src/server.ts";
 
-// The loop a host reads for the zero-ceremony mode, and the text `describe_mode` serves
-// rather than copies (design section 7). `skills/cross-agent/SKILL.md` — the launcher, the
-// one skill a host loads, identical on all three — arrives with step 9 of the work plan
-// and carries these same paragraphs; until it exists this is where they live.
+// The text every host loads and the loop every mode serves. `skills/cross-agent/SKILL.md`
+// is the launcher — the one skill a host discovers, identical on all three — and
+// `modes/<name>/SKILL.md` is that mode's loop, served by `describe_mode` rather than
+// copied into a host's skill directory (design section 7). Nothing here reads the prose
+// for style; what it checks is what a machine can: the name a host matches, the tools a
+// step actually calls, the statuses a watcher has to act on, and the order of the steps
+// that touch git.
 
-/** The loop as one line: what it says, rather than where the paragraph wrapped. */
-function soloLoop(): string {
-  const described = describeMode(builtInModesDir(), "solo");
-  assert.ok(!("reason" in described), JSON.stringify(described));
-  return described.loop.replace(/\s+/g, " ");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const launcherDir = path.join(repoRoot, "skills", "cross-agent");
+const launcherFile = path.join(launcherDir, "SKILL.md");
+
+type Tool = ReturnType<typeof projectTools>[number];
+
+/** The launcher's own text, without its frontmatter. */
+function launcher(): string {
+  return fs.readFileSync(launcherFile, "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
 }
 
-test("the solo loop names every step a worktree one-shot settles under, and who applies them", () => {
-  const loop = soloLoop();
+/** One line: what a document says, rather than where its paragraphs wrapped. */
+function flat(text: string): string {
+  return text.replace(/\s+/g, " ");
+}
+
+/** The mode's loop as `describe_mode` serves it. */
+function loop(name: string): string {
+  const described = describeMode(builtInModesDir(), name);
+  assert.ok(!("reason" in described), JSON.stringify(described));
+  return described.loop;
+}
+
+/** Every tool this project's server registers under `name`, by its own name. */
+function registry(name: string): Map<string, Tool> {
+  const tools = projectTools(repoRoot, { mode: loadMode(builtInModesDir(), name) });
+  return new Map(tools.map((tool) => [tool.name, tool]));
+}
+
+/** Every key any of those tools takes on the wire: `task_id`, `slug`, `timeout_seconds`. */
+function parameters(tools: Map<string, Tool>): Set<string> {
+  const keys = new Set<string>();
+  for (const tool of tools.values()) {
+    for (const key of Object.keys((tool.inputSchema as { properties?: object }).properties ?? {})) keys.add(key);
+  }
+  return keys;
+}
+
+// A backticked span is a call when it starts with an identifier: `list_tasks`,
+// `run_command {which: "test", …}`, `git_root merge --ff-only <branch>`. Only the names
+// carrying an underscore are judged — every prose word in a backtick would otherwise be a
+// tool — which covers ten of the twelve and every name a typo could invent.
+const CALL_SHAPED = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;
+
+function namesCalled(text: string): string[] {
+  const names = new Set<string>();
+  for (const [, span] of text.matchAll(/`([^`]+)`/g)) {
+    const lead = /^[a-z][a-z0-9_]*/.exec(span.trim());
+    if (lead !== null && CALL_SHAPED.test(lead[0])) names.add(lead[0]);
+  }
+  return [...names];
+}
+
+// Keys of a host's own manifest, which this server never sees. Codex's per-server MCP
+// tool timeout is one of the two numbers the launcher's budget table is made of.
+const hostManifestKeys = new Set(["tool_timeout_sec"]);
+// The mailbox an engine-placed lead needs, which step 11 of the work plan builds. Nothing
+// registers these yet, so the launcher may name them only where it says so.
+const notYetBuilt = new Set(["list_asks"]);
+const placeholder = /S11 extends/;
+
+/**
+ * Every call-shaped name in `text` names a tool the mode registers for `row`, a key one of
+ * those tools takes, or a host's own manifest key — unless the paragraph that names it is
+ * the one marked as what step 11 extends.
+ */
+function assertToolsExist(text: string, mode: string, row: "operator" | "lead", where: string): void {
+  const tools = registry(mode);
+  const keys = parameters(tools);
+  for (const paragraph of text.split(/\n\s*\n/)) {
+    const marked = placeholder.test(paragraph);
+    for (const name of namesCalled(paragraph)) {
+      if (keys.has(name) || hostManifestKeys.has(name)) continue;
+      if (marked && notYetBuilt.has(name)) continue;
+      const tool = tools.get(name);
+      assert.ok(tool !== undefined, `${where} calls ${name}, which ${mode} registers no tool for`);
+      assert.ok(tool.rows.includes(row), `${where} calls ${name}, which is not offered to the ${row} row`);
+    }
+  }
+}
+
+/** Each fragment appears after the one before it, so the document states them in order. */
+function assertInOrder(text: string, steps: string[], where: string): void {
+  let at = 0;
+  for (const step of steps) {
+    const found = text.indexOf(step, at);
+    assert.ok(found >= at, `${where} names ${step} after the step before it`);
+    at = found + step.length;
+  }
+}
+
+test("the launcher's frontmatter names the skill its directory does, and its description names the triggers", () => {
+  const source = fs.readFileSync(launcherFile, "utf8");
+  const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(source);
+  assert.ok(frontmatter !== null, "a host reads the skill through its frontmatter");
+  const fields = new Map(
+    frontmatter[1].split("\n").filter((line) => /^\S/.test(line))
+      .map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim()] as [string, string]),
+  );
+  assert.equal(fields.get("name"), path.basename(launcherDir), "a host matches the skill by the name its directory carries");
+  const description = fields.get("description") ?? "";
+  for (const trigger of ["team", "delegate", "bead", "codex"]) {
+    assert.ok(description.includes(trigger), `the description names the ${trigger} trigger, or a host never loads the skill`);
+  }
+  assert.equal(fields.has("allowed-tools"), false, "the launcher names no tool list: the server decides what it may call, by row");
+});
+
+test("every tool the launcher calls is registered and offered to the operator row, under every mode", () => {
+  const text = launcher();
+  for (const mode of ["solo", "dev-team", "dev-team-engine"]) {
+    assertToolsExist(text, mode, "operator", `the launcher under ${mode}`);
+  }
+});
+
+test("the launcher calls the tools a host session needs to start, watch, merge and report", () => {
+  const called = new Set(namesCalled(launcher()));
+  for (const name of ["describe_mode", "list_roles", "list_tasks", "git_mutate", "git_root", "run_command", "verify_worktree"]) {
+    assert.ok(called.has(name), `the launcher never calls ${name}`);
+  }
+  for (const name of ["delegate", "wait", "result", "cancel", "check"]) {
+    assert.match(launcher(), new RegExp("`" + name + "\\b"), `the launcher never calls ${name}`);
+  }
+});
+
+test("the launcher says what to do with every status a delegation answers with", () => {
+  const text = flat(launcher());
+  for (const status of ["running", "stalled", "unsettled", "done", "failed", "cancelled", "orphaned"]) {
+    assert.match(text, new RegExp("`" + status + "`"), `a watcher meets ${status} and the launcher says nothing about it`);
+  }
+  assert.match(text, /[Nn]ever declare a task done from `check` alone/, "`check` reconciles nothing, so it settles nothing");
+});
+
+test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
+  const text = flat(launcher());
+  assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");
+  assert.match(text, /Codex[^|]*\|[^|]*`tool_timeout_sec`[^|]*3600[^|]*\|[^|]*600/, "Codex's row names the manifest key and this repo's value");
+  assert.match(text, /Grok[^|]*\|[^|]*\|[^|]*300/, "Grok's row, until T15 settles its timeout");
+  assert.match(text, /Time limits/, "the table is the design's own budget, cited");
+});
+
+test("the launcher carries the merge policy for every mode, in the order a one-shot settles under", () => {
+  const text = flat(launcher());
   // The work is committed before anything merges it: a specialist writes no git metadata,
   // so what it left in the worktree is still uncommitted when its task settles.
-  assert.match(loop, /git_mutate \{slug, args: \["add", "-A", "--", "\.", ":\(exclude\)\.cross-agent", ":\(exclude\)\.worktrees"\]\}/);
-  assert.match(loop, /git_mutate \{slug, args: \["commit"/);
-  // `auto`, in order: the suite in the worktree, the fast-forward merge, the suite at the
-  // root, the worktree, the branch, the report (design section 4).
-  const steps = [
+  assertInOrder(text, [
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    'git_mutate {slug, args: ["commit"',
+    "project.mergePolicy",
     'run_command {which: "test", where: <worktree path>, slug}',
     'git_root {args: ["merge", "--ff-only", <branch>], slug}',
     'run_command {which: "test", where: "root", slug}',
     '"worktree", "remove"',
     '"branch", "-d"',
-  ];
-  let at = loop.indexOf("project.mergePolicy");
-  assert.ok(at > 0, "the loop names the policy it applies");
-  for (const step of steps) {
-    const found = loop.indexOf(step, at);
-    assert.ok(found > at, `the loop names ${step} after the step before it`);
-    at = found;
-  }
-  assert.match(loop, /nobody merges by hand under `auto`/, "the launcher applies the policy, not the user");
-  assert.match(loop, /\*\*`manual`, or any failure.{0,80}?leave the branch/, "the other half of the policy");
-  assert.match(loop, /git revert --no-edit/, "and the repair path when the root suite fails after the merge");
-  // The branch is the one this task was given, spelled by the mode's own pattern, and the
-  // merge runs at a root whose HEAD `git_root` checks before it merges anything.
-  assert.match(loop, /`git\.branchPattern` with the slug in place of its `\*`/);
-  assert.match(loop, /HEAD has to be on `project\.defaultBranch`/);
+  ], "the launcher's merge policy");
+  assert.match(text, /nobody merges by hand under `auto`/, "the launcher applies the policy, not the user");
+  assert.match(text, /\*\*`manual`, or any failure.{0,80}?leave the branch/, "the other half of the policy");
+  assert.match(text, /git revert --no-edit/, "and the repair path when the root suite fails after the merge");
+  assert.match(text, /`git\.branchPattern` with the slug in place of its `\*`/);
+  assert.match(text, /HEAD has to be on `project\.defaultBranch`/);
 });
 
-test("the solo loop documents review and critique as verbs it composes, each naming its engine", () => {
-  const loop = soloLoop();
-  assert.match(loop, /verbs of this loop, not tools of the server/);
-  assert.match(loop, /\*\*review\*\* — attach the diff/);
-  assert.match(loop, /git diff <base>\.\.\.HEAD/);
-  assert.match(loop, /findings by severity, each with `file:line`/);
-  assert.match(loop, /\*\*critique\*\* — name the plan or design file/);
-  assert.match(loop, /adversarial/);
-  assert.match(loop, /each is one `delegate` that names its own engine/);
+test("the launcher documents review and critique as verbs it composes, each naming its engine", () => {
+  const text = flat(launcher());
+  assert.match(text, /verbs of (this|the) loop, not tools of the server/);
+  assert.match(text, /\*\*review\*\* — attach the diff/);
+  assert.match(text, /git diff <base>\.\.\.HEAD/);
+  assert.match(text, /findings by severity, each with `file:line`/);
+  assert.match(text, /\*\*critique\*\* — name the plan or design file/);
+  assert.match(text, /adversarial/);
+  assert.match(text, /each is one `delegate` that names its own engine/);
+});
+
+test("the launcher's reconciliation pass reads every source design section 7 names", () => {
+  const text = flat(launcher());
+  assertInOrder(text, ["list_tasks", "journal", '"worktree", "list"', '"branch", "--list"', '"status", "--porcelain"'], "the launcher's reconciliation pass");
+  assert.match(text, /rebase/, "the rebase state is the fifth source");
+  for (const rule of [/interrupted rebase/, /merged branch/, /branch-only/, /unmerged branch/, /invalid/]) {
+    assert.match(text, rule, `a leftover the pass has a rule for: ${rule}`);
+  }
+});
+
+test("the launcher names what step 11 extends, and nothing else claims a tool that is not built", () => {
+  const paragraphs = launcher().split(/\n\s*\n/);
+  const marked = paragraphs.filter((paragraph) => placeholder.test(paragraph));
+  assert.equal(marked.length, 1, "one marked paragraph, so a reader knows exactly what is deferred");
+  for (const name of ["`list_asks`", "`answer`", "`cross-agent answer`", "`cross-agent report`"]) {
+    assert.ok(marked[0].includes(name), `the placeholder names ${name}, which engine placement needs`);
+  }
+  for (const paragraph of paragraphs) {
+    if (placeholder.test(paragraph)) continue;
+    assert.doesNotMatch(paragraph, /`list_asks`/, "only the marked paragraph names the mailbox");
+  }
+});
+
+test("the launcher's guardrails keep the host out of a specialist's work and off the engines", () => {
+  const text = flat(launcher());
+  for (const rule of [/[Nn]ever do a specialist's work/, /[Nn]ever run an engine CLI yourself/, /verbatim/, /secret/, /git push/, /git stash/, /restart/]) {
+    assert.match(text, rule, `a guardrail the launcher drops: ${rule}`);
+  }
+});
+
+test("the launcher's closing report names every task with what ran it and what it cost", () => {
+  const text = flat(launcher());
+  assert.match(text, /\.cross-agent\/log\.md/);
+  assertInOrder(text, ["role", "engine", "model", "effort", "duration", "outcome"], "the launcher's log line");
+  assert.match(text, /not verified/, "the closing report says what nobody checked");
+});
+
+test("the dev-team loop runs the ten steps in the order design section 4 gives them", () => {
+  const text = flat(loop("dev-team"));
+  assertInOrder(text, [
+    "list_tasks",
+    "delegate {role: \"planner\"",
+    "delegate {role: \"plan-reviewer\"",
+    'git_root {args: ["worktree", "add", "-b", <branch>, <worktree path>, <default>], slug}',
+    "delegate {role: \"implementer\"",
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    'git_mutate {slug, args: ["commit"',
+    "delegate {role: \"code-reviewer\"",
+    'git_mutate {slug, args: ["rebase", <default>]}',
+    'git_root {args: ["merge", "--ff-only", <branch>], slug}',
+    'run_command {which: "test", where: "root", slug}',
+    '"worktree", "remove"',
+    '"branch", "-d"',
+    ".cross-agent/log.md",
+  ], "the dev-team loop");
+  assert.match(text, /rebase", "--abort/, "a rebase that stops on a conflict is aborted in the worktree, and the user hears about it");
+  assert.match(text, /git revert --no-edit/, "the repair path when the suite fails on the default branch after the merge");
+  assert.match(text, /resume/, "a needs-work round continues the task that did the work");
+});
+
+test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {
+  assertToolsExist(loop("dev-team"), "dev-team", "operator", "the dev-team loop");
+  assertToolsExist(loop("dev-team-engine"), "dev-team-engine", "lead", "the engine-placed dev-team loop");
+  assertToolsExist(loop("solo"), "solo", "operator", "the solo loop");
+});
+
+test("the dev-team loop names the journal step each of its git calls completes", () => {
+  const text = flat(loop("dev-team"));
+  for (const step of ["worktree-created", "committed", "rebased", "merged", "tests-passed", "worktree-removed", "branch-deleted"]) {
+    assert.match(text, new RegExp("`" + step + "`"), `the loop never says which call writes ${step}`);
+  }
+  assert.match(text, /`ok: false`/, "any refusal is a reconciliation trigger, whatever its exit code");
+});
+
+test("the solo loop is the short one and hands a one-shot that wrote to the launcher", () => {
+  const text = flat(loop("solo"));
+  assert.match(text, /worktree: true/);
+  assert.match(text, /launcher/, "the merge policy belongs to the launcher now, for every mode");
+  assert.doesNotMatch(text, /run_command \{which: "test", where: "root", slug\}/, "one copy of the merge policy, and it is the launcher's");
+  assert.doesNotMatch(text, /\*\*critique\*\*/, "and one copy of the verbs");
+});
+
+test("the three built-in modes validate, and each serves the loop file its own directory holds", () => {
+  const modes = builtInModesDir();
+  for (const name of ["solo", "dev-team", "dev-team-engine"]) {
+    const mode = loadMode(modes, name);
+    assert.equal(loop(name), fs.readFileSync(path.join(mode.dir, "SKILL.md"), "utf8"), `${name}: describe_mode serves the file, never a copy`);
+    const described = describeMode(modes, name);
+    assert.ok(!("reason" in described));
+    for (const role of described.roles) {
+      assert.ok(role.prompt.trim().length > 0, `${name}: the ${role.key} role is served an empty prompt`);
+    }
+  }
 });
 
 test("the mode that declares the consultant says exactly what the built-in role says", () => {
