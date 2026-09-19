@@ -1395,8 +1395,8 @@ test("a SIGTERM over an orphaned record settles cancelled, the one edge the ledg
     const running = await poll(h.read, (record) => record.status === "running");
     await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
     // Reconciliation adopting a stranded engine is what writes this status; from here the
-    // ledger allows orphaned -> failed | cancelled and nothing else, so the teardown may
-    // not claim the record with a `cancelling` write of its own.
+    // ledger allows orphaned -> failed | cancelled | done and nothing else, so the
+    // teardown may not claim the record with a `cancelling` write of its own.
     const orphaned = await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
     child.child.kill("SIGTERM");
     const cancelled = await poll(h.read, terminal, 6000);

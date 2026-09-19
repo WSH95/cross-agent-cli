@@ -105,9 +105,9 @@ const codex = {
     // subcommand accepts. There is no unsandboxed resume by omission (P10).
     if (resume) argv.push("-c", `sandbox_mode=${JSON.stringify(sandbox)}`);
 
-    // Emptied first, so that a run which dies before Codex writes its last message cannot
-    // leave the previous run's text to be read back and reported as this one's — on a
-    // resumed task it is the same file every time.
+    // Created empty, so that a run which dies before Codex writes its last message leaves
+    // nothing for the pipeline to read back and report as this one's. Every run has its
+    // own file: a resume is a record of its own, with its own `<id>.out`.
     const files: NonNullable<SpawnPlan["files"]> = [{ path: request.resultPath, contents: "" }];
     // A Codex role prompt reaches the child as a file, and it is obeyed with no role text
     // in the prompt at all (P9), so a lead spends no prompt space on the loop. The file is

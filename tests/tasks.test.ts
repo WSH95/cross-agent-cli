@@ -297,7 +297,7 @@ test("a cancel of an orphaned record terminates its group and settles it from wh
   process.kill(running.runnerIdentity!.pid, "SIGKILL");
   await poll(() => alive(running.runnerIdentity), (value) => value === false);
   // Reconciliation adopts an engine whose runner is gone; the ledger then allows
-  // `orphaned -> failed | cancelled` and nothing else.
+  // `orphaned -> failed | cancelled | done` and nothing else.
   assert.equal((await update(p.root, running.id, { status: "orphaned" })).applied, true);
 
   assert.deepEqual(cancelled(await cancel(p.root, running.id)), [{ id: running.id, outcome: "cancelled" }]);

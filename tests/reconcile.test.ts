@@ -636,6 +636,47 @@ setInterval(() => {}, 1000);
   assert.equal(read(root, own.id).status, "orphaned", "and left its own record for another server");
 });
 
+test("a pass settles every record it can before it judges its own group", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // One record this server can settle — an orphan of a group that is already gone — and
+  // one it can only die on: a `cancelling` record whose engine is the engine this server
+  // runs inside, which the pass terminates by the identity the record carries. Judging
+  // that one inside reconciliation's own loop killed the pass before cleanup ever ran,
+  // so the orphan it could have settled was left for another server (finding T3b-6).
+  const settleable = await started(root, "orphaned", now);
+  const stranger = zoo.leader();
+  await zoo.reap(stranger);
+  await change(root, settleable.id, { runnerIdentity: deadIdentity(), engineIdentity: stranger.identity }, now + 1);
+
+  const pidFile = path.join(root, "reconciler.pid");
+  const start = path.join(root, "start");
+  const passFile = path.join(root, "pass.mjs");
+  fs.writeFileSync(passFile, `
+import fs from "node:fs";
+import { reconcileAndCleanup } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+while (!fs.existsSync(process.argv[3])) await new Promise((resolve) => setTimeout(resolve, 10));
+await reconcileAndCleanup(process.argv[2], Number(process.argv[4]));
+`);
+  const leaderScript = `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, [process.argv[1], process.argv[2], process.argv[3], process.argv[4]], { stdio: "ignore" });
+fs.writeFileSync(process.argv[5], String(child.pid));
+setInterval(() => {}, 1000);
+`;
+  const engine = zoo.leader({}, leaderScript, [passFile, root, start, String(now + 2), pidFile]);
+  const own = await started(root, "cancelling", now + 2);
+  await change(root, own.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 3);
+  const child = await zoo.member(pidFile);
+  fs.writeFileSync(start, "");
+
+  await poll(() => read(root, settleable.id).status, (status) => status === "failed", 8000);
+  assert.equal(read(root, settleable.id).reason, "runner lost");
+  await poll(() => running(engine.pid) || running(child), (alive) => !alive, 8000);
+  assert.equal(read(root, own.id).status, "cancelling", "its own record is left for another server");
+});
+
 test("an engine adopted beside one in this reconciler's own session names the survivor", async (t) => {
   const root = project(t);
   const zoo = processes(t);

@@ -82,8 +82,8 @@ function processes(t: TestContext) {
   });
   return {
     root,
-    leader(env: NodeJS.ProcessEnv = {}): { pid: number; identity: EngineIdentity; child: ChildProcess } {
-      const child = spawn(process.execPath, ["-e", fixture], { detached: true, stdio: "ignore", env });
+    leader(env: NodeJS.ProcessEnv = {}, script = fixture): { pid: number; identity: EngineIdentity; child: ChildProcess } {
+      const child = spawn(process.execPath, ["-e", script], { detached: true, stdio: "ignore", env });
       child.once("error", () => {});
       const pid = child.pid!;
       tracked.push({ pid, leader: true });
@@ -300,6 +300,117 @@ test("the environment scan does not count a process still inside exec as unreada
   assert.ok(seen > 0, "the scans ran while the storm did: children carrying the id were read");
   assert.equal(unreadable, 0,
     "a child still inside execve is retried, never counted as an engine this scan may not read");
+});
+
+test("one scan waits once for everything it cannot read, not once for each", async (t) => {
+  const zoo = processes(t);
+  const taskId = `budget-${process.pid}-${Date.now()}`;
+  const since = Date.now() - 1000;
+  // Eight processes that look for ever like the one shape this scan waits for: a
+  // plausible candidate whose argv the kernel has not published. The wait is the
+  // server's own thread, so it belongs to the scan and not to each candidate it meets
+  // (finding T3b-4).
+  const leaders = Array.from({ length: 8 }, () => zoo.leader({ CROSS_AGENT_TASK: taskId }));
+  await poll(() => findByEnvironment(taskId, since).found, (found) => found.length === 8);
+  const denied = new Set(leaders.map((leader) => `/proc/${leader.pid}/environ`));
+  const starting = new Set(leaders.map((leader) => `/proc/${leader.pid}/cmdline`));
+  const original = fs.readFileSync;
+  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
+    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
+  const mocked = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (typeof target === "string" && denied.has(target)) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    if (typeof target === "string" && starting.has(target)) return "";
+    return real(target, options);
+  }) as typeof fs.readFileSync);
+  const started = performance.now();
+  const scan = findByEnvironment(taskId, since);
+  const elapsed = performance.now() - started;
+  mocked.mock.restore();
+
+  assert.equal(scan.unreadable, 8, "each of them is a candidate this scan could not read");
+  assert.ok(elapsed < 1200, `one budget for the scan, not one per candidate: ${Math.round(elapsed)} ms for eight`);
+});
+
+test("a candidate is re-verified on every retry, and an environment that opens is read", async (t) => {
+  const zoo = processes(t);
+  const taskId = `retry-${process.pid}-${Date.now()}`;
+  const since = Date.now() - 1000;
+  const leader = zoo.leader({ CROSS_AGENT_TASK: taskId });
+  await poll(() => findByEnvironment(taskId, since).found, (found) => found.length === 1);
+  const environ = `/proc/${leader.pid}/environ`;
+  const cmdline = `/proc/${leader.pid}/cmdline`;
+  const stat = `/proc/${leader.pid}/stat`;
+  const original = fs.readFileSync;
+  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
+    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
+
+  // The argv is published while the scan waits, and the environment opens with it: the
+  // argv is read before the environment on every turn, so the read that decides is the
+  // one taken after it (finding T3b-10).
+  let denials = 0;
+  let starting = 0;
+  const opening = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === environ && ++denials <= 2) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    if (target === cmdline && ++starting <= 2) return "";
+    return real(target, options);
+  }) as typeof fs.readFileSync);
+  const opened = findByEnvironment(taskId, since);
+  opening.mock.restore();
+  assert.deepEqual(opened.found.map((entry) => entry.pid), [leader.pid], "the engine it waited for is the engine it found");
+  assert.equal(opened.unreadable, 0);
+
+  // A pid that left and came back as something else during the wait is not this scan's
+  // candidate, whatever its environment says now: the identity is read again, and a
+  // start time that moved ends the wait rather than the count (finding R-5).
+  let stats = 0;
+  const reused = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === environ) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    if (target === cmdline) return "";
+    const text = real(target, options);
+    if (target !== stat || ++stats < 2) return text;
+    const head = text.slice(0, text.lastIndexOf(")") + 1);
+    const fields = text.slice(text.lastIndexOf(")") + 1).trim().split(/\s+/);
+    fields[19] = String(BigInt(fields[19]) + 1n);
+    return `${head} ${fields.join(" ")}\n`;
+  }) as typeof fs.readFileSync);
+  const raced = findByEnvironment(taskId, since);
+  reused.mock.restore();
+  assert.equal(raced.unreadable, 0, "a pid reused while the scan waited is nobody's engine");
+});
+
+// A leader that answers SIGTERM by ignoring it, so an escalation has to be seen through.
+// It says so only once the handler is installed: a SIGTERM before that is the kernel's
+// default and would kill it outright.
+const stubbornFixture = `
+const fs = require("node:fs");
+process.on("SIGTERM", () => {});
+fs.writeFileSync(process.env.READY_FILE, "ready");
+setInterval(() => {}, 1000);
+`;
+
+test("the shared ladder at a zero grace sends SIGTERM and SIGKILL one after the other", async (t) => {
+  const zoo = processes(t);
+  const ready = path.join(zoo.root, "stubborn.ready");
+  const stubborn = zoo.leader({ READY_FILE: ready }, stubbornFixture);
+  await poll(() => fs.existsSync(ready), Boolean);
+  // The runner's identity branch used to send SIGKILL alone at a zero grace; the shared
+  // ladder always opens with SIGTERM and escalates at once, and the two differ only in
+  // the signal a process that answers SIGTERM sees first (finding T3b-5).
+  const signals: (string | number | undefined)[] = [];
+  const kill = process.kill.bind(process) as (pid: number, signal?: string | number) => true;
+  const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    if (pid === -stubborn.pid) signals.push(signal);
+    return kill(pid, signal);
+  });
+  const started = performance.now();
+  const outcome = await terminateGroup(stubborn.identity, { termGrace: 0, killGrace: 500 });
+  const elapsed = performance.now() - started;
+  mocked.mock.restore();
+
+  assert.equal(outcome, "dead");
+  assert.deepEqual(signals, ["SIGTERM", "SIGKILL"]);
+  assert.ok(elapsed < 1000, `a zero grace waits for nothing before the kill: ${Math.round(elapsed)} ms`);
+  assert.equal(groupAlive(stubborn.identity), false);
 });
 
 // The judgement a runner makes about a scan, taken over synthetic ones: the shapes below

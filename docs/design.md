@@ -792,6 +792,13 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   and `terminateGroupByPid` when it did not (`src/runner.ts:54-68`) — and
   differs only in throwing where the reconciler reports, because a terminal
   record written over an engine still running would be a lie about the task.
+  One thing changed when its identity branch joined the ladder: at a zero
+  grace that branch used to send SIGKILL alone, and the ladder always opens
+  with SIGTERM and escalates with no wait between them
+  (`tests/process.test.ts:391`). An engine that answers SIGTERM now sees it
+  first even on a teardown with no grace, which is the signal a settling
+  runner would rather it saw, and one that ignores it is killed just as
+  quickly (finding T3b-5).
   Killing the strays is the one step that
   runs **after** the decision has been written, so it reports the pids it could
   not signal instead of throwing (`src/process.ts#killStrays`, `src/reconcile.ts#adopt`):
@@ -829,10 +836,13 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   (`src/process.ts#terminateOrphans`), and a `cancelling` record's engine is
   being cancelled (`src/reconcile.ts#judge`). Both are right, and both kill this
   server with the group. What that must not cost is the rest of the pass, so the
-  records naming this process's own engine group are judged **last**
-  (`src/process.ts#ownGroup`, `#selfLast`, `src/reconcile.ts#reconcile`): every
-  record this server can settle is settled before it dies, and its own record
-  keeps its status for whatever server runs the next pass. That is the honest
+  records naming this process's own engine group are judged **last** — last in
+  the pass, not last in each of its loops: `reconcileAndCleanup` holds them
+  back through reconciliation's own loop and through cleanup, and judges them
+  only when both have run (`src/process.ts#ownGroup`, `#selfLast`,
+  `src/reconcile.ts#reconcileAndCleanup`, finding T3b-6). Every record this
+  server can settle is settled before it dies, and its own record keeps its
+  status for whatever server runs the next pass. That is the honest
   answer for a process that is about to stop existing, and the only one it can
   write. Adoption also takes only a **group leader** (`pid ===
   pgid === sid`), because only a leader can be recorded as an `engineIdentity`,

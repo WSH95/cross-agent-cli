@@ -1,7 +1,10 @@
 import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, isProcessAlive, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
-import { killStrays, selfLast, settlement, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
+import {
+  groupAlive, killStrays, ownGroup, selfLast, settlement, strandedEngine,
+  terminateGroup, terminateGroupByPid, terminateOrphans,
+} from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";
 
 export interface TaskError {
@@ -33,6 +36,11 @@ type Judgement = { changed: TaskRecord[]; errors: TaskError[] };
  * operator's task settles while they are still looking at it (bead atc-s96.31).
  */
 const unreadableHoldMs = 5 * 60 * 1000;
+
+/** The one sentence both halves of the unreadable case report, counted as it reads. */
+function plural(unreadable: number): string {
+  return `environ unreadable for ${unreadable} process${unreadable === 1 ? "" : "es"}`;
+}
 
 const nothing: Judgement = { changed: [], errors: [] };
 
@@ -84,13 +92,13 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number, waitS
     // it running with no record accounting for it. The next pass tries again — until the
     // hold runs out, because a process that can never be read would otherwise keep the
     // record launching for as long as it lived.
-    return { changed: [], errors: [{ id: record.id, reason: `environ unreadable for ${unreadable} processes` }] };
+    return { changed: [], errors: [{ id: record.id, reason: plural(unreadable) }] };
   }
   // What the failure says is what the operator has to work from: the strays this pass is
   // about to kill, and the count it waited out without ever being able to read it.
   const failed = ["launch"];
   if (strays.length > 0) failed.push(`killed stray ${strays.map((entry) => entry.pid).join(", ")}`);
-  if (unreadable > 0) failed.push(`environ unreadable for ${unreadable} process${unreadable === 1 ? "" : "es"}`);
+  if (unreadable > 0) failed.push(plural(unreadable));
   const patch: TaskPatch = leader
     ? { status: "orphaned", engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } }
     : { status: "failed", reason: failed.join("; ") };
@@ -179,6 +187,26 @@ async function judge(projectRoot: string, record: TaskRecord, now: number, waitS
   return nothing;
 }
 
+/** Judges the records it is given, in the order it is given them. */
+async function judgeAll(
+  projectRoot: string, records: readonly TaskRecord[], now: number, waitSeconds: number,
+): Promise<Judgement> {
+  const changed: TaskRecord[] = [];
+  const errors: TaskError[] = [];
+  for (const record of records) {
+    // One record's trouble is that record's. A pass that stopped at the first would leave
+    // every task after it unjudged, and reconciliation runs on every listing.
+    try {
+      const judgement = await judge(projectRoot, record, now, waitSeconds);
+      changed.push(...judgement.changed);
+      errors.push(...judgement.errors);
+    } catch (error) {
+      errors.push({ id: record.id, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { changed, errors };
+}
+
 /**
  * Brings the ledger back in step with the kernel: a `launching` record past its deadline
  * with no runner, and a `running`, `stalled` or `cancelling` record whose runner is gone.
@@ -194,22 +222,10 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
   // One read of the project's waiting rule for the whole pass: every record write below
   // waits that long for its record lock and then reports the record it could not judge.
   const waitSeconds = lockWaitSeconds(projectRoot);
-  const changed: TaskRecord[] = [];
-  const errors: TaskError[] = [];
   // A record whose engine group is this process's own is judged last: this pass can
   // terminate that group — the `cancelling` case does — and it dies with it, so every
   // record it could judge is judged first (design section 2).
-  for (const record of selfLast(records)) {
-    // One record's trouble is that record's. A pass that stopped at the first would leave
-    // every task after it unjudged, and reconciliation runs on every listing.
-    try {
-      const judgement = await judge(projectRoot, record, now, waitSeconds);
-      changed.push(...judgement.changed);
-      errors.push(...judgement.errors);
-    } catch (error) {
-      errors.push({ id: record.id, reason: error instanceof Error ? error.message : String(error) });
-    }
-  }
+  const { changed, errors } = await judgeAll(projectRoot, selfLast(records), now, waitSeconds);
   return { changed, invalid, errors };
 }
 
@@ -222,7 +238,20 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
 export async function reconcileAndCleanup(
   projectRoot: string, now = Date.now(),
 ): Promise<Reconciled & { cleaned: TaskRecord[]; skipped: Skipped[] }> {
-  const { changed, invalid, errors } = await reconcile(projectRoot, now);
+  const { records, invalid } = scan(projectRoot);
+  const waitSeconds = lockWaitSeconds(projectRoot);
+  // Self-last is a property of the pass, not of either loop inside it: a `cancelling`
+  // record of this process's own group is judged by terminating that group, which ends
+  // this process, and judging it in reconciliation's loop would kill the pass before
+  // cleanup had settled anything. So the records of this server's own engine are held
+  // back until both other halves have run (design section 2, finding T3b-6).
+  const ours = records.filter((record) => ownGroup(record.engineIdentity));
+  const others = records.filter((record) => !ownGroup(record.engineIdentity));
+  const first = await judgeAll(projectRoot, others, now, waitSeconds);
   const { changed: cleaned, skipped } = await terminateOrphans(projectRoot);
-  return { changed, invalid, errors, cleaned, skipped };
+  const last = await judgeAll(projectRoot, ours, now, waitSeconds);
+  return {
+    changed: [...first.changed, ...last.changed], invalid,
+    errors: [...first.errors, ...last.errors], cleaned, skipped,
+  };
 }

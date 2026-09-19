@@ -136,6 +136,12 @@ export interface EnvironmentScan {
  * 5 ms step of this wait takes 8. Overrunning costs only a stand-down that a later pass
  * retries, so the cap is where a machine in real trouble stops this scan, not where a
  * busy one does.
+ *
+ * It is the budget of **one scan**, not of one candidate: the wait blocks the thread of
+ * whatever called the scan — a runner about to spawn, a cancel, a reconciliation pass —
+ * so a sweep that met ten candidates mid-exec would otherwise hold that thread for ten
+ * budgets. A candidate the deadline has already passed is judged on what it looks like
+ * now, which is the same answer as before this wait existed (finding T3b-4).
  */
 const execWaitMs = 250;
 const execWaitStepMs = 5;
@@ -161,32 +167,47 @@ function publishedArgv(pid: number): string | null {
 /** A process's environment, `null` when it is gone, and `denied` when it may not be read. */
 type EnvironmentRead = { text: string } | { text: null; denied: boolean };
 
-function readEnvironment(pid: number, plausible: () => boolean): EnvironmentRead {
-  const deadline = performance.now() + execWaitMs;
-  let candidate: boolean | undefined;
+/** A process gone between the listing and this read; anything but a permission rethrows. */
+function vanished(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code === "ENOENT" || code === "ESRCH") return true;
+  if (code !== "EACCES" && code !== "EPERM") throw error;
+  return false;
+}
+
+function readEnvironment(
+  pid: number, before: { startTime: string }, plausible: () => boolean, deadline: number,
+): EnvironmentRead {
+  const gone: EnvironmentRead = { text: null, denied: false };
+  try {
+    return { text: fs.readFileSync(`/proc/${pid}/environ`, "utf8") };
+  } catch (error) {
+    if (vanished(error)) return gone;
+    // Decided once, and before anything is waited for: a kernel thread and another
+    // user's process are unreadable for ever, and neither could be this engine.
+    if (!plausible()) return gone;
+  }
+  // The argv is read **before** the environment on every turn, so the read that decides
+  // is the one taken after it: an argv published between the two would otherwise count a
+  // process whose environment had just become readable (finding T3b-10).
   while (true) {
+    const argv = publishedArgv(pid);
+    // A pid that left, died, or came back as another process while this waited is no
+    // engine to stand down for, whatever its environment would have said — the same
+    // answer the scan gives a process that was already gone or a zombie when it came to
+    // it. A process killed inside execve is the case that makes the check worth its
+    // read: it keeps the empty argv and the unreadable environment for as long as its
+    // zombie entry lasts.
+    if (argv === null) return gone;
+    const current = readProcessStat(pid);
+    if (!current || !live(current.state) || current.startTime !== before.startTime) return gone;
     try {
       return { text: fs.readFileSync(`/proc/${pid}/environ`, "utf8") };
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT" || code === "ESRCH") return { text: null, denied: false };
-      if (code !== "EACCES" && code !== "EPERM") throw error;
-      // Decided once, and before anything is waited for: a kernel thread and another
-      // user's process are unreadable for ever, and neither could be this engine.
-      candidate ??= plausible();
-      if (!candidate) return { text: null, denied: false };
-      const argv = publishedArgv(pid);
-      // A pid that left or died while this waited is no engine to stand down for, whatever
-      // its environment would have said — the same answer the scan gives a process that
-      // was already gone or a zombie when it came to it. A process killed inside execve is
-      // the case that makes the check worth its read: it keeps the empty argv and the
-      // unreadable environment for as long as its zombie entry lasts.
-      if (argv === null) return { text: null, denied: false };
-      const current = readProcessStat(pid);
-      if (!current || !live(current.state)) return { text: null, denied: false };
-      if (argv !== "" || performance.now() >= deadline) return { text: null, denied: true };
-      Atomics.wait(execClock, 0, 0, execWaitStepMs);
+      if (vanished(error)) return gone;
     }
+    if (argv !== "" || performance.now() >= deadline) return { text: null, denied: true };
+    Atomics.wait(execClock, 0, 0, execWaitStepMs);
   }
 }
 
@@ -195,6 +216,9 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
   const self = readProcessStat(process.pid);
   const found: FoundProcess[] = [];
   let unreadable = 0;
+  // One budget for the whole sweep: what the wait blocks is the caller's thread, so it
+  // is the scan that has to be bounded, not each candidate in it.
+  const deadline = performance.now() + execWaitMs;
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
@@ -205,8 +229,8 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
     // that could be the engine of the task being judged is counted: this user's, no older
     // than the task, and leading its own group and session, which is the only shape a
     // detached engine spawn can have.
-    const read = readEnvironment(pid, () => before.pgid === pid && before.sid === pid
-      && startedAt(before.startTime) >= since - btimeMarginMs && ownedByThisUser(pid));
+    const read = readEnvironment(pid, before, () => before.pgid === pid && before.sid === pid
+      && startedAt(before.startTime) >= since - btimeMarginMs && ownedByThisUser(pid), deadline);
     if (read.text === null) {
       if (read.denied) unreadable++;
       continue;
