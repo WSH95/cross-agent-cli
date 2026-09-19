@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:25:42Z
+updated_at: 2026-09-19T15:28:19Z
 updated_by: claude
 session_status: active
 branch: main
@@ -47,7 +47,11 @@ journal. **Fix round 4** is running on the implementer
 (`task-6-findings-round-4.md`; rulings: Codex items answer `?` until I1 Codex
 records the shape; verifier exit codes 0/1/2; newest complete journal by
 default; an alignment table in the report). The Opus 5 scoped re-review of
-round 3 is still running; its spot checks fold into round 4 by follow-up. When both
+round 3 agreed (spec PASS; quality needs fixes) and added the checker blind
+spot behind round 3's false "0 drifted" (`--since` skips lines past the
+revision's file length) and specific wrong anchors; all folded into round 4
+by follow-up (T6-R4-6 … R4-11). After round 4: the Grok seat and the Opus 5
+scoped re-review on its diff, then close `.13`, merge, `VERIFY.md`, handover. When both
 are clean: close `.13`, rebase onto `main` and fast-forward, root `npm test`,
 `VERIFY.md` T13 section (`dispatch/verify-t13-final.md` with four
 placeholders), the final handover (`HANDOFF.md` from

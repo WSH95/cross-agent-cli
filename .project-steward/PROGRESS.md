@@ -114,3 +114,4 @@ Set up Project Steward in this repository.
 - 2026-09-19T14:39:16Z — claude — [auto-checkpoint] Grok review of round 2 and the Opus evidence audit folded into T13 round 3 (R3-1..12); raw evidence archived under ~/.cache/agent-team/probe-logs/t13-2026-09-19/.
 - 2026-09-19T15:14:53Z — claude — [auto-checkpoint] T13 round 3 landed (052299d; 609 pass; --since clean; anchors); two closing reviews running; VERIFY text prepared.
 - 2026-09-19T15:25:42Z — claude — [auto-checkpoint] Grok review of T13 round 3: anchors misaligned in ~25 places, 17 drifts, verifier Codex holes → fix round 4 dispatched; Opus re-review of round 3 still running.
+- 2026-09-19T15:28:19Z — claude — [auto-checkpoint] Opus re-review of T13 round 3 folded into round 4 (checker blind spot; wrong anchors); round 4 running.
