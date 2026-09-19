@@ -276,6 +276,52 @@ test("a role prompt past the 100 KB argv limit goes to a file, never into anothe
   assert.equal(overByOneMoon.argv.includes("--prompt-file"), true);
 });
 
+test("a brief too large for the command line travels as the prompt file", (t) => {
+  const dirs = layout(t);
+  const rolePrompt = "You are the reviewer.\n";
+  // What the controller's own review delegation hit on 2026-09-19: a `review` brief with
+  // the diff attached was 150,745 bytes and the launch died on `spawn E2BIG`, because the
+  // role text — not the brief — was the only thing this adapter measured.
+  const brief = "d".repeat(150 * 1024);
+  const plan = grok.plan(requestFor(dirs, { rolePrompt, brief }));
+  const file = path.join(dirs.task, "rules.md");
+  assert.equal(plan.argv.includes("-p"), false);
+  assert.equal(plan.argv[plan.argv.indexOf("--prompt-file") + 1], file);
+  assert.deepEqual(plan.files, [{ path: file, contents: `${rolePrompt}\n\n${brief}` }]);
+  // `--rules` is Grok's system-prompt path and this role text fits in one argument, so it
+  // still travels that way; the file is the turn's own text.
+  assert.equal(plan.argv[plan.argv.indexOf("--rules") + 1], rolePrompt);
+  assert.equal(existsSync(file), false, "the adapter names the file; the pipeline writes it");
+});
+
+test("the prompt budget is the role text and the brief together, counted in bytes", (t) => {
+  const dirs = layout(t);
+  const budget = 64 * 1024;
+  const rolePrompt = "r".repeat(1024);
+  // Exactly at the budget: one argument each, as every ordinary task runs.
+  const atLimit = grok.plan(requestFor(dirs, { rolePrompt, brief: "b".repeat(budget - 1024) }));
+  assert.equal(atLimit.argv[atLimit.argv.indexOf("-p") + 1], "b".repeat(budget - 1024));
+  assert.equal(atLimit.files, undefined);
+  // One byte past it, the pair goes to the file: the sum is what the kernel charges for
+  // the line, and either half alone is bounded by it.
+  const over = grok.plan(requestFor(dirs, { rolePrompt, brief: "b".repeat(budget - 1023) }));
+  assert.equal(over.argv.includes("-p"), false);
+  assert.equal(over.argv.includes("--prompt-file"), true);
+  // Bytes, not UTF-16 units, because that is what an exec limit counts.
+  const moons = "🌙".repeat(budget / 4);
+  assert.equal(Buffer.byteLength(moons), budget);
+  assert.equal(grok.plan(requestFor(dirs, { rolePrompt: "", brief: moons })).argv.includes("-p"), true);
+  assert.equal(grok.plan(requestFor(dirs, { rolePrompt: "", brief: `${moons}🌙` })).argv.includes("-p"), false);
+});
+
+test("a role prompt of nothing puts the brief alone in the prompt file", (t) => {
+  const dirs = layout(t);
+  const brief = "b".repeat(80 * 1024);
+  const plan = grok.plan(requestFor(dirs, { rolePrompt: "", brief }));
+  assert.deepEqual(plan.files, [{ path: path.join(dirs.task, "rules.md"), contents: brief }]);
+  assert.equal(plan.argv.includes("--rules"), false);
+});
+
 test("plan refuses an engine-placed lead: Grok cannot be isolated as one (P9)", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };

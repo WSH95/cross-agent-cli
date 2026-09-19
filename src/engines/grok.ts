@@ -14,6 +14,17 @@ import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, S
 const rulesLimit = 100 * 1024;
 
 /**
+ * How much text the whole turn may put on the command line: the role prompt as `--rules`'s
+ * value plus the brief as `-p`'s. Linux caps one argument at 128 KiB and the whole argv at
+ * a quarter of the stack limit, and a `review` brief with a diff attached is routinely
+ * past both — on 2026-09-19 a 150,745-byte one failed at launch with `spawn E2BIG`
+ * (`atc-s96.55`). Past this budget the pair travels as `--prompt-file`'s file instead.
+ * Their sum is the measure because it bounds each half, and 64 KiB leaves the rest of the
+ * line — the deny list above all — room under the argv ceiling.
+ */
+const promptLimit = 64 * 1024;
+
+/**
  * Grok Build, on the spawn line P2 and P8 recorded and the `streaming-messages-json`
  * output P8 adopted (design section 3).
  */
@@ -77,18 +88,26 @@ const grok = {
     // `--rules` is Grok's system-level path for the role prompt and takes a string, not a
     // path (P9), so the flag carries the role's contents and keeps them out of the turn's
     // own text. Above the argv limit it cannot, and the role then travels the way P9's
-    // comparison run honoured — its text, a blank line, then the brief — but as
+    // comparison run honoured — its text, a blank line, then the brief — as
     // `--prompt-file`'s file rather than as `-p`'s value, which is one argument again and
     // larger than the one that did not fit. The file is the task's own, never inside the
     // specialist's worktree, which the role may edit.
     const carried = Buffer.byteLength(request.rolePrompt) <= rulesLimit;
+    // Two measures, because the two flags are charged separately. `carried` is whether
+    // `--rules` can hold the role at all; `inline` is whether the turn's text fits on the
+    // command line beside it. A role past `rulesLimit` is past `promptLimit` too, so the
+    // file below is the one delivery that serves both.
+    const inline = Buffer.byteLength(request.rolePrompt) + Buffer.byteLength(request.brief) <= promptLimit;
     const files: NonNullable<SpawnPlan["files"]> = [];
     const prompt: string[] = [];
-    if (carried) {
+    if (inline) {
       prompt.push("-p", request.brief);
     } else {
       const promptPath = path.join(request.scratchDir, "rules.md");
-      files.push({ path: promptPath, contents: `${request.rolePrompt}\n\n${request.brief}` });
+      // The role text, a blank line, then the brief — P9's own comparison run — unless
+      // `--rules` is already carrying the role, in which case the file is the turn's text
+      // and repeating the role there costs the run nothing but tokens.
+      files.push({ path: promptPath, contents: request.rolePrompt === "" ? request.brief : `${request.rolePrompt}\n\n${request.brief}` });
       prompt.push("--prompt-file", promptPath);
     }
 

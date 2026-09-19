@@ -1626,8 +1626,17 @@ which is a property of the line, not of the pipeline.
   gate no configuration can reach around (`src/engines/grok.ts:72-74`,
   `tests/engines/grok.test.ts:279`). **The prompt is `-p`'s own value**, so
   nothing goes on stdin and the plan names no files: Grok reads none that this
-  adapter writes, until an oversize role prompt makes the one file below
-  (`src/engines/grok.ts:120`, `tests/engines/grok.test.ts:143`). `strict` and `off` are the two
+  adapter writes, until the line grows too long for the kernel. Two budgets
+  decide that, because the two flags are charged separately
+  (`src/engines/grok.ts#promptLimit`, `#rulesLimit`): a role prompt past 100 KiB
+  cannot be one `--rules` argument at all, and the role text **and the brief
+  together** past 64 KiB cannot share the command line, whichever of them is
+  large. Either way the pair travels as `--prompt-file`'s file — the role's
+  text, a blank line, then the brief, P9's own comparison delivery — and
+  `--rules` still carries the role when it fits there, because that is Grok's
+  system-prompt path. The second budget is `atc-s96.55`: a `review` brief with
+  a diff attached, 150,745 bytes, failed at launch with `spawn E2BIG` when only
+  the role text was measured (`tests/engines/grok.test.ts:279`, `:297`). `strict` and `off` are the two
   `--sandbox` values no run has exercised: P2 ran `workspace` and `read-only`,
   and `--help` does not enumerate the profiles (`docs/probes.md:893-900`).
   Every flag takes exactly one value, which is what lets the deny list end the
