@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T10:03:57Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 4c complete on task/cross-agent-m3 at 3859410 (fix round closed a Critical: a merge could carry .cross-agent/ into the root; task ids now hex; one-shots resume, dedupe and clean up; nothing written before the first delegate; every mode registers the provider tools); atc-s96.27 closed; 561 pass/1 skip; 787 citations/0 misses. Task 5 (T12 skills) running (cross-agent-implementer: claude-opus-5, max). Briefs drafted for T13 (task-6), S11 (task-7), T16 (task-10). New P4 bead: read tools write .cross-agent/tasks on an unknown id.
+
 ### 2026-09-19T09:05:04Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4c (solo without ceremony) implemented on task/cross-agent-m3 as d09efc4 (553 pass/1 skip; 776 citations/0 misses): consult role, no-config default, worktree:true one-shots, merge-policy and review/critique text in modes/solo/SKILL.md. Rulings for its fix round: every mode registers the four provider tools; a verification refusal after creation removes the one-shot worktree; list_roles lists unbound mode roles; worktree:true refused for an engine-placed lead. Task review (claude-opus-5, max) done (two Importants: a stale §7 sentence; the at-the-root escape hatch to delete); second opinion (claude-fable-5-1, max) running. T12 brief drafted with the rulings.
 

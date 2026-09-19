@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T09:05:04Z
+updated_at: 2026-09-19T10:03:57Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -25,20 +25,18 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 4c (solo without ceremony, plan decision 10; `atc-s96.27`) is
-implemented on `task/cross-agent-m3` as `d09efc4` over `c057420` (553
-pass, 1 skip; 776 citations, 0 misses) and under review: the task review
-(Claude Code subagent · claude-opus-5 · max) is in with two Important
-items plus the controller's three rulings (every mode registers the four
-provider tools; a verification refusal after creation removes the one-shot
-worktree; `list_roles` lists unbound mode roles; `worktree: true` refused
-for an engine-placed lead); the second opinion (· claude-fable-5-1 · max)
-is running; one fix round follows. Complete there since M1: Task 4 (S8),
-Task 4b (`git_root`, `run_command`, journal steps). Next: T12 (skills;
-`task-5-brief.md` ready), T13 (Claude Code packaging, I1/I2, E1), S11.
-**Codex is paused by the user.** Pending your approval: `agents-md-m1.diff`
-(plus the Layout diffs Tasks 4 and 4b proposed) in
-`.superpowers/sdd/the-development-of-this-calm-planet/`.
+Task 5 (T12: the launcher skill, the `dev-team` loop and role prompts
+through the one-off devpack converter, the skill tests; `atc-s96.12`)
+runs as a Claude Code subagent (`cross-agent-implementer` · claude-opus-5
+· max) on `task/cross-agent-m3` from `3859410`. Complete there since M1:
+Task 4 (S8), 4b (root git tools), 4c (solo without ceremony; its fix
+round closed a Critical merge-smuggling hole); 561 pass, 1 skip. Next:
+T13 (`task-6-brief.md`: packaging, P2 for Claude, I1/I2, E1 on the
+slugkit sample), S11 (`task-7-brief.md`), T14/T15, T16
+(`task-10-brief.md`). **Codex is paused by the user.** Pending your
+approval: `agents-md-m1.diff` plus the Layout diffs of Tasks 4, 4b, 4c in
+`.superpowers/sdd/the-development-of-this-calm-planet/` (to be merged
+into one proposal at the M3 report).
 
 ## Next steps
 
