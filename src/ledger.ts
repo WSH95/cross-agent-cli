@@ -116,9 +116,9 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
   launching: ["running", "cancelling", "failed", "orphaned"],
   running: ["stalled", "cancelling", "orphaned", "done", "failed"],
   stalled: ["running", "cancelling", "orphaned", "done", "failed"],
-  // orphaned -> done is reconciliation settling a record from the result file an engine
-  // that finished left behind: the runner that would have written the outcome was gone,
-  // the work was not (bead atc-s96.30).
+  // orphaned -> done is reconciliation settling a record from the outcome its runner
+  // recorded before a write it was no longer allowed to make: the runner's claim was
+  // lost, the work was not (`TaskOutcome`, bead atc-s96.30).
   orphaned: ["done", "failed", "cancelled"],
   cancelling: ["cancelled", "failed"],
   done: [],
@@ -343,6 +343,62 @@ export function readSpec(projectRoot: string, id: string): LaunchSpec {
   const spec = JSON.parse(fs.readFileSync(file, "utf8")) as LaunchSpec;
   validateSpec(spec);
   return spec;
+}
+
+/**
+ * What the runner saw the engine do, written beside the task before the runner attempts
+ * its terminal ledger write. The record may already belong to someone else by then — an
+ * adoption that beat the runner's last write leaves it `orphaned` — and this file is
+ * then the only account of how the engine ended. It is the runner's, and it is the only
+ * evidence reconciliation settles such a record from (design section 2, bead
+ * `atc-s96.30`): the result file holds an engine's last word whether the run succeeded
+ * or failed, so text in it proves that something ended and nothing more.
+ */
+export interface TaskOutcome {
+  kind: "done" | "failed";
+  exitCode: number | null;
+  sessionId: string | null;
+  /** The failure's own words, which become the settled record's `reason`. */
+  reason?: string;
+  truncated?: boolean;
+  /** When it was written, so a record can refuse an outcome older than itself. */
+  at: number;
+}
+
+export function outcomePath(projectRoot: string, id: string): string {
+  return recordPath(projectRoot, id).replace(/\.json$/, ".outcome.json");
+}
+
+export function writeOutcome(projectRoot: string, id: string, outcome: TaskOutcome): void {
+  writeAtomic(outcomePath(projectRoot, id), outcome);
+}
+
+/**
+ * The recorded outcome of a task, or `null` when there is none this record may trust: no
+ * file, a file no reader can make sense of, or one written before the record existed. A
+ * stale outcome cannot arise on its own — one record has one runner, and a resume gets a
+ * record of its own — so the `at` check is a guard against the file being wrong, not a
+ * case the design expects.
+ */
+export function readOutcome(projectRoot: string, record: TaskRecord): TaskOutcome | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(fs.readFileSync(outcomePath(projectRoot, record.id), "utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const outcome = value as Record<string, unknown>;
+  if (outcome.kind !== "done" && outcome.kind !== "failed") return null;
+  if (typeof outcome.at !== "number" || outcome.at < record.createdAt) return null;
+  return {
+    kind: outcome.kind,
+    exitCode: typeof outcome.exitCode === "number" ? outcome.exitCode : null,
+    sessionId: typeof outcome.sessionId === "string" ? outcome.sessionId : null,
+    ...(typeof outcome.reason === "string" ? { reason: outcome.reason } : {}),
+    ...(typeof outcome.truncated === "boolean" ? { truncated: outcome.truncated } : {}),
+    at: outcome.at,
+  };
 }
 
 export async function update(

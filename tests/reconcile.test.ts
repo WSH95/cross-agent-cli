@@ -218,7 +218,10 @@ test("reconcile judges the engine by its group, so a reaped leader with a live m
   const { changed } = await reconcile(root, now + 2);
   assert.deepEqual(changed.map((value) => [value.id, value.status]), [[record.id, "orphaned"]]);
   const { changed: cleaned } = await terminateOrphans(root);
-  assert.deepEqual(cleaned.map((value) => [value.id, value.status, value.reason]), [[record.id, "failed", "runner lost"]]);
+  // Cleanup is what ended the group, so the settlement says so: the member was alive
+  // when the pass met it (finding T3b-2).
+  assert.deepEqual(cleaned.map((value) => [value.id, value.status, value.reason]),
+    [[record.id, "failed", "runner lost; engine group terminated"]]);
   await poll(() => running(member), (alive) => !alive);
   assert.equal(read(root, record.id).status, "failed");
 });
@@ -285,7 +288,7 @@ test("a launching record past its deadline adopts the group leader carrying its 
   assert.equal(groupAlive(adopted.engineIdentity), true);
 
   const { changed: cleaned } = await terminateOrphans(root);
-  assert.deepEqual(cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost"]]);
+  assert.deepEqual(cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost; engine group terminated"]]);
   await poll(() => running(engine.pid), (alive) => !alive);
 });
 
@@ -626,7 +629,7 @@ setInterval(() => {}, 1000);
   fs.writeFileSync(start, "");
 
   await poll(() => read(root, foreign.id).status, (status) => status === "failed", 8000);
-  assert.equal(read(root, foreign.id).reason, "runner lost", "the record it could settle was settled");
+  assert.equal(read(root, foreign.id).reason, "runner lost; engine group terminated", "the record it could settle was settled");
   // The group goes down together, but not in one instant: the leader and the pass inside
   // it are two processes, and which of them the kernel reaps first is not the point.
   await poll(() => running(engine.pid) || running(child), (alive) => !alive, 8000);
@@ -792,7 +795,7 @@ test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
   await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 1);
   const result = await reconcileAndCleanup(root, now + 2);
   assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
-  assert.deepEqual(result.cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost"]]);
+  assert.deepEqual(result.cleaned.map((value) => [value.status, value.reason]), [["failed", "runner lost; engine group terminated"]]);
   assert.deepEqual(result.invalid, []);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.skipped, []);
@@ -800,46 +803,97 @@ test("reconcileAndCleanup settles the orphans of its own pass", async (t) => {
   assert.equal(groupAlive(engine.identity), false, "no caller can see an orphan whose group is still being decided");
 });
 
-test("an orphan whose engine finished is settled from that result, not as a lost runner", async (t) => {
+/** The outcome a runner records beside a task before it attempts its terminal write. */
+function recordOutcome(root: string, record: TaskRecord, outcome: Record<string, unknown>): void {
+  fs.writeFileSync(path.join(tasks(root), `${record.id}.outcome.json`), JSON.stringify(outcome));
+}
+
+test("an orphan is settled from the outcome its runner recorded, never from the result file", async (t) => {
   const root = project(t);
   const zoo = processes(t);
-  // The engine ran to the end and its last word is on disk — the pipeline writes the
-  // final message to the result file as the engine exits — and what was lost is the
-  // runner's claim on the record, not the work. Settling that `failed: runner lost`
-  // throws away a task that was done.
-  const finished = await started(root, "orphaned", now);
-  const gone = zoo.leader();
-  await zoo.reap(gone);
-  fs.writeFileSync(finished.resultPath, "the brief is implemented\n");
-  await change(root, finished.id, { runnerIdentity: deadIdentity(), engineIdentity: gone.identity }, now + 1);
+  // A runner writes what the engine did beside the record before it tries to settle it,
+  // because the record may already belong to an adoption that beat it. That file is the
+  // evidence, and the result file is not: the pipeline writes the engine's last word
+  // there whether the run succeeded or failed, so text in it proves only that something
+  // ended (bead atc-s96.30, finding T3b-1).
+  const succeeded = await started(root, "orphaned", now);
+  const first = zoo.leader();
+  await zoo.reap(first);
+  fs.writeFileSync(succeeded.resultPath, "the brief is implemented\n");
+  recordOutcome(root, succeeded, { kind: "done", exitCode: 0, sessionId: "session-done", at: now + 1 });
+  await change(root, succeeded.id, { runnerIdentity: deadIdentity(), engineIdentity: first.identity }, now + 1);
 
-  // An engine that finished with nothing to say is the other half of the same evidence:
-  // it ended, and it ended with no result, which is the runner's own rule for a failure.
-  const empty = await started(root, "orphaned", now);
-  const alsoGone = zoo.leader();
-  await zoo.reap(alsoGone);
-  fs.writeFileSync(empty.resultPath, "");
-  await change(root, empty.id, { runnerIdentity: deadIdentity(), engineIdentity: alsoGone.identity }, now + 1);
+  // The run the old rule settled `done`: a failed engine's error text is in the result
+  // file too, and only the runner's own record tells the two apart.
+  const failed = await started(root, "orphaned", now);
+  const second = zoo.leader();
+  await zoo.reap(second);
+  fs.writeFileSync(failed.resultPath, "engine exited 2\n");
+  recordOutcome(root, failed, { kind: "failed", exitCode: 2, sessionId: "session-failed", reason: "fake failure", at: now + 1 });
+  await change(root, failed.id, { runnerIdentity: deadIdentity(), engineIdentity: second.identity }, now + 1);
 
-  // And an engine that left no result file at all never got that far: nothing beats
-  // "runner lost" there, because there is no evidence of an engine that finished.
-  const silent = await started(root, "orphaned", now);
-  const thirdGone = zoo.leader();
-  await zoo.reap(thirdGone);
-  await change(root, silent.id, { runnerIdentity: deadIdentity(), engineIdentity: thirdGone.identity }, now + 1);
+  // No outcome file: the runner never got that far. The result file is named rather than
+  // read, so an operator can find the text without the ledger calling it a success.
+  const lost = await started(root, "orphaned", now);
+  const third = zoo.leader();
+  await zoo.reap(third);
+  fs.writeFileSync(lost.resultPath, "half a sentence from someone\n");
+  await change(root, lost.id, { runnerIdentity: deadIdentity(), engineIdentity: third.identity }, now + 1);
+
+  // An outcome file older than the record it sits beside belongs to nothing this record
+  // knows about, so it is refused and the record settles as if there were none.
+  const stale = await started(root, "orphaned", now);
+  const fourth = zoo.leader();
+  await zoo.reap(fourth);
+  recordOutcome(root, stale, { kind: "done", exitCode: 0, sessionId: "session-stale", at: now - 1 });
+  await change(root, stale.id, { runnerIdentity: deadIdentity(), engineIdentity: fourth.identity }, now + 1);
 
   const { changed, skipped } = await terminateOrphans(root);
   assert.deepEqual(skipped, []);
   const byId = new Map(changed.map((value) => [value.id, value]));
-  assert.deepEqual([byId.get(finished.id)!.status, byId.get(finished.id)!.reason],
-    ["done", "settled by reconciliation from the engine's result"]);
-  assert.deepEqual([byId.get(empty.id)!.status, byId.get(empty.id)!.reason],
-    ["failed", "settled by reconciliation from the engine's result: it wrote none"]);
-  assert.deepEqual([byId.get(silent.id)!.status, byId.get(silent.id)!.reason], ["failed", "runner lost"]);
-  // No process was left to say how the two that finished ended, so the record says the
-  // exit code is unknown rather than inventing one to go with the result it read.
-  assert.equal(byId.get(finished.id)!.exitCode, null);
-  assert.equal(byId.get(empty.id)!.exitCode, null);
+  assert.deepEqual([byId.get(succeeded.id)!.status, byId.get(succeeded.id)!.exitCode, byId.get(succeeded.id)!.sessionId],
+    ["done", 0, "session-done"]);
+  assert.deepEqual([byId.get(failed.id)!.status, byId.get(failed.id)!.reason, byId.get(failed.id)!.exitCode],
+    ["failed", "fake failure", 2]);
+  assert.deepEqual([byId.get(lost.id)!.status, byId.get(lost.id)!.reason],
+    ["failed", `runner lost; result text present at ${lost.resultPath}`]);
+  assert.deepEqual([byId.get(stale.id)!.status, byId.get(stale.id)!.reason], ["failed", "runner lost"]);
+});
+
+test("a group the cleanup itself had to kill is a lost runner, whatever any outcome file says", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // The engine was still running when the pass met it, so it did not end on its own —
+  // cleanup ended it. Reading an outcome beside that record would settle a task this
+  // pass just killed, and reading the result file would settle a Codex task by the empty
+  // file the pipeline pre-creates for `-o` (finding T3b-2).
+  const record = await started(root, "orphaned", now);
+  const engine = zoo.leader();
+  fs.writeFileSync(record.resultPath, "");
+  recordOutcome(root, record, { kind: "done", exitCode: 0, sessionId: "session-done", at: now + 1 });
+  await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 1);
+
+  const { changed, skipped } = await terminateOrphans(root);
+  assert.deepEqual(skipped, []);
+  assert.deepEqual(changed.map((value) => [value.status, value.reason]),
+    [["failed", "runner lost; engine group terminated"]]);
+  assert.equal(groupAlive(engine.identity), false);
+});
+
+test("a running task whose runner and engine are both gone is settled from the same outcome file", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // `judge` and cleanup meet the same evidence in different states, and an operator
+  // cannot be told a task failed by one pass and succeeded by another (finding T3b-3).
+  const record = await started(root, "running", now);
+  const engine = zoo.leader();
+  await zoo.reap(engine);
+  recordOutcome(root, record, { kind: "done", exitCode: 0, sessionId: "session-judged", at: now + 1 });
+  await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 1);
+
+  const { changed, errors } = await reconcile(root, now + 2);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => [value.status, value.exitCode, value.sessionId]), [["done", 0, "session-judged"]]);
 });
 
 test("a pass waits the configured lockWaitSeconds for a record it cannot write", async (t) => {

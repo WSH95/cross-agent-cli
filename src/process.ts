@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { lockWaitSeconds } from "./config.ts";
-import { currentBootId, list, readProcessStat, update } from "./ledger.ts";
+import { currentBootId, list, readOutcome, readProcessStat, update } from "./ledger.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 
 // Process start times are ticks since boot, at Linux's fixed USER_HZ of 100, and btime
@@ -384,27 +384,32 @@ export function selfLast<T extends { engineIdentity?: EngineIdentity | null }>(r
 }
 
 /**
- * What an orphaned record whose group is gone settles as. `runner lost` is the truth
- * when nothing else is known, but the engine may have finished and said its last word
- * first: the pipeline writes the final message to the result file as the engine exits
- * (`src/engines/spawn.ts`), and a runner that found its record already orphaned wrote
- * nothing to the ledger. That evidence beats the lost runner — the task ran to the end,
- * whatever became of the process watching it — and the one thing it cannot supply is the
- * exit code, which stays unknown rather than being invented (bead atc-s96.30).
+ * What a record whose runner is gone and whose engine group is dead settles as. `runner
+ * lost` is the truth when nothing else is known, but the runner may have recorded the
+ * engine's verdict before a terminal write it was no longer allowed to make: an adoption
+ * that beat that write leaves the record `orphaned` and the runner settling nothing
+ * (`src/ledger.ts#TaskOutcome`, `src/runner.ts`). That record is the evidence, and the
+ * result file is not — the pipeline writes an engine's last word there whether the run
+ * succeeded or failed, so its text proves only that something ended (bead atc-s96.30).
+ * With no outcome recorded the result file is **named** rather than read, so an operator
+ * can find what is there without the ledger calling it a success.
  */
-function settlement(record: TaskRecord): TaskPatch {
-  let result: string;
+export function settlement(projectRoot: string, record: TaskRecord): TaskPatch {
+  const outcome = readOutcome(projectRoot, record);
+  if (outcome) {
+    const evidence = { exitCode: outcome.exitCode, sessionId: outcome.sessionId, truncated: outcome.truncated ?? false };
+    return outcome.kind === "done"
+      ? { status: "done", ...evidence, reason: "settled by reconciliation from the runner's recorded outcome" }
+      : { status: "failed", ...evidence, reason: outcome.reason ?? "settled by reconciliation from the runner's recorded outcome" };
+  }
+  let result = "";
   try {
     result = fs.readFileSync(record.resultPath, "utf8");
-  } catch {
-    // No result file: no engine ever finished here, and the lost runner is the whole story.
-    return { status: "failed", reason: "runner lost" };
-  }
-  const reason = "settled by reconciliation from the engine's result";
-  return result.trim() === ""
-    // An engine that ended with nothing to say is the runner's own rule for a failure.
-    ? { status: "failed", reason: `${reason}: it wrote none`, exitCode: null }
-    : { status: "done", reason, exitCode: null };
+  } catch { /* No result file either: the lost runner is the whole story. */ }
+  return {
+    status: "failed",
+    reason: result.trim() === "" ? "runner lost" : `runner lost; result text present at ${record.resultPath}`,
+  };
 }
 
 // Each call judges every orphaned record on the current kernel state: an invalid or
@@ -427,13 +432,22 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
     // that never settles has to be told which identity cleanup would not act on.
     if (!identity) { skipped.push({ id: record.id, reason: "no engine identity" }); continue; }
     if (state === "invalid" || state === "reused") { skipped.push({ id: record.id, reason: `engine identity ${state}` }); continue; }
-    const outcome = state === "alive" ? await terminateGroup(identity) : "dead";
-    if (outcome !== "dead") {
-      skipped.push({ id: record.id, reason: `engine group ${identity.pgid} did not terminate: ${outcome}` });
-      continue;
+    if (state === "alive") {
+      const outcome = await terminateGroup(identity);
+      if (outcome !== "dead") {
+        skipped.push({ id: record.id, reason: `engine group ${identity.pgid} did not terminate: ${outcome}` });
+        continue;
+      }
     }
+    // A group this pass had to kill did not end on its own, whatever anyone recorded
+    // beside the record: the engine was still running when the pass met it, and settling
+    // it from a runner's outcome would report a task this pass has just ended as one that
+    // finished (bead atc-s96.30, finding T3b-2).
+    const patch: TaskPatch = state === "alive"
+      ? { status: "failed", reason: "runner lost; engine group terminated" }
+      : settlement(projectRoot, record);
     // A record settled by another writer since the listing is refused: not changed.
-    const result = await update(projectRoot, record.id, settlement(record), Date.now(), { unlessTerminal: true, waitSeconds });
+    const result = await update(projectRoot, record.id, patch, Date.now(), { unlessTerminal: true, waitSeconds });
     if (result.applied) changed.push(result.record);
   }
   return { changed, skipped };

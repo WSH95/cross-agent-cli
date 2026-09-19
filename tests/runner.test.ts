@@ -619,6 +619,69 @@ test("activity persistence is throttled to once per two seconds", async () => {
   } finally { await h.cleanup(); }
 });
 
+/** The outcome file a runner records beside the task, if it wrote one. */
+function outcomeOf(h: ReturnType<typeof harness>): Record<string, unknown> | null {
+  const file = path.join(h.root, ".cross-agent", "tasks", `${h.record.id}.outcome.json`);
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+}
+
+test("the runner records the engine's verdict beside the task before it settles", async () => {
+  for (const [script, kind] of [["ok", "done"], ["fail", "failed"]] as const) {
+    const h = harness();
+    try {
+      h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: script } });
+      const settled = await poll(h.read, terminal);
+      const recorded = outcomeOf(h)!;
+      // The same verdict the ledger write carries, written first and by itself, because
+      // the ledger write may be refused by a record this runner no longer owns.
+      assert.equal(recorded.kind, kind);
+      assert.equal(recorded.exitCode, settled.exitCode);
+      assert.equal(recorded.sessionId, settled.sessionId);
+      assert.equal(recorded.reason, settled.reason);
+      assert.ok(typeof recorded.at === "number" && recorded.at >= h.record.createdAt);
+    } finally { await h.cleanup(); }
+  }
+});
+
+test("an engine that failed while its record was adopted settles failed, with its own reason", async () => {
+  const { terminateOrphans } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    // The adoption race: reconciliation orphans the record while the engine is still
+    // running, so the runner's terminal write is refused and it settles nothing. The
+    // result file holds the failure's text by then, and reading that as a completed run
+    // settled a failed task `done` (finding T3b-1).
+    h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "fail", HOLD: "1" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
+    fs.writeFileSync(h.release, "go");
+    await poll(() => outcomeOf(h), (recorded) => recorded !== null);
+    await poll(() => living(running.engineIdentity!), (alive) => !alive);
+
+    const { changed } = await terminateOrphans(h.root);
+    assert.deepEqual(changed.map((record) => [record.status, record.reason]), [["failed", "fake failure"]]);
+    assert.equal(h.read().exitCode, 2, "the exit code the runner saw, which the record never got");
+    assert.match(h.runnerLog(), /someone else settled the task/);
+  } finally { await h.cleanup(); }
+});
+
+test("an engine that finished while its record was adopted settles done, with its exit code", async () => {
+  const { terminateOrphans } = await import("../src/process.ts");
+  const h = harness();
+  try {
+    h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "ok", HOLD: "1" } });
+    const running = await poll(h.read, (record) => record.status === "running");
+    await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
+    fs.writeFileSync(h.release, "go");
+    await poll(() => outcomeOf(h), (recorded) => recorded !== null);
+    await poll(() => living(running.engineIdentity!), (alive) => !alive);
+
+    const { changed } = await terminateOrphans(h.root);
+    assert.deepEqual(changed.map((record) => [record.status, record.exitCode]), [["done", 0]]);
+    assert.match(h.read().sessionId!, /^fake-\d+$/, "and the session the engine announced");
+  } finally { await h.cleanup(); }
+});
+
 async function orphan(h: ReturnType<typeof harness>, script: string, env: Record<string, string> = {}) {
   const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: script, ...env } });
   const running = await poll(h.read, (record) => record.status === "running");
@@ -638,7 +701,7 @@ test("SIGKILL leaves a live engine that reconciliation orphans and cleanup termi
     const { changed } = await terminateOrphans(h.root);
     assert.equal(changed.length, 1);
     assert.equal(changed[0].status, "failed");
-    assert.equal(changed[0].reason, "runner lost");
+    assert.equal(changed[0].reason, "runner lost; engine group terminated");
     await poll(() => proc(identity.pid), (current) => current === null);
   } finally { await h.cleanup(); }
 });
@@ -709,7 +772,7 @@ test("orphan cleanup terminates descendants whose leader died before cleanup beg
     await poll(() => proc(identity.pid), (current) => current === null || current.state === "Z");
     assert.equal(living(descendant), true);
     const { changed } = await terminateOrphans(h.root);
-    assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
+    assert.deepEqual(changed.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost; engine group terminated"]]);
     assert.equal(living(descendant), false);
     assert.equal(h.read().status, "failed");
     assert.deepEqual(await terminateOrphans(h.root), { changed: [], skipped: [] });
@@ -736,7 +799,7 @@ test("reconciliation orphans a task whose engine leader is gone but whose group 
     const { changed } = await reconcile(h.root);
     assert.deepEqual(changed.map((record) => [record.id, record.status]), [[h.record.id, "orphaned"]]);
     const { changed: cleaned } = await terminateOrphans(h.root);
-    assert.deepEqual(cleaned.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost"]]);
+    assert.deepEqual(cleaned.map((record) => [record.id, record.status, record.reason]), [[h.record.id, "failed", "runner lost; engine group terminated"]]);
     assert.equal(living(descendant), false);
     assert.deepEqual(ownedProcesses(h.root), []);
   } finally { await h.cleanup(); }
@@ -772,7 +835,7 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
     assert.deepEqual(h.read().engineIdentity,
       { pid: engine.pid, startTime: engine.startTime, pgid: engine.pid, bootId: ledger.currentBootId });
     const { changed: cleaned } = await terminateOrphans(h.root);
-    assert.deepEqual(cleaned.map((record) => [record.status, record.reason]), [["failed", "runner lost"]]);
+    assert.deepEqual(cleaned.map((record) => [record.status, record.reason]), [["failed", "runner lost; engine group terminated"]]);
     await poll(() => proc(engine.pid), (current) => current === null || current.state === "Z");
     assert.deepEqual(ownedProcesses(h.root), []);
   } finally { await h.cleanup(); }
@@ -942,7 +1005,7 @@ test("orphan cleanup escalates after two seconds and returns only changed record
     assert.deepEqual(skipped, [{ id: stale.id, reason: "engine identity reused" }],
       "an identity cleanup will not act on is named, not passed over in silence");
     assert.equal(changed[0].status, "failed");
-    assert.equal(changed[0].reason, "runner lost");
+    assert.equal(changed[0].reason, "runner lost; engine group terminated");
     await poll(() => proc(identity.pid), (current) => current === null);
     // ledger.list returns newest first, so the stale record was inspected before the
     // engine died, while its mismatched leader still lived: skipped, not settled.

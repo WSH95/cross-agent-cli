@@ -1,7 +1,7 @@
 import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, isProcessAlive, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
-import { killStrays, selfLast, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
+import { killStrays, selfLast, settlement, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";
 
 export interface TaskError {
@@ -134,9 +134,12 @@ async function judge(projectRoot: string, record: TaskRecord, now: number, waitS
   }
 
   if ((record.status === "running" || record.status === "stalled") && !runnerAlive(record)) {
+    // The same evidence cleanup reads for an orphan whose group is gone, read the same
+    // way: an operator cannot be told a task failed by one pass and succeeded by another
+    // (`src/process.ts#settlement`, finding T3b-3).
     const patch = groupAlive(record.engineIdentity)
       ? { status: "orphaned" as const }
-      : { status: "failed" as const, reason: "runner lost" };
+      : settlement(projectRoot, record);
     const result = await update(projectRoot, record.id, patch, now, {
       unlessTerminal: true, waitSeconds,
       expect: (current) => current.status === record.status && sameRunner(current.runnerIdentity, record.runnerIdentity),

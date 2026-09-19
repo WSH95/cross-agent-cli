@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockWaitSeconds } from "./config.ts";
-import { isTerminal, read, readSpec, update } from "./ledger.ts";
+import { isTerminal, read, readSpec, update, writeOutcome } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { findByEnvironment, foreignEngine, identityOf, terminateGroup, terminateGroupByPid } from "./process.ts";
@@ -131,18 +131,40 @@ async function run(projectRoot: string, id: string): Promise<void> {
         truncated: outcome?.truncated ?? false,
         ...identities,
       };
+      // The engine's own verdict, by the rule the terminal write below uses. It is
+      // computed here rather than inside that write because it is also what this runner
+      // records on disk, and it records that whether or not the write is its to make.
+      const hasResult = outcome?.events.some((event) => event.kind === "result")
+        || Boolean(outcome?.finalMessage.trim());
+      const succeeded = Boolean(outcome?.ok) && outcome?.exitCode === 0 && hasResult;
+      const detail = error instanceof Error ? error.message : error !== undefined ? String(error)
+        : outcome?.events.findLast((event) => event.kind === "error")?.text
+          ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
+            : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
+      // The stdio drain expired, so this failure's evidence may be missing its tail. An
+      // operator reading the reason has to be told that, or read it as complete.
+      const reason = outcome?.truncated ? `${detail}; output truncated` : detail;
+      // Recorded before any terminal write is attempted, whatever becomes of that write.
+      // A record adopted while this runner was finishing is no longer this runner's to
+      // settle, and then this file is the only account of how the engine ended:
+      // reconciliation settles such a record from it and from nothing else, because the
+      // result file carries an engine's last word whether it succeeded or failed
+      // (`src/ledger.ts#TaskOutcome`, design section 2, bead atc-s96.30).
+      try {
+        writeOutcome(projectRoot, id, {
+          kind: succeeded ? "done" : "failed",
+          exitCode: evidence.exitCode ?? null, sessionId: evidence.sessionId ?? null,
+          ...(succeeded ? {} : { reason }),
+          truncated: outcome?.truncated ?? false, at: Date.now(),
+        });
+      } catch (outcomeError) {
+        // A record nobody can settle from is worse than one settled `runner lost`, but
+        // it is not worth losing the settlement this runner can still write.
+        log(outcomeError);
+      }
       let completedDuringCancel = false;
       if (kind === "completion" || kind === "failed") {
-        const hasResult = outcome?.events.some((event) => event.kind === "result")
-          || Boolean(outcome?.finalMessage.trim());
-        const status = kind === "completion" && outcome?.ok && outcome.exitCode === 0 && hasResult ? "done" : "failed";
-        const detail = error instanceof Error ? error.message : error !== undefined ? String(error)
-          : outcome?.events.findLast((event) => event.kind === "error")?.text
-            ?? (outcome?.exitCode === 0 && !hasResult ? "engine exited without a result"
-              : `engine exited ${outcome?.signal ?? outcome?.exitCode ?? "without an exit code"}`);
-        // The stdio drain expired, so this failure's evidence may be missing its tail.
-        // An operator reading the reason has to be told that, or read it as complete.
-        const reason = outcome?.truncated ? `${detail}; output truncated` : detail;
+        const status = kind === "completion" && succeeded ? "done" : "failed";
         // The engine's own outcome names the status only while the record is still this
         // runner's. A record that reached `cancelling` while the engine was finishing is
         // being cancelled, however well the engine ended; one that reached `orphaned`

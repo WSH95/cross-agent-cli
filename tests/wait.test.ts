@@ -342,7 +342,8 @@ test("a launch past its deadline is adopted and settled by this call's own pass"
   const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
   assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
   assert.equal(answer.ok && answer.hint, "settled: call result");
-  assert.equal(p.record(record.id).reason, "runner lost");
+  // The engine was alive when the pass adopted it, so cleanup is what ended it.
+  assert.equal(p.record(record.id).reason, "runner lost; engine group terminated");
   assert.equal(alive(engine.identity), false, "the adopted engine's group was terminated");
 });
 
