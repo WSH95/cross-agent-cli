@@ -47,6 +47,9 @@ test("verifyWorktree accepts a linked worktree on its exact branch", async (t) =
     gitDir: await realpath(path.join(root, ".git", "worktrees", "different-directory-name")),
     workTree: await realpath(candidate),
     branch: "task/feature",
+    // The repository's own git directory, which every linked worktree shares and no
+    // specialist may write: `delegate` puts it in the spec's `protectedPaths`.
+    commonDir: await realpath(path.join(root, ".git")),
   });
   assert.equal(await readFile(path.join(candidate, ".git"), "utf8"), before);
   assert.equal(await git(root, "status", "--porcelain"), "");
@@ -57,6 +60,7 @@ test("verifyWorktree accepts a linked worktree on its exact branch", async (t) =
   assert.notEqual(path.basename(gitDir), path.basename(sameBasename));
   assert.deepEqual(await verifyWorktree(root, sameBasename, "task/second"), {
     gitDir, workTree: await realpath(sameBasename), branch: "task/second",
+    commonDir: await realpath(path.join(root, ".git")),
   });
 });
 
@@ -69,6 +73,7 @@ test("verifyWorktree accepts canonical-equivalent symlink paths", async (t) => {
     gitDir: await realpath(path.join(root, ".git", "worktrees", "symlink")),
     workTree: await realpath(candidate),
     branch: "task/symlink",
+    commonDir: await realpath(path.join(root, ".git")),
   });
 });
 
@@ -79,6 +84,7 @@ test("verifyWorktree handles porcelain paths containing whitespace, quotes, back
     gitDir: await realpath(await git(candidate, "rev-parse", "--git-dir")),
     workTree: await realpath(candidate),
     branch: "task/encoding",
+    commonDir: await realpath(path.join(root, ".git")),
   });
 });
 
@@ -92,6 +98,7 @@ test("verifyWorktree resolves relative Git paths against the command cwd", async
     await writeFile(pointer, `gitdir: ${path.relative(candidate, gitDir)}\n`);
     assert.deepEqual(await verifyWorktree(path.relative(process.cwd(), root), path.relative(process.cwd(), candidate), "task/relative"), {
       gitDir, workTree: await realpath(candidate), branch: "task/relative",
+      commonDir: await realpath(path.join(root, ".git")),
     });
   } finally {
     await writeFile(pointer, original);
@@ -173,6 +180,7 @@ test("verifyWorktree ignores what the server's own environment says about a repo
     gitDir: await realpath(path.join(root, ".git", "worktrees", "inherited")),
     workTree: await realpath(candidate),
     branch: "task/inherited",
+    commonDir: await realpath(path.join(root, ".git")),
   });
 });
 

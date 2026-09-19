@@ -25,9 +25,9 @@
 // own `delegate` is refused naming the task id.
 //
 //   --track [--project DIR] [--role NAME] [--track-timeout SECONDS]
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,6 +47,11 @@ const bins = { claude: process.env.CROSS_AGENT_CLAUDE_BIN ?? "claude", codex: pr
 const denyTargets = ["claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent"];
 const denyRules = args["no-deny"] ? [] : denyTargets.flatMap((t) => [`Bash(${t} *)`, `Bash(${t})`]);
 
+// What `delegate` puts in a writable spec's `protectedPaths` (`src/delegate.ts#delegate`):
+// the workspace's own `.git` pointer file and the repository's common git directory, which
+// probe P2's Claude row wrote into. Empty for anything that is not a linked worktree.
+const protectedPaths = sandbox === "workspace-write" ? worktreeGitPaths(cwd) : [];
+
 const scratch = path.join(cwd, ".cross-agent", "probe");
 mkdirSync(scratch, { recursive: true });
 const sessionId = args["session-id"] ?? randomUUID();
@@ -60,7 +65,9 @@ if (engine === "claude") {
   // one writable root, its workspace.
   const settings = { sandbox: { enabled: sandbox !== "off", autoAllowBashIfSandboxed: true } };
   if (sandbox !== "off") { settings.sandbox.allowUnsandboxedCommands = false; settings.sandbox.failIfUnavailable = true; }
-  if (sandbox === "workspace-write") settings.sandbox.filesystem = { allowWrite: [cwd] };
+  if (sandbox === "workspace-write") {
+    settings.sandbox.filesystem = { allowWrite: [cwd], ...(protectedPaths.length === 0 ? {} : { denyWrite: protectedPaths }) };
+  }
   argv = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", args["permission-mode"] ?? "bypassPermissions"];
   if (!args["no-strict-mcp"]) argv.push("--strict-mcp-config");
   if (args["mcp-config"]) argv.push("--mcp-config", path.resolve(args["mcp-config"]));
@@ -166,6 +173,7 @@ async function track() {
     ...(model ? { model } : {}), ...(effort ? { effort } : {}),
     sessionId,
     denyTargets,
+    ...(protectedPaths.length === 0 ? {} : { protectedPaths }),
     env: childEnv(process.env, 0, record.id, childLineage([], { taskId: record.id, role: roleKey, cwd }), "subscription", projectRoot),
     scratchDir,
     // What an engine-placed lead is given, handed to a specialist on purpose: the run is
@@ -208,5 +216,21 @@ function parseArgs(list) {
   }
   return out;
 }
+/**
+ * `[<worktree>/.git, <common git dir>]` for a linked worktree, `[]` for anything else —
+ * a main worktree's `.git` is the common directory itself and a writable role never runs
+ * in one. Both realpath'd, as the verifier returns them.
+ */
+function worktreeGitPaths(directory) {
+  const pointer = path.join(directory, ".git");
+  try {
+    if (!statSync(pointer).isFile()) return [];
+    const common = execFileSync("git", ["-C", directory, "rev-parse", "--git-common-dir"], { encoding: "utf8" }).replace(/\n$/, "");
+    return [realpathSync(pointer), realpathSync(path.resolve(directory, common))];
+  } catch {
+    return [];
+  }
+}
+
 function need(k) { if (!args[k]) fail(`--${k} is required`); return args[k]; }
 function fail(msg) { console.error(msg); process.exit(64); }

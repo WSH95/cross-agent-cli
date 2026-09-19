@@ -65,7 +65,7 @@ const claude = {
       sandbox: {
         enabled: boolean; autoAllowBashIfSandboxed: true;
         allowUnsandboxedCommands?: false; failIfUnavailable?: true;
-        filesystem?: { allowWrite: string[] };
+        filesystem?: { allowWrite: string[]; denyWrite?: string[] };
       };
     } = { sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
     // A sandbox the specialist cannot step out of. `allowUnsandboxedCommands: false` makes
@@ -80,8 +80,17 @@ const claude = {
       settings.sandbox.failIfUnavailable = true;
     }
     // A writable role gets exactly one writable root, its own workspace; a read-only one
-    // gets no `allowWrite` at all.
-    if (mode === "write") settings.sandbox.filesystem = { allowWrite: [request.cwd] };
+    // gets no `allowWrite` at all. `allowWrite` is not the whole rule: probe P2's Claude
+    // row wrote into the repository's common git directory from inside a worktree whose
+    // pointer file the same sandbox refused, so the paths the guard protects are named
+    // here as well, and a deny rule wins over an allow one.
+    if (mode === "write") {
+      const protectedPaths = request.protectedPaths ?? [];
+      settings.sandbox.filesystem = {
+        allowWrite: [request.cwd],
+        ...(protectedPaths.length === 0 ? {} : { denyWrite: protectedPaths }),
+      };
+    }
 
     const argv = [
       "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",

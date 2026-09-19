@@ -3,7 +3,15 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-export type WorktreeResult = { gitDir: string; workTree: string; branch: string } | { reason: string };
+/**
+ * What a verified linked worktree is: its administrative directory, its work tree, the
+ * branch it is on, and `commonDir`, the repository's own git directory that every worktree
+ * of it shares. `commonDir` is here because a writable specialist must be kept out of it —
+ * it is half of the spec's `protectedPaths` (design section 3) — and this is the one place
+ * that resolves it from the worktree itself rather than guessing `<root>/.git`.
+ */
+export type VerifiedWorktree = { gitDir: string; workTree: string; branch: string; commonDir: string };
+export type WorktreeResult = VerifiedWorktree | { reason: string };
 
 const exec = promisify(execFile);
 
@@ -100,7 +108,7 @@ export async function verifyWorktree(projectRoot: string, worktreePath: string, 
     if (linkedPointer !== candidatePointer) {
       return { reason: `Git directory ${gitDir} points back to ${linkedPointer}, not ${candidatePointer}.` };
     }
-    return { gitDir, workTree, branch: actualBranch };
+    return { gitDir, workTree, branch: actualBranch, commonDir };
   } catch (error) {
     return { reason: `Cannot ${operation}: ${error instanceof Error ? error.message : String(error)}` };
   }

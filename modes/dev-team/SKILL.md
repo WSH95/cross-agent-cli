@@ -126,7 +126,12 @@ it is for a brief you meant to repeat.
 ## 8. Rebase
 
 `git_mutate {slug, args: ["rebase", <default>]}` journals `rebased` when the
-branch moved. A conflict leaves the worktree mid-rebase with HEAD detached:
+branch moved. Run it even when `<default>` has not moved since step 4: it costs
+one call, git answers that the branch is up to date, and the journal then shows
+a `git` step with the arguments rather than `rebased`, which is what the table
+at the end of this file says a call that moved nothing writes. Skipping it
+means the journal cannot tell a rebase that found nothing to do from a rebase
+nobody ran. A conflict leaves the worktree mid-rebase with HEAD detached:
 `git_mutate {slug, args: ["rebase", "--abort"]}` — the one argv the worktree
 verifier accepts with a detached HEAD, and the reason the abort runs here rather
 than at the root — and then escalate to the user with the file names. You do not

@@ -22,6 +22,11 @@ const grok = {
   // `strict` is a read-only profile too, so it frees a workspace exactly as `read-only` does.
   sandboxProfiles: { "read-only": "read-only", strict: "read-only", workspace: "write", off: "off" },
 
+  // `protectedPaths` cannot be enforced here: the `workspace` profile takes no per-path
+  // deny rule, and P2 watched a Grok specialist rewrite its own `.git` pointer. So a Grok
+  // implementer's git metadata is checked rather than protected — `verify_worktree` before
+  // every `git_mutate`, which is what design section 4 means by detected, not prevented.
+
   // Grok's sandbox is the binary's own, so the binary resolving is the whole of the check.
   sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
     const bin = engineBin("grok", env);

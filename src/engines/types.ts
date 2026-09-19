@@ -57,6 +57,19 @@ export interface SpawnRequest {
   denyTargets: string[];
   /** Already prepared by childEnv; the pipeline does not inherit additional variables. */
   env: NodeJS.ProcessEnv;
+  /**
+   * Paths a writable sandbox must refuse even where the engine's own default would allow
+   * them: the workspace's `.git` pointer and the repository's common git directory, which
+   * `verifyWorktree` resolves. Set only for a writable workspace — a read-only role has
+   * nothing to subtract from. Probe P2 (Claude, 2026-09-19) is why it exists: a writable
+   * root named the worktree alone and the repository's `.git` beside it was still
+   * writable. What an adapter does with it is its own: Claude deny-lists them
+   * (`filesystem.denyWrite`), Codex needs no argument because its `workspace-write`
+   * already protects `.git` inside the workspace and denies everything outside it, and
+   * Grok cannot enforce it at all, which is what leaves `verify_worktree` as the check
+   * (design section 4).
+   */
+  protectedPaths?: string[];
   /** The task's own directory (`path.dirname(logPath)`): where an adapter's files go, never the specialist's worktree. */
   scratchDir: string;
   /** Set only for an engine-placed lead, which mounts this server through `leadMount`. */

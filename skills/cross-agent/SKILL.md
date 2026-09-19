@@ -40,7 +40,11 @@ ask for a restart instead of working around it.
 `delegate {role, brief, cwd}` launches one specialist and answers with its task
 id. Add `branch` when the role works in a worktree — the mode's loop says where
 that worktree comes from and on what branch — and `engine`, `model` or `effort`
-to override the binding for this call alone. `worktree: true` gives a
+to override the binding for this call alone. Naming another `engine` drops the
+binding's `model` and `effort` rather than carrying them across: they belong to
+the engine that was bound, and `grok --model claude-sonnet-5` is an unknown
+model id. So name the model you want with the engine, or get that engine's own
+default. `worktree: true` gives a
 role that works at the project root a writable task worktree of its own instead;
 the record then carries `worktree: {path, branch, slug}` and the slug is the
 task id.

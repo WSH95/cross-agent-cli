@@ -23,10 +23,19 @@ import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName } from "./engines/types.ts";
 import { verifyWorktree } from "./worktree.ts";
+import type { VerifiedWorktree } from "./worktree.ts";
 
 // `delegate`: validate under `spawn.lock`, write the record and the launch spec, start the
 // detached runner. Everything it refuses, it refuses before a record exists, so a refusal
 // leaves the project exactly as it found it (design section 2).
+
+/**
+ * This repository, resolved from this module: where `src/server.ts` and `src/cli.ts`
+ * actually are, which is what the deny list has to name. The project a task runs in has
+ * neither, and a rule naming `<project>/src/server.ts` denies nothing (I1, 2026-09-19).
+ * It is the same base `adapterModule` is built from.
+ */
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
 export interface DelegateRequest {
   role: string;
@@ -88,15 +97,19 @@ function directory(target: string): boolean {
 }
 
 /** The workspace rule of the kind the mode gave this role (design, "Modes"). */
-async function workspaceFault(projectRoot: string, workspace: Workspace, name: string, cwd: string, branch?: string): Promise<string | null> {
+async function workspaceFault(
+  projectRoot: string, workspace: Workspace, name: string, cwd: string, branch?: string,
+): Promise<{ fault: string } | { verified?: VerifiedWorktree }> {
   if (workspace.kind === "root") {
-    return cwd === canonicalPath(projectRoot) ? null : `role ${JSON.stringify(name)} works at the project root ${projectRoot}, not ${cwd}`;
+    return cwd === canonicalPath(projectRoot) ? {} : { fault: `role ${JSON.stringify(name)} works at the project root ${projectRoot}, not ${cwd}` };
   }
   if (branch === undefined || branch === "") {
-    return `role ${JSON.stringify(name)} works in a worktree, so the request must name the branch it is on`;
+    return { fault: `role ${JSON.stringify(name)} works in a worktree, so the request must name the branch it is on` };
   }
+  // The verification is the check and the source of `protectedPaths`: the caller keeps
+  // what it resolved rather than running git a second time to learn the same thing.
   const verified = await verifyWorktree(projectRoot, cwd, branch);
-  return "reason" in verified ? verified.reason : null;
+  return "reason" in verified ? { fault: verified.reason } : { verified };
 }
 
 /** Every record of one resume chain: what `id` continues, and what continues it. */
@@ -249,8 +262,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (engineLeadRole(options.mode) === request.role && engine === "grok") {
       return refuse(`role ${JSON.stringify(request.role)} is mode ${options.mode.id}'s engine-placed lead, and grok cannot carry one (P9: no per-run isolation)`);
     }
-    const model = request.model ?? bound?.model ?? null;
-    const effort = request.effort ?? bound?.effort ?? null;
+    // A binding's model and effort belong to the engine it binds: `grok --model
+    // claude-sonnet-5` is an unknown model id, not a cross-engine default (I1,
+    // 2026-09-19). A call that names another engine therefore carries its own or none.
+    const binding = bound?.engine === engine ? bound : undefined;
+    const model = request.model ?? binding?.model ?? null;
+    const effort = request.effort ?? binding?.effort ?? null;
     if (!path.isAbsolute(request.cwd)) return refuse(`cwd ${JSON.stringify(request.cwd)} must be an absolute path`);
     const cwd = canonicalPath(request.cwd);
     if (!directory(cwd)) return refuse(`no directory at ${cwd}`);
@@ -328,9 +345,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
 
     // 2. Where this role may work. A continuation is held to its original's workspace
     // instead, which the resume binding below compares and the verifier confirms.
+    /** The worktree this task will run in, once something has verified it. */
+    let verifiedWorktree: VerifiedWorktree | undefined;
     if (continued === undefined) {
-      const fault = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
-      if (fault !== null) return refuse(fault);
+      const checked = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
+      if ("fault" in checked) return refuse(checked.fault);
+      verifiedWorktree = checked.verified;
     }
 
     // 3. The workspace reservation, and the records nobody can read (design section 2, E2).
@@ -371,6 +391,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         if ("reason" in verified) {
           return refuse(`task ${request.resume} ran in ${continued.path} on ${continued.branch}, which is no longer a worktree of this project: ${verified.reason}`);
         }
+        verifiedWorktree = verified;
       }
       resumeSessionId = original!.sessionId!;
       // Preserved across resume (the lead model, item 2): the continuation belongs to
@@ -403,6 +424,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       if ("reason" in verified) {
         return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, oneShot)}`);
       }
+      verifiedWorktree = verified;
     }
 
     // 7. The record, its spec, and the runner that owns the engine from here on. A throw
@@ -433,7 +455,14 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         ...(effort === null ? {} : { effort }),
         sessionId: randomUUID(),
         ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
-        denyTargets: denyTargets(config, projectRoot),
+        denyTargets: denyTargets(config, repositoryRoot),
+        // The git metadata of a worktree workspace, which a writable sandbox has to refuse
+        // however its engine names the rule: the pointer file the specialist could redirect
+        // and the repository's own git directory every worktree shares (probe P2, Claude).
+        // A root workspace is read-only by rule, so it has none.
+        ...(verifiedWorktree === undefined ? {} : {
+          protectedPaths: [path.join(verifiedWorktree.workTree, ".git"), verifiedWorktree.commonDir],
+        }),
         env: {
           ...childEnv(env, options.authority.depth, record.id, childLineage(lineage, {
             taskId: record.id, role: request.role, cwd: workspace,

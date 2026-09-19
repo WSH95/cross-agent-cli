@@ -158,6 +158,16 @@ test("a delegation launches its engine once, in the workspace, with the environm
   assert.equal(spec.adapterModule, path.join(fs.realpathSync(path.join(import.meta.dirname, "..")), "src", "engines", "grok.ts"));
   assert.ok(spec.denyTargets.includes("cross-agent"), "the deny list is rebuilt from config at every launch");
   assert.ok(spec.denyTargets.includes(p.bin), "the configured binary is a deny target too");
+  // This repository's entry points, not the project's: the server a specialist could
+  // start lives here, and a rule naming `<project>/src/server.ts` denies a path that
+  // exists in no project but this one (I1, 2026-09-19).
+  const repo = fs.realpathSync(path.join(import.meta.dirname, ".."));
+  assert.ok(spec.denyTargets.includes(`node ${path.join(repo, "src", "server.ts")}`), spec.denyTargets.join(" "));
+  assert.ok(spec.denyTargets.includes(`node ${path.join(repo, "src", "cli.ts")}`), spec.denyTargets.join(" "));
+  // The configured binary is a target because config named it; the project's own tree is
+  // not a place this server could be started from.
+  assert.equal(spec.denyTargets.includes(`node ${path.join(p.root, "src", "server.ts")}`), false);
+  assert.deepEqual([...new Set(spec.denyTargets.filter((target) => target.includes(p.root)))], [p.bin]);
 
   // The environment the fixture was actually given, which is the spec's.
   const invocation = JSON.parse(fs.readFileSync(record, "utf8")) as { argv: string[]; cwd: string; env: Record<string, string> };
@@ -801,6 +811,61 @@ test("a delegation waits for the spawn lock and refuses when it cannot have it",
   assert.match(refusal(result), /spawn\.lock/);
   assert.match(refusal(result), /held by another process/);
   assert.deepEqual(p.records(), []);
+});
+
+test("a worktree workspace carries the paths a writable sandbox must refuse", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const commonDir = fs.realpathSync(path.join(p.root, ".git"));
+
+  // A role that works at the project root has no writable root at all, so there is
+  // nothing for a deny rule to subtract from. It goes first: a writable task below the
+  // root reserves it, and every delegation onto the root would then be refused.
+  const atRoot = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief: "Read the project." }, options));
+  assert.equal(readSpec(p.root, atRoot).protectedPaths, undefined);
+
+  // A role that works in a worktree: its own `.git` pointer file and the repository's
+  // common git directory, which is what probe P2's Claude row wrote into.
+  const worktree = await p.worktree("task/protected");
+  const inWorktree = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/protected" }), options));
+  assert.deepEqual(readSpec(p.root, inWorktree).protectedPaths, [path.join(fs.realpathSync(worktree), ".git"), commonDir]);
+
+  // A one-shot, whose worktree this call created a moment ago.
+  const oneShot = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options));
+  assert.deepEqual(
+    readSpec(p.root, oneShot).protectedPaths,
+    [path.join(fs.realpathSync(path.join(p.root, ".worktrees", oneShot)), ".git"), commonDir],
+  );
+});
+
+test("a call that names another engine drops the binding's model and effort", async (t) => {
+  const p = await projectWithRoles(t);
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
+    ...configFor(p.bin),
+    roles: { planner: { engine: "claude", model: "claude-sonnet-5", effort: "high" } },
+    engines: { claude: { bin: p.bin }, grok: { bin: p.bin } },
+  }));
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+
+  // I1, 2026-09-19: `delegate {engine: "grok"}` on this binding launched
+  // `grok --model claude-sonnet-5`, which grok refuses as an unknown model id. A model
+  // and an effort belong to the engine that was bound, so naming another drops both.
+  const crossed = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, engine: "grok" }), options));
+  assert.equal(p.record(crossed).engine, "grok");
+  assert.equal(p.record(crossed).model, null);
+  assert.equal(p.record(crossed).effort, null);
+  assert.equal(readSpec(p.root, crossed).model, undefined);
+  assert.equal(readSpec(p.root, crossed).effort, undefined);
+
+  // Named in the call, they are the call's.
+  const named = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root, engine: "grok", model: "grok-4.6" }), brief: "Named model." }, options));
+  assert.equal(readSpec(p.root, named).model, "grok-4.6");
+  assert.equal(readSpec(p.root, named).effort, undefined);
+
+  // The binding still holds for the engine it binds.
+  const bound = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief: "The bound engine." }, options));
+  assert.equal(readSpec(p.root, bound).model, "claude-sonnet-5");
+  assert.equal(readSpec(p.root, bound).effort, "high");
 });
 
 test("the engine a request overrides is the engine that runs, and the record says so", async (t) => {

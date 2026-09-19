@@ -1500,10 +1500,24 @@ which is a property of the line, not of the pipeline.
   config as a plan file (`tests/engines/claude.test.ts:189`, `:213`, `:236`,
   `:251`).
   Sandbox through the settings JSON (`sandbox.enabled`,
-  `filesystem.allowWrite`, `autoAllowBashIfSandboxed`,
+  `filesystem.allowWrite`, `filesystem.denyWrite`, `autoAllowBashIfSandboxed`,
   `allowUnsandboxedCommands`, `failIfUnavailable`;
-  `src/engines/claude.ts:63-84`). Read-only roles get no `allowWrite` and no
-  `Edit`/`Write` tools (`src/engines/claude.ts:84`, `:120`). **A sandboxed
+  `src/engines/claude.ts#claude`, the `plan` member). Read-only roles get no
+  `filesystem` rules at all and no `Edit`/`Write` tools
+  (`src/engines/claude.ts:120`). **`allowWrite` is not the whole of a writable
+  role's rule.** P2's Claude row watched a specialist whose only writable root
+  was its worktree write into the repository's common git directory beside it,
+  which design section 4 rests on being impossible; `denyWrite` carries the
+  spec's `protectedPaths` — the workspace's own `.git` pointer file and that
+  common directory, both resolved by `verifyWorktree` and put in the spec by
+  `delegate` — and a deny rule wins over an allow one. The rerun with the two
+  paths named denied the write and changed nothing else
+  (`docs/probes.md:115-153`). The other two adapters take the same field
+  differently: Codex needs no argument, because its `workspace-write` denies
+  every write outside the workspace and protects the `.git` entry inside it
+  (P2, Codex), and Grok cannot enforce it at all, which is why a Grok
+  implementer's metadata is checked by `verify_worktree` rather than protected
+  (`src/engines/types.ts#SpawnRequest`). **A sandboxed
   role may neither leave its sandbox nor run without one.** At
   `allowUnsandboxedCommands: false` the engine ignores the
   `dangerouslyDisableSandbox` parameter its own escape hatch retries a blocked
@@ -1671,7 +1685,9 @@ which is a property of the line, not of the pipeline.
 Deny list for Claude and Grok, rebuilt from config at spawn
 (`src/guard.ts#denyTargets`): the commands `claude`, `codex`, `grok`, each
 configured `engines.<e>.bin` path, `node <absolute path of src/server.ts>`,
-`node <absolute path of src/cli.ts>`, and `cross-agent`. The targets are the
+`node <absolute path of src/cli.ts>` — **this repository's**, the same base
+`adapterModule` is built from and never the project's, which has neither file
+(`src/delegate.ts#repositoryRoot`, I1) — and `cross-agent`. The targets are the
 guard's; the forms are each adapter's `denyArgs`. Claude `Bash(<target> *)` and
 `Bash(<target>)` in one appendable `--disallowedTools` array (enforced under
 `bypassPermissions`, P3); Grok one `--deny "Bash(<target> *)"` per target
@@ -2513,6 +2529,17 @@ say so (`tests/packaging.test.ts`). `claude plugin validate <repo>` passes on
 them, warning only that the repository's own `CLAUDE.md` is not plugin context,
 which it is not meant to be. The Codex and Grok manifests are step 12.
 
+A host mounts this server one way and a specialist another, and the tool names
+differ accordingly: under `--plugin-dir` the host's tools are
+`mcp__plugin_cross-agent_cross-agent__<tool>`, while a `--mcp-config` mount —
+every specialist's, and an engine-placed lead's — spells them
+`mcp__cross-agent__<tool>`, which is also the spelling the deny list names. A
+test of either compares the set of this server's tools, never a prefix (I1,
+`docs/probes.md:525-534`). And the exclusion flag excludes **MCP servers**: a
+specialist's session still loads the host installation's hooks, slash commands
+and skills, which is why I1's pass condition is a scan of the tool calls a
+transcript holds rather than a grep of its text (`docs/probes.md:613-622`).
+
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three
 manifests below are examples of satisfying that contract, not the contract
@@ -2825,7 +2852,10 @@ Integration probes after each packaging task, run by the operator:
   `verify_worktree` and `git_mutate` refusing with git's own words and mutating
   nothing, and a 600-second `wait` returning at 602 s with the task still
   running. Claude's `<root>/.git` cell was not repeated here: P2 had just
-  recorded it as allowed, and a containment failure is recorded once.
+  recorded it as allowed, and a containment failure is recorded once. It was
+  answered instead, in P2's own rerun with `filesystem.denyWrite` carrying the
+  spec's `protectedPaths` (`docs/probes.md:115-159`), where the same write is
+  denied and nothing else about the row changes.
 
 ### Phase 2: evidence and decisions
 

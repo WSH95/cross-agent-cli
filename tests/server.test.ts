@@ -280,6 +280,10 @@ test("verify_worktree returns success and refusal JSON as text", async (t) => {
       assert.deepEqual(parsed, {
         gitDir: await realpath(path.join(root, ".git", "worktrees", "stdio")),
         workTree: await realpath(candidate), branch,
+        // The lead sees the common directory too: it is what a host that writes its own
+        // sandbox rules would have to protect, and `delegate` puts it in every writable
+        // spec's `protectedPaths`.
+        commonDir: await realpath(path.join(root, ".git")),
       });
     } else {
       assert.deepEqual(Object.keys(parsed), ["reason"]);

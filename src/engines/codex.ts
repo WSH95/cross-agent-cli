@@ -34,6 +34,9 @@ const codex = {
   name: "codex",
   sandboxProfiles: { "read-only": "read-only", "workspace-write": "write", off: "off" },
 
+  // `protectedPaths` needs no argument here: `workspace-write` denies every write outside
+  // the workspace and protects the `.git` entry inside it, both observed (P2, Codex).
+
   /**
    * Codex's sandbox is the binary's own, so the binary resolving is the whole of the
    * check. What it cannot see is where the workspace is: Codex treats `/tmp` and `$TMPDIR`

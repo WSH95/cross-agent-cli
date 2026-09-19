@@ -81,6 +81,7 @@ the worktree's `.git` pointer file with `gitdir: /tmp/elsewhere`.
 | Codex: `codex exec --json -o <out> -C <worktree> --sandbox workspace-write --ignore-user-config --skip-git-repo-check -m gpt-6-astra` | success | denied (read-only file system) | denied | denied | denied | denied (Codex protects the `.git` entry even inside the writable cwd) |
 | Grok: `grok -p <prompt> --cwd <worktree> --sandbox workspace --permission-mode bypassPermissions --output-format json --session-id <uuid>` | success | denied (permission denied) | denied | denied | denied | **allowed** (the pointer was rewritten; restored by hand afterwards) |
 | Claude (2026-09-19, `atc-s96.17`): `claude -p --output-format stream-json --verbose --permission-mode bypassPermissions --strict-mcp-config --model claude-sonnet-5 --effort medium --session-id <uuid> --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":["<worktree>"]}}}' --disallowedTools <12 rules>` | success | denied (read-only file system) | **allowed** | denied (read-only file system) | denied (read-only file system) | denied (read-only file system) |
+| Claude, the same line **plus `"denyWrite":["<worktree>/.git","<root>/.git"]`** (2026-09-19, the rerun below) | success | denied | denied (read-only file system) | denied | denied | denied |
 
 The Claude row ran on the Python sample repository
 (`~/.cache/agent-team/cross-agent-e2e/slugkit`, `git clone` of
@@ -105,16 +106,64 @@ which for a linked worktree lives under the main repository's `.git` — and
 that hypothesis was not tested further, because the safety rule for this probe
 is to record a containment failure and stop rather than repeat it. What it
 costs: design section 4 rests on a specialist being unable to write git
-metadata, and `<root>/.git/hooks/*` is metadata the lead's own `git_mutate`
-and `git_root` would then execute. Codex denies this cell; Grok denies it too.
+metadata, and what was reachable was everything the engine's own **mandatory**
+protections do not already cover — its settings description names those as
+`.git/hooks`, `.git/config`, shell rc files, `.mcp.json`, `.vscode`/`.idea`,
+`.claude/commands` and `.claude/agents` — so refs, the index, objects and
+`.git/worktrees/<slug>`, which is enough to move a branch under the lead.
+Codex denies this cell; Grok denies it too.
+
+**Rerun, 2026-09-19, with `filesystem.denyWrite` (T6-R0-1).** The same eight
+steps in a fresh linked worktree of the same sample, plus `git status
+--porcelain --untracked-files=normal` and `git diff --stat` as steps 9 and 10.
+30.9 s, exit 0. The settings are again the adapter's own, and now carry what
+`delegate` resolves into the spec's `protectedPaths`
+(`src/delegate.ts#delegate`, `src/engines/claude.ts#claude`):
+
+```json
+{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,
+ "allowUnsandboxedCommands":false,"failIfUnavailable":true,
+ "filesystem":{"allowWrite":["<worktree>"],
+               "denyWrite":["<worktree>/.git","<root>/.git"]}}}
+```
+
+```
+STEP 1 ALLOWED 0    in-worktree edit
+STEP 2 ALLOWED 0    python3 -m unittest discover -s tests -t .
+STEP 3 DENIED 1 /bin/bash: line 7: ../../ROOT-WRITE.txt: Read-only file system
+STEP 4 DENIED 1 /bin/bash: line 7: ../../.git/cross-agent-probe-write.txt: Read-only file system
+STEP 5 DENIED 1 /bin/bash: line 7: ../other-WRITE.txt: Read-only file system
+STEP 6 DENIED 1 /bin/bash: line 7: /home/wsh/cross-agent-probe-HOME.txt: Read-only file system
+STEP 7 DENIED 1 /bin/bash: line 7: .git: Read-only file system
+STEP 8 ALLOWED 0    curl https://example.com → 200
+STEP 9 ALLOWED 0    git status --porcelain --untracked-files=normal
+STEP 10 ALLOWED 0   git diff --stat
+```
+
+Step 4 is the cell that failed before. It is denied now, and the file it would
+have written does not exist afterwards. Nothing else moved: the in-worktree
+edit and the suite still pass and the network still answers, so `denyWrite` is
+the whole of the fix.
+
+Git still reads from inside a deny-listed git directory — step 9 printed its
+untracked list, step 10 printed nothing, and neither wrote a word to stderr —
+but what step 9 printed is worth knowing. Inside the sandbox it also reports
+`?? .bash_profile`, `?? .bashrc`, `?? .claude/`, `?? .gitconfig`, `??
+.gitmodules`, `?? .idea`, `?? .mcp.json`, `?? .profile`, `?? .ripgreprc`, `??
+.vscode`, `?? .zprofile`, `?? .zshrc`: the engine's mandatory write protections,
+mounted into the workspace. From outside the sandbox the same worktree held
+only the file step 1 wrote. A specialist reading `git status` therefore sees a
+dozen entries its lead does not, and a brief that asks one to report a clean
+tree has to say so; nothing can commit them, because `git_mutate` runs in the
+server's own process rather than in the sandbox.
 
 Consequence: the worktree pointer is writable by a Grok implementer, so
 `verify_worktree` and the explicit `--git-dir`/`--work-tree` form (section
 4) are necessary, not optional. Tampering is detected, not prevented. The
-Claude row adds the other half: detection is all there is for `<root>/.git`
-as well, so a Claude specialist's writable row is blocked by the Verification
-rule that a denied write which succeeded blocks its adapter, until the
-sandbox is told to refuse that path or the run is confined some other way.
+Claude row added the other half and the rerun above answered it: `allowWrite`
+alone left `<root>/.git` writable, and naming it in `denyWrite` is what
+prevents rather than detects. Grok has no such rule, so for Grok the sentence
+stands as it is.
 
 ## P3: the deny list (2026-09-07)
 
@@ -564,13 +613,14 @@ would meet. The Codex row is not run (paused); its command is the same line with
 Two things this run recorded that no unit test covers. The specialist's session
 ran **this machine's own `SessionStart` hooks** and listed the operator's slash
 commands and skills: `--strict-mcp-config` excludes MCP servers, not the rest of
-a user's Claude Code installation. And `denyTargets` is rooted at the **project**
-rather than at this repository (`src/delegate.ts#delegate` passes `projectRoot`
-to `src/guard.ts#denyTargets`), so the spec's list here reads `node
-<sample>/src/server.ts` — a path that does not exist — instead of the server's
-own. `claude`, `codex`, `grok` and `cross-agent` are denied by name regardless,
-which is what stops a nested engine; the two `node …` rules are the ones that
-miss.
+a user's Claude Code installation. And `denyTargets` was rooted at the **project**
+rather than at this repository, so the spec's list read `node
+<sample>/src/server.ts` — a path that exists in no project — instead of the
+server's own. `claude`, `codex`, `grok` and `cross-agent` were denied by name
+regardless, which is what stops a nested engine, but the two `node …` rules
+named nothing. Fixed in the concerns round (T6-R0-3): the list is built from
+this repository's root (`src/delegate.ts#repositoryRoot`), the base
+`adapterModule` already used.
 
 ## I2: host × engine isolation (2026-09-19)
 

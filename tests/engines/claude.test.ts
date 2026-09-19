@@ -233,6 +233,37 @@ test("a write role's argv carries the worktree as the only writable root, and th
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
 });
 
+test("a writable role's protected paths are deny-listed beside the writable root", (t) => {
+  const dirs = layout(t);
+  const protectedPaths = [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")];
+  const plan = claude.plan(requestFor(dirs, { protectedPaths }));
+  // Probe P2 (Claude, 2026-09-19): `allowWrite` alone left the repository's common git
+  // directory writable from inside the worktree. `denyWrite` is the rule that stops it,
+  // and deny wins over allow, so the two paths sit beside the writable root.
+  assert.deepEqual(
+    JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
+    {
+      sandbox: {
+        enabled: true, autoAllowBashIfSandboxed: true,
+        allowUnsandboxedCommands: false, failIfUnavailable: true,
+        filesystem: { allowWrite: [dirs.worktree], denyWrite: protectedPaths },
+      },
+    },
+  );
+});
+
+test("a read-only role gets no filesystem rules at all, protected paths or not", (t) => {
+  const dirs = layout(t);
+  const plan = claude.plan(requestFor(dirs, {
+    sandbox: sandboxFor("claude", "read-only"),
+    cwd: dirs.root,
+    protectedPaths: [path.join(dirs.root, ".git")],
+  }));
+  const settings = JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]) as { sandbox: Record<string, unknown> };
+  // Nothing is writable under `read-only`, so there is nothing for a deny rule to subtract.
+  assert.equal("filesystem" in settings.sandbox, false);
+});
+
 test("a resumed run carries --resume and never a --session-id beside it", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { resumeSessionId: "138a9c9e-f573-45c5-80fc-fda76dddc834" }));
