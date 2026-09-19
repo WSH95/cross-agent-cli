@@ -1685,7 +1685,19 @@ different branches. It
    to that worktree's `.git` and no other (`:96-102`), which is what rejects a
    pointer redirected at a sibling. On success it returns `{gitDir, workTree,
    branch}` (`:103`); a refusal is returned to the lead as the verifier's own
-   `reason`, verbatim (`src/gitmutate.ts#mutate`);
+   `reason`, verbatim (`src/gitmutate.ts#mutate`). **One argv is verified
+   differently**, because the branch check would otherwise refuse the only
+   command that can undo a stopped rebase: a rebase that stops on a conflict
+   leaves HEAD detached, so for `args` exactly `["rebase", "--abort"]` the
+   requested branch is the detached `HEAD` — a name git will not take for a
+   branch — and git's own rebase state must name this journal's branch, as
+   `<gitDir>/rebase-merge/head-name` or `rebase-apply/head-name`
+   (`src/gitmutate.ts#abortsRebase`, `#rebasing`, `#mutate`). Every other check
+   still has to pass, the step is recorded against the branch that file names,
+   and a HEAD detached for any other reason is refused as before. This is the
+   conflict path of the loop below: the rebase runs **in the worktree**, so its
+   abort does too, and `git_root rebase --abort` covers only a rebase started at
+   the root, which the loop never does;
 3. runs, while `.cross-agent/locks/git.lock` is held, `git --git-dir=<the
    gitDir verify_worktree returned> --work-tree=<the workTree it returned>
    <args>`, so the pointer file is never consulted and the paths are never
@@ -2122,20 +2134,27 @@ on its behalf.
   `branch-deleted` — plus `git`, which is any other `git_mutate` call and
   records the arguments it ran instead of a name (`src/journal.ts#JournalStep`).
 
-  **Each named step is written by the tool that performs it**, in the same
-  locked call, so nothing has to remember to journal afterwards and no separate
-  journal verb exists for the lead to forget or misuse:
+  **Each named step is written by the tool that performs it**, under the lock
+  that orders the writers — `git_mutate` and `git_root` while they still hold
+  the lock their command ran under, `run_command` under `git.lock` taken for the
+  re-check and the append alone, because a suite may run for ten minutes
+  (`src/runcommand.ts#runCommand`) — so nothing has to remember to journal
+  afterwards and no separate journal verb exists for the lead to forget or
+  misuse. A step is named for what it **moved**: `git commit --dry-run` and a
+  rebase that replayed nothing leave the branch where it was, and a
+  reconciliation pass reading `committed` would go looking for a commit that is
+  not there (`src/gitmutate.ts#stepName`):
 
   | step | written by | built |
   | --- | --- | --- |
   | `worktree-created` | `git_root worktree add -b <branch> <dir> <base>` | `src/gitroot.ts#whitelist`, `#execute` |
-  | `committed` | `git_mutate` whose `args[0]` is `commit` | `src/gitmutate.ts#stepName` |
-  | `rebased` | `git_mutate` whose `args[0]` is `rebase` | `src/gitmutate.ts#stepName` |
+  | `committed` | a `git_mutate` `commit` that moved the branch | `src/gitmutate.ts#stepName` |
+  | `rebased` | a `git_mutate` `rebase` that moved the branch, its own control flags apart | `src/gitmutate.ts#stepName`, `#rebaseControls` |
   | `merged` | `git_root merge --ff-only <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
   | `tests-passed` | `run_command {which: "test", where: "root", slug}` exiting zero after the merge | `src/runcommand.ts#runCommand` |
   | `worktree-removed` | `git_root worktree remove <dir>` | `src/gitroot.ts#whitelist`, `#execute` |
   | `branch-deleted` | `git_root branch -d <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
-  | `git` | any other `git_mutate` call, with its `args` | `src/gitmutate.ts#mutate` |
+  | `git` | any other `git_mutate` call, with its `args` — a dry run, a rebase abort, a `git add` | `src/gitmutate.ts#mutate` |
 
   The `merged` step is the one that carries the document's two merge fields,
   and `git_root` takes both values **inside the same `git.lock` it holds for
@@ -2176,7 +2195,10 @@ on its behalf.
   `appendStep` reads them from its data only when its step is `merged`, and a
   second `merged` step for one slug is refused — `journal <slug>: a merged
   step is already recorded; a task merges once` — so a task merges once and
-  the pair is written once (`src/journal.ts#appendStep`). Every other step
+  the pair is written once (`src/journal.ts#appendStep`). `tests-passed` is
+  refused the same way and for the same kind of reason — a task's suite passes
+  once, and two runs that both finished before either recorded a step would
+  otherwise both record one (`src/journal.ts#appendStep`, `#once`). Every other step
   records the default branch's SHA it observed in **its own** step, as
   `steps[].defaultSha` beside `before` and `after`
   (`src/journal.ts#JournalEntry`, `#appendStep`), and never touches the

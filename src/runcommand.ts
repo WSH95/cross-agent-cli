@@ -6,6 +6,8 @@ import { loadConfig } from "./config.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
+import { acquire, gitLockName, lockPath } from "./locks.ts";
+import type { Lock } from "./locks.ts";
 import { verifyWorktree } from "./worktree.ts";
 
 export interface RunCommandRequest {
@@ -181,14 +183,11 @@ export async function runCommand(
 
   // The one step this tool can complete, judged before the suite runs rather than after:
   // a run that could not be journaled is worth knowing about before it takes ten minutes.
+  // The same judgement is made again under the lock, where it decides.
   const journals = atRoot && which === "test" && slug !== undefined;
   if (journals) {
-    if (!journal!.steps.some((step) => step.step === "merged")) {
-      return { ok: false, reason: `slug ${slug} has no merged step; tests-passed records the suite passing on ${config.project.defaultBranch} after the merge` };
-    }
-    if (journal!.steps.some((step) => step.step === "tests-passed")) {
-      return { ok: false, reason: `slug ${slug} already has a tests-passed step; the journal records what happened, not how often it was run` };
-    }
+    const fault = passedFault(slug!, journal, config.project.defaultBranch);
+    if (fault !== null) return { ok: false, reason: fault };
   }
 
   const command = which === "test" ? config.project.testCommand : config.project.setupCommand;
@@ -211,10 +210,47 @@ export async function runCommand(
   // A failing suite is an answer, not a refusal: it is where the repair path of section 7
   // starts, and the lead reads the exit code and the tail to report it.
   if (!journals || ran.exitCode !== 0) return { ok: true, exitCode: ran.exitCode, tail: ran.tail };
+
+  // `git.lock` around the re-check and the append, and never around the suite: a run may
+  // take ten minutes, and holding the lock for it would refuse every mutation in the
+  // project for that long. Two runs that both passed the check above are ordered here,
+  // and the second reads the first's step (design section 7).
+  let lock: Lock;
+  const unwritten = (reason: string): { ok: false; reason: string } =>
+    ({ ok: false, reason: `the suite passed in ${cwd}, but its journal step could not be written: ${reason}` });
   try {
+    lock = await acquire(lockPath(projectRoot, gitLockName()), {
+      waitSeconds: config.limits.lockWaitSeconds, operation: `run_command tests-passed ${slug}`,
+    });
+  } catch (error) {
+    return unwritten(message(error));
+  }
+  try {
+    const current = readJournal(projectRoot, slug!);
+    const fault = passedFault(slug!, current, config.project.defaultBranch);
+    if (fault !== null) return { ok: false, reason: fault };
     const appended = appendStep(projectRoot, slug!, "tests-passed", { at: options.now ?? Date.now() });
     return { ok: true, exitCode: ran.exitCode, tail: ran.tail, journal: appended.steps[appended.steps.length - 1] };
   } catch (error) {
-    return { ok: false, reason: `the suite passed in ${cwd}, but its journal step could not be written: ${message(error)}` };
+    return unwritten(message(error));
+  } finally {
+    await lock.release();
   }
+}
+
+/**
+ * Whether this slug's journal is one a `tests-passed` step belongs to: the merge has
+ * happened, and no run has recorded the step already. Read before the suite runs so a run
+ * that could not be journaled is refused early, and again under the lock, where two runs
+ * that both read "no step yet" are finally ordered.
+ */
+function passedFault(slug: string, journal: Journal | null, defaultBranch: string): string | null {
+  if (journal === null) return `slug ${slug} has no journal; there is no task to run this against`;
+  if (!journal.steps.some((step) => step.step === "merged")) {
+    return `slug ${slug} has no merged step; tests-passed records the suite passing on ${defaultBranch} after the merge`;
+  }
+  if (journal.steps.some((step) => step.step === "tests-passed")) {
+    return `slug ${slug} already has a tests-passed step; the journal records what happened, not how often it was run`;
+  }
+  return null;
 }

@@ -128,6 +128,10 @@ test("the revert target and the branch head are set once, and only by the merge"
 
   // A task merges once, and a second merge would move the target of a revert of the first.
   assert.throws(() => appendStep(root, "gamma", "merged", { at: 7, defaultShaBeforeMerge: "9".repeat(40) }), /merged/);
+  // And a task's suite passes once: two runs that both finish before either records its
+  // step would otherwise both record one, and the journal would say the suite passed
+  // twice on a branch it only ever ran on once.
+  assert.throws(() => appendStep(root, "gamma", "tests-passed", { at: 8 }), /tests-passed step is already recorded/);
   assert.deepEqual(readJournal(root, "gamma")!.steps.map((entry) => entry.at), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(Object.keys(readJournal(root, "gamma")!), ["slug", "branch", "defaultBranch", "defaultShaBeforeMerge", "branchHead", "steps"]);
 });

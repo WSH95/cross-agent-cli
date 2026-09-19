@@ -146,6 +146,9 @@ test("git_mutate names the commit and the rebase, and records the work tree the 
   // `git_mutate` that is `committed` and `rebased`, by the subcommand it was given.
   accepted(await gitMutate(root, { slug: "named", args: ["add", "-A"] }, { waitSeconds: 5, now: 1 }));
   assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["commit", "-m", "task work"] }, { waitSeconds: 5, now: 2 })).journal.step, "committed");
+  // A rebase that replays the task's commit onto a default branch that has moved: the
+  // branch moves, so this is the `rebased` step of the loop.
+  await git(root, "commit", "--allow-empty", "-m", "on the default branch");
   assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["rebase", "main"] }, { waitSeconds: 5, now: 3 })).journal.step, "rebased");
   assert.equal(accepted(await gitMutate(root, { slug: "named", args: ["status", "--porcelain"] }, { waitSeconds: 5, now: 4 })).journal.step, "git");
 
@@ -155,6 +158,60 @@ test("git_mutate names the commit and the rebase, and records the work tree the 
   // hold a later call to the work tree this task's steps actually ran in.
   assert.equal(journal.worktree, worktree);
   assert.deepEqual(journal.steps[1].args, ["commit", "-m", "task work"], "a named step still carries what it ran");
+});
+
+test("a step is named for the branch it moved, not for the subcommand it ran", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await add("moving");
+  await writeFile(path.join(worktree, "notes.md"), "the implementer's edit\n");
+  accepted(await gitMutate(root, { slug: "moving", args: ["add", "-A"] }, { waitSeconds: 5, now: 1 }));
+
+  // A commit that reports what it would do moves nothing, and a step called `committed`
+  // would tell a reconciliation pass this task had a commit to find.
+  const dry = accepted(await gitMutate(root, { slug: "moving", args: ["commit", "--dry-run", "-m", "would commit"] }, { waitSeconds: 5, now: 2 }));
+  assert.equal(dry.journal.step, "git");
+  assert.equal(dry.before, dry.after);
+  assert.equal(accepted(await gitMutate(root, { slug: "moving", args: ["commit", "-m", "the real one"] }, { waitSeconds: 5, now: 3 })).journal.step, "committed");
+
+  // A rebase onto a default branch that has not moved replays nothing, so it is no more
+  // the loop's `rebased` step than the dry run was its `committed` one.
+  const still = accepted(await gitMutate(root, { slug: "moving", args: ["rebase", "main"] }, { waitSeconds: 5, now: 4 }));
+  assert.equal(still.journal.step, "git");
+  assert.equal(still.before, still.after);
+  assert.deepEqual(readJournal(root, "moving")!.steps.map((step) => step.step), ["git", "git", "committed", "git"]);
+});
+
+test("a rebase stopped on a conflict is aborted through git_mutate, and nothing else may run detached", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await add("conflicted");
+  // The same file, added on both branches with different contents: the rebase stops.
+  await writeFile(path.join(worktree, "shared.txt"), "from the task branch\n");
+  accepted(await gitMutate(root, { slug: "conflicted", args: ["add", "-A"] }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "conflicted", args: ["commit", "-m", "the task's line"] }, { waitSeconds: 5 }));
+  await writeFile(path.join(root, "shared.txt"), "from the default branch\n");
+  await git(root, "add", "-A");
+  await git(root, "commit", "-m", "the default branch's line");
+
+  const stopped = await gitMutate(root, { slug: "conflicted", args: ["rebase", "main"] }, { waitSeconds: 5 });
+  assert.equal(stopped.ok, false, JSON.stringify(stopped));
+  assert.equal(await git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD", "a stopped rebase leaves HEAD detached");
+  const gitDir = await git(worktree, "rev-parse", "--absolute-git-dir");
+  assert.equal(fs.readFileSync(path.join(gitDir, "rebase-merge", "head-name"), "utf8").trim(), "refs/heads/task/conflicted");
+
+  // Only this one argv, and only while git's own rebase state names this journal's branch.
+  for (const args of [["rebase", "--continue"], ["rebase", "--skip"], ["rebase", "--abort", "--quiet"], ["status"], ["commit", "--allow-empty", "-m", "x"]]) {
+    assert.match(refusal(await gitMutate(root, { slug: "conflicted", args }, { waitSeconds: 5 })), /HEAD does not match/, args.join(" "));
+  }
+
+  const aborted = accepted(await gitMutate(root, { slug: "conflicted", args: ["rebase", "--abort"] }, { waitSeconds: 5, now: 9 }));
+  assert.equal(aborted.journal.step, "git", "an abort completes no step of the loop");
+  assert.equal(await git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "task/conflicted");
+  assert.equal(await git(worktree, "status", "--porcelain"), "");
+  assert.equal(readJournal(root, "conflicted")!.steps.at(-1)!.at, 9);
+
+  // A HEAD detached for any other reason is not a rebase to abort.
+  await git(worktree, "checkout", "--detach");
+  assert.match(refusal(await gitMutate(root, { slug: "conflicted", args: ["rebase", "--abort"] }, { waitSeconds: 5 })), /HEAD does not match/);
 });
 
 test("git_mutate refuses a work tree that is not the one its journal records", async (t) => {

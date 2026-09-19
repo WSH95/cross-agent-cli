@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { loadConfig } from "./config.ts";
@@ -88,16 +89,45 @@ interface Ran {
   stderr: string;
 }
 
+// The rebase's own control verbs. Each of them ends or steers a rebase already in
+// progress; none of them is the loop's rebase onto the default branch.
+const rebaseControls = new Set(["--abort", "--continue", "--skip", "--quit", "--edit-todo", "--show-current-patch"]);
+
 /**
  * Section 7's table: the step a subcommand completes is written under its own name, by
- * the tool that performed it. Everything else this tool runs is a `git` step carrying the
- * arguments it ran instead of a name — and a named one carries both, because the lead
- * composed those arguments and the message or the upstream they name is evidence.
+ * the tool that performed it. A step is named for what it **moved** — `git commit
+ * --dry-run` and a rebase that replayed nothing leave the branch where it was, and a
+ * reconciliation pass reading `committed` would go looking for a commit that is not
+ * there. Everything else is a `git` step carrying the arguments it ran instead of a name;
+ * a named one carries both, because the lead composed those arguments and the message or
+ * the upstream they name is evidence.
  */
-function stepName(args: readonly string[]): JournalStep {
+function stepName(args: readonly string[], before?: string, after?: string): JournalStep {
+  if (before === after) return "git";
   if (args[0] === "commit") return "committed";
-  if (args[0] === "rebase") return "rebased";
+  if (args[0] === "rebase" && !rebaseControls.has(args[1] ?? "")) return "rebased";
   return "git";
+}
+
+/** Exactly `rebase --abort`, the one command a detached HEAD may run (design section 4). */
+function abortsRebase(args: readonly string[]): boolean {
+  return args.length === 2 && args[0] === "rebase" && args[1] === "--abort";
+}
+
+/**
+ * Whether git's own rebase state in this worktree names `branch` as the branch being
+ * rebased. A rebase that stops on a conflict leaves HEAD detached, so the verifier's
+ * branch check would refuse the one command that can undo it; this file is what says the
+ * detached HEAD belongs to this task rather than to something else (design section 4).
+ */
+async function rebasing(gitDir: string, branch: string): Promise<boolean> {
+  for (const directory of ["rebase-merge", "rebase-apply"]) {
+    try {
+      const head = await readFile(path.join(gitDir, directory, "head-name"), "utf8");
+      if (head.trim() === `refs/heads/${branch}`) return true;
+    } catch { /* no rebase of that kind is in progress here */ }
+  }
+  return false;
 }
 
 // The explicit form of probe P7: the pointer file is never consulted, and the paths are
@@ -221,7 +251,15 @@ async function mutate(
   }
 
   // 2. Verification from the root, and its answer is what step 3 runs against.
-  const verified = await verifyWorktree(projectRoot, target, branch);
+  let verified = await verifyWorktree(projectRoot, target, branch);
+  if ("reason" in verified && abortsRebase(request.args)) {
+    // The conflict path of section 4: HEAD is detached — `--abbrev-ref HEAD` answers
+    // `HEAD`, which is no branch name git will take — so every other check the verifier
+    // makes still has to pass, and git's own rebase state has to name this journal's
+    // branch. The branch the step is recorded against is that one, not the detached HEAD.
+    const detached = await verifyWorktree(projectRoot, target, "HEAD");
+    if (!("reason" in detached) && await rebasing(detached.gitDir, branch)) verified = { ...detached, branch };
+  }
   if ("reason" in verified) return { ok: false, reason: verified.reason };
   const { gitDir, workTree } = verified;
   // The journal is authoritative for its own path as it is for its own branch (section 7):
@@ -263,7 +301,7 @@ async function mutate(
     // are ordered by the same lock that ordered their commands.
     let journal;
     try {
-      journal = appendStep(projectRoot, slug, stepName(request.args), {
+      journal = appendStep(projectRoot, slug, stepName(request.args, before, after), {
         at: options.now ?? Date.now(), before, after, args: request.args,
         // The work tree is the verifier's answer, so a journal this call creates binds the
         // slug to the directory its steps actually ran in, not to the one the slug names.

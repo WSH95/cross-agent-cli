@@ -138,14 +138,22 @@ export function appendStep(projectRoot: string, slug: string, step: JournalStep,
   if (branch === undefined || defaultBranch === undefined) {
     throw new Error(`journal ${slug}: the step that creates a journal must name its branch and defaultBranch`);
   }
+  // Two steps of the loop happen once per task, and the journal is what says so: a second
+  // merge would move the target of a revert of the first, and a second `tests-passed`
+  // would say the suite passed twice on a branch it ran on once. Both are refused here as
+  // well as by their tools, because two callers can pass their own checks at the same time
+  // and only this write is serialized (`src/runcommand.ts#runCommand`).
+  // @anchor once
+  const once: Partial<Record<JournalStep, string>> = { merged: "a task merges once", "tests-passed": "a task's suite passes once" };
+  const reason = once[step];
+  if (reason !== undefined && (existing?.steps ?? []).some((entry) => entry.step === step)) {
+    throw new Error(`journal ${slug}: a ${step} step is already recorded; ${reason}`);
+  }
   // The revert target is the SHA the default branch had **at the merge**, and the merge is
   // the only step that knows it: the branch moves under a task, so a value recorded by the
   // task's first commit would aim a revert at a point before other tasks' merges. Every
-  // other step records what it saw in its own step instead, and a task merges once.
+  // other step records what it saw in its own step instead.
   const merging = step === "merged";
-  if (merging && (existing?.steps ?? []).some((entry) => entry.step === "merged")) {
-    throw new Error(`journal ${slug}: a merged step is already recorded; a task merges once`);
-  }
   const defaultShaBeforeMerge = merging ? data.defaultShaBeforeMerge ?? existing?.defaultShaBeforeMerge : existing?.defaultShaBeforeMerge;
   const branchHead = merging ? data.branchHead ?? existing?.branchHead : existing?.branchHead;
   const entry: JournalEntry = {

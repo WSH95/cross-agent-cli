@@ -3,9 +3,11 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { gitMutate } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { readJournal } from "../src/journal.ts";
+import { acquire, gitLockName, lockPath } from "../src/locks.ts";
 import { runCommand } from "../src/runcommand.ts";
 import type { RunCommandResult } from "../src/runcommand.ts";
 import { git } from "./helpers/git.ts";
@@ -191,6 +193,45 @@ test("tests-passed is journaled for a passing root run, once, and only after the
     ["worktree-created", "committed", "merged", "tests-passed"]);
   // Once: the journal is a record of what happened, not a counter of runs.
   assert.match(refusal(await runCommand(root, { which: "test", where: "root", slug: "alpha" })), /tests-passed/);
+});
+
+test("two passing root runs at once record one tests-passed step, and the second is told", async (t) => {
+  const { root } = await repository(t, { testCommand: "echo the suite ran" });
+  await merged(root, "alpha");
+
+  // The server dispatches calls concurrently, so two runs can both pass their own check
+  // before either records anything: the step is what says the suite passed, and it says
+  // it once (`src/journal.ts#appendStep`).
+  const both = await Promise.all([
+    runCommand(root, { which: "test", where: "root", slug: "alpha" }),
+    runCommand(root, { which: "test", where: "root", slug: "alpha" }),
+  ]);
+  const recorded = both.filter((result) => result.ok && result.journal !== undefined);
+  const refused = both.filter((result) => !result.ok);
+  assert.equal(recorded.length, 1, JSON.stringify(both));
+  assert.equal(refused.length, 1, JSON.stringify(both));
+  assert.match(refusal(refused[0]), /tests-passed/);
+  assert.equal(readJournal(root, "alpha")!.steps.filter((step) => step.step === "tests-passed").length, 1);
+});
+
+test("the tests-passed step is written under git.lock, and the suite runs outside it", async (t) => {
+  const { root } = await repository(t);
+  const marker = path.join(root, "the-suite-ran");
+  configure(root, { testCommand: `touch ${JSON.stringify(marker)}; echo the suite ran` });
+  await merged(root, "locked");
+
+  // A suite may run for ten minutes; holding the git lock for it would refuse every
+  // mutation in the project for that long. The lock covers the re-check and the append.
+  const held = await acquire(lockPath(root, gitLockName()), { operation: "a competing mutation", waitSeconds: 5 });
+  t.after(() => held.release());
+  const pending = runCommand(root, { which: "test", where: "root", slug: "locked" });
+  await poll(() => fs.existsSync(marker), Boolean);
+  await delay(300);
+  assert.equal(readJournal(root, "locked")!.steps.some((step) => step.step === "tests-passed"), false,
+    "the suite ran while the lock was held, and its step waited for it");
+
+  await held.release();
+  assert.equal(accepted(await pending).journal!.step, "tests-passed");
 });
 
 test("the command runs in the child environment a specialist gets, carrying no task", async (t) => {
