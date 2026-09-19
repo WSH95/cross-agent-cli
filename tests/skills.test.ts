@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
@@ -289,4 +292,108 @@ test("the mode that declares the consultant says exactly what the built-in role 
   // Two copies of one role's text: the file a mode may override, and the text every mode
   // that overrides nothing is given. They say the same thing or one of them is stale.
   assert.equal(findRole(loadMode(modes, "dev-team"), CONSULT_ROLE)?.prompt, declared);
+});
+
+// The role prompts came from the devpack package through `tools/from-openmaus.mjs`, a
+// one-off harness beside `tools/probe.mjs` (design section 8). The converter is tested on
+// a fixture package rather than on that package, which lives outside this repository: what
+// the committed files owe it is the transform below — the devpack's machinery dropped, the
+// specialist's own git steps dropped, and this runtime's rule for the role added as the
+// coda every one of them ends on.
+
+const converter = path.join(repoRoot, "tools", "from-openmaus.mjs");
+const fixturePackage = path.join(repoRoot, "tests", "fixtures", "openmaus-package.json");
+
+function convert(args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [converter, ...args], { cwd: repoRoot });
+    let out = "";
+    let err = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { out += chunk; });
+    child.stderr.on("data", (chunk: string) => { err += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, out, err }));
+    child.stdin.end();
+  });
+}
+
+async function draftsFrom(t: { after: (fn: () => unknown) => void }, extra: string[] = []): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "from-openmaus-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const run = await convert(["--package", fixturePackage, "--out", dir, ...extra]);
+  assert.equal(run.code, 0, `${run.out}${run.err}`);
+  return dir;
+}
+
+test("the converter refuses a package whose format it does not know", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "from-openmaus-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "other.json");
+  fs.writeFileSync(file, JSON.stringify({ format: "other.package", version: 1, package: { agents: [] } }), "utf8");
+  const { code, err } = await convert(["--package", file, "--out", path.join(dir, "out")]);
+  assert.equal(code, 1);
+  assert.match(err, /other\.package/, "the refusal names what it was handed");
+});
+
+test("the converter writes one draft per devpack title this runtime has a role for", async (t) => {
+  const dir = await draftsFrom(t);
+  assert.deepEqual(fs.readdirSync(path.join(dir, "roles")).sort(), ["implementer.md", "planner.md"]);
+  assert.equal(fs.existsSync(path.join(dir, "SKILL.md")), true, "the loop draft comes from the worktree-workflow playbook");
+  assert.match(fs.readFileSync(path.join(dir, "roles", "planner.md"), "utf8"), /You never edit files or implement\./);
+});
+
+test("the converter drops the devpack's own machinery and says what it dropped", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "from-openmaus-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const { code, err } = await convert(["--package", fixturePackage, "--out", dir]);
+  assert.equal(code, 0, err);
+  const planner = fs.readFileSync(path.join(dir, "roles", "planner.md"), "utf8");
+  assert.doesNotMatch(planner, /list_bots/, "a sentence naming a devpack tool has no analogue here");
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, "SKILL.md"), "utf8"), /delegate_bot/, "the loop draft is remapped too");
+  assert.match(err, /planner: dropped/, "a human has to see what was cut before editing the draft");
+  assert.match(err, /Archivist/, "and which titles this runtime has no role for");
+});
+
+test("the converter drops the git steps the devpack's specialist ran, which the lead runs here", async (t) => {
+  const dir = await draftsFrom(t);
+  const implementer = flat(fs.readFileSync(path.join(dir, "roles", "implementer.md"), "utf8"));
+  assert.match(implementer, /Follow the plan or report BLOCKED with the reason\./, "what survives is the reporting convention");
+  assert.doesNotMatch(implementer, /rebase on the brief's default branch/, "a specialist writes no git metadata here");
+  assert.match(implementer, /You run no git command that writes/, "and the coda says so in this runtime's own words");
+});
+
+test("the converter writes the lead's prompt only for the mode that has a lead role", async (t) => {
+  assert.equal(fs.existsSync(path.join(await draftsFrom(t), "roles", "lead.md")), false);
+  const engine = await draftsFrom(t, ["--mode", "dev-team-engine"]);
+  assert.match(fs.readFileSync(path.join(engine, "roles", "lead.md"), "utf8"), /You run this mode's loop/);
+});
+
+test("the converter never writes over a draft that is already there", async (t) => {
+  const dir = await draftsFrom(t);
+  const { code, err } = await convert(["--package", fixturePackage, "--out", dir]);
+  assert.equal(code, 1);
+  assert.match(err, /roles\/planner\.md/, "the refusal names the file it would have replaced");
+});
+
+test("every committed dev-team role prompt came through the converter and was edited for this runtime", () => {
+  const modes = builtInModesDir();
+  const codas = new Map([
+    ["planner", "You write no files and you delegate nothing; your final message is the plan."],
+    ["plan-reviewer", "You write no files and you delegate nothing; your final message is the review."],
+    ["implementer", "You run no git command that writes: the session that delegated you commits what you leave. You delegate nothing; your final message is the report that commit is made from."],
+    ["code-reviewer", "You write no files and you delegate nothing; your final message is the review, verdict first."],
+  ]);
+  for (const [key, coda] of codas) {
+    const prompt = fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8");
+    assert.equal(flat(prompt).trim().endsWith(coda), true, `${key}: the converter's coda is this runtime's own rule for the role`);
+    for (const machinery of [/delegate_bot/, /ask_bot/, /post_to_room/, /list_bots/, /create_bot/, /\broom\b/]) {
+      assert.doesNotMatch(prompt, machinery, `${key} carries devpack machinery this runtime has no analogue for`);
+    }
+  }
+  const implementer = fs.readFileSync(path.join(modes, "dev-team", "roles", "implementer.md"), "utf8");
+  assert.match(implementer, /worktree/, "the one role that writes is told where");
+  const lead = fs.readFileSync(path.join(modes, "dev-team-engine", "roles", "lead.md"), "utf8");
+  assert.match(lead, /`git_root`/, "the engine-placed lead reaches the root through the tools and not its own hands");
 });

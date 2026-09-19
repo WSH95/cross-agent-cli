@@ -1,0 +1,44 @@
+{
+  "format": "openmaus.package",
+  "version": 1,
+  "package": {
+    "id": "fixture-team",
+    "release": "0.0.1",
+    "name": "Fixture team",
+    "agents": [
+      {
+        "key": "lead",
+        "name": "Sudo",
+        "title": "Team Lead",
+        "description": "Team Lead and the user's single point of contact. Delegate work only with delegate_bot to the teammate whose title matches the role. Run each task through the plan, implement, review loop, one task at a time. Post each task's closing report to the team's room with post_to_room in the same turn."
+      },
+      {
+        "key": "sage",
+        "name": "Sage",
+        "title": "Planner",
+        "description": "Planner. You never edit files or implement. Read the task, code, and tests from the project root. Check the task's claims about the repository first. Ask the user through list_bots before you plan."
+      },
+      {
+        "key": "nova",
+        "name": "Nova",
+        "title": "Implementer",
+        "description": "Implementer. Work in the worktree named in the brief. Follow the plan or report BLOCKED with the reason. When the test command passes in the worktree: commit, rebase on the brief's default branch, test again, report."
+      },
+      {
+        "key": "dot",
+        "name": "Dot",
+        "title": "Archivist",
+        "description": "Archivist. Files what the team produced."
+      }
+    ],
+    "playbooks": [
+      {
+        "key": "worktree-workflow",
+        "name": "Worktree workflow",
+        "summary": "How the lead runs a development task.",
+        "triggers": ["task"],
+        "instructions": "Run every development task through these steps, one task at a time.\n1. Read the request. Choose a short slug nothing else uses.\n2. Plan: delegate_bot to the Planner with the task text verbatim.\n3. Implement: run `git worktree add -b task/<slug> .worktrees/<slug> <default>`, then delegate_bot to an Implementer.\n"
+      }
+    ]
+  }
+}

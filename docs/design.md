@@ -2467,12 +2467,14 @@ on its behalf.
 
 ### 8. Role prompts
 
-One skeleton paragraph per role exists and is served verbatim by `describe_mode`
+Every role's prompt is written and served verbatim by `describe_mode`
 (`modes/dev-team/roles/planner.md` and its siblings,
-`src/modes.ts#describeMode`); the text this runtime deserves arrives with step 9,
-from the converter. What `delegate` launches a specialist with is still the
-config's `prompt` or the one-line default (section 6), so step 9 is where the two
-meet.
+`src/modes.ts#describeMode`). What `delegate` launches a specialist with is still
+the config's `prompt` or the one-line default (section 6,
+`src/delegate.ts#defaultPrompt`), so the two have yet to meet: reading the mode's
+own text at the launch boundary is what is left of row 9, and until it lands the
+loop's brief carries what the role has to produce
+(`modes/dev-team/SKILL.md`).
 
 `modes/<name>/roles/*.md`. For `dev-team` they are
 `{planner,plan-reviewer,implementer,code-reviewer}.md`, written for this
@@ -2481,9 +2483,15 @@ conventions only: planner and plan reviewer read at the root; the implementer
 edits and runs the tests in its worktree and reports a commit summary but
 never runs git write commands; the code reviewer reads the committed branch in
 the worktree; nobody delegates. `solo` has one role prompt. Acceptance is
-behavioural (the end-to-end runs). The devpack's text is carried over once by
-a converter beside `tools/probe.mjs`, run to generate `dev-team` and then
-kept only as history; nothing reads `openmaus.package` at runtime.
+behavioural (the end-to-end runs). The devpack's text was carried over once by
+`tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
+code: it drops the sentences naming the devpack's own machinery, drops the git
+steps a devpack specialist ran itself, and appends this runtime's rule for the
+role as a coda, reporting every drop so the draft is edited by someone who can
+see what was cut. The committed files are those drafts edited. Nothing reads
+`openmaus.package` at runtime, and the converter is tested against a fixture
+package rather than the devpack's, which lives outside this repository
+(`tests/fixtures/openmaus-package.json`, `tests/skills.test.ts`).
 
 ### 9. Host packaging
 
@@ -2608,7 +2616,7 @@ src/engines/{types,spawn,registry,binaries}.ts
 src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
 tests/fixtures/fake-engine.mjs
-tools/probe.mjs   tools/check-citations.mjs
+tools/probe.mjs   tools/check-citations.mjs   tools/from-openmaus.mjs
 docs/design.md    docs/probes.md
 AGENTS.md         README.md         package.json      .gitignore
 LICENSE (Apache-2.0)
@@ -2623,9 +2631,9 @@ and all seven of
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
 `npm test` runs), the two docs, and the root files. From row 9:
-`skills/cross-agent/SKILL.md` and every mode's own `SKILL.md`. Still to be
-written: both plugin manifests, `.mcp.json`, and the real text of every mode's
-`roles/*.md`.
+`skills/cross-agent/SKILL.md`, every mode's own `SKILL.md` and every
+`roles/*.md`, with `tools/from-openmaus.mjs` beside the other two harnesses.
+Still to be written: both plugin manifests and `.mcp.json`.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
 and `"bin": {"cross-agent": "src/cli.ts"}`.
@@ -2758,7 +2766,7 @@ registered by the mode that declares the worktree provider.
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registered with step 8, which built the mode loader it reads. |
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
-| 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
+| 9 | Launcher skill and mode loops | `atc-s96.12` | **Done, less one item.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row. Not in this row: `delegate` reading the mode's role prompt instead of the config's, which is a change in `src/` this task's scope excluded (section 8). |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | **Split.** `git_root`, `run_command` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
