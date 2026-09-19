@@ -442,7 +442,13 @@ them.
   for reasoning models", `[aliases: --effort]`. `--rules <RULES>`, "Extra rules
   to append to the system prompt" — a string, as P9 confirmed.
   `--system-prompt-override <PROMPT>`, "Override the agent's system prompt
-  (compat alias: `--system-prompt`)". `--include-partial-messages` "Only
+  (compat alias: `--system-prompt`)". `--prompt-file <PATH>`, "Single-turn
+  prompt from a file", beside `-p, --single <PROMPT>`, "Single-turn prompt.
+  Prints the response to stdout and exits", and `--prompt-json <JSON>`: three
+  spellings of the same single-turn prompt, so a prompt too long for an
+  argument has a flag that takes a path (read again on 2026-09-18 from
+  `grok --help` on 1.0.34, which is what the adapter's oversize-role fallback
+  now uses; bead `atc-s96.38`). `--include-partial-messages` "Only
   affects `--output-format streaming-messages-json`". There is no per-run MCP
   flag: `grok mcp` is a subcommand (`list`, `add`, `remove`, `enable`,
   `disable`, `doctor`), and `grok mcp add` writes to `~/.grok/config.toml`

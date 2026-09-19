@@ -1377,18 +1377,18 @@ which is a property of the line, not of the pipeline.
   `docs/probes.md:266`, `:285-301`). Every role's instructions travel that way,
   lead or specialist, in a `role.md` under `scratchDir`
   (`src/engines/codex.ts:126-130`, `tests/engines/codex.test.ts:260`).
-- **Grok** (`src/engines/grok.ts:95-136`): `grok -p <prompt> --cwd <cwd>
+- **Grok** (`src/engines/grok.ts:97-151`): `grok -p <prompt> --cwd <cwd>
   --sandbox <workspace|read-only|strict|off> --permission-mode
   bypassPermissions --output-format streaming-messages-json --session-id
   <uuid> | -r <id> --model <m> --reasoning-effort <e> --rules <role text>`
   plus one `--deny` per deny-list entry, ending the argv, the same on resume.
   There is **no lead head at all**: `plan` refuses a request carrying `lead`,
   because P9 found no per-run mount it could build one from, and that is the
-  gate no configuration can reach around (`src/engines/grok.ts:101-103`,
-  `tests/engines/grok.test.ts:271`). **The prompt is `-p`'s own value**, so
+  gate no configuration can reach around (`src/engines/grok.ts:103-105`,
+  `tests/engines/grok.test.ts:279`). **The prompt is `-p`'s own value**, so
   nothing goes on stdin and the plan names no files: Grok reads none that this
-  adapter writes (`src/engines/grok.ts:136`,
-  `tests/engines/grok.test.ts:143`). `strict` and `off` are the two
+  adapter writes, until an oversize role prompt makes the one file below
+  (`src/engines/grok.ts:151`, `tests/engines/grok.test.ts:143`). `strict` and `off` are the two
   `--sandbox` values no run has exercised: P2 ran `workspace` and `read-only`,
   and `--help` does not enumerate the profiles (`docs/probes.md:428-435`).
   Every flag takes exactly one value, which is what lets the deny list end the
@@ -1431,12 +1431,20 @@ which is a property of the line, not of the pipeline.
   (`docs/probes.md:302-339`). It takes a **string**, not a path — given a role
   file's path it put the path into the system prompt as literal text and the
   child read the file itself — so the adapter passes the role's *contents*,
-  and falls back to prepending them to the prompt only when the text would
-  exceed the argv limit, which is the one case a flag cannot carry. The
-  ceiling is 100 KiB, below Linux's 128 KiB cap on a single argument with room
-  for the rest of the line (`src/engines/grok.ts#rulesLimit`, `:109-110`,
-  `tests/engines/grok.test.ts:236`, `:249`). So Grok is the one engine whose
-  role prompt reaches the child without a file on disk. `--sandbox workspace` is
+  and only when the text would exceed the argv limit, which is the one case a
+  flag cannot carry, does the delivery change. The ceiling is 100 KiB, below
+  Linux's 128 KiB cap on a single argument with room for the rest of the line
+  (`src/engines/grok.ts#rulesLimit`, `:114`, `tests/engines/grok.test.ts:236`,
+  `:249`). Past it the role text, a blank line and the brief go to
+  `<scratchDir>/rules.md` through the plan's `files`, and the argv carries
+  `--prompt-file <path>` in place of `-p <prompt>` (`grok --help`, 1.0.34:
+  "Single-turn prompt from a file", `docs/probes.md:445-452`). Prepending the
+  role to `-p`'s value, which is what P9 honoured and this adapter used to do,
+  would put the same text plus the brief into one argument again — strictly
+  larger than the `--rules` value that did not fit — so the fallback for an
+  argument that is too long cannot itself be an argument (bead `atc-s96.38`).
+  Grok is therefore the one engine whose role prompt reaches the child without
+  a file on disk, until it is too big to. `--sandbox workspace` is
   deliberately stricter than `grok-build-plugin-cc`'s write mode, which omits
   `--sandbox` entirely.
 

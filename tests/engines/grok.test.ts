@@ -1,7 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -246,17 +246,24 @@ test("the role prompt travels as the --rules string itself, never as a path (P9)
   assert.equal(plan.files, undefined);
 });
 
-test("a role prompt past the 100 KB argv limit is prepended to the prompt instead (P9)", (t) => {
+test("a role prompt past the 100 KB argv limit goes to a file, never into another argument", (t) => {
   const dirs = layout(t);
   const limit = 100 * 1024;
   const atLimit = "r".repeat(limit);
   const carried = grok.plan(requestFor(dirs, { rolePrompt: atLimit })).argv;
   assert.equal(carried[carried.indexOf("--rules") + 1], atLimit);
   const over = `${atLimit}r`;
-  const prepended = grok.plan(requestFor(dirs, { rolePrompt: over }));
-  // The other delivery path P9 honoured: the role text, a blank line, then the brief.
-  assert.equal(prepended.argv.includes("--rules"), false);
-  assert.equal(prepended.argv[prepended.argv.indexOf("-p") + 1], `${over}\n\nImplement the brief.`);
+  const filed = grok.plan(requestFor(dirs, { rolePrompt: over }));
+  const rules = path.join(dirs.task, "rules.md");
+  // What the ceiling exists for is the kernel's limit on one argument, so the delivery it
+  // falls back to cannot be another argument: `-p`'s value would hold the role text and
+  // the brief, and be strictly larger than the `--rules` value that did not fit.
+  assert.equal(filed.argv.includes("--rules"), false);
+  assert.equal(filed.argv.includes("-p"), false);
+  assert.equal(filed.argv[filed.argv.indexOf("--prompt-file") + 1], rules);
+  assert.deepEqual(filed.files, [{ path: rules, contents: `${over}\n\nImplement the brief.` }]);
+  // The adapter names the file; the pipeline is what puts it on disk.
+  assert.equal(existsSync(rules), false);
   // The limit is the argument's bytes, which is what an exec limit counts: a moon is four
   // of them and one UTF-16 unit short of two.
   const moons = "🌙".repeat(limit / 4);
@@ -266,6 +273,7 @@ test("a role prompt past the 100 KB argv limit is prepended to the prompt instea
   assert.equal(carriedMoons[carriedMoons.indexOf("--rules") + 1], moons);
   const overByOneMoon = grok.plan(requestFor(dirs, { rolePrompt: `${moons}🌙` }));
   assert.equal(overByOneMoon.argv.includes("--rules"), false);
+  assert.equal(overByOneMoon.argv.includes("--prompt-file"), true);
 });
 
 test("plan refuses an engine-placed lead: Grok cannot be isolated as one (P9)", (t) => {

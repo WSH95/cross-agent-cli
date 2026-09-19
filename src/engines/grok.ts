@@ -1,3 +1,4 @@
+import path from "node:path";
 import { commandPath, engineBin } from "./binaries.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
 
@@ -8,8 +9,9 @@ const activityLimit = 200;
  * How much role text `--rules` may carry as one argument. The kernel's exec limit caps a
  * single argument — 128 KiB of it on Linux — and a role prompt anywhere near that is
  * pathological, so the ceiling sits below it with room for the rest of the line. Past it
- * the role goes the other way P9 honoured, prepended to the prompt, which is the one case
- * a flag cannot serve (design section 3).
+ * the role travels as a file: the delivery P9 honoured, prepending it to `-p`'s value,
+ * would put the same text plus the brief into another single argument and hit the same
+ * limit it was fleeing (design section 3).
  */
 const rulesLimit = 100 * 1024;
 
@@ -104,13 +106,24 @@ const grok = {
 
     // `--rules` is Grok's system-level path for the role prompt and takes a string, not a
     // path (P9), so the flag carries the role's contents and keeps them out of the turn's
-    // own text. Above the argv limit it cannot, and the role is prepended to the prompt
-    // instead — the delivery P9's comparison run honoured.
+    // own text. Above the argv limit it cannot, and the role then travels the way P9's
+    // comparison run honoured — its text, a blank line, then the brief — but as
+    // `--prompt-file`'s file rather than as `-p`'s value, which is one argument again and
+    // larger than the one that did not fit. The file is the task's own, never inside the
+    // specialist's worktree, which the role may edit.
     const carried = Buffer.byteLength(request.rolePrompt) <= rulesLimit;
-    const prompt = carried ? request.brief : `${request.rolePrompt}\n\n${request.brief}`;
+    const files: NonNullable<SpawnPlan["files"]> = [];
+    const prompt: string[] = [];
+    if (carried) {
+      prompt.push("-p", request.brief);
+    } else {
+      const promptPath = path.join(request.scratchDir, "rules.md");
+      files.push({ path: promptPath, contents: `${request.rolePrompt}\n\n${request.brief}` });
+      prompt.push("--prompt-file", promptPath);
+    }
 
     const argv = [
-      "-p", prompt,
+      ...prompt,
       "--cwd", request.cwd,
       // The profile is Grok's own name for it, `off` included, and by the time this runs
       // the pipeline has re-derived its mode from `sandboxProfiles` and refused a request
@@ -133,7 +146,9 @@ const grok = {
     // `cwd` is passed through as the request wrote it — it is already canonical — and it
     // is both the spawn's own cwd and the `--cwd` the child is told about, because a
     // sandbox told about a symlink would not be told about the directory.
-    return { bin: engineBin("grok", request.env), argv, cwd: request.cwd, env: request.env };
+    // No file at all in the ordinary case: the role is `--rules`'s own string and the
+    // brief is `-p`'s, so the plan names nothing for the pipeline to write.
+    return { bin: engineBin("grok", request.env), argv, cwd: request.cwd, env: request.env, ...(files.length > 0 ? { files } : {}) };
   },
 
   /**
