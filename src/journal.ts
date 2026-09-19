@@ -68,6 +68,15 @@ function journalFile(projectRoot: string, slug: string): string {
   return path.resolve(projectRoot, ".cross-agent", "journal", `${slug}.json`);
 }
 
+/**
+ * Removes a task's journal, for the one caller that undoes the step which created it: a
+ * `delegate` whose worktree creation succeeded and whose launch then failed
+ * (`src/delegate.ts#discardWorktree`). A journal that is not there is already removed.
+ */
+export function removeJournal(projectRoot: string, slug: string): void {
+  fs.rmSync(journalFile(projectRoot, slug), { force: true });
+}
+
 function fault(value: unknown): string | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return "not a JSON object";
   const journal = value as Record<string, unknown>;

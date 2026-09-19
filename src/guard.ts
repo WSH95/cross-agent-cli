@@ -15,6 +15,12 @@ export interface DuplicateRequest {
   cwd: string;
   brief: string;
   force?: boolean;
+  /**
+   * This call would take a worktree of its own, so its workspace is new by construction
+   * and no path could ever match: the window is read against the other tasks that were
+   * given a worktree, by role and brief (design section 5, layer 3).
+   */
+  worktree?: boolean;
 }
 
 export interface ResumeRequest {
@@ -80,7 +86,8 @@ export function duplicateRefusal(
 ): string | null {
   const briefHash = createHash("sha256").update(request.brief).digest("hex");
   const matches = records.filter((record) =>
-    record.role === request.role && record.cwd === request.cwd && record.briefHash === briefHash,
+    record.role === request.role && record.briefHash === briefHash
+    && (request.worktree === true ? record.worktree !== undefined : record.cwd === request.cwd),
   );
   const active = matches.find((record) => activeStatuses.has(record.status));
   if (active) return `already running, wait on ${active.id}`;

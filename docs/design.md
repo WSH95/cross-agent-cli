@@ -594,7 +594,10 @@ through them too (plan decision 4); both are built and registered there
 
 **`delegate {worktree: true}`** gives a role that works at the project root a
 writable workspace of its own instead of the root. Under `spawn.lock`, and only
-once every other check has passed, `delegate` mints the task id, creates
+once every other check has passed, `delegate` mints the task id — from hex, the
+alphabet all four of its consumers accept, because the same id names the record,
+the journal file, the directory and the branch and the journal's is the
+narrowest (`src/ledger.ts#newTaskId`, `src/journal.ts#journalFile`) — creates
 `<worktreeDir>/<id>` on the mode's branch pattern filled with that id through
 `gitRoot` — so the mode's own policy judges the path and the `worktree-created`
 step is journaled under the task's slug — verifies the result with
@@ -608,7 +611,17 @@ weakened: the root rule is about a task that runs at the root, and this one
 never does. A `git_root` refusal is the delegation's refusal; the reservation is
 read against the new path before anything is created, so a task holding that
 directory refuses the one-shot rather than losing it; and a `resume` takes no
-new worktree, because it continues the workspace of the task it names. The
+new worktree, because it continues in the one its original was given (section
+5, layer 4). **Every failure from the `worktree add` to the runner discards
+what exists** — the worktree, its branch and its journal, through the explicit
+git form inside the `spawn.lock` this call already holds rather than through
+`git_root worktree remove`, which takes that same lock
+(`src/delegate.ts#discardWorktree`). That covers the three that leave something
+standing: a `git_root` refusal for a command that ran, which is what a journal
+step that could not be written is; a worktree that does not verify; and a throw
+while the record, its scratch directory or its spec is written. Reconciliation
+does not clean up worktrees — it reports an unmerged branch with a dead task to
+the operator (section 7) — so a leftover here would be a leftover for good. The
 policy is the mode's where it declares one and the implicit `.worktrees` /
 `task/*` where it does not, which is how `solo` has one at all
 (`src/modes.ts#gitPolicy`). What becomes of the branch afterwards is the
@@ -2139,12 +2152,24 @@ each with its own unit test:
    to a running task in `(role, canonical cwd, sha256(brief))` is refused with
    "already running, wait on <id>"; identical to a task finished within
    `duplicateWindowMinutes` (default 10) is refused unless `force: true`
-   (`src/guard.ts#duplicateRefusal`). `force` crosses the finished window and
+   (`src/guard.ts#duplicateRefusal`). A `worktree: true` request is compared on
+   `(role, sha256(brief))` against the tasks that were **given a worktree**
+   instead: its own workspace is a path nothing has seen before, so a cwd could
+   never match and the window would be inert on the one call that creates
+   workspaces (`src/guard.ts#DuplicateRequest`, `src/delegate.ts#delegate`).
+   The lineage rule is unchanged and keyed by the workspace as it always was. `force` crosses the finished window and
    never a live task: two engines in one workspace is what the first half
    refuses. `resume` skips the duplicate check, is refused for active tasks, and
    is bound to the original task's role, engine, cwd, and sandbox
    (`src/guard.ts#resumeRefusal`) — the profile read from the original's own
-   launch spec, since the record carries none. Two rules of the chain are
+   launch spec, since the record carries none. A record that carries a
+   `worktree` is continued **there**: the workspace and the profile come from
+   that record and its spec rather than from the role, which works at the
+   project root and would otherwise put the continuation back there read-only,
+   and the worktree is verified to still be on that branch before anything
+   launches — a lead that has already merged and cleaned up is told so by name
+   (`src/delegate.ts#delegate`). That is what makes a needs-work round for a
+   one-shot possible. Two rules of the chain are
    `delegate`'s, because they need the scan (section 2): no record of a chain
    with an active member may be continued, and a record that already has a
    successor answers `resume the latest: <id>` (`src/delegate.ts#resumeFault`).

@@ -291,9 +291,16 @@ export function writeAtomic(file: string, value: unknown): void {
   }
 }
 
-/** A task id: what names the record, its log, its scratch directory — and its journal. */
+/**
+ * A task id: what names the record, its log, its scratch directory, and — for a task given
+ * a worktree — its journal file, its directory under the worktree directory and its
+ * branch. The alphabet is the narrowest of those, which is the journal's
+ * (`src/journal.ts#journalFile`): base64url's `-` and `_` lead characters are legal here
+ * and refused there, so one delegation in sixty-four refused for a reason its caller could
+ * not see. Hex keeps the 18 bytes of entropy and is accepted by all four.
+ */
 export function newTaskId(): string {
-  return randomBytes(18).toString("base64url");
+  return randomBytes(18).toString("hex");
 }
 
 export function create(projectRoot: string, input: CreateTask, now = Date.now()): TaskRecord {
@@ -490,10 +497,20 @@ export interface InvalidRecord {
  * and its read is gone, not invalid.
  */
 export function scan(projectRoot: string): { records: TaskRecord[]; invalid: InvalidRecord[] } {
-  const directory = initialize(projectRoot);
+  // A read, and only a read: a project nothing has been delegated in has no task
+  // directory, and attaching a server to it must leave it exactly as it was — the first
+  // `delegate` is what creates `.cross-agent/`, through `create` (design, "Modes").
+  const directory = path.resolve(projectRoot, ".cross-agent", "tasks");
   const records: TaskRecord[] = [];
   const invalid: InvalidRecord[] = [];
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+  let listing: fs.Dirent[];
+  try {
+    listing = fs.readdirSync(directory, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { records, invalid };
+    throw error;
+  }
+  for (const entry of listing) {
     if (!entry.isFile() || !/^[A-Za-z0-9_-]+\.json$/.test(entry.name)) continue;
     try {
       records.push(readRecord(path.join(directory, entry.name)));

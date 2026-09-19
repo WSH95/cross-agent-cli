@@ -593,6 +593,107 @@ test("a worktree one-shot is refused wherever git_root would refuse it, and leav
   assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "journal")), false, "or a journal");
 });
 
+test("one worktree one-shot of a role and brief at a time, and the window holds after it settles", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const brief = "Change the one thing.";
+  const oneShot = (patch: Partial<DelegateRequest> = {}) =>
+    delegate(p.root, { ...request({ role: "planner", cwd: p.root, worktree: true }), brief, ...patch }, options);
+
+  const first = launched(await oneShot());
+  // Each one-shot takes a workspace nothing has seen before, so the duplicate window is
+  // read against the other one-shots of this role and brief rather than against a path.
+  assert.match(refusal(await oneShot()), new RegExp(`already running, wait on ${first}`));
+  await settle(p, first);
+  assert.match(refusal(await oneShot()), /duplicate delegation/);
+  const forced = launched(await oneShot({ force: true }));
+  assert.notEqual(forced, first);
+  // A brief of its own is another task, whatever else is running.
+  const other = launched(await oneShot({ brief: "Change the other thing." }));
+
+  // And the same brief at the project root is not one of these at all: a delegation
+  // without the flag is keyed by its workspace, as every other delegation is. It waits
+  // for the worktrees to settle, because a task at the root contains every one of them.
+  for (const id of [forced, other]) await settle(p, id);
+  launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief }, options));
+});
+
+test("a one-shot resumes in the worktree it was given, and is refused once that worktree is gone", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  // Run to completion rather than cancelled: the session a resume continues is what the
+  // runner writes when the engine settles, and there is nothing to continue without it.
+  const start = async (brief: string): Promise<TaskRecord> => {
+    const id = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root, worktree: true }), brief }, options));
+    return waitForRecord(p, id, (value) => value.status === "done" && Boolean(value.sessionId));
+  };
+
+  // A needs-work round for a one-shot: the role works at the project root, but the record
+  // says where this task ran and its spec says what it ran under, and a continuation is
+  // bound to both (design section 5, layer 4).
+  const original = await start("Change the one thing.");
+  const again = launched(await delegate(p.root, {
+    ...request({ role: "planner", cwd: p.root }), resume: original.id, brief: "Now address the review.",
+  }, options));
+  const continued = p.record(again);
+  assert.equal(continued.cwd, original.worktree!.path);
+  assert.deepEqual(continued.worktree, original.worktree, "the same worktree, and the same journal slug");
+  assert.deepEqual(readSpec(p.root, again).sandbox, sandboxFor("grok", "workspace"));
+  assert.equal(readSpec(p.root, again).cwd, original.worktree!.path);
+
+  // And a worktree the lead has already cleaned up is named rather than recreated.
+  const removed = await start("Change the other thing.");
+  await git(p.root, "worktree", "remove", "--force", removed.worktree!.path);
+  const reason = refusal(await delegate(p.root, {
+    ...request({ role: "planner", cwd: p.root }), resume: removed.id, brief: "Now address that review.",
+  }, options));
+  assert.match(reason, new RegExp(removed.worktree!.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("a one-shot that fails after its worktree exists leaves no worktree, branch or journal", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so neither failure can be staged");
+    return;
+  }
+  const options = (p: TestProject) => ({ authority: operator, mode: p.mode, env: engineEnv(p) });
+  const left = async (p: TestProject): Promise<string[]> => [
+    ...fs.readdirSync(path.join(p.root, ".worktrees"), { withFileTypes: true }).map((entry) => entry.name),
+    ...(await git(p.root, "branch", "--list", "task/*")).split("\n").filter(Boolean),
+    ...fs.readdirSync(path.join(p.root, ".cross-agent", "journal")).filter((name) => name.endsWith(".json")),
+  ];
+
+  // (a) The journal step fails after `git worktree add` has already run: `git_root`
+  // answers `ok: false` for a command that happened, which is the one refusal that can
+  // leave a worktree standing.
+  const journalled = await projectWithRoles(t);
+  fs.mkdirSync(path.join(journalled.root, ".cross-agent", "journal"), { recursive: true });
+  fs.mkdirSync(path.join(journalled.root, ".worktrees"), { recursive: true });
+  // Restored before the project's own cleanup, which cannot empty a directory it may not
+  // write; a removed root is already clean.
+  t.after(() => { try { fs.chmodSync(path.join(journalled.root, ".cross-agent", "journal"), 0o755); } catch { /* gone */ } });
+  fs.chmodSync(path.join(journalled.root, ".cross-agent", "journal"), 0o555);
+  assert.match(
+    refusal(await delegate(journalled.root, request({ role: "planner", cwd: journalled.root, worktree: true }), options(journalled))),
+    /journal step could not be written/,
+  );
+  assert.deepEqual(await left(journalled), []);
+
+  // (b) A throw after the worktree exists — here the ledger's own directory cannot be
+  // written — escapes as an error, and must not escape with a worktree behind it.
+  const recorded = await projectWithRoles(t);
+  fs.mkdirSync(path.join(recorded.root, ".cross-agent", "journal"), { recursive: true });
+  fs.mkdirSync(path.join(recorded.root, ".worktrees"), { recursive: true });
+  fs.mkdirSync(path.join(recorded.root, ".cross-agent", "tasks"), { recursive: true });
+  t.after(() => { try { fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o755); } catch { /* gone */ } });
+  fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o555);
+  await assert.rejects(
+    () => delegate(recorded.root, request({ role: "planner", cwd: recorded.root, worktree: true }), options(recorded)),
+    /EACCES|permission denied/,
+  );
+  fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o755);
+  assert.deepEqual(await left(recorded), []);
+});
+
 test("a project with no config delegates on the engine the call names, and no config is written", async (t) => {
   const p = await projectWithRoles(t);
   // The mode a project with no config runs as, served from this project's own shelf: one

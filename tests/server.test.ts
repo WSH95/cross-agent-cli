@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -320,6 +320,35 @@ test("a server that finds no project exits naming the reason", async (t) => {
 
 // A bounded test, because what it asserts is that the process **ends**: a server that
 // served instead would leave this waiting on a close that never comes.
+test("a server attached to a repository with no config writes nothing to it", async (t) => {
+  const repo = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-bare-")));
+  t.after(() => rm(repo, { recursive: true, force: true }));
+  await promisify(execFile)("git", ["-C", repo, "init", "-b", "main"]);
+  const before = (await readdir(repo)).sort();
+  const exclude = path.join(repo, ".git", "info", "exclude");
+  const excluded = async () => readFile(exclude, "utf8").catch(() => "");
+  const wasExcluded = await excluded();
+
+  const client = stdioClient(repo);
+  try {
+    // The project is the git toplevel, running solo on the defaults, and it says which
+    // git policy a `worktree: true` one-shot here would use (design, "Modes").
+    const reply = (await client.request("tools/call", { name: "describe_mode", arguments: {} })).result as Json;
+    assert.notEqual(reply.isError, true, JSON.stringify(reply));
+    const described = JSON.parse((reply.content as Json[])[0].text as string) as Json;
+    assert.equal((described.mode as Json).id, "solo");
+    assert.deepEqual(described.git, { worktreeDir: ".worktrees", branchPattern: "task/*", implicit: true });
+    assert.deepEqual((described.roles as Json[]).map((role) => role.key), ["consult"]);
+  } finally {
+    client.close();
+  }
+
+  // And attaching it wrote nothing: `cross-agent init` writes the config, and the first
+  // `delegate` writes the ledger — a read of a project creates neither (T4c-F6).
+  assert.deepEqual((await readdir(repo)).sort(), before);
+  assert.equal(await excluded(), wasExcluded);
+});
+
 test("a server whose mode does not load, or whose config does not match it, exits naming the reason", { timeout: 20_000 }, async (t) => {
   const modes = modesRoot(t);
   buildMode(modes, "dev-team", [{ key: "planner" }]);

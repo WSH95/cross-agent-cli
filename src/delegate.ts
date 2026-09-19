@@ -8,7 +8,9 @@ import { bindingFault, CONFIG_PATH, engineLeadRole, loadConfig, modeDrift } from
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
+import { run } from "./gitmutate.ts";
 import { gitRoot, repositoryAt, trackedStateFault } from "./gitroot.ts";
+import { removeJournal } from "./journal.ts";
 import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
@@ -280,29 +282,50 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         slug,
       };
     }
-    /** Where this task will run: the worktree it is about to be given, or the named cwd. */
-    const workspace = oneShot?.path ?? cwd;
+    // 1c. A resume continues the task it names **where that task ran**. A one-shot's role
+    // works at the project root, but the record says which worktree it was given and its
+    // spec says what profile it ran under, and a continuation is bound to both (design
+    // section 5, layer 4): read them here, before the rules that would otherwise put this
+    // launch back at the root under a read-only profile.
+    const original = request.resume === undefined ? undefined : records.find((record) => record.id === request.resume);
+    const continued = original?.worktree;
+    let continuedProfile: string | undefined;
+    if (continued !== undefined) {
+      try {
+        continuedProfile = readSpec(projectRoot, original!.id).sandbox.profile;
+      } catch {
+        // An unreadable spec leaves the binding unprovable, which `resumeFault` names.
+      }
+    }
+    /** Where this task will run: its new worktree, the one it continues in, or the named cwd. */
+    const workspace = oneShot?.path ?? continued?.path ?? cwd;
 
     // The mode's default unless config overrode it, never the request's, because it is the
     // rule the record will be reserved by; an engine override has to be one that declares
-    // it. A one-shot runs writable in the worktree it was given, which is what it is for.
+    // it. A one-shot runs writable in the worktree it was given, which is what it is for,
+    // and a continuation runs under the profile its original was bound to.
     let sandbox: LaunchSpec["sandbox"];
     try {
-      sandbox = sandboxFor(engine, oneShot === undefined ? bound?.sandbox ?? declared.sandboxDefault : writableProfiles[engine]);
+      const profile = oneShot !== undefined ? writableProfiles[engine]
+        : continuedProfile ?? bound?.sandbox ?? declared.sandboxDefault;
+      sandbox = sandboxFor(engine, profile);
     } catch (error) {
       return refuse(message(error));
     }
     // The root rule against the **resolved** engine: `bindingFault` above checked the one
     // config binds, and this call may name another whose profile map reads the same name
     // differently. `.cross-agent/` is the server's to write, and no engine starts at the
-    // root that could edit it — which a one-shot does not: it starts in its own worktree.
-    if (oneShot === undefined && declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
+    // root that could edit it — which neither of these does: both run in a worktree.
+    if (oneShot === undefined && continued === undefined && declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
       return refuse(`role ${JSON.stringify(request.role)} works at the project root, which only the server may write; ${JSON.stringify(sandbox.profile)} is ${sandbox.mode} under ${engine}`);
     }
 
-    // 2. Where this role may work.
-    const fault = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
-    if (fault !== null) return refuse(fault);
+    // 2. Where this role may work. A continuation is held to its original's workspace
+    // instead, which the resume binding below compares and the verifier confirms.
+    if (continued === undefined) {
+      const fault = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
+      if (fault !== null) return refuse(fault);
+    }
 
     // 3. The workspace reservation, and the records nobody can read (design section 2, E2).
     const known = reservations(projectRoot);
@@ -319,8 +342,10 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     let resumeSessionId: string | undefined;
     let parentTaskId = caller;
     if (request.resume === undefined) {
-      const duplicate = duplicateRefusal({ role: request.role, cwd: workspace, brief: request.brief, force: request.force }, records, now,
-        config.limits.duplicateWindowMinutes);
+      const duplicate = duplicateRefusal({
+        role: request.role, cwd: workspace, brief: request.brief, force: request.force,
+        ...(oneShot === undefined ? {} : { worktree: true }),
+      }, records, now, config.limits.duplicateWindowMinutes);
       if (duplicate !== null) return { ok: false, reason: duplicate };
     } else {
       // A lead continues its own tasks and no others: a resume launches an engine in the
@@ -333,11 +358,18 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         role: request.role, engine, cwd: workspace, sandbox: sandbox.profile as SandboxProfile,
       });
       if (chain !== null) return { ok: false, reason: chain };
-      const original = records.find((record) => record.id === request.resume)!;
-      resumeSessionId = original.sessionId!;
+      // The worktree the original ran in has to still be that worktree: a lead that has
+      // already merged and cleaned up is told so by name rather than handed a fresh one.
+      if (continued !== undefined) {
+        const verified = await verifyWorktree(projectRoot, continued.path, continued.branch);
+        if ("reason" in verified) {
+          return refuse(`task ${request.resume} ran in ${continued.path} on ${continued.branch}, which is no longer a worktree of this project: ${verified.reason}`);
+        }
+      }
+      resumeSessionId = original!.sessionId!;
       // Preserved across resume (the lead model, item 2): the continuation belongs to
       // whoever the original belonged to, not to whoever asked for it.
-      parentTaskId = original.parentTaskId ?? undefined;
+      parentTaskId = original!.parentTaskId ?? undefined;
     }
 
     // 5. Nothing exists yet, and the checks above were only true while this lock held them
@@ -353,54 +385,120 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         args: ["worktree", "add", "-b", oneShot.branch, oneShot.path, config.project.defaultBranch],
         slug: oneShot.slug,
       }, { waitSeconds, dir: policy.worktreeDir, branchPattern: policy.branchPattern });
-      if (!created.ok) return refuse(created.reason);
+      // A refusal here may still have created the worktree: `git_root` answers `ok: false`
+      // for a `worktree add` whose journal step could not be written, and that command
+      // has run. So every failure from here to the runner discards what exists.
+      if (!created.ok) {
+        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, oneShot)}`);
+      }
       // What a worktree role's own delegation is held to, applied to the one just made:
       // the record is about to say a writable engine runs there.
       const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch);
       if ("reason" in verified) {
-        return refuse(`the worktree for this task does not verify: ${verified.reason} It was created at ${oneShot.path} on ${oneShot.branch} and nothing has removed it.`);
+        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, oneShot)}`);
       }
     }
 
-    // 7. The record, its spec, and the runner that owns the engine from here on.
-    const record = create(projectRoot, {
-      role: request.role, brief: request.brief, cwd: workspace, engine, model, effort, depth,
-      ...(oneShot === undefined ? {} : { id: oneShot.slug, worktree: oneShot }),
-      ...(parentTaskId === undefined ? {} : { parentTaskId }),
-      ...(request.resume === undefined ? {} : { resumedFrom: request.resume }),
-    }, now);
-    // The task's own directory, which nothing else shares: an adapter writes a role file
-    // and a lead's mount config here, never into a workspace the role may edit.
-    const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
-    fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
-    const spec: LaunchSpec = {
-      // The prompt config binds, else the text a built-in role carries, else the one-line
-      // default; a mode's own prompt files reach `delegate` with row 9.
-      role: request.role, brief: request.brief,
-      rolePrompt: bound?.prompt ?? declared.prompt ?? defaultPrompt(request.role),
-      cwd: workspace, engine, sandbox,
-      ...(model === null ? {} : { model }),
-      ...(effort === null ? {} : { effort }),
-      sessionId: randomUUID(),
-      ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
-      denyTargets: denyTargets(config, projectRoot),
-      env: {
-        ...childEnv(env, options.authority.depth, record.id, childLineage(lineage, {
-          taskId: record.id, role: request.role, cwd: workspace,
-        }), config.billing, projectRoot),
-        // The one way a configured binary reaches both the adapter's capability check and
-        // its spawn line, which read the same environment (design section 3).
-        ...binEnvironment(config, engine),
-      },
-      scratchDir,
-      adapterModule: fileURLToPath(new URL(`./engines/${engine}.ts`, import.meta.url)),
-    };
-    writeSpec(projectRoot, record.id, spec);
+    // 7. The record, its spec, and the runner that owns the engine from here on. A throw
+    // in any of the three is a task that will never run, so it leaves nothing standing
+    // either: the worktree, its branch and its journal go with it.
+    let record: TaskRecord;
+    let spec: LaunchSpec;
+    try {
+      record = create(projectRoot, {
+        role: request.role, brief: request.brief, cwd: workspace, engine, model, effort, depth,
+        ...(oneShot === undefined ? {} : { id: oneShot.slug, worktree: oneShot }),
+        ...(continued === undefined ? {} : { worktree: continued }),
+        ...(parentTaskId === undefined ? {} : { parentTaskId }),
+        ...(request.resume === undefined ? {} : { resumedFrom: request.resume }),
+      }, now);
+      // The task's own directory, which nothing else shares: an adapter writes a role file
+      // and a lead's mount config here, never into a workspace the role may edit.
+      const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
+      fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
+      spec = {
+        // The prompt config binds, else the text a built-in role carries, else the
+        // one-line default; a mode's own prompt files reach `delegate` with row 9.
+        role: request.role, brief: request.brief,
+        rolePrompt: bound?.prompt ?? declared.prompt ?? defaultPrompt(request.role),
+        cwd: workspace, engine, sandbox,
+        ...(model === null ? {} : { model }),
+        ...(effort === null ? {} : { effort }),
+        sessionId: randomUUID(),
+        ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+        denyTargets: denyTargets(config, projectRoot),
+        env: {
+          ...childEnv(env, options.authority.depth, record.id, childLineage(lineage, {
+            taskId: record.id, role: request.role, cwd: workspace,
+          }), config.billing, projectRoot),
+          // The one way a configured binary reaches both the adapter's capability check
+          // and its spawn line, which read the same environment (design section 3).
+          ...binEnvironment(config, engine),
+        },
+        scratchDir,
+        adapterModule: fileURLToPath(new URL(`./engines/${engine}.ts`, import.meta.url)),
+      };
+      writeSpec(projectRoot, record.id, spec);
+    } catch (error) {
+      if (oneShot !== undefined) await discardWorktree(projectRoot, oneShot);
+      throw error;
+    }
     startRunner(projectRoot, record.id, env);
     return { ok: true, taskId: record.id };
   } finally {
     await claim.release();
   }
+}
+
+/** What git printed, when it printed anything: the line a lead needs to act on. */
+function printed(stderr?: string): string {
+  const text = stderr?.trim();
+  return text === undefined || text === "" ? "" : `: ${text}`;
+}
+
+/**
+ * The one refusal a project is likely to meet before it has a config: a one-shot branches
+ * from `project.defaultBranch`, whose documented default is `main`, and a repository whose
+ * own default branch is called something else fails inside git with nothing to act on.
+ */
+function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projectRoot: string): string {
+  const base = config.project.defaultBranch;
+  if (failure.stderr === undefined || !failure.stderr.includes(base)) return "";
+  const configured = fs.statSync(path.join(projectRoot, CONFIG_PATH), { throwIfNoEntry: false })?.isFile() ?? false;
+  return `. A one-shot branches from project.defaultBranch, which is ${JSON.stringify(base)} here; `
+    + (configured ? `set another in ${CONFIG_PATH}` : `this project has no ${CONFIG_PATH}, so run "cross-agent init --mode ${config.mode}" and set project.defaultBranch`)
+    + " if that is not this repository's default branch";
+}
+
+/**
+ * Everything a one-shot that never launched would otherwise leave standing: its worktree,
+ * its branch and its journal. It runs inside the `spawn.lock` this delegation already
+ * holds, so it uses the explicit git form directly rather than `git_root worktree remove`,
+ * which takes that same lock; `--force` is right here and nowhere else, because the only
+ * thing in that worktree is what git has just put there and no task ever ran in it.
+ * Reconciliation does not clean up worktrees, so a leftover here is a leftover for good.
+ * It is best effort by construction — the failure it follows may be the reason a step of
+ * it cannot run — and what it could not remove is named in the refusal.
+ */
+async function discardWorktree(projectRoot: string, worktree: TaskWorktree): Promise<string> {
+  const located = await repositoryAt(projectRoot);
+  if (!("reason" in located)) {
+    for (const args of [["worktree", "remove", "--force", worktree.path], ["branch", "-D", worktree.branch]]) {
+      try {
+        await run(located.gitDir, located.workTree, args);
+      } catch {
+        // A git that could not run leaves what it was asked to remove; named below.
+      }
+    }
+  }
+  try {
+    removeJournal(projectRoot, worktree.slug);
+  } catch {
+    // Named below with the worktree it belongs to.
+  }
+  return directory(worktree.path)
+    ? `. ${worktree.path} on ${worktree.branch} could not be removed and is still there`
+    : "";
 }
 
 function binEnvironment(config: CrossAgentConfig, engine: EngineName): NodeJS.ProcessEnv {

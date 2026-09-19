@@ -7,7 +7,8 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
+import { create, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
+import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { poll } from "./helpers/project.ts";
@@ -567,7 +568,13 @@ test("first ledger use appends each missing exclusion once", async (t) => {
       fs.mkdirSync(path.dirname(exclude));
       fs.writeFileSync(exclude, existing);
     }
+    // A read writes nothing at all: a project nothing has been delegated in keeps no
+    // ledger, and attaching a server to one must leave it as it was (T4c-F6).
     assert.deepEqual(list(root), []);
+    assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false);
+    assert.equal(fs.existsSync(exclude), existing !== undefined);
+    // The first record is what creates the ledger, and what ignores it.
+    create(root, input(root), now);
     const first = fs.readFileSync(exclude, "utf8");
     assert.ok(first.startsWith(existing ?? ""), "preserves existing content");
     for (const line of [".cross-agent/", ".worktrees/"]) {
@@ -616,6 +623,25 @@ test("create writes the fields a cascade, a resume and a stall clock read", (t) 
   assert.equal(top.model, null);
   assert.equal(top.effort, null);
   assert.deepEqual(read(root, top.id), top);
+});
+
+test("every task id this build mints is a slug the journal accepts", (t) => {
+  const root = project(t);
+  // One id names four things: the record file, the journal file, the worktree directory
+  // and the task branch. The journal's alphabet is the narrowest of them and refuses a
+  // leading `-`, which base64url mints about one time in sixty-four — a `worktree: true`
+  // delegation that refused for no reason the caller could see (T4c-F2).
+  const minted = new Set<string>();
+  for (let index = 0; index < 400; index += 1) {
+    const id = newTaskId();
+    assert.match(id, /^[0-9a-f]{36}$/, "18 bytes, in an alphabet every consumer accepts");
+    assert.doesNotThrow(() => readJournal(root, id), `the journal refuses ${id}`);
+    assert.equal(readJournal(root, id), null);
+    minted.add(id);
+  }
+  assert.equal(minted.size, 400, "and each one is its own");
+  const record = create(root, { ...input(root), id: [...minted][0] }, now);
+  assert.equal(record.id, [...minted][0]);
 });
 
 test("the delegation fields are patchable, and validated as what a reader dereferences", async (t) => {
