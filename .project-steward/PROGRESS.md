@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T01:57:08Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 3b complete on task/cross-agent-m3 at e585f33 (fix round: the runner's outcome sidecar decides an orphan's settlement; cleanup-killed groups never settle from evidence; one exec-wait budget per scan; self-group records judged after cleanup); nine beads closed (.44 .40 atc-1p0 .31 .32 .30 .38 .41 .46); 465 pass/1 skip. Task 3c (test hygiene, ten-run acceptance) running (cross-agent-implementer: claude-opus-5, max). New P4 bead for prune. Next: the first ff-merge to main.
+
 ### 2026-09-19T01:02:04Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 3 (T11) complete and re-reviewed clean; atc-s96.10/.11 and their folds closed. Task 3b (behavioural beads incl. atc-s96.44 sandbox settings and atc-s96.46 environ-scan mid-exec retry) landed 11 commits 6840da8..4c6ae45 on task/cross-agent-m3 (456 pass/1 skip; the environ flake is gone); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running. New P4 bead: killGroup/probe.mjs settings out of step. Next: 3c test hygiene, then the first ff-merge to main.
 

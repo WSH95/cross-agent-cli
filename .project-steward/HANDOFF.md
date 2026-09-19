@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T01:02:04Z
+updated_at: 2026-09-19T01:57:08Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -34,20 +34,18 @@ builds a spawn request: the server registers `list_roles` and
 
 ## In flight
 
-Task 3b (the M1-close behavioural beads: `atc-s96.44`, `.40`, `atc-1p0`,
-`.31`, `.32`, `.30`, `.38`, `.41`, `.46`) landed eleven commits
-`6840da8..4c6ae45` on `task/cross-agent-m3` (456 pass, 1 skip; the
-`environ unreadable` load flake is gone after the mid-exec retry in
-`findByEnvironment`) and is under review: task review (Claude Code
-subagent · claude-opus-5 · max) and second opinion (· claude-fable-5-1 ·
-max). Tasks 0–3 are complete there (`54ff90a..928ba1e`; T10 and T11 beads
-closed). Next: 3c (test hygiene, ten-run acceptance under load), then the
-first fast-forward merge into `main` (rebase the branch onto `main`'s
-steward commits first), then Task 4 (S8 modes), 4b, 4c. **Codex is paused
-by the user.** Briefs, the ledger (`progress.md`), reports and review
-packages are in `.superpowers/sdd/the-development-of-this-calm-planet/`;
-two AGENTS.md diffs await your approval there
-(`agents-md-cite-by-symbol.diff`, `task-3b-agents-md.diff`).
+Task 3c (test hygiene, `atc-s96.33`/`.43`, ten consecutive `npm test` runs
+under load as acceptance) runs as a Claude Code subagent
+(`cross-agent-implementer` · claude-opus-5 · max) on `task/cross-agent-m3`
+from `e585f33`. Tasks 0–3 and 3b are complete there (`54ff90a..e585f33`;
+465 pass, 1 skip; the environ-scan and cancel-timing flakes are fixed).
+After 3c's review: rebase the branch onto `main` (steward commits only),
+fast-forward merge, `npm test` at the root, create `VERIFY.md`, mark M1
+in `PLAN.md`, and report the milestone with the two AGENTS.md diffs
+awaiting approval (`agents-md-cite-by-symbol.diff`,
+`task-3b-agents-md.diff`). Then Task 4 (S8 modes), 4b, 4c. **Codex is
+paused by the user.** Ledger, briefs, reports and review packages:
+`.superpowers/sdd/the-development-of-this-calm-planet/`.
 
 ## Next steps
 
