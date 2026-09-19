@@ -2457,8 +2457,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   writer until it is repaired or removed. Recorded for `git_mutate`
   (`tests/gitmutate.test.ts:208`), for `delegate`, which refuses a writable
   delegation naming the file and leaves a read-only one alone
-  (`tests/delegate.test.ts:222`), and for `list_tasks`, which returns the file
-  beside the records it could read (`tests/tasks.test.ts:224`).
+  (`tests/delegate.test.ts:249`), and for `list_tasks`, which returns the file
+  beside the records it could read (`tests/tasks.test.ts:229`).
 - **Authority (T10a, recorded but for its last two clauses):** a server whose
   nearest engine ancestor is a specialist gets the specialist row even when
   the process also carries a lead's environment (`tests/authority.test.ts:253`),
@@ -2518,7 +2518,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   100 ms with `cancelled: true` and a reply that is still sent
   (`tests/server.test.ts:363`), including when the notification shares one stdin
   chunk with the call it cancels (`:406`). `check` is the other writer of the two
-  transitions, and writes both (`tests/tasks.test.ts:181`).
+  transitions, and writes both (`tests/tasks.test.ts:186`).
 - **Modes:** `init --mode dev-team` yields the four roles with the engines,
   models and efforts of section 6 and the profiles of the mode's
   `sandboxDefault`; a config carrying a `workspace`

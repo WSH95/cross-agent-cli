@@ -13,7 +13,7 @@ import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
 import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
-import { alive, engineEnv, poll, project, proc, strandedEngine } from "./helpers/project.ts";
+import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -30,7 +30,12 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
       implementer: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
     },
     engines: { grok: { bin } },
-    limits: { maxDepth: 3, lockWaitSeconds: 2, duplicateWindowMinutes: 10, cancelGraceSeconds: 5, ...limits },
+    // The two wall-clock budgets these tools ride on, set far past anything the tests
+    // below need: how long a write waits for a record another writer holds, and how long
+    // a cancel gives a runner to settle. Left small they are margins a loaded machine can
+    // miss, and the test then fails for the load rather than for the behaviour. Each test
+    // that is about one of the budgets sets its own.
+    limits: { maxDepth: 3, lockWaitSeconds: 30, duplicateWindowMinutes: 10, cancelGraceSeconds: 30, ...limits },
     billing: "subscription",
   };
 }
@@ -53,7 +58,7 @@ async function launch(
     env: engineEnv(p, { FAKE_ENGINE_SCRIPT: values.script ?? "stall" }),
   });
   assert.equal(result.ok, true, `delegate refused: ${JSON.stringify(result)}`);
-  return poll(() => p.record(result.taskId), (record) => record.status === "running");
+  return waitForRecord(p, result.taskId, (record) => record.status === "running");
 }
 
 /** A record written straight to the ledger, with the launch spec a real one would carry. */
@@ -206,7 +211,7 @@ test("result is the final message in full, and a task still running has only its
   });
   assert.equal(started.ok, true);
   const id = started.ok ? started.taskId : "";
-  const running = await poll(() => p.record(id), (value) => value.status === "running");
+  const running = await waitForRecord(p, id, (value) => value.status === "running");
   assert.deepEqual(result(p.root, id), { ok: true, id, status: "running", settled: false });
 
   // The runner writes the final message itself, which is what `result` reads back.
@@ -488,7 +493,7 @@ test("a delegation racing a cascade is either refused or cancelled with the rest
     if (child.ok) {
       // It was written under the same lock the cascade snapshots under, so it is in the
       // cascade; a child the cascade never saw would be an engine nobody cancels.
-      const settled = await poll(() => p.record(child.taskId), (record) => ["cancelled", "failed"].includes(record.status));
+      const settled = await waitForRecord(p, child.taskId, (record) => ["cancelled", "failed"].includes(record.status));
       assert.equal(settled.status, "cancelled", `${attempt}: ${JSON.stringify(outcomes.ok && outcomes.outcomes)}`);
       assert.ok(outcomes.ok && outcomes.outcomes.some((outcome) => outcome.id === child.taskId));
     } else {

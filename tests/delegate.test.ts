@@ -11,7 +11,7 @@ import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { lockPath, spawnLockName } from "../src/locks.ts";
-import { alive, engineEnv, environOf, killLockHolder, poll, project } from "./helpers/project.ts";
+import { alive, engineEnv, environOf, killLockHolder, poll, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -29,7 +29,12 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
       lead: { engine: "grok", cwd: "root", sandbox: "read-only" },
     },
     engines: { grok: { bin } },
-    limits: { maxDepth: 2, lockWaitSeconds: 2, duplicateWindowMinutes: 10, cancelGraceSeconds: 2, ...limits },
+    // The two wall-clock budgets these tools ride on, set far past anything the tests
+    // below need: how long a write waits for a record another writer holds, and how long
+    // a cancel gives a runner to settle. Left small they are margins a loaded machine can
+    // miss, and the test then fails for the load rather than for the behaviour. Each test
+    // that is about one of the budgets sets its own.
+    limits: { maxDepth: 2, lockWaitSeconds: 30, duplicateWindowMinutes: 10, cancelGraceSeconds: 30, ...limits },
     billing: "subscription",
   };
 }
@@ -106,7 +111,7 @@ test("a delegation launches its engine once, in the workspace, with the environm
   const id = launched(launch);
 
   // The record is the launch, and the runner settles it without the server's help.
-  const done = await poll(() => p.record(id), (value) => value.status === "done");
+  const done = await waitForRecord(p, id, (value) => value.status === "done");
   assert.equal(done.role, "planner");
   assert.equal(done.engine, "grok");
   assert.equal(done.model, "grok-4.6");
@@ -161,7 +166,7 @@ test("a configured binary that does not resolve fails the task at the adapter's 
   // The spec's environment is what the capability check reads, so the binary config named
   // is the binary it looked for — and the launch fails closed rather than finding `grok`
   // on the server's own PATH.
-  const failed = await poll(() => p.record(id), (value) => value.status === "failed");
+  const failed = await waitForRecord(p, id, (value) => value.status === "failed");
   assert.match(failed.reason ?? "", /grok sandbox refused/);
   assert.match(failed.reason ?? "", new RegExp(missing.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(readSpec(p.root, id).env.CROSS_AGENT_GROK_BIN, missing);
@@ -174,7 +179,7 @@ test("the runner is started with the server's own environment, never the child's
     env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall", CLAUDECODE: "1" }),
   });
   const id = launched(launch);
-  const running = await poll(() => p.record(id), (value) => value.status === "running");
+  const running = await waitForRecord(p, id, (value) => value.status === "running");
   const runner = environOf(running.runnerIdentity!.pid) ?? [];
   const engine = environOf(running.engineIdentity!.pid) ?? [];
 
@@ -223,7 +228,7 @@ test("a workspace an unsettled writable task holds refuses every delegation onto
   const worktree = await p.worktree("task/held");
   const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const id = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/held" }), options));
-  await poll(() => p.record(id), (value) => value.status === "running");
+  await waitForRecord(p, id, (value) => value.status === "running");
 
   for (const [cwd, role, branch] of [
     [worktree, "implementer", "task/held"], [worktree, "reviewer", "task/held"],
@@ -261,7 +266,7 @@ test("a duplicate of a live task is refused, and force is what crosses the finis
   const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const same = request({ role: "planner", cwd: p.root });
   const id = launched(await delegate(p.root, same, options));
-  await poll(() => p.record(id), (value) => value.status === "running");
+  await waitForRecord(p, id, (value) => value.status === "running");
 
   assert.equal(refusal(await delegate(p.root, same, options)), `already running, wait on ${id}`);
   // Force is not a way past a live task: two engines in one workspace is what this refuses.
@@ -280,7 +285,7 @@ test("resume is bound to the original task, and one chain never forks", async (t
   const options = { authority: operator, env: engineEnv(p) };
   const first = request({ role: "planner", cwd: p.root });
   const id = launched(await delegate(p.root, first, options));
-  const done = await poll(() => p.record(id), (value) => value.status === "done");
+  const done = await waitForRecord(p, id, (value) => value.status === "done");
 
   // A chain with an active record is not resumed: one chain, one live task.
   const other = await seed(p.root, { role: "planner", cwd: p.root, status: "running" });
@@ -302,7 +307,7 @@ test("resume is bound to the original task, and one chain never forks", async (t
   assert.equal(resumed.parentTaskId, undefined, "the original had no parent, so neither has its continuation");
   assert.equal(readSpec(p.root, second).resumeSessionId, done.sessionId);
   assert.notEqual(readSpec(p.root, second).sessionId, done.sessionId, "a fresh id of its own, never the resumed session");
-  await poll(() => p.record(second), (value) => value.status === "done");
+  await waitForRecord(p, second, (value) => value.status === "done");
 
   // A chain keeps one live record: while any record of it is active, no record of it may
   // be resumed, whichever one the request names.
@@ -328,7 +333,7 @@ test("a resume keeps the parent of the record it continues, and a lead resumes o
   const child = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/owned" }), {
     authority: lead(first.id), env: engineEnv(p),
   }));
-  await poll(() => p.record(child), (value) => value.status === "done");
+  await waitForRecord(p, child, (value) => value.status === "done");
 
   // The operator resumes the lead's child: the task stays the lead's, or a cascade could
   // never reach the engine this launches in the lead's own worktree.
@@ -337,7 +342,7 @@ test("a resume keeps the parent of the record it continues, and a lead resumes o
   }, { authority: operator, env: engineEnv(p) }));
   assert.equal(p.record(resumed).parentTaskId, first.id, "preserved across resume");
   assert.equal(p.record(resumed).resumedFrom, child);
-  await poll(() => p.record(resumed), (value) => value.status === "done");
+  await waitForRecord(p, resumed, (value) => value.status === "done");
 
   // A lead that did not delegate it may not continue it either: the refusal is the same
   // ownership `cancel` applies.
@@ -419,7 +424,15 @@ test("a delegation whose spawn lock was lost before the record is written launch
   // true, so the launch is refused rather than spawned onto a workspace someone may have
   // taken meanwhile. The holder is killed the way a dead one dies: the kernel drops it.
   let reason: string | undefined;
-  for (let attempt = 0; attempt < 8 && reason === undefined; attempt++) {
+  let rounds = 0;
+  // Rounds until the window is hit, not a fixed number of them: whether one round lands
+  // inside it is the machine's business, and every round asserts the same invariant —
+  // the delegation either never held the lock, or wrote a record, or was refused for the
+  // lock it lost. A round that loses the race is retried; the deadline is where a build
+  // that can never hit the window stops.
+  const deadline = Date.now() + pollDeadlineMs;
+  while (reason === undefined) {
+    rounds++;
     const killer = setInterval(() => { killLockHolder(file); }, 1);
     try {
       const result = await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/lost" }), options);
@@ -436,8 +449,9 @@ test("a delegation whose spawn lock was lost before the record is written launch
       }
       await delay(20);
     } finally { clearInterval(killer); }
+    assert.ok(Date.now() < deadline || reason !== undefined,
+      `the lock holder was never killed inside the validation window: ${rounds} rounds`);
   }
-  assert.ok(reason, "the lock holder was never killed inside the validation window");
   assert.match(reason, /spawn\.lock/);
   assert.match(reason, /lost/);
   assert.equal(p.records().some((value) => value.status === "launching"), false, "nothing was written or spawned");
@@ -478,7 +492,7 @@ test("the engine a request overrides is the engine that runs, and the record say
   const crossed = launched(await delegate(p.root, { ...request({ role: "claudish", cwd: p.root, engine: "claude" }), brief: "Run on the other engine." }, {
     authority: operator, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok" }),
   }));
-  const ran = await poll(() => p.record(crossed), (value) => value.status === "done");
+  const ran = await waitForRecord(p, crossed, (value) => value.status === "done");
   assert.equal(ran.engine, "claude");
   assert.equal(readSpec(p.root, crossed).adapterModule.endsWith("/engines/claude.ts"), true);
   assert.equal(readSpec(p.root, crossed).env.CROSS_AGENT_CLAUDE_BIN, claudeBin);
@@ -512,7 +526,7 @@ test("every delegation of a project gets its own scratch directory and nothing e
   const p = await projectWithRoles(t);
   const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const first = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
-  const running = await poll(() => p.record(first), (value) => value.status === "running");
+  const running = await waitForRecord(p, first, (value) => value.status === "running");
   assert.equal((await update(p.root, first, { status: "cancelling" })).applied, true);
   assert.equal((await update(p.root, first, { status: "cancelled" })).applied, true);
   if (running.engineIdentity) {
