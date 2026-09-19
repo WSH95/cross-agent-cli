@@ -315,6 +315,40 @@ test("a server that finds no project exits naming the reason", async (t) => {
   assert.equal(stderr, `cross-agent: no .cross-agent/config.json in ${empty} or any directory above it\n`);
 });
 
+// A bounded test, because what it asserts is that the process **ends**: a server that
+// served instead would leave this waiting on a close that never comes.
+test("a server whose mode does not load, or whose config does not match it, exits naming the reason", { timeout: 20_000 }, async (t) => {
+  const modes = modesRoot(t);
+  buildMode(modes, "dev-team", [{ key: "planner" }]);
+  const cases: Array<[Json, RegExp]> = [
+    // The mode decides which tools exist and where every role works, so a mode that
+    // cannot be read is not something to discover on the first `delegate`.
+    [{ mode: "no-such-mode", roles: {} }, /no mode "no-such-mode"/],
+    // The server serves the built-in modes, and `dev-team` declares no `designer`.
+    [{ roles: { designer: { engine: "codex" } } }, /declares no role "designer"/],
+  ];
+  for (const [config, expected] of cases) {
+    const root = await projectWithConfig(config);
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const child = spawn(process.execPath, [serverEntry, "--project", root], { stdio: ["pipe", "pipe", "pipe"], env: suiteEnv });
+    t.after(() => { child.kill(); });
+    let stderr = "";
+    let stdout = "";
+    child.stderr!.setEncoding("utf8");
+    child.stdout!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
+    child.stdout!.on("data", (chunk: string) => { stdout += chunk; });
+    // A client that speaks first is answered by the exit, not by a server serving half a
+    // mode: the refusal is this process's own reason for stopping.
+    child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }) + "\n");
+    const [code] = await once(child, "close");
+    assert.equal(code, 1, `${JSON.stringify(config)}: ${stderr}`);
+    assert.match(stderr, /^cross-agent: /);
+    assert.match(stderr, expected);
+    assert.equal(stdout, "", "a server that will not serve answers nothing");
+  }
+});
+
 test("the entry point resolves its own row: a server carrying a task no record matches is a specialist", async (t) => {
   const root = await projectWithConfig({ roles: {} });
   t.after(() => rm(root, { recursive: true, force: true }));

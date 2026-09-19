@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Authority } from "../src/authority.ts";
+import { CONFIG_PATH } from "../src/config.ts";
 import { delegate } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
 import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
@@ -599,6 +600,38 @@ test("the engine a request overrides is the engine that runs, and the record say
   // A role that binds neither records neither, rather than a value nobody chose.
   const bare = await seed(p.root, { role: "claudish", cwd: p.root, status: "failed" });
   assert.equal(bare.model, undefined);
+});
+
+test("the profile a specialist runs under is the mode's default unless config overrides it", async (t) => {
+  const p = await projectWithRoles(t);
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+  const base = configFor(p.bin);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+
+  // No override: the planner runs under the mode's own `read-only`.
+  const byDefault = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  assert.deepEqual(readSpec(p.root, byDefault).sandbox, { mode: "read-only", profile: "read-only" });
+
+  // An override config binds: Grok's own read-only profile, which is a profile this
+  // engine has and the mode never names.
+  fs.writeFileSync(configFile, JSON.stringify({
+    ...base, roles: { ...(base.roles as Record<string, unknown>), planner: { engine: "grok", sandbox: "strict" } },
+  }));
+  // Its own brief, because two live tasks with one brief in one workspace are the
+  // duplicate `delegate` refuses whatever `force` says.
+  const overridden = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief: "Plan the second thing." }, options));
+  assert.deepEqual(readSpec(p.root, overridden).sandbox, { mode: "read-only", profile: "strict" });
+
+  // A role the mode declares and config does not bind has no engine to run on, and the
+  // refusal says which file is missing it.
+  fs.writeFileSync(configFile, JSON.stringify(base));
+  assert.equal(
+    refusal(await delegate(p.root, request({ role: "claudish", cwd: p.root }), options)),
+    `refused delegation: no role "claudish" in ${CONFIG_PATH}`,
+  );
+  // And a role neither declares is the mode's refusal, because the mode is what says
+  // where a role works.
+  assert.match(refusal(await delegate(p.root, request({ role: "nobody", cwd: p.root }), options)), /no role "nobody" in mode/);
 });
 
 test("a role that binds no prompt is launched with a one-line default that forbids delegating", async (t) => {

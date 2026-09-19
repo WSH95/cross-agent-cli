@@ -74,6 +74,13 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
   assert.deepEqual(bound.mode.roles.map((role) => role.sandboxDefault), ["read-only", "read-only", "workspace-write", "read-only"]);
   assert.equal(effectiveMaxDepth(bound.mode, bound.config), 1);
 
+  // Every project in this suite is under the system temporary directory, which Codex and
+  // Grok sandboxes treat as writable: `init` says so on stderr rather than silently
+  // writing a config for a project its own sandboxes do not isolate.
+  assert.match(ran.stderr, /^cross-agent: /);
+  assert.match(ran.stderr, /writable/);
+  assert.match(ran.stderr, /not isolated/);
+
   // A second run neither rewrites nor fails: the operator's own edits survive it.
   const bytes = fs.readFileSync(path.join(root, CONFIG_PATH), "utf8");
   const again = await run(["init", "--mode", "dev-team"], root);

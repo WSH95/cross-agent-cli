@@ -328,7 +328,12 @@ that spelling, so nothing in the matrix depends on it.
    exactly the inheritance case section 5 was written for — and a **host**,
    where the loop runs in the operator's own Grok session and no mount is
    needed. Under an engine-placed mode, a config that binds the mode's
-   `lead.role` to `grok` is refused at load, naming the reason (section 6).
+   `lead.role` to `grok` is refused at load **and again at the launch
+   boundary**, where `delegate` checks the engine the call will actually start
+   rather than the one config binds — a per-call `engine` override would
+   otherwise reach exactly the mount this item rules out, and the server an
+   inherited configuration hands that child resolves to the **lead row**
+   (section 6, `src/delegate.ts#delegate`).
 
    So "the loop as the lead's system prompt" is settled rather than assumed:
    a file on Claude, a file on Codex, and no lead on Grok.
@@ -375,11 +380,20 @@ as a `..`; a mode name is one directory under the shelf, never a path; the `git`
 policy exists exactly when a role works in a worktree and must name that role's
 own `dir` and `branchPattern`, because those two are what `git_mutate` defaults
 `path` and `branch` from (section 4); and a worktree `dir` is relative and
-inside the project, where section 4's guarantees are written. `branchPattern`
-carries exactly one `*`, which the task slug fills. `requires.engines` is
-validated as a list of engine names and enforced by nothing: a preflight is
-deferred with a reason ("Not built"), and the sandbox-or-refuse rule already
-fails closed at spawn time.
+inside the project, where section 4's guarantees are written.
+`branchPattern` carries exactly one `*`, which the task slug fills, and a
+worktree `dir` is none of `.`, `.cross-agent` or `.git`: the project root and the
+two directories the root keeps for itself. `SKILL.md` is held to the prompt
+files' rule and read **at load** rather than at the launcher's first call — it
+must exist, be a file, and resolve inside the mode, and the path the loader
+resolved is what `describeMode` reads (`src/modes.ts#loadMode`, `#Mode`). An
+engine-placed `lead.role` must name a role that works at the project root,
+because being read-only there is what makes `git_root` and `run_command` its way
+of reaching git at all ("The lead model"). The mode directory itself is resolved
+against the shelf, so a directory entry that is a symlink to a mode elsewhere is
+not a mode of that shelf. `requires.engines` is validated as a list of engine
+names and enforced by nothing: a preflight is deferred with a reason ("Not
+built"), and the sandbox-or-refuse rule already fails closed at spawn time.
 
 The **bind-time layer** stays out of the mode and lives in
 `.cross-agent/config.json`: which engine, model and effort each role runs
@@ -428,9 +442,10 @@ every engine accepts, since a mode is bound to engines elsewhere and cannot know
 which (`src/modes.ts#loadMode`); a config `sandbox` override is refused when the
 profile is not read-only **under the engine that role is bound to**, which is
 what makes Grok's `strict` a legal override and `off` an illegal one
-(`src/config.ts#loadConfigWithMode`); and `delegate` refuses the same pair again
-at the one place an engine is actually started, so a config edited after the
-server read it cannot launch that engine (`src/delegate.ts#delegate`).
+(`src/config.ts#loadConfigWithMode`); and `delegate` re-runs every rule that
+needs both files at the one place an engine is actually started, so a config
+edited after the server read it cannot launch that engine
+(`src/config.ts#bindingFault`, `src/delegate.ts#delegate`).
 
 **A role's `workspace` and `sandboxDefault` belong to the mode, not to the
 config.** Config binds `engine`, `model` and `effort` per role — `bin` is per
@@ -491,8 +506,8 @@ active mode declares the worktree provider; **engine lead** only under
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
 | `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt, and its git policy | core |
-| `list_roles` | — | each bound role: engine, model and effort from config, with the workspace and the sandbox profile the mode gives it | core |
-| `delegate` | `role`, `brief`, `cwd`, optional `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
+| `list_roles` | — | each bound role: engine, model and effort from config, with the workspace and the sandbox profile the mode gives it; plus a `warning` when the config now names a mode other than the one served | core |
+| `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
 | `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
 | `result` | `task_id` | the final message in full, the engine session id | core |
@@ -1927,7 +1942,13 @@ every role key must name a role the mode declares.
 `cross-agent init` writes `engines` with an empty object per engine; the `bin`
 above is what an operator adds when an engine is not on `PATH` under its own
 name, and it is the value `delegate` carries to that engine's adapter
-(section 3).
+(section 3). The file is written whole — a temporary beside it, linked into
+place — so a crash leaves a temporary rather than an empty config a later run
+would call "already exists" and never repair, and the link is what keeps `init`
+from replacing a config that is already there
+(`src/config.ts#initConfig`). `limits.maxDepth` is a whole number of hops and
+never negative; zero is legal, and is the cap that offers every server the
+specialist row.
 
 The `dev-team` mode supplies the rest (`modes/dev-team/mode.json`): `planner`
 and `plan-reviewer` at `workspace: {kind: "root"}` with `sandboxDefault:
@@ -1950,14 +1971,20 @@ not fail for want of one. Every lock acquisition but the runner's own claim
 reads the first limit, through the caller's argument or through
 `lockWaitSeconds(projectRoot)` (`src/config.ts#lockWaitSeconds`, section 2); the
 second is how long `cancel` gives a runner to settle its own task (section 2).
-`loadConfigWithMode` reads both files and checks them against each other: every
-role key names a role the mode declares, the effective profile — the override
-else the mode's default — is one the bound engine accepts, no root role is
-writable, and an engine-placed mode's `lead.role` is not bound to `grok` (P9: no
-per-run isolation, "The lead model", item 4), each refused by field with its
-reason (`src/config.ts#loadConfigWithMode`). It is what the server loads before
-it serves, what `list_roles` answers from, and what the entry point derives the
-depth cap from.
+`bindingFault` is every rule that needs both files, written once and answered as
+a reason rather than a throw: every role key names a role the mode declares, the
+effective profile — the override else the mode's default — is one the bound
+engine accepts, no root role is writable, and an engine-placed mode's `lead.role`
+is not bound to `grok` (P9: no per-run isolation, "The lead model", item 4), each
+refused by field (`src/config.ts#bindingFault`). `loadConfigWithMode` raises it,
+and is what the server loads before it serves, what `list_roles` answers from,
+and what the entry point derives the depth cap from; `delegate` refuses with it
+at the launch boundary, because these two files can change under a running
+server and that is where an engine actually starts
+(`src/config.ts#loadConfigWithMode`, `src/delegate.ts#delegate`). Which tools
+exist is settled when the server loads its mode, so a config since pointed at
+another mode is a refusal there and a `warning` from `list_roles`, both naming
+the restart that fixes it (`src/config.ts#modeDrift`).
 
 One thing config still carries that belongs to the mode: a role's own `prompt`,
 the string `delegate` launches the role with, falling back to a one-line default
@@ -2460,7 +2487,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   mutation behind a SIGKILLed holder completes well inside the five-second wait
   (`:558`); `spawn.lock` is held for the whole call with `git.lock` inside it
   (`:303`). `limits.lockWaitSeconds` is read where a config is loadable and
-  answers with the default where none is (`tests/config.test.ts:209`).
+  answers with the default where none is (`tests/config.test.ts:213`).
   Reservation: a writable task holds its cwd until it settles, every profile
   but the read-only ones reserves, an unreadable launch spec holds the
   workspace anyway, paths compare canonically, and a removed workspace is still
@@ -2546,8 +2573,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   writer until it is repaired or removed. Recorded for `git_mutate`
   (`tests/gitmutate.test.ts:208`), for `delegate`, which refuses a writable
   delegation naming the file and leaves a read-only one alone
-  (`tests/delegate.test.ts:249`), and for `list_tasks`, which returns the file
-  beside the records it could read (`tests/tasks.test.ts:229`).
+  (`tests/delegate.test.ts:253`), and for `list_tasks`, which returns the file
+  beside the records it could read (`tests/tasks.test.ts:231`).
 - **Authority (T10a, recorded but for its last two clauses):** a server whose
   nearest engine ancestor is a specialist gets the specialist row even when
   the process also carries a lead's environment (`tests/authority.test.ts:253`),
@@ -2568,71 +2595,85 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   follow the row from one request to the next (`tests/server.test.ts:128`,
   `:302`, `:152`); a specialist's `delegate`, `wait` and `cancel` are refused by
   this server's own name with the resolver's reason, and its read tools answer
-  (`:433`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
+  (`:467`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
   the nearest configured directory, a linked worktree resolving to its main
   project and no config anywhere to a reason (`tests/project.test.ts:24`,
   `:40`, `:50`, `:66`). A resolver that throws is answered `-32603`, lists
-  nothing and runs no handler (`tests/server.test.ts:484`). Still to record: a
+  nothing and runs no handler (`tests/server.test.ts:518`). Still to record: a
   Grok specialist inheriting the user's MCP configuration sees exactly the
   specialist row (this is I1).
 - **T11 (recorded).** An engine that says nothing from its launch stalls on the
   acknowledgement clock while its group stays alive, comes back to `running`
   through `check` when it emits, stalls again on the next silence, and settles
   with the tail of its result — one fake engine, one task, four readings
-  (`tests/wait.test.ts:83`). A settled task is answered on the first read
-  (`:128`); `check` answers while a `wait` is pending and an aborted `wait`
-  returns the status it found, in under 100 ms, having written nothing (`:147`);
-  a `launching` record never stalls however old its clock (`:170`); the timeout
-  with no argument is the project's `waitDefaultSeconds` (`:184`); a runner
+  (`tests/wait.test.ts:85`). A settled task is answered on the first read
+  (`:130`); `check` answers while a `wait` is pending and an aborted `wait`
+  returns the status it found, in under 100 ms, having written nothing (`:149`);
+  a `launching` record never stalls however old its clock (`:172`); the timeout
+  with no argument is the project's `waitDefaultSeconds` (`:186`); a runner
   SIGKILLed under a pending `wait` is settled by that call's one reconciliation
-  pass, engine group and all (`:195`), while an orphan the pass cannot settle is
+  pass, engine group and all (`:197`), while an orphan the pass cannot settle is
   answered as `orphaned`, with the reason it was skipped, rather than waited on
-  (`:214`); a second `wait` run in a **fresh process** reads the same stall from
-  the ledger and the task is still running when it does (`:230`); a lead is
+  (`:216`); a second `wait` run in a **fresh process** reads the same stall from
+  the ledger and the task is still running when it does (`:232`); a lead is
   answered for a task it delegated, refused by name for one it did not, and told
-  `no task` for one nobody has (`:251`); and `observeStall` writes each
+  `no task` for one nobody has (`:253`); and `observeStall` writes each
   transition once, leaves a reading it has already written alone, and returns the
-  record that beat it when another writer settled the task (`:283`). A stall
+  record that beat it when another writer settled the task (`:285`). A stall
   another reader wrote while a `wait` slept ends that wait too, because the
-  crossing is the event and not the write (`:308`); a quiet task whose runner has
-  died is reconciled rather than reported as stalled (`:328`); a launch past its
-  deadline is adopted and settled by the waiter's own pass (`:348`), and one that
+  crossing is the event and not the write (`:310`); a quiet task whose runner has
+  died is reconciled rather than reported as stalled (`:330`); a launch past its
+  deadline is adopted and settled by the waiter's own pass (`:350`), and one that
   pass cannot judge — the engine's environment unreadable — is answered at once
   with that reason and a `list_tasks` hint, having written and killed nothing
-  (`:362`); a call aborted before it polls answers `cancelled` and runs no pass
-  at all (`:385`); and a project whose `lockWaitSeconds` is zero has both readers
+  (`:364`); a call aborted before it polls answers `cancelled` and runs no pass
+  at all (`:387`); and a project whose `lockWaitSeconds` is zero has both readers
   refuse the contended record by that rule rather than the helper's own default
-  (`:398`). The cancellation is recorded at the protocol edge as well: an unknown
+  (`:400`). The cancellation is recorded at the protocol edge as well: an unknown
   request id is ignored, and the one the notification names is answered within
   100 ms with `cancelled: true` and a reply that is still sent
-  (`tests/server.test.ts:363`), including when the notification shares one stdin
-  chunk with the call it cancels (`:406`). `check` is the other writer of the two
-  transitions, and writes both (`tests/tasks.test.ts:186`).
+  (`tests/server.test.ts:397`), including when the notification shares one stdin
+  chunk with the call it cancels (`:440`). `check` is the other writer of the two
+  transitions, and writes both (`tests/tasks.test.ts:188`).
 - **Modes (recorded, except the hosts).** `init --mode dev-team` writes section
   6's config byte for byte and it loads against the built-in mode, whose four
-  roles default to read-only, read-only, `workspace-write` and read-only
-  (`tests/cli.test.ts:48`); `--mode dev-team-engine` binds the `lead` and writes
-  the cap of 2 the placement needs, and `--mode solo` binds its one role and
-  declares no git policy (`:85`); `--project` writes where it names, in either
-  flag order (`:104`); a mode this build does not have is exit 1 with nothing
-  written, and a command line this build cannot read is exit 2 (`:125`); and the
-  shebang entry point runs as `bin` names it (`:148`). A config carrying a
-  `workspace` or `cwd` key, or a role key the mode does not declare, is refused
-  by key and rule (`tests/config.test.ts:259`, `:275`); so is an override that
-  would make a root role writable, a mode default the bound engine does not
-  accept, and a grok-bound lead under engine placement (`:303`, `:336`), while
-  the cap follows the placement and only ever falls (`:356`). `solo` yields a
-  `tools/list` without the worktree tools and `dev-team` yields both, for the
-  operator and lead rows and never the specialist (`tests/server.test.ts:500`);
-  `git_mutate` defaults its workspace and branch from that mode's own policy
-  (`:589`); `describe_mode` returns the loop and every role prompt byte for byte
-  with nothing written anywhere (`tests/modes.test.ts:177`), answers every row,
-  and refuses with a reason when the config names a mode that is not there
-  (`tests/server.test.ts:532`, `tests/modes.test.ts:208`). The mode loader
+  roles default to read-only, read-only, `workspace-write` and read-only, with
+  the temporary-directory warning on stderr (`tests/cli.test.ts:48`); `--mode
+  dev-team-engine` binds the `lead` and writes the cap of 2 the placement needs,
+  and `--mode solo` binds its one role and declares no git policy (`:92`);
+  `--project` writes where it names, in either flag order (`:111`); a mode this
+  build does not have is exit 1 with nothing written, and a command line it
+  cannot read is exit 2 (`:132`); and the shebang entry point runs as `bin`
+  names it (`:155`). A config carrying a `workspace` or `cwd` key, or a role key
+  the mode does not declare, is refused by key and rule
+  (`tests/config.test.ts:275`, `:291`); so is an override that would make a root
+  role writable, a mode default the bound engine does not accept, and a
+  grok-bound lead under engine placement (`:319`, `:352`); the cap follows the
+  placement and only ever falls (`:372`), and `init` leaves the config directory
+  holding the config alone (`:263`). `solo` yields a `tools/list` without the
+  worktree tools and `dev-team` yields both, for the operator and lead rows and
+  never the specialist (`tests/server.test.ts:534`); `git_mutate` defaults its
+  workspace and branch from that mode's own policy (`:635`); `describe_mode`
+  returns the loop and every role prompt byte for byte with nothing written
+  anywhere (`tests/modes.test.ts:297`), answers every row, and refuses with a
+  reason when the config names a mode that is not there
+  (`tests/server.test.ts:566`, `tests/modes.test.ts:328`). The mode loader
   refuses each of its own rules by field (`tests/modes.test.ts:58`, `:73`,
-  `:130`), and the three built-in modes validate (`:151`). What the hosts still
-  owe: the same `describe_mode` text through each host's own tool spelling,
-  which is integration probe I1's row.
+  `:161`, `:182`, `:196`, `:213`, `:243`, `:250`), the three built-in modes
+  validate (`:271`), and the two dev-team modes' role prompts are pinned equal
+  until step 9 generates both (`:260`). **No delegation starts a Grok engine as
+  an engine-placed lead**, whether the config binds one or a single call names
+  one, and a config edited after the server read it — a writable root role, a
+  role the mode does not declare, a foreign profile, a mode swapped under a
+  server whose tools are registered — is refused at the launch boundary by
+  field and rule (`tests/delegate.test.ts:390`, `:422`). A server whose mode
+  does not load, or whose config names a role it does not declare, exits 1 with
+  the reason and answers nothing (`tests/server.test.ts:320`). The profile a
+  specialist runs under is the mode's default unless config overrides it, and a
+  role the mode declares but config does not bind is refused by file
+  (`tests/delegate.test.ts:605`). What the hosts still owe: the same
+  `describe_mode` text through each host's own tool spelling, which is
+  integration probe I1's row.
 - **P9 (recorded):** Claude clean — `--strict-mcp-config --mcp-config <file>`
   shows exactly this server's tools and none of the operator's, and
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —
