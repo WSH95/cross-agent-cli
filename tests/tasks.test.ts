@@ -195,6 +195,7 @@ test("check reports the task, what is running it, and the tail of its own event 
   assert.deepEqual(missing, { ok: false, reason: "no task no-such-task" });
 });
 
+// @anchor checkWritesStall
 test("check writes the stall its clock reads, and writes the task back when events resume", async (t) => {
   // 0.02 of a minute is 1.2 seconds: a fraction is a valid `stallMinutes` and the reading
   // is the same one a quarter of an hour would give.

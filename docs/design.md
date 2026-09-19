@@ -2968,7 +2968,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   keeps it too (`#launchSpecWhose`). `git_mutate` refuses: a workspace an unsettled
   writable task is holding (`tests/gitmutate.test.ts#gitMutateRefusesWorkspace`), every workspace
   while a record
-  cannot be read (`#gitMutateRefuses`), a worktree the verifier rejects — the main
+  cannot be read (`#recordCannotBeRead`), a worktree the verifier rejects — the main
   worktree, a subdirectory, the wrong branch, a missing path, a pointer
   redirected at a sibling — with the verifier's own reason (`#gitMutateRefusesWorktree`), an
   argument list that is not one subcommand in this worktree (`#gitMutateRefusesArguments`), and a step
@@ -2978,7 +2978,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   nothing (`#failingGitCommand`); a config, a lock, or a git that could not run is refused
   rather than thrown (`#configLockGit`); a lock lost while the command ran is reported and
   the step is still journaled (`#lockLostWhile`). Journal: a commit lands on the task
-  branch and is journaled with the SHAs around it (`#stepNamedBranch`); steps accumulate in
+  branch and is journaled with the SHAs around it (`#commitLandsBranch`); steps accumulate in
   order with only the fields they carry, each append is a rename that leaves no
   temporary behind, the branch a journal was created on is write-once, the
   revert target and the branch head are set once and only by the merge, and a
@@ -3107,9 +3107,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`#lockWaitZero`). The cancellation is recorded at the protocol edge as well: an unknown
   request id is ignored, and the one the notification names is answered within
   100 ms with `cancelled: true` and a reply that is still sent
-  (`tests/server.test.ts#serverWhoseMode`), including when the notification shares one stdin
-  chunk with the call it cancels (`#unknownMethodsGet`). `check` is the other writer of the two
-  transitions, and writes both (`tests/tasks.test.ts#checkReportsTask`).
+  (`tests/server.test.ts#cancelledEndsWait`), including when the notification shares one stdin
+  chunk with the call it cancels (`#cancellationSharingChunk`). `check` is the other writer of the two
+  transitions, and writes both (`tests/tasks.test.ts#checkWritesStall`).
 - **Modes (recorded, except the hosts).** `init --mode dev-team` writes section
   6's config byte for byte and it loads against the built-in mode, whose four
   roles default to read-only, read-only, `workspace-write` and read-only, with

@@ -88,6 +88,7 @@ function poison(t: TestContext, values: Record<string, string>): void {
   }
 }
 
+// @anchor commitLandsBranch
 test("a commit through git_mutate lands on the task branch and is journaled with its SHAs", async (t) => {
   const { root, add } = await repository(t);
   const worktree = await add("alpha");
