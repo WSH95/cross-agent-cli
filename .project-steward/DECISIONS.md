@@ -227,3 +227,77 @@ managed blocks are untouched. `CLAUDE.md` includes `AGENTS.md` by reference,
 so it needs no mirror. Later Layout refreshes in this session (the e2e verify
 script, S11's mailbox, T14–T16) fall under the same approval and are noted
 here as they land.
+
+### Rulings taken during M3 (Tasks 4, 4b, 4c, 5, 6), 2026-09-19
+
+Each is also in the SDD ledger with its dispatch. The cost named is what it
+costs if the ruling is wrong.
+
+- **S8 (Task 4).** Fixtures bind leads to Codex so the tests are
+  host-independent; `delegate`'s own root-write check stays behind
+  `bindingFault`; a Grok-bound lead is refused at load. Cost: a test rebind.
+- **Root git tools (4b).** `"none"` journals nothing and a slug is refused
+  where nothing would be journaled; `merge --ff-only` is refused unless the
+  root HEAD is on the default branch; `tests-passed` is written once and
+  only after `merged`; `worktree remove` respects reservations; a tracked
+  `.cross-agent/` in the root index is refused before a merge; a rebase can
+  be aborted through `git_mutate`. Cost: one refusal too many, never a
+  silent merge.
+- **Solo without ceremony (4c).** Every mode is a worktree provider: the
+  four provider tools register for every mode, and `describe_mode.git.implicit`
+  tells the launcher whether the mode declares worktree roles, so a solo
+  one-shot's merge finishes through `git_root`/`run_command` with a complete
+  journal. Task ids are hex (a base64url id starting with `-` failed the
+  slug rule). A consult one-shot cannot smuggle `.cross-agent/` into the
+  root (`trackedStateFault`, found Critical by the second opinion). Cost:
+  four tools in solo's list nobody calls.
+- **T12.** The mode's `roles/*.md` reach the engine: `delegate` launches a
+  role with the mode's prompt file and a configured `prompt` overrides it
+  (`src/` allowed in a text task's fix round because the prompts were
+  otherwise dead text). The launcher keeps the plan's "call `list_tasks`
+  after a timeout or a stalled return". A resume resolves its model as call,
+  then the binding for this engine, then the record (the implementer's
+  order, accepted over the finding's). Six one-line fixes were verified by
+  the controller's own read rather than a review seat. Cost: one function
+  to revert; one missed nit.
+- **T13, before review.** A `workspace-write` Claude specialist in a linked
+  worktree could write into `<root>/.git`: the launch spec carries
+  `protectedPaths` (the workspace's `.git` pointer and the common git
+  directory from `verifyWorktree`) and the Claude adapter deny-lists them;
+  a call naming another engine drops the binding's model and effort;
+  `denyTargets` is rooted at this repository. Fixed before the review so one
+  review saw one complete task. Cost: three minutes of subscription for the
+  reruns.
+- **T13, round 1.** The read-only Claude profile sent no filesystem rule and
+  Claude's sandbox writes to the cwd by default: the builder now sends
+  `denyWrite` of the cwd plus the protected paths, proven by a real
+  read-only probe. The probe harness takes its settings from the adapter's
+  `plan`; a fake-engine test pins the by-ancestry refusal naming the task
+  id; the Codex I2 body is written behind `CROSS_AGENT_REAL_CODEX=1` and not
+  run. The MCP server is declared inline in `.claude-plugin/plugin.json`
+  and the root `.mcp.json` deleted, because a repository-root `.mcp.json` is
+  Claude Code's project-scoped config for every developer session here
+  (from the Claude Code docs). Cost: the file form is one commit away.
+- **T13, round 2.** The Grok adapter routes a prompt through
+  `--prompt-file` when the brief or the role text is large (a 150 KB review
+  brief failed with `E2BIG`, found by running the product on its own
+  review); the server's row-and-reason stderr line moves from startup to
+  the first request resolution (a specialist's record is often still
+  `launching` at startup); a reusable `tools/e2e-verify.mjs` replaces the
+  one-off E1 verification for E4–E7. Cost: a harness file to maintain.
+- **Bindings while Codex is paused (user, 2026-09-18).** E1 and E3 bind
+  planner and implementer to claude-sonnet-5 and the reviewers to grok-4.6;
+  every Codex row is recorded as not run with the command that runs it
+  later. Cost: coverage order only.
+- **Reviewer seats (user, 2026-09-19).** The second code review is a
+  `consult` delegation through cross-agent's own server to grok · grok-4.6
+  · xhigh with the diff attached, driven by
+  `.superpowers/sdd/…/dispatch/cross-agent-review.mjs` launched with
+  `setsid --fork` from the worktree (which holds a git-ignored `solo`
+  config); `/grok-build:review` was considered and set aside because its
+  bridge caps effort at `high`. The task review stays on claude-opus-5; the
+  closure check of a fix round is the controller's. Cost: a Grok review
+  takes about 17 minutes at xhigh.
+- **Grok trusted folder (user, 2026-09-19).** The e2e sample folder is
+  trusted in `~/.grok/trusted_folders.toml` (backup beside it) so I1's Grok
+  row can close.
