@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T07:24:03Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 4 (S8) complete on task/cross-agent-m3 at 757371f (atc-s96.23 closed). Task 4b (git_root, run_command, journal named steps) implemented as 9cb89bc, 59c26cb (527 pass/1 skip; 738 citations/0 misses); task review (claude-opus-5, max) and second opinion (claude-fable-5-1, max) running; fix round will also add the timed-out run_command tail and git_mutate's mode-drift refusal. 4c brief updated.
+
 ### 2026-09-19T06:31:15Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4 (S8) fix round 1 landed on task/cross-agent-m3: 28e5a54, 22853d2, 757371f (500 pass/1 skip; 678 citations/0 misses) after a Critical from the Fable review (delegate accepted a Grok engine for the engine-placed lead role via per-call override or a post-start config edit; now bindingFault at the launch boundary) and the SKILL.md containment gap; scoped re-review (claude-fable-5-1, max) running. 4b brief updated with the S8 seams.
 

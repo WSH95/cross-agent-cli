@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T06:31:15Z
+updated_at: 2026-09-19T07:24:03Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -25,16 +25,17 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 4 (S8 modes; `atc-s96.23`) is on `task/cross-agent-m3` at `757371f`:
-the task commit `ad06631` plus fix round 1 (`28e5a54`, `22853d2`,
-`757371f`; 500 pass, 1 skip) after the Fable review found a Critical — a
-Grok engine accepted for the engine-placed lead role at the launch
-boundary — and the loop file's missing containment; its scoped re-review
-(Claude Code subagent · claude-fable-5-1 · max) is running. Next: 4b (root
-git tools and journal steps; brief updated with the S8 seams), 4c (solo
-without ceremony), T12, T13. **Codex is paused by the user.** Pending
-your approval: `agents-md-m1.diff` (and Task 4's `task-4-agents-md.diff`)
-in `.superpowers/sdd/the-development-of-this-calm-planet/`.
+Task 4b (`git_root`, `run_command`, the journal's `worktree` field and
+named steps; the `git_root`/`run_command` half of `atc-s96.24`) is
+implemented on `task/cross-agent-m3` as `9cb89bc`, `59c26cb` over
+`757371f` (527 pass, 1 skip; 738 citations, 0 misses) and under review:
+task review (Claude Code subagent · claude-opus-5 · max) and second
+opinion (· claude-fable-5-1 · max). Task 4 (S8 modes) is complete there
+(`atc-s96.23` closed). Next: 4c (solo without ceremony; brief updated
+with 4b's shapes), T12 (skills), T13 (Claude Code packaging, I1/I2, E1),
+S11 (mailbox, lead delegation, E2/E3). **Codex is paused by the user.**
+Pending your approval: `agents-md-m1.diff` (plus Task 4's and 4b's
+Layout diffs) in `.superpowers/sdd/the-development-of-this-calm-planet/`.
 
 ## Next steps
 
