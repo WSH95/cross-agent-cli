@@ -12,7 +12,7 @@ resume` keeps neither cwd nor sandbox) recorded on 2026-09-09 (`atc-s96.21`,
 closed). Open: probe P2 for Claude, blocked on the bwrap AppArmor profile
 (`atc-s96.17`).
 
-## M1: core runtime
+## M1: core runtime (done 2026-09-19, merged as `bd37e0e`; `VERIFY.md`)
 
 - Done by the OpenMausBot pack: T1 ledger (db75a8f), T2 config and
   worktree verification (975e394), T3 loop guard (3dba529), T4 adapter
@@ -25,9 +25,11 @@ closed). Open: probe P2 for Claude, blocked on the bwrap AppArmor profile
   reconciliation on the group scan with single-write adoption, the spawn
   drain, record validation (S2, `.20`); T6 — reservation, `git_mutate` on
   the verified git-dir, the journal, `lockWaitSeconds` (`.6`).
-- Open: T10 delegate, check, result, cancel, list_tasks with authority by
-  ancestry (`.10`, two halves briefed; `.10.1` and `.10.2` fold in; `.37`
-  and `atc-vuu` owed); T11 wait with stall detection (`.11`).
+- Done on 2026-09-18/19 (branch `task/cross-agent-m3`, merged): cite by
+  symbol (`.36`); T10 both halves (`.10`, `.10.1`, `.10.2`, `.37`, `.39`,
+  `.29`, `atc-vuu`); T11 (`.11`); the M1-close beads (`.44`, `.40`,
+  `atc-1p0`, `.31`, `.32`, `.30`, `.38`, `.41`, `.46`) and test hygiene
+  (`.33`, `.43`). Plan: `~/.claude/plans/the-development-of-this-calm-planet.md`.
 
 ## M2: engine adapters (done 2026-09-09)
 

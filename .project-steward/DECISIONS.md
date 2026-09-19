@@ -186,3 +186,32 @@ do. Managed blocks untouched; `CLAUDE.md` unchanged.
 
 Consequences: Instruction files match the tree at the close of the
 adapter milestone.
+
+## 0010 — 2026-09-19 — Rulings taken while executing the M1 plan (cite-by-symbol, T10, T11, the M1-close beads)
+
+Context: The plan at `~/.claude/plans/the-development-of-this-calm-planet.md`
+(reviewed three times by Codex gpt-6-astra before execution) was executed by
+Claude Code subagents — implementers on claude-opus-5 at max effort, task
+reviews on claude-opus-5, second-opinion reviews on claude-fable-5-1 after the
+user paused Codex on 2026-09-18 — with the SDD ledger at
+`.superpowers/sdd/the-development-of-this-calm-planet/progress.md` holding
+every ruling. This entry preserves them; each names what it costs if wrong.
+
+Decision: the following rulings stand (written into `docs/design.md` where
+they concern the design):
+
+- The Claude sandbox on this machine: the docs' `/etc/apparmor.d/bwrap` profile was shadowed by Ubuntu's stock `bwrap-userns-restrict` (same profile name, loaded later); the stock one is disabled (link in `/etc/apparmor.d/disable/`). The adapter now sends `allowUnsandboxedCommands: false` and `failIfUnavailable: true` (`atc-s96.44`) — cost if wrong: a Claude child whose sandbox cannot start fails instead of running unsandboxed, the safe direction.
+- Authority resolver (T10a): the walk stops at the nearest engine ancestor whatever its record's status; the lead row also requires that the nearest carried `CROSS_AGENT_TASK` (own env, else the first ancestor environ) equals the lead record's id; any ancestor's `CROSS_AGENT_TASK` counts against operator provenance; a stateless full re-walk per request; the cap never hides an ancestry reason; the 8-hop limit stands (this machine: 6 hops from an MCP server's position); invalid records stay skipped — cost if wrong: an unusual process layout is denied a row in the safe direction, with a reason naming the cause.
+- T10b: ownership is by lineage ids (own id plus the `resumedFrom` chain); a resume chain has at most one active record and never forks, and a lead resumes only what it owns; `cancel` handles every parent state (`orphaned` is terminated by identity and written `cancelled` directly; a terminal parent's surviving descendants are still cancelled); the parent write and descendant snapshot happen under `spawn.lock`; records carry `depth`, `parentTaskId`, `resumedFrom`, `acknowledgedAt`, `effort`; `check` and `list_tasks` show engine, model and effort (user request) — cost if wrong: each is one function.
+- A cancel inside the launch window: the reconciler's `cancelling` branch runs the environ scan before settling, `terminate()` scans too, and the runner stands down on a `cancelling` record at both checkpoints — cost if wrong: a leaked engine, the failure this closed (reproduced before the fix).
+- T11: the stall clock is `lastEventAt ?? acknowledgedAt`; `observeStall` (shared by `wait` and `check`) is the only writer of `running ↔ stalled`; a wait answers a stall crossed during its own call whoever wrote it; a dead runner or overdue launch triggers one pass and an unsettled record is answered with the pass's reason; the per-call `AbortController` registers before authority resolution — cost if wrong: a wait that polls to its timeout instead of answering.
+- The runner writes `<id>.outcome.json` before its terminal ledger write; reconciliation settles an orphan only from that sidecar (a result file alone never means success); a group the cleanup itself killed settles `runner lost; engine group terminated`; the edge `orphaned → done` exists for the sidecar's `done` — cost if wrong: a failed run shown as done, the defect this replaced.
+- `findByEnvironment` retries a process mid-`execve` (empty `cmdline`, EACCES on `environ`) for one 250 ms budget per scan before counting it unreadable — the real cause of the `atc-s96.33` flake — cost if wrong: a slower scan under a spawn storm.
+- Engine placement ships as a third built-in mode `dev-team-engine` (S8); `git_root` and `run_command` register under the worktree provider for every placement with the journal selected by an explicit `slug`; the built-in `consult` role in every mode, a no-config default to `solo`, `worktree: true` one-shots merged by the launcher under `mergePolicy`, and `review`/`critique` briefs (user-approved decision 10) — cost if wrong: one mode file, one flag, one role to remove.
+- Process: Codex paused by the user (subscription limit); second-opinion reviews on Fable 5.1, plan reviews on Opus 5; every dispatch names harness · model · effort; the controller's own citation-drift script misattributed continuation citations once (Task 3c round 3, withdrawn) — cost: one wasted round.
+
+Consequences: `docs/design.md`, `VERIFY.md` and the beads carry each ruling's
+effect; a ruling the operator rejects is reverted by the bead or commit it
+names. The AGENTS.md changes these rulings imply are proposed in
+`.superpowers/sdd/the-development-of-this-calm-planet/agents-md-m1.diff` and
+await approval.
