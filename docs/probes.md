@@ -600,7 +600,8 @@ MCP tool named delegate … and report, word for word, whatever comes back".
 | engine | what the specialist answered | task |
 | --- | --- | --- |
 | claude (`claude-sonnet-5`, medium, 11 s) | "I see no MCP tools available in this session — none of the tools listed to me (top-level or deferred) are namespaced as MCP tools, and none is named `delegate`." | `4ffe6405…` |
-| grok (`grok-4.6`, medium, 18 s) | "MCP tools I can see: `context7__query-docs`, `context7__resolve-library-id`. No MCP tool named `delegate` is offered to you at all." | `dacd2a10…` |
+| grok (`grok-4.6`, medium, 18 s), before the folder was trusted | "MCP tools I can see: `context7__query-docs`, `context7__resolve-library-id`. No MCP tool named `delegate` is offered to you at all." | `dacd2a10…` |
+| grok (`grok-4.6`, medium, 44 s), after it was | the five `cross-agent__…` tools and no sixth; `delegate` refused by Grok's own dispatcher as a name it has no schema for | `915d1a84…` |
 | codex | not run: Codex paused by the user (2026-09-18). When the pause lifts: the same `delegate {role: "consult", engine: "codex", model: "gpt-5.6-luna", cwd: <sample>}` with the same brief, expecting no `mcp__cross_agent__` tool beside its built-in `codex_apps`. | — |
 
 One deviation in the run itself: the second `delegate` carried the same brief as
@@ -609,16 +610,19 @@ finished within the 10-minute duplicate window` — and the host repeated the ca
 with `force: true`, which is what the launcher says to do. The duplicate window
 is per `(role, cwd, brief)` and does not know that the engine differs.
 
-Claude's row is the design's claim exactly. Grok's is the design's claim about
-the **mechanism** — a Grok child reaches whatever the operator's configuration
+Claude's row is the design's claim exactly. Grok's, on 2026-09-19, showed the
+**mechanism** — a Grok child reaches whatever the operator's configuration
 mounts, here another plugin's `context7` — without its second half: this server
-was not among them. What was observed, exactly: `grok mcp add --scope project
-cross-agent node -- <repo>/src/server.ts --project <sample>` wrote
-`<sample>/.grok/config.toml`, and the specialist's own answer listed only
-`context7`'s two tools. Why it did not start was **not** observed in that run —
-the reason first written here was carried over from P9's transcription — so it
-was asked directly afterwards, with the project file in place. `grok mcp doctor`
-in the sample, on 1.0.34 (a diagnostic, not an engine session):
+was not among them. `grok mcp add --scope project cross-agent node --
+<repo>/src/server.ts --project <sample>` wrote `<sample>/.grok/config.toml` and
+the specialist still listed only `context7`. Why was asked directly afterwards,
+with the project file in place, and `grok mcp doctor` answered it: "✗ folder
+untrusted (repo-local (project-scoped) server not started for an untrusted
+folder) → re-run with --trust to allow repo-local servers".
+
+**Closed on 2026-09-19, once the user trusted the folder** (`atc-s96.54`;
+`~/.grok/trusted_folders.toml` now holds `<sample>`). The same two commands, in
+order. `grok mcp doctor` in the sample, with the project mount present:
 
 ```
   Config sources
@@ -626,28 +630,57 @@ in the sample, on 1.0.34 (a diagnostic, not an engine session):
     <sample>/.grok/config.toml               1 server
     plugin: context7                         1 server
     ~/.claude.json                           1 server
-    .mcp.json                                not found
 
   cross-agent (stdio: node <repo>/src/server.ts --project <sample>)
-    ✗ folder untrusted (repo-local (project-scoped) server not started for an untrusted folder)
-    → re-run with --trust to allow repo-local servers
+    ✓ command found (/home/wsh/.local/bin/node)
+    ✓ server started (0.0s)
+    ✓ handshake OK (protocol 2025-11-25)
+    ✓ 5 tools discovered
 ```
 
-So the reason is Grok's own about this mount, not an inference: a project-scoped
-server does not start in an untrusted folder. The remedy the doctor names,
-`--trust`, is in neither `grok --help` nor `grok mcp doctor --help` on 1.0.34;
-what is documented is the trust decision itself, kept in
-`~/.grok/trusted_folders.toml`. The listing also confirms P9's other half — a
-Grok session reads `~/.claude.json`'s servers as well as its own.
+Then the row itself: `delegate {role: "consult", engine: "grok", model:
+"grok-4.6", effort: "medium", cwd: <sample>}` through the real server, runner
+and adapter, with I1's own brief. Task `915d1a84…`, 44 s, `done`, exit 0, depth
+1. Its `system/init` line reports `mcp_servers: [{"name": "cross-agent",
+"status": "connected"}, {"name": "claude-design", "status": "connected"}]` and
+27 tools in all, and what it answered, quoted:
 
-A warning for anyone reading a Grok transcript: the `system/init` line's
-`mcp_servers` field is **not** Grok's MCP state. Grok's own
-`events.jsonl` `mcp_config_resolved` is, and the two disagree.
+```
+**cross-agent**
+- `cross-agent__list_roles`   - `cross-agent__list_tasks`
+- `cross-agent__result`       - `cross-agent__describe_mode`
+- `cross-agent__check`
+…
+`delegate` / `cross-agent__delegate` was not among the tools I could see.
+```
 
-So **the Grok half of I1 is not closed**: what it still owes is a Grok specialist
-that does reach this server, listing exactly the specialist row and having its
-own `delegate` refused. Running it needs the sample trusted for Grok, or the
-server mounted at user scope — the operator's decision, held in `atc-s96.54`.
+**Exactly the specialist row**, in a third spelling — `cross-agent__<tool>`,
+neither Claude's `mcp__cross-agent__<tool>` nor a plugin mount's
+`mcp__plugin_cross-agent_cross-agent__<tool>` — which is the whole reason I1
+compares the set and never a prefix. Its two attempts at `delegate`, word for
+word:
+
+```
+Tool `cross-agent__delegate` failed via `use_tool`: Tool not found: cross-agent__delegate
+Tool `delegate` failed via `use_tool`: 'delegate' is not a valid MCP tool name.
+```
+
+So the refusal reaches this engine the same way it reaches Claude: the tool was
+never in the list, so the dispatcher refuses the name and the server is never
+asked. The reason-bearing refusal is `tests/authority.test.ts:209`'s, as for
+Claude. The specialist also reported `total_hidden_tools: 7` behind Grok's own
+`search_tool`, and it saw this server's five without searching.
+
+**What this row does not cover: a Grok specialist in a linked worktree.** The
+`consult` above works at the project root, which is the trusted folder and the
+directory holding `.grok/config.toml`. A `dev-team` implementer or code reviewer
+works in `<sample>/.worktrees/<slug>`, and `grok mcp doctor` run there lists no
+project config source at all — `./.grok/config.toml` is per-directory and a
+linked worktree is its own directory, so the mount is not even attempted,
+trusted or not. A worktree specialist therefore reaches this server only if the
+operator mounts it at **user scope** (`grok mcp add --scope user`). Trusting
+more folders, or mounting at user scope, is the operator's decision and not a
+probe's, so this run stopped here.
 
 ### (ii) Authority by ancestry
 

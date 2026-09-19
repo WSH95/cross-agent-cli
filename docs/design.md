@@ -2854,7 +2854,7 @@ registered by the mode that declares the worktree provider.
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | **Done.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `dev-team` and `dev-team-engine` `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests, `modes/solo/roles/consult.md` being 4c's own text; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row; and, in the fix round, `delegate` launching a role with the mode's own prompt file rather than a one-line default, the config's `prompt` becoming the override it was meant to be (`src/delegate.ts#delegate`, `src/modes.ts#rolePrompt`, section 8). |
 | 10 | Claude Code packaging | `atc-s96.13` | **Done, less the Codex rows and the Grok half of I1.** `.claude-plugin/plugin.json` carrying the server inline, and
-`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2): every Codex row waits on the user's pause lifting, and I1's Grok row waits on a Grok that reaches this server — the project-scoped mount did not start in an untrusted folder (P9). |
+`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2): every Codex row waits on the user's pause lifting, and I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24` | **Split.** `git_root`, `run_command` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
 | 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `answer`, `report`, and the rest of section 10, over a seeded ledger. |
@@ -2873,9 +2873,18 @@ Integration probes after each packaging task, run by the operator:
   `mcp__cross_agent__<tool>` beside its built-in `codex_apps`
   (`docs/probes.md:393`, `:396`), and Grok reaches the tools through its
   `use_tool` dispatcher (`docs/probes.md:398`), so the test compares the set of
-  this server's tools, not a literal string. A direct `tools/call delegate`
+  this server's tools, not a literal string — three spellings have now been
+  observed for the same five tools, and none of them is the design's own. A direct `tools/call delegate`
   from that session is refused by name, with the reason. **Run for Claude**
-  (`docs/probes.md:539-718`): a delegated `consult` sees no MCP tool at all,
+  (`docs/probes.md:539-750`). **Run for Grok too**, once the operator trusted the
+  sample folder (`atc-s96.54`): a `consult` delegated normally into the project
+  root reached this server through the configuration it inherits and listed
+  exactly the five specialist tools as `cross-agent__<tool>`, with `delegate`
+  refused by Grok's own dispatcher as a name it was given no schema for. A Grok
+  specialist **in a linked worktree** is not covered and is not a trust
+  question: `./.grok/config.toml` is per-directory, and a worktree is its own
+  directory, so only a user-scope mount would reach one. For Claude: a delegated
+  `consult` sees no MCP tool at all,
   and one given a lead's own mount by `tools/probe.mjs --track` sees exactly
   the five specialist tools as `mcp__cross-agent__<tool>` — while the host's
   own plugin mount spells them `mcp__plugin_cross-agent_cross-agent__<tool>`,
@@ -3056,9 +3065,12 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the nearest configured directory, a linked worktree resolving to its main
   project and no config anywhere to a reason (`tests/project.test.ts:24`,
   `:40`, `:50`, `:66`). A resolver that throws is answered `-32603`, lists
-  nothing and runs no handler (`tests/server.test.ts:854`). Still to record: a
-  Grok specialist inheriting the user's MCP configuration sees exactly the
-  specialist row (this is I1).
+  nothing and runs no handler (`tests/server.test.ts:854`). **Recorded** on 2026-09-19: a Grok
+  specialist inheriting the operator's MCP configuration — the project-scoped
+  mount, in a folder its operator trusts — sees exactly the specialist row and
+  has its own `delegate` refused (I1, `atc-s96.54`). A Grok specialist in a
+  linked worktree still reaches no server, because a project-scoped mount is
+  per-directory.
 - **T11 (recorded).** An engine that says nothing from its launch stalls on the
   acknowledgement clock while its group stays alive, comes back to `running`
   through `check` when it emits, stalls again on the next silence, and settles
