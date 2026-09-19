@@ -434,6 +434,31 @@ test("a launching record with an environment it could not read waits for the nex
   assert.deepEqual(seeing.changed.map((value) => value.status), ["orphaned"], "the next pass judges it");
 });
 
+test("a record held open by an environment it could not read is failed once the hold expires", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  // A same-uid non-dumpable leader started during the task is answered by waiting, and
+  // waiting for ever is no answer: past the hold the launch is failed, and the count of
+  // what could not be read is on the record for the operator who has to explain it.
+  const hidden = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
+  const original = fs.readFileSync;
+  const mock = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === `/proc/${hidden.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+  }) as typeof fs.readFileSync);
+  const held = await reconcile(root, record.launchDeadline + 5 * 60 * 1000);
+  const expired = await reconcile(root, record.launchDeadline + 5 * 60 * 1000 + 1);
+  mock.mock.restore();
+
+  assert.deepEqual(held.changed, [], "the hold is not over until it is over");
+  assert.deepEqual(expired.changed.map((value) => [value.status, value.reason]), [["failed", "launch; environ unreadable for 1 process"]]);
+  assert.deepEqual(expired.errors, []);
+  assert.equal(read(root, record.id).engineIdentity, undefined, "nothing was adopted: nothing could be read");
+  assert.equal(running(hidden.pid), true, "and the process it could not read is left alone");
+});
+
 test("a record whose group will not die is reported, and the pass judges the rest", async (t) => {
   const root = project(t);
   const zoo = processes(t);

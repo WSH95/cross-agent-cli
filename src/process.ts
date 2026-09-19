@@ -275,20 +275,33 @@ async function waitFor(dead: () => boolean, timeout: number): Promise<boolean> {
   return true;
 }
 
-// SIGTERM, a grace, SIGKILL, a shorter grace. It answers whether the group is gone and
-// never throws: a caller judging many records reports the survivor and carries on, and
-// an EPERM or a group that will not die is that answer, not an exception.
-async function terminate(pgid: number, alive: () => boolean, options: TerminateOptions): Promise<boolean> {
+/**
+ * How a termination ended. `dead` is the group gone; the other two are the two ways it
+ * can still be there, and they are different repairs — a permission this process does
+ * not have, and a process that took SIGKILL and stayed (bead atc-s96.31).
+ */
+export type TerminationOutcome = "dead" | "eperm" | "survived";
+
+// SIGTERM, a grace, SIGKILL, a shorter grace. It answers how the group ended and never
+// throws: a caller judging many records reports the survivor and carries on, and an EPERM
+// or a group that will not die is that answer, not an exception.
+async function terminate(pgid: number, alive: () => boolean, options: TerminateOptions): Promise<TerminationOutcome> {
+  let denied = false;
   const signal = (value: NodeJS.Signals) => {
     try {
       if (alive()) process.kill(-pgid, value);
-    } catch { /* ESRCH is a group that died first; EPERM is answered by the wait below. */ }
+    } catch (error) {
+      // ESRCH is a group that died first. EPERM is a group this process may not signal,
+      // which the wait below cannot tell from one that ignored what it was sent.
+      if ((error as NodeJS.ErrnoException).code === "EPERM") denied = true;
+    }
   };
-  if (!alive()) return true;
+  if (!alive()) return "dead";
   signal("SIGTERM");
-  if (await waitFor(() => !alive(), options.termGrace ?? 2000)) return true;
+  if (await waitFor(() => !alive(), options.termGrace ?? 2000)) return "dead";
   signal("SIGKILL");
-  return waitFor(() => !alive(), options.killGrace ?? 500);
+  if (await waitFor(() => !alive(), options.killGrace ?? 500)) return "dead";
+  return denied ? "eperm" : "survived";
 }
 
 // A zombie is not a running process, and its parent may never reap it, so waiting for
@@ -328,16 +341,16 @@ export async function killStrays(strays: readonly FoundProcess[]): Promise<strin
 }
 
 /** The verified group of a recorded engine identity. */
-export function terminateGroup(identity: EngineIdentity, options: TerminateOptions = {}): Promise<boolean> {
+export function terminateGroup(identity: EngineIdentity, options: TerminateOptions = {}): Promise<TerminationOutcome> {
   return terminate(identity.pgid, () => groupAlive(identity), options);
 }
 
 // The group a detached spawn created, known only by the pid it made the group and session
 // id — the case where the engine's identity could never be captured. The kernel keeps that
 // id reserved while any member holds it, so the members are exactly what the scan finds.
-export function terminateGroupByPid(pid: number, options: TerminateOptions = {}): Promise<boolean> {
-  if (!Number.isInteger(pid) || pid <= 1) return Promise.resolve(true);
-  return terminate(pid, () => hasMember(pid), options);
+export async function terminateGroupByPid(pid: number, options: TerminateOptions = {}): Promise<boolean> {
+  if (!Number.isInteger(pid) || pid <= 1) return true;
+  return await terminate(pid, () => hasMember(pid), options) === "dead";
 }
 
 // Each call judges every orphaned record on the current kernel state: an invalid or
@@ -357,8 +370,9 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
     // that never settles has to be told which identity cleanup would not act on.
     if (!identity) { skipped.push({ id: record.id, reason: "no engine identity" }); continue; }
     if (state === "invalid" || state === "reused") { skipped.push({ id: record.id, reason: `engine identity ${state}` }); continue; }
-    if (state === "alive" && !await terminateGroup(identity)) {
-      skipped.push({ id: record.id, reason: `engine group ${identity.pgid} did not terminate` });
+    const outcome = state === "alive" ? await terminateGroup(identity) : "dead";
+    if (outcome !== "dead") {
+      skipped.push({ id: record.id, reason: `engine group ${identity.pgid} did not terminate: ${outcome}` });
       continue;
     }
     // A record settled by another writer since the listing is refused: not changed.

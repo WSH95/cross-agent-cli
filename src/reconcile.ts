@@ -24,6 +24,16 @@ export interface Reconciled {
 
 type Judgement = { changed: TaskRecord[]; errors: TaskError[] };
 
+/**
+ * How long past its launch deadline a record may be held open by an environment the scan
+ * could not read. Waiting is the right answer to an unreadable plausible candidate — one
+ * of them could be the engine (design section 2, B5) — but a same-uid non-dumpable leader
+ * started during the task would hold the record `launching` for as long as it lived,
+ * which is no bound at all. Five minutes is far past any launch and short enough that the
+ * operator's task settles while they are still looking at it (bead atc-s96.31).
+ */
+const unreadableHoldMs = 5 * 60 * 1000;
+
 const nothing: Judgement = { changed: [], errors: [] };
 
 // The runner is one process, so its identity is judged by pid and start time; the engine
@@ -69,14 +79,21 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number, waitS
       errors: [{ id: record.id, reason: `engine ${own.pid} shares this reconciler's session; adoption deferred to another server` }],
     };
   }
-  if (!leader && unreadable > 0) {
+  if (!leader && unreadable > 0 && now <= record.launchDeadline + unreadableHoldMs) {
     // One of those could have been this engine, and calling the launch failed would leave
-    // it running with no record accounting for it. The next pass tries again.
+    // it running with no record accounting for it. The next pass tries again — until the
+    // hold runs out, because a process that can never be read would otherwise keep the
+    // record launching for as long as it lived.
     return { changed: [], errors: [{ id: record.id, reason: `environ unreadable for ${unreadable} processes` }] };
   }
+  // What the failure says is what the operator has to work from: the strays this pass is
+  // about to kill, and the count it waited out without ever being able to read it.
+  const failed = ["launch"];
+  if (strays.length > 0) failed.push(`killed stray ${strays.map((entry) => entry.pid).join(", ")}`);
+  if (unreadable > 0) failed.push(`environ unreadable for ${unreadable} process${unreadable === 1 ? "" : "es"}`);
   const patch: TaskPatch = leader
     ? { status: "orphaned", engineIdentity: { pid: leader.pid, startTime: leader.startTime, pgid: leader.pid, bootId: currentBootId } }
-    : { status: "failed", reason: strays.length > 0 ? `launch; killed stray ${strays.map((entry) => entry.pid).join(", ")}` : "launch" };
+    : { status: "failed", reason: failed.join("; ") };
 
   const result = await update(projectRoot, record.id, patch, now, { unlessTerminal: true, expect, waitSeconds });
   if (!result.applied) {
@@ -125,7 +142,8 @@ async function judge(projectRoot: string, record: TaskRecord, now: number, waitS
     const identity = record.engineIdentity;
     const fail = (reason: string): Judgement => ({ changed: [], errors: [{ id: record.id, reason }] });
     if (identity) {
-      if (!await terminateGroup(identity)) return fail(`engine group ${identity.pgid} did not terminate`);
+      const outcome = await terminateGroup(identity);
+      if (outcome !== "dead") return fail(`engine group ${identity.pgid} did not terminate: ${outcome}`);
       return settleCancelled(projectRoot, record, {}, [], now, waitSeconds);
     }
     // A cancel inside the launch window claims a record that never acknowledged, so there

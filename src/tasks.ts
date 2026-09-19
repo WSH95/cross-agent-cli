@@ -261,9 +261,10 @@ async function terminate(projectRoot: string, taskId: string, grace: number, wai
 
   const identity = record.engineIdentity;
   if (identity) {
-    return await terminateGroup(identity, { termGrace: grace, killGrace: 500 })
+    const outcome = await terminateGroup(identity, { termGrace: grace, killGrace: 500 });
+    return outcome === "dead"
       ? settle({ engineIdentity: identity }, [])
-      : refuse(`engine group ${identity.pgid} did not terminate`);
+      : refuse(`engine group ${identity.pgid} did not terminate: ${outcome}`);
   }
   // The record names no engine, which is what a task cancelled inside its launch window
   // looks like — and an engine may still exist, carrying the assignment its runner put in

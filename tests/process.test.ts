@@ -329,21 +329,30 @@ test("foreignEngine names the engine or the blind spot a launch must stand down 
   assert.match(foreignEngine({ found: [entry(2202, false)], unreadable: 1 })!, /\b2202\b/);
 });
 
-test("terminateGroup escalates, reports what survives, and never throws", async (t) => {
+test("terminateGroup escalates, names what it could not end, and never throws", async (t) => {
   const zoo = processes(t);
   const graces = { termGrace: 200, killGrace: 200 };
-  assert.equal(await terminateGroup({ pid: 2_147_483_647, startTime: "0", pgid: 2_147_483_647, bootId: currentBootId }, graces), true,
+  assert.equal(await terminateGroup({ pid: 2_147_483_647, startTime: "0", pgid: 2_147_483_647, bootId: currentBootId }, graces), "dead",
     "a group with no live member needs nothing signalled");
 
   const stubborn = zoo.leader();
   const denied = Object.assign(new Error("not permitted"), { code: "EPERM" });
-  const mocked = t.mock.method(process, "kill", () => { throw denied; });
-  const survived = await terminateGroup(stubborn.identity, graces);
-  mocked.mock.restore();
-  assert.equal(survived, false, "a group it could not signal is reported, not thrown");
+  const refused = t.mock.method(process, "kill", () => { throw denied; });
+  const eperm = await terminateGroup(stubborn.identity, graces);
+  refused.mock.restore();
+  assert.equal(eperm, "eperm", "a group it may not signal is reported, not thrown");
   assert.equal(groupAlive(stubborn.identity), true);
 
-  assert.equal(await terminateGroup(stubborn.identity, graces), true);
+  // The other failure: every signal was delivered and the group is still there. An
+  // operator reading a record that would not settle has to be told which of the two it
+  // was, because a permission and a process that will not die are different repairs.
+  const swallowed = t.mock.method(process, "kill", () => true);
+  const survived = await terminateGroup(stubborn.identity, graces);
+  swallowed.mock.restore();
+  assert.equal(survived, "survived");
+  assert.equal(groupAlive(stubborn.identity), true);
+
+  assert.equal(await terminateGroup(stubborn.identity, graces), "dead");
   assert.equal(groupAlive(stubborn.identity), false);
 });
 

@@ -1,12 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { lockWaitSeconds } from "./config.ts";
 import { isTerminal, read, readSpec, update } from "./ledger.ts";
 import { acquire, lockPath, runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
-import { findByEnvironment, foreignEngine, groupAlive, identityOf, killGroup, terminateGroupByPid } from "./process.ts";
+import { findByEnvironment, foreignEngine, identityOf, terminateGroup, terminateGroupByPid } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
 import type { EngineAdapter } from "./engines/types.ts";
@@ -52,24 +51,15 @@ async function run(projectRoot: string, id: string): Promise<void> {
     }
   }
 
-  async function waitForGroup(timeout: number): Promise<boolean> {
-    const deadline = performance.now() + timeout;
-    while (engine && groupAlive(engine)) {
-      const remaining = deadline - performance.now();
-      if (remaining <= 0) return false;
-      await delay(Math.min(20, remaining));
-    }
-    return true;
-  }
-
   async function stopEngine(grace: number): Promise<void> {
-    if (engine && groupAlive(engine)) {
-      killGroup(engine, grace > 0 ? "SIGTERM" : "SIGKILL");
-      if (!await waitForGroup(grace || 500)) {
-        killGroup(engine, "SIGKILL");
-        if (!await waitForGroup(500)) throw new Error(`engine group ${engine.pgid} did not terminate`);
-      }
-    } else if (!engine && handle?.pid !== undefined) {
+    if (engine) {
+      // The same escalation the branch below runs, from the same place: SIGTERM, the
+      // grace, SIGKILL, a shorter one (`src/process.ts#terminate`). What this branch does
+      // differently is throw, because the runner owns this group and a terminal record
+      // written over an engine still running would be a lie about the task.
+      const outcome = await terminateGroup(engine, { termGrace: grace, killGrace: 500 });
+      if (outcome !== "dead") throw new Error(`engine group ${engine.pgid} did not terminate: ${outcome}`);
+    } else if (handle?.pid !== undefined) {
       // The identity could not be captured, so no record can name this group — but the
       // detached spawn made handle.pid its group and session id, and the kernel keeps
       // that id reserved while any member lives. Killing the child alone would settle
