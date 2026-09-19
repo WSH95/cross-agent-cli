@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T04:45:14Z
+updated_at: 2026-09-19T05:34:12Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -25,17 +25,17 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 
 ## In flight
 
-Task 4 (S8: the mode loader, `describe_mode`, the worktree provider
-registration, the built-in modes `dev-team`, `solo`, `dev-team-engine`,
-`cross-agent init --mode`; `atc-s96.23`) runs as a Claude Code subagent
-(`cross-agent-implementer` · claude-opus-5 · max) in
-`.worktrees/cross-agent-m3` from `a3ac875`. Brief:
-`.superpowers/sdd/the-development-of-this-calm-planet/task-4-brief.md`;
-the ledger `progress.md` beside it holds every ruling and dispatch. Next:
-4b (root git tools and journal steps), 4c (solo without ceremony), T12
-(skills), T13 (Claude Code packaging, I1/I2, E1), S11, T14, T15, T16.
-**Codex is paused by the user.** Pending your approval: the combined
-AGENTS.md proposal `agents-md-m1.diff` in the SDD directory.
+Task 4 (S8: mode loader, `describe_mode`, provider-gated worktree tools,
+the built-in modes `dev-team`, `solo`, `dev-team-engine`, `cross-agent init
+--mode`; `atc-s96.23`) is implemented on `task/cross-agent-m3` as
+`ad06631` over `a3ac875` (489 pass, 1 skip; 659 citations, 0 misses) and
+under review: task review (Claude Code subagent · claude-opus-5 · max)
+and second opinion (· claude-fable-5-1 · max). One of five runs hit the
+reconcile session-defer flake (`atc-s96.33`, closed; reopen if it
+recurs). Next: 4b (root git tools, journal steps), 4c (solo without
+ceremony), T12 (skills), T13 (Claude Code packaging, I1/I2, E1). **Codex
+is paused by the user.** Pending your approval: `agents-md-m1.diff` (and
+Task 4's `task-4-agents-md.diff`) in the SDD directory.
 
 ## Next steps
 
