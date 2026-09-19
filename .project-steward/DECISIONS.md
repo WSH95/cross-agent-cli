@@ -215,3 +215,15 @@ effect; a ruling the operator rejects is reverted by the bead or commit it
 names. The AGENTS.md changes these rulings imply are proposed in
 `.superpowers/sdd/the-development-of-this-calm-planet/agents-md-m1.diff` and
 await approval.
+
+**AGENTS.md changes approved (2026-09-19).** The user approved changing
+`AGENTS.md` in this session. Applied on `main`: the consolidated proposal
+`agents-md-m3.diff` (Layout rewritten to what shipped in M1 and M3; the
+cite-by-symbol sentence in Conventions; the `init --mode` line in Run),
+refreshed for T13 (the Claude Code plugin manifest with its inline MCP
+declaration and `tests/packaging.test.ts` under Shipped; Planned reduced to
+the Codex and Grok packaging, the mailbox, the remaining CLI verbs). The
+managed blocks are untouched. `CLAUDE.md` includes `AGENTS.md` by reference,
+so it needs no mirror. Later Layout refreshes in this session (the e2e verify
+script, S11's mailbox, T14–T16) fall under the same approval and are noted
+here as they land.

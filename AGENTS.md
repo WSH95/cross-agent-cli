@@ -21,36 +21,73 @@ each engine CLI was observed to do.
 
 Shipped:
 
-- `src/server.ts`: the stdio JSON-RPC (MCP) server and its tool registry.
-- `src/config.ts`: `.cross-agent/config.json` loading and validation (a
-  role's sandbox profile must belong to its engine).
+- `src/server.ts`: the stdio JSON-RPC (MCP) server and its tool registry,
+  gated per request by the permission-matrix row `src/authority.ts` resolves
+  from process ancestry; `src/project.ts` finds the project (`--project`,
+  `CROSS_AGENT_PROJECT`, or the nearest `.cross-agent/config.json`).
+- `src/delegate.ts` (`delegate` under `spawn.lock`: validation, the launch
+  spec, the detached runner), `src/tasks.ts` (`check`, `result`, `cancel`
+  with its cascade, `list_tasks`; ownership by lineage ids), `src/wait.ts`
+  (`wait` with stall detection; `observeStall` shared with `check`).
+- `src/config.ts`: `.cross-agent/config.json` loading and validation
+  (`loadConfig` for the bindings alone; `loadConfigWithMode` for the config
+  and the mode checked against each other; `effectiveMaxDepth`).
+- `src/modes.ts`: the mode loader, `describe_mode`'s payload, the built-in
+  `consult` role, and `builtInModesDir`.
+- `src/cli.ts`: `cross-agent init [--mode <name>] [--project <root>]`, the
+  one operator verb built (exit 0 wrote, 1 error, 2 usage).
 - `src/ledger.ts` (task records; async conditional `update` under the
-  record lock), `src/locks.ts` (OS-held `flock` on a pipe), `src/process.ts`
+  record lock; the runner's outcome sidecar), `src/locks.ts` (OS-held
+  `flock` on a pipe), `src/process.ts`
   (identities, groups, the environ scan, orphan cleanup), `src/reconcile.ts`
   (reconciliation on the group scan), `src/worktree.ts` (linked-worktree
   verification), `src/reservation.ts` (workspace reservation),
   `src/gitmutate.ts` (`git_mutate` on the verified git-dir under
-  `spawn.lock` → `git.lock`), `src/journal.ts` (the per-task git journal),
+  `spawn.lock` → `git.lock`), `src/gitroot.ts` (`git_root`: one
+  whitelisted verb at the project root under `git.lock`),
+  `src/runcommand.ts` (`run_command`: the configured test or setup
+  command by selector), `src/journal.ts` (the per-task git journal),
   `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,
   lineage, duplicates, deny targets, child env): one file per concern, as
   in the design.
 - `src/engines/types.ts` (the adapter contract), `src/engines/spawn.ts`
   (the pipeline), `src/engines/registry.ts` (the built-in table,
-  `sandboxFor`), `src/engines/binaries.ts`, and the three adapters
+  `sandboxFor`), `src/engines/binaries.ts`, `src/engines/text.ts` (the
+  readers the adapters share: `truncate`, `assistantText`, `failureText`),
+  and the three adapters
   `src/engines/{claude,codex,grok}.ts` (Claude: stream-json, settings
   sandbox, deny list; Codex: `exec`/`exec resume` with the prompt on stdin;
   Grok: `streaming-messages-json`, `--rules`, not an engine-placed lead);
-  `tests/fixtures/fake-engine.mjs` stands in for a CLI.
+  `tests/fixtures/fake-engine.mjs` stands in for a CLI;
+  `tests/helpers/project.ts` builds a per-test project and sweeps every
+  process it spawned.
 - `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;
   `tests/citations.test.ts` runs `tools/check-citations.mjs`, which fails
-  `npm test` when a doc cites a line past a file's end.
+  `npm test` when a doc cites a line past a file's end or a symbol the file
+  does not declare.
+- `skills/cross-agent/SKILL.md`: the launcher skill, the one skill a host
+  discovers. It carries what every mode shares — the roster, the brief, the
+  watch budget, the merge policy a `worktree: true` task settles under, the
+  `review` and `critique` verbs, the reconciliation pass, the report.
+- `modes/{dev-team,dev-team-engine,solo}/{mode.json, SKILL.md, roles/*.md}`:
+  the three built-in modes. `SKILL.md` is that mode's loop, served by
+  `describe_mode` and never copied into a host's skill directory;
+  `roles/*.md` is one prompt per role, launched with the specialist.
+  `dev-team-engine`'s loop is a delta over `dev-team`'s until S11 gives the
+  engine lead its text.
+- `.claude-plugin/plugin.json`: the Claude Code plugin manifest, which declares
+  the MCP server inline under `mcpServers` (a repository-root `.mcp.json`
+  would double as this repository's own project config); `tests/packaging.test.ts`
+  pins it. A host attaches with `claude --plugin-dir <this repository>`.
 - `tools/probe.mjs`: a standalone harness for observing a real engine CLI.
-  Not product code.
+  Not product code. `tools/from-openmaus.mjs` is the same kind of thing: the
+  one-off that carried the devpack's dev-team text into `modes/`, run once,
+  kept as history.
 - `docs/design.md`, `docs/probes.md`.
 
-Planned, in the design's work plan: `src/cli.ts`; the delegation tools;
-`skills/cross-agent/SKILL.md` (the launcher skill) and
-`modes/<name>/{mode.json, SKILL.md, roles/*.md}` (the built-in modes).
+Planned, in the design's work plan: the Codex and Grok packaging (T14, T15);
+the `ask`/`list_asks`/`answer` mailbox an engine-placed lead needs (S11); the
+operator CLI's remaining verbs (T16).
 
 ## Conventions
 
@@ -65,6 +102,9 @@ Planned, in the design's work plan: `src/cli.ts`; the delegation tools;
   section 5) and the deny list and exclusion flags (design section 3) are
   hard requirements: a change to spawn arguments keeps them and updates the
   builder tests.
+- Docs cite code by symbol (`src/<file>.ts#<symbol>`) where a top-level
+  declaration or an `// @anchor` comment names the spot, and by line only
+  where none does; `tools/check-citations.mjs` verifies both.
 - Specialists never write git metadata (design section 4). Code that runs
   git in a worktree goes through `git_mutate`; root operations for an
   engine-placed lead go through `git_root`.
@@ -77,6 +117,8 @@ Planned, in the design's work plan: `src/cli.ts`; the delegation tools;
 ## Run
 
 - The server: `node src/server.ts` (stdio; JSON-RPC lines in, lines out).
+- A project's config: `node src/cli.ts init --mode dev-team` (or `solo`, or
+  `dev-team-engine`) in the project root.
 - An engine probe: `node tools/probe.mjs --engine claude --cwd <dir> --sandbox read-only --prompt "…"`.
 
 <!-- PROJECT-STEWARD:BEGIN commands -->
