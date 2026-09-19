@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import * as config from "../src/config.ts";
 import { adapterFor, adapters } from "../src/engines/registry.ts";
 import type { EngineName } from "../src/engines/types.ts";
+import { builtInModesDir, loadMode } from "../src/modes.ts";
+import { buildMode, modesRoot } from "./helpers/mode.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
@@ -16,12 +18,13 @@ const limitDefaults = {
   cancelGraceSeconds: 5,
 };
 const sectionSixDefaults = {
+  mode: "dev-team",
   project: projectDefaults,
   roles: {
-    planner: { engine: "codex", model: "gpt-6-astra", effort: "high", cwd: "root", sandbox: "read-only" },
-    "plan-reviewer": { engine: "claude", model: "claude-opus-5", cwd: "root", sandbox: "read-only" },
-    implementer: { engine: "codex", model: "gpt-6-astra", cwd: "worktree", sandbox: "workspace-write" },
-    "code-reviewer": { engine: "claude", model: "claude-opus-5", cwd: "worktree", sandbox: "read-only" },
+    planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
+    "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
+    implementer: { engine: "codex", model: "gpt-6-astra" },
+    "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
   },
   engines: { claude: {}, codex: {}, grok: {} },
   limits: limitDefaults,
@@ -72,32 +75,35 @@ test("loadConfig applies every default", (t) => {
   writeConfig(root, { roles: { planner: { engine: "codex" } } });
   const loaded = config.loadConfig(root);
   assert.deepEqual(loaded.project, projectDefaults);
-  assert.deepEqual(loaded.roles, { planner: { engine: "codex", cwd: "root", sandbox: "read-only" } });
+  assert.equal(loaded.mode, "dev-team", "the mode a config does not name");
+  // No sandbox and no workspace: both belong to the mode, and a role that overrides
+  // neither carries neither here.
+  assert.deepEqual(loaded.roles, { planner: { engine: "codex" } });
   assert.deepEqual(loaded.limits, limitDefaults);
   assert.equal(loaded.billing, "subscription");
 
   writeConfig(root, {
+    mode: "solo",
     project: { defaultBranch: "trunk" },
-    roles: { reviewer: { engine: "grok", cwd: "worktree" }, helper: { engine: "claude", sandbox: "off" } },
+    roles: { reviewer: { engine: "grok" }, helper: { engine: "claude", sandbox: "off" } },
     limits: { maxDepth: 0 },
   });
   const partial = config.loadConfig(root);
+  assert.equal(partial.mode, "solo");
   assert.deepEqual(partial.project, { ...projectDefaults, defaultBranch: "trunk" });
-  assert.deepEqual(partial.roles, {
-    reviewer: { engine: "grok", cwd: "worktree", sandbox: "read-only" },
-    helper: { engine: "claude", cwd: "root", sandbox: "off" },
-  });
+  assert.deepEqual(partial.roles, { reviewer: { engine: "grok" }, helper: { engine: "claude", sandbox: "off" } });
   assert.deepEqual(partial.limits, { ...limitDefaults, maxDepth: 0 });
 });
 
 test("loadConfig preserves explicit values and custom or empty role maps", (t) => {
   const root = project(t);
   const explicit = {
+    mode: "dev-team",
     project: { defaultBranch: "trunk", testCommand: "node --test", setupCommand: "node setup.mjs", mergePolicy: "manual" },
     roles: {
-      "custom-role": { engine: "grok", model: "custom-model", effort: "custom-effort", cwd: "root", sandbox: "workspace" },
-      strict: { engine: "grok", cwd: "worktree", sandbox: "strict" },
-      workspace: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
+      "custom-role": { engine: "grok", model: "custom-model", effort: "custom-effort", sandbox: "workspace" },
+      strict: { engine: "grok", sandbox: "strict" },
+      workspace: { engine: "grok", sandbox: "workspace" },
     },
     engines: { claude: { bin: "/custom/claude" }, codex: {}, grok: { bin: "custom-grok" } },
     limits: {
@@ -119,10 +125,10 @@ test("a role may bind the prompt its specialist is launched with", (t) => {
   const root = project(t);
   writeConfig(root, { roles: { planner: { engine: "codex", prompt: "You are the planner. Report a plan." } } });
   assert.deepEqual(config.loadConfig(root).roles.planner, {
-    engine: "codex", prompt: "You are the planner. Report a plan.", cwd: "root", sandbox: "read-only",
+    engine: "codex", prompt: "You are the planner. Report a plan.",
   });
-  // Until modes own the role prompts (step 8), a role that binds none is launched with a
-  // one-line default, so the key is optional and nothing fills it in here.
+  // A role that binds none is launched with a one-line default until the mode's own role
+  // prompts are written (step 9), so the key is optional and nothing fills it in here.
   writeConfig(root, { roles: { planner: { engine: "codex" } } });
   assert.equal("prompt" in config.loadConfig(root).roles.planner, false);
 });
@@ -150,7 +156,7 @@ test("a role's sandbox profile must be one its own engine accepts", (t) => {
   for (const [engine, adapter] of Object.entries(adapters)) {
     for (const sandbox of Object.keys(adapter.sandboxProfiles)) {
       writeConfig(root, { roles: { planner: { engine, sandbox } } });
-      assert.deepEqual(config.loadConfig(root).roles.planner, { engine, cwd: "root", sandbox }, `${engine} accepts ${sandbox}`);
+      assert.deepEqual(config.loadConfig(root).roles.planner, { engine, sandbox }, `${engine} accepts ${sandbox}`);
     }
   }
 });
@@ -184,12 +190,12 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
     invalid.push([{ roles: {}, project: { [field]: null } }, `project.${field}`]);
     invalid.push([{ roles: {}, project: { [field]: 1 } }, `project.${field}`]);
   }
-  for (const field of ["model", "effort", "prompt", "cwd", "sandbox"]) {
+  for (const field of ["model", "effort", "prompt", "sandbox"]) {
     invalid.push([{ roles: { planner: { engine: "codex", [field]: null } } }, `roles.planner.${field}`]);
     invalid.push([{ roles: { planner: { engine: "codex", [field]: 1 } } }, `roles.planner.${field}`]);
   }
-  invalid.push([{ roles: { planner: { engine: "codex", cwd: "elsewhere" } } }, "roles.planner.cwd"]);
   invalid.push([{ roles: { planner: { engine: "codex", sandbox: "unknown" } } }, "roles.planner.sandbox"]);
+  for (const value of [null, "", 1, []]) invalid.push([{ roles: {}, mode: value }, "mode"]);
   for (const value of [null, [], "binary"]) invalid.push([{ roles: {}, engines: { codex: value } }, "engines.codex"]);
   for (const value of [null, 2]) invalid.push([{ roles: {}, engines: { grok: { bin: value } } }, "engines.grok.bin"]);
   for (const field of Object.keys(limitDefaults)) {
@@ -248,6 +254,163 @@ test("initConfig writes the section 6 defaults once and preserves existing bytes
   writeFileSync(file, custom);
   assert.equal(config.initConfig(root).wrote, false);
   assert.equal(readFileSync(file, "utf8"), custom);
+});
+
+test("a config that names where a role works, rather than binding it, is refused by key and rule", (t) => {
+  const root = project(t);
+  for (const key of ["workspace", "cwd"]) {
+    writeConfig(root, { roles: { planner: { engine: "codex", [key]: "root" } } });
+    assert.throws(() => config.loadConfig(root), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes(`roles.planner.${key}`), error.message);
+      // The rule, not just the key: where a role works belongs to the mode, and a local
+      // binding that could move a read-only reviewer into a worktree would take the
+      // mode's own containment argument with it.
+      assert.match(error.message, /mode/, error.message);
+      return true;
+    });
+  }
+});
+
+test("loadConfigWithMode binds every role the mode declares and refuses every key it does not", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  const mode = buildMode(modes, "team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
+  writeConfig(root, { mode: "team", roles: { planner: { engine: "codex" }, implementer: { engine: "codex" } } });
+
+  const bound = config.loadConfigWithMode(root, modes);
+  assert.deepEqual(bound.mode, mode);
+  assert.deepEqual(bound.config.roles, { planner: { engine: "codex" }, implementer: { engine: "codex" } });
+  // The effective profile of a role that overrides none is the mode's default.
+  assert.equal(config.roleProfile(bound.mode, bound.config, "implementer"), "workspace-write");
+  assert.equal(config.roleProfile(bound.mode, bound.config, "planner"), "read-only");
+
+  writeConfig(root, { mode: "team", roles: { planner: { engine: "codex" }, designer: { engine: "codex" } } });
+  assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes("roles.designer"), error.message);
+    assert.ok(error.message.includes("planner, implementer"), error.message);
+    return true;
+  });
+
+  // A mode the shelf does not hold is the loader's own refusal, whatever named it.
+  writeConfig(root, { mode: "absent", roles: {} });
+  assert.throws(() => config.loadConfigWithMode(root, modes), /no mode "absent"/);
+  writeConfig(root, { mode: "../elsewhere", roles: {} });
+  assert.throws(() => config.loadConfigWithMode(root, modes), /one directory/);
+});
+
+test("an override may not make a root role writable, and must be a profile its engine accepts", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  buildMode(modes, "team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
+
+  for (const [engine, sandbox] of [["codex", "workspace-write"], ["codex", "off"], ["grok", "workspace"], ["claude", "off"]] as const) {
+    writeConfig(root, { mode: "team", roles: { planner: { engine, sandbox } } });
+    assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes("roles.planner.sandbox"), error.message);
+      // `.cross-agent/` is the server's to write, and a writable root role could edit the
+      // ledger, the mailbox and the journal out from under it.
+      assert.match(error.message, /root/, error.message);
+      return true;
+    });
+  }
+  // A profile that is read-only under its own engine is not a write: Grok's `strict` is
+  // one, and the rule is about what the sandbox permits, not what it is called.
+  writeConfig(root, { mode: "team", roles: { planner: { engine: "grok", sandbox: "strict" } } });
+  assert.equal(config.roleProfile(config.loadConfigWithMode(root, modes).mode, config.loadConfig(root), "planner"), "strict");
+
+  // The mode's own default has to reach the bound engine too: `workspace-write` is
+  // Claude's and Codex's name for it, and Grok has no such profile.
+  writeConfig(root, { mode: "team", roles: { implementer: { engine: "grok" } } });
+  assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes("roles.implementer"), error.message);
+    assert.ok(error.message.includes("workspace-write"), error.message);
+    assert.ok(error.message.includes("grok"), error.message);
+    return true;
+  });
+});
+
+test("an engine-placed mode whose lead is bound to grok is refused at load", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  buildMode(modes, "led", [{ key: "lead" }, { key: "planner" }], { lead: { placement: "engine", role: "lead" } });
+
+  writeConfig(root, { mode: "led", roles: { lead: { engine: "grok" }, planner: { engine: "grok" } } });
+  assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes("roles.lead.engine"), error.message);
+    // P9: a Grok child inherits the operator's own servers and has no per-run isolation,
+    // so there is no Grok lead — only a Grok specialist, held to its row by ancestry.
+    assert.match(error.message, /P9/, error.message);
+    return true;
+  });
+  // The same binding is fine for a specialist, and fine for a lead role under a
+  // host-placed mode, where nothing is mounted at all.
+  writeConfig(root, { mode: "led", roles: { lead: { engine: "claude" }, planner: { engine: "grok" } } });
+  assert.equal(config.loadConfigWithMode(root, modes).config.roles.planner.engine, "grok");
+});
+
+test("effectiveMaxDepth comes from the mode's placement and config may only lower it", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  const host = buildMode(modes, "host-placed", [{ key: "planner" }]);
+  const engine = buildMode(modes, "engine-placed", [{ key: "lead" }, { key: "planner" }], { lead: { placement: "engine", role: "lead" } });
+
+  // A lead runs at depth 1 and its specialists at 2, so an engine-placed mode needs 2 —
+  // which is what `init --mode dev-team-engine` writes.
+  writeConfig(root, { roles: {}, limits: { maxDepth: 2 } });
+  const written = config.loadConfig(root);
+  assert.equal(config.effectiveMaxDepth(host, written), 1, "a host-placed mode needs 1 however high config sets the cap");
+  assert.equal(config.effectiveMaxDepth(engine, written), 2);
+
+  for (const [maxDepth, expected] of [[1, 1], [0, 0]] as const) {
+    writeConfig(root, { roles: {}, limits: { maxDepth } });
+    const lowered = config.loadConfig(root);
+    assert.equal(config.effectiveMaxDepth(host, lowered), expected);
+    assert.equal(config.effectiveMaxDepth(engine, lowered), expected, "config lowers the cap, to below what the mode needs if it says so");
+  }
+
+  writeConfig(root, { roles: {}, limits: { maxDepth: 9 } });
+  const raised = config.loadConfig(root);
+  assert.equal(config.effectiveMaxDepth(host, raised), 1, "and never raises it");
+  assert.equal(config.effectiveMaxDepth(engine, raised), 2);
+});
+
+test("initConfig writes the bindings of the mode it is given, and refuses a mode it cannot", (t) => {
+  const root = project(t);
+  assert.equal(config.initConfig(root, { mode: "solo" }).wrote, true);
+  const solo = config.loadConfigWithMode(root, builtInModesDir());
+  assert.equal(solo.config.mode, "solo");
+  assert.deepEqual(solo.config.roles, { solo: { engine: "codex", model: "gpt-6-astra" } });
+  assert.equal(config.effectiveMaxDepth(solo.mode, solo.config), 1);
+
+  const engineRoot = project(t);
+  assert.equal(config.initConfig(engineRoot, { mode: "dev-team-engine" }).wrote, true);
+  const led = config.loadConfigWithMode(engineRoot, builtInModesDir());
+  assert.deepEqual(led.config.roles.lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
+  assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer"]);
+  // The cap the mode needs is written, because the derived cap is the lower of the two.
+  assert.equal(led.config.limits.maxDepth, 2);
+  assert.equal(config.effectiveMaxDepth(led.mode, led.config), 2);
+
+  // Every role the mode declares is bound, and every binding names a role it declares.
+  for (const name of ["dev-team", "dev-team-engine", "solo"]) {
+    const each = project(t);
+    config.initConfig(each, { mode: name });
+    const bound = config.loadConfigWithMode(each, builtInModesDir());
+    assert.deepEqual(Object.keys(bound.config.roles), bound.mode.roles.map((role) => role.key), name);
+  }
+
+  const unknown = project(t);
+  assert.throws(() => config.initConfig(unknown, { mode: "no-such-mode" }), /no-such-mode/);
+  assert.throws(() => config.loadConfig(unknown), /no config/, "a refused init writes nothing");
+  // A mode this build has no bindings for is refused by name rather than invented.
+  const modes = modesRoot(t);
+  buildMode(modes, "local-team", [{ key: "planner" }]);
+  assert.throws(() => config.initConfig(unknown, { mode: "local-team", modesDir: modes }), /local-team/);
 });
 
 test("initConfig warns under /tmp and TMPDIR, including symlink aliases", (t) => {

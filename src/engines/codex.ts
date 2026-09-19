@@ -38,8 +38,9 @@ const codex = {
    * Codex's sandbox is the binary's own, so the binary resolving is the whole of the
    * check. What it cannot see is where the workspace is: Codex treats `/tmp` and `$TMPDIR`
    * as writable, so a project under either is not isolated by a workspace-write profile.
-   * `cross-agent init` warns about that (design section 3, `src/config.ts:148-165`); the
-   * adapter does not refuse, because the operator may have meant it.
+   * `cross-agent init` warns about that (design section 3,
+   * `src/config.ts#temporaryLocationWarning`); the adapter does not refuse, because the
+   * operator may have meant it.
    */
   sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
     const bin = engineBin("codex", env);

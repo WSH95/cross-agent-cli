@@ -12,9 +12,9 @@ import { gitEnvironment, verifyWorktree } from "./worktree.ts";
 
 export interface GitMutateRequest {
   slug: string;
-  /** Defaults to `<projectRoot>/.worktrees/<slug>`, the worktree provider's own default. */
+  /** Defaults to `<projectRoot>/<dir>/<slug>`, the mode's own worktree directory. */
   path?: string;
-  /** Defaults to `task/<slug>`. The worktree's HEAD must be exactly this branch. */
+  /** Defaults to the mode's branch pattern with the slug in it. The worktree's HEAD must be exactly this branch. */
   branch?: string;
   args: string[];
 }
@@ -25,6 +25,14 @@ export interface GitMutateOptions {
    * `limits.lockWaitSeconds` of the loaded config.
    */
   waitSeconds: number;
+  /**
+   * The active mode's `git.worktreeDir`, which `path` defaults to. Both defaults are the
+   * mode's, because `dir` and `branchPattern` are already the mode's (design section 4);
+   * the values here are the built-in team's, for a caller that has no mode to hand.
+   */
+  dir?: string;
+  /** The active mode's `git.branchPattern`, whose one `*` the slug fills. */
+  branchPattern?: string;
   now?: number;
 }
 
@@ -127,8 +135,8 @@ export async function gitMutate(
     return { ok: false, reason: message(error) };
   }
   const slug = request.slug;
-  const branch = request.branch ?? `task/${slug}`;
-  const target = path.resolve(projectRoot, request.path ?? path.join(".worktrees", slug));
+  const branch = request.branch ?? (options.branchPattern ?? "task/*").replace("*", slug);
+  const target = path.resolve(projectRoot, request.path ?? path.join(options.dir ?? ".worktrees", slug));
 
   // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
   // around validate-and-spawn (T10), so holding it across this whole call is what keeps

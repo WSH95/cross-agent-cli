@@ -5,9 +5,13 @@ import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { resolveAuthority } from "./authority.ts";
 import type { Authority, Row } from "./authority.ts";
-import { loadConfig } from "./config.ts";
+import { effectiveMaxDepth, loadConfig, loadConfigWithMode, lockWaitSeconds, roleProfile } from "./config.ts";
 import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
+import { gitMutate } from "./gitmutate.ts";
+import type { GitMutateRequest } from "./gitmutate.ts";
+import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole } from "./modes.ts";
+import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import { cancel, check, listTasks, ownedBy, result } from "./tasks.ts";
@@ -207,6 +211,14 @@ function optional(args: Json, key: string, kind: "string" | "boolean" | "number"
   return value;
 }
 
+function stringList(args: Json, key: string, name: string): string[] {
+  const value = args[key];
+  if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string")) {
+    throw new RpcError(-32602, `${name} requires a non-empty array of strings ${key}`);
+  }
+  return value as string[];
+}
+
 const statuses = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
 /** The `delegate` request as the wire spells it, checked before anything reads it. */
@@ -226,20 +238,17 @@ function delegateRequest(args: Json): DelegateRequest {
 }
 
 export interface ToolOptions {
-  /** The active mode's lead role. No mode names one until step 8, so `delegate` has none to refuse. */
-  leadRole?: string;
+  /** The active mode, loaded once by whoever starts the server: it decides what registers. */
+  mode: Mode;
 }
 
-/** The tools for the project at `projectRoot`, each with the rows of the permission matrix it is offered to. */
-export function projectTools(projectRoot: string, options: ToolOptions = {}): ToolDefinition[] {
+/**
+ * The tools the worktree provider registers, and only when the active mode declares a
+ * role that works in one (design, "Modes"): a `solo` project's `tools/list` holds
+ * neither. `git_root` and `run_command` join this list with engine placement (row 11).
+ */
+function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
   return [
-    {
-      name: "list_roles",
-      description: "List the roles configured in .cross-agent/config.json with their engine, model, working directory kind, and sandbox profile.",
-      inputSchema: { type: "object", properties: {} },
-      rows: ["operator", "lead", "specialist"],
-      handler: () => text({ roles: loadConfig(projectRoot).roles }),
-    },
     {
       name: "verify_worktree",
       description: "Verify a linked worktree and its exact branch, returning canonical Git and worktree paths or a refusal reason.",
@@ -258,6 +267,74 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
       },
     },
     {
+      name: "git_mutate",
+      description: "Run one git subcommand in a verified worktree, under the project's locks and journaled. The only path that writes a worktree's git metadata; the workspace and branch default to the mode's own git policy.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          slug: { type: "string" }, args: { type: "array", items: { type: "string" } },
+          path: { type: "string" }, branch: { type: "string" },
+        },
+        required: ["slug", "args"],
+      },
+      rows: ["operator", "lead"],
+      handler: async (args) => {
+        const values = fields(args, "git_mutate");
+        const request: GitMutateRequest = {
+          slug: requiredString(values, "slug", "git_mutate"),
+          args: stringList(values, "args", "git_mutate"),
+        };
+        for (const key of ["path", "branch"] as const) {
+          const value = optional(values, key, "string", "git_mutate");
+          if (value !== undefined) request[key] = value as string;
+        }
+        return answer(await gitMutate(projectRoot, request, {
+          waitSeconds: lockWaitSeconds(projectRoot),
+          ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
+        }));
+      },
+    },
+  ];
+}
+
+/** The tools for the project at `projectRoot`, each with the rows of the permission matrix it is offered to. */
+export function projectTools(projectRoot: string, options: ToolOptions): ToolDefinition[] {
+  const { mode } = options;
+  // The shelf this mode came from, so `describe_mode` re-reads the mode config names now
+  // rather than the one the server started with.
+  const modesDir = path.dirname(mode.dir);
+  return [
+    {
+      name: "describe_mode",
+      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, and its git policy. Call this first: it is how a launcher learns the loop, which is served rather than copied.",
+      inputSchema: { type: "object", properties: {} },
+      rows: ["operator", "lead", "specialist"],
+      handler: () => {
+        const described = describeMode(modesDir, loadConfig(projectRoot).mode);
+        return "reason" in described ? { ...text(described), isError: true } : text(described);
+      },
+    },
+    {
+      name: "list_roles",
+      description: "The roles this project binds: each one's engine, model and effort from .cross-agent/config.json, with the workspace and the sandbox profile it will run under from the active mode.",
+      inputSchema: { type: "object", properties: {} },
+      rows: ["operator", "lead", "specialist"],
+      handler: () => {
+        // Both files, checked against each other: a config naming a role the mode does not
+        // declare is the loader's refusal, and this tool is where an operator reads it.
+        const bound = loadConfigWithMode(projectRoot, modesDir);
+        return text({
+          roles: Object.fromEntries(Object.entries(bound.config.roles).map(([key, role]) => [key, {
+            engine: role.engine,
+            ...(role.model === undefined ? {} : { model: role.model }),
+            ...(role.effort === undefined ? {} : { effort: role.effort }),
+            workspace: findRole(bound.mode, key)!.workspace,
+            sandbox: roleProfile(bound.mode, bound.config, key),
+          }])),
+        });
+      },
+    },
+    {
       name: "delegate",
       description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first.",
       inputSchema: {
@@ -272,7 +349,7 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
       rows: ["operator", "lead"],
       handler: async (args, context) => {
         const request = delegateRequest(fields(args, "delegate"));
-        const launched = await delegate(projectRoot, request, { authority: context.authority, leadRole: options.leadRole });
+        const launched = await delegate(projectRoot, request, { authority: context.authority, mode });
         return answer(launched.ok ? { ok: true, task_id: launched.taskId } : launched);
       },
     },
@@ -356,6 +433,7 @@ export function projectTools(projectRoot: string, options: ToolOptions = {}): To
         return answer(await listTasks(projectRoot, status as TaskStatus | undefined));
       },
     },
+    ...(declaresWorktreeProvider(mode) ? worktreeTools(projectRoot, mode) : []),
   ];
 }
 
@@ -364,7 +442,11 @@ async function main(): Promise<void> {
   const found = await discoverProject(process.argv.slice(2), process.env, process.cwd());
   if ("reason" in found) throw new Error(found.reason);
   const { root } = found;
-  const { maxDepth } = loadConfig(root).limits;
+  // Once, before serving: the mode decides which tools exist and what each role's
+  // workspace is, so a mode that cannot be read is not something to discover on the first
+  // `delegate`. Its refusal is this process's exit reason.
+  const { config, mode } = loadConfigWithMode(root, builtInModesDir());
+  const maxDepth = effectiveMaxDepth(mode, config);
   // Once before serving, so the first request reads a ledger that is in step with the
   // kernel: a task whose runner died while no server was running is judged here rather
   // than on whichever call happens to be first (design section 2).
@@ -372,9 +454,12 @@ async function main(): Promise<void> {
   for (const { id, reason } of [...pass.errors, ...pass.skipped]) {
     process.stderr.write(`cross-agent: task ${id}: ${reason}\n`);
   }
-  // No lead role: a host-placed mode has none until its mode binds one (S8).
-  createServer({ tools: projectTools(root), authority: () => resolveAuthority(root, process.env, { maxDepth }) })
-    .connect(process.stdin, process.stdout);
+  createServer({
+    tools: projectTools(root, { mode }),
+    // A host-placed mode names no lead role, so nothing an ancestry walk finds resolves to
+    // the lead row under one.
+    authority: () => resolveAuthority(root, process.env, { leadRole: mode.lead.role, maxDepth }),
+  }).connect(process.stdin, process.stdout);
 }
 
 const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

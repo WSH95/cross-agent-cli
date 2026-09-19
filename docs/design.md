@@ -80,11 +80,12 @@ delegation rows themselves: `delegate`, `check`, `result`, `cancel` and
 `list_tasks`, each offered to the rows below and each applying its own half of
 the matrix inside itself (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`);
 T11 adds `wait`, which shares `cancel`'s row and applies the same lineage check
-before it polls (`src/wait.ts#wait`, `src/server.ts#projectTools`).
-The server's entry point passes no lead role yet, because only a mode names one
-(step 8), so today it resolves to the operator or the specialist row, and
-nothing runs a loop; what is not built below is the target the remaining tasks
-are measured against.
+before it polls (`src/wait.ts#wait`, `src/server.ts#projectTools`). S8 adds the
+mode the entry point loads once at start, so the resolver is now given that
+mode's `lead.role` and the cap it derives (`src/server.ts#main`,
+`src/config.ts#effectiveMaxDepth`); under a host-placed mode there is no lead
+role to match, and no loop runs until step 9 writes one. What is not built below
+is the target the remaining tasks are measured against.
 
 **A lead is a session holding the lead tools and running the mode's loop.
 `placement` decides which process that session is.**
@@ -336,31 +337,49 @@ that spelling, so nothing in the matrix depends on it.
 
 `skills/cross-agent/SKILL.md` is the **launcher**: select the mode, start,
 watch, answer, cancel, reconcile, report. It is short and host-independent.
-`modes/<name>/SKILL.md` is that mode's **loop**. Hosts discover only
-`skills/`, and Codex's documented fallback copies that one directory (section
-9), so a mode's loop cannot be found by convention on any host. The server
-serves it instead: `describe_mode` returns the active mode's loop text, its
-roles, and its workspace and git policy, and the launcher's first step is to
-call it. Under `engine` placement the same text also reaches the lead through
-the engine's own instruction file — `--append-system-prompt-file` on Claude,
-`-c model_instructions_file=` on Codex (P9, item 4 above). No asset copying, no
-per-host loader, and no second copy of the loop to keep in step.
+`modes/<name>/SKILL.md` is that mode's **loop**. Hosts discover only `skills/`,
+and Codex's documented fallback copies that one directory (section 9), so a
+mode's loop cannot be found by convention on any host. The server serves it
+instead: `describe_mode` returns the active mode's loop text, its roles, and its
+workspace and git policy, and the launcher's first step is to call it
+(`src/modes.ts#describeMode`). Under `engine` placement the same text also
+reaches the lead through the engine's own instruction file —
+`--append-system-prompt-file` on Claude, `-c model_instructions_file=` on Codex
+(P9, item 4 above). No asset copying, no per-host loader, and no second copy of
+the loop to keep in step.
 
 ### Modes
 
-Modes are a target: no `modes/` directory, mode loader, or `describe_mode`
-exists yet; they arrive with step 8 of the work plan.
+Modes are built. `modes/` holds three of them, `src/modes.ts` validates one and
+serves its text, and `describe_mode` answers from the mode the config names
+(`src/modes.ts#loadMode`, `#describeMode`, `src/server.ts#projectTools`). Two
+things inside them are still targets, and each is named where it is: the loop in
+every `SKILL.md` and every role prompt under `modes/*/roles/` is a skeleton
+until step 9 writes them, and `git_root` and `run_command` join the worktree
+provider with step 11.
 
 A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
 carries `id`, `release`, `name`, `summary`, `lead: {placement:
 "host"|"engine", role?}`, `roles[{key, title, promptFile, workspace,
-sandboxDefault}]`, a `git` policy, and `requires{engines?}`. Validation
-refuses unknown fields, requires role keys to be unique, requires `id` to
-equal the directory name, requires every `promptFile` to resolve inside the
-mode directory, and requires `lead.role` exactly when `placement` is
-`engine` — a host-placed mode has no lead role to name, and an engine-placed
-one cannot resolve the lead row without it.
+sandboxDefault}]`, a `git` policy, and `requires{engines?}`
+(`src/modes.ts#Mode`). Validation refuses unknown fields, requires role keys to
+be unique, requires `id` to equal the directory name, requires every
+`promptFile` to resolve inside the mode directory, and requires `lead.role`
+exactly when `placement` is `engine` — a host-placed mode has no lead role to
+name, and an engine-placed one cannot resolve the lead row without it
+(`src/modes.ts#loadMode`). Four rules are the containment argument rather than
+hygiene, and each refuses by field and reason: a `promptFile` is checked by
+**realpath**, so a symlink inside the mode pointing out of it is the same escape
+as a `..`; a mode name is one directory under the shelf, never a path; the `git`
+policy exists exactly when a role works in a worktree and must name that role's
+own `dir` and `branchPattern`, because those two are what `git_mutate` defaults
+`path` and `branch` from (section 4); and a worktree `dir` is relative and
+inside the project, where section 4's guarantees are written. `branchPattern`
+carries exactly one `*`, which the task slug fills. `requires.engines` is
+validated as a list of engine names and enforced by nothing: a preflight is
+deferred with a reason ("Not built"), and the sandbox-or-refuse rule already
+fails closed at spawn time.
 
 The **bind-time layer** stays out of the mode and lives in
 `.cross-agent/config.json`: which engine, model and effort each role runs
@@ -375,7 +394,8 @@ ride through the package boundary." Its schema itself is **not** adopted:
 `openmaus.package` v1 describes agents, playbooks, rooms, and routines, and
 only the first has an analogue here.
 
-Two modes will ship built in:
+Three modes ship built in (`modes/dev-team/mode.json`, `modes/solo/mode.json`,
+`modes/dev-team-engine/mode.json`):
 
 - **`dev-team`**: the devpack's four roles (planner, plan reviewer,
   implementer, code reviewer), `placement: host`, the worktree workspace
@@ -383,38 +403,68 @@ Two modes will ship built in:
 - **`solo`**: one role, no git provider, `placement: host`. It is the proof
   that the seam is real, and the zero-ceremony one-shot delegation the vendor
   bridges offer.
+- **`dev-team-engine`**: those four roles plus a `lead` at `{kind: "root"}`
+  read-only, under `placement: engine`. It is the same team with the loop moved
+  into a spawned Claude or Codex session, so it needs the four things "The lead
+  model" lists and the cap of 2 that `init` writes for it.
 
 **Workspace is policy, with two kinds.** A role declares `workspace:
-{kind:"root"}` or `workspace: {kind:"worktree", branchPattern, dir}`. The
-worktree provider registers `verify_worktree` and `git_mutate`, and only when
-a mode declares it; `solo` therefore yields a `tools/list` without them.
-Arbitrary-path workspace providers are deferred (see "Not built").
+{kind:"root"}` or `workspace: {kind:"worktree", branchPattern, dir}`
+(`src/modes.ts#Workspace`). The worktree provider registers `verify_worktree`
+and `git_mutate`, and only when a mode declares a role that works in one
+(`src/server.ts#worktreeTools`, `src/modes.ts#declaresWorktreeProvider`); `solo`
+therefore yields a `tools/list` without them, and a call to one of them there is
+`unknown tool` rather than a refusal. Arbitrary-path workspace providers are
+deferred (see "Not built").
 
 **No role may combine `{kind: "root"}` with a writable sandbox**, and mode
 validation refuses one that does. A writable root role could edit
 `.cross-agent/` itself — the ledger, the mailbox, the journal, the config —
 and every containment argument in this document assumes those are the
-server's to write. A role that must write does so in a worktree.
+server's to write. A role that must write does so in a worktree. The rule is
+enforced three times, because three different things could break it: a mode's
+own `sandboxDefault` for a root role must be `read-only`, the one profile name
+every engine accepts, since a mode is bound to engines elsewhere and cannot know
+which (`src/modes.ts#loadMode`); a config `sandbox` override is refused when the
+profile is not read-only **under the engine that role is bound to**, which is
+what makes Grok's `strict` a legal override and `off` an illegal one
+(`src/config.ts#loadConfigWithMode`); and `delegate` refuses the same pair again
+at the one place an engine is actually started, so a config edited after the
+server read it cannot launch that engine (`src/delegate.ts#delegate`).
 
 **A role's `workspace` and `sandboxDefault` belong to the mode, not to the
 config.** Config binds `engine`, `model` and `effort` per role — `bin` is per
 engine, under `engines.<e>.bin`, never per role — and may override `sandbox`
-alone; a `workspace` key in `.cross-agent/config.json` is refused, and every
-role key in config must name a role the mode declares.
+alone; a `workspace` key in `.cross-agent/config.json` is refused, by that name
+and by the older spelling `cwd` an existing config carries
+(`src/config.ts#loadConfig`), and every role key in config must name a role the
+mode declares (`src/config.ts#loadConfigWithMode`).
 Otherwise a local binding could move a read-only reviewer into a writable
 worktree, and the mode's own containment argument (section 4) would no longer
 be about the mode.
 
 **`describe_mode` returns** `{mode: {id, release, name, summary, lead}, loop:
 string, roles: [{key, title, workspace, sandboxDefault, prompt}], git}`, where
-`loop` is `SKILL.md` verbatim and each `prompt` is that role's prompt file. It
-refuses, with a reason, when the config's `mode` names no existing mode
-directory — the launcher's first call is this one, so a missing mode has to
-fail loudly at step one rather than half-way through a task.
+`loop` is `SKILL.md` verbatim, each `prompt` is that role's prompt file, and
+`git` is present exactly when the mode declares the worktree provider
+(`src/modes.ts#describeMode`, `#ModeDescription`). It refuses, with a reason and
+never a throw, when the config's `mode` names no existing mode directory, when
+that directory holds no `SKILL.md`, or when the mode does not validate — the
+launcher's first call is this one, so a missing mode has to fail loudly at step
+one rather than half-way through a task, and the refusal is the tool's own
+answer, marked as an error (`src/server.ts#projectTools`). It reads the mode the
+config names **at the call**, from the shelf the server loaded its own mode
+from, so a config edited mid-session is answered rather than cached.
 
-`cross-agent init --mode <name>` writes the bind-time config for a mode.
-`initConfig` already exists (`src/config.ts#initConfig`); the CLI entry point
-that calls it does not.
+`cross-agent init --mode <name>` writes the bind-time config for a mode
+(`src/cli.ts#runCli`, `src/config.ts#initConfig`). It loads the mode first, so
+an unknown or invalid one is refused before anything is written; it binds every
+role the mode declares, in the order the mode declares them, from a table of
+built-in bindings — a mode this build ships no bindings for is refused by name
+rather than bound by guess, because binding is a local act; and it writes the
+`maxDepth` that mode needs, since the effective cap is the lower of the mode's
+and the config's and the documented default of 1 would hold an engine-placed
+lead's specialists at the lead (`src/config.ts#effectiveMaxDepth`).
 
 ### 1. The `cross-agent` MCP server
 
@@ -440,8 +490,8 @@ active mode declares the worktree provider; **engine lead** only under
 
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
-| `describe_mode` | — | the active mode's loop text, roles, workspace and git policy | core |
-| `list_roles` | — | roles from config with engine, model, workspace kind, sandbox profile | core |
+| `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt, and its git policy | core |
+| `list_roles` | — | each bound role: engine, model and effort from config, with the workspace and the sandbox profile the mode gives it | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
 | `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
@@ -460,16 +510,19 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-Today `projectTools` registers eight of these (`src/server.ts#projectTools`):
-`list_roles`, `check`, `result` and `list_tasks` for every row, `delegate`,
-`wait`, `cancel` and `verify_worktree` for the operator and lead rows. The
+Today `projectTools` registers ten of these (`src/server.ts#projectTools`):
+`describe_mode`, `list_roles`, `check`, `result` and `list_tasks` for every row,
+`delegate`, `wait` and `cancel` for the operator and lead rows, and
+`verify_worktree` and `git_mutate` for those two rows **and only under a mode
+that declares the worktree provider** (`src/server.ts#worktreeTools`). The
 server offers and refuses each by the row it resolves, and `delegate`, `wait`
 and `cancel` apply the lead's own half of the matrix inside themselves — a lead
 delegates no lead and no child of a cancelling parent, and waits on and cancels
 only what it delegated, refused by name with the lead task that did not delegate
 it (`src/delegate.ts#delegate`, `src/server.ts#projectTools`,
-`src/tasks.ts#cancel`). `describe_mode` arrives with the mode loader it reads,
-and the rest with the tasks named in the work plan.
+`src/tasks.ts#cancel`). The five engine-lead rows — `git_root`, `run_command`
+and the mailbox — arrive with row 11, and `git_root` and `run_command` join the
+worktree provider's own list when they do.
 
 ### 2. Ledger, runner, locks
 
@@ -1551,22 +1604,24 @@ probe.
 
 ### 4. Git ownership
 
-The worktree half of this section is built: `verify_worktree` and
-`src/worktree.ts` from T2, and `gitMutate` from T6 (`src/gitmutate.ts`) with
-the reservation, both locks and the journal. What is left is the wiring and
-the root half — registering the two tools on a mode's worktree provider
-(row 8; `verify_worktree` itself is registered today for the operator and lead
-rows, `src/server.ts#projectTools`), `git_root` and `run_command` (row 11), and
-the `cross-agent git` CLI (row 13).
+The worktree half of this section is built and wired: `verify_worktree` and
+`src/worktree.ts` from T2, `gitMutate` from T6 (`src/gitmutate.ts`) with the
+reservation, both locks and the journal, and from row 8 both tools registered on
+the mode's worktree provider, for the operator and lead rows, with `path` and
+`branch` defaulting from that mode's own git policy
+(`src/server.ts#worktreeTools`). What is left is the root half: `git_root` and
+`run_command` (row 11), and the `cross-agent git` CLI (row 13).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
 `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI) is the
 only way a lead mutates git in a worktree. Its request is `{slug, path?,
 branch?, args}` (`src/gitmutate.ts#GitMutateRequest`): `path` defaults to
-`<root>/.worktrees/<slug>` and `branch` to `task/<slug>`, the worktree
-provider's own defaults (`src/gitmutate.ts#gitMutate`), and row 8 makes both the
-mode's to configure, since `dir` and `branchPattern` are already the mode's. The
+`<root>/<git.worktreeDir>/<slug>` and `branch` to the mode's `git.branchPattern`
+with the slug in place of its one `*`, which the tool passes from the active
+mode and which fall back to `.worktrees` and `task/*` for a caller that has no
+mode to hand (`src/gitmutate.ts#gitMutate`, `#GitMutateOptions`,
+`src/server.ts#worktreeTools`). The
 slug is used for exactly four things — those two defaults, the lock's
 operation label, and the journal file name — and never for the git directory.
 Before the four steps, the **shape of the request** is judged, because it needs
@@ -1780,16 +1835,21 @@ each with its own unit test:
    cap exists to bound a chain whose ancestry the walk could not read, which
    is why it fails closed.
 
-   The depth read today is the server's own `CROSS_AGENT_DEPTH`, and until
-   modes exist (step 8) the cap is `limits.maxDepth` as the config states it
-   (`src/server.ts#main`). Every record carries its own `depth`, written by
+   The depth read is the server's own `CROSS_AGENT_DEPTH`, and the cap is now
+   the mode's: `effectiveMaxDepth` takes 2 under `placement: engine` and 1
+   otherwise, lowered by `limits.maxDepth` where that is smaller and never
+   raised by it, and the entry point hands the resolver that number beside the
+   mode's `lead.role` (`src/config.ts#effectiveMaxDepth`, `src/server.ts#main`).
+   Because the two are combined by taking the lower, a config written for a
+   host-placed mode would hold an engine-placed lead's specialists at depth 1,
+   so `cross-agent init` writes the cap its mode needs
+   (`src/config.ts#initConfig`). Every record carries its own `depth`, written by
    `delegate` as the caller's plus one (`src/ledger.ts#TaskRecord`,
    `src/delegate.ts#delegate`), so a finished run can be checked against the
    mode's cap as well as each call. The specialist row is the four read tools
-   plus `describe_mode`; three of them are registered — `check`, `result` and
-   `list_tasks` beside `list_roles` (`src/server.ts#projectTools`) — and the
-   matrix's rows replaced `toolsAtDepth`, the depth-only tool list that used to
-   approximate it.
+   plus `describe_mode`, and all five are registered
+   (`src/server.ts#projectTools`); the matrix's rows replaced `toolsAtDepth`, the
+   depth-only tool list that used to approximate it.
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
    `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
    specialists **do** reach a server, because Grok has no per-invocation
@@ -1836,7 +1896,7 @@ each with its own unit test:
 ### 6. Config and validation
 
 `<project>/.cross-agent/config.json`, created by `cross-agent init --mode
-<name>`, validated on load (`src/config.ts#loadConfig`). It carries the
+<name>`, validated on load (`src/config.ts#loadConfig`, `#loadConfigWithMode`). It carries the
 **bind-time layer only**: which mode is active, which engine, model and
 effort each of that mode's roles runs on, plus an optional `sandbox` override
 per role, and, under `engines`, where each engine's binary is
@@ -1869,32 +1929,42 @@ above is what an operator adds when an engine is not on `PATH` under its own
 name, and it is the value `delegate` carries to that engine's adapter
 (section 3).
 
-The `dev-team` mode supplies the rest: `planner` and `plan-reviewer` at
-`workspace: {kind: "root"}` with `sandboxDefault: "read-only"`, `implementer`
-and `code-reviewer` at `{kind: "worktree", branchPattern: "task/*", dir:
-".worktrees"}` with the implementer defaulting to a writable profile. A
+The `dev-team` mode supplies the rest (`modes/dev-team/mode.json`): `planner`
+and `plan-reviewer` at `workspace: {kind: "root"}` with `sandboxDefault:
+"read-only"`, `implementer` and `code-reviewer` at `{kind: "worktree",
+branchPattern: "task/*", dir: ".worktrees"}` with the implementer defaulting to
+a writable profile. A
 `kind: "root"` role runs at the project root; a `kind: "worktree"` role
 requires the `verify_worktree` checks of section 4 against the branch named in
 the request, and a role whose sandbox mode is anything but read-only reserves
 the path (section 2).
 
-What is a target here and what is not: the `mode` field, the refusal of
-`workspace`, the per-engine profile check, and the refusal of a `grok`-bound
-`lead.role` under an engine-placed mode (P9: no per-run isolation, "The lead
-model", item 4) all arrive with the tasks that need them. `project`, `roles`'
-engine/model/effort, `engines`, all six limits and `billing` are validated
-today — `limits.lockWaitSeconds` and `limits.cancelGraceSeconds` included
-(`src/config.ts#CrossAgentConfig`, `#limitDefaults`, `#loadConfig`), and every
-lock acquisition but the runner's own claim reads the first, through the
-caller's argument or through `lockWaitSeconds(projectRoot)`
-(`src/config.ts#lockWaitSeconds`, section 2); the second is how long `cancel`
-gives a runner to settle its own task (section 2). The shipped loader still
-carries the role's directory kind as `cwd`, and a role's own prompt with it
-(`src/config.ts#RoleConfig`, `#loadConfig`) — a mode's job from step 8, and
-until then the string `delegate` launches the role with, falling back to a
-one-line default that tells a specialist it cannot delegate
-(`src/delegate.ts#defaultPrompt`, section 8). The Work plan says what happens to
-`cwd` in the meantime.
+Every field above is validated, and the file is read by two loaders that answer
+different questions. `loadConfig` reads the bind-time layer alone — `mode`,
+`project`, each role's engine, model, effort and optional `sandbox`, `engines`,
+all six limits and `billing`, `limits.lockWaitSeconds` and
+`limits.cancelGraceSeconds` included (`src/config.ts#CrossAgentConfig`,
+`#limitDefaults`, `#loadConfig`) — and it is what a runner, a lock or a
+reconciliation reads, because those run where no mode has been loaded and must
+not fail for want of one. Every lock acquisition but the runner's own claim
+reads the first limit, through the caller's argument or through
+`lockWaitSeconds(projectRoot)` (`src/config.ts#lockWaitSeconds`, section 2); the
+second is how long `cancel` gives a runner to settle its own task (section 2).
+`loadConfigWithMode` reads both files and checks them against each other: every
+role key names a role the mode declares, the effective profile — the override
+else the mode's default — is one the bound engine accepts, no root role is
+writable, and an engine-placed mode's `lead.role` is not bound to `grok` (P9: no
+per-run isolation, "The lead model", item 4), each refused by field with its
+reason (`src/config.ts#loadConfigWithMode`). It is what the server loads before
+it serves, what `list_roles` answers from, and what the entry point derives the
+depth cap from.
+
+One thing config still carries that belongs to the mode: a role's own `prompt`,
+the string `delegate` launches the role with, falling back to a one-line default
+that tells a specialist it cannot delegate (`src/config.ts#RoleConfig`,
+`src/delegate.ts#defaultPrompt`, section 8). Step 9 writes the mode's role
+prompts, which `describe_mode` already serves; until a launch reads them from
+there, this key is how an operator binds one.
 
 ### 7. The skills
 
@@ -2029,7 +2099,12 @@ on its behalf.
 
 ### 8. Role prompts
 
-Not written yet; they arrive with step 9, from the converter.
+One skeleton paragraph per role exists and is served verbatim by `describe_mode`
+(`modes/dev-team/roles/planner.md` and its siblings,
+`src/modes.ts#describeMode`); the text this runtime deserves arrives with step 9,
+from the converter. What `delegate` launches a specialist with is still the
+config's `prompt` or the one-line default (section 6), so step 9 is where the two
+meet.
 
 `modes/<name>/roles/*.md`. For `dev-team` they are
 `{planner,plan-reviewer,implementer,code-reviewer}.md`, written for this
@@ -2072,8 +2147,18 @@ sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 
 ### 10. Operator CLI
 
-`src/cli.ts` does not exist. `init --mode` lands with step 8 because modes need
-it; the rest is step 13.
+`src/cli.ts` ships `init` alone: `cross-agent init [--mode <name>] [--project
+<root>]` writes the bind-time config for a mode and answers with an exit code —
+0 it wrote one, 1 it could not, 2 it could not read the command line
+(`src/cli.ts#runCli`). A project that already holds a config is not rewritten,
+and that is a 0 with a line saying so; a `--project` that does not resolve to an
+existing directory is a 1, because `initConfig` creates `.cross-agent/` with its
+parents and a typo would otherwise leave a project tree nobody asked for. The
+flags go through the same parser the server's own argv does, so adding one does
+not break the other (`src/project.ts#parseFlags`, `#discoverProject`).
+`package.json` names the entry point under `bin`, and the file carries a
+`#!/usr/bin/env node` shebang, which Node 24 strips from a `.ts` source as it
+does from any other. The rest of the verbs below are step 13 (`atc-s96.16`).
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
 log <id> | cancel <id> | answer <ask-id> <text> | report | verify-worktree
@@ -2167,14 +2252,17 @@ LICENSE (Apache-2.0)
 Present today:
 `src/{server,config,ledger,process,reconcile,runner,locks,guard,worktree}.ts`,
 `src/{reservation,journal,gitmutate}.ts`, `src/{delegate,tasks}.ts` from row 7,
+`src/{modes,cli}.ts` and `modes/{dev-team,dev-team-engine,solo}/` from row 8,
 and all seven of
 `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
-`npm test` runs), the two docs, and the root files. Still to be written:
-`src/cli.ts`, both plugin manifests, `.mcp.json`, `skills/`, and `modes/`.
+`npm test` runs), the two docs, and the root files. Still to be written: both
+plugin manifests, `.mcp.json`, `skills/`, and the real text of every mode's
+`SKILL.md` and `roles/*.md`.
 
-`package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`.
+`package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
+and `"bin": {"cross-agent": "src/cli.ts"}`.
 AGENTS.md carries the Project facts (default branch `main`, test command `npm
 test`, setup command `none`, merge policy `auto`), the layout, the conventions
 (one file per concern, tests next to behaviour, no dependency without a
@@ -2285,13 +2373,14 @@ T1–T5 (ledger, config and `verify_worktree`, guard, adapter interface and
 spawn pipeline, detached runner) are built and green, and so are steps 1 to 4
 below: the rename and this document's rewrite, the lifecycle step that closed
 the five correctness defects in shipped code, the T6 remainder, and the probes
-the adapters depend on. Steps 5 and 6 — the engine contract and all three
-adapters — are built and green too. What is left starts at step 7, the tools,
-and then runs through the modes, the skills, and each host's packaging with its
-integration probes and end-to-end run right after it.
-Rows 7 and 8 are where the built git and reservation machinery is finally
-reached by a caller: until then no tool registers `git_mutate` and no
-`delegate` consults a reservation.
+the adapters depend on. Steps 5 to 8 — the engine contract, all three adapters,
+the tools, and the modes with the worktree provider and `init --mode` — are
+built and green too. What is left starts at step 9, the skills and the mode
+loops, and then runs through each host's packaging with its integration probes
+and end-to-end run right after it.
+Rows 7 and 8 were where the built git and reservation machinery was finally
+reached by a caller: `delegate` consults a reservation, and `git_mutate` is
+registered by the mode that declares the worktree provider.
 
 | # | Work | Bead | Notes |
 |---|---|---|---|
@@ -2301,8 +2390,8 @@ reached by a caller: until then no tool registers `git_mutate` and no
 | 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | **Done** (397763c, 649b8e5, f40cadb). `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; the resume argv no longer pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Outcomes in Phase 0 above: `streaming-messages-json` for T9, three `-c` settings for a Codex lead mount, no Grok lead, and a Codex resume that keeps neither cwd nor sandbox. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | **Done** (`734e1e9..193b511`, with its review's fix round in `cfaf2b0`). A2; the adapter fields of section 3, `sandboxFor` as their one construction site, the built-in table in `src/engines/registry.ts`, `src/engines/binaries.ts`, and `EngineName` moved beside the contract; informed by P8 and P9. The three adapters carried the static half only at this point: `plan`, `parseLine` and `finalMessage` threw, and so did the `finish` stub each declared; row 6 replaced all four. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
-| 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registers with step 8, which builds the mode loader it reads. |
-| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | `dev-team` and `solo`; `describe_mode`; `mode.json` validation. Until this step lands, `.cross-agent/config.json` keeps a per-role directory kind — the shipped `cwd` (`src/config.ts#RoleConfig`), renamed `workspace` when a step needs it; from this step on the key moves to the mode and config refuses it. |
+| 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registered with step 8, which built the mode loader it reads. |
+| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (row 11), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | `git_root`, `run_command`, the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
@@ -2519,13 +2608,31 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`tests/server.test.ts:363`), including when the notification shares one stdin
   chunk with the call it cancels (`:406`). `check` is the other writer of the two
   transitions, and writes both (`tests/tasks.test.ts:186`).
-- **Modes:** `init --mode dev-team` yields the four roles with the engines,
-  models and efforts of section 6 and the profiles of the mode's
-  `sandboxDefault`; a config carrying a `workspace`
-  key, or a role key the mode does not declare, is refused; `solo` yields a
-  `tools/list` without the worktree tools; `describe_mode` returns the loop
-  text on all three hosts with no file copied, and refuses with a reason when
-  the mode directory is missing.
+- **Modes (recorded, except the hosts).** `init --mode dev-team` writes section
+  6's config byte for byte and it loads against the built-in mode, whose four
+  roles default to read-only, read-only, `workspace-write` and read-only
+  (`tests/cli.test.ts:48`); `--mode dev-team-engine` binds the `lead` and writes
+  the cap of 2 the placement needs, and `--mode solo` binds its one role and
+  declares no git policy (`:85`); `--project` writes where it names, in either
+  flag order (`:104`); a mode this build does not have is exit 1 with nothing
+  written, and a command line this build cannot read is exit 2 (`:125`); and the
+  shebang entry point runs as `bin` names it (`:148`). A config carrying a
+  `workspace` or `cwd` key, or a role key the mode does not declare, is refused
+  by key and rule (`tests/config.test.ts:259`, `:275`); so is an override that
+  would make a root role writable, a mode default the bound engine does not
+  accept, and a grok-bound lead under engine placement (`:303`, `:336`), while
+  the cap follows the placement and only ever falls (`:356`). `solo` yields a
+  `tools/list` without the worktree tools and `dev-team` yields both, for the
+  operator and lead rows and never the specialist (`tests/server.test.ts:500`);
+  `git_mutate` defaults its workspace and branch from that mode's own policy
+  (`:589`); `describe_mode` returns the loop and every role prompt byte for byte
+  with nothing written anywhere (`tests/modes.test.ts:177`), answers every row,
+  and refuses with a reason when the config names a mode that is not there
+  (`tests/server.test.ts:532`, `tests/modes.test.ts:208`). The mode loader
+  refuses each of its own rules by field (`tests/modes.test.ts:58`, `:73`,
+  `:130`), and the three built-in modes validate (`:151`). What the hosts still
+  owe: the same `describe_mode` text through each host's own tool spelling,
+  which is integration probe I1's row.
 - **P9 (recorded):** Claude clean — `--strict-mcp-config --mcp-config <file>`
   shows exactly this server's tools and none of the operator's, and
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —

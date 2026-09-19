@@ -11,6 +11,8 @@ import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { lockPath, spawnLockName } from "../src/locks.ts";
+import { buildMode } from "./helpers/mode.ts";
+import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, environOf, killLockHolder, poll, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
@@ -20,13 +22,26 @@ function lead(taskId: string, depth = 1): Authority {
   return { row: "lead", reason: `lead by ancestry: task ${taskId} (lead, running)`, taskId, depth };
 }
 
+// The roles this suite's mode declares: where each one works and what profile it defaults
+// to, which is the mode's half of a role. The lead is engine-placed, so `delegate` has a
+// lead role to refuse. Grok's own write profile is `workspace`, and the mode names the
+// default its bound engine will have to accept.
+const modeRoles: RoleSpec[] = [
+  { key: "planner" },
+  { key: "implementer", workspace: "worktree", sandboxDefault: "workspace" },
+  { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only" },
+  { key: "lead" },
+  { key: "claudish" },
+];
+const modePatch = { lead: { placement: "engine", role: "lead" } };
+
 function configFor(bin: string, limits: Record<string, number> = {}): Record<string, unknown> {
   return {
     roles: {
-      planner: { engine: "grok", cwd: "root", sandbox: "read-only", prompt: "You are the planner. Report a plan." },
-      implementer: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
-      reviewer: { engine: "grok", cwd: "worktree", sandbox: "read-only" },
-      lead: { engine: "grok", cwd: "root", sandbox: "read-only" },
+      planner: { engine: "grok", prompt: "You are the planner. Report a plan." },
+      implementer: { engine: "grok" },
+      reviewer: { engine: "grok" },
+      lead: { engine: "grok" },
     },
     engines: { grok: { bin } },
     // The two wall-clock budgets these tools ride on, set far past anything the tests
@@ -41,7 +56,7 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
 
 async function projectWithRoles(t: TestContext, limits: Record<string, number> = {}): Promise<TestProject> {
   const bin = path.join(fs.mkdtempSync(path.join(fs.realpathSync("/tmp"), "cross-agent-bin-")), "unused");
-  const created = await project(t, configFor(bin, limits));
+  const created = await project(t, configFor(bin, limits), modeRoles, modePatch);
   fs.writeFileSync(path.join(created.root, ".cross-agent", "config.json"), JSON.stringify(configFor(created.bin, limits)));
   return created;
 }
@@ -105,7 +120,7 @@ test("a delegation launches its engine once, in the workspace, with the environm
   const p = await projectWithRoles(t);
   const record = path.join(p.root, "invocation.json");
   const launch = await delegate(p.root, request({ role: "planner", cwd: p.root, model: "grok-4.6", effort: "high" }), {
-    authority: operator,
+    authority: operator, mode: p.mode,
     env: engineEnv(p, { FAKE_ENGINE_RECORD: record, CLAUDECODE: "1", MCP_SERVER: "operator's own" }),
   });
   const id = launched(launch);
@@ -161,7 +176,7 @@ test("a configured binary that does not resolve fails the task at the adapter's 
     ...configFor(missing), engines: { grok: { bin: missing } },
   }));
   const id = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), {
-    authority: operator, env: engineEnv(p),
+    authority: operator, mode: p.mode, env: engineEnv(p),
   }));
   // The spec's environment is what the capability check reads, so the binary config named
   // is the binary it looked for — and the launch fails closed rather than finding `grok`
@@ -175,7 +190,7 @@ test("a configured binary that does not resolve fails the task at the adapter's 
 test("the runner is started with the server's own environment, never the child's", async (t) => {
   const p = await projectWithRoles(t);
   const launch = await delegate(p.root, request({ role: "planner", cwd: p.root }), {
-    authority: operator,
+    authority: operator, mode: p.mode,
     env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall", CLAUDECODE: "1" }),
   });
   const id = launched(launch);
@@ -194,7 +209,7 @@ test("the runner is started with the server's own environment, never the child's
 
 test("a role, a workspace and a branch the project does not have are each refused by name", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
   const worktree = await p.worktree("task/one");
 
   assert.match(refusal(await delegate(p.root, request({ role: "nobody", cwd: p.root }), options)), /role "nobody"/);
@@ -226,7 +241,7 @@ test("a role, a workspace and a branch the project does not have are each refuse
 test("a workspace an unsettled writable task holds refuses every delegation onto it, above it and below it", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/held");
-  const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const id = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/held" }), options));
   await waitForRecord(p, id, (value) => value.status === "running");
 
@@ -252,7 +267,7 @@ test("a record nobody can read refuses a writable delegation and leaves a read-o
   const broken = path.join(p.root, ".cross-agent", "tasks", "broken.json");
   fs.mkdirSync(path.dirname(broken), { recursive: true });
   fs.writeFileSync(broken, "{not a record");
-  const options = { authority: operator, env: engineEnv(p) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
 
   const reason = refusal(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/unknown" }), options));
   assert.match(reason, /broken\.json/);
@@ -263,7 +278,7 @@ test("a record nobody can read refuses a writable delegation and leaves a read-o
 
 test("a duplicate of a live task is refused, and force is what crosses the finished window", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const same = request({ role: "planner", cwd: p.root });
   const id = launched(await delegate(p.root, same, options));
   await waitForRecord(p, id, (value) => value.status === "running");
@@ -282,7 +297,7 @@ test("a duplicate of a live task is refused, and force is what crosses the finis
 
 test("resume is bound to the original task, and one chain never forks", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
   const first = request({ role: "planner", cwd: p.root });
   const id = launched(await delegate(p.root, first, options));
   const done = await waitForRecord(p, id, (value) => value.status === "done");
@@ -331,7 +346,7 @@ test("a resume keeps the parent of the record it continues, and a lead resumes o
   const worktree = await p.worktree("task/owned");
   const first = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
   const child = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/owned" }), {
-    authority: lead(first.id), env: engineEnv(p),
+    authority: lead(first.id), mode: p.mode, env: engineEnv(p),
   }));
   await waitForRecord(p, child, (value) => value.status === "done");
 
@@ -339,7 +354,7 @@ test("a resume keeps the parent of the record it continues, and a lead resumes o
   // never reach the engine this launches in the lead's own worktree.
   const resumed = launched(await delegate(p.root, {
     ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: child,
-  }, { authority: operator, env: engineEnv(p) }));
+  }, { authority: operator, mode: p.mode, env: engineEnv(p) }));
   assert.equal(p.record(resumed).parentTaskId, first.id, "preserved across resume");
   assert.equal(p.record(resumed).resumedFrom, child);
   await waitForRecord(p, resumed, (value) => value.status === "done");
@@ -349,18 +364,18 @@ test("a resume keeps the parent of the record it continues, and a lead resumes o
   const stranger = await seed(p.root, { role: "lead", cwd: p.root, status: "running" });
   const refused = refusal(await delegate(p.root, {
     ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: resumed,
-  }, { authority: lead(stranger.id), env: engineEnv(p) }));
+  }, { authority: lead(stranger.id), mode: p.mode, env: engineEnv(p) }));
   assert.match(refused, new RegExp(`lead task ${stranger.id} did not delegate`));
   // Its own lead may, and the continuation is still that lead's.
   const again = launched(await delegate(p.root, {
     ...request({ role: "implementer", cwd: worktree, branch: "task/owned" }), resume: resumed,
-  }, { authority: lead(first.id), env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) }));
+  }, { authority: lead(first.id), mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) }));
   assert.equal(p.record(again).parentTaskId, first.id);
 });
 
 test("a resume whose original never reached a session is refused rather than launched fresh", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
   // It failed before the engine ever announced a session, so there is nothing to continue.
   const original = await seed(p.root, { role: "planner", cwd: p.root, status: "failed", sessionId: null });
   assert.equal(original.sessionId, null);
@@ -373,7 +388,7 @@ test("the lead row delegates its own children, and is refused a lead, a lineage 
   const worktree = await p.worktree("task/child");
   const leadTask = await seed(p.root, { role: "lead", cwd: p.root, status: "running", depth: 1 });
   const options = {
-    authority: lead(leadTask.id), leadRole: "lead",
+    authority: lead(leadTask.id), mode: p.mode,
     env: { ...engineEnv(p), CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: leadTask.id, CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: leadTask.id, role: "lead", cwd: p.root }]) },
   };
 
@@ -381,16 +396,18 @@ test("the lead row delegates its own children, and is refused a lead, a lineage 
   assert.match(refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), options)), /lead/);
   // The operator's row may delegate a lead; the refusal is the lead row's alone.
   assert.ok(launched(await delegate(p.root, request({ role: "lead", cwd: p.root }), {
-    authority: operator, leadRole: "lead", env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
   })));
   // A caller whose own depth cannot be trusted writes no record at all.
   assert.match(
     refusal(await delegate(p.root, request({ role: "planner", cwd: p.root }), { ...options, authority: { ...operator, depth: Infinity } })),
     /depth Infinity cannot be trusted/,
   );
-  // Its own (role, cwd) pair is already in the lineage it carries.
+  // Its own (role, cwd) pair is already in the lineage it carries. Under a host-placed
+  // mode there is no lead role to refuse first, so the lineage is what answers.
+  const hostPlaced = buildMode(p.modesDir, "host-placed", modeRoles);
   assert.match(
-    refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), { ...options, leadRole: undefined })),
+    refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), { ...options, mode: hostPlaced })),
     /already has this pair in CROSS_AGENT_LINEAGE/,
   );
 
@@ -418,7 +435,7 @@ test("a delegation whose spawn lock was lost before the record is written launch
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/lost");
   const file = lockPath(p.root, spawnLockName());
-  const options = { authority: operator, env: engineEnv(p) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
 
   // The reservation check this delegation passed was only true while the lock held it
   // true, so the launch is refused rather than spawned onto a workspace someone may have
@@ -462,7 +479,7 @@ test("a delegation waits for the spawn lock and refuses when it cannot have it",
   const { acquire } = await import("../src/locks.ts");
   const held = await acquire(lockPath(p.root, spawnLockName()), { operation: "the test holds it", waitSeconds: 2 });
   t.after(() => held.release());
-  const result = await delegate(p.root, request({ role: "planner", cwd: p.root }), { authority: operator, env: engineEnv(p) });
+  const result = await delegate(p.root, request({ role: "planner", cwd: p.root }), { authority: operator, mode: p.mode, env: engineEnv(p) });
   assert.match(refusal(result), /spawn\.lock/);
   assert.match(refusal(result), /held by another process/);
   assert.deepEqual(p.records(), []);
@@ -474,12 +491,12 @@ test("the engine a request overrides is the engine that runs, and the record say
   fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
     ...configFor(p.bin),
     roles: {
-      planner: { engine: "grok", cwd: "root", sandbox: "read-only", model: "grok-4.6", effort: "low" },
-      claudish: { engine: "grok", cwd: "root", sandbox: "off" },
+      planner: { engine: "grok", model: "grok-4.6", effort: "low" },
+      claudish: { engine: "grok" },
     },
     engines: { grok: { bin: p.bin }, claude: { bin: claudeBin } },
   }));
-  const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
 
   // The role's bindings unless the request names its own.
   const bound = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
@@ -488,9 +505,9 @@ test("the engine a request overrides is the engine that runs, and the record say
 
   // A request that names another engine runs that engine's adapter, with that engine's
   // configured binary: the role's own profile has to be one the new engine declares, and
-  // `off` is declared by both.
+  // the mode's `read-only` default is declared by both.
   const crossed = launched(await delegate(p.root, { ...request({ role: "claudish", cwd: p.root, engine: "claude" }), brief: "Run on the other engine." }, {
-    authority: operator, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok" }),
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "claude", FAKE_ENGINE_SCRIPT: "ok" }),
   }));
   const ran = await waitForRecord(p, crossed, (value) => value.status === "done");
   assert.equal(ran.engine, "claude");
@@ -513,7 +530,7 @@ test("the engine a request overrides is the engine that runs, and the record say
 
 test("a role that binds no prompt is launched with a one-line default that forbids delegating", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const worktree = await p.worktree("task/prompt");
   const id = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/prompt" }), options));
   const spec: LaunchSpec = readSpec(p.root, id);
@@ -524,7 +541,7 @@ test("a role that binds no prompt is launched with a one-line default that forbi
 
 test("every delegation of a project gets its own scratch directory and nothing else shares it", async (t) => {
   const p = await projectWithRoles(t);
-  const options = { authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
   const first = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
   const running = await waitForRecord(p, first, (value) => value.status === "running");
   assert.equal((await update(p.root, first, { status: "cancelling" })).applied, true);

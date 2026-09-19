@@ -1,0 +1,39 @@
+{
+  "id": "dev-team",
+  "release": "0.1.0",
+  "name": "Dev team",
+  "summary": "A planner and a plan reviewer read at the project root; an implementer works in a linked worktree on its own task branch and a code reviewer reads that branch. The loop runs in your own host session, which owns every root git operation.",
+  "lead": { "placement": "host" },
+  "roles": [
+    {
+      "key": "planner",
+      "title": "Planner",
+      "promptFile": "roles/planner.md",
+      "workspace": { "kind": "root" },
+      "sandboxDefault": "read-only"
+    },
+    {
+      "key": "plan-reviewer",
+      "title": "Plan reviewer",
+      "promptFile": "roles/plan-reviewer.md",
+      "workspace": { "kind": "root" },
+      "sandboxDefault": "read-only"
+    },
+    {
+      "key": "implementer",
+      "title": "Implementer",
+      "promptFile": "roles/implementer.md",
+      "workspace": { "kind": "worktree", "branchPattern": "task/*", "dir": ".worktrees" },
+      "sandboxDefault": "workspace-write"
+    },
+    {
+      "key": "code-reviewer",
+      "title": "Code reviewer",
+      "promptFile": "roles/code-reviewer.md",
+      "workspace": { "kind": "worktree", "branchPattern": "task/*", "dir": ".worktrees" },
+      "sandboxDefault": "read-only"
+    }
+  ],
+  "git": { "worktreeDir": ".worktrees", "branchPattern": "task/*" },
+  "requires": { "engines": [] }
+}

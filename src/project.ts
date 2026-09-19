@@ -8,6 +8,8 @@ import { gitEnvironment } from "./worktree.ts";
 
 export type Discovery = { root: string } | { reason: string };
 
+export type Flags = { values: Record<string, string> } | { reason: string };
+
 const exec = promisify(execFile);
 
 function holdsConfig(dir: string): boolean {
@@ -46,6 +48,27 @@ async function inMainWorktree(cwd: string): Promise<string> {
 }
 
 /**
+ * The `--flag <value>` pairs a caller takes, each at most once, in any order. Anything
+ * else — an unknown flag, a missing or empty value, a repeat, a bare argument — is a
+ * reason and never a guess, because a command line this build cannot read in full is one
+ * it must not act on half of. The server takes `--project` alone; the operator CLI takes
+ * its own flags and shares the parser, so a second flag does not break the first.
+ */
+export function parseFlags(argv: readonly string[], spec: Record<string, string>): Flags {
+  const usage = Object.entries(spec).map(([flag, value]) => `[${flag} <${value}>]`).join(" ");
+  const values: Record<string, string> = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = argv[index + 1];
+    if (!Object.hasOwn(spec, flag) || typeof value !== "string" || value === "" || Object.hasOwn(values, flag)) {
+      return { reason: `expected ${usage}, got ${argv.join(" ")}` };
+    }
+    values[flag] = value;
+  }
+  return { values };
+}
+
+/**
  * The canonical root of the project this server serves (design, "Which project"):
  * `--project <root>` first, then `CROSS_AGENT_PROJECT`, then the nearest directory at or
  * above the working directory holding `.cross-agent/config.json`. Every answer holds a
@@ -53,8 +76,9 @@ async function inMainWorktree(cwd: string): Promise<string> {
  */
 export async function discoverProject(argv: readonly string[], env: Readonly<NodeJS.ProcessEnv>, cwd: string): Promise<Discovery> {
   if (argv.length > 0) {
-    if (argv.length !== 2 || argv[0] !== "--project" || argv[1] === "") return { reason: `expected [--project <root>], got ${argv.join(" ")}` };
-    return named(path.resolve(cwd, argv[1]), "--project");
+    const flags = parseFlags(argv, { "--project": "root" });
+    if ("reason" in flags) return flags;
+    return named(path.resolve(cwd, flags.values["--project"]), "--project");
   }
   const exported = env.CROSS_AGENT_PROJECT;
   if (exported !== undefined) {

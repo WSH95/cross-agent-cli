@@ -15,6 +15,7 @@ import { findByEnvironment } from "../src/process.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import { check } from "../src/tasks.ts";
 import { observeStall, wait } from "../src/wait.ts";
+import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, strandedEngine, suiteEnv } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
@@ -27,11 +28,14 @@ const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT
 const stallMinutes = 0.02;
 const stallMs = stallMinutes * 60_000;
 
+const modeRoles: RoleSpec[] = [{ key: "lead" }, { key: "planner" }];
+const modePatch = { lead: { placement: "engine", role: "lead" } };
+
 function configFor(bin: string, limits: Record<string, number> = {}): Record<string, unknown> {
   return {
     roles: {
-      lead: { engine: "grok", cwd: "root", sandbox: "read-only" },
-      planner: { engine: "grok", cwd: "root", sandbox: "read-only" },
+      lead: { engine: "grok" },
+      planner: { engine: "grok" },
     },
     engines: { grok: { bin } },
     // The two wall-clock budgets these tools ride on, set far past anything the tests
@@ -46,7 +50,7 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
 
 /** A project whose engine binary is the fake engine, with this test's own limits. */
 async function waitProject(t: TestContext, limits: Record<string, number> = {}): Promise<TestProject> {
-  const created = await project(t, configFor("placeholder", limits));
+  const created = await project(t, configFor("placeholder", limits), modeRoles, modePatch);
   fs.writeFileSync(path.join(created.root, ".cross-agent", "config.json"), JSON.stringify(configFor(created.bin, limits)));
   return created;
 }
@@ -54,7 +58,7 @@ async function waitProject(t: TestContext, limits: Record<string, number> = {}):
 /** A real task of this project, returned once its runner has acknowledged it. */
 async function launch(p: TestProject, env: Record<string, string>): Promise<TaskRecord> {
   const started = await delegate(p.root, { role: "planner", brief: "work for planner", cwd: p.root }, {
-    authority: operator, env: engineEnv(p, env),
+    authority: operator, mode: p.mode, env: engineEnv(p, env),
   });
   assert.equal(started.ok, true, `delegate refused: ${JSON.stringify(started)}`);
   const id = started.ok ? started.taskId : "";
@@ -255,7 +259,7 @@ test("a lead waits on the tasks it delegated and is refused by name for any othe
   const stranger = seed(p);
 
   const authority: Authority = { row: "lead", reason: `lead by ancestry: task ${lead.id} (lead, running)`, taskId: lead.id, depth: 1 };
-  const server = createServer({ tools: projectTools(p.root), authority: () => authority });
+  const server = createServer({ tools: projectTools(p.root, { mode: p.mode }), authority: () => authority });
   let id = 0;
   const call = async (args: Record<string, unknown>) => await server.handle({
     jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name: "wait", arguments: args },

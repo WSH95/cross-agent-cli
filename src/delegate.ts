@@ -5,12 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "./authority.ts";
 import { CONFIG_PATH, loadConfig } from "./config.ts";
-import type { CrossAgentConfig, RoleConfig } from "./config.ts";
+import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
 import { create, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { findRole } from "./modes.ts";
+import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
 import { ownedBy } from "./tasks.ts";
 import { sandboxFor } from "./engines/registry.ts";
@@ -41,8 +43,8 @@ export interface DelegateRequest {
 export interface DelegateOptions {
   /** Who this call serves. A lead's own task is what its children are recorded under. */
   authority: Authority;
-  /** The active mode's lead role, which no mode names until step 8. */
-  leadRole?: string;
+  /** The active mode: where each role works, what it defaults to, and which role is the lead. */
+  mode: Mode;
   /** The server's own environment: the parent of the child's, and the runner's own. */
   env?: NodeJS.ProcessEnv;
   now?: number;
@@ -71,9 +73,9 @@ function directory(target: string): boolean {
   return fs.statSync(target, { throwIfNoEntry: false })?.isDirectory() ?? false;
 }
 
-/** The workspace rule of the role's own kind (design section 6). */
-async function workspaceFault(projectRoot: string, role: RoleConfig, name: string, cwd: string, branch?: string): Promise<string | null> {
-  if (role.cwd === "root") {
+/** The workspace rule of the kind the mode gave this role (design, "Modes"). */
+async function workspaceFault(projectRoot: string, workspace: Workspace, name: string, cwd: string, branch?: string): Promise<string | null> {
+  if (workspace.kind === "root") {
     return cwd === canonicalPath(projectRoot) ? null : `role ${JSON.stringify(name)} works at the project root ${projectRoot}, not ${cwd}`;
   }
   if (branch === undefined || branch === "") {
@@ -145,7 +147,8 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   } catch (error) {
     return refuse(message(error));
   }
-  if (options.authority.row === "lead" && options.leadRole !== undefined && request.role === options.leadRole) {
+  const leadRole = options.mode.lead.role;
+  if (options.authority.row === "lead" && leadRole !== undefined && request.role === leadRole) {
     // `delegate (another lead)` is the operator's row alone in the permission matrix: a
     // lead delegates specialists, and the mode's own lead is placed by the launcher.
     return refuse(`role ${JSON.stringify(request.role)} is the mode's lead role; a lead delegates specialists`);
@@ -185,7 +188,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       if (!authoritative.has(parent.status)) return refuse(`parent task ${caller} is ${parent.status}`);
     }
 
-    // 1. The role, its engine, and the workspace as the reservation will key it.
+    // 1. The role as the mode declares it and as config binds it, its engine, and the
+    // workspace as the reservation will key it. A role the mode does not declare has no
+    // workspace and no sandbox default, so there is nothing to launch it under.
+    const declared = findRole(options.mode, request.role);
+    if (declared === undefined) return refuse(`no role ${JSON.stringify(request.role)} in mode ${options.mode.id}`);
     if (!Object.hasOwn(config.roles, request.role)) return refuse(`no role ${JSON.stringify(request.role)} in ${CONFIG_PATH}`);
     const role = config.roles[request.role];
     const engine = (request.engine ?? role.engine) as EngineName;
@@ -197,17 +204,23 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (!path.isAbsolute(request.cwd)) return refuse(`cwd ${JSON.stringify(request.cwd)} must be an absolute path`);
     const cwd = canonicalPath(request.cwd);
     if (!directory(cwd)) return refuse(`no directory at ${cwd}`);
-    // The role's own profile, never the request's, because it is the rule the record will
-    // be reserved by; an engine override has to be one that declares it.
+    // The mode's default unless config overrode it, never the request's, because it is the
+    // rule the record will be reserved by; an engine override has to be one that declares it.
     let sandbox: LaunchSpec["sandbox"];
     try {
-      sandbox = sandboxFor(engine, role.sandbox);
+      sandbox = sandboxFor(engine, role.sandbox ?? declared.sandboxDefault);
     } catch (error) {
       return refuse(message(error));
     }
+    // The root rule again at the one place an engine is actually started: `.cross-agent/`
+    // is the server's to write, and a config that drifted from the mode after this server
+    // read it would otherwise launch the engine that could edit it.
+    if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
+      return refuse(`role ${JSON.stringify(request.role)} works at the project root, which only the server may write; ${JSON.stringify(sandbox.profile)} is ${sandbox.mode} under ${engine}`);
+    }
 
     // 2. Where this role may work.
-    const fault = await workspaceFault(projectRoot, role, request.role, cwd, request.branch);
+    const fault = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
     if (fault !== null) return refuse(fault);
 
     // 3. The workspace reservation, and the records nobody can read (design section 2, E2).

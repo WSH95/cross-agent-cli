@@ -1,0 +1,17 @@
+{
+  "id": "solo",
+  "release": "0.1.0",
+  "name": "Solo",
+  "summary": "One role, one brief, no ceremony: a single specialist reads the project at its root and reports back. No worktree, no branch, no git policy — the zero-ceremony delegation, and the proof that the worktree provider is a seam rather than an assumption.",
+  "lead": { "placement": "host" },
+  "roles": [
+    {
+      "key": "solo",
+      "title": "Solo specialist",
+      "promptFile": "roles/solo.md",
+      "workspace": { "kind": "root" },
+      "sandboxDefault": "read-only"
+    }
+  ],
+  "requires": { "engines": [] }
+}

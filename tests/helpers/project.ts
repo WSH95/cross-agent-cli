@@ -9,6 +9,9 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { scan } from "../../src/ledger.ts";
 import type { TaskRecord } from "../../src/ledger.ts";
+import type { Mode } from "../../src/modes.ts";
+import { buildMode } from "./mode.ts";
+import type { RoleSpec } from "./mode.ts";
 
 // A project the delegation tools can be run against: a git repository with a config, an
 // engine binary that is the fake engine, and a cleanup that leaves no process behind.
@@ -121,16 +124,24 @@ export interface TestProject {
   /** The environment a server of this project would have: the parent of every child env. */
   env: NodeJS.ProcessEnv;
   bin: string;
+  /** The mode this project's config is bound to, written under `<root>/modes` and loaded. */
+  mode: Mode;
+  modesDir: string;
   worktree(branch: string, slug?: string): Promise<string>;
   records(): TaskRecord[];
   record(id: string): TaskRecord;
 }
 
 /**
- * A git project with `.cross-agent/config.json`, ready for a delegation. `t.after` kills
- * every process the tasks left, so a test that fails still leaves no engine running.
+ * A git project with `.cross-agent/config.json` and the mode that config names, ready for
+ * a delegation. The mode is written under `<root>/modes`, because where a role works and
+ * what sandbox it defaults to are the mode's to say, and a test that binds a role has to
+ * declare it there. `t.after` kills every process the tasks left, so a test that fails
+ * still leaves no engine running.
  */
-export async function project(t: TestContext, config: Record<string, unknown>): Promise<TestProject> {
+export async function project(
+  t: TestContext, config: Record<string, unknown>, roles: RoleSpec[], patch: Record<string, unknown> = {},
+): Promise<TestProject> {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-tools-")));
   const marker = `AGENT_TEAM_TEST_PROJECT=${root}`;
   await exec("git", ["-C", root, "init", "-b", "main"]);
@@ -139,6 +150,9 @@ export async function project(t: TestContext, config: Record<string, unknown>): 
   const bin = engineShim(root, "engine");
   fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
   fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify(config));
+  const modesDir = path.join(root, "modes");
+  fs.mkdirSync(modesDir, { recursive: true });
+  const mode = buildMode(modesDir, typeof config.mode === "string" ? config.mode : "dev-team", roles, patch);
 
   t.after(async () => {
     const deadline = Date.now() + pollDeadlineMs;
@@ -157,7 +171,7 @@ export async function project(t: TestContext, config: Record<string, unknown>): 
   });
 
   return {
-    root, marker, bin,
+    root, marker, bin, mode, modesDir,
     env: { ...suiteEnv, [marker.split("=")[0]]: root },
     async worktree(branch: string, slug = branch.replace(/[^A-Za-z0-9_-]/g, "-")) {
       const directory = path.join(root, ".worktrees", slug);

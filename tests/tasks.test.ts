@@ -13,6 +13,7 @@ import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
 import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
+import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
@@ -22,12 +23,20 @@ function leadRow(taskId: string, depth = 1): Authority {
   return { row: "lead", reason: `lead by ancestry: task ${taskId} (lead, running)`, taskId, depth };
 }
 
+// Grok's own write profile is `workspace`; the lead is engine-placed, as a cascade needs.
+const modeRoles: RoleSpec[] = [
+  { key: "lead" },
+  { key: "planner" },
+  { key: "implementer", workspace: "worktree", sandboxDefault: "workspace" },
+];
+const modePatch = { lead: { placement: "engine", role: "lead" } };
+
 function configFor(bin: string, limits: Record<string, number> = {}): Record<string, unknown> {
   return {
     roles: {
-      lead: { engine: "grok", cwd: "root", sandbox: "read-only" },
-      planner: { engine: "grok", cwd: "root", sandbox: "read-only" },
-      implementer: { engine: "grok", cwd: "worktree", sandbox: "workspace" },
+      lead: { engine: "grok" },
+      planner: { engine: "grok" },
+      implementer: { engine: "grok" },
     },
     engines: { grok: { bin } },
     // The two wall-clock budgets these tools ride on, set far past anything the tests
@@ -41,7 +50,7 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
 }
 
 async function projectWithRoles(t: TestContext, limits: Record<string, number> = {}): Promise<TestProject> {
-  const created = await project(t, configFor("placeholder", limits));
+  const created = await project(t, configFor("placeholder", limits), modeRoles, modePatch);
   fs.writeFileSync(path.join(created.root, ".cross-agent", "config.json"), JSON.stringify(configFor(created.bin, limits)));
   return created;
 }
@@ -54,7 +63,7 @@ async function launch(
   const result = await delegate(p.root, {
     role: values.role, brief: values.brief ?? `work for ${values.role} in ${values.cwd}`, cwd: values.cwd, branch: values.branch,
   }, {
-    authority: values.authority ?? operator,
+    authority: values.authority ?? operator, mode: p.mode,
     env: engineEnv(p, { FAKE_ENGINE_SCRIPT: values.script ?? "stall" }),
   });
   assert.equal(result.ok, true, `delegate refused: ${JSON.stringify(result)}`);
@@ -207,7 +216,7 @@ test("check writes the stall its clock reads, and writes the task back when even
 test("result is the final message in full, and a task still running has only its status", async (t) => {
   const p = await projectWithRoles(t);
   const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root }, {
-    authority: operator, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
   });
   assert.equal(started.ok, true);
   const id = started.ok ? started.taskId : "";
@@ -485,7 +494,7 @@ test("a delegation racing a cascade is either refused or cancelled with the rest
     const lead = await launch(p, { role: "lead", cwd: p.root, brief: `lead of round ${attempt}` });
     const [child, outcomes] = await Promise.all([
       delegate(p.root, { role: "implementer", brief: "race", cwd: worktree, branch: `task/race-${attempt}` }, {
-        authority: leadRow(lead.id), env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+        authority: leadRow(lead.id), mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
       }),
       cancel(p.root, lead.id),
     ]);
