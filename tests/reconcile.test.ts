@@ -598,14 +598,17 @@ test("cleanup judges the records of its own group last, so the rest are settled 
   const stranger = zoo.leader();
   await change(root, foreign.id, { runnerIdentity: deadIdentity(), engineIdentity: stranger.identity }, now + 1);
 
-  const outcome = path.join(root, "cleaned.json");
   const pidFile = path.join(root, "reconciler.pid");
+  const start = path.join(root, "start");
   const cleaner = path.join(root, "cleaner.mjs");
+  // The pass runs on the ledger as the test leaves it, never on a half-written one: the
+  // record naming this cleaner's own engine cannot exist before the engine does, so the
+  // cleaner waits to be told both records are there.
   fs.writeFileSync(cleaner, `
 import fs from "node:fs";
 import { terminateOrphans } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "process.ts")).href)};
-const result = await terminateOrphans(process.argv[2]);
-fs.writeFileSync(process.argv[3], JSON.stringify(result));
+while (!fs.existsSync(process.argv[3])) await new Promise((resolve) => setTimeout(resolve, 10));
+await terminateOrphans(process.argv[2]);
 `);
   const leaderScript = `
 const fs = require("node:fs");
@@ -616,15 +619,17 @@ setInterval(() => {}, 1000);
 `;
   // Listed newest first, so the record of this server's own engine is the one the pass
   // would reach first if nothing ordered it.
-  const engine = zoo.leader({}, leaderScript, [cleaner, root, outcome, pidFile]);
+  const engine = zoo.leader({}, leaderScript, [cleaner, root, start, pidFile]);
   const own = await started(root, "orphaned", now + 2);
   await change(root, own.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 3);
   const child = await zoo.member(pidFile);
+  fs.writeFileSync(start, "");
 
-  await poll(() => read(root, foreign.id).status, (status) => status === "failed");
+  await poll(() => read(root, foreign.id).status, (status) => status === "failed", 8000);
   assert.equal(read(root, foreign.id).reason, "runner lost", "the record it could settle was settled");
-  await poll(() => running(engine.pid), (alive) => !alive, 8000);
-  assert.equal(running(child), false, "the pass died with the group it was told to end");
+  // The group goes down together, but not in one instant: the leader and the pass inside
+  // it are two processes, and which of them the kernel reaps first is not the point.
+  await poll(() => running(engine.pid) || running(child), (alive) => !alive, 8000);
   assert.equal(read(root, own.id).status, "orphaned", "and left its own record for another server");
 });
 

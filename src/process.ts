@@ -129,8 +129,15 @@ export interface EnvironmentScan {
  * milliseconds every detached spawn on the machine wears the exact shape of an engine
  * nobody may read, and counting one stands a launch, a cancel or an adoption down over a
  * process that is nothing yet (bead atc-s96.46).
+ *
+ * The budget is generous on purpose. Measured on an idle machine the window closes
+ * within 40 ms; under a loaded one — a full test suite beside a process spawned every
+ * 10 ms — it was seen to outlast 55 ms, because the exec itself waits on disk and each
+ * 5 ms step of this wait takes 8. Overrunning costs only a stand-down that a later pass
+ * retries, so the cap is where a machine in real trouble stops this scan, not where a
+ * busy one does.
  */
-const execWaitMs = 50;
+const execWaitMs = 250;
 const execWaitStepMs = 5;
 
 // The scan is synchronous — every caller reads its answer as a value — so the wait

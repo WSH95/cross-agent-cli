@@ -855,8 +855,10 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   `/proc/<pid>/cmdline` is empty and `/proc/<pid>/environ` answers EACCES —
   every detached spawn on the machine wears the plausible candidate's shape for
   those few milliseconds. So a candidate whose argv is not published yet is
-  re-read in 5-millisecond steps for up to 50 (`src/process.ts#execWaitMs`,
-  `#readEnvironment`) and counted only if it still cannot be read then; a pid
+  re-read in 5-millisecond steps for up to 250 (`src/process.ts#execWaitMs`,
+  `#readEnvironment`) — a window measured at under 40 ms on an idle machine
+  and over 55 ms on a loaded one — and counted only if it still cannot be read
+  then; a pid
   that leaves or dies while that waits is no engine to stand down for and is
   not counted, and a process killed inside `execve` is exactly that — it keeps
   the empty argv and the unreadable environment for as long as its zombie entry
