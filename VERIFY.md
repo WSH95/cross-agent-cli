@@ -32,3 +32,25 @@ before the fix the child escaped a failed sandboxed command with
 Not run yet: probe P2 for Claude (`atc-s96.17`, runnable now), the
 integration probes I1 and I2, every end-to-end run (E1–E7). Grok's
 `--prompt-file` fallback is `--help`-verified only (T15).
+
+## M3 — modes, root git tools, solo, the launcher and the loops (merged 2026-09-19)
+
+| what | value |
+|---|---|
+| `main` after the merge | `3023e30` (fast-forward of `task/cross-agent-m3`, 20 commits over `ff1cf55`) |
+| `npm test` at the root | 586 tests: 585 pass, 0 fail, 1 skipped (the Codex I2 placeholder) |
+| citation checker | 795 citations in 2 files (334 by line, 461 by symbol), 0 misses |
+
+Landed: modes and the worktree provider with `describe_mode` and `init
+--mode` (S8, `atc-s96.23`); `git_root`, `run_command` and the journal's
+named steps (Task 4b, part of `.24`); the built-in `consult` role, the
+no-config `solo` default and `worktree: true` one-shots (`.27`); the
+launcher skill, the `dev-team` loop, the role prompts through the one-off
+converter, and `delegate` launching a role with the mode's own prompt
+(T12, `.12`).
+
+Probes rerun this milestone: none.
+
+Not run yet: probe P2 for Claude (`atc-s96.17`, at T13), I1, I2, E1–E7.
+Codex is paused by the user (2026-09-18): T13 records its Codex rows as
+not run, each with the command that runs it later.
