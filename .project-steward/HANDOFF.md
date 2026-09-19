@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:50:17Z
+updated_at: 2026-09-19T15:52:25Z
 updated_by: claude
 session_status: active
 branch: main
@@ -35,9 +35,10 @@ Four fix rounds closed everything four reviews found; round 4 realigned the
 anchored citations to the tests whose titles state each claim (alignment
 table in `task-6-report.md`), grounded the verifier's Codex handling, and
 fixed the checker's blind spot. **Closing reviews of round 4:** the Grok seat runs through cross-agent
-(diff attached); the Opus 5 scoped re-review was stopped by the user before
-a verdict and not restarted (the user was asked); the controller's own
-spot-check of the realigned anchors passed. When both are clean: close `.13`,
+(diff attached); the Opus 5 scoped re-review's first run was terminated by the
+harness before a verdict (reported as "stopped by user"; the user did not
+stop it) and is rerunning; the controller's own spot-check of the realigned
+anchors passed. When both are clean: close `.13`,
 rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
 section (`dispatch/verify-t13-final.md`, four placeholders), the final
 handover (`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`,
