@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { loadConfig } from "../src/config.ts";
 import { discoverProject } from "../src/project.ts";
 
 function scratch(t: TestContext): string {
@@ -63,14 +64,48 @@ test("a working directory inside a linked worktree resolves to the main project"
   assert.deepEqual(await discoverProject([], {}, worktree), { root: main });
 });
 
-test("no config anywhere is a reason, never a guess", async (t) => {
+test("a project with no config anywhere is the git toplevel of the working directory", async (t) => {
+  const root = scratch(t);
+  const repo = path.join(root, "repo");
+  const deep = path.join(repo, "src", "deep");
+  fs.mkdirSync(deep, { recursive: true });
+  const git = (...args: string[]) => execFileSync("git", ["-C", repo, ...args], { stdio: "ignore" });
+  git("init", "-b", "main");
+
+  // No config above the working directory and no `--project`: the project is the
+  // repository, running solo, and nothing is written to find that out — `cross-agent
+  // init` stays the only writer of a config (design, "Modes").
+  assert.deepEqual(await discoverProject([], {}, deep), { root: repo });
+  assert.deepEqual(await discoverProject([], {}, repo), { root: repo });
+  assert.equal(fs.existsSync(path.join(repo, ".cross-agent")), false);
+  const defaults = loadConfig(repo);
+  assert.equal(defaults.mode, "solo");
+  assert.deepEqual(defaults.roles, {}, "no binding is guessed: the engine comes per call");
+
+  // A linked worktree of that repository is the same project, read at the main checkout,
+  // where the ledger lives.
+  git("-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false",
+    "commit", "--allow-empty", "-m", "initial");
+  const worktree = path.join(root, "elsewhere", "task-x");
+  git("worktree", "add", "-b", "task/x", worktree);
+  assert.deepEqual(await discoverProject([], {}, worktree), { root: repo });
+
+  // A config that does exist above the working directory still wins over the toplevel.
+  project(path.join(repo, "packages", "inner"));
+  assert.deepEqual(await discoverProject([], {}, path.join(repo, "packages", "inner", "src")),
+    { root: path.join(repo, "packages", "inner") });
+});
+
+test("no config and no repository is a reason, never a guess", async (t) => {
   const root = scratch(t);
   const empty = path.join(root, "empty");
   fs.mkdirSync(empty);
   const missing = path.join(root, "missing");
   const usage = (argv: string) => `expected [--project <root>], got ${argv}`;
 
-  assert.deepEqual(await discoverProject([], {}, empty), { reason: `no .cross-agent/config.json in ${empty} or any directory above it` });
+  assert.deepEqual(await discoverProject([], {}, empty), {
+    reason: `no .cross-agent/config.json in ${empty} or any directory above it, and ${empty} is in no git repository: without a config the project is the working directory's git toplevel`,
+  });
   assert.deepEqual(await discoverProject(["--project", empty], {}, root), { reason: `--project ${empty} holds no .cross-agent/config.json` });
   assert.deepEqual(await discoverProject(["--project", missing], {}, root),
     { reason: `cannot resolve --project ${missing}: ENOENT: no such file or directory, realpath '${missing}'` });

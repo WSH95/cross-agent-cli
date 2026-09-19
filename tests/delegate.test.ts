@@ -8,13 +8,17 @@ import type { Authority } from "../src/authority.ts";
 import { CONFIG_PATH } from "../src/config.ts";
 import { delegate } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
+import { readJournal } from "../src/journal.ts";
 import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
+import { reservedBy } from "../src/reservation.ts";
+import { verifyWorktree } from "../src/worktree.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { lockPath, spawnLockName } from "../src/locks.ts";
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
-import { alive, engineEnv, environOf, killLockHolder, poll, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { git } from "./helpers/git.ts";
+import { alive, engineEnv, environOf, killLockHolder, poll, reserve, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -505,6 +509,117 @@ test("the lead row delegates its own children, and is refused a lead, a lineage 
   );
 });
 
+test("a role with no binding runs on the engine the call names, and the built-in consultant has none", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  // `consult` is a role of every mode, declared by none of them here and bound by
+  // nothing: the engine comes from the call, which is what makes a one-off delegation
+  // possible with no team template (design, "Modes").
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "consult", cwd: p.root }), options)),
+    /bound to no engine .*cross-agent init --mode dev-team/,
+  );
+  const id = launched(await delegate(p.root, request({ role: "consult", cwd: p.root, engine: "grok" }), options));
+  assert.equal(p.record(id).engine, "grok");
+  const spec: LaunchSpec = readSpec(p.root, id);
+  assert.deepEqual(spec.sandbox, sandboxFor("grok", "read-only"), "read-only at the root, as the mode says");
+  // Its prompt is the mode's own text for the role, not the one-line default a bound
+  // role with no configured prompt gets.
+  assert.match(spec.rolePrompt, /consultant/);
+  assert.match(spec.rolePrompt, /read-only/);
+});
+
+test("a worktree one-shot is created through git_root, journaled, and the record carries it", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const id = launched(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options));
+  const worktree = path.join(p.root, ".worktrees", id);
+  const record = p.record(id);
+  assert.deepEqual(record.worktree, { path: worktree, branch: `task/${id}`, slug: id });
+  assert.equal(record.cwd, worktree, "the task runs there, so that is what it reserves");
+  assert.equal(reservedBy(p.root, worktree)?.id, id);
+  // Writable in the engine's own spelling of the profile — that is what the flag is for —
+  // and the root rule is untouched, because the task never runs at the root.
+  const spec: LaunchSpec = readSpec(p.root, id);
+  assert.deepEqual(spec.sandbox, sandboxFor("grok", "workspace"));
+  assert.equal(spec.cwd, worktree);
+  // A real linked worktree on its own branch, with the step in the task's own journal.
+  const verified = await verifyWorktree(p.root, worktree, `task/${id}`);
+  assert.ok(!("reason" in verified), JSON.stringify(verified));
+  const journal = readJournal(p.root, id);
+  assert.equal(journal?.branch, `task/${id}`);
+  assert.equal(journal?.worktree, worktree);
+  assert.equal(journal?.defaultBranch, "main");
+  assert.deepEqual(journal?.steps.map((step) => step.step), ["worktree-created"]);
+});
+
+test("a worktree one-shot is refused wherever git_root would refuse it, and leaves nothing behind", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const existing = await p.worktree("task/one");
+
+  // Only a role that works at the project root takes the flag, and never with a resume,
+  // which continues the workspace of the task it names rather than taking a new one.
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "implementer", cwd: existing, branch: "task/one", worktree: true }), options)),
+    /already works in a worktree/,
+  );
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true, resume: "whatever" }), options)),
+    /resume/,
+  );
+  // The reservation is read against the path the one-shot would take, before git creates
+  // it: a task holding the worktree directory holds every worktree under it.
+  const holder = await reserve(p.root, path.join(p.root, ".worktrees"));
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options)),
+    new RegExp(`is reserved by task ${holder.id}`),
+  );
+  assert.equal((await update(p.root, holder.id, { status: "done" })).applied, true);
+
+  // And `git_root` is what creates it, so its own refusals are this delegation's: a
+  // project that tracks `.cross-agent/` is one where a specialist could commit what the
+  // lead runs at the root.
+  await git(p.root, "add", "-f", ".cross-agent/config.json");
+  assert.match(refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options)), /\.gitignore/);
+
+  assert.deepEqual(p.records().map((record) => record.id), [holder.id], "nothing refused leaves a record behind");
+  assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), ["task-one"], "or a worktree");
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "journal")), false, "or a journal");
+});
+
+test("a project with no config delegates on the engine the call names, and no config is written", async (t) => {
+  const p = await projectWithRoles(t);
+  // The mode a project with no config runs as, served from this project's own shelf: one
+  // role, no worktree role, and therefore no git policy of its own.
+  const solo = buildMode(p.modesDir, "solo", [{ key: "consult" }]);
+  fs.rmSync(path.join(p.root, ".cross-agent", "config.json"));
+  const options = {
+    authority: operator, mode: solo,
+    env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall", CROSS_AGENT_GROK_BIN: p.bin }),
+  };
+
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "consult", cwd: p.root }), options)),
+    /bound to no engine .*cross-agent init --mode solo/,
+  );
+  const asked = launched(await delegate(p.root, request({ role: "consult", cwd: p.root, engine: "grok" }), options));
+  assert.equal(p.record(asked).engine, "grok");
+
+  // And a change, in a worktree created under the policy this build supplies where the
+  // mode declares none.
+  const changed = launched(await delegate(p.root, { ...request({ role: "consult", cwd: p.root, engine: "grok", worktree: true }), brief: "Change the one thing." }, options));
+  assert.deepEqual(p.record(changed).worktree, {
+    path: path.join(p.root, ".worktrees", changed), branch: `task/${changed}`, slug: changed,
+  });
+  assert.deepEqual(readSpec(p.root, changed).sandbox, sandboxFor("grok", "workspace"));
+
+  // The ledger's own directory is created by the first delegation; the config file is
+  // not, because `cross-agent init` is the only thing that writes one.
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "tasks")), true);
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "config.json")), false);
+});
+
 test("a delegation whose spawn lock was lost before the record is written launches nothing", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/lost");
@@ -627,7 +742,7 @@ test("the profile a specialist runs under is the mode's default unless config ov
   fs.writeFileSync(configFile, JSON.stringify(base));
   assert.equal(
     refusal(await delegate(p.root, request({ role: "claudish", cwd: p.root }), options)),
-    `refused delegation: no role "claudish" in ${CONFIG_PATH}`,
+    `refused delegation: role "claudish" is bound to no engine in ${CONFIG_PATH}: name engine in this call, or run "cross-agent init --mode dev-team"`,
   );
   // And a role neither declares is the mode's refusal, because the mode is what says
   // where a role works.

@@ -64,6 +64,8 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
       "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
       implementer: { engine: "codex", model: "gpt-6-astra" },
       "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+      // The role every mode carries, bound to a starting engine any call may override.
+      consult: { engine: "codex", model: "gpt-6-astra" },
     },
     engines: { claude: {}, codex: {}, grok: {} },
     limits: {
@@ -75,7 +77,7 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
   // What it wrote loads, against the mode it named: the four roles run under the profiles
   // the mode defaults them to.
   const bound = loadConfigWithMode(root, builtInModesDir());
-  assert.deepEqual(bound.mode.roles.map((role) => role.sandboxDefault), ["read-only", "read-only", "workspace-write", "read-only"]);
+  assert.deepEqual(bound.mode.roles.map((role) => role.sandboxDefault), ["read-only", "read-only", "workspace-write", "read-only", "read-only"]);
   assert.equal(effectiveMaxDepth(bound.mode, bound.config), 1);
 
   // Every project in this suite is under the system temporary directory, which Codex and
@@ -106,7 +108,7 @@ test("init --mode binds each built-in mode's own roles, and an engine-placed lea
 
   const soloRoot = scratch(t);
   assert.equal((await run(["init", "--mode", "solo"], soloRoot)).code, 0);
-  assert.deepEqual(written(soloRoot).roles, { solo: { engine: "codex", model: "gpt-6-astra" } });
+  assert.deepEqual(written(soloRoot).roles, { consult: { engine: "codex", model: "gpt-6-astra" } });
   assert.equal((written(soloRoot).limits as Record<string, number>).maxDepth, 1);
   // Solo declares no worktree role, so nothing in its config names a branch or a directory.
   assert.equal(loadConfigWithMode(soloRoot, builtInModesDir()).mode.git, undefined);

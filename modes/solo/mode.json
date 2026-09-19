@@ -2,13 +2,13 @@
   "id": "solo",
   "release": "0.1.0",
   "name": "Solo",
-  "summary": "One role, one brief, no ceremony: a single specialist reads the project at its root and reports back. No worktree, no branch, no git policy — the zero-ceremony delegation, and the proof that the worktree provider is a seam rather than an assumption.",
+  "summary": "One role and one turn: the built-in consultant reads the project at its root under a read-only sandbox and reports back, or takes one change in a task worktree of its own when the call asks for one. No plan, no review round, no second engine — the zero-ceremony delegation, the mode a project with no config runs as, and the proof that the worktree provider is a seam rather than an assumption.",
   "lead": { "placement": "host" },
   "roles": [
     {
-      "key": "solo",
-      "title": "Solo specialist",
-      "promptFile": "roles/solo.md",
+      "key": "consult",
+      "title": "Consultant",
+      "promptFile": "roles/consult.md",
       "workspace": { "kind": "root" },
       "sandboxDefault": "read-only"
     }

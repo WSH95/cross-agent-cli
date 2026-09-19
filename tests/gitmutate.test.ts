@@ -521,10 +521,12 @@ test("a config, a lock, or a git that could not run is refused rather than throw
   assert.match(refusal(signalled), /could not run/);
   assert.ok((await recorder.argv()).some((argument) => argument.includes("signal-marker")));
 
-  // Without a config there is no default branch for the journal to record.
-  fs.rmSync(path.join(root, ".cross-agent", "config.json"));
-  const unconfigured = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 });
-  assert.match(refusal(unconfigured), /config/);
+  // A config that cannot be read leaves no default branch for the journal to record, and
+  // is the loader's refusal rather than its throw. A project with no config file at all is
+  // not this case: it runs on the documented defaults (`src/config.ts#defaultConfig`).
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), "{broken");
+  const unreadable = await gitMutate(root, { slug: "refused", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 });
+  assert.match(refusal(unreadable), /config/);
 
   assert.equal(await git(root, "rev-list", "--count", "task/refused"), "1", "and not one of them ran");
   assert.equal(readJournal(root, "refused"), null);

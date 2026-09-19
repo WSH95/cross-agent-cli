@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole, loadMode } from "../src/modes.ts";
+import { builtInModesDir, CONSULT_ROLE, declaresWorktreeProvider, describeMode, findRole, gitPolicy, loadMode } from "../src/modes.ts";
 import { modeDocument, modesRoot, writeMode } from "./helpers/mode.ts";
 
 // A mode is portable text: everything a team needs except which engine runs which role.
@@ -29,7 +29,8 @@ test("loadMode reads a mode's identity, lead, roles, git policy and requirements
   assert.equal(mode.id, "dev-team-like");
   assert.equal(mode.release, "0.1.0");
   assert.deepEqual(mode.lead, { placement: "host" });
-  assert.deepEqual(mode.roles, [
+  // The declared roles; the built-in `consult` role every mode gains is its own test.
+  assert.deepEqual(mode.roles.slice(0, 2), [
     {
       key: "planner", title: "Planner", promptFile: "roles/planner.md",
       workspace: { kind: "root" }, sandboxDefault: "read-only",
@@ -257,6 +258,68 @@ test("a mode directory that is a symlink out of the shelf is not a mode of that 
   assert.match(refusal(modes, "smuggled"), /modes/);
 });
 
+test("every mode carries the built-in consult role, which a mode may retitle and reprompt alone", (t) => {
+  const modes = modesRoot(t);
+  // A mode that says nothing about it still has it: read-only at the project root, with
+  // this build's own text rather than a file of the mode's, listed after the mode's own
+  // roles (design, "Modes").
+  writeMode(modes, "team", modeDocument("team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]));
+  const team = loadMode(modes, "team");
+  assert.deepEqual(team.roles.map((role) => role.key), ["planner", "implementer", CONSULT_ROLE]);
+  const consult = findRole(team, CONSULT_ROLE);
+  assert.ok(consult);
+  assert.deepEqual(consult.workspace, { kind: "root" });
+  assert.equal(consult.sandboxDefault, "read-only");
+  assert.equal(consult.title, "Consultant");
+  assert.equal(consult.promptFile, undefined, "a built-in role carries its own text, not a file the mode owns");
+  assert.match(consult.prompt ?? "", /read-only/);
+  const described = describeMode(modes, "team");
+  assert.ok(!("reason" in described), JSON.stringify(described));
+  assert.deepEqual(described.roles.map((role) => role.key), ["planner", "implementer", CONSULT_ROLE]);
+  assert.equal(described.roles[2].prompt, consult.prompt, "the built-in text is served where a prompt file would be read");
+
+  // A mode that declares it keeps its own title and its own prompt file, and the role is
+  // where the mode declared it rather than appended.
+  writeMode(modes, "own", modeDocument("own", [{ key: CONSULT_ROLE, title: "House critic" }, { key: "planner" }]), {
+    prompts: { consult: "Read this project and answer the brief.\n" },
+  });
+  const own = loadMode(modes, "own");
+  assert.deepEqual(own.roles.map((role) => [role.key, role.title, role.promptFile]), [
+    [CONSULT_ROLE, "House critic", "roles/consult.md"],
+    ["planner", "planner", "roles/planner.md"],
+  ]);
+  assert.equal(findRole(own, CONSULT_ROLE)?.prompt, undefined);
+  const describedOwn = describeMode(modes, "own");
+  assert.ok(!("reason" in describedOwn), JSON.stringify(describedOwn));
+  assert.equal(describedOwn.roles[0].prompt, "Read this project and answer the brief.\n");
+});
+
+test("a declared consult role that is not read-only at the project root is refused", (t) => {
+  const modes = modesRoot(t);
+  // The two things a mode may not change about it. Each names the rule rather than the
+  // generic one, because a mode author is overriding a role this build supplies.
+  writeMode(modes, "m", modeDocument("m", [{ key: CONSULT_ROLE, workspace: "worktree" }]));
+  assert.match(refusal(modes, "m"), /roles\.consult\.workspace: .*title and prompt/);
+  writeMode(modes, "n", modeDocument("n", [{ key: CONSULT_ROLE, sandboxDefault: "off" }]));
+  assert.match(refusal(modes, "n"), /roles\.consult\.sandboxDefault: .*title and prompt/);
+});
+
+test("a mode with no worktree role still has the git policy its one-shots use, marked implicit", (t) => {
+  const modes = modesRoot(t);
+  writeMode(modes, "rootish", modeDocument("rootish", [{ key: "solo" }]));
+  const rootOnly = loadMode(modes, "rootish");
+  // Nothing is declared, so nothing registers the worktree provider; the policy a
+  // `delegate` one-shot creates its worktree under is this build's own (design, "Modes").
+  assert.equal(rootOnly.git, undefined);
+  assert.equal(declaresWorktreeProvider(rootOnly), false);
+  assert.deepEqual(gitPolicy(rootOnly), { worktreeDir: ".worktrees", branchPattern: "task/*", implicit: true });
+
+  writeMode(modes, "team", modeDocument("team", [{ key: "implementer", workspace: "worktree" }]));
+  const team = loadMode(modes, "team");
+  assert.deepEqual(gitPolicy(team), { worktreeDir: ".worktrees", branchPattern: "task/*" },
+    "a mode that declares one is held to it, and nothing is implicit about it");
+});
+
 test("the two dev-team modes carry the same role prompts until the converter generates both", () => {
   const modes = builtInModesDir();
   for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
@@ -279,17 +342,18 @@ test("the three built-in modes validate, and each declares what its loop needs",
     ["plan-reviewer", "root", "read-only"],
     ["implementer", "worktree", "workspace-write"],
     ["code-reviewer", "worktree", "read-only"],
+    ["consult", "root", "read-only"],
   ]);
   assert.deepEqual(devTeam.git, { worktreeDir: ".worktrees", branchPattern: "task/*" });
 
   const solo = loadMode(modes, "solo");
-  assert.deepEqual(solo.roles.map((role) => [role.key, role.workspace.kind, role.sandboxDefault]), [["solo", "root", "read-only"]]);
+  assert.deepEqual(solo.roles.map((role) => [role.key, role.workspace.kind, role.sandboxDefault]), [["consult", "root", "read-only"]]);
   assert.equal(solo.git, undefined);
   assert.equal(declaresWorktreeProvider(solo), false, "solo yields a tools/list without the worktree tools");
 
   const engine = loadMode(modes, "dev-team-engine");
   assert.deepEqual(engine.lead, { placement: "engine", role: "lead" });
-  assert.deepEqual(engine.roles.map((role) => role.key), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer"]);
+  assert.deepEqual(engine.roles.map((role) => role.key), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "consult"]);
   assert.deepEqual(findRole(engine, "lead")?.workspace, { kind: "root" }, "an engine lead is read-only at the root");
   assert.equal(findRole(engine, "lead")?.sandboxDefault, "read-only");
 });
@@ -321,7 +385,8 @@ test("describeMode returns the loop and every role prompt verbatim, with no file
 
   const described3 = describeMode(builtInModesDir(), "solo");
   assert.ok(!("reason" in described3));
-  assert.equal(described3.git, undefined, "a mode with no worktree role describes no git policy");
+  assert.deepEqual(described3.git, { worktreeDir: ".worktrees", branchPattern: "task/*", implicit: true },
+    "a mode with no worktree role describes the policy its one-shots use, as implicit");
   assert.ok(described3.loop.length > 0);
 });
 

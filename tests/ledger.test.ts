@@ -632,12 +632,23 @@ test("the delegation fields are patchable, and validated as what a reader derefe
     ["low", "p", "r", now + 5],
   );
 
+  // A task given a worktree carries it, under the id its caller minted: the worktree, the
+  // branch and the journal are all named after that id, so it exists before the record.
+  const worktree = { path: path.join(root, ".worktrees", "given"), branch: "task/given", slug: "given" };
+  const given = create(root, { ...input(root), id: "given", worktree }, now);
+  assert.equal(given.id, "given");
+  assert.deepEqual(read(root, "given").worktree, worktree);
+
   const file = path.join(tasks(root), `${record.id}.json`);
   const faults: [string, Record<string, unknown>][] = [
     ["depth", { depth: "1" }], ["depth", { depth: null }], ["depth", { depth: -1 }], ["depth", { depth: 1.5 }],
     ["parentTaskId", { parentTaskId: 5 }], ["resumedFrom", { resumedFrom: [] }],
     ["model", { model: 5 }], ["effort", { effort: true }],
     ["acknowledgedAt", { acknowledgedAt: "soon" }],
+    // The worktree a delegation created for the task: three strings or nothing, because
+    // every reader of it dereferences all three (`src/delegate.ts#delegate`).
+    ["worktree", { worktree: "the path" }], ["worktree", { worktree: { branch: "task/b", slug: "b" } }],
+    ["worktree", { worktree: { path: 1, branch: "task/b", slug: "b" } }],
   ];
   for (const [field, fault] of faults) {
     fs.writeFileSync(file, JSON.stringify({ ...settled, ...fault }));

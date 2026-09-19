@@ -21,7 +21,24 @@ export interface LaunchSpec extends Omit<SpawnRequest, "logPath" | "resultPath">
   adapterModule: string;
 }
 
+/**
+ * The worktree a `delegate` call created for one task: where it is, the branch it is on,
+ * and the slug its journal and every root verb of it are held to — the task's own id
+ * (design section 1, the `delegate` row).
+ */
+export interface TaskWorktree {
+  path: string;
+  branch: string;
+  slug: string;
+}
+
 export interface CreateTask {
+  /**
+   * The id to write. A delegation that creates a worktree mints it first, because the
+   * worktree, the branch and the journal are all named after it; every other caller lets
+   * `create` mint one.
+   */
+  id?: string;
   role: string;
   brief: string;
   cwd: string;
@@ -34,6 +51,8 @@ export interface CreateTask {
   parentTaskId?: string | null;
   /** The record this one continues, when it is a `resume` (design section 2, the reattach rule). */
   resumedFrom?: string | null;
+  /** The worktree this delegation created for the task, when it was given one. */
+  worktree?: TaskWorktree;
 }
 
 export interface TaskRecord {
@@ -69,6 +88,13 @@ export interface TaskRecord {
   parentTaskId?: string | null;
   /** The record this one continues; the chain of them is a resume chain (design section 2). */
   resumedFrom?: string | null;
+  /**
+   * The worktree `delegate` created for this task, absent for a task given a workspace
+   * that already existed. `cwd` is that path; this says the task owns the directory, the
+   * branch and the journal slug, and it is written once, at creation, because a task that
+   * could be moved to another worktree could be merged from one (design section 4).
+   */
+  worktree?: TaskWorktree;
   /**
    * When the runner's `launching → running` acknowledgement landed, written once and never
    * again: the stall clock measures from it rather than from a launch nobody answered.
@@ -220,6 +246,13 @@ function recordFault(value: unknown, file: string): string | null {
     && (typeof record.acknowledgedAt !== "number" || !Number.isFinite(record.acknowledgedAt))) {
     return "acknowledgedAt must be a finite number or null";
   }
+  const worktree = record.worktree;
+  if (worktree !== undefined) {
+    if (worktree === null || typeof worktree !== "object" || Array.isArray(worktree)) return "worktree must be an object";
+    for (const field of ["path", "branch", "slug"] as const) {
+      if (typeof (worktree as Record<string, unknown>)[field] !== "string") return `worktree needs a string ${field}`;
+    }
+  }
   return null;
 }
 
@@ -258,9 +291,17 @@ export function writeAtomic(file: string, value: unknown): void {
   }
 }
 
+/** A task id: what names the record, its log, its scratch directory — and its journal. */
+export function newTaskId(): string {
+  return randomBytes(18).toString("base64url");
+}
+
 export function create(projectRoot: string, input: CreateTask, now = Date.now()): TaskRecord {
-  const directory = initialize(projectRoot);
-  const id = randomBytes(18).toString("base64url");
+  const id = input.id ?? newTaskId();
+  // `recordPath` creates the task directory and holds an id a caller minted to the one
+  // alphabet every reader resolves a record by.
+  const file = recordPath(projectRoot, id);
+  const directory = path.dirname(file);
   const record: TaskRecord = {
     id,
     role: input.role,
@@ -278,8 +319,9 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
     depth: input.depth ?? 0,
     ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
     ...(input.resumedFrom === undefined ? {} : { resumedFrom: input.resumedFrom }),
+    ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
   };
-  writeAtomic(path.join(directory, `${id}.json`), record);
+  writeAtomic(file, record);
   return record;
 }
 

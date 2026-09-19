@@ -238,8 +238,10 @@ function delegateRequest(args: Json): DelegateRequest {
     const value = optional(args, key, "string", "delegate");
     if (value !== undefined) request[key] = value as string;
   }
-  const force = optional(args, "force", "boolean", "delegate");
-  if (force !== undefined) request.force = force as boolean;
+  for (const key of ["force", "worktree"] as const) {
+    const value = optional(args, key, "boolean", "delegate");
+    if (value !== undefined) request[key] = value as boolean;
+  }
   return request;
 }
 
@@ -424,13 +426,14 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "delegate",
-      description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first.",
+      description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first. A role with no binding takes its engine in the call; worktree: true gives a role that works at the project root a writable task worktree of its own instead.",
       inputSchema: {
         type: "object",
         properties: {
           role: { type: "string" }, brief: { type: "string" }, cwd: { type: "string" },
           engine: { type: "string" }, model: { type: "string" }, effort: { type: "string" },
           branch: { type: "string" }, resume: { type: "string" }, force: { type: "boolean" },
+          worktree: { type: "boolean" },
         },
         required: ["role", "brief", "cwd"],
       },

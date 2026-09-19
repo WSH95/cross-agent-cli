@@ -29,20 +29,32 @@ const caps = {
 /** Where a role works. Arbitrary paths are deferred with a reason (design, "Not built"). */
 export type Workspace = { kind: "root" } | { kind: "worktree"; branchPattern: string; dir: string };
 
-export interface ModeRole {
+interface RoleFields {
   key: string;
   title: string;
-  /** Relative to the mode directory, which it must resolve inside. */
-  promptFile: string;
   workspace: Workspace;
   /** The profile this role runs under unless config overrides it (design section 6). */
   sandboxDefault: SandboxProfile;
 }
 
+/**
+ * A role the mode declares names a prompt file of its own; a role this build supplies
+ * carries its own text, because it belongs to no mode directory. `rolePrompt` reads
+ * whichever a role has, and nothing else needs to know which it was.
+ */
+export type ModeRole =
+  | (RoleFields & { promptFile: string; prompt?: undefined })
+  | (RoleFields & { prompt: string; promptFile?: undefined });
+
 /** The worktree provider's own policy: where its worktrees live and what its branches are called. */
 export interface GitPolicy {
   worktreeDir: string;
   branchPattern: string;
+}
+
+/** A mode's policy, or this build's own where the mode declares none (`gitPolicy`). */
+export interface EffectiveGitPolicy extends GitPolicy {
+  implicit?: true;
 }
 
 export interface ModeLead {
@@ -72,7 +84,48 @@ export interface ModeDescription {
   /** `SKILL.md` verbatim: the mode's loop, served rather than copied (design section 7). */
   loop: string;
   roles: Array<{ key: string; title: string; workspace: Workspace; sandboxDefault: SandboxProfile; prompt: string }>;
-  git?: GitPolicy;
+  /** Always present: the mode's own policy, or the implicit one its one-shots use. */
+  git: EffectiveGitPolicy;
+}
+
+/** The role every mode carries, whether or not it declares one (design, "Modes"). */
+export const CONSULT_ROLE = "consult";
+
+/**
+ * What `delegate`'s `worktree: true` uses where a mode declares no policy of its own,
+ * which is every mode with no worktree role: a one-shot needs a directory and a branch
+ * name whatever team it was asked of, and these are the two the built-in team uses.
+ */
+const DEFAULT_GIT_POLICY: GitPolicy = { worktreeDir: ".worktrees", branchPattern: "task/*" };
+
+/**
+ * The built-in consultant's own text. It is read-only at the project root and writable
+ * only in a worktree `delegate` made for it, and it runs git in neither: the session that
+ * delegated it commits and merges its work (design section 4).
+ */
+const consultPrompt = `You are the consultant for this task. You work in the directory you were given and
+nowhere else: at the project root you are read-only and you answer rather than change
+anything, and in a task worktree of your own you may edit files — but you never run git,
+because the session that delegated you commits and merges what you leave there.
+
+Answer what the brief asks: a review, a critique, an investigation, a search across the
+codebase, an explanation of how something works. Cite what you read by path and symbol,
+order findings by severity when the brief asks for findings, and say plainly where the
+evidence ran out rather than filling the gap. You delegate nothing. Your final message is
+the whole of your answer, because nothing else of this task is kept.
+`;
+
+/** A role's system prompt: the mode's own file, or the text a built-in role carries. */
+export function rolePrompt(mode: Mode, role: ModeRole): string {
+  return role.prompt !== undefined ? role.prompt : readFileSync(path.join(mode.dir, role.promptFile), "utf8");
+}
+
+/**
+ * The policy a one-shot worktree is created under: the mode's own, or this build's,
+ * marked `implicit` so a launcher can say which it is reading (design, "Modes").
+ */
+export function gitPolicy(mode: Mode): EffectiveGitPolicy {
+  return mode.git ?? { ...DEFAULT_GIT_POLICY, implicit: true };
 }
 
 function message(error: unknown): string {
@@ -224,6 +277,15 @@ export function loadMode(modesDir: string, name: string): Mode {
     }
 
     const sandboxDefault = oneOf(record.sandboxDefault, `${field}.sandboxDefault`, sandboxProfiles);
+    // A mode may give the built-in consultant its own title and its own prompt file, and
+    // nothing else: it is the one role every mode has, and a launcher that delegates it
+    // against a mode it has never read is relying on it being read-only at the root
+    // (design, "Modes").
+    if (key === CONSULT_ROLE) {
+      const only = `mode ${JSON.stringify(name)} may give the built-in ${CONSULT_ROLE} role its own title and prompt file and nothing else`;
+      if (workspace.kind !== "root") reject(`${field}.workspace`, `${CONSULT_ROLE} works at the project root in every mode; ${only}`);
+      if (sandboxDefault !== "read-only") reject(`${field}.sandboxDefault`, `${CONSULT_ROLE} is read-only in every mode; ${only}`);
+    }
     // No role may combine `{kind: "root"}` with a writable sandbox (design, "Modes"): a
     // writable root role could edit `.cross-agent/` itself. The rule is stated portably —
     // the profile has to be `read-only`, which is the one name every engine accepts for
@@ -252,6 +314,16 @@ export function loadMode(modesDir: string, name: string): Mode {
     if (roles.findIndex((other) => other.key === role.key) !== index) {
       reject(`roles.${role.key}`, "declared twice; each role key is declared once");
     }
+  }
+  // Every mode has the consultant, so a one-off delegation needs no team template: a host
+  // with a mode and an engine can ask this role a question or hand it one change in a
+  // worktree of its own. A mode that declares it has just been held to the two rules it
+  // may not break; a mode that does not gets this build's own, last.
+  if (!roles.some((role) => role.key === CONSULT_ROLE)) {
+    roles.push({
+      key: CONSULT_ROLE, title: "Consultant", workspace: { kind: "root" },
+      sandboxDefault: "read-only", prompt: consultPrompt,
+    });
   }
 
   const leadRecord = object(document.lead, "lead");
@@ -350,14 +422,15 @@ export function describeMode(modesDir: string, name: string): ModeDescription | 
   }
   try {
     const loop = readFileSync(mode.loopFile, "utf8");
-    const roles = mode.roles.map(({ key, title, workspace, sandboxDefault, promptFile }) => ({
-      key, title, workspace, sandboxDefault, prompt: readFileSync(path.join(mode.dir, promptFile), "utf8"),
+    const roles = mode.roles.map((role) => ({
+      key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault,
+      prompt: rolePrompt(mode, role),
     }));
     return {
       mode: { id: mode.id, release: mode.release, name: mode.name, summary: mode.summary, lead: mode.lead },
       loop,
       roles,
-      ...(mode.git === undefined ? {} : { git: mode.git }),
+      git: gitPolicy(mode),
     };
   } catch (error) {
     return { reason: `mode ${JSON.stringify(name)}: ${message(error)}` };

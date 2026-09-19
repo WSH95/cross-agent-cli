@@ -25,6 +25,8 @@ const sectionSixDefaults = {
     "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
     implementer: { engine: "codex", model: "gpt-6-astra" },
     "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+    // The role every mode carries, bound to a starting engine this call may override.
+    consult: { engine: "codex", model: "gpt-6-astra" },
   },
   engines: { claude: {}, codex: {}, grok: {} },
   limits: limitDefaults,
@@ -235,14 +237,25 @@ test("lockWaitSeconds reads the configured wait, and answers even when it cannot
   assert.equal(config.lockWaitSeconds(root), 5);
 });
 
-test("loadConfig retains missing-config guidance", (t) => {
+test("a project with no config file loads solo's defaults, bound to nothing and writing nothing", (t) => {
   const root = project(t);
-  assert.throws(() => config.loadConfig(root), (error: unknown) => {
-    assert.ok(error instanceof Error);
-    assert.ok(error.message.includes(path.join(root, config.CONFIG_PATH)));
-    assert.match(error.message, /cross-agent init/);
-    return true;
+  // The no-config default of design, "Modes": `discoverProject` answers with the git
+  // toplevel, and what runs there is this — solo, the documented project and limit
+  // defaults, and no role binding, because binding is `cross-agent init`'s to write and
+  // an engine named in the call is what a one-shot uses instead.
+  assert.deepEqual(config.loadConfig(root), {
+    mode: "solo", project: projectDefaults, roles: {}, limits: limitDefaults, billing: "subscription",
   });
+  assert.deepEqual(config.loadConfig(root), config.defaultConfig());
+  assert.deepEqual(readdirSync(root), [], "reading a project that has no config writes none");
+  // The mode that default names loads, and it carries the one role a one-shot needs.
+  const bound = config.loadConfigWithMode(root, builtInModesDir());
+  assert.equal(bound.mode.id, "solo");
+  assert.deepEqual(bound.mode.roles.map((role) => role.key), ["consult"]);
+  // A file that exists and cannot be read is still a throw: absence is the only default.
+  mkdirSync(path.join(root, ".cross-agent"));
+  writeFileSync(path.join(root, config.CONFIG_PATH), "{broken");
+  assert.throws(() => config.loadConfig(root), /valid JSON/);
 });
 
 test("initConfig writes the section 6 defaults once and preserves existing bytes", (t) => {
@@ -427,14 +440,14 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
   assert.equal(config.initConfig(root, { mode: "solo" }).wrote, true);
   const solo = config.loadConfigWithMode(root, builtInModesDir());
   assert.equal(solo.config.mode, "solo");
-  assert.deepEqual(solo.config.roles, { solo: { engine: "codex", model: "gpt-6-astra" } });
+  assert.deepEqual(solo.config.roles, { consult: { engine: "codex", model: "gpt-6-astra" } });
   assert.equal(config.effectiveMaxDepth(solo.mode, solo.config), 1);
 
   const engineRoot = project(t);
   assert.equal(config.initConfig(engineRoot, { mode: "dev-team-engine" }).wrote, true);
   const led = config.loadConfigWithMode(engineRoot, builtInModesDir());
   assert.deepEqual(led.config.roles.lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
-  assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer"]);
+  assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "consult"]);
   // The cap the mode needs is written, because the derived cap is the lower of the two.
   assert.equal(led.config.limits.maxDepth, 2);
   assert.equal(config.effectiveMaxDepth(led.mode, led.config), 2);
@@ -449,7 +462,7 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
 
   const unknown = project(t);
   assert.throws(() => config.initConfig(unknown, { mode: "no-such-mode" }), /no-such-mode/);
-  assert.throws(() => config.loadConfig(unknown), /no config/, "a refused init writes nothing");
+  assert.deepEqual(config.loadConfig(unknown), config.defaultConfig(), "a refused init writes nothing");
   // A mode this build has no bindings for is refused by name rather than invented.
   const modes = modesRoot(t);
   buildMode(modes, "local-team", [{ key: "planner" }]);

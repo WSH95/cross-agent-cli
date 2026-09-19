@@ -69,6 +69,14 @@ export interface BoundConfig {
 
 export const DEFAULT_MODE = "dev-team";
 
+/**
+ * What a project with no config runs as. `discoverProject` answers with the git toplevel
+ * where nothing above the working directory holds a config, and this is the config that
+ * project has: one role, read-only at the root, and no binding — `delegate` takes the
+ * engine from the call (design, "Modes").
+ */
+export const NO_CONFIG_MODE = "solo";
+
 const projectDefaults: CrossAgentConfig["project"] = {
   defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto",
 };
@@ -76,6 +84,8 @@ const limitDefaults: CrossAgentConfig["limits"] = {
   maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
   cancelGraceSeconds: 5,
 };
+/** The built-in consultant's starting binding; every `delegate` may name another engine. */
+const consultBinding: RoleConfig = { engine: "codex", model: "gpt-6-astra" };
 const devTeamBindings: Record<string, RoleConfig> = {
   planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
   "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
@@ -89,10 +99,25 @@ const devTeamBindings: Record<string, RoleConfig> = {
  * mode this build ships no bindings for is refused by name rather than bound by guess.
  */
 const builtInBindings: Record<string, Record<string, RoleConfig>> = {
-  "dev-team": devTeamBindings,
-  "dev-team-engine": { lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamBindings },
-  solo: { solo: { engine: "codex", model: "gpt-6-astra" } },
+  "dev-team": { ...devTeamBindings, consult: consultBinding },
+  "dev-team-engine": {
+    lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamBindings, consult: consultBinding,
+  },
+  solo: { consult: consultBinding },
 };
+
+/**
+ * The defaults of a project that has no config file at all: the mode `discoverProject`
+ * falls back to, this section's own project and limit values, and no role binding, because
+ * binding is a local act nobody has performed here — a `delegate` in this state names its
+ * own engine, and `cross-agent init --mode solo` is how it stops having to.
+ */
+export function defaultConfig(): CrossAgentConfig {
+  return {
+    mode: NO_CONFIG_MODE, project: { ...projectDefaults }, roles: {}, limits: { ...limitDefaults },
+    billing: "subscription",
+  };
+}
 
 /** Validates the documented fields and fills only absent defaults. */
 export function loadConfig(projectRoot: string): CrossAgentConfig {
@@ -101,9 +126,10 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
   try {
     raw = readFileSync(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`no config at ${file}; run "cross-agent init" in the project root`);
-    }
+    // No file is not a failure: it is the project `discoverProject` found at a git
+    // toplevel, running solo on these defaults until `cross-agent init` writes a config.
+    // A file that exists and cannot be read is still a throw, below.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultConfig();
     throw new Error(`${file}: cannot read config: ${error instanceof Error ? error.message : String(error)}`);
   }
 

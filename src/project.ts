@@ -71,8 +71,12 @@ export function parseFlags(argv: readonly string[], spec: Record<string, string>
 /**
  * The canonical root of the project this server serves (design, "Which project"):
  * `--project <root>` first, then `CROSS_AGENT_PROJECT`, then the nearest directory at or
- * above the working directory holding `.cross-agent/config.json`. Every answer holds a
- * config; where none does, the answer is the reason, never a guess.
+ * above the working directory holding `.cross-agent/config.json`, and — where none does —
+ * that directory's own git toplevel, which runs `solo` on the defaults `loadConfig`
+ * answers with when there is no file (design, "Modes"). A root a caller **names** still
+ * has to hold a config: naming one is a claim about a project, and a typo in that claim is
+ * not a new project. Nothing is written to answer this question: `cross-agent init`
+ * remains the only writer of a config, and the first `delegate` creates `.cross-agent/`.
  */
 export async function discoverProject(argv: readonly string[], env: Readonly<NodeJS.ProcessEnv>, cwd: string): Promise<Discovery> {
   if (argv.length > 0) {
@@ -93,6 +97,17 @@ export async function discoverProject(argv: readonly string[], env: Readonly<Nod
   }
   for (let dir = start; ; dir = path.dirname(dir)) {
     if (holdsConfig(dir)) return { root: dir };
-    if (path.dirname(dir) === dir) return { reason: `no ${CONFIG_PATH} in ${start} or any directory above it` };
+    if (path.dirname(dir) === dir) break;
+  }
+  // No config above it, so the project is the repository the working directory is in, read
+  // at its main checkout as every other answer is. A directory in no repository is still a
+  // reason: there is nothing for a ledger, a journal or a worktree to belong to.
+  try {
+    return { root: await inMainWorktree(await git(await realpath(cwd), "rev-parse", "--show-toplevel")) };
+  } catch {
+    return {
+      reason: `no ${CONFIG_PATH} in ${start} or any directory above it, and ${start} is in no git repository: `
+        + "without a config the project is the working directory's git toplevel",
+    };
   }
 }

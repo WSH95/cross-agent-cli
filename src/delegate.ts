@@ -8,10 +8,11 @@ import { bindingFault, CONFIG_PATH, engineLeadRole, loadConfig, modeDrift } from
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
-import { create, readSpec, scan, writeSpec } from "./ledger.ts";
-import type { LaunchSpec, TaskRecord } from "./ledger.ts";
+import { gitRoot } from "./gitroot.ts";
+import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
+import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
-import { findRole } from "./modes.ts";
+import { findRole, gitPolicy } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
 import { ownedBy } from "./tasks.ts";
@@ -34,6 +35,12 @@ export interface DelegateRequest {
   effort?: string;
   /** Required for a role whose workspace is a worktree: the branch that worktree must be on. */
   branch?: string;
+  /**
+   * Give this task a writable worktree of its own — `<worktreeDir>/<id>` on the mode's
+   * branch pattern — instead of running it at the project root. Valid for a role whose
+   * workspace is root, which is the only kind that has no worktree already.
+   */
+  worktree?: boolean;
   /** The task to continue. Bound to the original's role, engine, cwd and sandbox profile. */
   resume?: string;
   /** Delegate again although an identical task finished inside the duplicate window. */
@@ -63,6 +70,16 @@ function refuse(reason: string): DelegateResult {
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * What a `worktree: true` one-shot runs under: the writable counterpart of the read-only
+ * profile its role has at the root, in each engine's own spelling (design section 3).
+ * `sandboxFor` re-derives the mode from the adapter's own map, so a name an engine does
+ * not declare is a refusal here rather than a launch.
+ */
+const writableProfiles: Record<EngineName, SandboxProfile> = {
+  claude: "workspace-write", codex: "workspace-write", grok: "workspace",
+};
 
 /** Until a mode brings the role's own prompt (design section 8), this is what a role says. */
 function defaultPrompt(role: string): string {
@@ -203,9 +220,14 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // workspace and no sandbox default, so there is nothing to launch it under.
     const declared = findRole(options.mode, request.role);
     if (declared === undefined) return refuse(`no role ${JSON.stringify(request.role)} in mode ${options.mode.id}`);
-    if (!Object.hasOwn(config.roles, request.role)) return refuse(`no role ${JSON.stringify(request.role)} in ${CONFIG_PATH}`);
-    const role = config.roles[request.role];
-    const engine = (request.engine ?? role.engine) as EngineName;
+    // A role with no binding is still a role of this mode — the built-in consultant is
+    // bound by nothing in a project with no config at all — so the engine may come from
+    // the call instead. Nothing else a binding carries is required (design, "Modes").
+    const bound = Object.hasOwn(config.roles, request.role) ? config.roles[request.role] : undefined;
+    if (bound === undefined && request.engine === undefined) {
+      return refuse(`role ${JSON.stringify(request.role)} is bound to no engine in ${CONFIG_PATH}: name engine in this call, or run "cross-agent init --mode ${config.mode}"`);
+    }
+    const engine = (request.engine ?? bound?.engine) as EngineName;
     if (!engineNames.includes(engine)) {
       return refuse(`no engine ${JSON.stringify(request.engine)}; this build has ${engineNames.join(", ")}`);
     }
@@ -215,24 +237,51 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (engineLeadRole(options.mode) === request.role && engine === "grok") {
       return refuse(`role ${JSON.stringify(request.role)} is mode ${options.mode.id}'s engine-placed lead, and grok cannot carry one (P9: no per-run isolation)`);
     }
-    const model = request.model ?? role.model ?? null;
-    const effort = request.effort ?? role.effort ?? null;
+    const model = request.model ?? bound?.model ?? null;
+    const effort = request.effort ?? bound?.effort ?? null;
     if (!path.isAbsolute(request.cwd)) return refuse(`cwd ${JSON.stringify(request.cwd)} must be an absolute path`);
     const cwd = canonicalPath(request.cwd);
     if (!directory(cwd)) return refuse(`no directory at ${cwd}`);
+
+    // 1b. A one-shot worktree. The role works at the project root, and this call gives it
+    // a writable workspace of its own instead: `<worktreeDir>/<id>` on the mode's branch
+    // pattern, under the mode's own git policy or the implicit one where it declares none
+    // (design section 1, the `delegate` row). The id is minted here because the directory,
+    // the branch and the journal are all named after it. Nothing is created yet: every
+    // refusal below still leaves the project as it found it.
+    const policy = gitPolicy(options.mode);
+    let oneShot: TaskWorktree | undefined;
+    if (request.worktree === true) {
+      if (declared.workspace.kind !== "root") {
+        return refuse(`role ${JSON.stringify(request.role)} already works in a worktree, which this request names; worktree: true is for a role that works at the project root`);
+      }
+      if (request.resume !== undefined) {
+        return refuse(`task ${request.resume} is resumed in the workspace it ran in, so worktree: true would take another`);
+      }
+      const slug = newTaskId();
+      oneShot = {
+        path: canonicalPath(path.join(projectRoot, policy.worktreeDir, slug)),
+        branch: policy.branchPattern.replace("*", slug),
+        slug,
+      };
+    }
+    /** Where this task will run: the worktree it is about to be given, or the named cwd. */
+    const workspace = oneShot?.path ?? cwd;
+
     // The mode's default unless config overrode it, never the request's, because it is the
-    // rule the record will be reserved by; an engine override has to be one that declares it.
+    // rule the record will be reserved by; an engine override has to be one that declares
+    // it. A one-shot runs writable in the worktree it was given, which is what it is for.
     let sandbox: LaunchSpec["sandbox"];
     try {
-      sandbox = sandboxFor(engine, role.sandbox ?? declared.sandboxDefault);
+      sandbox = sandboxFor(engine, oneShot === undefined ? bound?.sandbox ?? declared.sandboxDefault : writableProfiles[engine]);
     } catch (error) {
       return refuse(message(error));
     }
     // The root rule against the **resolved** engine: `bindingFault` above checked the one
     // config binds, and this call may name another whose profile map reads the same name
     // differently. `.cross-agent/` is the server's to write, and no engine starts at the
-    // root that could edit it.
-    if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
+    // root that could edit it — which a one-shot does not: it starts in its own worktree.
+    if (oneShot === undefined && declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
       return refuse(`role ${JSON.stringify(request.role)} works at the project root, which only the server may write; ${JSON.stringify(sandbox.profile)} is ${sandbox.mode} under ${engine}`);
     }
 
@@ -242,20 +291,20 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
 
     // 3. The workspace reservation, and the records nobody can read (design section 2, E2).
     const known = reservations(projectRoot);
-    const holder = reservedBy(projectRoot, cwd, known);
-    if (holder !== null) return refuse(`${cwd} is reserved by task ${holder.id} (${holder.status}); wait or cancel first`);
+    const holder = reservedBy(projectRoot, workspace, known);
+    if (holder !== null) return refuse(`${workspace} is reserved by task ${holder.id} (${holder.status}); wait or cancel first`);
     if (sandbox.mode !== "read-only" && known.unknown.length > 0) {
       const files = known.unknown.map((entry) => `${entry.file} (${entry.reason})`).join(", ");
       return refuse(`no workspace can be cleared while a task record cannot be read: ${files}; repair or remove it first`);
     }
 
     // 4. The loop guard: lineage, duplicates, and the resume binding.
-    const repeat = lineageRefusal(lineage, request.role, cwd);
+    const repeat = lineageRefusal(lineage, request.role, workspace);
     if (repeat !== null) return { ok: false, reason: repeat };
     let resumeSessionId: string | undefined;
     let parentTaskId = caller;
     if (request.resume === undefined) {
-      const duplicate = duplicateRefusal({ role: request.role, cwd, brief: request.brief, force: request.force }, records, now,
+      const duplicate = duplicateRefusal({ role: request.role, cwd: workspace, brief: request.brief, force: request.force }, records, now,
         config.limits.duplicateWindowMinutes);
       if (duplicate !== null) return { ok: false, reason: duplicate };
     } else {
@@ -266,7 +315,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         return refuse(`lead task ${caller} did not delegate task ${request.resume}`);
       }
       const chain = resumeFault(projectRoot, records, request.resume, {
-        role: request.role, engine, cwd, sandbox: sandbox.profile as SandboxProfile,
+        role: request.role, engine, cwd: workspace, sandbox: sandbox.profile as SandboxProfile,
       });
       if (chain !== null) return { ok: false, reason: chain };
       const original = records.find((record) => record.id === request.resume)!;
@@ -280,9 +329,28 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // true, so a lock already lost is a launch that must not happen (design section 2).
     if (claim.lost) return refuse("spawn.lock was lost before the record was written; nothing was launched");
 
-    // 6. The record, its spec, and the runner that owns the engine from here on.
+    // 6. The worktree a one-shot was promised, created the way every other root git verb
+    // is — through `git_root`, which holds it to this mode's policy and journals the
+    // `worktree-created` step under the task's own slug (design section 4). Its refusal is
+    // this delegation's, and a refusal here has still written no record.
+    if (oneShot !== undefined) {
+      const created = await gitRoot(projectRoot, {
+        args: ["worktree", "add", "-b", oneShot.branch, oneShot.path, config.project.defaultBranch],
+        slug: oneShot.slug,
+      }, { waitSeconds, dir: policy.worktreeDir, branchPattern: policy.branchPattern });
+      if (!created.ok) return refuse(created.reason);
+      // What a worktree role's own delegation is held to, applied to the one just made:
+      // the record is about to say a writable engine runs there.
+      const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch);
+      if ("reason" in verified) {
+        return refuse(`the worktree for this task does not verify: ${verified.reason} It was created at ${oneShot.path} on ${oneShot.branch} and nothing has removed it.`);
+      }
+    }
+
+    // 7. The record, its spec, and the runner that owns the engine from here on.
     const record = create(projectRoot, {
-      role: request.role, brief: request.brief, cwd, engine, model, effort, depth,
+      role: request.role, brief: request.brief, cwd: workspace, engine, model, effort, depth,
+      ...(oneShot === undefined ? {} : { id: oneShot.slug, worktree: oneShot }),
       ...(parentTaskId === undefined ? {} : { parentTaskId }),
       ...(request.resume === undefined ? {} : { resumedFrom: request.resume }),
     }, now);
@@ -291,8 +359,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
     fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
     const spec: LaunchSpec = {
-      role: request.role, brief: request.brief, rolePrompt: role.prompt ?? defaultPrompt(request.role),
-      cwd, engine, sandbox,
+      // The prompt config binds, else the text a built-in role carries, else the one-line
+      // default; a mode's own prompt files reach `delegate` with row 9.
+      role: request.role, brief: request.brief,
+      rolePrompt: bound?.prompt ?? declared.prompt ?? defaultPrompt(request.role),
+      cwd: workspace, engine, sandbox,
       ...(model === null ? {} : { model }),
       ...(effort === null ? {} : { effort }),
       sessionId: randomUUID(),
@@ -300,7 +371,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       denyTargets: denyTargets(config, projectRoot),
       env: {
         ...childEnv(env, options.authority.depth, record.id, childLineage(lineage, {
-          taskId: record.id, role: request.role, cwd,
+          taskId: record.id, role: request.role, cwd: workspace,
         }), config.billing, projectRoot),
         // The one way a configured binary reaches both the adapter's capability check and
         // its spawn line, which read the same environment (design section 3).

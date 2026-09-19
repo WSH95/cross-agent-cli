@@ -312,7 +312,10 @@ test("a server that finds no project exits naming the reason", async (t) => {
   child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
   const [code] = await once(child, "close");
   assert.equal(code, 1);
-  assert.equal(stderr, `cross-agent: no .cross-agent/config.json in ${empty} or any directory above it\n`);
+  // Under no config the project would be the working directory's git toplevel, and a
+  // directory in no repository has none (design, "Modes").
+  assert.equal(stderr, `cross-agent: no .cross-agent/config.json in ${empty} or any directory above it, `
+    + `and ${empty} is in no git repository: without a config the project is the working directory's git toplevel\n`);
 });
 
 // A bounded test, because what it asserts is that the process **ends**: a server that
@@ -521,6 +524,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
   // A request this server cannot read at all is a protocol error instead.
   for (const [name, args] of [
     ["delegate", {}], ["delegate", { role: "planner", brief: "b", cwd: 5 }], ["delegate", { role: "planner", brief: "b", cwd: root, force: "yes" }],
+    ["delegate", { role: "planner", brief: "b", cwd: root, worktree: "yes" }],
     ["check", { task_id: "" }], ["check", { task_id: "t", lines: "ten" }], ["result", {}], ["cancel", { task_id: null }],
     ["check", { task_id: "t", lines: 0 }], ["check", { task_id: "t", lines: -1 }], ["check", { task_id: "t", lines: 1.5 }],
     ["wait", { task_id: "" }], ["wait", { task_id: "t", timeout_seconds: "soon" }], ["wait", { task_id: "t", timeout_seconds: -1 }],
@@ -581,7 +585,7 @@ test("describe_mode serves the active mode's loop and roles to every row, and re
     assert.deepEqual((described.mode as Json).id, "dev-team");
     assert.equal(described.loop, await readFile(path.join(mode.dir, "SKILL.md"), "utf8"), row);
     const roles = described.roles as Json[];
-    assert.deepEqual(roles.map((role) => role.key), ["planner", "implementer"]);
+    assert.deepEqual(roles.map((role) => role.key), ["planner", "implementer", "consult"]);
     assert.equal(roles[0].prompt, "You are the planner of this test.\n");
     assert.deepEqual(described.git, { worktreeDir: ".worktrees", branchPattern: "task/*" });
   }

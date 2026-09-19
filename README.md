@@ -6,7 +6,10 @@ CLI's sandbox. A host is anything that can attach an MCP server and load a
 skill: Claude Code, Codex, and Grok today. What the team does is a **mode** —
 data, not code: the roles, the loop the lead runs, and a git policy — and the
 design builds in two, `dev-team`, the four-role worktree team (planner, plan
-reviewer, implementer, code reviewer), and `solo`, one role with no git.
+reviewer, implementer, code reviewer), and `solo`, one consultant and no team.
+Every mode carries that consultant, and a project with no config at all runs as
+`solo` at its git toplevel, so a one-off delegation to another engine — read the
+code and answer, or take one change in a worktree of its own — costs no setup.
 
 ## Status
 
