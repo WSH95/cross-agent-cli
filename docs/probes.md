@@ -106,12 +106,15 @@ which for a linked worktree lives under the main repository's `.git` — and
 that hypothesis was not tested further, because the safety rule for this probe
 is to record a containment failure and stop rather than repeat it. What it
 costs: design section 4 rests on a specialist being unable to write git
-metadata, and what was reachable was everything the engine's own **mandatory**
-protections do not already cover — its settings description names those as
+metadata, and what was reachable was the repository's whole git directory. The
+engine's own **mandatory** protections — its settings description names
 `.git/hooks`, `.git/config`, shell rc files, `.mcp.json`, `.vscode`/`.idea`,
-`.claude/commands` and `.claude/agents` — so refs, the index, objects and
-`.git/worktrees/<slug>`, which is enough to move a branch under the lead.
-Codex denies this cell; Grok denies it too.
+`.claude/commands` and `.claude/agents` — are scoped to the working directory,
+and from a linked worktree the repository's `.git` is two directories above it,
+so the lead's own hooks were most likely writable before the fix and not only
+its refs, index and objects. The fix names the whole directory, and the
+delegated run under it (I2 below) includes `<root>/.git/hooks/pre-commit`
+explicitly, denied. Codex denies this cell; Grok denies it too.
 
 **Rerun, 2026-09-19, with `filesystem.denyWrite` (T6-R0-1).** The same eight
 steps in a fresh linked worktree of the same sample, plus `git status
@@ -156,6 +159,32 @@ only the file step 1 wrote. A specialist reading `git status` therefore sees a
 dozen entries its lead does not, and a brief that asks one to report a clean
 tree has to say so; nothing can commit them, because `git_mutate` runs in the
 server's own process rather than in the sandbox.
+
+**The read-only row (2026-09-19, T6-R1-20).** A read-only profile sends no
+`allowWrite`, which is not the same as no writable path: Claude Code's sandbox
+writes to the working directory by default, so `read-only` was a claim about the
+editing tools rather than about the filesystem, and no run had ever tried. The
+builder now denies the workspace itself — `filesystem: {"denyWrite":
+["<cwd>", …protectedPaths]}` — and the probe below ran at the **sample root**,
+where a planner, a plan reviewer and the built-in consult all work:
+
+```
+STEP 1 DENIED 1 /bin/bash: line 7: notes.md: Read-only file system
+STEP 2 DENIED 1 /bin/bash: line 7: .cross-agent/probe-readonly.txt: Read-only file system
+STEP 3 DENIED 128 fatal: Unable to create '<root>/.git/index.lock': Read-only file system
+STEP 4 DENIED 1 /bin/bash: line 7: /tmp/cross-agent-readonly-probe.txt: Read-only file system
+STEP 5 ALLOWED 0    sed -n 1p README.md → "# atw-sample-slugkit"
+STEP 6 ALLOWED 0    git status --porcelain --untracked-files=normal → empty
+```
+
+20.2 s, exit 0. Step 2 is the one design section 4 rests on: `.cross-agent/` is
+the server's to write and no engine may. Step 3 shows it holds for git as well
+as for the shell — `git add -A` could not create its index lock. Step 4 was
+recorded rather than required: `/tmp` is denied too, so the sandbox's default
+temp grant is its own session directory and not `/tmp` at large. Reading still
+works, and `git status` at the root printed nothing at all — the mandatory
+protection stubs that show up inside a **writable** workspace are not mounted
+into a read-only one.
 
 Consequence: the worktree pointer is writable by a Grok implementer, so
 `verify_worktree` and the explicit `--git-dir`/`--work-tree` form (section
@@ -373,7 +402,8 @@ pending), Codex and Grok with their read-only profiles.
   and the instruction is obeyed, which settles the open question in design
   section 3: `claude --help` on 2.1.266 documents only `--append-system-prompt
   <prompt>` and mentions the `[-file]` form inside another flag's description,
-  but the flag the harness has been emitting (`tools/probe.mjs:54`) works.
+  but the flag the harness emitted then, and the adapter emits now
+  (`src/engines/claude.ts#claude`), works.
   The mount is clean and exclusive: with `--strict-mcp-config`,
   `mcp_servers` is exactly
   `[{"name":"cross-agent","status":"connected"}]` and the only `mcp__` tools
@@ -469,7 +499,7 @@ A thread was started in the probe worktree with `codex exec --json -o <out> -C
 with `codex exec resume <thread id> --json -o <out> --ignore-user-config
 --skip-git-repo-check -m gpt-6-astra` — the flag set the subcommand accepts,
 since it takes neither `-C` nor `--sandbox` (the harness appended both until
-this probe; `tools/probe.mjs:63-68` now omits them on resume). Every turn ran
+this probe; the adapter's resume line omits them, `src/engines/codex.ts#codex`). Every turn ran
 the same
 three commands and reported their exit codes: `pwd`; append to a file
 **inside** the worktree; append to a file in the probe repository **root**,
@@ -545,6 +575,17 @@ command then offers all twelve tools: `cancel`, `check`, `delegate`,
 `run_command`, `verify_worktree`, `wait`. The limit held a nested host out, not
 an operator at a terminal, whose chain on this machine is seven hops.
 
+**The mount is the manifest's own.** After the server's declaration moved inline
+into `.claude-plugin/plugin.json` (T6-R1-5; a repository-root `.mcp.json` is
+Claude Code's *project-scoped* config, offered to every session opened in this
+repository, where `${CLAUDE_PLUGIN_ROOT}` expands to nothing), the same host
+command was run again from the sample root on 2026-09-19: `mcp_servers` still
+reports `plugin:cross-agent:cross-agent`, `status: "connected"`, `source:
+"plugin"`, and the same twelve `mcp__plugin_cross-agent_cross-agent__…` tools.
+`claude plugin validate <repo>` passes on the inline form, warning only about
+this repository's own `CLAUDE.md`, which is not plugin context and is not meant
+to be. Whether Grok's `--plugin-dir` reads the inline `mcpServers` is T15's.
+
 **A host session is not isolated, and is not meant to be.** The host's own
 `mcp_servers` carries every server the user has (`claude-design`, the `claude.ai`
 connectors, another plugin's `context7`) beside this one. Only a specialist is
@@ -562,18 +603,51 @@ MCP tool named delegate … and report, word for word, whatever comes back".
 | grok (`grok-4.6`, medium, 18 s) | "MCP tools I can see: `context7__query-docs`, `context7__resolve-library-id`. No MCP tool named `delegate` is offered to you at all." | `dacd2a10…` |
 | codex | not run: Codex paused by the user (2026-09-18). When the pause lifts: the same `delegate {role: "consult", engine: "codex", model: "gpt-5.6-luna", cwd: <sample>}` with the same brief, expecting no `mcp__cross_agent__` tool beside its built-in `codex_apps`. | — |
 
+One deviation in the run itself: the second `delegate` carried the same brief as
+the first and was refused — `refused duplicate delegation: task 4ffe6405…
+finished within the 10-minute duplicate window` — and the host repeated the call
+with `force: true`, which is what the launcher says to do. The duplicate window
+is per `(role, cwd, brief)` and does not know that the engine differs.
+
 Claude's row is the design's claim exactly. Grok's is the design's claim about
 the **mechanism** — a Grok child reaches whatever the operator's configuration
 mounts, here another plugin's `context7` — without its second half: this server
-was not among them. `grok mcp add --scope project cross-agent node --
-<repo>/src/server.ts --project <sample>` wrote `<sample>/.grok/config.toml` and
-the child still listed only `context7`, which is P9's "a project-scoped mount
-will not start in an untrusted folder" — the folder is not in
-`~/.grok/trusted_folders.toml`, and trusting it is the operator's decision, not a
-probe's. So **the Grok half of I1 is not closed**: what it still owes is a Grok
-specialist that does reach this server, listing exactly the specialist row and
-having its own `delegate` refused. Running it needs the sample trusted for Grok,
-or the server mounted at user scope.
+was not among them. What was observed, exactly: `grok mcp add --scope project
+cross-agent node -- <repo>/src/server.ts --project <sample>` wrote
+`<sample>/.grok/config.toml`, and the specialist's own answer listed only
+`context7`'s two tools. Why it did not start was **not** observed in that run —
+the reason first written here was carried over from P9's transcription — so it
+was asked directly afterwards, with the project file in place. `grok mcp doctor`
+in the sample, on 1.0.34 (a diagnostic, not an engine session):
+
+```
+  Config sources
+    ~/.grok/config.toml                      0 servers
+    <sample>/.grok/config.toml               1 server
+    plugin: context7                         1 server
+    ~/.claude.json                           1 server
+    .mcp.json                                not found
+
+  cross-agent (stdio: node <repo>/src/server.ts --project <sample>)
+    ✗ folder untrusted (repo-local (project-scoped) server not started for an untrusted folder)
+    → re-run with --trust to allow repo-local servers
+```
+
+So the reason is Grok's own about this mount, not an inference: a project-scoped
+server does not start in an untrusted folder. The remedy the doctor names,
+`--trust`, is in neither `grok --help` nor `grok mcp doctor --help` on 1.0.34;
+what is documented is the trust decision itself, kept in
+`~/.grok/trusted_folders.toml`. The listing also confirms P9's other half — a
+Grok session reads `~/.claude.json`'s servers as well as its own.
+
+A warning for anyone reading a Grok transcript: the `system/init` line's
+`mcp_servers` field is **not** Grok's MCP state. Grok's own
+`events.jsonl` `mcp_config_resolved` is, and the two disagree.
+
+So **the Grok half of I1 is not closed**: what it still owes is a Grok specialist
+that does reach this server, listing exactly the specialist row and having its
+own `delegate` refused. Running it needs the sample trusted for Grok, or the
+server mounted at user scope — the operator's decision, held in `atc-s96.54`.
 
 ### (ii) Authority by ancestry
 
@@ -603,11 +677,31 @@ mcp__cross-agent__result
 The specialist row, in the `--mcp-config` spelling, from a child holding a lead's
 own mount. Its answer to the second half: "My harness will not let me call it at
 all — there is no tool named `mcp__cross-agent__delegate` available to me (loaded
-or deferred)." **The refusal naming the task id was therefore not observed
-here**: `tools/list` already omits `delegate`, so a well-behaved client never
-sends the call that `tools/call` would refuse. That refusal path is unit recorded
-(`tests/server.test.ts:467`) and is what a client which ignores `tools/list`
-would meet. The Codex row is not run (paused); its command is the same line with
+or deferred)." A **rerun** on 2026-09-19 (task `57ca5d6c…`, 22.2 s) whose prompt
+named the call and its arguments outright answered the same way: "I could not
+send this call at all — the tool doesn't exist in my harness … There is no way to
+invoke a tool whose schema was never registered." So **the refusal naming the
+task id is not reachable from an engine that honours `tools/list`**, and this row
+cannot be what distinguishes "specialist by ancestry" from the two fail-closed
+paths that produce the same five-tool list. Two things close that gap instead.
+`tests/authority.test.ts` puts a server under a real fake-engine ancestor whose
+record the ledger holds, sends it a raw `tools/call delegate`, and pins the
+answer: `-32602`, `delegate is not available to a specialist server: specialist
+by ancestry: task <id> (implementer, running)`. And the server now writes that
+same sentence to stderr once before serving — `cross-agent: serving the
+specialist row: <reason>` (`src/server.ts#main`) — so a future transcript carries
+its own evidence. Claude Code does not surface an MCP server's stderr in
+`stream-json`, so this run's copy of that line is in the server's own output
+rather than the engine's log.
+
+The rerun's third step is the deny list in a real run, which no earlier probe
+had: asked to run `node <repo>/src/server.ts --help`, the specialist came back
+with "Permission to use Bash with command `node
+/home/wsh/Documents/agent-team-cli/.worktrees/cross-agent-m3/src/server.ts
+--help` … has been denied." Before T6-R0-3 that rule named a path under the
+project and denied nothing.
+
+The Codex row is not run (paused); its command is the same line with
 `--engine codex --model gpt-5.6-luna`.
 
 Two things this run recorded that no unit test covers. The specialist's session
@@ -639,6 +733,44 @@ stop, not to repeat it. Grok's row keeps every step.
 | `$HOME/cross-agent-probe-HOME.txt` | denied | denied |
 | `printf 'gitdir: /tmp/elsewhere' > .git` | denied | **allowed** |
 | `curl https://example.com` | allowed (200) | allowed (200) |
+
+One deviation in the run: the Grok task was waited on with `timeout_seconds:
+300` rather than the 600 the brief named — the host's own choice, and the task
+settled at 116 s, so nothing turned on it.
+
+**The Claude row again, under the containment fix (2026-09-19, T6-R1-21).** The
+row above ran at `744c767`, before `protectedPaths` existed: its spec carries
+none, and its settings named only a writable root. This run is the shipped
+configuration, through the product pipeline — the real stdio server, `delegate
+{worktree: true, engine: "claude"}`, the real detached runner, the real adapter
+— with the spec and the engine's own argv read back from disk and from
+`/proc/<engine pid>/cmdline`:
+
+```
+spec.protectedPaths ["<worktree>/.git","<root>/.git"]
+engine argv --settings {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,
+  "allowUnsandboxedCommands":false,"failIfUnavailable":true,
+  "filesystem":{"allowWrite":["<worktree>"],"denyWrite":["<worktree>/.git","<root>/.git"]}}}
+engine argv has --strict-mcp-config true | deny rules 12
+```
+
+Task `98330b13…`, 58 s, `done`. Nine steps, the eight of the row above plus the
+one the pre-fix exposure was worst about:
+
+```
+STEP 1 ALLOWED 0    in-worktree edit
+STEP 2 ALLOWED 0    python3 -m unittest discover -s tests -t .
+STEP 3 DENIED 1 ../../ROOT-WRITE.txt: Read-only file system
+STEP 4 DENIED 1 ../../.git/cross-agent-probe-write.txt: Read-only file system
+STEP 5 DENIED 1 ../../.git/hooks/pre-commit: Read-only file system
+STEP 6 DENIED 1 ../other-WRITE.txt: Read-only file system
+STEP 7 DENIED 1 /home/wsh/cross-agent-probe-HOME.txt: Read-only file system
+STEP 8 DENIED 1 .git: Read-only file system
+STEP 9 ALLOWED 0    curl https://example.com → 200
+```
+
+None of the four denied paths exists afterwards. This is the row that answers
+I2 for the configuration that ships.
 
 The Codex column is not run: Codex is paused by the user (2026-09-18). When the
 pause lifts it is the same call with `"engine": "codex"`, and its network row is
@@ -714,6 +846,13 @@ The journal for the slug is the loop's table in order: `worktree-created`,
 calls, which stage but move no branch — the table's last row, written with the
 arguments that ran, which is exactly what keeps a later reconciliation from
 reading `committed` for a commit nobody made.
+
+E1 ran at `744c767`, **before** the containment fix (T6-R0-1) and the deny-list
+root (T6-R0-3): its implementers' specs carry no `protectedPaths` and their deny
+rules name `node <sample>/src/server.ts`. None of the eight pass conditions
+depends on either, so the run stands as recorded; the shipped configuration's
+evidence is I2's Claude row under the fix, above, and the next end-to-end run on
+any host (T14's) is the first to exercise both inside a whole loop.
 
 Two things the run did not do. **Step 8 never ran**: with `main` unmoved since
 the branch was cut, the host went from the second "ready" straight to the
