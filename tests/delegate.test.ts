@@ -6,13 +6,14 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Authority } from "../src/authority.ts";
 import { CONFIG_PATH } from "../src/config.ts";
-import { delegate } from "../src/delegate.ts";
+import { delegate, writableProfiles } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
 import { readJournal } from "../src/journal.ts";
 import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
 import { reservedBy } from "../src/reservation.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
+import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { lockPath, spawnLockName } from "../src/locks.ts";
 import { buildMode } from "./helpers/mode.ts";
@@ -527,6 +528,17 @@ test("a role with no binding runs on the engine the call names, and the built-in
   // role with no configured prompt gets.
   assert.match(spec.rolePrompt, /consultant/);
   assert.match(spec.rolePrompt, /read-only/);
+});
+
+test("every engine names the writable profile a one-shot runs under", () => {
+  // The table is per engine because a profile means nothing apart from the engine that
+  // declares it — `workspace-write` is Claude's and Codex's name, `workspace` is Grok's —
+  // and an engine missing from it would launch a one-shot read-only in a worktree it was
+  // given to write in, or refuse at `sandboxFor` with the engine's own list.
+  assert.deepEqual(Object.keys(writableProfiles).sort(), [...engineNames].sort());
+  for (const engine of engineNames) {
+    assert.equal(sandboxFor(engine, writableProfiles[engine]).mode, "write", engine);
+  }
 });
 
 test("a worktree one-shot is created through git_root, journaled, and the record carries it", async (t) => {

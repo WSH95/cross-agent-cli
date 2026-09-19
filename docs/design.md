@@ -2272,7 +2272,10 @@ there, this key is how an operator binds one.
 
 ### 7. The skills
 
-Neither skill is written; both arrive with step 9 of the work plan.
+The launcher skill is not written and arrives with step 9 of the work plan, and
+so do the two dev-team loops. `modes/solo/SKILL.md` is written: it is the loop
+below, and the paragraphs the launcher will carry for every mode are in it
+already.
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
 loads: read the config, call `describe_mode` **first** to get the active

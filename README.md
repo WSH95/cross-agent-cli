@@ -22,9 +22,12 @@ git-dir with a per-task journal, the loop-guard helpers, the engine contract
 with its three adapters (Claude, Codex, Grok) and the spawn pipeline, and
 the detached runner with its orphan handling. `npm test` covers each of
 those, runs the citation checker over the docs, and is green at every commit
-on `main`; one test stays skipped until a real `codex` binary runs it. The
-rest is a target, modes included: the delegation tools and the authority
-model that gates them, the mode loader, the skills, and each host's
+on `main`; one test stays skipped until a real `codex` binary runs it. On top
+of it: the mode loader and the three built-in modes, the authority model and
+the twelve tools it gates — `delegate`, `wait`, `check`, `result`, `cancel`,
+`list_tasks`, `describe_mode`, `list_roles` and the worktree provider's four —
+and `cross-agent init`. What is left is a target: the launcher skill, the two
+dev-team loops, the mailbox an engine-placed lead needs, and each host's
 packaging. `docs/design.md` is the design and the work plan; `docs/probes.md`
 records what each engine CLI was observed to do.
 
@@ -52,9 +55,9 @@ operator, lead, or specialist row of the permission matrix accordingly,
 failing closed to specialist. Depth only caps that row, never raises it, and
 no token could grant it — the launch spec holding a child's environment sits
 in the project, where every role can read it, so possession must not equal
-authority. None of this is built at this commit: nothing in `src/` resolves a
-placement, walks the ancestry, or serves a row, and the server registers two
-tools, `list_roles` and `verify_worktree`.
+authority. This is built: `src/authority.ts` walks the ancestry and resolves
+the row, and `src/server.ts` offers each tool to the rows it belongs to and
+refuses a call from any other by name.
 
 ## Loop guard, in one paragraph
 

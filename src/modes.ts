@@ -137,7 +137,13 @@ export function builtInModesDir(): string {
   return fileURLToPath(new URL("../modes", import.meta.url));
 }
 
-/** Whether this mode registers the worktree provider — `verify_worktree` and `git_mutate`. */
+/**
+ * Whether this mode declares a role that works in a worktree, which is the same question
+ * as whether the git policy it acts under is its own: `describe_mode` reports the answer
+ * to a launcher as `git.implicit` (`gitPolicy`). The provider's four tools are registered
+ * under every mode, because every mode has a root role that `delegate {worktree: true}`
+ * can give a worktree to (design, "Modes").
+ */
 export function declaresWorktreeProvider(mode: Mode): boolean {
   return mode.roles.some((role) => role.workspace.kind === "worktree");
 }
@@ -282,9 +288,9 @@ export function loadMode(modesDir: string, name: string): Mode {
     // against a mode it has never read is relying on it being read-only at the root
     // (design, "Modes").
     if (key === CONSULT_ROLE) {
-      const only = `mode ${JSON.stringify(name)} may give the built-in ${CONSULT_ROLE} role its own title and prompt file and nothing else`;
-      if (workspace.kind !== "root") reject(`${field}.workspace`, `${CONSULT_ROLE} works at the project root in every mode; ${only}`);
-      if (sandboxDefault !== "read-only") reject(`${field}.sandboxDefault`, `${CONSULT_ROLE} is read-only in every mode; ${only}`);
+      const rule = `mode ${JSON.stringify(name)} may give the built-in ${CONSULT_ROLE} role its own title and prompt file and nothing else`;
+      if (workspace.kind !== "root") reject(`${field}.workspace`, `${CONSULT_ROLE} works at the project root in every mode; ${rule}`);
+      if (sandboxDefault !== "read-only") reject(`${field}.sandboxDefault`, `${CONSULT_ROLE} is read-only in every mode; ${rule}`);
     }
     // No role may combine `{kind: "root"}` with a writable sandbox (design, "Modes"): a
     // writable root role could edit `.cross-agent/` itself. The rule is stated portably —

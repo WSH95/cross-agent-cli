@@ -26,7 +26,7 @@ test("the solo loop names every step a worktree one-shot settles under, and who 
   // root, the worktree, the branch, the report (design section 4).
   const steps = [
     'run_command {which: "test", where: <worktree path>, slug}',
-    'git_root {args: ["merge", "--ff-only", "task/<id>"], slug}',
+    'git_root {args: ["merge", "--ff-only", <branch>], slug}',
     'run_command {which: "test", where: "root", slug}',
     '"worktree", "remove"',
     '"branch", "-d"',
@@ -41,6 +41,10 @@ test("the solo loop names every step a worktree one-shot settles under, and who 
   assert.match(loop, /nobody merges by hand under `auto`/, "the launcher applies the policy, not the user");
   assert.match(loop, /\*\*`manual`, or any failure.{0,80}?leave the branch/, "the other half of the policy");
   assert.match(loop, /git revert --no-edit/, "and the repair path when the root suite fails after the merge");
+  // The branch is the one this task was given, spelled by the mode's own pattern, and the
+  // merge runs at a root whose HEAD `git_root` checks before it merges anything.
+  assert.match(loop, /`git\.branchPattern` with the slug in place of its `\*`/);
+  assert.match(loop, /HEAD has to be on `project\.defaultBranch`/);
 });
 
 test("the solo loop documents review and critique as verbs it composes, each naming its engine", () => {

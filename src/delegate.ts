@@ -79,7 +79,7 @@ function message(error: unknown): string {
  * `sandboxFor` re-derives the mode from the adapter's own map, so a name an engine does
  * not declare is a refusal here rather than a launch.
  */
-const writableProfiles: Record<EngineName, SandboxProfile> = {
+export const writableProfiles: Record<EngineName, SandboxProfile> = {
   claude: "workspace-write", codex: "workspace-write", grok: "workspace",
 };
 

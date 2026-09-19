@@ -50,10 +50,13 @@ The specialist edits files and runs no git. Once its task settles:
    by hand under `auto`.
 
    **`auto`** — `run_command {which: "test", where: <worktree path>, slug}`;
-   `git_root {args: ["merge", "--ff-only", "task/<id>"], slug}`; `run_command
+   `git_root {args: ["merge", "--ff-only", <branch>], slug}`; `run_command
    {which: "test", where: "root", slug}`; `git_root {args: ["worktree", "remove",
-   <worktree path>], slug}`; `git_root {args: ["branch", "-d", "task/<id>"],
-   slug}`; then the closing report.
+   <worktree path>], slug}`; `git_root {args: ["branch", "-d", <branch>],
+   slug}`; then the closing report. `<branch>` is the one the record and the
+   journal name — `git.branchPattern` with the slug in place of its `*`, which
+   is not always `task/…` — and the merge runs at the project root, so its HEAD
+   has to be on `project.defaultBranch` or `git_root` refuses before merging.
 
    **`manual`, or any failure at any step of `auto`** — stop where you are, leave
    the branch and its worktree standing, and report the reason with the commands
