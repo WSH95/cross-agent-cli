@@ -174,6 +174,7 @@ test("a call to a tool outside the resolved row is refused by name with the reas
   assert.deepEqual((await request("tools/call", { name: "delegate", arguments: {} })).error, { code: -32602, message: "unknown tool: delegate" });
 });
 
+// @anchor rowResolvedAgain
 test("the row is resolved again on every request", async () => {
   let authority: Authority = operator;
   const request = inProcess({

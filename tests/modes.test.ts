@@ -342,6 +342,7 @@ test("the two dev-team modes carry the same role prompts, byte for byte", () => 
   }
 });
 
+// @anchor builtInModesValidate
 test("the three built-in modes validate, and each declares what its loop needs", () => {
   const modes = builtInModesDir();
   assert.equal(fs.statSync(modes).isDirectory(), true);
@@ -369,6 +370,7 @@ test("the three built-in modes validate, and each declares what its loop needs",
   assert.equal(findRole(engine, "lead")?.sandboxDefault, "read-only");
 });
 
+// @anchor describemodeReturnsLoop
 test("describeMode returns the loop and every role prompt verbatim, with no file copied", (t) => {
   const modes = modesRoot(t);
   const loop = "# The loop\n\nWhat this mode's lead does, in its own words.\n";
@@ -401,6 +403,7 @@ test("describeMode returns the loop and every role prompt verbatim, with no file
   assert.ok(described3.loop.length > 0);
 });
 
+// @anchor describemodeAnswersMissing
 test("describeMode answers a missing or invalid mode with a reason rather than a throw", (t) => {
   const modes = modesRoot(t);
   const reasonOf = (name: string): string => {

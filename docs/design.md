@@ -1642,7 +1642,7 @@ which is a property of the line, not of the pipeline.
   Every flag takes exactly one value, which is what lets the deny list end the
   line without swallowing anything (`tests/engines/grok.test.ts#wholeDenyList`); the
   writable, read-only, every-profile and resumed lines are pinned byte for
-  byte (`tests/engines/grok.test.ts#readOnlyRole`, `#readOnlyRole`, `#profileReachesSandbox`, `#resumedRunCarries`). **P8 chose
+  byte (`tests/engines/grok.test.ts#writeRoleArgv`, `#readOnlyRole`, `#profileReachesSandbox`, `#resumedRunCarries`). **P8 chose
   the format** (`docs/probes.md#p8Formats`). `streaming-messages-json` is NDJSON
   in the Anthropic Messages API wire shape — line for line what Claude Code's
   `stream-json` emits, so one line vocabulary serves both adapters. Its first
@@ -2877,7 +2877,7 @@ Integration probes after each packaging task, run by the operator:
   row is checked **per host, in that host's own spelling**: Claude shows
   `mcp__cross-agent__<tool>`, Codex folds the hyphen and shows
   `mcp__cross_agent__<tool>` beside its built-in `codex_apps`
-  (`docs/probes.md#p9Mounts`, `#p9Mounts`), and Grok reaches the tools through its
+  (`docs/probes.md#p9Mounts`), and Grok reaches the tools through its
   `use_tool` dispatcher (`docs/probes.md#p9Mounts`), so the test compares the set of
   this server's tools, not a literal string — three spellings have now been
   observed for the same five tools, and none of them is the design's own. A direct `tools/call delegate`
@@ -2979,11 +2979,12 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   rather than thrown (`#configLockGit`); a lock lost while the command ran is reported and
   the step is still journaled (`#lockLostWhile`). Journal: a commit lands on the task
   branch and is journaled with the SHAs around it (`#commitLandsBranch`); steps accumulate in
-  order with only the fields they carry, each append is a rename that leaves no
-  temporary behind, the branch a journal was created on is write-once, the
-  revert target and the branch head are set once and only by the merge, and a
-  damaged journal is named rather than replaced (`tests/journal.test.ts#worktreeJournalCreated`,
-  `#revertTargetBranch`, `#branchJournalCreated`, `#stepsAccumulateOrder`, `#damagedJournalNamed`). Environment: `gitEnvironment` passes what git
+  order with only the fields they carry (`tests/journal.test.ts#stepsAccumulateOrder`),
+  each append is a rename that leaves no temporary behind (`#appendReplacesFile`), the
+  branch a journal was created on is write-once (`#branchJournalCreated`), the revert
+  target and the branch head are set once and only by the merge
+  (`#revertTargetBranch`), and a damaged journal is named rather than replaced
+  (`#damagedJournalNamed`). Environment: `gitEnvironment` passes what git
   needs to run as this user and nothing else, and the verifier ignores what the
   server's own environment says about a repository
   (`tests/worktree.test.ts#gitenvironmentPassesGit`, `#verifyworktreeIgnoresServer`).
@@ -3062,10 +3063,10 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the first after it reaches `running` (`#leadHoldsRow`); an identity from another boot,
   or an engine not carrying its task, matches nothing (`#identityAnotherBoot`); and the depth
   cap only ever lowers a row (`#engineAncestorGrants`). A direct `tools/call` of a tool outside
-  the resolved row is refused by name with the reason, the entry point
-  refuses by the row it resolves for itself, and both the list and the refusal
-  follow the row from one request to the next (`tests/server.test.ts#toolsListOffers`,
-  `#callToolOutside`, `#entryPointResolves`); a specialist's `delegate`, `wait` and `cancel` are refused by
+  the resolved row is refused by name with the reason
+  (`tests/server.test.ts#callToolOutside`), the entry point refuses by the row it
+  resolves for itself (`#entryPointResolves`), and both the list and the refusal follow
+  the row from one request to the next (`#toolsListOffers`, `#rowResolvedAgain`); a specialist's `delegate`, `wait` and `cancel` are refused by
   this server's own name with the resolver's reason, and its read tools answer
   (`#specialistRowCannot`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
   the nearest configured directory, a linked worktree resolving to its main
@@ -3130,12 +3131,12 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   never the specialist (`tests/server.test.ts#worktreeProviderTools`); `git_mutate` defaults its
   workspace and branch from that mode's own policy (`#gitMutateTakes`); `describe_mode`
   returns the loop and every role prompt byte for byte with nothing written
-  anywhere (`tests/modes.test.ts#devTeamModes`), answers every row, and refuses with a
-  reason when the config names a mode that is not there
-  (`tests/server.test.ts#describeModeServes`, `tests/modes.test.ts#devTeamModes`). The mode loader
+  anywhere (`tests/modes.test.ts#describemodeReturnsLoop`), answers every row
+  (`tests/server.test.ts#describeModeServes`), and refuses with a reason when the config
+  names a mode that is not there (`tests/modes.test.ts#describemodeAnswersMissing`). The mode loader
   refuses each of its own rules by field (`tests/modes.test.ts#loadmodeRefusesMode`, `#loadmodeRefusesDocument`,
   `#loadmodeRefusesPrompt`, `#worktreeDirectoryProject`, `#enginePlacedLead`, `#loopFileContained`, `#promptFileDirectory`, `#modeDirectorySymlink`), the three built-in modes
-  validate (`#modeCarriesBuilt`), and the two dev-team modes' role prompts are pinned equal
+  validate (`#builtInModesValidate`), and the two dev-team modes' role prompts are pinned equal
   until step 9 generates both (`#devTeamModes`). **No delegation starts a Grok engine as
   an engine-placed lead**, whether the config binds one or a single call names
   one, and a config edited after the server read it — a writable root role, a
