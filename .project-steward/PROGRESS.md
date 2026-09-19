@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-19T17:02:17Z — claude
+T13 complete and merged at e9cbac0 (617 tests, 616 pass); handover written for S11
+
 ### 2026-09-19T10:03:57Z — claude
 [auto-checkpoint] [auto-checkpoint] Task 4c complete on task/cross-agent-m3 at 3859410 (fix round closed a Critical: a merge could carry .cross-agent/ into the root; task ids now hex; one-shots resume, dedupe and clean up; nothing written before the first delegate; every mode registers the provider tools); atc-s96.27 closed; 561 pass/1 skip; 787 citations/0 misses. Task 5 (T12 skills) running (cross-agent-implementer: claude-opus-5, max). Briefs drafted for T13 (task-6), S11 (task-7), T16 (task-10). New P4 bead: read tools write .cross-agent/tasks on an unknown id.
 

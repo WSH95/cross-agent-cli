@@ -303,3 +303,42 @@ costs if the ruling is wrong.
   row can close.
 - **AGENTS.md refresh under the same approval (T13 round 2):** the `tools/`
   bullet names `probe.mjs --track` and `e2e-verify.mjs`.
+
+### Rulings taken while closing T13 (rounds 3–7), 2026-09-19
+
+- **Citations by anchor.** Every citation into a test file is an
+  `// @anchor <name>` on the `test(` line; passages in `docs/probes.md` carry
+  `<!-- @anchor -->` names (never inside a table, which splits it); code is
+  cited by `#symbol` where a symbol holds the line. Line citations remain only
+  for `src/` ranges. Cost: anchors must be kept on their test when tests move.
+- **`--since <rev>` in the checker** compares each line citation's text with
+  the revision and reports what it cannot judge (a line past the revision's
+  file length) rather than staying silent — round 3's "0 drifted" had been
+  vacuous for exactly that reason. The controller runs it with the task's
+  BASE after every task. Cost: a non-zero exit for a citation into a file that
+  grew, until it is re-pointed or anchored.
+- **The e2e verifier fails closed, not open:** a transcript shape no archived
+  run shows answers `?`; an offence already found is FAIL whatever else is
+  unread; the launcher mirrors `denyTargets` (the four CLIs and configured
+  bins as command words; `node …/src/server.ts|cli.ts` only where a command
+  can start); exit 0 only when every row passes, 1 on a FAIL, 2 on a `?`. The
+  Codex MCP-call item shape is not guessed: until I1 Codex records it, an
+  unknown Codex item answers `?`. Cost: a real Codex run may answer `?` until
+  the shape is recorded.
+- **Micro-round 7 closed without another review seat.** The Grok seat's last
+  Important (a bare space opening the `node` branch) is a three-line regex
+  change in a harness tool; the controller verified it against every
+  counterexample that review named (`dispatch/launcher-probe.mjs`, 25/25),
+  and the task reviewer had already approved on round 5. The verifier's next
+  full review runs under `atc-s96.56`. Cost: a residual regex case is found
+  later, by that bead.
+- **Review seats (user, 2026-09-19):** the second code review runs through
+  cross-agent's own `consult` on grok · grok-4.6 · xhigh; the Opus 5 task
+  reviewer judges every task and its last fix round (the user caught that
+  seat being skipped on T13's rounds 1–2; it returned for the cumulative
+  review). One Opus review instance was terminated by the harness mid-run and
+  reported as "stopped by user"; the user had not stopped it, and it was
+  rerun.
+- **Attribution:** commits before the user's model switch carry
+  `Co-Authored-By: Claude Fable 5.1`, after it `Claude Opus 5 (1M context)`.
+
