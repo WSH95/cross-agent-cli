@@ -5,8 +5,9 @@ project root.
 
 Make the change the plan describes. Test first where this project's conventions say so,
 and run its test command in your worktree until it passes; a suite that fails only
-because of your sandbox is rerun with escalation, or reported as exactly that rather than
-as a result. Follow the plan or stop and report BLOCKED with the reason — a plan step
+because of your sandbox is reported as exactly that — the command, what it printed, and
+what it could not reach — rather than as a result, because nothing here can lift your
+sandbox for you. Follow the plan or stop and report BLOCKED with the reason — a plan step
 naming a path that is not there is a correction the session that delegated you can make,
 and quietly substituting your own approach is how the review and the plan end up
 describing different changes.

@@ -45,12 +45,14 @@ role that works at the project root a writable task worktree of its own instead;
 the record then carries `worktree: {path, branch, slug}` and the slug is the
 task id.
 
-The brief is the whole of what the specialist knows about your intent: what to
+The brief is the whole of what the specialist knows about *this* task: what to
 do, where, what counts as done, and the shape of the closing report you will
-read back. Put the role's own standing duties in it as well — today `delegate`
-launches a specialist with the `prompt` bound in `.cross-agent/config.json` or a
-one-line default, so a role prompt the mode serves is text for you to draw on,
-not something the engine has already been told.
+read back. It is not where the role's standing duties go — `delegate` launches a
+specialist with the mode's own prompt for its role, the same text `describe_mode`
+serves you under `roles[].prompt`, or with the `prompt` bound in
+`.cross-agent/config.json` where a project sets one. Read that text before you
+write the brief: what the role is already told is what your brief need not
+repeat, and what it does not cover is what your brief has to.
 
 Narrate every dispatch in one line before you wait on it: *delegating `<role>`
 to `<engine>`/`<model>` at `<effort>` in `<cwd>`*. The user is paying for these
@@ -77,9 +79,10 @@ settled task, and a `hint` naming the call to make next. Act on the status:
 - `stalled` — the engine has emitted nothing for the configured threshold; the
   task is still alive. Read the log the hint names, then keep waiting or
   `cancel`.
-- `unsettled` — a flag beside the status, not a status: this call reconciled
-  and the record did not move, and its `reason` says what the pass could not do.
-  Call `list_tasks`, which reconciles again, and decide from what it reports.
+- `unsettled` — not a status but the word the `hint` opens with, beside a
+  `reason`: this call reconciled and the record still did not move, and the
+  reason is what the pass could not do. Call `list_tasks`, which reconciles
+  again, and decide from what it reports.
 - `orphaned` — the runner is gone. `list_tasks` reconciles it; `cancel`
   terminates whatever engine is left.
 - `done` — call `result` for the final message in full. That message is the
@@ -87,6 +90,12 @@ settled task, and a `hint` naming the call to make next. Act on the status:
 - `failed` — read `result` for whatever the engine said and the log for how it
   ended, and report both. A failed task is never retried silently.
 - `cancelled` — somebody stopped it. Say who asked and what it had done.
+
+After a `wait` that timed out or came back `stalled`, call `list_tasks` before
+you wait again. `wait` runs a reconciliation pass itself when a record's own
+evidence says the ledger is adrift, but `list_tasks` reconciles unconditionally
+and refreshes the whole roster you are showing the user; one call per timeout is
+the whole of its cost.
 
 Never declare a task done from `check` alone: `check` reconciles nothing, so a
 record it reports as running may have lost its runner minutes ago. `check` is
@@ -110,12 +119,18 @@ is `limits.stallMinutes`.
 ## A needs-work round
 
 A second round on the same task is `delegate` with `resume: <task id>` and an
-amended brief — the findings verbatim and what to do about them. The
-continuation keeps the original's role, engine, cwd and sandbox, and a task that
-was given a worktree is continued in that worktree, so a review round reaches
-the same branch. Resume only after the task settled: an active task is refused,
-and so is a chain that already has a successor, which answers with the latest id
-to continue instead.
+amended brief — the findings verbatim and what to do about them. The call still
+carries every key a first call does: the same `role` and `cwd` as the original,
+and `branch` for a role that works in a worktree. They are not optional and they
+are not defaults — the schema requires `role`, `brief` and `cwd`, and the resume
+binding compares the role, the engine, the cwd and the sandbox with the original
+and refuses any difference. The engine, the model and the sandbox come from the
+original; a task that was given a worktree is continued in that worktree, so a
+review round reaches the same branch.
+
+Resume the **latest** id of the chain: an id that already has a successor is
+refused with `resume the latest: <id>`, and a chain with an active member is
+refused outright. Resume only after the task settled.
 
 ## Cancelling
 
@@ -140,7 +155,8 @@ Read, in this order: `list_tasks`, which reconciles the ledger and names any
 record file no reader could judge; the task's journal at
 `.cross-agent/journal/<slug>.json`, whose steps are the git steps that actually
 completed; `git_root {args: ["worktree", "list", "--porcelain"]}`; `git_root
-{args: ["branch", "--list", <the mode's `git.branchPattern`>]}`; `git_root {args: ["status",
+{args: ["branch", "--list", <branchPattern>]}`, the mode's own pattern from
+`describe_mode`'s `git` field; `git_root {args: ["status",
 "--porcelain", "--untracked-files=normal"]}`; and the rebase state of each task
 worktree, which is a `rebase-merge` or `rebase-apply` directory under
 `.git/worktrees/<slug>`. `verify_worktree {path, branch}` settles whether a
@@ -151,7 +167,9 @@ Then, leftover by leftover: an interrupted rebase is aborted where it started �
 one argv the verifier accepts with HEAD detached. A merged branch whose worktree
 survives resumes at the cleanup steps of the merge policy below — `worktree
 remove`, then `branch -d`. A branch-only leftover is deleted
-with `git_root {args: ["branch", "-d", <branch>], slug}`. A task still running
+with `git_root {args: ["branch", "-d", <branch>], slug}`, which holds the verb to
+the branch that slug's journal records; a branch whose journal is gone is the
+user's to delete, and you say so rather than reaching for git. A task still running
 is waited on, not cleaned up. An unmerged branch whose task is dead is reported
 to the user with what the journal recorded — never deleted for them. And any
 record `list_tasks` reports as invalid is named to the operator: until it is
@@ -164,9 +182,10 @@ specialist writes no git metadata at all. You commit it, then apply the
 project's merge policy.
 
 1. Commit what it left: `git_mutate {slug, args: ["add", "-A", "--", ".",
-   ":(exclude).cross-agent", ":(exclude).worktrees"]}`, then `git_mutate {slug,
-   args: ["commit", "-m", <message>]}`, with the specialist's own summary as the
-   message. That is the only path that writes a worktree's git metadata, and it
+   ":(exclude).cross-agent", ":(exclude)<git.worktreeDir>"]}` — the second
+   exclusion is the mode's own worktree directory, `.worktrees` unless
+   `describe_mode` says otherwise — then `git_mutate {slug, args: ["commit",
+   "-m", <message>]}`, with the specialist's own summary as the message. That is the only path that writes a worktree's git metadata, and it
    journals the `committed` step. The two exclusions are not optional: a
    `.gitignore` the specialist wrote in its worktree outranks the repository's
    own, and the project's state is never committed to a task branch — the merge
@@ -184,8 +203,12 @@ project's merge policy.
    is not always `task/…` — and the merge runs at the project root, so its HEAD
    has to be on `project.defaultBranch` or `git_root` refuses before merging.
    **`manual`, or any failure at any step of `auto`** — stop where you are,
-   leave the branch and its worktree standing, and report the reason with the
-   commands that finish the job by hand. A suite that fails at the root after
+   leave the branch and its worktree standing, and report the reason together
+   with the three commands that finish the job at the root: `git merge --ff-only
+   <branch>` once the branch's own tests pass, `git worktree remove <worktree
+   path>`, `git branch -d <branch>`. They are the user's to run, not yours:
+   under `manual` finishing it by hand is the policy, and after a failure the
+   repository is in a state the user has to look at first. A suite that fails at the root after
    the merge is the repair path: offer `git revert --no-edit
    <defaultShaBeforeMerge>..<branchHead>` from the journal's `merged` step as a
    new commit, never a reset and never a merge to retry, and dispatch nothing
@@ -197,12 +220,16 @@ project's merge policy.
 each is one `delegate` that names its own engine, because a second engine
 reading the work is the point of asking:
 
-- **review** — attach the diff under review, `git diff <base>...HEAD` for
-  committed work or the working tree where nothing is committed, and ask for
-  findings by severity, each with `file:line` and what to do about it.
-- **critique** — name the plan or design file and ask for the adversarial
-  reading: what it assumes without saying so, what it leaves undefined, where it
-  would fail first, and what a reviewer would send back.
+- **review** — `delegate {role: "consult", cwd: <project root>, engine: <the
+  engine the user named>, brief: <the diff and what to look for>}`. Attach the
+  diff under review, `git diff <base>...HEAD` for committed work or the working
+  tree where nothing is committed, and ask for findings by severity, each with
+  `file:line` and what to do about it.
+- **critique** — `delegate {role: "consult", cwd: <project root>, engine: <the
+  engine the user named>, brief: <the file and the question>}`. Name the plan or
+  design file and ask for the adversarial reading: what it assumes without saying
+  so, what it leaves undefined, where it would fail first, and what a reviewer
+  would send back.
 
 ## Reporting
 

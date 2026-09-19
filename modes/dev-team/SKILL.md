@@ -12,27 +12,39 @@ here trusts it.
 `git.worktreeDir`, the branch its `git.branchPattern` makes (`task/<slug>` for
 this mode, written `<branch>` below), the journal file every git step appends
 to, and the `slug` that `git_mutate`, `git_root` and `run_command` all take.
+Because it is all four, its alphabet is the narrowest of them: letters, digits,
+`.`, `_` and `-`, starting with a letter, a digit or an underscore, or the
+journal refuses the call before any git runs.
 `<default>` is `project.defaultBranch`, and `<worktree path>` is
 `<git.worktreeDir>/<slug>`. `describe_mode` gives you the policy those come
-from, and each role's own prompt; `list_roles` gives you the engine, model and
-effort behind each role name below, and you announce each of them as you
-dispatch it. Until `delegate` launches a role with the mode's prompt rather than
-the config's, every brief below carries what its role has to produce.
+from, and each role's own prompt — the text `delegate` launches that role with,
+so a brief below adds this task's own work to it and never repeats it;
+`list_roles` gives you the engine, model and effort behind each role name below,
+and you announce each of them as you dispatch it.
 
 ## 1. Root check
 
-`list_tasks` first: it reconciles the ledger and names any record file no reader
-could judge. Settle what it and the journals show by the launcher's
-reconciliation rules before starting anything new — an unmerged branch from a
-dead task is not a repository that is ready for another one.
+`list_tasks` first. It runs the reconciliation pass itself: a task whose runner
+is gone is settled rather than believed, and any record file no reader could
+judge is named back to you — until that file is repaired or removed, every
+writable delegation in the project refuses. Read the journals of whatever it
+reports and settle each leftover before you start something new: an interrupted
+rebase is aborted in its own worktree, a merged branch whose worktree survives
+goes to step 10, a branch with no worktree and no live task is deleted with
+`git_root {args: ["branch", "-d", <branch>], slug}` — which needs that slug's
+journal to still record the branch, and where the journal is gone the branch is
+the user's to delete — a task still running is waited on, and an unmerged branch whose task is dead is reported to the user and
+left standing.
 
 Then `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`
 must print nothing; if it prints, show the user and stop. The root must also sit
-on `<default>`: step 9 refuses to merge anywhere else, and `git_root`'s
-whitelist has no verb that prints the current branch, so read it yourself — it
-costs nothing here and a whole task there. Choose a `<slug>` that neither
-`git_root {args: ["branch", "--list", "task/*"]}` nor `git_root {args:
-["worktree", "list"]}` already shows.
+on `<default>`, because step 9 refuses to merge anywhere else: read it from the
+first stanza of `git_root {args: ["worktree", "list", "--porcelain"]}`, which is
+the main worktree's, and which prints `branch refs/heads/<default>` when the
+root is where it should be — anything else there, `detached` included, stops the
+task here. That listing is also half of the slug check: choose a `<slug>` that
+neither it nor `git_root {args: ["branch", "--list", "task/*"]}` already
+shows.
 
 ## 2. Plan
 
@@ -47,11 +59,17 @@ and stop until the user corrects the task.
 
 `delegate {role: "plan-reviewer", cwd: <project root>, brief}` with the task text
 and the plan verbatim. `wait`, then `result`, then act on the verdict. `approve`
-— step 4. `revise` — `delegate {role: "planner", resume: <the planner's task
-id>, brief: <the findings verbatim>}`, then review the revision; at most two
-rounds, and then you stop and show the user both texts. `human decision` — put
-the reviewer's question to the user in plain words, and resume the planner with
-the answer once you have it.
+— step 4. `revise` — `delegate {role: "planner", cwd: <project root>, resume:
+<the latest planner task id>, brief: <the findings verbatim>}`, then review the
+revision; at most two rounds, and then you stop and show the user both texts.
+`human decision` — put the reviewer's question to the user in plain words, and
+resume the planner the same way once you have the answer, carrying it in the
+brief.
+
+A resume call carries every key a first call does — the same `role` and `cwd`,
+and the branch where the role works in a worktree — and it names the **latest**
+id of the chain: a resumed task's own id supersedes the one it continued, and
+the id before it is refused with `resume the latest: <id>`.
 
 ## 4. The worktree
 
@@ -69,9 +87,10 @@ The brief carries the task text, the approved plan verbatim, the test command,
 `<default>`, the branch and the worktree path, and the closing report you need
 back: what changed, what ran, what the result was, and the one-line summary you
 will commit under. `wait`, then `result`. A `BLOCKED` report caused by a plan
-step naming a path that does not exist is a correction you send back with
-`resume`; any other `BLOCKED` ends the task with its worktree standing and goes
-to the user.
+step naming a path that does not exist is a correction you send back the way
+step 7 does — a `resume` naming the same `cwd` and `branch` and the latest
+implementer id; any other `BLOCKED` ends the task with its worktree standing and
+goes to the user.
 
 ## 6. Commit what it left
 
@@ -92,10 +111,17 @@ own, and step 9 refuses a branch that carries either directory at all.
 with the task text, the plan, the branch, `<default>`, and the four verdicts you
 will act on: ready, needs work, needs rebase, discard. It reads the committed
 branch under a read-only sandbox and runs nothing that writes. Needs work —
-`delegate {role: "implementer", resume: <the implementer's task id>, brief: <the
-findings verbatim>}`, then step 6 again; at most two rounds before you stop and
-report. Needs rebase — step 8, then review again. Discard — stop and report,
-worktree standing. Ready — step 8.
+`delegate {role: "implementer", cwd: <worktree path>, branch: <branch>, resume:
+<the latest implementer task id>, brief: <the findings verbatim>}`, then step 6
+again; at most two rounds before you stop and report. Needs rebase — step 8,
+then review again. Discard — stop and report, worktree standing. Ready — step 8.
+
+Every review after the first names its round and the commit it is reviewing in
+the brief. A brief identical to one a task in this cwd finished inside
+`limits.duplicateWindowMinutes` is refused as a duplicate, and a rebase and a
+re-review take less time than that window; naming the round is also what tells
+the reviewer which findings it is checking. `force: true` is the override, and
+it is for a brief you meant to repeat.
 
 ## 8. Rebase
 
@@ -127,9 +153,11 @@ and dispatch no further task until the repository is reconciled.
 
 `git_root {args: ["worktree", "remove", <worktree path>], slug}`, then `git_root
 {args: ["branch", "-d", <branch>], slug}`, journalling `worktree-removed` and
-`branch-deleted`. Both refuse the shortcut that would lose work: the removal
-waits for a workspace no live task reserves, and `-d` refuses a branch git does
-not see as merged, which is this loop's cleanup gate. Stop at the first failure
+`branch-deleted`. Both refuse the shortcut that would lose work: the removal is refused outright
+while a live task reserves that workspace — `<path> is reserved by task <id>
+(<status>); wait or cancel first` — so you settle that task before you retry,
+and `-d` refuses a branch git does not see as merged, which is this loop's
+cleanup gate. Stop at the first failure
 and report exactly what was removed and what is still standing.
 
 Then record the task: one line per specialist appended to `.cross-agent/log.md`
@@ -153,14 +181,20 @@ what it said, every verdict, the cleanup result, and anything nobody verified.
 
 Each step is written by the tool that performed it, while it still holds the
 lock that ordered it, so no step of this loop has to remember to journal
-afterwards and no journal verb exists for you to misuse. A step is named for
-what it **moved**: a commit that committed nothing and a rebase that replayed
-nothing leave none behind, which is what keeps a reconciliation pass from
-looking for a commit that was never made.
+afterwards and no journal verb exists for you to misuse. A named step is written for
+what a call **moved**: a commit that committed nothing and a rebase that
+replayed nothing are journaled as a `git` step with their arguments instead, the
+table's last row, which is what keeps a reconciliation pass reading `committed`
+from looking for a commit that was never made.
 
 Any `ok: false` from `git_mutate` or `git_root`, with an exit code or without
 one, is a reconciliation trigger — a refusal is not a claim that nothing
-happened. Stop the loop, run the launcher's reconciliation pass over this slug,
-and only then decide whether the step can be repeated. An `ok: true` carrying
+happened. Stop the loop and reconcile this slug before anything else: `list_tasks`, this
+task's journal, `git_root {args: ["worktree", "list", "--porcelain"]}`,
+`git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`, and
+the `rebase-merge` or `rebase-apply` directory under `.git/worktrees/<slug>` —
+what the journal records is what completed, and the difference between that and
+what git shows is what you repair, by step 1's rules, before you decide whether
+the step can be repeated. An `ok: true` carrying
 `lockLost: true` says the command ran but was not exclusive for all of its life:
 reconcile that slug too before you trust the next step.

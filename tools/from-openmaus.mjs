@@ -24,11 +24,14 @@
 //    `post_to_room`, `create_bot`, `list_bots`, a teammate, a room, a card or the wake
 //    budget has nothing to map to — delegation here is one `delegate` call and one `wait`,
 //    and the closing report is the task's own final message.
-// 3. *The specialist's git steps are dropped.* In the devpack the implementer committed,
-//    rebased and reported; here a specialist writes no git metadata at all, and the
-//    session that delegated it commits through `git_mutate` and merges through `git_root`
-//    (design section 4). A sentence in which the specialist runs git goes, and the rule
-//    that replaces it is the coda below.
+// 3. *Anything that mentions git is dropped* — any sentence naming git, a commit, a
+//    rebase, a merge, a push or worktrees, which is broader than "the specialist runs
+//    git" and deliberately so: in the devpack the implementer committed, rebased and
+//    reported, while here a specialist writes no git metadata at all and the session that
+//    delegated it commits through `git_mutate` and merges through `git_root` (design
+//    section 4). The rule catches the sentences that had to be rewritten rather than
+//    carried, and the ones it over-catches are cheaper to write back by hand than to
+//    find. The coda below is what replaces them.
 // 4. *One coda per role, this runtime's own text*, appended verbatim: what the role may
 //    not do and what its final message is, because a specialist's final message is the
 //    whole of what leaves its task.

@@ -2025,7 +2025,9 @@ refuses, before git merges anything, when `git diff --name-only
 refusal lists them (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
 up: the loop's own commit step is `git_mutate ["add", "-A", "--", ".",
 ":(exclude).cross-agent", ":(exclude).worktrees"]`, so the ordinary case never
-stages either directory (`modes/solo/SKILL.md`, section 7); and `delegate`'s
+stages either directory (`skills/cross-agent/SKILL.md` for a one-shot, with the
+mode's own `git.worktreeDir` in place of the literal, and
+`modes/dev-team/SKILL.md` step 6; section 7); and `delegate`'s
 check above means a config that did reach the root is still never read as one.
 
 **`run_command`.** `{which: "test" | "setup", where: "root" | <a verified
@@ -2268,11 +2270,16 @@ another mode is a refusal there and a `warning` from `list_roles`, both naming
 the restart that fixes it (`src/config.ts#modeDrift`).
 
 One thing config still carries that belongs to the mode: a role's own `prompt`,
-the string `delegate` launches the role with, falling back to a one-line default
-that tells a specialist it cannot delegate (`src/config.ts#RoleConfig`,
-`src/delegate.ts#defaultPrompt`, section 8). Step 9 writes the mode's role
-prompts, which `describe_mode` already serves; until a launch reads them from
-there, this key is how an operator binds one.
+the string `delegate` launches the role with (`src/config.ts#RoleConfig`,
+section 8). It is an **override** now rather than the only source: `delegate`
+falls back to the mode's own text for the role — the `roles/<key>.md` that
+`describe_mode` serves, or the text a built-in role carries — read through the
+one function that answers that question (`src/delegate.ts#delegate`,
+`src/modes.ts#rolePrompt`). The one-line default that stood in for a mode's
+prompt is gone with row 9, because a mode role carries a `prompt` or a
+`promptFile` and never neither (`src/modes.ts#Mode`). The key stays because an
+operator binding a role to a particular engine may want a sentence for that
+engine without editing a portable mode.
 
 ### 7. The skills
 
@@ -2280,9 +2287,12 @@ Both skills are written. `skills/cross-agent/SKILL.md` is the launcher, with
 the paragraphs every mode shares; `modes/dev-team/SKILL.md` is the ten-step loop
 below, `modes/solo/SKILL.md` the zero-ceremony one, and
 `modes/dev-team-engine/SKILL.md` the placement delta row 11 completes. Which
-tools a loop may call is a test rather than a promise: every backticked name in
-the launcher and in each loop is checked against the tools that mode registers
-for the row its placement runs it in (`tests/skills.test.ts`,
+tools a loop may call is a test rather than a promise: every call-shaped name in
+the launcher and in each loop — the seven of the twelve that carry an underscore
+— is checked against the tools that mode registers for the row its placement
+runs it in, the five bare ones (`delegate`, `wait`, `check`, `result`, `cancel`)
+by a second test that names them, and every spelled `delegate {…}` by a third
+that holds it to the keys the schema requires (`tests/skills.test.ts`,
 `src/server.ts#projectTools`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
@@ -2467,14 +2477,13 @@ on its behalf.
 
 ### 8. Role prompts
 
-Every role's prompt is written and served verbatim by `describe_mode`
+Every role's prompt is written, served verbatim by `describe_mode` and launched
+with by `delegate`: one string, read by `rolePrompt` for both readers, so what a
+host is shown and what the engine is told cannot drift
 (`modes/dev-team/roles/planner.md` and its siblings,
-`src/modes.ts#describeMode`). What `delegate` launches a specialist with is still
-the config's `prompt` or the one-line default (section 6,
-`src/delegate.ts#defaultPrompt`), so the two have yet to meet: reading the mode's
-own text at the launch boundary is what is left of row 9, and until it lands the
-loop's brief carries what the role has to produce
-(`modes/dev-team/SKILL.md`).
+`src/modes.ts#describeMode`, `#rolePrompt`, `src/delegate.ts#delegate`). A
+`prompt` bound in `.cross-agent/config.json` overrides it for that project
+(section 6); nothing else does.
 
 `modes/<name>/roles/*.md`. For `dev-team` they are
 `{planner,plan-reviewer,implementer,code-reviewer}.md`, written for this
@@ -2766,7 +2775,7 @@ registered by the mode that declares the worktree provider.
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registered with step 8, which built the mode loader it reads. |
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
-| 9 | Launcher skill and mode loops | `atc-s96.12` | **Done, less one item.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row. Not in this row: `delegate` reading the mode's role prompt instead of the config's, which is a change in `src/` this task's scope excluded (section 8). |
+| 9 | Launcher skill and mode loops | `atc-s96.12` | **Done, less one item.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `dev-team` and `dev-team-engine` `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests, `modes/solo/roles/consult.md` being 4c's own text; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row; and, in the fix round, `delegate` launching a role with the mode's own prompt file rather than a one-line default, the config's `prompt` becoming the override it was meant to be (`src/delegate.ts#delegate`, `src/modes.ts#rolePrompt`, section 8). |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | **Split.** `git_root`, `run_command` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |

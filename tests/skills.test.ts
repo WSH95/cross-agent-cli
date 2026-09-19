@@ -58,7 +58,9 @@ function parameters(tools: Map<string, Tool>): Set<string> {
 // A backticked span is a call when it starts with an identifier: `list_tasks`,
 // `run_command {which: "test", …}`, `git_root merge --ff-only <branch>`. Only the names
 // carrying an underscore are judged — every prose word in a backtick would otherwise be a
-// tool — which covers ten of the twelve and every name a typo could invent.
+// tool — which is seven of the twelve registered names and any name a typo invents in
+// their shape. The other five (`delegate`, `wait`, `check`, `result`, `cancel`) are bare
+// words, and the test below names them one by one instead.
 const CALL_SHAPED = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;
 
 function namesCalled(text: string): string[] {
@@ -162,7 +164,9 @@ test("the launcher carries the merge policy for every mode, in the order a one-s
   // The work is committed before anything merges it: a specialist writes no git metadata,
   // so what it left in the worktree is still uncommitted when its task settles.
   assertInOrder(text, [
-    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    // The launcher is mode-generic, so the second exclusion is the mode's own worktree
+    // directory; only `dev-team`'s own loop may spell `.worktrees`.
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude)<git.worktreeDir>"]}',
     'git_mutate {slug, args: ["commit"',
     "project.mergePolicy",
     'run_command {which: "test", where: <worktree path>, slug}',
@@ -181,10 +185,15 @@ test("the launcher carries the merge policy for every mode, in the order a one-s
 test("the launcher documents review and critique as verbs it composes, each naming its engine", () => {
   const text = flat(launcher());
   assert.match(text, /verbs of (this|the) loop, not tools of the server/);
-  assert.match(text, /\*\*review\*\* — attach the diff/);
+  // Each verb is one `delegate` of the role every mode carries, spelled with the keys
+  // the schema requires: a verb the launcher cannot spell is a verb nobody can call.
+  for (const verb of ["review", "critique"]) {
+    assert.match(text, new RegExp(`\\*\\*${verb}\\*\\* — \`delegate \\{role: "consult", cwd: <project root>, engine: `));
+  }
+  assert.match(text, /Attach the diff under review/);
   assert.match(text, /git diff <base>\.\.\.HEAD/);
   assert.match(text, /findings by severity, each with `file:line`/);
-  assert.match(text, /\*\*critique\*\* — name the plan or design file/);
+  assert.match(text, /Name the plan or design file/);
   assert.match(text, /adversarial/);
   assert.match(text, /each is one `delegate` that names its own engine/);
 });
@@ -268,6 +277,45 @@ test("the solo loop is the short one and hands a one-shot that wrote to the laun
   assert.match(text, /launcher/, "the merge policy belongs to the launcher now, for every mode");
   assert.doesNotMatch(text, /run_command \{which: "test", where: "root", slug\}/, "one copy of the merge policy, and it is the launcher's");
   assert.doesNotMatch(text, /\*\*critique\*\*/, "and one copy of the verbs");
+});
+
+/** Every `delegate {…}` call a document spells, as one line each. */
+function delegateCalls(text: string): string[] {
+  return [...flat(text).matchAll(/`(delegate \{[^`]*)`/g)].map(([, call]) => call);
+}
+
+test("every delegate call the launcher and the loops spell names the keys the schema requires", () => {
+  // `role`, `brief` and `cwd` are required on every call, resume included, and a role
+  // that works in a worktree is refused without the branch it is on
+  // (`src/server.ts#projectTools`, `src/delegate.ts#delegate`). A call spelled without
+  // them is a step that cannot run.
+  const documents: Array<[string, string]> = [
+    ["the launcher", launcher()],
+    ...["solo", "dev-team", "dev-team-engine"].map((name) => [`the ${name} loop`, loop(name)] as [string, string]),
+  ];
+  let checked = 0;
+  for (const [where, text] of documents) {
+    for (const call of delegateCalls(text)) {
+      checked++;
+      assert.match(call, /\brole\b/, `${where} spells a delegate call with no role: ${call}`);
+      assert.match(call, /\bcwd\b/, `${where} spells a delegate call with no cwd: ${call}`);
+      if (/cwd: <worktree path>/.test(call)) {
+        assert.match(call, /\bbranch\b/, `${where} spells a worktree delegation with no branch: ${call}`);
+      }
+    }
+  }
+  assert.ok(checked >= 6, `only ${checked} delegate calls found; the loops spell more than that`);
+});
+
+test("the two dev-team modes carry the same role prompts, byte for byte", () => {
+  const modes = builtInModesDir();
+  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
+    assert.equal(
+      fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
+      fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
+      `${key}: the engine-placed team's specialists are the host-placed team's; one edit changes both files or neither`,
+    );
+  }
 });
 
 test("the three built-in modes validate, and each serves the loop file its own directory holds", () => {
