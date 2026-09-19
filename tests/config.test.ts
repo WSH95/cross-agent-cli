@@ -136,6 +136,7 @@ test("a role may bind the prompt its specialist is launched with", (t) => {
   assert.equal("prompt" in config.loadConfig(root).roles.planner, false);
 });
 
+// @anchor sandboxProfileEngine
 test("a role's sandbox profile must be one its own engine accepts", (t) => {
   const root = project(t);
   // Nothing checked the pair before: every engine accepted every profile, so
@@ -336,6 +337,7 @@ test("a config that names where a role works, rather than binding it, is refused
   }
 });
 
+// @anchor loadconfigwithmodeBindsEvery
 test("loadConfigWithMode binds every role the mode declares and refuses every key it does not", (t) => {
   const root = project(t);
   const modes = modesRoot(t);
@@ -398,6 +400,7 @@ test("an override may not make a root role writable, and must be a profile its e
   });
 });
 
+// @anchor grokBoundLead
 test("an engine-placed mode whose lead is bound to grok is refused at load", (t) => {
   const root = project(t);
   const modes = modesRoot(t);
@@ -418,6 +421,7 @@ test("an engine-placed mode whose lead is bound to grok is refused at load", (t)
   assert.equal(config.loadConfigWithMode(root, modes).config.roles.planner.engine, "grok");
 });
 
+// @anchor effectiveMaxDepthLower
 test("effectiveMaxDepth comes from the mode's placement and config may only lower it", (t) => {
   const root = project(t);
   const modes = modesRoot(t);

@@ -174,6 +174,7 @@ test("a slug that is not a file name of its own is refused", (t) => {
   assert.equal(fs.existsSync(directory(root)) && fs.readdirSync(directory(root)).length > 0, false);
 });
 
+// @anchor damagedJournalNamed
 test("a damaged journal is named rather than silently replaced", (t) => {
   const root = project(t);
   appendStep(root, "eta", "worktree-created", { at: 1, branch: "task/eta", defaultBranch: "main" });

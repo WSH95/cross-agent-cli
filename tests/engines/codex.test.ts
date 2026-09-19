@@ -557,6 +557,7 @@ async function settled(handle: ReturnType<typeof spawnEngine>, which: string, ms
   }
 }
 
+// @anchor codexI2Real
 test("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", async (t) => {
   if (!realCodex) return t.skip("set CROSS_AGENT_REAL_CODEX=1 to run this against the real binary");
   if (commandPath(codexBinary, process.env) === null) return t.skip(`${codexBinary} does not resolve on PATH`);

@@ -416,6 +416,7 @@ test("a call aborted before it polls answers cancelled and reconciles nothing", 
   assert.equal(p.record(record.id).status, "launching", "no pass ran for a caller that had gone");
 });
 
+// @anchor lockWaitZero
 test("a record lock this project will not wait for refuses both readers by that rule", async (t) => {
   // Every waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation
   // (design section 2); zero is a project that refuses at once.

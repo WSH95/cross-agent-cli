@@ -209,6 +209,7 @@ function asker(exchange: string) {
   };
 }
 
+// @anchor specialistOwnServer
 test("a specialist's own server refuses delegate by name, with the task its ancestry matched", async (t) => {
   const { project, exchange } = workspace(t);
   // A server starts against a project that has a config, so this one is the smallest that
@@ -322,6 +323,7 @@ test("a lead holds its row exactly while its record is running or stalled, re-re
   assert.deepEqual(await ask(options), byAncestry("specialist", "cancelled"));
 });
 
+// @anchor nearestEngineDecides
 test("the nearest engine decides: a server under a specialist under a lead is a specialist, even in the lead's environment", async (t) => {
   const { project, exchange } = workspace(t);
   const lead = task(project, "lead");
@@ -336,6 +338,7 @@ test("the nearest engine decides: a server under a specialist under a lead is a 
     { row: "specialist", reason: `specialist by ancestry: task ${specialist.id} (implementer, running)`, taskId: specialist.id, depth: 1 });
 });
 
+// @anchor specialistHoldsNoAuthority
 test("a specialist engine holding no authority never hands the lead's row above it to its server", async (t) => {
   const { project, exchange } = workspace(t);
   const lead = task(project, "lead");

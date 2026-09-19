@@ -239,6 +239,7 @@ test("git_mutate refuses a workspace an unsettled writable task is holding", asy
   assert.equal(await git(root, "rev-list", "--count", "task/held"), "2");
 });
 
+// @anchor recordCannotBeRead
 test("git_mutate refuses every workspace while a task record cannot be read", async (t) => {
   const { root, add } = await repository(t);
   await add("unknown");
@@ -469,6 +470,7 @@ test("git_mutate refuses before it runs anything if the step could not be record
   assert.equal(await git(root, "rev-list", "--count", "task/recordable"), "2", "the damaged journal stopped the commit");
 });
 
+// @anchor failingGitCommand
 test("a git command that fails returns its exit code and output, and journals nothing", async (t) => {
   const { root, add } = await repository(t);
   await add("failing");

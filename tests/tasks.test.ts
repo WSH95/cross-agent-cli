@@ -239,6 +239,7 @@ test("result is the final message in full, and a task still running has only its
   assert.deepEqual(result(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
 });
 
+// @anchor listTasksReconciles
 test("list_tasks reconciles first: an orphan is settled, an unreadable record is named", async (t) => {
   const p = await projectWithRoles(t);
   const orphan = await seed(p.root, { role: "planner", cwd: p.root, status: "orphaned", identity: true });

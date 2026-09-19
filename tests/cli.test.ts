@@ -162,6 +162,7 @@ test("a mode this build does not have is an error, and a command line it cannot 
   }
 });
 
+// @anchor shebangEntryPoint
 test("the packaged entry point runs from its own shebang, as the bin field names it", async (t) => {
   const root = scratch(t);
   const pkg = JSON.parse(fs.readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")) as {

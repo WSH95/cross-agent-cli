@@ -416,15 +416,11 @@ pending), Codex and Grok with their read-only profiles.
 <!-- @anchor p9Mounts -->
 | Engine | mount mechanism | child's MCP tools | user's own servers visible? | instruction delivery | instruction honoured? |
 |---|---|---|---|---|---|
-<!-- @anchor p9Claude -->
 | Claude | `--strict-mcp-config --mcp-config <file>` | `mcp__cross-agent__list_roles`, `mcp__cross-agent__verify_worktree`; init line reports `mcp_servers: [{"name":"cross-agent","status":"connected"}]` | no — exactly one server | `--append-system-prompt-file <role.md>` | yes, every assistant message begins `ROLE-OK` |
 | Claude, control | `--strict-mcp-config`, no config (today's specialist spawn) | none; `mcp_servers: []` | no | `--append-system-prompt-file` | yes |
-<!-- @anchor p9ClaudeInherited -->
 | Claude, inheritance | `--mcp-config <file>` with `--strict-mcp-config` **omitted** | the file's server **plus** five of the user's own | yes: `plugin:context7:context7`, `claude-design`, and three `claude.ai` connectors `needs-auth` | `--append-system-prompt-file` | yes |
-<!-- @anchor p9Codex -->
 | Codex | `--ignore-user-config -c mcp_servers.cross-agent.command="node" -c mcp_servers.cross-agent.args=["<repo>/src/server.ts"] -c mcp_servers.cross-agent.default_tools_approval_mode="approve"` | `mcp__cross_agent__list_roles`, `mcp__cross_agent__verify_worktree` (hyphen folded to `_` in the tool name) **plus** Codex's built-in `codex_apps`, 38 tools in all | the user's own, no; `codex_apps`, always | role text prepended to the prompt, and separately `-c model_instructions_file="<role.md>"` | yes for both |
 | Codex, control | `--ignore-user-config` alone | 36 tools, every one `mcp__codex_apps__…` | no | `-c model_instructions_file="<role.md>"` only | yes |
-<!-- @anchor p9GrokUser -->
 | Grok, user scope | `grok mcp add cross-agent --scope user -- node <repo>/src/server.ts`, then the ordinary spawn | `cross-agent__list_roles`, `cross-agent__verify_worktree`, reached through the built-in `use_tool` dispatcher | **yes** — `probe-other__*` (a second registration added to prove the point) and `context7__*` (a Grok plugin, not in `grok mcp list`) came too | `--rules "<role text>"` | yes for the final message; the interstitial narration does not carry it |
 | Grok, project scope | `grok mcp add cross-agent --scope project` (writes `<cwd>/.grok/config.toml`) | **no cross-agent tool at all**; the run's `available_commands` line lists only `context7__resolve-library-id` and `context7__query-docs`, and the child named `context7` as connected and `claude-design` as failed to connect, auth required | yes, those two | `--rules` | yes |
 
@@ -736,6 +732,7 @@ operator mounts it at **user scope** (`grok mcp add --scope user`). Trusting
 more folders, or mounting at user scope, is the operator's decision and not a
 probe's, so this run stopped here.
 
+<!-- @anchor i1Ancestry -->
 ### (ii) Authority by ancestry
 
 `tools/probe.mjs --track` builds the launch spec `delegate` builds — a non-lead
@@ -792,6 +789,7 @@ project and denied nothing.
 The Codex row is not run (paused); its command is the same line with
 `--engine codex --model gpt-5.6-luna`.
 
+<!-- @anchor i1Inherited -->
 Two things this run recorded that no unit test covers. The specialist's session
 ran **this machine's own `SessionStart` hooks** and listed the operator's slash
 commands and skills: `--strict-mcp-config` excludes MCP servers, not the rest of
@@ -804,6 +802,7 @@ named nothing. Fixed in the concerns round (T6-R0-3): the list is built from
 this repository's root (`src/delegate.ts#repositoryRoot`), the base
 `adapterModule` already used.
 
+<!-- @anchor i2 -->
 ## I2: host × engine isolation (2026-09-19)
 
 From the same host, one session, two `delegate {worktree: true}` calls of
@@ -826,6 +825,7 @@ One deviation in the run: the Grok task was waited on with `timeout_seconds:
 300` rather than the 600 the brief named — the host's own choice, and the task
 settled at 116 s, so nothing turned on it.
 
+<!-- @anchor i2UnderFix -->
 **The Claude row again, under the containment fix (2026-09-19, T6-R1-21).** The
 row above ran at `744c767`, before `protectedPaths` existed: its spec carries
 none, and its settings named only a writable root. This run is the shipped
@@ -848,7 +848,9 @@ engine argv has --strict-mcp-config true | deny rules 12
 ```
 
 Task `98330b13…`, 58 s, `done`. Nine steps, the eight of the row above plus the
-one the pre-fix exposure was worst about:
+one the pre-fix exposure was worst about. The verdict, the exit code and the
+error text on each line are the specialist's own; the words after them are this
+document's note of what the step ran:
 
 ```
 STEP 1 ALLOWED 0    in-worktree edit
@@ -868,7 +870,7 @@ I2 for the configuration that ships.
 The Codex column is not run: Codex is paused by the user (2026-09-18). When the
 pause lifts it is the same call with `"engine": "codex"`, and its network row is
 a **failure** if it succeeds, because that denial is loop-guard layer 3; the
-run of `tests/engines/codex.test.ts:544` behind `CROSS_AGENT_REAL_CODEX=1`
+run of `tests/engines/codex.test.ts#codexI2Real` behind `CROSS_AGENT_REAL_CODEX=1`
 belongs to the same run.
 
 The pointer rewrite is what design section 4 was built for, and the two calls
@@ -902,6 +904,7 @@ ten minutes, as the launcher's table says. `cancel` then settled the task
 of I2's last line; Codex's `tool_timeout_sec` and Grok's budget are still
 unmeasured.
 
+<!-- @anchor e1 -->
 ## E1: one `dev-team` task end to end under a Claude Code host (2026-09-19)
 
 The host of I1, one prompt: the launcher skill, then the loop `describe_mode`
@@ -966,6 +969,7 @@ brief. Its record carries `resumedFrom` and its spec the original's
 `resumeSessionId`, with the same role, cwd, branch and sandbox.
 
 
+<!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
 Read from `--help` on this machine, with the CLI version, rather than from
@@ -973,6 +977,7 @@ memory. These are the flags that design section 3's spawn lines depend on and
 that no earlier probe exercised; P8, P9 and P10 above are the runs that used
 them.
 
+<!-- @anchor cliGrok -->
 - **Grok Build 1.0.13** (`grok --help`). `--output-format <OUTPUT_FORMAT>`,
   "Output format for headless mode", possible values `plain`, `json`,
   `streaming-json: NDJSON: one ACP session update per line, the agent's native
@@ -1000,6 +1005,7 @@ them.
   .grok/sandbox.toml" before doing anything else, and `grok inspect` does not
   list them. The adapter's map names `workspace`, `read-only`, `strict` and
   `off`; P2 ran the first two, and no run has exercised `strict` or `off`.
+<!-- @anchor cliClaude -->
 - **Claude Code 2.1.266** (`claude --help`). `--mcp-config <configs...>`, "Load
   MCP servers from JSON files or strings (space-separated)";
   `--strict-mcp-config`, "Only use MCP servers from `--mcp-config`, ignoring
@@ -1011,6 +1017,7 @@ them.
   (P9). `--effort <level>`, "Effort level for the current session", read on
   this machine during T7; it is Claude's counterpart of Grok's
   `--reasoning-effort` and no run has exercised it.
+<!-- @anchor cliCodex -->
 - **Codex 0.153.4** (`codex exec --help`, `codex exec resume --help`). `codex
   exec` takes `-c/--config <key=value>`, `-m/--model`, `-C/--cd <DIR>`,
   `-s/--sandbox <SANDBOX_MODE>`, `--add-dir`, `--json`,
@@ -1038,7 +1045,7 @@ them.
   *also* given as an argument, and `-` is not one. This is a `--help` reading
   of 0.153.4, not a run; the run that confirms a child behaves as the help says
   is **I2**'s own test, written and guarded rather than run
-  (`tests/engines/codex.test.ts:544`).
+  (`tests/engines/codex.test.ts#codexI2Real`).
 
 ## Native output samples (2026-09-07)
 

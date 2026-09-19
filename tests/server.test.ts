@@ -486,6 +486,7 @@ test("ping is answered while a slow tool call is pending", async () => {
   assert.equal(((slow.result as Json).content as Json[])[0].text, "slow done");
 });
 
+// @anchor cancelledEndsWait
 test("notifications/cancelled ends the wait it names within 100ms, and the reply is still sent", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -528,6 +529,7 @@ test("notifications/cancelled ends the wait it names within 100ms, and the reply
   });
   assert.ok(typeof elapsedSeconds === "number" && elapsedSeconds >= 0 && elapsedSeconds < 30, `elapsed ${elapsedSeconds}`);
 });
+// @anchor cancellationSharingChunk
 
 test("a cancellation sharing a chunk with the call it names is still honoured", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });
@@ -556,6 +558,7 @@ test("a cancellation sharing a chunk with the call it names is still honoured", 
   assert.equal(answered.status, "launching");
 });
 
+// @anchor specialistRowCannot
 test("the specialist row cannot delegate, wait or cancel, and is refused by this server's own name", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "codex" } } });
   t.after(() => rm(root, { recursive: true, force: true }));

@@ -510,6 +510,7 @@ test("claude declares no finish: its output is a line stream, not one document a
   assert.equal(Object.hasOwn(claude, "finish"), false);
 });
 
+// @anchor fakeClaudeRun
 test("a fake claude run through the pipeline yields the session, the activity and the final text", async (t) => {
   const dirs = layout(t);
   const record = path.join(dirs.task, "record.json");
@@ -575,6 +576,7 @@ test("a failed run settles as an error carrying the engine's own message", async
   assert.equal(result.finalMessage, "fake failure");
 });
 
+// @anchor sandboxFailureStderr
 test("a sandbox failure on stderr fails a run the engine itself calls a success (P1)", async (t) => {
   const dirs = layout(t);
   const warning = "Sandbox disabled: sandbox is enabled but dependencies are missing: socat not installed. Commands will run WITHOUT sandboxing.";

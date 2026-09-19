@@ -436,6 +436,7 @@ test("no delegation starts a grok engine as the mode's engine-placed lead, whoev
   })));
 });
 
+// @anchor configEditedAfter
 test("a config edited after the server read it is refused at the launch boundary, by field and rule", async (t) => {
   const p = await projectWithRoles(t);
   const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
@@ -1022,6 +1023,7 @@ test("the engine a request overrides is the engine that runs, and the record say
   const bare = await seed(p.root, { role: "claudish", cwd: p.root, status: "failed" });
   assert.equal(bare.model, undefined);
 });
+// @anchor profileSpecialistRuns
 
 test("the profile a specialist runs under is the mode's default unless config overrides it", async (t) => {
   const p = await projectWithRoles(t);
