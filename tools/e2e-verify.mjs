@@ -9,7 +9,8 @@
 //       [--slug <journal slug>] [--branch-pattern 'task/*']
 //       [--test-command <command>] [--since <ISO date or task id>]
 //
-// `--slug` names the journal to read; with none, every journal in the project is read.
+// `--slug` names the journal to judge; with none, the newest journal that opened a
+// worktree is judged and the others are named in that row.
 // `--since` narrows the records to one run: a task id counts every record created at or
 // after that record's own `createdAt`. The test command defaults to the project's
 // `.cross-agent/config.json` (`project.testCommand`).
@@ -149,28 +150,40 @@ if (journals.length === 0) {
 // to record. Until then a Codex log carrying any other item type is answered `?` rather
 // than guessed at, and one carrying only those two is judged on its commands.
 const codexItems = new Set(["agent_message", "command_execution"]);
-// Every non-item top-level `type` the three engines' recorded transcripts hold: Claude's
-// stream-json and Grok's streaming-messages-json (`system`, `assistant`, `user`, `result`,
-// `rate_limit_event`, and a failed Grok run's `error`), and Codex's thread and turn lines.
-// The list is closed on purpose — "any string type is noise" would let a whole unarchived
-// shape pass on the strength of the lines around it, which is the opposite of the rule
-// this tool is built on.
+// Every non-item top-level `type` a recorded transcript holds, and where it was recorded:
+// `system`, `assistant`, `user` and `result` in Claude's stream-json and Grok's
+// streaming-messages-json (`docs/probes.md`'s native samples, and every archived task log
+// of E1 and I1); `rate_limit_event` in those archived Claude logs, which the samples in
+// `docs/probes.md` are too short to show; `error` in a failed Grok run (P8); and
+// `thread.started`, `turn.started`, `turn.completed` and `turn.failed` in Codex's
+// `--json` (`docs/probes.md`'s Codex sample, `src/engines/codex.ts#codex`). The list is
+// closed on purpose — "any string type is noise" would let a whole unarchived shape pass
+// on the strength of the lines around it, which is the opposite of the rule this tool is
+// built on.
 const knownEvents = new Set([
   "system", "assistant", "user", "result", "rate_limit_event", "error",
   "thread.started", "turn.started", "turn.completed", "turn.failed",
 ]);
 // What counts as a launch is exactly what the deny list denies (`src/guard.ts#denyTargets`):
-// the command **word** `claude`, `codex`, `grok` or `cross-agent`, bare or path-qualified,
-// and `node <path>/src/server.ts` or `<path>/src/cli.ts`. A command word is what opens a
-// command — the start of the line, or what follows a separator or an opening quote, since
-// Codex wraps everything in `/bin/bash -lc '…'` (P9, P10) and the engine's name then sits
-// behind a quote rather than behind whitespace. A path that merely appears as an
-// **argument** is not a launch: `cat src/server.ts` is a specialist reading this
+// the command **word** `claude`, `codex`, `grok`, `cross-agent` or any binary this
+// project configured under `engines.<e>.bin`, bare or path-qualified; and `node` followed
+// by a path ending in `src/server.ts` or `src/cli.ts`, relative or absolute, which is how
+// AGENTS.md itself spells running them. A command word is what **opens** a command — the
+// start of the line, or what follows a separator or an opening quote, since Codex wraps
+// everything in `/bin/bash -lc '…'` (P9, P10) and the engine's name then sits behind a
+// quote. The opener is never optional: without it `not-claude`, `FOO=claude`, `ls
+// ~/.claude` and `rm -rf .grok` would all read as launches. A path that merely appears as
+// an argument is not one either: `cat src/server.ts` is a specialist reading this
 // repository, which is what a reviewer does.
-const OPENS = "(?:^|[|&;`(]|&&|\\|\\||[\\s]*['\"]?)";
+const configuredBins = Object.values(config.engines ?? {})
+  .map((engine) => engine?.bin)
+  .filter((bin) => typeof bin === "string" && bin !== "");
+const escape = (value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const OPENS = "(?:^|[|&;`(\\s'\"])";
+const NAMES = ["claude", "codex", "grok", "cross-agent", ...configuredBins].map(escape).join("|");
 const launcher = new RegExp(
-  `${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?(claude|codex|grok|cross-agent)(?=[\\s'"]|$)`
-  + `|${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?node\\s+['"]?[^\\s'"]*\\/src\\/(?:server|cli)\\.(?:ts|js)(?=[\\s'"]|$)`,
+  `${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?(?:${NAMES})(?=[\\s'"]|$)`
+  + `|${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?node\\s+['"]?(?:[^\\s'"]*\\/)?src\\/(?:server|cli)\\.(?:ts|js)(?=[\\s'"]|$)`,
 );
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];

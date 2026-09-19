@@ -3066,7 +3066,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the resolved row is refused by name with the reason
   (`tests/server.test.ts#callToolOutside`), the entry point refuses by the row it
   resolves for itself (`#entryPointResolves`), and both the list and the refusal follow
-  the row from one request to the next (`#toolsListOffers`, `#rowResolvedAgain`); a specialist's `delegate`, `wait` and `cancel` are refused by
+  the row from one request to the next (`#rowResolvedAgain`); a specialist's `delegate`, `wait` and `cancel` are refused by
   this server's own name with the resolver's reason, and its read tools answer
   (`#specialistRowCannot`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
   the nearest configured directory, a linked worktree resolving to its main
@@ -3131,9 +3131,10 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   never the specialist (`tests/server.test.ts#worktreeProviderTools`); `git_mutate` defaults its
   workspace and branch from that mode's own policy (`#gitMutateTakes`); `describe_mode`
   returns the loop and every role prompt byte for byte with nothing written
-  anywhere (`tests/modes.test.ts#describemodeReturnsLoop`), answers every row
-  (`tests/server.test.ts#describeModeServes`), and refuses with a reason when the config
-  names a mode that is not there (`tests/modes.test.ts#describemodeAnswersMissing`). The mode loader
+  anywhere (`tests/modes.test.ts#describemodeReturnsLoop`), answers every row and refuses
+  with a reason when the config names a mode that is not there
+  (`tests/server.test.ts#describeModeServes`), and answers a name it was given directly
+  the same way rather than throwing (`tests/modes.test.ts#describemodeAnswersMissing`). The mode loader
   refuses each of its own rules by field (`tests/modes.test.ts#loadmodeRefusesMode`, `#loadmodeRefusesDocument`,
   `#loadmodeRefusesPrompt`, `#worktreeDirectoryProject`, `#enginePlacedLead`, `#loopFileContained`, `#promptFileDirectory`, `#modeDirectorySymlink`), the three built-in modes
   validate (`#builtInModesValidate`), and the two dev-team modes' role prompts are pinned equal

@@ -100,6 +100,9 @@ async function project(
     // A command that runs and exits zero, so the suite row is a pass and the exit status
     // is about the rows this file is testing.
     mode: "dev-team", project: { defaultBranch: "main", testCommand: "true" }, limits: { maxDepth: 1 },
+    // A configured binary is a deny target of its own (`src/guard.ts#denyTargets`), so
+    // the scan has to know this project's.
+    engines: { claude: { bin: "/opt/wrapper" } },
   }));
   await writeFile(
     path.join(root, ".cross-agent", "journal", "slug.json"),
@@ -209,8 +212,13 @@ test("a shell command that starts an engine is an offence through a shell's own 
     { codex: codexLog("/bin/bash -lc 'grok -p hello'") },
     { codex: codexLog(`/bin/bash -lc 'echo "DEPTH=\${CROSS_AGENT_DEPTH:-NONE}"; claude --version'`) },
     { grok: grokBash("codex exec 'do the work'") },
-    // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`).
+    // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`),
+    // and AGENTS.md documents both as relative paths from the repository root.
     { claude: claudeLog("node /home/op/agent-team-cli/src/cli.ts init --mode solo") },
+    { claude: claudeLog("node src/cli.ts init --mode solo") },
+    { claude: claudeLog("node ./src/server.ts") },
+    // And the binary this project configured, which is the fourth kind of deny target.
+    { claude: claudeLog("/opt/wrapper -p hello") },
   ]) {
     const root = await project(t, logs);
     const { code, out } = await run(root);
@@ -242,6 +250,14 @@ test("reading a file that happens to be named like one of them is not a launch",
     "git show HEAD:src/server.ts",
     "rg --files-with-matches server.ts src",
     "python3 -m unittest discover -s tests -t .",
+    // A name that merely ends in an engine's is not that engine, and a dotfile named
+    // after one is a directory to look at, not a command to run.
+    "not-claude --version",
+    "myclaude -p hello",
+    "FOO=claude python3 run.py",
+    "ls ~/.claude",
+    "rm -rf .grok",
+    "echo pre-grok",
   ]) {
     const root = await project(t, { claude: claudeLog(command) });
     const { code, out } = await run(root);
