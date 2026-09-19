@@ -111,19 +111,42 @@ test("the returned output is the tail, capped at 64 KB", async (t) => {
 });
 
 test("a run past its timeout is refused, and the process group it started is killed", async (t) => {
-  const { root } = await repository(t);
+  const { root, env } = await repository(t);
   const file = path.join(root, "grandchild.pid");
   // The shell backgrounds a child of its own: killing the process leader alone would
   // leave this one running, holding the worktree and the machine.
-  configure(root, { testCommand: `sleep 60 & echo $! > ${JSON.stringify(file)}; sleep 60` });
+  configure(root, { testCommand: `echo the suite started; sleep 60 & echo $! > ${JSON.stringify(file)}; sleep 60` });
 
   const started = Date.now();
-  const reason = refusal(await runCommand(root, { which: "test", where: "root", timeoutSeconds: 1 }));
-  assert.match(reason, /1 second|timeout|killed/i);
+  const timedOut = await runCommand(root, { which: "test", where: "root", timeoutSeconds: 1 }, { env });
+  const reason = refusal(timedOut);
+  assert.match(reason, /1s|timeout|killed/i);
+  // The last of what it printed is exactly what a lead needs to see when a suite hangs.
+  assert.match((timedOut as { tail?: string }).tail ?? "", /the suite started/);
   assert.ok(Date.now() - started < 30_000, "the refusal did not wait for the command");
   const pid = Number(fs.readFileSync(file, "utf8").trim());
   assert.ok(Number.isSafeInteger(pid) && pid > 1, `the command recorded a pid: ${pid}`);
   await poll(() => proc(pid), (stat) => stat === null || stat.state === "Z");
+});
+
+test("a timeout above the timer's own bound is refused rather than silently collapsing", async (t) => {
+  const { root } = await repository(t, { testCommand: "echo the suite ran" });
+  // Node's timer takes a 32-bit delay: 2^31 ms and above fire immediately, so a lead
+  // asking for a month would get a suite killed on the spot.
+  for (const timeoutSeconds of [2_147_484, 1e12, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.match(refusal(await runCommand(root, { which: "test", where: "root", timeoutSeconds })), /timeout_seconds/, String(timeoutSeconds));
+  }
+  accepted(await runCommand(root, { which: "test", where: "root", timeoutSeconds: 2_147_483 }));
+});
+
+test("the tail is cut on a character boundary, never inside one", async (t) => {
+  // 90 000 bytes of a three-byte character: the 64 KB cut cannot land on a boundary, and
+  // a byte-sliced tail would open with a replacement character.
+  const { root } = await repository(t, { testCommand: "printf '\u221a%.0s' $(seq 1 30000)" });
+  const tail = accepted(await runCommand(root, { which: "test", where: "root" })).tail;
+  assert.ok(tail.length > 20_000, `tail is ${tail.length} characters`);
+  assert.doesNotMatch(tail, /\uFFFD/);
+  assert.equal(tail.replace(/\u221a/g, ""), "");
 });
 
 test("a worktree where is verified as git_mutate verifies it, with the branch from its journal", async (t) => {
@@ -189,6 +212,8 @@ test("tests-passed is journaled for a passing root run, once, and only after the
   const passed = accepted(await runCommand(root, { which: "test", where: "root", slug: "alpha", timeoutSeconds: 60 }));
   assert.equal(passed.exitCode, 0);
   assert.equal(passed.journal!.step, "tests-passed");
+  // What the suite ran on, read before it started: the journal says which commit passed.
+  assert.equal(passed.journal!.defaultSha, await git(root, "rev-parse", "main"));
   assert.deepEqual(readJournal(root, "alpha")!.steps.map((step) => step.step),
     ["worktree-created", "committed", "merged", "tests-passed"]);
   // Once: the journal is a record of what happened, not a counter of runs.
@@ -253,10 +278,18 @@ test("the tests-passed step is written under git.lock, and the suite runs outsid
 test("the command runs in the child environment a specialist gets, carrying no task", async (t) => {
   const { root, env } = await repository(t, {
     testCommand: "printenv CROSS_AGENT_DEPTH; printenv CROSS_AGENT_PROJECT; printenv CROSS_AGENT_TASK;"
-      + " printenv CROSS_AGENT_LINEAGE; printenv CLAUDECODE; printenv MCP_SERVER_THING; printenv ANTHROPIC_API_KEY; echo done",
+      + " printenv CROSS_AGENT_LINEAGE; printenv CLAUDECODE; printenv MCP_SERVER_THING; printenv ANTHROPIC_API_KEY;"
+      + " printenv GIT_DIR; printenv GIT_WORK_TREE; printenv GIT_INDEX_FILE; printenv GIT_CONFIG_GLOBAL;"
+      + " printenv GIT_CEILING_DIRECTORIES; printenv GIT_COMMON_DIR; echo done",
   });
   const result = accepted(await runCommand(root, { which: "test", where: "root" }, {
-    env: { ...env, CLAUDECODE: "1", MCP_SERVER_THING: "a host's", ANTHROPIC_API_KEY: "the operator's key", CROSS_AGENT_TASK: "T9" },
+    env: {
+      ...env, CLAUDECODE: "1", MCP_SERVER_THING: "a host's", ANTHROPIC_API_KEY: "the operator's key", CROSS_AGENT_TASK: "T9",
+      // What a server started from a git hook or `git rebase --exec` carries: a suite that
+      // runs git would be pointed at another repository, index or configuration by these.
+      GIT_DIR: "/elsewhere/.git", GIT_WORK_TREE: "/elsewhere", GIT_INDEX_FILE: "/elsewhere/index",
+      GIT_CONFIG_GLOBAL: "/elsewhere/config", GIT_CEILING_DIRECTORIES: "/", GIT_COMMON_DIR: "/elsewhere/.git",
+    },
     depth: 1,
   }));
   const lines = result.tail.split("\n").filter(Boolean);

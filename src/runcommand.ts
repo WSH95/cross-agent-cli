@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises";
 import { constants } from "node:os";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
+import { revision } from "./gitmutate.ts";
 import { repositoryAt, trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
@@ -42,7 +43,12 @@ export type RunCommandResult =
     /** The `tests-passed` step, when this run completed one. */
     journal?: JournalEntry;
   }
-  | { ok: false; reason: string };
+  | {
+    ok: false;
+    reason: string;
+    /** What a killed run had printed: the last thing a hanging suite said. */
+    tail?: string;
+  };
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -53,6 +59,9 @@ const selectors = ["test", "setup"] as const;
 // tool result into a lead's context.
 const tailBytes = 64 * 1024;
 const defaultTimeoutSeconds = 600;
+// A `setTimeout` delay is a 32-bit millisecond count: anything above this fires at once,
+// so a lead asking for a month would have its suite killed on the spot.
+export const maxTimeoutSeconds = Math.floor((2 ** 31 - 1) / 1000);
 
 /**
  * What the command's own process sees. It is the specialist child environment — the host
@@ -68,8 +77,20 @@ function commandEnv(
   const env = childEnv(parentEnv, depth, "", [], billing, projectRoot);
   delete env.CROSS_AGENT_TASK;
   delete env.CROSS_AGENT_LINEAGE;
+  // The variables `gitEnvironment` drops for git's own invocations, dropped here too: a
+  // suite that runs git — this project's does — would otherwise be pointed at another
+  // repository, index, object store or configuration by whatever the server inherited
+  // (`src/worktree.ts#gitEnvironment`, design section 4).
+  for (const name of Object.keys(env)) {
+    if (redirectingGit.includes(name) || name.startsWith("GIT_CONFIG_")) delete env[name];
+  }
   return env;
 }
+
+const redirectingGit = [
+  "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES", "GIT_COMMON_DIR",
+];
 
 interface Ran {
   exitCode: number;
@@ -110,7 +131,12 @@ async function shell(command: string, cwd: string, env: NodeJS.ProcessEnv, secon
       // shell would report for it — 137 for the SIGKILL this timeout sends.
       child.once("close", (code, signal) => resolve(code ?? 128 + (constants.signals[signal!] ?? 0)));
     });
-    const tail = Buffer.concat(chunks).subarray(Math.max(0, size - tailBytes)).toString("utf8");
+    const whole = Buffer.concat(chunks);
+    // The cut is by byte and the output is text: step over the continuation bytes of a
+    // character the cap landed inside, so a tail never opens with a replacement character.
+    let start = Math.max(0, size - tailBytes);
+    while (start < whole.length && (whole[start] & 0xc0) === 0x80) start += 1;
+    const tail = whole.subarray(start).toString("utf8");
     return timedOut ? { exitCode, tail, timedOut: true } : { exitCode, tail };
   } finally {
     clearTimeout(timer);
@@ -134,8 +160,8 @@ export async function runCommand(
     return { ok: false, reason: `run_command runs at "root" or in a verified worktree; where must name one` };
   }
   const seconds = request.timeoutSeconds ?? defaultTimeoutSeconds;
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return { ok: false, reason: `run_command's timeout_seconds must be a positive number of seconds, not ${seconds}` };
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > maxTimeoutSeconds) {
+    return { ok: false, reason: `run_command's timeout_seconds must be a positive number of seconds no greater than ${maxTimeoutSeconds}, not ${seconds}` };
   }
   const atRoot = where === "root";
   // A run journals only the root test run after a merge, so a slug is meaningful in two
@@ -194,9 +220,13 @@ export async function runCommand(
   // a run that could not be journaled is worth knowing about before it takes ten minutes.
   // The same judgement is made again under the lock, where it decides.
   const journals = atRoot && which === "test" && slug !== undefined;
+  let defaultSha: string | undefined;
   if (journals) {
     const fault = passedFault(slug!, journal, config.project.defaultBranch);
     if (fault !== null) return { ok: false, reason: fault };
+    // What the suite is about to run on, read before it starts: the step says which commit
+    // passed, and the branch may move while a long suite runs.
+    defaultSha = await revision(located.gitDir, located.workTree, config.project.defaultBranch);
   }
 
   const command = which === "test" ? config.project.testCommand : config.project.setupCommand;
@@ -213,7 +243,8 @@ export async function runCommand(
   if (ran.timedOut === true) {
     return {
       ok: false,
-      reason: `${which}Command ran longer than ${seconds}s in ${cwd}; its process group was killed, so there is no exit code to judge and no output to report`,
+      reason: `${which}Command ran longer than ${seconds}s in ${cwd}; its process group was killed, so there is no exit code to judge`,
+      tail: ran.tail,
     };
   }
   // A failing suite is an answer, not a refusal: it is where the repair path of section 7
@@ -238,7 +269,9 @@ export async function runCommand(
     const current = readJournal(projectRoot, slug!);
     const fault = passedFault(slug!, current, config.project.defaultBranch);
     if (fault !== null) return { ok: false, reason: fault };
-    const appended = appendStep(projectRoot, slug!, "tests-passed", { at: options.now ?? Date.now() });
+    const appended = appendStep(projectRoot, slug!, "tests-passed", {
+      at: options.now ?? Date.now(), ...(defaultSha === undefined ? {} : { defaultSha }),
+    });
     return { ok: true, exitCode: ran.exitCode, tail: ran.tail, journal: appended.steps[appended.steps.length - 1] };
   } catch (error) {
     return unwritten(message(error));

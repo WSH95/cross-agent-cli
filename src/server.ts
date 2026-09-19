@@ -12,7 +12,7 @@ import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
 import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
-import { runCommand } from "./runcommand.ts";
+import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
 import { builtInModesDir, declaresWorktreeProvider, describeMode, findRole } from "./modes.ts";
 import type { Mode } from "./modes.ts";
@@ -285,6 +285,8 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
           throw new RpcError(-32602, "verify_worktree requires a string path");
         }
         if (typeof args.branch !== "string") throw new RpcError(-32602, "verify_worktree requires a string branch");
+        const drift = driftFault(projectRoot, mode);
+        if (drift !== null) return text({ reason: drift });
         return text(await verifyWorktree(projectRoot, args.path, args.branch));
       },
     },
@@ -310,6 +312,8 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
           const value = optional(values, key, "string", "git_mutate");
           if (value !== undefined) request[key] = value as string;
         }
+        const drift = driftFault(projectRoot, mode);
+        if (drift !== null) return answer({ ok: false, reason: drift });
         return answer(await gitMutate(projectRoot, request, {
           waitSeconds: lockWaitSeconds(projectRoot),
           ...(mode.git === undefined ? {} : { dir: mode.git.worktreeDir, branchPattern: mode.git.branchPattern }),
@@ -359,8 +363,10 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
         if (slug !== undefined) request.slug = slug as string;
         const timeoutSeconds = optional(values, "timeout_seconds", "number", "run_command") as number | undefined;
         if (timeoutSeconds !== undefined) {
-          if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
-            throw new RpcError(-32602, `run_command's timeout_seconds must be a positive number of seconds, not ${timeoutSeconds}`);
+          // The same bound `runCommand` holds: a delay above it fires at once, and a lead
+          // asking for a month would have its suite killed on the spot.
+          if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > maxTimeoutSeconds) {
+            throw new RpcError(-32602, `run_command's timeout_seconds must be a positive number of seconds no greater than ${maxTimeoutSeconds}, not ${timeoutSeconds}`);
           }
           request.timeoutSeconds = timeoutSeconds;
         }

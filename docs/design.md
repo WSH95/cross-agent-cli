@@ -532,6 +532,11 @@ Today `projectTools` registers twelve of these (`src/server.ts#projectTools`):
 `verify_worktree`, `git_mutate`, `git_root` and `run_command` for those two rows
 **and only under a mode that declares the worktree provider**
 (`src/server.ts#worktreeTools`). The
+four worktree tools refuse on **mode drift** as `delegate` does at the launch
+boundary: which tools exist was decided when this server loaded its mode, so a
+config since pointed at another one is answered with a restart rather than
+served under a policy this server is not serving (`src/server.ts#driftFault`,
+`src/config.ts#modeDrift`, section 6). The
 server offers and refuses each by the row it resolves, and `delegate`, `wait`
 and `cancel` apply the lead's own half of the matrix inside themselves — a lead
 delegates no lead and no child of a cancelling parent, and waits on and cancels
@@ -1829,10 +1834,19 @@ whitelisted verb into an arbitrary one against an arbitrary repository
 argument resolves under the mode's own worktree directory, which itself resolves
 under the project root, with what exists of the path resolved through
 `realpath` first, so a symlinked worktree directory is the same escape as a `..`
-and is refused as one (`src/gitroot.ts#within`, `#resolveExisting`). A new task
-branch matches the mode's `branchPattern`, a `<base>` is the default branch and
-nothing else, and a branch a read names matches the pattern or is the default
-branch (`src/gitroot.ts#judge`, `#matchesPattern`).
+and is refused as one; a worktree this tool creates sits **directly** under that
+directory, the `<worktreeDir>/<slug>` shape `git_mutate` defaults `path` to,
+because a worktree nested inside another is a tree the outer one's own git would
+then see (`src/gitroot.ts#within`, `#resolveExisting`). What was judged is what
+runs: the directory positional git is given is the resolved path, not the token
+the caller wrote (`src/gitroot.ts#execute`). **Every** branch argument matches
+the mode's `branchPattern` — a new task branch, and the branch a merge or a
+delete names, whatever its journal records — or, for a read, is the default
+branch; a `<base>` is the default branch and nothing else
+(`src/gitroot.ts#judge`, `#matchesPattern`). `git_mutate` takes any branch its
+caller names, and its unbounded `args` reach the same ref store through the
+worktree's git-dir, so this whitelist bounds `git_root` and says nothing about
+what a worktree mutation can do.
 
 **The journal is selected by `slug`, never inferred**, and it is authoritative
 for its own branch and path (`src/gitroot.ts#journalFault`): `worktree add`
@@ -1906,12 +1920,17 @@ worktree path>, slug?, timeout_seconds?}` as the wire spells it,
 command string**, so no argument the lead composes ever reaches a shell. What runs is the
 project's configured `testCommand` or `setupCommand` through `sh -c`, with
 `cwd` the project root or the verified worktree, the returned output tail capped
-at 64 KB and the run at `timeout_seconds` (default 600)
-(`src/runcommand.ts#tailBytes`, `#defaultTimeoutSeconds`, `#shell`). The child
+at 64 KB and the run at `timeout_seconds` (default 600, and no more than
+`maxTimeoutSeconds`, because a `setTimeout` delay is a 32-bit millisecond count
+and anything above it fires at once) (`src/runcommand.ts#tailBytes`,
+`#defaultTimeoutSeconds`, `#maxTimeoutSeconds`, `#shell`). The cut is by byte
+and the output is text, so the tail steps over the continuation bytes of a
+character the cap landed inside (`src/runcommand.ts#shell`). The child
 is a **process-group leader** and the timeout kills the group, not the leader
 alone, because a suite that backgrounds a server would otherwise outlive the run
 that started it; a run killed that way is `ok: false` and carries no exit code
-to judge. It takes **no lock**: `git.lock` serializes git mutations against each
+to judge, but it still carries its `tail`: the last thing a hanging suite said
+is what a lead has to report. It takes **no lock**: `git.lock` serializes git mutations against each
 other, and holding it for a suite that may run for ten minutes would refuse
 every mutation in the project for as long as the tests took. A configured value of `"none"` is a no-op success, which is what this
 project's own `setupCommand` is, and it completes no step: `tests-passed` would
@@ -1919,11 +1938,15 @@ claim a suite passed that never ran.
 
 The child environment is the specialist's own — the host markers a nested
 engine must not inherit are gone, and so are the API keys under subscription
-billing — with one difference: the command is **not a task**, so it carries no
+billing — with two differences: the command is **not a task**, so it carries no
 `CROSS_AGENT_TASK` and no lineage, and the depth it carries is one below its
 caller's, which is what makes a `cross-agent` server started inside a test suite
-a specialist rather than the operator (`src/runcommand.ts#commandEnv`,
-`src/guard.ts#childEnv`, section 5). A worktree `where` is verified exactly as
+a specialist rather than the operator; and the variables that redirect git —
+the ones `gitEnvironment` drops — are dropped here too, because a suite that
+runs git would otherwise be pointed at another repository, index, object store
+or configuration by whatever the server inherited
+(`src/runcommand.ts#commandEnv`, `#redirectingGit`, `src/guard.ts#childEnv`,
+`src/worktree.ts#gitEnvironment`, section 5). A worktree `where` is verified exactly as
 `git_mutate` verifies it, with the branch taken from the journal of the `slug`
 the call names — **required** there, because a worktree may carry another
 slug's branch and the lead does not get to say which branch a directory is on —
@@ -2228,10 +2251,11 @@ on its behalf.
   (`src/journal.ts#JournalEntry`, `#appendStep`), and never touches the
   document-level field; `git_mutate` passes exactly that
   (`src/gitmutate.ts#mutate`), and so does `git_root`, where it is the same SHA
-  as that step's own `before` (`src/gitroot.ts#execute`). `tests-passed` is the
-  one step with no SHA at all, because `run_command` runs no git
-  (`src/runcommand.ts#runCommand`): the commit its suite ran on is the `merged`
-  step's `after`, and only `git_root` can have moved the branch since.
+  as that step's own `before` (`src/gitroot.ts#execute`). `tests-passed` records
+  the default branch's SHA read **before** its suite starts
+  (`src/runcommand.ts#runCommand`), which is the commit that passed: a long
+  suite runs while the branch can move, and a journal that only said "the tests
+  passed" would not say on what.
 
   The reason is the repair path. `defaultShaBeforeMerge` is a **revert target**,
   and a revert is only safe if it names the commit this task's merge sat on. A
@@ -2567,12 +2591,12 @@ registered by the mode that declares the worktree provider.
 |---|---|---|---|
 | 1 | Rename and design rewrite | `atc-s96.19` | **Done.** One pass; `npm test` gated the rename. History files untouched. |
 | 2 | Locks primitive, conditional update, lifecycle | `atc-s96.20` | **Done** (`45ee841..e426f35`). `src/locks.ts` (the `flock` child); `update` with `expect` and `{applied}`; B1 (reconcile on the group scan in `src/reconcile.ts`, the `cancelling` case), B2 (bounded drain, `truncated`), B3, B4, B5 (environ scan, runner lock, `launchToken` removed), A4-a (record validation); plus the two review rounds' rulings, which section 2 states with the line that implements each. The reconciliation **triggers** are not in this step: they belong to row 7. |
-| 3 | T6 remainder | `atc-s96.6` | **Done** (`58b90cf..69f3eac`, with its review's two fix rounds in `608c89a..53e5e45` and `ffbb84d`). `limits.lockWaitSeconds` and `lockWaitSeconds(root)` (`src/config.ts`); `gitLockName`/`spawnLockName` (`src/locks.ts`); `src/reservation.ts`; `src/journal.ts`; `src/gitmutate.ts` — the four steps of section 4 on the verified git-dir, under `spawn.lock` then `git.lock`, journaled; `gitEnvironment` for every git invocation (`src/worktree.ts`). The review's rulings are stated in sections 2, 4 and 7 with the line that implements each. Three beads came out of it: `atc-s96.33` (a pre-existing suite flake in `reconcile`/`process` under load, open), `.34` (`lockWaitSeconds` through `update`'s callers, closed) and `.35` (an inherited `GIT_DIR` makes `verify_worktree` refuse, closed). Not in this row: registering the two worktree tools (row 8), `delegate`'s reservation check and `spawn.lock` (row 7), `git_root` (row 11), `cross-agent git` (row 13). |
+| 3 | T6 remainder | `atc-s96.6` | **Done** (`58b90cf..69f3eac`, with its review's two fix rounds in `608c89a..53e5e45` and `ffbb84d`). `limits.lockWaitSeconds` and `lockWaitSeconds(root)` (`src/config.ts`); `gitLockName`/`spawnLockName` (`src/locks.ts`); `src/reservation.ts`; `src/journal.ts`; `src/gitmutate.ts` — the four steps of section 4 on the verified git-dir, under `spawn.lock` then `git.lock`, journaled; `gitEnvironment` for every git invocation (`src/worktree.ts`). The review's rulings are stated in sections 2, 4 and 7 with the line that implements each. Three beads came out of it: `atc-s96.33` (a pre-existing suite flake in `reconcile`/`process` under load, open), `.34` (`lockWaitSeconds` through `update`'s callers, closed) and `.35` (an inherited `GIT_DIR` makes `verify_worktree` refuse, closed). Not in this row: registering the two worktree tools (row 8), `delegate`'s reservation check and `spawn.lock` (row 7), `git_root` (Task 4b), `cross-agent git` (row 13). |
 | 4 | Probe harness flags, P8, P9, P10 | `atc-s96.21` | **Done** (397763c, 649b8e5, f40cadb). `--output-format`, `--mcp-config`/`-c`/`--rules` passthrough; the resume argv no longer pushes `-C` and `--sandbox` onto `exec resume`, which accepts neither. Outcomes in Phase 0 above: `streaming-messages-json` for T9, three `-c` settings for a Codex lead mount, no Grok lead, and a Codex resume that keeps neither cwd nor sandbox. |
 | 5 | Engine contract and profile validation | `atc-s96.22` | **Done** (`734e1e9..193b511`, with its review's fix round in `cfaf2b0`). A2; the adapter fields of section 3, `sandboxFor` as their one construction site, the built-in table in `src/engines/registry.ts`, `src/engines/binaries.ts`, and `EngineName` moved beside the contract; informed by P8 and P9. The three adapters carried the static half only at this point: `plan`, `parseLine` and `finalMessage` threw, and so did the `finish` stub each declared; row 6 replaced all four. |
 | 6 | Adapters | `atc-s96.7`, `.8`, `.9` | **Done.** `.7` T7 Claude (`d8bc672`, with its review's fix round in `90fd4d6`): `--append-system-prompt-file` for the role file (P9), `parseStderrLine` for P1's two sandbox failures, and the mount immediately after `--strict-mcp-config`. `.8` T8 Codex (`aa3e8bc`, fix round `1a20cc8`): **without an execpolicy rules file**, resuming with the process cwd and `-c sandbox_mode=` re-supplied (P10), and the prompt on stdin behind a `-` positional on both heads. `.9` T9 Grok (`992a830`): `--output-format streaming-messages-json`, `finalMessage` reading `result` or `errors` joined with newlines, the role prompt through `--rules` (P8, P9), no engine-placed lead, and `tests/fixtures/fake-engine.mjs`'s `grok` format rewritten to that shape with the old one kept as `grok-json`. Section 3 was refreshed against the built adapters in one pass afterwards (`atc-vao`). |
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registered with step 8, which built the mode loader it reads. |
-| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (row 11), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
+| 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | `skills/cross-agent/SKILL.md`; `modes/*/SKILL.md` and roles through the converter. |
 | 10 | Claude Code packaging | `atc-s96.13` | `.claude-plugin/plugin.json`, `.mcp.json`; I1 and I2; end-to-end run 1 under `placement: host`. |
 | 11 | Engine placement | `atc-s96.24` | **Split.** `git_root`, `run_command` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |

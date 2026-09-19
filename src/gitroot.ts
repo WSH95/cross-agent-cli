@@ -126,6 +126,8 @@ interface Call {
   verb: Verb;
   /** The positional arguments, in the order the verb's `tail` names them. */
   values: string[];
+  /** Where each of those sat in `args`, so a judged path can replace its own token. */
+  at: number[];
 }
 
 /** The one verb these arguments are, in the shape it is whitelisted in, or a refusal. */
@@ -135,16 +137,18 @@ function parse(args: string[]): Call | { reason: string } {
     return { reason: `git_root runs one whitelisted verb and ${JSON.stringify(args.join(" "))} is none of them; they are: ${forms}` };
   }
   const values: string[] = [];
-  for (const token of args.slice(verb.head.length)) {
+  const at: number[] = [];
+  for (const [offset, token] of args.slice(verb.head.length).entries()) {
     if (verb.options?.test(token) === true) continue;
     if (token.startsWith("-")) return { reason: `git_root runs ${JSON.stringify(verb.form)}; ${JSON.stringify(token)} is no part of it` };
     values.push(token);
+    at.push(verb.head.length + offset);
   }
   const least = verb.tail.length - (verb.optional ?? 0);
   if (values.length < least || values.length > verb.tail.length) {
     return { reason: `git_root runs ${JSON.stringify(verb.form)}; ${JSON.stringify(args.join(" "))} does not match it` };
   }
-  return { verb, values };
+  return { verb, values, at };
 }
 
 /** The mode's pattern with its one `*` standing for a non-empty name. */
@@ -188,8 +192,13 @@ async function resolveExisting(target: string): Promise<string> {
  * A directory argument, resolved and judged: it lies under the mode's own worktree
  * directory, which itself lies under the project root. Both checks are on resolved paths,
  * so a symlinked worktree directory is the same escape as a `..` and is refused as one.
+ * A worktree this tool creates must sit **directly** under that directory — the
+ * `<worktreeDir>/<slug>` shape `git_mutate` defaults `path` to — because a worktree
+ * nested inside another is a tree the outer one's own git would then see.
  */
-async function within(workTree: string, dir: string, given: string): Promise<string | { reason: string }> {
+async function within(
+  workTree: string, dir: string, given: string, directly: boolean,
+): Promise<string | { reason: string }> {
   const base = await resolveExisting(path.resolve(workTree, dir));
   if (!base.startsWith(workTree + path.sep)) {
     return { reason: `the worktree directory ${JSON.stringify(dir)} resolves to ${base}, outside the project at ${workTree}` };
@@ -197,6 +206,9 @@ async function within(workTree: string, dir: string, given: string): Promise<str
   const target = await resolveExisting(path.resolve(workTree, given));
   if (!target.startsWith(base + path.sep)) {
     return { reason: `git_root works under ${base}${path.sep}, the mode's own worktree directory; ${given} resolves to ${target}` };
+  }
+  if (directly && path.dirname(target) !== base) {
+    return { reason: `a worktree sits directly under ${base}${path.sep}, one directory per task; ${given} resolves to ${target}` };
   }
   return target;
 }
@@ -206,6 +218,8 @@ interface Parts {
   branch?: string;
   ref?: string;
   dir?: string;
+  /** Where the directory sat in `args`, so what runs is the path that was judged. */
+  dirAt?: number;
 }
 
 async function judge(
@@ -215,9 +229,10 @@ async function judge(
   for (const [index, value] of call.values.entries()) {
     const kind = call.verb.tail[index];
     if (kind === "dir") {
-      const resolved = await within(workTree, dir, value);
+      const resolved = await within(workTree, dir, value, call.verb.step === "worktree-created");
       if (typeof resolved !== "string") return resolved;
       parts.dir = resolved;
+      parts.dirAt = call.at[index];
       continue;
     }
     if (kind === "base") {
@@ -236,7 +251,16 @@ async function judge(
       }
       parts.branch = value;
     }
-    if (kind === "ref") parts.ref = value;
+    if (kind === "ref") {
+      // The journal decides **which** branch this verb may name; the pattern decides which
+      // branches this tool acts on at all. `git_mutate` takes any branch its caller names,
+      // so a journal can be bound to one outside the pattern, and the whitelist is what
+      // keeps `git_root` from merging or deleting it (design section 4).
+      if (!matchesPattern(value, pattern)) {
+        return { reason: `git_root acts on branches matching this mode's branch pattern ${JSON.stringify(pattern)}; ${JSON.stringify(value)} does not` };
+      }
+      parts.ref = value;
+    }
     if ((kind === "read-ref" || kind === "list-pattern") && !matchesPattern(value, pattern) && value !== defaultBranch) {
       return { reason: `git_root reads a branch matching this mode's branch pattern ${JSON.stringify(pattern)} or the default branch ${defaultBranch}; ${JSON.stringify(value)} is neither` };
     }
@@ -472,11 +496,16 @@ async function execute(
     branchHead = await revision(gitDir, workTree, parts.ref!);
   }
 
-  const ran = await run(gitDir, workTree, request.args);
+  // What the arguments were judged as is what git is given: the directory positional is
+  // the resolved path, not the token the caller wrote (design section 4).
+  const argv = parts.dir === undefined || parts.dirAt === undefined
+    ? request.args
+    : request.args.map((argument, index) => (index === parts.dirAt ? parts.dir! : argument));
+  const ran = await run(gitDir, workTree, argv);
   if (ran.exitCode !== 0) {
     return {
       ok: false,
-      reason: `git ${request.args.join(" ")} exited ${ran.exitCode} at ${workTree}`,
+      reason: `git ${argv.join(" ")} exited ${ran.exitCode} at ${workTree}`,
       exitCode: ran.exitCode, stdout: ran.stdout, stderr: ran.stderr,
     };
   }

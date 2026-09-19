@@ -300,6 +300,83 @@ test("git_root refuses a path outside the mode's worktree directory, a base that
   assert.equal(fs.existsSync(path.join(outside, "x")), false);
 });
 
+test("a worktree lives directly under the mode's worktree directory, never inside another", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "one");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/one", directory, "main"], slug: "one" }, { waitSeconds: 5 }));
+
+  // `<worktreeDir>/<slug>` is the shape `git_mutate` defaults `path` to, and a worktree
+  // inside another worktree is a tree the inner one's own git would then track.
+  for (const nested of [path.join(directory, "inner"), path.join(root, ".worktrees", "a", "b")]) {
+    assert.match(refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/two", nested, "main"], slug: "two" }, { waitSeconds: 5 })), /directly under/);
+    assert.equal(fs.existsSync(nested), false);
+  }
+  assert.equal(readJournal(root, "two"), null);
+});
+
+test("a branch git_root acts on matches the mode's pattern, whatever its journal records", async (t) => {
+  const { root } = await repository(t);
+  // `git_mutate` takes any branch its caller names, so a journal can be bound to one the
+  // mode's pattern does not describe; the whitelist bounds `git_root` alone.
+  const directory = path.join(root, ".worktrees", "outside");
+  await git(root, "worktree", "add", "-b", "feature/x", directory);
+  accepted(await gitMutate(root, { slug: "outside", path: directory, branch: "feature/x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.equal(readJournal(root, "outside")!.branch, "feature/x");
+
+  for (const args of [["merge", "--ff-only", "feature/x"], ["branch", "-d", "feature/x"]]) {
+    assert.match(refusal(await gitRoot(root, { args, slug: "outside" }, { waitSeconds: 5 })), /branch pattern/, args.join(" "));
+  }
+  assert.equal(await git(root, "rev-parse", "main"), await git(root, "rev-parse", "main"));
+  assert.match(await git(root, "branch", "--list", "feature/*"), /feature\/x/);
+});
+
+test("the directory git registers is the one this tool judged", async (t) => {
+  const { root } = await repository(t);
+  fs.mkdirSync(path.join(root, ".worktrees"), { recursive: true });
+  fs.symlinkSync(path.join(root, ".worktrees"), path.join(root, "trees"));
+  const policy = { waitSeconds: 5, dir: "trees", branchPattern: "task/*" };
+
+  // The worktree directory is a symlink inside the project, so it passes containment —
+  // and what git registers has to be the path this tool judged, not the one it was told.
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/linked", path.join(root, "trees", "linked"), "main"], slug: "linked" }, policy));
+  const listing = await git(root, "worktree", "list", "--porcelain");
+  assert.match(listing, new RegExp(path.join(root, ".worktrees", "linked").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(listing, new RegExp(path.join(root, "trees", "linked").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(readJournal(root, "linked")!.worktree, path.join(root, ".worktrees", "linked"));
+});
+
+test("every shape outside a verb's own grammar is refused", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "shapes");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/shapes", directory, "main"], slug: "shapes" }, { waitSeconds: 5 }));
+  const before = await state(root);
+
+  // Each of these is one token away from a whitelisted call, which is where a whitelist
+  // is worth testing: the options a verb does not take, the positionals it does not have,
+  // and a revision where a branch belongs.
+  const refused: Array<{ args: string[]; slug?: string }> = [
+    { args: ["--"] },
+    { args: ["status", "--"] },
+    { args: ["branch", "-B", "task/shapes"], slug: "shapes" },
+    { args: ["merge", "--ff-only", "task/shapes", "main"], slug: "shapes" },
+    { args: ["rebase", "--abort", "task/shapes"] },
+    { args: ["log", "--output=/tmp/stolen"] },
+    { args: ["log", "--max-count=abc"] },
+    { args: ["rev-parse", "--git-path", "objects"] },
+    { args: ["rev-parse", "HEAD"] },
+    { args: ["status", "--porcelain=v2"] },
+    { args: ["worktree", "list", "--verbose"] },
+    { args: ["worktree", "add", "-b", "task/sha", path.join(root, ".worktrees", "sha"), await git(root, "rev-parse", "main")], slug: "sha" },
+    { args: ["branch", "-d", "-c"], slug: "shapes" },
+    { args: ["merge-base", "main"] },
+  ];
+  for (const call of refused) {
+    refusal(await gitRoot(root, { args: call.args, ...(call.slug === undefined ? {} : { slug: call.slug }) }, { waitSeconds: 5 }));
+  }
+  assert.deepEqual(await state(root), before);
+  assert.deepEqual(readJournal(root, "shapes")!.steps.map((step) => step.step), ["worktree-created"]);
+});
+
 test("the worktree directory and the branch pattern are the mode's own", async (t) => {
   const created = await project(t, { roles: {} }, [{ key: "implementer", workspace: "worktree" }], {
     git: { worktreeDir: "trees", branchPattern: "work/*" },

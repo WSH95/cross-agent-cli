@@ -713,11 +713,20 @@ test("git_root is the worktree provider's own, for the operator and the lead, un
   assert.equal(outside.ok, false);
 
   // A config pointed at another mode after this server started is answered with a restart
-  // rather than served under a policy this server is not serving.
+  // rather than served under a policy this server is not serving — by every tool of the
+  // provider, because each of them acts on that mode's own git policy.
   await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "solo", roles: {} }));
   const drifted = await call({ args: ["status", "--porcelain"] });
   assert.equal(drifted.ok, false);
   assert.match(drifted.reason as string, /restart the server/);
+  for (const [name, args] of [
+    ["git_mutate", { slug: "one", args: ["status"] }],
+    ["verify_worktree", { path: directory, branch: "task/one" }],
+  ] as Array<[string, Json]>) {
+    const reply = await request("tools/call", { name, arguments: args });
+    const answered = JSON.parse((((reply.result as Json).content as Json[])[0].text) as string) as Json;
+    assert.match(answered.reason as string, /restart the server/, name);
+  }
   await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "dev-team", roles: {} }));
 
   // The shape of the request is this server's to check.
@@ -755,7 +764,8 @@ test("run_command is registered beside git_root and runs the project's own comma
 
   // The shape of the request is this server's to check, the enum included.
   for (const args of [{}, { which: "test" }, { where: "root" }, { which: "build", where: "root" },
-    { which: "test", where: "root", timeout_seconds: 0 }, { which: "test", where: "root", slug: 1 }]) {
+    { which: "test", where: "root", timeout_seconds: 0 }, { which: "test", where: "root", timeout_seconds: 2_147_484 },
+    { which: "test", where: "root", slug: 1 }]) {
     const reply = await request("tools/call", { name: "run_command", arguments: args as Json });
     assert.equal((reply.error as Json)?.code, -32602, JSON.stringify(args));
   }
