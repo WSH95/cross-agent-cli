@@ -15,10 +15,33 @@ import { findByEnvironment, groupAlive, terminateOrphans } from "../src/process.
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { reconcile, reconcileAndCleanup } from "../src/reconcile.ts";
 import type { Reconciled } from "../src/reconcile.ts";
+import { poll, pollDeadlineMs } from "./helpers/project.ts";
 
 // A real wall clock: reconciliation compares a record's createdAt with the start times of
 // live processes, so a task from 1970 would be older than everything on the machine.
 const worktree = fileURLToPath(new URL("../", import.meta.url));
+
+// One change for the whole file: a process no test here started, whose environment may
+// not be read, reads as an environment carrying nothing. Every test judges a known set of
+// processes, and what else the machine is starting is part of none of them — a same-uid
+// leader still inside execve is unreadable for the few milliseconds it spends there, and a
+// pass that met one answers `environ unreadable for 1 process` instead of taking the
+// decision the test is about (bead atc-s96.33). A test that wants an unreadable process
+// denies it itself, on top of this.
+const realReadFileSync = fs.readFileSync;
+(fs as { readFileSync: typeof fs.readFileSync }).readFileSync = ((
+  target: fs.PathOrFileDescriptor, options?: unknown,
+) => {
+  const read = () => (realReadFileSync as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
+  if (typeof target !== "string" || !/^\/proc\/\d+\/environ$/.test(target)) return read();
+  try {
+    return read();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EACCES" || code === "EPERM") return "";
+    throw error;
+  }
+}) as typeof fs.readFileSync;
 
 const now = Date.now();
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -81,16 +104,6 @@ async function started(root: string, status: TaskStatus, at = now): Promise<Task
   return record;
 }
 
-async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (true) {
-    const value = read();
-    if (accepts(value)) return value;
-    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
-    await delay(10);
-  }
-}
-
 /** Independent of the implementation, so cleanup works even when the code under test does not. */
 function running(pid: number): boolean {
   const stat = readProcessStat(pid);
@@ -115,21 +128,31 @@ setInterval(() => {}, 1000);
 `;
 
 function processes(t: TestContext) {
-  const tracked: { pid: number; leader: boolean }[] = [];
+  const tracked: { pid: number; leader: boolean; startTime: string }[] = [];
   const children: ChildProcess[] = [];
   t.after(async () => {
-    const deadline = Date.now() + 4000;
-    while (true) {
-      const alive = tracked.filter((entry) => running(entry.pid));
-      for (const entry of alive) {
-        try { process.kill(entry.leader ? -entry.pid : entry.pid, "SIGKILL"); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    // The unref runs whatever the sweep finds. An assertion that skipped it would leave
+    // this process holding a handle on every child it spawned, and a cleanup that found
+    // something alive would end the run in a hang rather than in a failure.
+    try {
+      const deadline = Date.now() + pollDeadlineMs;
+      while (true) {
+        // By identity, never by pid alone: these tests spawn and kill enough processes
+        // that a pid one of them has left can belong to something else by now, and the
+        // start time is what tells them apart (`tests/helpers/project.ts#project`).
+        const alive = tracked.filter((entry) => readProcessStat(entry.pid)?.startTime === entry.startTime
+          && running(entry.pid));
+        for (const entry of alive) {
+          try { process.kill(entry.leader ? -entry.pid : entry.pid, "SIGKILL"); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+        }
+        if (alive.length === 0) break;
+        assert.ok(Date.now() < deadline, `cleanup left processes: ${alive.map((entry) => entry.pid)}`);
+        await delay(10);
       }
-      if (alive.length === 0) break;
-      assert.ok(Date.now() < deadline, `cleanup left processes: ${alive.map((entry) => entry.pid)}`);
-      await delay(10);
+    } finally {
+      for (const child of children) child.unref();
     }
-    for (const child of children) child.unref();
   });
   return {
     /** A live engine group: one detached leader, and its identity as the runner would record it. */
@@ -138,15 +161,17 @@ function processes(t: TestContext) {
       child.once("error", () => {});
       children.push(child);
       const pid = child.pid!;
-      tracked.push({ pid, leader: true });
       const stat = readProcessStat(pid)!;
+      tracked.push({ pid, leader: true, startTime: stat.startTime });
       return { pid, identity: { pid, startTime: stat.startTime, pgid: pid, bootId: currentBootId }, child };
     },
     /** The pid the leader's own child wrote, once it exists. */
     async member(pidFile: string): Promise<number> {
       const text = await poll(() => (fs.existsSync(pidFile) ? fs.readFileSync(pidFile, "utf8") : ""), (value) => value.length > 0);
       const pid = Number(text);
-      tracked.push({ pid, leader: false });
+      // A member already gone is nothing to clean up, and its pid is no longer its own.
+      const stat = readProcessStat(pid);
+      if (stat) tracked.push({ pid, leader: false, startTime: stat.startTime });
       return pid;
     },
     /** Kills a leader and waits for it to be reaped, leaving its group members behind. */
@@ -396,13 +421,24 @@ test("a launch decision refused at the write signals nothing and is reported", a
     }
     return (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
   }) as typeof fs.readFileSync);
+  // Every signal the pass sends, recorded as it is sent: "nothing was signalled" is a
+  // claim about the pass, and waiting a moment afterwards to see who is still alive only
+  // asks whether a signal has landed yet.
+  const signals: { pid: number; signal?: string | number }[] = [];
+  const send = process.kill.bind(process) as (pid: number, signal?: string | number) => true;
+  const watched = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    signals.push({ pid, signal });
+    return send(pid, signal);
+  });
   const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
+  watched.mock.restore();
 
   assert.deepEqual(changed, [], "nothing was written for this record");
   assert.deepEqual(errors.map((entry) => entry.id), [record.id]);
   assert.match(errors[0].reason, /refused/);
   assert.deepEqual(read(root, record.id), acknowledged);
-  await delay(100);
+  assert.deepEqual(signals.filter(({ pid }) => [stray, parent.pid, -parent.pid].includes(pid)), [],
+    "the acknowledged runner's engine and its descendants were never signalled");
   assert.equal(running(stray), true, "the acknowledged runner's engine kept its descendants");
   assert.equal(running(parent.pid), true);
 });
@@ -506,11 +542,19 @@ test("a reconciler carrying the task id in its own environment never signals its
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+import { findByEnvironment } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "process.ts")).href)};
 const sibling = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 fs.writeFileSync(process.argv[4], String(sibling.pid));
-await new Promise((resolve) => setTimeout(resolve, 100));
+// The pass must meet all three — this process, its sibling, and the engine — for the
+// exclusion to be what it is about. Waiting for the scan to see them is the gate; a
+// fixed pause is a guess about how long a spawn takes on a loaded machine.
+const seen = () => findByEnvironment(process.env.CROSS_AGENT_TASK, 0).found.length;
+const deadline = Date.now() + ${pollDeadlineMs};
+while (seen() < 3 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+const before = seen();
 const result = await reconcile(process.argv[2], Number(process.argv[3]));
-fs.writeFileSync(process.argv[5], JSON.stringify({ ...result, self: process.pid, sibling: sibling.pid }));
+const alive = fs.existsSync("/proc/" + sibling.pid);
+fs.writeFileSync(process.argv[5], JSON.stringify({ ...result, before, alive, self: process.pid, sibling: sibling.pid }));
 sibling.kill("SIGKILL");
 `;
   const file = path.join(root, "reconciler.mjs");
@@ -527,7 +571,11 @@ sibling.kill("SIGKILL");
   const [code] = await once(reconciler, "close");
 
   assert.equal(code, 0, "the reconciler survived its own pass");
-  const result = JSON.parse(fs.readFileSync(outcome, "utf8")) as { changed: TaskRecord[]; errors: unknown[] };
+  const result = JSON.parse(fs.readFileSync(outcome, "utf8")) as {
+    changed: TaskRecord[]; errors: unknown[]; before: number; alive: boolean;
+  };
+  assert.equal(result.before, 3, "the pass met the engine, the reconciler and the reconciler's own child");
+  assert.equal(result.alive, true, "the child in its own group outlived the pass");
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
   assert.deepEqual(read(root, record.id).engineIdentity, engine.identity, "the detached engine is still what was adopted");
@@ -549,8 +597,19 @@ test("a reconciler inside the engine's own session defers the launch instead of 
   fs.writeFileSync(reconciler, `
 import fs from "node:fs";
 import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+import { findByEnvironment } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "process.ts")).href)};
+// The engine this pass must defer to is this process's own session leader. A pass that
+// ran before the scan could see it would find nothing carrying the id, call the launch
+// failed, and settle the record over a live engine — which is the failure this test is
+// here to catch, so it waits until the engine is in the scan (bead atc-s96.33).
+const seen = () => findByEnvironment(process.env.CROSS_AGENT_TASK, 0).found;
+const deadline = Date.now() + ${pollDeadlineMs};
+while (!seen().some((entry) => entry.leader) && Date.now() < deadline) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const before = seen().map((entry) => [entry.pid, entry.leader, entry.self]);
 const result = await reconcile(process.argv[2], Number(process.argv[3]));
-fs.writeFileSync(process.argv[4], JSON.stringify(result));
+fs.writeFileSync(process.argv[4], JSON.stringify({ ...result, before }));
 `);
   // The leader is the only process that can say how its own child ended, because it is
   // the one that reaps it. It records that exit for the assertion below.
@@ -567,8 +626,10 @@ setInterval(() => {}, 1000);
   const child = await zoo.member(pidFile);
   const result = JSON.parse(await poll(
     () => (fs.existsSync(outcome) ? fs.readFileSync(outcome, "utf8") : ""), (text) => text.length > 0,
-  )) as Reconciled;
+  )) as Reconciled & { before: [number, boolean, boolean][] };
 
+  assert.deepEqual(result.before.find(([pid]) => pid === engine.pid), [engine.pid, true, true],
+    "the pass met the engine, as the leader of the session it is running in");
   assert.deepEqual(result.changed, [], "nothing was written over a live engine");
   assert.deepEqual(result.errors.map((entry) => entry.id), [record.id]);
   assert.match(result.errors[0].reason, new RegExp(`engine ${engine.pid} shares this reconciler's session`));
@@ -628,11 +689,11 @@ setInterval(() => {}, 1000);
   const child = await zoo.member(pidFile);
   fs.writeFileSync(start, "");
 
-  await poll(() => read(root, foreign.id).status, (status) => status === "failed", 8000);
+  await poll(() => read(root, foreign.id).status, (status) => status === "failed");
   assert.equal(read(root, foreign.id).reason, "runner lost; engine group terminated", "the record it could settle was settled");
   // The group goes down together, but not in one instant: the leader and the pass inside
   // it are two processes, and which of them the kernel reaps first is not the point.
-  await poll(() => running(engine.pid) || running(child), (alive) => !alive, 8000);
+  await poll(() => running(engine.pid) || running(child), (alive) => !alive);
   assert.equal(read(root, own.id).status, "orphaned", "and left its own record for another server");
 });
 
@@ -671,9 +732,9 @@ setInterval(() => {}, 1000);
   const child = await zoo.member(pidFile);
   fs.writeFileSync(start, "");
 
-  await poll(() => read(root, settleable.id).status, (status) => status === "failed", 8000);
+  await poll(() => read(root, settleable.id).status, (status) => status === "failed");
   assert.equal(read(root, settleable.id).reason, "runner lost");
-  await poll(() => running(engine.pid) || running(child), (alive) => !alive, 8000);
+  await poll(() => running(engine.pid) || running(child), (alive) => !alive);
   assert.equal(read(root, own.id).status, "cancelling", "its own record is left for another server");
 });
 
@@ -693,8 +754,19 @@ test("an engine adopted beside one in this reconciler's own session names the su
   fs.writeFileSync(reconciler, `
 import fs from "node:fs";
 import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+import { findByEnvironment } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "process.ts")).href)};
+// The stranded engine is a detached spawn, and for the first milliseconds of its life
+// the kernel shows it as a leader nobody may read. A pass that ran then would defer to
+// this reconciler's own session instead of adopting it, so the pass waits until the
+// engine it is to adopt is one the scan can see (bead atc-s96.33).
+const seen = () => findByEnvironment(process.env.CROSS_AGENT_TASK, 0).found;
+const deadline = Date.now() + ${pollDeadlineMs};
+while (!seen().some((entry) => entry.leader && !entry.self) && Date.now() < deadline) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const before = seen().map((entry) => [entry.pid, entry.leader, entry.self]);
 const result = await reconcile(process.argv[2], Number(process.argv[3]));
-fs.writeFileSync(process.argv[4], JSON.stringify(result));
+fs.writeFileSync(process.argv[4], JSON.stringify({ ...result, before }));
 `);
   const leaderScript = `
 const fs = require("node:fs");
@@ -709,8 +781,12 @@ setInterval(() => {}, 1000);
   await zoo.member(pidFile);
   const result = JSON.parse(await poll(
     () => (fs.existsSync(outcome) ? fs.readFileSync(outcome, "utf8") : ""), (text) => text.length > 0,
-  )) as Reconciled;
+  )) as Reconciled & { before: [number, boolean, boolean][] };
 
+  assert.deepEqual(result.before.find(([pid]) => pid === stranded.pid), [stranded.pid, true, false],
+    "the pass met the stranded engine as a leader of another session");
+  assert.deepEqual(result.before.find(([pid]) => pid === own.pid), [own.pid, true, true],
+    "and the engine it is running inside as its own");
   assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
   assert.deepEqual(read(root, record.id).engineIdentity!.pid, stranded.pid, "the engine of another session is the one adopted");
   assert.deepEqual(result.errors.map((entry) => entry.id), [record.id]);

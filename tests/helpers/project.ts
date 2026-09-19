@@ -58,13 +58,47 @@ function markedProcesses(marker: string): number[] {
   return pids;
 }
 
-export async function poll<T>(read: () => T | Promise<T>, accepts: (value: T) => boolean, timeout = 8000): Promise<T> {
+/**
+ * How long a barrier waits before it reports the state it was waiting for as a failure.
+ * It is not a measurement: every wait in this suite is for an event that takes
+ * milliseconds on an idle machine, and this is where a machine in real trouble stops the
+ * suite rather than hanging it. A test that means to assert a bound asserts that bound
+ * itself, with its own number and its own sentence.
+ */
+export const pollDeadlineMs = 30_000;
+
+export async function poll<T>(read: () => T | Promise<T>, accepts: (value: T) => boolean, timeout = pollDeadlineMs): Promise<T> {
   const deadline = Date.now() + timeout;
   while (true) {
     const value = await read();
     if (accepts(value)) return value;
     assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
     await delay(15);
+  }
+}
+
+/** The runner's own diagnostic for a task, or a note that there is none. */
+export function runnerLog(root: string, id: string): string {
+  try {
+    return fs.readFileSync(path.join(root, ".cross-agent", "tasks", `${id}.runner.log`), "utf8").trim();
+  } catch {
+    return "(the runner wrote no diagnostic)";
+  }
+}
+
+/**
+ * A record waited to a state, with the runner's own diagnostic in the failure. A launch
+ * that never reaches `running` has nearly always been answered in that file — the runner
+ * stood down for an engine it found, or for an environment it could not read (design
+ * section 2, B5-i) — and the record alone never says which.
+ */
+export async function waitForRecord(
+  project: TestProject, id: string, accepts: (record: TaskRecord) => boolean,
+): Promise<TaskRecord> {
+  try {
+    return await poll(() => project.record(id), accepts);
+  } catch (error) {
+    throw new Error(`${(error as Error).message}\n  runner log: ${runnerLog(project.root, id)}`);
   }
 }
 
@@ -107,7 +141,7 @@ export async function project(t: TestContext, config: Record<string, unknown>): 
   fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify(config));
 
   t.after(async () => {
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + pollDeadlineMs;
     while (true) {
       const pids = markedProcesses(marker);
       for (const pid of pids) {

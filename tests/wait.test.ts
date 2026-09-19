@@ -15,7 +15,7 @@ import { findByEnvironment } from "../src/process.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import { check } from "../src/tasks.ts";
 import { observeStall, wait } from "../src/wait.ts";
-import { alive, engineEnv, poll, project, strandedEngine, suiteEnv } from "./helpers/project.ts";
+import { alive, engineEnv, poll, waitForRecord, project, strandedEngine, suiteEnv } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
@@ -34,7 +34,12 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
       planner: { engine: "grok", cwd: "root", sandbox: "read-only" },
     },
     engines: { grok: { bin } },
-    limits: { maxDepth: 3, lockWaitSeconds: 5, stallMinutes, ...limits },
+    // The two wall-clock budgets these tools ride on, set far past anything the tests
+    // below need: how long a write waits for a record another writer holds, and how long
+    // a cancel gives a runner to settle. Left small they are margins a loaded machine can
+    // miss, and the test then fails for the load rather than for the behaviour. Each test
+    // that is about one of the budgets sets its own.
+    limits: { maxDepth: 3, lockWaitSeconds: 30, stallMinutes, ...limits },
     billing: "subscription",
   };
 }
@@ -53,7 +58,7 @@ async function launch(p: TestProject, env: Record<string, string>): Promise<Task
   });
   assert.equal(started.ok, true, `delegate refused: ${JSON.stringify(started)}`);
   const id = started.ok ? started.taskId : "";
-  return poll(() => p.record(id), (record) => record.status !== "launching");
+  return waitForRecord(p, id, (record) => record.status !== "launching");
 }
 
 /** A record nobody launched: a `launching` task with no runner and no engine. */
@@ -127,7 +132,7 @@ test("a settled task is answered on the first read, with the tail of its result"
 
   const started = performance.now();
   const answer = await wait(p.root, task.id, { timeoutSeconds: 30 });
-  assert.ok(performance.now() - started < 1000, "a terminal record is not polled for");
+  assert.ok(performance.now() - started < 10_000, "a terminal record is answered by the pass, not polled for 30s");
   assert.equal(answer.ok && answer.status, "done");
   assert.equal(answer.ok && answer.stalled, false);
   assert.equal(answer.ok && answer.hint, "settled: call result");
@@ -183,7 +188,7 @@ test("the default timeout is the project's waitDefaultSeconds", async (t) => {
   const answer = await wait(p.root, record.id, {});
   const elapsed = performance.now() - started;
   assert.ok(elapsed >= 350, `returned after ${Math.round(elapsed)}ms, before the configured timeout`);
-  assert.ok(elapsed < 5000, `waited ${Math.round(elapsed)}ms, not the configured timeout`);
+  assert.ok(elapsed < 15_000, `waited ${Math.round(elapsed)}ms, not the 600s the helper would default to`);
   assert.equal(answer.ok && answer.hint, "call wait again");
 });
 
@@ -197,10 +202,12 @@ test("a runner killed during a wait is settled by one reconciliation pass and re
 
   assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
   assert.equal(answer.ok && answer.hint, "settled: call result");
-  // Which half of the pass ended the engine is a race — cleanup kills a group it finds
-  // alive and says so, and a group that died inside that grace is settled from what the
-  // runner recorded — and the answer to a caller is the same either way.
-  assert.match(p.record(task.id).reason!, /^runner lost/);
+  // Which half of the pass ended the engine is genuinely a race, and both answers are
+  // right: this runner was SIGKILLed with the engine's stdout pipe open, so the engine
+  // may take SIGPIPE on its next write and be gone before the pass reaches it, or it may
+  // still be there and be killed by cleanup, which says so. Those two reasons are the
+  // whole set — anything else would be a third answer nobody expected.
+  assert.match(p.record(task.id).reason!, /^runner lost(; engine group terminated)?$/);
   assert.equal(alive(task.engineIdentity), false, "the pass ended the engine the dead runner left");
 });
 
@@ -211,8 +218,8 @@ test("an orphan that cleanup cannot settle is reported as orphaned, not polled f
   assert.equal((await update(p.root, record.id, { status: "orphaned" })).applied, true);
 
   const started = performance.now();
-  const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
-  assert.ok(performance.now() - started < 5000, "an orphan is answered, not waited on");
+  const answer = await wait(p.root, record.id, { timeoutSeconds: 30, pollMs: 100 });
+  assert.ok(performance.now() - started < 10_000, "an orphan is answered by the pass, not waited on for 30s");
   assert.equal(answer.ok && answer.status, "orphaned");
   assert.equal(answer.ok && answer.stalled, false);
   assert.equal(answer.ok && answer.hint, "orphaned: list_tasks reconciles; cancel terminates the engine");
@@ -345,7 +352,10 @@ test("a launch past its deadline is adopted and settled by this call's own pass"
   const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
   assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
   assert.equal(answer.ok && answer.hint, "settled: call result");
-  assert.match(p.record(record.id).reason!, /^runner lost/);
+  // Exactly one reason is possible here, unlike the SIGKILLed-runner case above: this
+  // engine shares no pipe with anything (`strandedEngine`, stdio "ignore") and handles no
+  // signal, so it is alive when the pass adopts it and cleanup is what ends it.
+  assert.equal(p.record(record.id).reason, "runner lost; engine group terminated");
   assert.equal(alive(engine.identity), false, "the adopted engine's group was terminated");
 });
 
@@ -361,10 +371,10 @@ test("a record the one pass could not settle is answered with the pass's reason,
   }) as typeof fs.readFileSync);
 
   const started = performance.now();
-  const answer = await wait(p.root, record.id, { timeoutSeconds: 10, pollMs: 100 });
+  const answer = await wait(p.root, record.id, { timeoutSeconds: 30, pollMs: 100 });
   mock.mock.restore();
 
-  assert.ok(performance.now() - started < 5000, "the pass is the answer, not the timeout");
+  assert.ok(performance.now() - started < 10_000, "the pass is the answer, not the 30s timeout");
   assert.equal(answer.ok && answer.status, "launching");
   assert.match(answer.ok ? answer.reason ?? "" : "", /environ unreadable for 1 process/);
   assert.match(answer.ok ? answer.hint : "", /list_tasks/);
@@ -396,7 +406,7 @@ test("a record lock this project will not wait for refuses both readers by that 
   try {
     const started = performance.now();
     const refused = await check(p.root, task.id, { now: eventAt + stallMs + 1 });
-    assert.ok(performance.now() - started < 2000, "check waited its own project's rule, not the helper's default");
+    assert.ok(performance.now() - started < 3500, "check waited its own project's rule of 0s, not the helper's 5s default");
     assert.equal(refused.ok, false, JSON.stringify(refused));
     assert.match(refused.ok === false ? refused.reason : "", /is held by another process \(waited 0s\)/);
 

@@ -13,17 +13,48 @@ import { currentBootId, readProcessStat } from "../src/ledger.ts";
 import type { EngineIdentity } from "../src/ledger.ts";
 import { findByEnvironment, foreignEngine, groupAlive, terminateGroup, terminateGroupByPid } from "../src/process.ts";
 import type { FoundProcess } from "../src/process.ts";
+import { poll, pollDeadlineMs } from "./helpers/project.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 
-async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (true) {
-    const value = read();
-    if (accepts(value)) return value;
-    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
-    await delay(10);
-  }
+/**
+ * `fs.readFileSync`, with `answer` consulted first and one thing changed under it: a
+ * process this test did not start, whose environment may not be read, reads as empty.
+ * `unreadable` is otherwise a property of the whole machine rather than of this test —
+ * every detached spawn on it wears the shape of a plausible candidate nobody may read
+ * for the few milliseconds it spends inside execve — and no count could then be
+ * attributed to the processes the test made (bead atc-s96.33). `ours` names the pids
+ * whose real denial the scan must still see.
+ */
+function scanReads(
+  t: TestContext,
+  answer: (target: string, real: () => string) => string | undefined,
+  ours: (pid: number) => boolean = () => false,
+): { restore(): void } {
+  const module = fs as { readFileSync: typeof fs.readFileSync };
+  const original = fs.readFileSync;
+  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
+    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
+  // A plain swap rather than `t.mock.method`: one scan reads every environment on the
+  // machine, and a mock that recorded each call would hold all of them in memory.
+  module.readFileSync = ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    const answered = typeof target === "string" ? answer(target, () => real(target, options)) : undefined;
+    if (answered !== undefined) return answered;
+    const environ = typeof target === "string" ? /^\/proc\/(\d+)\/environ$/.exec(target) : null;
+    if (environ === null) return real(target, options);
+    try {
+      return real(target, options);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // A stranger that may not be read reads as an environment carrying nothing: seen,
+      // and never counted. ENOENT still means gone, which is the scan's own case.
+      if ((code === "EACCES" || code === "EPERM") && !ours(Number(environ[1]))) return "";
+      throw error;
+    }
+  }) as typeof fs.readFileSync;
+  const restore = () => { module.readFileSync = original; };
+  t.after(restore);
+  return { restore };
 }
 
 /** Independent of the implementation, so cleanup works even when the code under test does not. */
@@ -47,21 +78,47 @@ setInterval(() => {}, 1000);
 `;
 
 // The churn a busy machine makes: a separate process spawning a detached leader every
-// 10 ms, each carrying the task id and each inside execve for the first milliseconds of
-// its life. Every pid is appended to a file, so the test ends what it started however it
-// ends itself.
+// `stormStepMs`, each carrying the task id and each inside execve for the first
+// milliseconds of its life. Every child is appended to a file with the start time it was
+// spawned at, so the test ends what it started — and only what it started, since a pid
+// it has left can already belong to something else on a machine spawning this fast.
 const storm = `
 import fs from "node:fs";
 import { spawn } from "node:child_process";
-const [pidFile, taskId] = process.argv.slice(2);
+const [pidFile, taskId, lifetimeMs, stepMs, capMs] = process.argv.slice(2);
+// This is the one fixture in the suite that makes processes faster than it makes
+// anything else, so it ends itself: a test run killed between the spawn and the sweep
+// would otherwise leave it spawning a detached child every few milliseconds for ever.
+setTimeout(() => process.exit(0), Number(capMs));
 setInterval(() => {
-  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 200)"],
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, " + lifetimeMs + ")"],
     { detached: true, stdio: "ignore", env: { ...process.env, CROSS_AGENT_TASK: taskId } });
   child.once("error", () => {});
   child.unref();
-  if (child.pid !== undefined) fs.appendFileSync(pidFile, String(child.pid) + "\\n");
-}, 10);
+  if (child.pid === undefined) return;
+  try {
+    const stat = fs.readFileSync("/proc/" + child.pid + "/stat", "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\\s+/);
+    fs.appendFileSync(pidFile, child.pid + " " + fields[19] + "\\n");
+  } catch { /* Gone before it could be recorded: there is nothing left to clean up. */ }
+}, Number(stepMs));
 `;
+
+/**
+ * The storm's shape. A child lives `stormChildMs` and one starts every `stormStepMs`, so
+ * about six are alive at a time: enough for the scans below to meet children at every
+ * stage of their start, and few enough that this test is not itself the reason another
+ * file's launch stands down — a process inside execve is a candidate nobody can read to
+ * every scan on the machine, not only to these (`src/process.ts#foreignEngine`). Neither
+ * number is a bound an assertion rests on; what the rounds below need is to have met
+ * `stormChildrenMet` children, and how long that takes is the machine's business.
+ */
+const stormChildMs = 120;
+const stormStepMs = 20;
+const stormChildrenMet = 20;
+const stormRounds = 50;
+/** Far past this test, and short enough that a run killed mid-storm leaves nothing for long. */
+const stormCapMs = 60_000;
 
 function processes(t: TestContext) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-process-"));
@@ -148,8 +205,15 @@ const sibling = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
 const engine = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached: true });
 engine.unref();
 fs.writeFileSync(process.argv[2], String(engine.pid));
-await new Promise((resolve) => setTimeout(resolve, 100));
-const scan = findByEnvironment(process.env.CROSS_AGENT_TASK);
+// Both children are still inside execve for a moment after the spawn returns, and how
+// long that moment is belongs to the machine. The scan that answers is the first one
+// that has met all three; the deadline below is where a machine in trouble gives up.
+const deadline = Date.now() + ${pollDeadlineMs};
+let scan = findByEnvironment(process.env.CROSS_AGENT_TASK);
+while (scan.found.length < 3 && Date.now() < deadline) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  scan = findByEnvironment(process.env.CROSS_AGENT_TASK);
+}
 fs.writeFileSync(process.argv[3], JSON.stringify({ ...scan, self: process.pid, sibling: sibling.pid, engine: engine.pid }));
 sibling.kill("SIGKILL");
 `;
@@ -187,19 +251,18 @@ test("the environment scan reports what it could not read and binds each match t
   await poll(() => findByEnvironment(taskId, since).found, (found) => found.length === 1);
   const environ = `/proc/${leader.pid}/environ`;
   const stat = `/proc/${leader.pid}/stat`;
-  const original = fs.readFileSync;
-  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
-    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
 
   // A process this scan may not read could be the engine it is looking for, so it is
-  // counted rather than passed over in silence.
-  const denied = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+  // counted rather than passed over in silence. The count is exactly this leader:
+  // `scanReads` answers for the rest of the machine, which is starting processes of its
+  // own throughout this run.
+  const denied = scanReads(t, (target) => {
     if (target === environ) throw Object.assign(new Error("denied"), { code: "EACCES" });
-    return real(target, options);
-  }) as typeof fs.readFileSync);
+    return undefined;
+  });
   const blind = findByEnvironment(taskId, since);
   const older = findByEnvironment(taskId, Date.now() + 60_000);
-  denied.mock.restore();
+  denied.restore();
   assert.deepEqual(blind.found, []);
   assert.equal(blind.unreadable, 1, "one process of ours, started since the task, could not be judged");
   assert.equal(older.unreadable, 0,
@@ -208,16 +271,17 @@ test("the environment scan reports what it could not read and binds each match t
   // A pid reused between the two stats is a different process: the match is dropped
   // rather than recorded against a foreign start time.
   let stats = 0;
-  const reused = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
-    const text = real(target, options);
-    if (target !== stat || ++stats !== 2) return text;
+  const reused = scanReads(t, (target, real) => {
+    if (target !== stat) return undefined;
+    const text = real();
+    if (++stats !== 2) return text;
     const head = text.slice(0, text.lastIndexOf(")") + 1);
     const fields = text.slice(text.lastIndexOf(")") + 1).trim().split(/\s+/);
     fields[19] = String(BigInt(fields[19]) + 1n);
     return `${head} ${fields.join(" ")}\n`;
-  }) as typeof fs.readFileSync);
+  });
   const raced = findByEnvironment(taskId, since);
-  reused.mock.restore();
+  reused.restore();
   assert.equal(stats, 2, "the identity is read before the environment and again after it");
   assert.deepEqual(raced.found, []);
   assert.equal(raced.unreadable, 0);
@@ -236,16 +300,13 @@ test("the unreadable-candidate bound allows for the second btime rounds away", a
   // margin it computes as older than the record and is not counted at all.
   const bootTimeMs = Number(/^btime (\d+)$/m.exec(fs.readFileSync("/proc/stat", "utf8"))![1]) * 1000;
   const startedAt = bootTimeMs + Number(readProcessStat(leader.pid)!.startTime) * 10;
-  const original = fs.readFileSync;
-  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
-    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
-  const denied = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+  const denied = scanReads(t, (target) => {
     if (target === `/proc/${leader.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
-    return real(target, options);
-  }) as typeof fs.readFileSync);
+    return undefined;
+  });
   const within = findByEnvironment(taskId, startedAt + 900);
   const beyond = findByEnvironment(taskId, startedAt + 60_000);
-  denied.mock.restore();
+  denied.restore();
 
   assert.equal(within.unreadable, 1, "a candidate the rounding put just before the record is still counted");
   assert.equal(beyond.unreadable, 0, "and the bound still means something past the margin");
@@ -264,40 +325,86 @@ test("the environment scan does not count a process still inside exec as unreada
   fs.writeFileSync(pidFile, "");
   const file = path.join(root, "storm.mjs");
   fs.writeFileSync(file, storm);
-  const spawned = (): number[] => {
-    try { return fs.readFileSync(pidFile, "utf8").split("\n").filter(Boolean).map(Number); }
-    catch { return []; }
+  const spawned = (): { pid: number; startTime: string }[] => {
+    try {
+      return fs.readFileSync(pidFile, "utf8").split("\n").filter(Boolean)
+        .map((line) => ({ pid: Number(line.split(" ")[0]), startTime: line.split(" ")[1] }));
+    } catch { return []; }
   };
   // The churn runs in its own process, so the scans below meet children at every stage of
   // their start rather than only in the gaps between spawns of their own.
-  const spawner = spawn(process.execPath, [file, pidFile, taskId], { detached: true, stdio: "ignore" });
+  const spawner = spawn(process.execPath,
+    [file, pidFile, taskId, String(stormChildMs), String(stormStepMs), String(stormCapMs)],
+    { detached: true, stdio: "ignore" });
   spawner.once("error", () => {});
   t.after(async () => {
     try { process.kill(-spawner.pid!, "SIGKILL"); } catch { /* already gone */ }
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + pollDeadlineMs;
     while (true) {
-      const alive = spawned().filter(running);
-      for (const pid of alive) {
-        try { process.kill(-pid, "SIGKILL"); }
+      // Signalled by the identity that was recorded, never by a pid alone: this storm
+      // leaves pids behind faster than anything else in the suite, and a group killed by
+      // number could be a stranger's by the time the sweep reaches it. The start time is
+      // what tells them apart, as the suite's own sweep checks (`tests/helpers/project.ts`).
+      const alive = spawned().flatMap((child) => {
+        const stat = readProcessStat(child.pid);
+        return stat !== null && stat.startTime === child.startTime && stat.state !== "Z" && stat.state !== "X"
+          ? [{ ...child, pgid: stat.pgid }] : [];
+      });
+      for (const child of alive) {
+        try { process.kill(child.pgid === child.pid ? -child.pid : child.pid, "SIGKILL"); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
       }
       if (alive.length === 0) break;
-      assert.ok(Date.now() < deadline, `cleanup left processes: ${alive}`);
+      assert.ok(Date.now() < deadline, `cleanup left processes: ${alive.map((child) => child.pid)}`);
       await delay(10);
     }
     fs.rmSync(root, { recursive: true, force: true });
   });
 
   await poll(() => spawned().length, (count) => count >= 2);
+  // The scans start once the storm is one the scan can see, rather than after a guess at
+  // how long the spawner needs: from here every round meets children at some stage of
+  // their start, which is what this test is made of.
+  await poll(() => findByEnvironment(taskId, since).found.length, (count) => count >= 1);
+
+  // What this count may include is the storm's own children and nothing else. Every other
+  // process on the machine reads as an environment carrying nothing, because the suite
+  // beside this test is starting processes that wear the same shape for the few
+  // milliseconds they spend inside execve, and a count of those could not be attributed.
+  const originalRead = fs.readFileSync;
+  const ppidOf = (pid: number): number | null => {
+    try {
+      const stat = (originalRead as (target: string, options: string) => string)(`/proc/${pid}/stat`, "utf8");
+      return Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[1]);
+    } catch { return null; }
+  };
+  const bounded = scanReads(t, () => undefined, (pid) => ppidOf(pid) === spawner.pid);
+  // The scan's exec budget is measured on this clock, and with it stopped the budget
+  // cannot expire: a candidate is then counted only when the kernel has published its
+  // argv and its environment still cannot be read, which is the case this test denies
+  // ever happens to a child inside execve. How long an execve takes on a loaded machine
+  // is nobody's claim to make, and the budget's own size is the business of the test
+  // beside this one ("one scan waits once for everything it cannot read"). Each wait
+  // still ends: a storm child either finishes its exec or dies inside `stormChildMs`,
+  // and a candidate that left is gone rather than unreadable.
+  const clock = performance as { now: () => number };
+  const realNow = clock.now.bind(performance);
+  clock.now = () => 0;
   let unreadable = 0;
   let seen = 0;
-  for (let round = 0; round < 50; round++) {
-    const scan = findByEnvironment(taskId, since);
-    unreadable += scan.unreadable;
-    seen += scan.found.length;
-    await delay(5);
+  try {
+    for (let round = 0; round < stormRounds; round++) {
+      const scan = findByEnvironment(taskId, since);
+      unreadable += scan.unreadable;
+      seen += scan.found.length;
+      await delay(stormStepMs / 2);
+    }
+  } finally {
+    clock.now = realNow;
+    bounded.restore();
   }
-  assert.ok(seen > 0, "the scans ran while the storm did: children carrying the id were read");
+  assert.ok(seen >= stormChildrenMet,
+    `the scans ran while the storm did: ${seen} children carrying the id were read in ${stormRounds} rounds`);
   assert.equal(unreadable, 0,
     "a child still inside execve is retried, never counted as an engine this scan may not read");
 });
@@ -314,18 +421,15 @@ test("one scan waits once for everything it cannot read, not once for each", asy
   await poll(() => findByEnvironment(taskId, since).found, (found) => found.length === 8);
   const denied = new Set(leaders.map((leader) => `/proc/${leader.pid}/environ`));
   const starting = new Set(leaders.map((leader) => `/proc/${leader.pid}/cmdline`));
-  const original = fs.readFileSync;
-  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
-    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
-  const mocked = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
-    if (typeof target === "string" && denied.has(target)) throw Object.assign(new Error("denied"), { code: "EACCES" });
-    if (typeof target === "string" && starting.has(target)) return "";
-    return real(target, options);
-  }) as typeof fs.readFileSync);
+  const mocked = scanReads(t, (target) => {
+    if (denied.has(target)) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    if (starting.has(target)) return "";
+    return undefined;
+  });
   const started = performance.now();
   const scan = findByEnvironment(taskId, since);
   const elapsed = performance.now() - started;
-  mocked.mock.restore();
+  mocked.restore();
 
   assert.equal(scan.unreadable, 8, "each of them is a candidate this scan could not read");
   assert.ok(elapsed < 1200, `one budget for the scan, not one per candidate: ${Math.round(elapsed)} ms for eight`);
@@ -340,22 +444,19 @@ test("a candidate is re-verified on every retry, and an environment that opens i
   const environ = `/proc/${leader.pid}/environ`;
   const cmdline = `/proc/${leader.pid}/cmdline`;
   const stat = `/proc/${leader.pid}/stat`;
-  const original = fs.readFileSync;
-  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
-    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
 
   // The argv is published while the scan waits, and the environment opens with it: the
   // argv is read before the environment on every turn, so the read that decides is the
   // one taken after it (finding T3b-10).
   let denials = 0;
   let starting = 0;
-  const opening = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+  const opening = scanReads(t, (target) => {
     if (target === environ && ++denials <= 2) throw Object.assign(new Error("denied"), { code: "EACCES" });
     if (target === cmdline && ++starting <= 2) return "";
-    return real(target, options);
-  }) as typeof fs.readFileSync);
+    return undefined;
+  });
   const opened = findByEnvironment(taskId, since);
-  opening.mock.restore();
+  opening.restore();
   assert.deepEqual(opened.found.map((entry) => entry.pid), [leader.pid], "the engine it waited for is the engine it found");
   assert.equal(opened.unreadable, 0);
 
@@ -363,18 +464,19 @@ test("a candidate is re-verified on every retry, and an environment that opens i
   // candidate, whatever its environment says now: the identity is read again, and a
   // start time that moved ends the wait rather than the count (finding R-5).
   let stats = 0;
-  const reused = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+  const reused = scanReads(t, (target, real) => {
     if (target === environ) throw Object.assign(new Error("denied"), { code: "EACCES" });
     if (target === cmdline) return "";
-    const text = real(target, options);
-    if (target !== stat || ++stats < 2) return text;
+    if (target !== stat) return undefined;
+    const text = real();
+    if (++stats < 2) return text;
     const head = text.slice(0, text.lastIndexOf(")") + 1);
     const fields = text.slice(text.lastIndexOf(")") + 1).trim().split(/\s+/);
     fields[19] = String(BigInt(fields[19]) + 1n);
     return `${head} ${fields.join(" ")}\n`;
-  }) as typeof fs.readFileSync);
+  });
   const raced = findByEnvironment(taskId, since);
-  reused.mock.restore();
+  reused.restore();
   assert.equal(raced.unreadable, 0, "a pid reused while the scan waited is nobody's engine");
 });
 

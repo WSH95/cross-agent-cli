@@ -513,16 +513,18 @@ function openFds(target: string): string[] {
   });
 }
 
-test("a descendant holding the engine's stdout cannot block settlement", { timeout: 10000 }, async (t) => {
+test("a descendant holding the engine's stdout cannot block settlement", { timeout: 30000 }, async (t) => {
   const { launch, request } = task(t);
-  const handle = launch(holder(request.cwd, true), {}, { drainMs: 100 });
+  // The drain is the production default, not a margin this test could outrun: the
+  // descendant never closes the pipe, so what proves the bound is that the result arrives
+  // at all — a settlement that waited for `close` would wait for ever and this test would
+  // end on its own timeout. What the shorter drain risked instead was the engine's own
+  // output not being in by the time it expired, which is this test's other assertion.
+  const handle = launch(holder(request.cwd, true), {}, { drainMs: 2000 });
   const pid = handle.pid!;
   t.after(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
-  const started = Date.now();
   const result = await handle.result;
-  const elapsed = Date.now() - started;
 
-  assert.ok(elapsed < 1100, `the drain is bounded: settled after ${elapsed}ms`);
   assert.equal(result.truncated, true, "the tail of the evidence may be missing and the result says so");
   assert.equal(result.exitCode, 7, "the exit values captured at exit are the ones reported");
   assert.equal(result.signal, null);
@@ -541,11 +543,12 @@ test("a descendant that shares no pipe leaves settlement on close unchanged", { 
   const handle = launch(holder(request.cwd, false), {}, { drainMs: 5000 });
   const pid = handle.pid!;
   t.after(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
-  const started = Date.now();
   const result = await handle.result;
 
-  assert.ok(Date.now() - started < 4000, "close arrived long before the drain could expire");
-  assert.equal(result.truncated, false);
+  // `truncated` is the answer to which of the two ended the wait, and it is the pipeline's
+  // own word rather than a stopwatch: the drain sets it, and `close` arriving first leaves
+  // it false (`src/engines/spawn.ts`).
+  assert.equal(result.truncated, false, "close arrived before the drain could expire");
   assert.equal(result.exitCode, 7);
   assert.equal(result.finalMessage, "leader done");
   assert.equal(readFileSync(request.resultPath, "utf8"), "leader done");

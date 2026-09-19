@@ -7,10 +7,10 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { create, read, update, list, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
+import { poll } from "./helpers/project.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -41,16 +41,6 @@ const routes: Record<TaskStatus, TaskStatus[]> = {
   failed: ["failed"],
   cancelled: ["cancelling", "cancelled"],
 };
-
-async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (true) {
-    const value = read();
-    if (accepts(value)) return value;
-    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
-    await delay(10);
-  }
-}
 
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-ledger-"));
@@ -265,20 +255,51 @@ test("update takes the record lock, refuses to guess when it cannot, and release
   const record = await started(root, "running", now);
   const file = lockPath(root, recordLockName(record.id));
   assert.equal(fs.existsSync(file), true, "the record lock was taken for the writes so far");
-  const holder = await acquire(file, { operation: "test holder", waitSeconds: 5 });
-  try {
-    // A caller that could not even look at the record must not read that as a refusal.
-    await assert.rejects(
-      update(root, record.id, { status: "done" }, now + 1, { waitSeconds: 0 }),
-      (error: Error) => error.message === `update task ${record.id}: lock ${file} is held by another process (waited 0s)`,
-    );
-    assert.equal(read(root, record.id).status, "running");
-  } finally {
-    await holder.release();
-  }
+  // The competitor is a process of its own, the way every real one is, and its stderr is
+  // kept rather than ignored: a refusal below has to be contention, and `flock` saying
+  // anything at all would mean it was something else. Its `held` line is the barrier —
+  // nothing here runs before the kernel has granted it the lock.
+  const holder = spawn("flock", ["-w", "30", file, "sh", "-c", "echo held; read _"],
+    { stdio: ["pipe", "pipe", "pipe"] });
+  t.after(() => { holder.kill("SIGKILL"); });
+  let noise = "";
+  holder.stderr.on("data", (chunk: Buffer) => { noise += chunk.toString("utf8"); });
+  let granted = "";
+  holder.stdout.on("data", (chunk: Buffer) => { granted += chunk.toString("utf8"); });
+  await poll(() => granted, (text) => text.includes("held"));
+
+  // A caller that could not even look at the record must not read that as a refusal.
+  await assert.rejects(
+    update(root, record.id, { status: "done" }, now + 1, { waitSeconds: 0 }),
+    (error: Error) => error.message === `update task ${record.id}: lock ${file} is held by another process (waited 0s)`,
+  );
+  assert.equal(read(root, record.id).status, "running");
+
+  // The newline alone releases it. `Lock.release` writes one before the pipe it wrote it
+  // on is closed, so a caller that blocks its own loop straight after releasing still
+  // frees the lock (`src/locks.ts#acquire`); here the pipe is left open to prove it.
+  holder.stdin.write("\n");
+  const [code] = await once(holder, "close");
+  assert.equal(code, 0);
+  assert.equal(noise, "", "flock said nothing: what refused the write above was contention");
   assert.equal((await change(root, record.id, { status: "done" }, now + 2)).status, "done");
   const second = await acquire(file, { operation: "test holder", waitSeconds: 1 });
   await second.release();
+});
+
+test("a record carrying a status this build does not know is named, and no writer crashes on it", async (t) => {
+  const root = project(t);
+  const record = await started(root, "running", now);
+  fs.writeFileSync(path.join(tasks(root), `${record.id}.json`), JSON.stringify({ ...record, status: "quiesced" }));
+  // A later build's status reaches this one through the record file. Reading the record
+  // names it, and a write over it is refused by the same sentence rather than by a
+  // TypeError out of a transition table that has no row for it.
+  assert.throws(() => read(root, record.id), /status must be one of/);
+  await assert.rejects(update(root, record.id, { status: "done" }, now + 1), /status must be one of/);
+  const { records, invalid } = scan(root);
+  assert.deepEqual(records, [], "a record nobody can judge is not listed as one that can be");
+  assert.deepEqual(invalid.map((entry) => path.basename(entry.file)), [`${record.id}.json`]);
+  assert.match(invalid[0].reason, /status must be one of/);
 });
 
 test("update rejects unknown statuses", async (t) => {

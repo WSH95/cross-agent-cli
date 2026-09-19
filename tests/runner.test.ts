@@ -12,6 +12,7 @@ import * as ledger from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName, runnerLockName } from "../src/locks.ts";
 import { reconcile } from "../src/reconcile.ts";
 import type { LaunchSpec, TaskPatch, TaskRecord, TaskStatus, UpdateResult } from "../src/ledger.ts";
+import { poll, pollDeadlineMs } from "./helpers/project.ts";
 
 // What this file's own /proc reading yields. It deliberately does not carry the boot
 // id the implementation records: these helpers judge liveness for cleanup, so they
@@ -45,16 +46,6 @@ async function writeAs(root: string, id: string, status: TaskStatus, patch: Task
     record = await applied(ledger.update(root, id, index === steps.length - 1 ? { status: step, ...patch } : { status: step }));
   }
   return record!;
-}
-
-async function poll<T>(read: () => T, accepts: (value: T) => boolean, timeout = 4000): Promise<T> {
-  const deadline = Date.now() + timeout;
-  while (true) {
-    const value = read();
-    if (accepts(value)) return value;
-    assert.ok(Date.now() < deadline, `timed out waiting for state: ${JSON.stringify(value)}`);
-    await delay(10);
-  }
 }
 
 // Independent proc inspection lets cleanup work even when the implementation is broken.
@@ -108,6 +99,13 @@ function harness(options: {
     fs.writeFileSync(path.join(path.dirname(originalFile), `${record.id}.json`), JSON.stringify(record));
     fs.rmSync(originalFile);
   }
+  // Every runner of this file waits this long for a record lock, written into the project
+  // so that no test rides on the default. A test that holds the lock while it sets a scene
+  // holds it for as long as that scene takes on the machine it is running on, and a runner
+  // that gave up at the five-second default would fail for the load rather than for the
+  // behaviour under test. The one test that is about the limit writes its own config.
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"),
+    JSON.stringify({ roles: {}, limits: { lockWaitSeconds: 60 } }));
   const recordFile = path.join(root, ".cross-agent", "tasks", `${record.id}.json`);
   const auditFile = path.join(root, "writes.ndjson");
   const release = path.join(root, "release");
@@ -121,7 +119,10 @@ function harness(options: {
   const inheritedFile = path.join(root, "descendant-inherited");
   const competitorScript = path.join(root, "competitor.mjs");
   const outcomeFile = path.join(root, "competitor-outcome.json");
-  const markers = { atWrite: path.join(root, "competitor-at-write"), beforeWrite: path.join(root, "settled-before-write") };
+  const markers = {
+    atWrite: path.join(root, "competitor-at-write"), beforeWrite: path.join(root, "settled-before-write"),
+    cancelled: path.join(root, "runner-claimed-the-cancel"),
+  };
   const spec: LaunchSpec = {
     role: "implementer", brief: "finish T5", rolePrompt: "Implement this brief.", cwd: root, engine: "claude",
     model: "fixture-model", effort: "high", sandbox: { mode: "write", profile: "workspace-write" },
@@ -139,6 +140,9 @@ const env = process.env;
 if (env.INVOCATIONS) fs.appendFileSync(env.INVOCATIONS, process.pid + "\\n");
 if (env.FILE_RESULT) fs.writeFileSync(env.FILE_RESULT, "engine file result");
 if (env.RACE_EXIT === "1") process.on("exit", () => { try { process.kill(process.ppid, "SIGTERM"); } catch {} });
+// An engine that outlives the cancel's grace, so the teardown below it lasts longer than
+// one turn of the runner's activity interval.
+if (env.IGNORE_TERM === "1") process.on("SIGTERM", () => {});
 // DESCENDANT_INHERIT=1 leaves a member that shares the runner's pipe, so the engine's
 // own exit can never close it.
 if (env.DESCENDANT_INHERIT === "1") {
@@ -192,6 +196,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 const target = ${JSON.stringify(recordFile)};
 const audit = ${JSON.stringify(auditFile)};
+// The runner registers its own SIGTERM handler before it imports this module, and
+// listeners run in registration order: this marker therefore appears only after the
+// runner has claimed the teardown, which is a fact no test can read from outside the
+// process.
+process.on("SIGTERM", () => { try { fs.writeFileSync(${JSON.stringify(markers.cancelled)}, "settling"); } catch {} });
 const terminal = (record) => ["done", "failed", "cancelled"].includes(record.status);
 const args = (patch, now, marker) => [
   ${JSON.stringify(competitorScript)}, ${JSON.stringify(root)}, ${JSON.stringify(record.id)},
@@ -220,8 +229,11 @@ fs.renameSync = function(from, to) {
     rename(target + ".external", target);
     throw new Error("fixture ledger write failed after external settlement");
   }` : ""}
-  const result = rename(from, to);
+  // Appended before the rename, not after it: the rename is what publishes the record a
+  // test is polling for, and a runner descheduled between the two would leave a reader
+  // that has already seen the new record with an audit that has not caught up yet.
   fs.appendFileSync(audit, JSON.stringify({ at: Date.now(), record }) + "\\n");
+  const result = rename(from, to);
   ${options.competitor === "at-write" ? `if (terminal(record)) competeLater({ status: "done", reason: "competitor" }, 456, ${JSON.stringify(markers.atWrite)});` : ""}
   return result;
 };
@@ -319,7 +331,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
           if (identity) tracked.set(identity.pid, identity);
         }
       }
-      const deadline = Date.now() + 4000;
+      const deadline = Date.now() + pollDeadlineMs;
       while (true) {
         // The inherited marker finds engines even if the runner died before writing identities,
         // and descendants whose parent was reaped before this finally block.
@@ -384,7 +396,6 @@ test("the runner waits the configured lockWaitSeconds for its record writes", as
       await poll(
         () => (fs.existsSync(diagnostic) ? fs.readFileSync(diagnostic, "utf8") : ""),
         (text) => /waited 0s/.test(text),
-        4000,
       );
       assert.equal(h.read().status, "launching", "and nothing was written past the lock");
     } finally {
@@ -605,11 +616,15 @@ test("activity persistence is throttled to once per two seconds", async () => {
   try {
     h.start({ env: { ...h.spec.env, HOLD: "1", ACTIVITY: "1" } });
     await poll(h.read, (record) => record.status === "running");
-    await poll(h.audit, (writes) => writes.filter(({ record }) => record.lastEventAt != null).length >= 2, 5500);
+    await poll(h.audit, (writes) => writes.filter(({ record }) => record.lastEventAt != null).length >= 2);
     const writes = h.audit().filter(({ record }) => record.status === "running");
     assert.equal(writes.length, 3, "running acknowledgement plus two activity writes");
     for (let i = 1; i < writes.length; i++) {
-      assert.ok(writes[i].at - writes[i - 1].at >= 1990, "no burst of persistence writes");
+      // Measured by what the interval stamped on each record, not by when the rename
+      // that published it landed: the lock and the rename take as long as the machine
+      // takes, and the throttle is the interval, which is what `updatedAt` records.
+      assert.ok(writes[i].record.updatedAt - writes[i - 1].record.updatedAt >= 1990,
+        `no burst of persistence writes: ${writes[i].record.updatedAt - writes[i - 1].record.updatedAt}ms apart`);
       assert.ok(writes[i].record.lastEventAt! > (writes[i - 1].record.lastEventAt ?? 0));
     }
     fs.writeFileSync(h.release, "go");
@@ -651,7 +666,7 @@ test("an engine that failed while its record was adopted settles failed, with it
     // running, so the runner's terminal write is refused and it settles nothing. The
     // result file holds the failure's text by then, and reading that as a completed run
     // settled a failed task `done` (finding T3b-1).
-    h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "fail", HOLD: "1" } });
+    const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "fail", HOLD: "1" } });
     const running = await poll(h.read, (record) => record.status === "running");
     await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
     fs.writeFileSync(h.release, "go");
@@ -661,6 +676,9 @@ test("an engine that failed while its record was adopted settles failed, with it
     const { changed } = await terminateOrphans(h.root);
     assert.deepEqual(changed.map((record) => [record.status, record.reason]), [["failed", "fake failure"]]);
     assert.equal(h.read().exitCode, 2, "the exit code the runner saw, which the record never got");
+    // The diagnostic is the runner's last act before it exits, so its exit is what says
+    // the line is there; a settled record only says the write before it landed.
+    await poll(() => child.closed, Boolean);
     assert.match(h.runnerLog(), /someone else settled the task/);
   } finally { await h.cleanup(); }
 });
@@ -711,7 +729,7 @@ test("a descendant holding the engine's stdout delays settlement by the drain an
   try {
     const started = Date.now();
     const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "fail", DESCENDANT_INHERIT: "1" } });
-    const failed = await poll(h.read, terminal, 8000);
+    const failed = await poll(h.read, terminal);
     assert.ok(Date.now() - started >= 2000, "the engine's own exit starts a two-second drain, not an unbounded wait");
     assert.equal(failed.status, "failed");
     assert.equal(failed.exitCode, 2);
@@ -730,7 +748,7 @@ test("a task that succeeds with truncated output is done, and says so", async ()
   const h = harness();
   try {
     const child = h.start({ env: { ...h.spec.env, DESCENDANT_INHERIT: "1" } });
-    const done = await poll(h.read, terminal, 8000);
+    const done = await poll(h.read, terminal);
     assert.equal(done.status, "done", "a drained tail is not a failure: the engine finished");
     assert.equal(done.truncated, true);
     assert.equal(done.exitCode, 0);
@@ -805,13 +823,16 @@ test("reconciliation orphans a task whose engine leader is gone but whose group 
   } finally { await h.cleanup(); }
 });
 
-test("a runner killed before it acknowledges leaves an engine reconciliation adopts by task id", async () => {
+test("a runner killed before it acknowledges leaves an engine reconciliation adopts by task id", async (t) => {
   const { findByEnvironment, terminateOrphans } = await import("../src/process.ts");
   const h = harness();
   try {
     // Holding the record lock stops this runner exactly where B5-i names it: the engine
     // is spawned and running, and nothing has been written about it.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    // Given up however the barriers below end: a lock a failed wait left held would
+    // keep the runner waiting on it for the rest of this test.
+    t.after(() => held.release());
     const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall", CROSS_AGENT_TASK: h.record.id } });
     const [engine] = await poll(() => findByEnvironment(h.record.id, h.record.createdAt).found,
       (found) => found.length === 1);
@@ -841,7 +862,7 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
   } finally { await h.cleanup(); }
 });
 
-test("a replacement runner refuses to start a second engine for one task", async () => {
+test("a replacement runner refuses to start a second engine for one task", async (t) => {
   const { findByEnvironment } = await import("../src/process.ts");
   const h = harness();
   try {
@@ -850,6 +871,9 @@ test("a replacement runner refuses to start a second engine for one task", async
     // lock and the record is still `launching`: exactly the state in which a second
     // runner would take the lock, believe nothing had started, and spawn engine B.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    // Given up however the barriers below end: a lock a failed wait left held would
+    // keep the runner waiting on it for the rest of this test.
+    t.after(() => held.release());
     const first = h.start({ env });
     await poll(() => h.engineLaunches(), (launches) => launches.length === 1);
     await poll(() => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
@@ -910,7 +934,7 @@ test("the runner puts the record's own id in the engine's environment", async ()
     assert.equal(found[0].pid, running.engineIdentity!.pid);
 
     child.child.kill("SIGTERM");
-    const cancelled = await poll(h.read, terminal, 6000);
+    const cancelled = await poll(h.read, terminal);
     assert.equal(cancelled.status, "cancelled");
     assert.equal(living(running.engineIdentity!), false);
   } finally { await h.cleanup(); }
@@ -959,7 +983,7 @@ test("group members of a live leader die with it on cancel and on orphan cleanup
       const descendant = await h.descendant();
       await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
       child.child.kill("SIGTERM");
-      const cancelled = await poll(h.read, terminal, 6000);
+      const cancelled = await poll(h.read, terminal);
       assert.equal(cancelled.status, "cancelled");
       await poll(() => child.closed, Boolean);
       assert.equal(child.code, 0);
@@ -1115,14 +1139,20 @@ test("an activity write after an external settlement is refused and the runner e
     assert.equal(running.lastEventAt, null);
     const external = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
     fs.writeFileSync(activityRelease, "emit the first activity event now");
-    await poll(() => child.closed, Boolean, 8000);
+    await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
     assert.deepEqual(h.read(), external);
     assert.match(fs.readFileSync(running.logPath, "utf8"), /fixture ready/, "the engine did emit the event");
     const writes = h.audit();
     assert.equal(writes.length, 1, "the running acknowledgement is the only rename; the activity write was refused");
     assert.equal(writes[0].record.status, "running");
-    assert.ok(writes[0].at <= external.updatedAt);
+    // Compared by what each writer stamped on the record, not by the audit's own clock:
+    // the audit line is appended after the rename, and on a loaded machine the runner can
+    // be descheduled between the two for longer than it took this test to see the record
+    // and settle it. What the acknowledgement being first means is that it was decided
+    // first, and `updatedAt` is that decision.
+    assert.ok(writes[0].record.updatedAt <= external.updatedAt,
+      `acknowledged at ${writes[0].record.updatedAt}, settled at ${external.updatedAt}`);
     assert.equal(living(running.engineIdentity!), false);
     assert.deepEqual(ownedProcesses(h.root), []);
     assert.match(h.runnerLog(), /someone else settled/);
@@ -1225,6 +1255,23 @@ test("orphan cleanup preserves a record settled during its grace period", async 
   } finally { await h.cleanup(); await cleanup; }
 });
 
+/** Every `flock` child of this machine queued on one lock file, holder and waiters alike. */
+function lockChildren(file: string): number[] {
+  const pids: number[] = [];
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let cmdline: string;
+    try {
+      cmdline = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8");
+    } catch {
+      continue;
+    }
+    const argv = cmdline.split("\0");
+    if (argv[0]?.endsWith("flock") && argv.includes(file)) pids.push(Number(entry));
+  }
+  return pids;
+}
+
 /** The util-linux child that actually holds a lock, found by the file on its command line. */
 function holderOf(file: string): number | null {
   for (const entry of fs.readdirSync("/proc")) {
@@ -1251,7 +1298,7 @@ test("a runner that loses its lock settles failed and leaves no engine group", a
     // The lock is this runner's claim to be the only one for the task. Once the kernel
     // has dropped it another runner may start, so this one must own nothing afterwards.
     process.kill(holder!, "SIGKILL");
-    const failed = await poll(h.read, terminal, 8000);
+    const failed = await poll(h.read, terminal);
     assert.equal(failed.status, "failed");
     assert.equal(failed.reason, "runner lock lost");
     assert.equal(groupAlive(running.engineIdentity!), false);
@@ -1329,7 +1376,7 @@ test("a runner that starts against a cancelling record settles it and spawns no 
   });
 });
 
-test("a cancel that lands before acknowledgement is a cancel, not a stranger's settlement", async () => {
+test("a cancel that lands before acknowledgement is a cancel, not a stranger's settlement", async (t) => {
   const { groupAlive } = await import("../src/process.ts");
   // The window the runner cannot stand down in: it read the record, found it `launching`,
   // and is building its spawn when the cancel lands. The fixture holds `plan` there, so
@@ -1343,13 +1390,16 @@ test("a cancel that lands before acknowledgement is a cancel, not a stranger's s
     // when the runner learns it was cancelled, and the settlement it writes carries real
     // evidence rather than whatever the engine managed before it was signalled.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    // Given up however the barriers below end: a lock a failed wait left held would
+    // keep the runner waiting on it for the rest of this test.
+    t.after(() => held.release());
     fs.writeFileSync(h.planRelease, "go");
     await poll(
       () => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
       (log) => log.includes('"working"'),
     );
     await held.release();
-    const cancelled = await poll(h.read, terminal, 8000);
+    const cancelled = await poll(h.read, terminal);
     assert.equal(cancelled.status, "cancelled");
     // The identities are written even though the acknowledgement never applied, so
     // cleanup can verify the group this runner owned.
@@ -1365,9 +1415,54 @@ test("a cancel that lands before acknowledgement is a cancel, not a stranger's s
     assert.deepEqual(ownedProcesses(h.root), []);
     assert.deepEqual(h.audit().map(({ record }) => record.status), ["cancelled"],
       "the runner never claimed running, and never rewrote the cancelling it did not own");
-    assert.match(h.runnerLog(), /cancelled before acknowledgement/);
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
+    assert.match(h.runnerLog(), /cancelled before acknowledgement/);
+  } finally { await h.cleanup(); }
+});
+
+test("a cancel that beat the acknowledgement leaves no activity interval behind it", async (t) => {
+  // The guard before the interval (`src/runner.ts`): a cancel that arrived while the
+  // acknowledgement was in flight already owns the teardown and has cleared an interval
+  // that this would otherwise start behind it — which would then persist `lastEventAt`
+  // over a record being cancelled, for as long as the engine took to die.
+  const h = harness({ delayedPlan: true });
+  try {
+    const child = h.start({ env: { ...h.spec.env, HOLD: "1", ACTIVITY: "1", IGNORE_TERM: "1" } });
+    await poll(() => fs.existsSync(h.planReady), Boolean);
+    const file = lockPath(h.root, recordLockName(h.record.id));
+    const held = await acquire(file, { operation: "test writer", waitSeconds: 60 });
+    t.after(() => held.release());
+    fs.writeFileSync(h.planRelease, "go");
+    // Two `flock` children on the record's lock: this test's, and the one the runner's
+    // acknowledgement is queued behind. That is the state this test needs — the cancel
+    // below has to land while that write is in flight — and waiting for it is what makes
+    // the race a certainty rather than a matter of how fast the machine is.
+    await poll(() => lockChildren(file).length, (count) => count === 2);
+    await poll(() => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
+      (log) => log.includes("fixture ready"));
+    child.child.kill("SIGTERM");
+    // The cancel has claimed the teardown, and the acknowledgement is still queued behind
+    // this lock: the state the guard is about, reached by waiting rather than by hoping
+    // that a signal beat a write.
+    await poll(() => fs.existsSync(h.markers.cancelled), Boolean);
+    assert.equal(h.read().status, "launching", "nothing was written while the lock was held");
+    await held.release();
+
+    const cancelled = await poll(h.read, terminal);
+    assert.equal(cancelled.status, "cancelled");
+    const writes = h.audit();
+    assert.deepEqual(writes.map(({ record }) => record.status), ["running", "cancelling", "cancelled"],
+      "the acknowledgement, the cancel and the settlement: no activity write behind them");
+    // What makes that a test rather than a coincidence: the engine ignored SIGTERM, so the
+    // teardown outlasted a turn of the two-second interval, and it kept emitting events
+    // the whole time, so an interval left running would have had something to persist.
+    const teardown = writes[2].record.updatedAt - writes[1].record.updatedAt;
+    assert.ok(teardown >= 2000, `the teardown was ${teardown}ms, less than a turn of the interval`);
+    assert.ok(cancelled.lastEventAt! > writes[0].record.lastEventAt!, "the engine went on talking through it");
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.deepEqual(ownedProcesses(h.root), []);
   } finally { await h.cleanup(); }
 });
 
@@ -1399,7 +1494,7 @@ test("a SIGTERM over an orphaned record settles cancelled, the one edge the ledg
     // teardown may not claim the record with a `cancelling` write of its own.
     const orphaned = await applied(ledger.update(h.root, h.record.id, { status: "orphaned" }));
     child.child.kill("SIGTERM");
-    const cancelled = await poll(h.read, terminal, 6000);
+    const cancelled = await poll(h.read, terminal);
     assert.equal(cancelled.status, "cancelled");
     assert.ok(cancelled.updatedAt >= orphaned.updatedAt);
     assert.equal(groupAlive(running.engineIdentity!), false);
@@ -1423,8 +1518,8 @@ test("a SIGTERM during startup settles the task or leaves it, and never exits th
       const child = h.start({ env: { ...h.spec.env, FAKE_ENGINE_SCRIPT: "stall" } });
       await delay(delayMs);
       child.child.kill("SIGTERM");
-      await poll(() => child.closed, Boolean, 8000);
-      const record = await poll(h.read, (value) => value.status !== "cancelling", 8000);
+      await poll(() => child.closed, Boolean);
+      const record = await poll(h.read, (value) => value.status !== "cancelling");
       // Either the signal arrived before this runner had a handler, which is the kernel's
       // default and leaves the record for reconciliation, or the runner answered it.
       assert.ok(["launching", "cancelled"].includes(record.status), `${delayMs}ms: ${record.status}`);
@@ -1444,7 +1539,7 @@ test("a SIGTERM after the server has already written cancelling still settles ca
     await poll(() => fs.readFileSync(running.logPath, "utf8"), (log) => log.includes('"working"'));
     const cancelling = await writeAs(h.root, h.record.id, "cancelling");
     child.child.kill("SIGTERM");
-    const cancelled = await poll(h.read, terminal, 6000);
+    const cancelled = await poll(h.read, terminal);
     assert.equal(cancelled.status, "cancelled");
     assert.ok(cancelled.updatedAt >= cancelling.updatedAt);
     assert.equal(living(running.engineIdentity!), false);
@@ -1456,30 +1551,35 @@ test("a SIGTERM after the server has already written cancelling still settles ca
 });
 
 test("two writers with contradictory expectations: exactly one applies, the other is refused", async () => {
-  const h = harness();
-  try {
-    // Both read `launching` and both intend to move it, so at most one can be right.
-    // The gate releases them together; the record lock decides which.
-    const gate = path.join(h.root, "race-go");
-    const first = h.competitor("claims-running", { status: "running", reason: "first" }, 111, "launching", gate);
-    const second = h.competitor("claims-cancelling", { status: "cancelling", reason: "second" }, 222, "launching", gate);
-    await poll(() => fs.existsSync(first.marker) && fs.existsSync(second.marker), Boolean);
-    fs.writeFileSync(gate, "go");
-    await poll(() => first.tracked.closed && second.tracked.closed, Boolean);
-    const results = [await h.outcome(first.outcome), await h.outcome(second.outcome)];
-    for (const result of results) assert.ok("applied" in result, `competitor threw: ${JSON.stringify(result)}`);
-    const applied = results.filter((result) => "applied" in result && result.applied);
-    const refused = results.filter((result) => "applied" in result && !result.applied);
-    assert.equal(applied.length, 1, `exactly one writer applied: ${JSON.stringify(results)}`);
-    assert.equal(refused.length, 1);
-    assert.equal((refused[0] as { reason: string }).reason, "expect");
-    const final = h.read();
-    assert.deepEqual((applied[0] as { record: TaskRecord }).record, final, "the record holds the winner's write");
-    assert.deepEqual((refused[0] as { record: TaskRecord }).record, final,
-      "the loser read the winner's record inside the lock, so it can act on what beat it");
-    assert.equal(final.reason, final.status === "running" ? "first" : "second");
-    assert.equal(final.updatedAt, final.status === "running" ? 111 : 222);
-  } finally { await h.cleanup(); }
+  // A race, so it is run as one: what each round asserts is the invariant the record lock
+  // gives — one of two contradictory writers applies and the other is refused, whichever
+  // of them the kernel let in first — and never an order.
+  for (let round = 0; round < 5; round++) {
+    const h = harness();
+    try {
+      // Both read `launching` and both intend to move it, so at most one can be right.
+      // The gate releases them together; the record lock decides which.
+      const gate = path.join(h.root, "race-go");
+      const first = h.competitor("claims-running", { status: "running", reason: "first" }, 111, "launching", gate);
+      const second = h.competitor("claims-cancelling", { status: "cancelling", reason: "second" }, 222, "launching", gate);
+      await poll(() => fs.existsSync(first.marker) && fs.existsSync(second.marker), Boolean);
+      fs.writeFileSync(gate, "go");
+      await poll(() => first.tracked.closed && second.tracked.closed, Boolean);
+      const results = [await h.outcome(first.outcome), await h.outcome(second.outcome)];
+      for (const result of results) assert.ok("applied" in result, `competitor threw: ${JSON.stringify(result)}`);
+      const applied = results.filter((result) => "applied" in result && result.applied);
+      const refused = results.filter((result) => "applied" in result && !result.applied);
+      assert.equal(applied.length, 1, `exactly one writer applied: ${JSON.stringify(results)}`);
+      assert.equal(refused.length, 1);
+      assert.equal((refused[0] as { reason: string }).reason, "expect");
+      const final = h.read();
+      assert.deepEqual((applied[0] as { record: TaskRecord }).record, final, "the record holds the winner's write");
+      assert.deepEqual((refused[0] as { record: TaskRecord }).record, final,
+        "the loser read the winner's record inside the lock, so it can act on what beat it");
+      assert.equal(final.reason, final.status === "running" ? "first" : "second");
+      assert.equal(final.updatedAt, final.status === "running" ? 111 : 222);
+    } finally { await h.cleanup(); }
+  }
 });
 
 test("an engine identity from another boot is dead, not a reused pid", async () => {
@@ -1503,7 +1603,7 @@ test("an engine identity from another boot is dead, not a reused pid", async () 
   } finally { await h.cleanup(); }
 });
 
-test("an engine that completes while the server is cancelling settles cancelled, not done", async () => {
+test("an engine that completes while the server is cancelling settles cancelled, not done", async (t) => {
   const { groupAlive } = await import("../src/process.ts");
   // The cancel lands while the runner is building its spawn, which is the one window it
   // cannot stand down in: past that point the engine is this runner's to settle.
@@ -1518,10 +1618,13 @@ test("an engine that completes while the server is cancelling settles cancelled,
     // `cancelling -> done`, which the ledger forbids: the write throws and the record
     // is stranded `cancelling` with no identities.
     const held = await acquire(lockPath(h.root, recordLockName(h.record.id)), { operation: "test writer", waitSeconds: 5 });
+    // Given up however the barriers below end: a lock a failed wait left held would
+    // keep the runner waiting on it for the rest of this test.
+    t.after(() => held.release());
     fs.writeFileSync(h.planRelease, "go");
     await poll(() => fs.existsSync(h.record.resultPath), Boolean);
     await held.release();
-    const cancelled = await poll(h.read, terminal, 8000);
+    const cancelled = await poll(h.read, terminal);
     assert.equal(cancelled.status, "cancelled");
     assert.equal(cancelled.reason, "engine completed during cancel");
     assert.equal(cancelled.exitCode, 0);
