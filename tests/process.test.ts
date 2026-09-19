@@ -225,6 +225,32 @@ test("the environment scan reports what it could not read and binds each match t
   assert.deepEqual(findByEnvironment(taskId, since).found.map((entry) => entry.pid), [leader.pid], "the mocks changed nothing else");
 });
 
+test("the unreadable-candidate bound allows for the second btime rounds away", async (t) => {
+  const zoo = processes(t);
+  const taskId = `margin-${process.pid}-${Date.now()}`;
+  const leader = zoo.leader({ CROSS_AGENT_TASK: taskId });
+  await poll(() => findByEnvironment(taskId, 0).found, (found) => found.length === 1);
+  // A start time is ticks since boot on a clock whose zero `/proc/stat` gives in whole
+  // seconds, so the moment it computes can fall up to a second before the real one. An
+  // engine is spawned within its own record's second — the normal case — and without the
+  // margin it computes as older than the record and is not counted at all.
+  const bootTimeMs = Number(/^btime (\d+)$/m.exec(fs.readFileSync("/proc/stat", "utf8"))![1]) * 1000;
+  const startedAt = bootTimeMs + Number(readProcessStat(leader.pid)!.startTime) * 10;
+  const original = fs.readFileSync;
+  const real = (target: fs.PathOrFileDescriptor, options?: unknown) =>
+    (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string)(target, options);
+  const denied = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    if (target === `/proc/${leader.pid}/environ`) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    return real(target, options);
+  }) as typeof fs.readFileSync);
+  const within = findByEnvironment(taskId, startedAt + 900);
+  const beyond = findByEnvironment(taskId, startedAt + 60_000);
+  denied.mock.restore();
+
+  assert.equal(within.unreadable, 1, "a candidate the rounding put just before the record is still counted");
+  assert.equal(beyond.unreadable, 0, "and the bound still means something past the margin");
+});
+
 // A detached spawn leads its own group and session before it has execed, and for the few
 // milliseconds it spends inside execve its cmdline is empty and its environ answers
 // EACCES: exactly the shape of a plausible engine this scan may not read. Counting one

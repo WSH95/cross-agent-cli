@@ -802,7 +802,11 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   candidate** is counted: a live process of this user that leads its own group
   and session and started no earlier than the record
   (`src/process.ts#findByEnvironment`), which is the only shape a detached
-  engine spawn can have. **A process still inside `execve` is waited for, not
+  engine spawn can have. That bound is read a second wide: a start time is
+  ticks since a boot whose wall clock `/proc/stat` gives in whole seconds, so
+  the engine a record spawned within its own second — the normal case — can
+  compute as older than the record, and the margin is what keeps it countable
+  (`src/process.ts#btimeMarginMs`, bead `atc-1p0`). **A process still inside `execve` is waited for, not
   counted.** Between the kernel's `begin_new_exec` and `setup_new_exec` a
   starting process has neither its argv nor its dumpable flag, so
   `/proc/<pid>/cmdline` is empty and `/proc/<pid>/environ` answers EACCES —

@@ -407,11 +407,11 @@ test("a launch decision refused at the write signals nothing and is reported", a
 test("a launching record with an environment it could not read waits for the next pass", async (t) => {
   const root = project(t);
   const zoo = processes(t);
-  // Dated a clear second before the leader below, because a start time read from /proc
-  // is ticks since a boot whose wall clock `/proc/stat` gives in whole seconds: it can
-  // name a start up to a second earlier than the real one. The candidate bound is not
-  // what this test measures, and a record created in that window would fall outside it.
-  const record = create(root, input(root), now - 5000);
+  // Dated at the moment the leader below is spawned, which is the case that matters: a
+  // start time read from /proc is ticks since a boot whose wall clock `/proc/stat` gives
+  // in whole seconds, so the engine of a record can compute as older than the record
+  // itself, and the candidate bound gives that second back (`src/process.ts` btimeMarginMs).
+  const record = create(root, input(root), now);
   const hidden = zoo.leader({ CROSS_AGENT_TASK: record.id });
   await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 1);
   const original = fs.readFileSync;

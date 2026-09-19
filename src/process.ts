@@ -13,6 +13,17 @@ function startedAt(startTime: string): number {
   return bootTimeMs + Number(startTime) * 10;
 }
 
+/**
+ * How much of a second the candidate bound gives back. `btime` is the boot's wall clock
+ * in whole seconds, so every start time computed from it can fall up to a second before
+ * the moment the process really started — 981 ms out on the machine this was measured
+ * on. An engine is spawned within its own record's second, which is the normal case, so
+ * without the margin it computes as older than the record and an unreadable one is not
+ * counted at all: the rule that an unreadable environment never yields `failed: launch`
+ * would have its hole exactly where it matters most (bead atc-1p0).
+ */
+const btimeMarginMs = 1000;
+
 function ownedByThisUser(pid: number): boolean {
   try {
     return fs.statSync(`/proc/${pid}`).uid === process.getuid!();
@@ -188,7 +199,7 @@ export function findByEnvironment(taskId: string, since = 0): EnvironmentScan {
     // than the task, and leading its own group and session, which is the only shape a
     // detached engine spawn can have.
     const read = readEnvironment(pid, () => before.pgid === pid && before.sid === pid
-      && startedAt(before.startTime) >= since && ownedByThisUser(pid));
+      && startedAt(before.startTime) >= since - btimeMarginMs && ownedByThisUser(pid));
     if (read.text === null) {
       if (read.denied) unreadable++;
       continue;
