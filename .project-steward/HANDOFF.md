@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T15:28:19Z
+updated_at: 2026-09-19T15:48:05Z
 updated_by: claude
 session_status: active
 branch: main
@@ -26,39 +26,24 @@ review rounds, then user-approved amendments: decision 10, Codex paused).
 ## In flight
 
 M3's skills half is merged (`main` `3023e30`; `VERIFY.md` M3). Task 6
-(T13; `atc-s96.13`) is on `task/cross-agent-m3` at `052299d`: eleven commits
-over `3023e30`; 610 tests, 609 pass, 1 skipped (the guarded Codex I2 test);
-825 citations, 0 misses; `node tools/check-citations.mjs --since 3023e30`
-reports no drift; `tools/e2e-verify.mjs` 8/8 on the sample. Three fix rounds
-closed everything the reviews found: the containment fixes (protected git
-paths for the writable profile; `denyWrite` of the cwd for the read-only
-profile, both proven by real probes), the Grok prompt-file budget (proven by
-a 76 KB review brief launching through the product), the plugin manifest with
-its inline MCP declaration, the e2e verifier that cannot pass on silence, the
-checker's `--since` drift flag, and every test-file citation as an anchor.
-Beads `.17`, `.52`, `.54`, `.55` closed; `atc-3ub` filed (two unprobed
-facts for T14/T15). The Grok second review of round 3 (task `2932a349…`) found the anchor
-mechanism sound but the conversion wrong in about twenty-five places (design
-sentences pointed at neighbouring tests whose titles do not state the claim),
-leftover line citations (`--since 39505aa` reports 17 drifts), a guessed
-Codex item shape and a quote-blind launcher regex in the verifier, HTML
-anchors splitting the P9 table, and a journal check that fails any unfinished
-journal. **Fix round 4** is running on the implementer
-(`task-6-findings-round-4.md`; rulings: Codex items answer `?` until I1 Codex
-records the shape; verifier exit codes 0/1/2; newest complete journal by
-default; an alignment table in the report). The Opus 5 scoped re-review of
-round 3 agreed (spec PASS; quality needs fixes) and added the checker blind
-spot behind round 3's false "0 drifted" (`--since` skips lines past the
-revision's file length) and specific wrong anchors; all folded into round 4
-by follow-up (T6-R4-6 … R4-11). After round 4: the Grok seat and the Opus 5
-scoped re-review on its diff, then close `.13`, merge, `VERIFY.md`, handover. When both
-are clean: close `.13`, rebase onto `main` and fast-forward, root `npm test`,
-`VERIFY.md` T13 section (`dispatch/verify-t13-final.md` with four
-placeholders), the final handover (`HANDOFF.md` from
-`dispatch/handoff-draft-static.md`, `PLAN.md`, `project-steward wrap`). The
-user leaves after T13; S11 is the next session's first dispatch
-(`task-7-brief.md` with addendum; `dispatch/s11-dispatch.md`). Raw evidence
-of P2/I1/I2/E1: `~/.cache/agent-team/probe-logs/t13-2026-09-19/`.
+(T13; `atc-s96.13`) is on `task/cross-agent-m3` at `aa5edc8`: fourteen
+commits over `3023e30`; 614 tests, 613 pass, 1 skipped (the guarded Codex
+I2 test); 824 citations, 0 misses; `tools/check-citations.mjs --since` quiet
+against both `3023e30` and `39505aa` (and it now reports what it cannot
+judge instead of staying silent); `tools/e2e-verify.mjs` 8/8 on the sample.
+Four fix rounds closed everything four reviews found; round 4 realigned the
+anchored citations to the tests whose titles state each claim (alignment
+table in `task-6-report.md`), grounded the verifier's Codex handling, and
+fixed the checker's blind spot. **Two closing reviews of round 4 run now:**
+the Grok seat through cross-agent (diff attached) and the Opus 5 scoped
+re-review over the alignment table. When both are clean: close `.13`,
+rebase onto `main` and fast-forward, root `npm test`, `VERIFY.md` T13
+section (`dispatch/verify-t13-final.md`, four placeholders), the final
+handover (`HANDOFF.md` from `dispatch/handoff-draft-static.md`, `PLAN.md`,
+`project-steward wrap`). The user leaves after T13; S11 is the next
+session's first dispatch (`task-7-brief.md` with addendum;
+`dispatch/s11-dispatch.md`). Raw evidence of P2/I1/I2/E1:
+`~/.cache/agent-team/probe-logs/t13-2026-09-19/`.
 
 ## Next steps
 
