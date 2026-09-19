@@ -54,7 +54,7 @@ async function repositoryWith(t: { after: (fn: () => unknown) => void }, files: 
   return dir;
 }
 
-test("--since reports a citation whose cited line moved under it, and nothing once it is re-pointed", async (t) => {
+test("--since reports a citation whose cited line moved under it, and what it cannot judge", async (t) => {
   const dir = await repositoryWith(t, {
     "code.ts": "export function first() {}\nexport function second() {}\n",
     "doc.md": "The second one (`code.ts:2`) is what this sentence is about.\n",
@@ -73,6 +73,7 @@ test("--since reports a citation whose cited line moved under it, and nothing on
   assert.equal(blind.code, 0, blind.out);
   const drifted = await run(["--root", dir, "--since", "HEAD", doc]);
   assert.equal(drifted.code, 1);
+  assert.match(drifted.err, /1 drifted since HEAD, 0 not judged/);
   const lines = drifted.out.trim().split("\n");
   assert.equal(lines.length, 3, drifted.out);
   assert.match(lines[0], /doc\.md:1: code\.ts:2 — drifted since HEAD$/);

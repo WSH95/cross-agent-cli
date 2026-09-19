@@ -153,6 +153,39 @@ test("a delegate call is an offence in every host's spelling, including Grok's d
   }
 });
 
+test("a top-level event type no archived run has shown is read the same way", async (t) => {
+  // R5-1: "any string `type` is noise" would let a whole unarchived shape through — a
+  // transcript whose only real content is an event type nothing here knows would pass on
+  // the strength of the two lines around it. The list of known event types is closed.
+  const invented = [
+    JSON.stringify({ type: "thread.started", thread_id: "t" }),
+    JSON.stringify({ type: "mcp_tool_call", tool: "mcp__cross_agent__delegate" }),
+    JSON.stringify({ type: "turn.completed" }),
+  ].join("\n") + "\n";
+  const root = await project(t, { codex: invented });
+  const { code, out } = await run(root);
+  assert.equal(verdict(out, scan), "?", out);
+  assert.equal(code, 2, out);
+});
+
+test("an offence already found is not withdrawn because another line went unread", async (t) => {
+  // R5-2: `?` is for a transcript that offended nowhere this tool could read. One that
+  // did offend has been read far enough, whatever else it holds.
+  const truncated = claudeDelegate + '{"type":"assistant","message":{"content":[{"typ\n';
+  const withClaude = await project(t, { claude: truncated });
+  const claudeRun = await run(withClaude);
+  assert.equal(verdict(claudeRun.out, scan), "FAIL", claudeRun.out);
+  assert.equal(claudeRun.code, 1, claudeRun.out);
+
+  // The same for Codex: a command that starts an engine beside an item type this build
+  // cannot read is still that command.
+  const mixed = codexLog("/bin/bash -lc 'claude --version'", { id: "item_2", type: "mcp_tool_call", tool: "whatever" });
+  const withCodex = await project(t, { codex: mixed });
+  const codexRun = await run(withCodex);
+  assert.equal(verdict(codexRun.out, scan), "FAIL", codexRun.out);
+  assert.equal(codexRun.code, 1, codexRun.out);
+});
+
 test("a Codex item type no archived run has shown makes the scan answer, not guess", async (t) => {
   // The only Codex items any archived `--json` transcript holds are `agent_message` and
   // `command_execution` (`docs/probes.md`, the native samples). How Codex names an MCP
@@ -176,6 +209,8 @@ test("a shell command that starts an engine is an offence through a shell's own 
     { codex: codexLog("/bin/bash -lc 'grok -p hello'") },
     { codex: codexLog(`/bin/bash -lc 'echo "DEPTH=\${CROSS_AGENT_DEPTH:-NONE}"; claude --version'`) },
     { grok: grokBash("codex exec 'do the work'") },
+    // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`).
+    { claude: claudeLog("node /home/op/agent-team-cli/src/cli.ts init --mode solo") },
   ]) {
     const root = await project(t, logs);
     const { code, out } = await run(root);
@@ -197,6 +232,22 @@ test("the exit status says which of the three verdicts the run reached", async (
   const answered = await run(silent);
   assert.equal(verdict(answered.out, scan), "?", answered.out);
   assert.equal(answered.code, 2, answered.out);
+});
+
+test("reading a file that happens to be named like one of them is not a launch", async (t) => {
+  // The deny list is about command words, not about paths anywhere in a line: a
+  // specialist reading this repository's own source is doing what a reviewer does.
+  for (const command of [
+    "cat src/server.ts",
+    "git show HEAD:src/server.ts",
+    "rg --files-with-matches server.ts src",
+    "python3 -m unittest discover -s tests -t .",
+  ]) {
+    const root = await project(t, { claude: claudeLog(command) });
+    const { code, out } = await run(root);
+    assert.equal(verdict(out, scan), "pass", `${command}\n${out}`);
+    assert.equal(code, 0, out);
+  }
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {

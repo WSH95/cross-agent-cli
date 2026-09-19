@@ -149,12 +149,29 @@ if (journals.length === 0) {
 // to record. Until then a Codex log carrying any other item type is answered `?` rather
 // than guessed at, and one carrying only those two is judged on its commands.
 const codexItems = new Set(["agent_message", "command_execution"]);
-// A quote is a delimiter like any other: Codex wraps every command in `/bin/bash -lc '…'`
-// (P9, P10), so the engine's own name is preceded by `'` and not by whitespace. A path is
-// still that engine — the deny list names `/opt/custom codex` as readily as `codex` — and
-// this server's own entry point is a launch of its own, so a `src/server.ts` or
-// `server.js` argument counts however it is reached.
-const launcher = /(^|[|&;`('"()\s/])(claude|codex|grok|cross-agent)(\s|$|['"])|(^|[\s'"])[^\s'"]*\/server\.(?:ts|js)(\s|$|['"])/;
+// Every non-item top-level `type` the three engines' recorded transcripts hold: Claude's
+// stream-json and Grok's streaming-messages-json (`system`, `assistant`, `user`, `result`,
+// `rate_limit_event`, and a failed Grok run's `error`), and Codex's thread and turn lines.
+// The list is closed on purpose — "any string type is noise" would let a whole unarchived
+// shape pass on the strength of the lines around it, which is the opposite of the rule
+// this tool is built on.
+const knownEvents = new Set([
+  "system", "assistant", "user", "result", "rate_limit_event", "error",
+  "thread.started", "turn.started", "turn.completed", "turn.failed",
+]);
+// What counts as a launch is exactly what the deny list denies (`src/guard.ts#denyTargets`):
+// the command **word** `claude`, `codex`, `grok` or `cross-agent`, bare or path-qualified,
+// and `node <path>/src/server.ts` or `<path>/src/cli.ts`. A command word is what opens a
+// command — the start of the line, or what follows a separator or an opening quote, since
+// Codex wraps everything in `/bin/bash -lc '…'` (P9, P10) and the engine's name then sits
+// behind a quote rather than behind whitespace. A path that merely appears as an
+// **argument** is not a launch: `cat src/server.ts` is a specialist reading this
+// repository, which is what a reviewer does.
+const OPENS = "(?:^|[|&;`(]|&&|\\|\\||[\\s]*['\"]?)";
+const launcher = new RegExp(
+  `${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?(claude|codex|grok|cross-agent)(?=[\\s'"]|$)`
+  + `|${OPENS}\\s*(?:[^\\s'"|&;]*\\/)?node\\s+['"]?[^\\s'"]*\\/src\\/(?:server|cli)\\.(?:ts|js)(?=[\\s'"]|$)`,
+);
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
 const unreadable = [];
@@ -202,25 +219,32 @@ for (const record of run) {
       if (item.type === "command_execution" && typeof item.command === "string") commands.push(item.command);
       continue;
     }
-    // Everything else an engine says about itself — a hook, a rate-limit notice, a
-    // session line, a result — carries no tool call and no command, so an unfamiliar
-    // `type` here is noise rather than evidence withheld.
-    if (typeof event.type === "string") understood++;
-    else unparsable++;
+    // Everything else an engine says about itself — a session line, a hook, a rate-limit
+    // notice, a result, a turn — carries no tool call and no command. The list of those
+    // is closed: an unfamiliar top-level `type` is a shape this build has never seen, and
+    // could be the very call the scan is looking for.
+    if (knownEvents.has(event.type)) understood++;
+    else unknownItems.push(String(event.type));
   }
+  // What was read is judged first. An offence found has been read far enough to be an
+  // offence, and an unread line beside it makes it no less true; `?` is for a transcript
+  // that offended nowhere this tool could read, not for one that offended and also holds
+  // a line it could not parse.
+  let offended = false;
+  for (const name of calls) {
+    if (isDelegate(name)) { offences.push(`${record.id.slice(0, 8)} called ${name}`); offended = true; }
+  }
+  for (const command of commands) {
+    if (launcher.test(command)) { offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`); offended = true; }
+  }
+  if (offended) { scanned++; continue; }
   if (understood === 0 || unparsable > 0 || unknownItems.length > 0) {
     unreadable.push(unknownItems.length > 0
-      ? `${record.id.slice(0, 8)}: Codex item${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`
+      ? `${record.id.slice(0, 8)}: event${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`
       : `${record.id.slice(0, 8)}: ${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`);
     continue;
   }
   scanned++;
-  for (const name of calls) {
-    if (isDelegate(name)) offences.push(`${record.id.slice(0, 8)} called ${name}`);
-  }
-  for (const command of commands) {
-    if (launcher.test(command)) offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`);
-  }
 }
 check("no delegate call and no engine launch in any specialist transcript",
   offences.length > 0 ? "FAIL" : unreadable.length > 0 || scanned === 0 ? "?" : "pass",

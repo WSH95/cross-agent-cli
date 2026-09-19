@@ -154,20 +154,20 @@ for (const doc of docs) {
 
 for (const miss of misses) console.log(miss);
 for (const drift of drifts) console.log(drift);
+// Two findings, counted apart: a citation whose line says something else now, and one the
+// comparison could not make at all. Reporting them as one number is how "0 drifted" came
+// to mean "not checked".
+const unjudged = drifts.filter((drift) => drift.includes(" — not judged: ")).length;
+const moved = drifts.length - unjudged;
 process.stderr.write(
   `${lineCitations + symbolCitations} citations in ${docs.length} file${docs.length === 1 ? "" : "s"}` +
     ` (${lineCitations} by line, ${symbolCitations} by symbol);` +
     ` ${misses.length} miss${misses.length === 1 ? "" : "es"}` +
-    (since === null ? "" : `; ${drifts.length} drifted since ${since}`) + "\n",
+    (since === null ? "" : `; ${moved} drifted since ${since}, ${unjudged} not judged`) + "\n",
 );
 process.exit(misses.length + drifts.length > 0 ? 1 : 0);
 
-/**
- * The first line of this citation whose text has changed since `--since`, with both
- * texts, or null when none has. Whitespace is normalised, because reindenting a line is
- * not moving the content out from under a sentence; a file the revision does not hold has
- * nothing to compare against, and a symbol citation never reaches here at all.
- */
+/** A line's text with its spacing flattened: reindenting is not moving. */
 function flat(line) {
   return line.replace(/\s+/g, " ").trim();
 }
