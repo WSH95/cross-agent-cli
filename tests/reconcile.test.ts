@@ -469,9 +469,12 @@ test("a record whose group will not die is reported, and the pass judges the res
   await change(root, other.id, { runnerIdentity: deadIdentity(), engineIdentity: deadIdentity() }, now + 1);
 
   const denied = Object.assign(new Error("not permitted"), { code: "EPERM" });
+  // The original, captured before the mock replaces it: reading `process.kill` from
+  // inside the mock would read the mock, and the fallback would signal nothing at all.
+  const kill = process.kill.bind(process) as (pid: number, signal?: string | number) => true;
   const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
     if (pid === -stubborn.pid) throw denied;
-    return (process.kill as unknown as (pid: number, signal?: string | number) => true)(pid, signal);
+    return kill(pid, signal);
   });
   const { changed, errors } = await reconcile(root, now + 2);
   mocked.mock.restore();
@@ -582,6 +585,90 @@ setInterval(() => {}, 1000);
   assert.deepEqual(read(root, record.id).engineIdentity, engine.identity);
 });
 
+test("cleanup judges the records of its own group last, so the rest are settled before it dies", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  // Two orphaned records: one whose engine is a group this server is not in, and one
+  // whose engine is the very engine this server runs inside. Cleanup terminates an
+  // orphan's group, and terminating the second kills this process with it — so the pass
+  // takes that record last, and everything it can settle is settled first. The record of
+  // its own group is left orphaned for another server, which is the only honest answer a
+  // process that is about to die can give.
+  const foreign = await started(root, "orphaned", now);
+  const stranger = zoo.leader();
+  await change(root, foreign.id, { runnerIdentity: deadIdentity(), engineIdentity: stranger.identity }, now + 1);
+
+  const outcome = path.join(root, "cleaned.json");
+  const pidFile = path.join(root, "reconciler.pid");
+  const cleaner = path.join(root, "cleaner.mjs");
+  fs.writeFileSync(cleaner, `
+import fs from "node:fs";
+import { terminateOrphans } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "process.ts")).href)};
+const result = await terminateOrphans(process.argv[2]);
+fs.writeFileSync(process.argv[3], JSON.stringify(result));
+`);
+  const leaderScript = `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, [process.argv[1], process.argv[2], process.argv[3]], { stdio: "ignore" });
+fs.writeFileSync(process.argv[4], String(child.pid));
+setInterval(() => {}, 1000);
+`;
+  // Listed newest first, so the record of this server's own engine is the one the pass
+  // would reach first if nothing ordered it.
+  const engine = zoo.leader({}, leaderScript, [cleaner, root, outcome, pidFile]);
+  const own = await started(root, "orphaned", now + 2);
+  await change(root, own.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 3);
+  const child = await zoo.member(pidFile);
+
+  await poll(() => read(root, foreign.id).status, (status) => status === "failed");
+  assert.equal(read(root, foreign.id).reason, "runner lost", "the record it could settle was settled");
+  await poll(() => running(engine.pid), (alive) => !alive, 8000);
+  assert.equal(running(child), false, "the pass died with the group it was told to end");
+  assert.equal(read(root, own.id).status, "orphaned", "and left its own record for another server");
+});
+
+test("an engine adopted beside one in this reconciler's own session names the survivor", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = create(root, input(root), now);
+  const outcome = path.join(root, "reconciled.json");
+  const pidFile = path.join(root, "reconciler.pid");
+  const exitFile = path.join(root, "reconciler.exit");
+  // Two processes carry this task id: a detached engine from an earlier runner, and the
+  // engine this server is running inside. The first is adopted; the second is neither
+  // adopted nor killed, and saying nothing about it would leave a live process carrying
+  // a task id that the record now names another engine for.
+  const stranded = zoo.leader({ CROSS_AGENT_TASK: record.id });
+  const reconciler = path.join(root, "reconciler.mjs");
+  fs.writeFileSync(reconciler, `
+import fs from "node:fs";
+import { reconcile } from ${JSON.stringify(pathToFileURL(path.join(worktree, "src", "reconcile.ts")).href)};
+const result = await reconcile(process.argv[2], Number(process.argv[3]));
+fs.writeFileSync(process.argv[4], JSON.stringify(result));
+`);
+  const leaderScript = `
+const fs = require("node:fs");
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, [process.argv[1], process.argv[2], process.argv[3], process.argv[4]], { stdio: "ignore" });
+child.on("exit", (code, signal) => fs.writeFileSync(process.argv[6], JSON.stringify({ code, signal })));
+fs.writeFileSync(process.argv[5], String(child.pid));
+setInterval(() => {}, 1000);
+`;
+  const own = zoo.leader({ CROSS_AGENT_TASK: record.id }, leaderScript,
+    [reconciler, root, String(record.launchDeadline + 1), outcome, pidFile, exitFile]);
+  await zoo.member(pidFile);
+  const result = JSON.parse(await poll(
+    () => (fs.existsSync(outcome) ? fs.readFileSync(outcome, "utf8") : ""), (text) => text.length > 0,
+  )) as Reconciled;
+
+  assert.deepEqual(result.changed.map((value) => value.status), ["orphaned"]);
+  assert.deepEqual(read(root, record.id).engineIdentity!.pid, stranded.pid, "the engine of another session is the one adopted");
+  assert.deepEqual(result.errors.map((entry) => entry.id), [record.id]);
+  assert.match(result.errors[0].reason, new RegExp(`engine ${own.pid}`));
+  assert.equal(running(own.pid), true, "and the one it named is left alone");
+});
+
 test("a stray that cannot be signalled is reported without losing the write that applied", async (t) => {
   const root = project(t);
   const zoo = processes(t);
@@ -592,9 +679,10 @@ test("a stray that cannot be signalled is reported without losing the write that
   await poll(() => findByEnvironment(record.id, record.createdAt).found, (found) => found.length === 2);
 
   const denied = Object.assign(new Error("not permitted"), { code: "EPERM" });
+  const kill = process.kill.bind(process) as (pid: number, signal?: string | number) => true;
   const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
     if (pid === stray) throw denied;
-    return (process.kill as unknown as (pid: number, signal?: string | number) => true)(pid, signal);
+    return kill(pid, signal);
   });
   const { changed, errors } = await reconcile(root, record.launchDeadline + 1);
   mocked.mock.restore();

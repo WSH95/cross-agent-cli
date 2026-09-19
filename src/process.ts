@@ -353,6 +353,28 @@ export async function terminateGroupByPid(pid: number, options: TerminateOptions
   return await terminate(pid, () => hasMember(pid), options) === "dead";
 }
 
+/**
+ * A recorded engine group that contains this process. The MCP server is started by its
+ * engine and lives in that engine's session (`src/guard.ts#childEnv`), so terminating
+ * that group ends this process too — the same rule the scan marks a `FoundProcess` self
+ * by, read from the identity a record carries rather than from a scan.
+ */
+export function ownGroup(identity?: EngineIdentity | null): boolean {
+  if (!identity) return false;
+  const self = readProcessStat(process.pid);
+  return self !== null && (identity.pgid === self.pgid || identity.pgid === self.sid);
+}
+
+/**
+ * The records of a pass with the ones naming this process's own engine group last. The
+ * engine of such a record is an orphan and should die, and this process dies with it, so
+ * everything the pass can settle is settled before it does (bead atc-s96.32).
+ */
+export function selfLast<T extends { engineIdentity?: EngineIdentity | null }>(records: readonly T[]): T[] {
+  const marked = records.map((record) => ({ record, own: ownGroup(record.engineIdentity) }));
+  return [...marked.filter((entry) => !entry.own), ...marked.filter((entry) => entry.own)].map((entry) => entry.record);
+}
+
 // Each call judges every orphaned record on the current kernel state: an invalid or
 // reused identity is left alone, a live group is terminated, and a dead group, one
 // with no live member, is settled. A stale identity is therefore skipped while its
@@ -363,7 +385,10 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
   const skipped: Skipped[] = [];
   // One read of the project's waiting rule for the whole pass, as reconciliation does.
   const waitSeconds = lockWaitSeconds(projectRoot);
-  for (const record of list(projectRoot, "orphaned")) {
+  // A record naming this process's own engine group is judged last: terminating that
+  // group kills this pass with it, and the records it could have settled would be left
+  // for another server for no reason (design section 2).
+  for (const record of selfLast(list(projectRoot, "orphaned"))) {
     const identity = record.engineIdentity;
     const state = inspectGroup(identity);
     // A record left orphaned on purpose is not silently left: an operator reading a task

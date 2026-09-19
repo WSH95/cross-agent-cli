@@ -781,7 +781,23 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   (`src/reconcile.ts#adopt`) — adopting it would have cleanup kill the group
   this process lives in, calling it a stray would do so directly, and `failed:
   launch` would leave a terminal record with no identity beside a live engine
-  nothing could reach. Adoption also takes only a **group leader** (`pid ===
+  nothing could reach. When another engine **is** adopted beside it, the record
+  names that one and the one in this session is named in `errors` as left
+  running (`src/reconcile.ts#adopt`), because nothing else would ever mention a
+  live process still carrying a task id the record now answers for.
+
+  **An in-session server may die with its engine, and judges its own record
+  last.** Nothing above stops the pass from terminating a group this process
+  lives in: an `orphaned` record's engine is an orphan and cleanup ends it
+  (`src/process.ts#terminateOrphans`), and a `cancelling` record's engine is
+  being cancelled (`src/reconcile.ts#judge`). Both are right, and both kill this
+  server with the group. What that must not cost is the rest of the pass, so the
+  records naming this process's own engine group are judged **last**
+  (`src/process.ts#ownGroup`, `#selfLast`, `src/reconcile.ts#reconcile`): every
+  record this server can settle is settled before it dies, and its own record
+  keeps its status for whatever server runs the next pass. That is the honest
+  answer for a process that is about to stop existing, and the only one it can
+  write. Adoption also takes only a **group leader** (`pid ===
   pgid === sid`), because only a leader can be recorded as an `engineIdentity`,
   and the scan reads `/proc/<pid>/stat` **before and after** the environment,
   keeping the match only when both reads agree on `startTime`

@@ -1,7 +1,7 @@
 import { lockWaitSeconds } from "./config.ts";
 import { currentBootId, isProcessAlive, scan, update } from "./ledger.ts";
 import type { InvalidRecord, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
-import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
+import { killStrays, selfLast, strandedEngine, terminateGroup, terminateGroupByPid, groupAlive, terminateOrphans } from "./process.ts";
 import type { FoundProcess, Skipped } from "./process.ts";
 
 export interface TaskError {
@@ -99,7 +99,17 @@ async function adopt(projectRoot: string, record: TaskRecord, now: number, waitS
   if (!result.applied) {
     return { changed: [], errors: [{ id: record.id, reason: `launch decision refused: the record is ${result.record.status}` }] };
   }
-  return { changed: [result.record], errors: (await killStrays(strays)).map((reason) => ({ id: record.id, reason })) };
+  // An engine in this reconciler's own session is neither adopted nor killed, and when
+  // another was adopted beside it nothing else would ever mention it: the record now
+  // names a different engine, and a live process carrying this task id is left for an
+  // operator to find on their own. So the survivor is named (bead atc-s96.32).
+  const survivor = own
+    ? [{ id: record.id, reason: `engine ${own.pid} shares this reconciler's session and was left running` }]
+    : [];
+  return {
+    changed: [result.record],
+    errors: [...survivor, ...(await killStrays(strays)).map((reason) => ({ id: record.id, reason }))],
+  };
 }
 
 /**
@@ -183,7 +193,10 @@ export async function reconcile(projectRoot: string, now = Date.now()): Promise<
   const waitSeconds = lockWaitSeconds(projectRoot);
   const changed: TaskRecord[] = [];
   const errors: TaskError[] = [];
-  for (const record of records) {
+  // A record whose engine group is this process's own is judged last: this pass can
+  // terminate that group — the `cancelling` case does — and it dies with it, so every
+  // record it could judge is judged first (design section 2).
+  for (const record of selfLast(records)) {
     // One record's trouble is that record's. A pass that stopped at the first would leave
     // every task after it unjudged, and reconciliation runs on every listing.
     try {
