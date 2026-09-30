@@ -59,51 +59,20 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
 
 1. **S11 — engine placement** (`atc-s96.24`, remainder). Brief:
    `.superpowers/sdd/the-development-of-this-calm-planet/task-7-brief.md`
-   (read its addendum: Codex paused → E2 not run, E3 with a Claude lead is
-   the run; the T13 facts it builds on). Dispatch prompt, ready to send:
-   `…/dispatch/s11-dispatch.md` — replace `__BASE__` with the branch HEAD
-   and send it to a fresh `cross-agent-implementer` subagent (claude-opus-5,
-   effort max, defined in `.claude/agents/cross-agent-implementer.md`).
+   (its addendum lists the T13 facts it builds on).
    First rebase the branch onto `main` (`main`'s later commits touch only
    `VERIFY.md` and `.project-steward/`), then record BASE
    (`git -C .worktrees/cross-agent-m3 rev-parse HEAD`). After each task run
    `node tools/check-citations.mjs --since <BASE>` — it must report 0 drifted
    and 0 not judged — because `npm test` cannot see a citation that moved.
-2. **Reviews per task**, in this order: (a) the task review — a
-   `general-purpose` subagent on claude-opus-5 with the SDD task-reviewer
-   shape (brief, report, review package from
-   `~/.claude/plugins/cache/claude-plugins-official/superpowers/6.3.0/skills/subagent-driven-development/scripts/review-package PLAN BASE HEAD`,
-   the binding constraints); (b) the second review through cross-agent
-   itself:
-   ```bash
-   cd .worktrees/cross-agent-m3 && setsid --fork node \
-     .superpowers/sdd/the-development-of-this-calm-planet/dispatch/cross-agent-review.mjs \
-     --project "$PWD" --base <BASE> --engine grok --model grok-4.6 --effort xhigh \
-     --out .superpowers/sdd/the-development-of-this-calm-planet/task-7-grok-review-round-1.md \
-     --context <a short context file naming what the diff claims to do>
-   ```
-   It writes `<out>.log` and `<out>` (the check and the result as JSON),
-   then `<out>.done` — the marker to wait on (poll it in bounded stretches,
-   never sleep in the foreground). Extract the review text from the JSON's
-   `result` field into `<out>.text.md`. The diff is attached by default (the
-   Grok prompt-file budget, `atc-s96.55`, is merged); `--attach-diff no`
-   makes the consultant read it from git instead. Expect 10–25 minutes at
-   xhigh. Findings from both reviews go into `task-N-findings-round-R.md`
-   with stable ids; fix rounds resume the same implementer by SendMessage.
-   After each fix round: the Grok seat reviews the fix diff and the
-   controller checks closure against the findings file; on the last round
-   the Opus 5 task reviewer returns for the scoped re-review plus the
-   cumulative whole-task review — never skip that seat (it was skipped on
-   T13's rounds until the user caught it).
-3. **Before E4–E7 rely on it**, do `atc-s96.56` (the verifier's residual
+2. **Before E4–E7 rely on it**, do `atc-s96.56` (the verifier's residual
    regex cases and two non-positional citation bundles). **Then** T14 (`.14`,
-   Codex packaging — blocked while Codex is paused:
-   record its rows as not run with commands, or wait for the user), T15
+   Codex packaging), T15
    (`.15`, Grok packaging; the sample folder is trusted; `.53`'s hop
    measurement and the read-only Grok probe row belong here), T16
    (`task-10-brief.md`), docs nits (`.42`), the go/no-go (`.18`), the final
    whole-branch review, wrap.
-4. **Merges.** Rebase `task/cross-agent-m3` onto `main` (main's own commits
+3. **Merges.** Rebase `task/cross-agent-m3` onto `main` (main's own commits
    touch only `.project-steward/`, `AGENTS.md`, `VERIFY.md`), fast-forward,
    run `npm test` at the root, record the SHA and counts in `VERIFY.md`.
    Never push.
@@ -111,11 +80,10 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
 ## Blockers
 
 - Questions only you can answer are in `.project-steward/QUESTIONS.md`: the
-  authority hop budget for nested hosts (`atc-s96.53`), whether a Grok
+  authority hop budget for nested hosts (`atc-s96.53`) and whether a Grok
   specialist in a linked worktree should reach the server through a
-  user-scope mount (your Grok config), and when the Codex pause lifts.
-- None hard. Codex is paused by the user (2026-09-18); every Codex row is
-  recorded with the command that runs it later. `atc-s96.53` (the hop
+  user-scope mount (your Grok config).
+- None hard. `atc-s96.53` (the hop
   budget under other hosts) is a measurement, not a blocker.
 
 ## Key files
@@ -137,8 +105,7 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
   `tools/from-openmaus.mjs` (one-off, history).
 - `VERIFY.md` (counts and runs per milestone), `.project-steward/DECISIONS.md`
   0010 (every ruling of M1–M3 with its cost), the plan
-  `~/.claude/plans/the-development-of-this-calm-planet.md` (with the user's
-  amendments), the SDD ledger
+  `~/.claude/plans/the-development-of-this-calm-planet.md`, the SDD ledger
   `.superpowers/sdd/the-development-of-this-calm-planet/progress.md` (every
   dispatch, ruling and review; git-ignored), its `dispatch/` (the review
   driver, dispatch drafts, the citation-drift script).
@@ -153,8 +120,6 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
 - A repository-root `.mcp.json` for the plugin: Claude Code reads it as this
   repository's own project-scoped config in every developer session, where
   `${CLAUDE_PLUGIN_ROOT}` is empty (T13; inline `mcpServers` instead).
-- `/grok-build:review` as the second review seat: its bridge caps effort at
-  `high` (the user wants xhigh; cross-agent's own `consult` does it).
 - Attaching a 150 KB diff to a Grok brief before `atc-s96.55`: `E2BIG`.
 - Relying on Claude's default sandbox for a read-only role: it writes to the
   cwd by default (T6-R1-20; `denyWrite` of the cwd now).
@@ -162,9 +127,7 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
 ## Warnings
 
 - Never push. Checkpoints commit on `main`, Conventional Commits, ending with
-  the Co-Authored-By trailer the session's attribution instruction names (this
-  session used Claude Fable 5.1, then Claude Opus 5 (1M context) after the
-  user switched models); subagents are told the trailer in their brief.
+  the Co-Authored-By trailer the session's attribution instruction names.
 - `AGENTS.md` and `CLAUDE.md` are user-owned: the user approved AGENTS.md
   changes for the 2026-09-19 session only (Decision 0010); a new session asks
   again and shows the diff first.
@@ -194,5 +157,4 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
   `.beads/interactions.jsonl` (bd's own interaction log) and `.codex/agents/`
   (the Codex plugin's mirror of the implementer agent definition).
 - Never run an engine at this repository's root or in the worktree except
-  the review `consult` (read-only) the user asked for; the sample is the
-  target for everything else.
+  a read-only `consult`; the sample is the target for everything else.

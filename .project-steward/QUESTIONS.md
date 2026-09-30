@@ -30,7 +30,3 @@ Add the answer to the item when it is resolved.
       That is the safe direction; reaching one needs a user-scope `grok mcp
       add`, a change to your Grok configuration. Leave it, or mount it
       user-wide? (T15)
-- [ ] When does the Codex pause (2026-09-18) lift? T14 (Codex packaging,
-      E4, E5), every recorded Codex row of I1/I2 and the guarded Codex I2
-      test (`CROSS_AGENT_REAL_CODEX=1`) wait on it; each has its command
-      recorded in `docs/probes.md` and `VERIFY.md`.

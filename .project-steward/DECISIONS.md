@@ -208,7 +208,6 @@ they concern the design):
 - The runner writes `<id>.outcome.json` before its terminal ledger write; reconciliation settles an orphan only from that sidecar (a result file alone never means success); a group the cleanup itself killed settles `runner lost; engine group terminated`; the edge `orphaned → done` exists for the sidecar's `done` — cost if wrong: a failed run shown as done, the defect this replaced.
 - `findByEnvironment` retries a process mid-`execve` (empty `cmdline`, EACCES on `environ`) for one 250 ms budget per scan before counting it unreadable — the real cause of the `atc-s96.33` flake — cost if wrong: a slower scan under a spawn storm.
 - Engine placement ships as a third built-in mode `dev-team-engine` (S8); `git_root` and `run_command` register under the worktree provider for every placement with the journal selected by an explicit `slug`; the built-in `consult` role in every mode, a no-config default to `solo`, `worktree: true` one-shots merged by the launcher under `mergePolicy`, and `review`/`critique` briefs (user-approved decision 10) — cost if wrong: one mode file, one flag, one role to remove.
-- Process: Codex paused by the user (subscription limit); second-opinion reviews on Fable 5.1, plan reviews on Opus 5; every dispatch names harness · model · effort; the controller's own citation-drift script misattributed continuation citations once (Task 3c round 3, withdrawn) — cost: one wasted round.
 
 Consequences: `docs/design.md`, `VERIFY.md` and the beads carry each ruling's
 effect; a ruling the operator rejects is reverted by the bead or commit it
@@ -285,19 +284,6 @@ costs if the ruling is wrong.
   the first request resolution (a specialist's record is often still
   `launching` at startup); a reusable `tools/e2e-verify.mjs` replaces the
   one-off E1 verification for E4–E7. Cost: a harness file to maintain.
-- **Bindings while Codex is paused (user, 2026-09-18).** E1 and E3 bind
-  planner and implementer to claude-sonnet-5 and the reviewers to grok-4.6;
-  every Codex row is recorded as not run with the command that runs it
-  later. Cost: coverage order only.
-- **Reviewer seats (user, 2026-09-19).** The second code review is a
-  `consult` delegation through cross-agent's own server to grok · grok-4.6
-  · xhigh with the diff attached, driven by
-  `.superpowers/sdd/…/dispatch/cross-agent-review.mjs` launched with
-  `setsid --fork` from the worktree (which holds a git-ignored `solo`
-  config); `/grok-build:review` was considered and set aside because its
-  bridge caps effort at `high`. The task review stays on claude-opus-5; the
-  closure check of a fix round is the controller's. Cost: a Grok review
-  takes about 17 minutes at xhigh.
 - **Grok trusted folder (user, 2026-09-19).** The e2e sample folder is
   trusted in `~/.grok/trusted_folders.toml` (backup beside it) so I1's Grok
   row can close.
@@ -325,20 +311,4 @@ costs if the ruling is wrong.
   Codex MCP-call item shape is not guessed: until I1 Codex records it, an
   unknown Codex item answers `?`. Cost: a real Codex run may answer `?` until
   the shape is recorded.
-- **Micro-round 7 closed without another review seat.** The Grok seat's last
-  Important (a bare space opening the `node` branch) is a three-line regex
-  change in a harness tool; the controller verified it against every
-  counterexample that review named (`dispatch/launcher-probe.mjs`, 25/25),
-  and the task reviewer had already approved on round 5. The verifier's next
-  full review runs under `atc-s96.56`. Cost: a residual regex case is found
-  later, by that bead.
-- **Review seats (user, 2026-09-19):** the second code review runs through
-  cross-agent's own `consult` on grok · grok-4.6 · xhigh; the Opus 5 task
-  reviewer judges every task and its last fix round (the user caught that
-  seat being skipped on T13's rounds 1–2; it returned for the cumulative
-  review). One Opus review instance was terminated by the harness mid-run and
-  reported as "stopped by user"; the user had not stopped it, and it was
-  rerun.
-- **Attribution:** commits before the user's model switch carry
-  `Co-Authored-By: Claude Fable 5.1`, after it `Claude Opus 5 (1M context)`.
 

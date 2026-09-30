@@ -30,7 +30,7 @@ Standing rules, from AGENTS.md and the design:
 - Specialists never write git metadata; the permission matrix, the deny
   list and the exclusion flags are hard requirements.
 - Commit in the worktree with `git add <paths>` (never `-A`), Conventional
-  Commits, the trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`;
+  Commits;
   never push; never touch `main`; never run a bare `git stash`.
 - `AGENTS.md` and `CLAUDE.md` are user-owned: write any proposed change as
   a diff file in the SDD directory named in your dispatch, never edit them.
