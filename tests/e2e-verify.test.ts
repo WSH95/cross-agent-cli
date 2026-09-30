@@ -341,10 +341,42 @@ test("a host-placed mode, or one this repository does not ship, exempts no lead"
   assert.match(row(unknownRun.out, depth), /<= 3/);
   assert.match(row(unknownRun.out, depth), /my-team/);
 
-  // `--lead-role` names the engine-placed lead the verifier cannot look up.
+  // For such a mode `--lead-role` supplies what the verifier cannot read: an engine-placed
+  // lead of that role, under the cap an engine placement gives, min(2, limits.maxDepth).
   const named = await runWith(unknown, ["--lead-role", "lead"]);
   assert.equal(verdict(named.out, scan), "pass", named.out);
   assert.match(row(named.out, depth), /<= 2/);
+  // And that limit defaults to 1 as the loader's does, which holds a depth-1 lead at the cap.
+  const unlimited = await project(t, { lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate } },
+    { mode: "my-team", limits: null });
+  const unlimitedRun = await runWith(unlimited, ["--lead-role", "lead"]);
+  assert.equal(verdict(unlimitedRun.out, scan), "FAIL", unlimitedRun.out);
+  assert.match(row(unlimitedRun.out, depth), /<= 1/);
+});
+
+// @anchor leadRoleNamesOnly
+test("--lead-role renames a shipped mode's lead and never changes its placement or cap", async (t) => {
+  // `dev-team` places its lead in the host. The flag cannot make a depth-1 implementer a
+  // lead: the server gives that implementer the specialist row, so its `delegate` offends,
+  // and the cap stays the host placement's 1 (6b-R1-2).
+  const hosted = await project(t, {
+    implementer: { engine: "claude", id: "impl1", role: "implementer", depth: 1, body: claudeDelegate },
+  }, { mode: "dev-team", limits: { maxDepth: 2 } });
+  const flagged = await runWith(hosted, ["--lead-role", "implementer"]);
+  assert.equal(verdict(flagged.out, scan), "FAIL", flagged.out);
+  assert.match(row(flagged.out, depth), /<= 1/);
+  assert.doesNotMatch(row(flagged.out, scan), /judged by the lead row/);
+
+  // Under an engine-placed mode it names the role the lead row belongs to, and only that.
+  const renamed = await project(t, {
+    boss: { engine: "claude", id: "boss1", role: "boss", depth: 1, body: claudeDelegate },
+    lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate },
+  }, { mode: "dev-team-engine", limits: { maxDepth: 2 } });
+  const bossRun = await runWith(renamed, ["--lead-role", "boss"]);
+  assert.equal(verdict(bossRun.out, scan), "FAIL", bossRun.out);
+  assert.match(row(bossRun.out, scan), /lead1 called mcp__cross-agent__delegate/);
+  assert.doesNotMatch(row(bossRun.out, scan), /boss1 called/);
+  assert.match(row(bossRun.out, depth), /<= 2/);
 });
 
 test("a shell command that starts an engine is an offence through a shell's own quoting", async (t) => {

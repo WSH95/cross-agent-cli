@@ -14,9 +14,10 @@
 // config's `limits.maxDepth`, which is 1 when the file leaves it out, so config can only
 // lower it. The mode is `config.mode` (the loader's `dev-team` when absent), read from this
 // repository's `modes/`. Under an engine-placed lead, the lead's own records below that
-// cap are judged by the lead row, whose `delegate` is no offence. `--lead-role` names that
-// role for a mode this repository does not ship, which is otherwise judged with no lead
-// exempt and the config's limit alone.
+// cap are judged by the lead row, whose `delegate` is no offence. `--lead-role` renames that
+// role and changes nothing else about a mode this repository ships; for a mode it does not
+// ship, which is otherwise judged with no lead exempt and the config's limit alone, the
+// flag also supplies the engine placement the verifier cannot read.
 //
 // `--slug` names the journal to judge; with none, the newest journal that opened a
 // worktree is judged and the others are named in that row.
@@ -49,13 +50,16 @@ const modeName = typeof config.mode === "string" && config.mode !== "" ? config.
 const mode = readJson(path.resolve(here, "..", "modes", modeName, "mode.json"));
 const configuredDepth = config.limits?.maxDepth ?? 1;
 const namedLead = args["lead-role"];
-const placement = namedLead !== undefined ? "engine" : mode?.lead?.placement;
+// A shipped mode keeps its own placement, and the flag only renames its lead's role; a mode
+// this repository does not ship has no placement to read, and the flag supplies an engine one.
+const shippedPlacement = mode?.lead?.placement;
+const placement = shippedPlacement ?? (namedLead !== undefined ? "engine" : undefined);
 const placementCap = placement === undefined ? undefined : placement === "engine" ? 2 : 1;
 const maxDepth = placementCap === undefined ? configuredDepth : Math.min(placementCap, configuredDepth);
-const leadRole = namedLead ?? (placement === "engine" ? mode.lead.role : undefined);
+const leadRole = placement === "engine" ? namedLead ?? mode?.lead?.role : undefined;
 const capDetail = placementCap === undefined
   ? `mode ${modeName} is not one this repository ships: the cap is limits.maxDepth ${configuredDepth}, and no lead is exempt`
-  : `cap ${maxDepth} = min(${namedLead === undefined ? modeName : `--lead-role ${namedLead}`}'s ${placement} placement ${placementCap}, limits.maxDepth ${configuredDepth})`;
+  : `cap ${maxDepth} = min(${shippedPlacement === undefined ? `--lead-role ${namedLead}` : modeName}'s ${placement} placement ${placementCap}, limits.maxDepth ${configuredDepth})`;
 /** Whether a record is an engine-placed lead's own, below the cap, and so holds the lead row. */
 const leadRow = (record) => leadRole !== undefined && record.role === leadRole && (record.depth ?? 0) < maxDepth;
 
