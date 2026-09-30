@@ -102,22 +102,25 @@ const codexHome = (project: string) => path.join(project, ".cross-agent", "codex
  * (`docs/probes.md#codexCacheWritable`): the session's own line, then for each command
  * the code-mode `exec` call whose script runs it through `tools.exec_command` and that
  * call's output — and, for a command that exited 0, the `CommandExecution` item Codex also
- * recorded. A6's denied writes have the call and the output and no item, as here.
+ * recorded. A6's denied writes have the call and the output and no item, as here. A step
+ * given as `script` is an `exec` call with that script as its input, verbatim.
  */
-const rolloutOf = (sessionId: string, commands: Array<{ cmd: string; exit: number; output?: string }>) => [
+type RolloutStep = { cmd: string; exit: number; output?: string } | { script: string };
+const rolloutOf = (sessionId: string, steps: RolloutStep[]) => [
   { timestamp: "2026-09-30T21:49:05.892Z", type: "session_meta", payload: {
     session_id: sessionId, id: sessionId, cwd: "/sample/.worktrees/6b-codex", originator: "codex_exec", cli_version: "0.159.2", source: "exec" } },
-  ...commands.flatMap(({ cmd, exit, output = "" }, n) => [
+  ...steps.flatMap((step, n) => [
     { timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: {
       type: "custom_tool_call", status: "completed", call_id: `call_${n}`, name: "exec",
-      input: `const r = await tools.exec_command({cmd:${JSON.stringify(cmd)}, max_output_tokens:1000});\ntext(JSON.stringify(r));\n` } },
-    ...(exit === 0 ? [{ timestamp: "2026-09-30T21:49:14.422Z", type: "event_msg", payload: {
+      input: "script" in step ? step.script
+        : `const r = await tools.exec_command({cmd:${JSON.stringify(step.cmd)}, max_output_tokens:1000});\ntext(JSON.stringify(r));\n` } },
+    ...("cmd" in step && step.exit === 0 ? [{ timestamp: "2026-09-30T21:49:14.422Z", type: "event_msg", payload: {
       type: "item_completed", thread_id: sessionId, item: {
-        type: "CommandExecution", id: `exec-${n}`, command: ["/bin/bash", "-lc", cmd], status: "completed", exit_code: 0 } } }] : []),
+        type: "CommandExecution", id: `exec-${n}`, command: ["/bin/bash", "-lc", step.cmd], status: "completed", exit_code: 0 } } }] : []),
     { timestamp: "2026-09-30T21:49:14.428Z", type: "response_item", payload: {
       type: "custom_tool_call_output", call_id: `call_${n}`, output: [
         { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
-        { type: "input_text", text: JSON.stringify({ exit_code: exit, output }) }] } },
+        { type: "input_text", text: "script" in step ? "" : JSON.stringify({ exit_code: step.exit, output: step.output ?? "" }) }] } },
   ]),
   { timestamp: "2026-09-30T21:49:29.557Z", type: "event_msg", payload: { type: "task_complete", last_agent_message: "done" } },
 ].map((line) => JSON.stringify(line)).join("\n") + "\n";
@@ -369,6 +372,78 @@ test("a Codex record's session rollout is read: a launch only it shows fails, an
   assert.equal(verdict((await run(opaque)).out, scan), "?");
 });
 
+// @anchor codexScriptRead
+test("a code-mode script is read as JavaScript: an escaped launch fails, and one it only names is a question", async (t) => {
+  // A 0.159.2 rollout holds the script, not the command: the command is a string literal the
+  // script hands `tools.exec_command`, escaped as JavaScript, beside whatever else the script
+  // says. The literal is decoded and judged. Anything else in the script that reads as a
+  // launch cannot be told from one the script assembles and runs, so it answers `?`, and so
+  // does a script this reader cannot lex; neither is ever a pass.
+  const log = codexLog("/bin/bash -lc 'ls'");
+  let n = 0;
+  const judged = async (script: string) => {
+    const sessionId = `01a0f44a-eb7a-7603-ae3a-${String(256 + n++).padStart(12, "0")}`;
+    return run(await project(t, { codex: { body: log, sessionId, rollout: rolloutOf(sessionId, [{ script }]) } }));
+  };
+  for (const script of [
+    // Quotes and escapes as JavaScript writes them, in each of its three quotes.
+    `const r = await tools.exec_command({cmd:${JSON.stringify('cd "/tmp/a dir" && claude -p "hi there"')}, max_output_tokens:1000});`,
+    String.raw`await tools.exec_command({cmd: 'sh -c \'claude -p hi\''});`,
+    String.raw`await tools.exec_command({cmd: "\u0063laude -p \x68i"});`,
+    "await tools.exec_command({cmd: `claude -p \"hi\"`});",
+    String.raw`await tools.\u0065xec_command({cmd: "claude -p hi"});`,
+    // The call's own `cmd`, wherever it sits in the object and however its key is spelled.
+    'await tools.exec_command({env: {cmd: "ls"}, cmd: "claude -p hi"});',
+    'await tools.exec_command({\n  "cmd":\n    "claude -p hi",\n  yield_time_ms: 10000,\n});',
+    'await tools["exec_command"]({cmd: "claude -p hi"});',
+    // A comment, and a regular expression holding a quote, are neither a string nor its end.
+    "// strip the quotes afterwards\nconst r = await tools.exec_command({cmd: \"claude -p hi\"});\ntext(r.output.replace(/'/g, \"\"));",
+    // Keystrokes a script writes to the shell it started.
+    'const s = await tools.exec_command({cmd: "bash", tty: true});\nawait tools.write_stdin({session_id: s.session_id, chars: "claude -p hi\\n"});',
+  ]) {
+    const { code, out } = await judged(script);
+    assert.equal(verdict(out, scan), "FAIL", `${script}\n${out}`);
+    assert.match(row(out, scan), /task1 ran claude -p hi/, `${script}\n${out}`);
+    assert.equal(code, 1, out);
+  }
+  // This server's `delegate`, called from a script, is a call all the same.
+  const called = await judged('const r = await tools.mcp__cross_agent__delegate({role: "implementer", brief: "x"});');
+  assert.equal(verdict(called.out, scan), "FAIL", called.out);
+  assert.match(row(called.out, scan), /task1 called mcp__cross_agent__delegate/);
+
+  for (const [script, why] of [
+    // Named and not run: a string beside the call, a comment, a message.
+    ['const note = "claude -p hi";\nconst r = await tools.exec_command({cmd: "ls"});\ntext(JSON.stringify(r));', /names a launch it does not run/],
+    ['// claude -p hi\nconst r = await tools.exec_command({cmd: "ls"});', /names a launch it does not run/],
+    ['const r = await tools.exec_command({cmd: "ls"});\ntext("claude -p hi was not run");', /names a launch it does not run/],
+    // A script that does not lex, and a command the script computes.
+    ['await tools.exec_command({cmd: "claude -p hi});', /does not read as JavaScript/],
+    ["const tool = ['cla', 'ude'].join('');\nawait tools.exec_command({cmd: tool + ' -p hi'});", /exec_command call whose cmd is not a literal/],
+    // This server's `delegate` named where no call of it can be seen.
+    ["const name = 'mcp__cross_agent__delegate';\nawait tools[name]({role: 'implementer', brief: 'x'});", /names mcp__cross_agent__delegate in a string/],
+    // Keystrokes naming an engine, written to a process whose program the rollout does not say.
+    ["await tools.write_stdin({session_id: 7, chars: \"import subprocess; subprocess.run(['claude'])\\n\"});", /which program reads them/],
+  ] as const) {
+    const { code, out } = await judged(script);
+    assert.equal(verdict(out, scan), "?", `${script}\n${out}`);
+    assert.match(row(out, scan), why, `${script}\n${out}`);
+    assert.equal(code, 2, out);
+  }
+
+  for (const script of [
+    // A6's first run and A4's two scripts, as Codex wrote them.
+    'const r = await tools.exec_command({cmd: "printf inside > ./PROBE-6b-inside.txt", workdir: "/sample/.worktrees/6b-codex", yield_time_ms: 10000});\ntext(`exit ${r.exit_code}\\nstderr:\\n${r.output}`);',
+    'text(ALL_TOOLS.map(x => x.name).join("\\n"))',
+    "const r = await tools.mcp__cross_agent__list_roles({});\ntext(JSON.stringify(r))",
+    // Division beside regular expressions with quotes in them, and a string that is no command.
+    'const r = await tools.exec_command({cmd: "wc -l README.md"});\nconst half = Number(r.output.split(/\\s+/)[0]) / 2;\ntext(String(half).replace(/"/g, "\'") + " lines; ask claude nothing");',
+  ]) {
+    const { code, out } = await judged(script);
+    assert.equal(verdict(out, scan), "pass", `${script}\n${out}`);
+    assert.equal(code, 0, out);
+  }
+});
+
 // The lead's own record under engine placement. An engine-placed lead is a specialist
 // record too — the ledger holds it at depth 1 — but its server holds the lead row, so its
 // `delegate` calls are the row's own and not offences; below the effective cap only.
@@ -609,7 +684,8 @@ test("reading a file that happens to be named like one of them is not a launch",
     "grep node src/cli.ts",
     "cat node src/cli.ts",
     // An engine's name, or this project's configured binary, as an argument is a word too,
-    // and so is a quoted one: only a shell's own `-c` argument opens a command in quotes.
+    // quoted or not: quoted text is a command line only where a shell would run it as one —
+    // a shell's `-c` payload, `eval`'s arguments, `ssh`'s remote command.
     "echo claude",
     "ls /opt/wrapper",
     'grep -rn "claude" README.md',

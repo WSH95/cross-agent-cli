@@ -2649,7 +2649,12 @@ call (`docs/probes.md#codexCacheWritable`). So the scan also reads each Codex
 record's rollout — `$CODEX_HOME/sessions/**/rollout-*-<sessionId>.jsonl`,
 `CODEX_HOME` defaulting to `~/.codex` — and judges every command it shows
 attempted, denied ones included; a Codex record with no rollout to read answers
-`?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`). Whether a command is a
+`?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`). A code-mode script in the
+rollout is read as JavaScript rather than searched: the literal it hands
+`exec_command` as `cmd`, or `write_stdin` as `chars`, is the command, escapes
+decoded; a command the script computes, a script that does not lex, and any other
+string or comment in it that reads as a launch answer `?`
+(`tests/e2e-verify.test.ts#codexScriptRead`). Whether a command is a
 launch is a shell's question, so a small tokenizer answers it rather than a
 pattern: simple commands at operators and substitutions, quotes and escapes
 honoured, assignments, reserved words and exec wrappers passed over with their
