@@ -209,7 +209,7 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
     "--model", "claude-opus-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}}}`,
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // The prompt is stdin's, so no positional argument follows the variadic flag.
@@ -229,7 +229,7 @@ test("a write role's argv carries the worktree as the only writable root, and th
     "--effort", "high",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools",
     "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
@@ -251,6 +251,7 @@ test("a writable role's protected paths are deny-listed beside the writable root
   assert.deepEqual(
     JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
     {
+      disableAllHooks: true,
       sandbox: {
         enabled: true, autoAllowBashIfSandboxed: true,
         allowUnsandboxedCommands: false, failIfUnavailable: true,
@@ -274,6 +275,7 @@ test("a read-only role's own workspace is deny-listed, because the sandbox grant
   assert.deepEqual(
     JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
     {
+      disableAllHooks: true,
       sandbox: {
         enabled: true, autoAllowBashIfSandboxed: true,
         allowUnsandboxedCommands: false, failIfUnavailable: true,
@@ -287,10 +289,25 @@ test("a read-only role's own workspace is deny-listed, because the sandbox grant
 test("an off-profile role gets no filesystem rules at all", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off"), protectedPaths: [path.join(dirs.root, ".git")] }));
-  const settings = JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]) as { sandbox: Record<string, unknown> };
+  const settings = JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]) as { sandbox: Record<string, unknown>; disableAllHooks: unknown };
   // The profile that asked for no sandbox gets none, and a rule inside a sandbox that is
-  // off would say something the run does not mean.
+  // off would say something the run does not mean. The operator's hooks stay off all the
+  // same: they are not the sandbox's to switch.
   assert.deepEqual(settings.sandbox, { enabled: false, autoAllowBashIfSandboxed: true });
+  assert.equal(settings.disableAllHooks, true);
+});
+
+// @anchor hooksDisabled
+test("a specialist runs with the operator's hooks disabled, whatever its profile", (t) => {
+  const dirs = layout(t);
+  // `--strict-mcp-config` excludes the operator's MCP servers and nothing else: probe A7
+  // watched a specialist run four `SessionStart` hooks, take one's `additionalContext`
+  // into its first turn and, in this repository, answer a `Stop` hook instead of its
+  // brief. `disableAllHooks` in the run's own settings is what keeps them out.
+  for (const profile of ["read-only", "workspace-write", "off"]) {
+    const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", profile) }));
+    assert.equal(JSON.parse(argv[argv.indexOf("--settings") + 1]).disableAllHooks, true, profile);
+  }
 });
 
 // @anchor resumedRunCarries
@@ -302,7 +319,7 @@ test("a resumed run carries --resume and never a --session-id beside it", (t) =>
     "--strict-mcp-config",
     "--resume", "138a9c9e-f573-45c5-80fc-fda76dddc834",
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ]);
   assert.equal(plan.argv.includes("--session-id"), false);
@@ -325,7 +342,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
     "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ]);
   // `--mcp-config` is variadic, so what follows it has to be a flag, and the argv may end
@@ -347,7 +364,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
 test("the sandbox settings say disabled for the one profile that means it", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
-  assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1], '{"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true}}');
+  assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1], '{"disableAllHooks":true,"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true}}');
   // `off` is not read-only: an unsandboxed role still edits.
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
 });
@@ -527,7 +544,7 @@ test("a fake claude run through the pipeline yields the session, the activity an
     "--model", "claude-sonnet-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
     "--disallowedTools", ...someDeny,
   ];
   // The role prompt is a file the child is pointed at, so it has to be on disk already.

@@ -61,13 +61,20 @@ const claude = {
    */
   plan(request: SpawnRequest): SpawnPlan {
     const { mode } = request.sandbox;
+    // The operator's hooks stay the operator's. `--strict-mcp-config` excludes MCP servers
+    // and nothing else, so a specialist ran every `SessionStart` hook of this machine, took
+    // their `additionalContext` into its first turn, and answered a `Stop` hook instead of
+    // its brief (probe A7). `disableAllHooks` in the run's own settings turns them all off,
+    // under every profile: whether a sandbox is on has nothing to do with them.
     const settings: {
+      disableAllHooks: true;
       sandbox: {
         enabled: boolean; autoAllowBashIfSandboxed: true;
         allowUnsandboxedCommands?: false; failIfUnavailable?: true;
         filesystem?: { allowWrite?: string[]; denyWrite?: string[] };
       };
-    } = { sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
+    } = { disableAllHooks: true, sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
+    // @anchor sandboxHatch
     // A sandbox the specialist cannot step out of. `allowUnsandboxedCommands: false` makes
     // the engine ignore the `dangerouslyDisableSandbox` parameter its own escape hatch
     // retries a blocked command with — P1's 2026-09-18 rerun watched a child take that

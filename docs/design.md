@@ -1528,7 +1528,7 @@ which is a property of the line, not of the pipeline.
   `dangerouslyDisableSandbox` parameter its own escape hatch retries a blocked
   command with, and at `failIfUnavailable: true` a sandbox that cannot start
   fails the run instead of warning and running every command unsandboxed
-  (`src/engines/claude.ts:78-81`, `tests/engines/claude.test.ts#sandboxedRoleMay`). P1's
+  (`src/engines/claude.ts#sandboxHatch`, `tests/engines/claude.test.ts#sandboxedRoleMay`). P1's
   rerun on 2026-09-18 is the reason and not a precaution: a sandboxed child
   whose `curl` died at bubblewrap's setup took that hatch by itself and
   reached the network, and under `bypassPermissions` nothing prompts

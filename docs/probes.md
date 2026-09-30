@@ -76,7 +76,7 @@ stdin, env scrubbed as in section 3, `CROSS_AGENT_DEPTH=1`.
   engine ignores that parameter and a command that cannot run sandboxed simply
   fails. The adapter now sends it, with `failIfUnavailable: true` beside it so
   that a sandbox which cannot start fails the run instead of warning and
-  running every command unsandboxed (`src/engines/claude.ts:71-81`).
+  running every command unsandboxed (`src/engines/claude.ts#sandboxHatch`).
 
 <!-- @anchor p2 -->
 ## P2: implementer inside a linked worktree, writes outside it (2026-09-07)
