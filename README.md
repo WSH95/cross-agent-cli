@@ -69,6 +69,44 @@ and leaves an existing config alone. The server discovers that
 project from the host session's working directory, so a session started
 anywhere inside it runs that project's team.
 
+### Prerequisites on Linux
+
+Node 24 or later, which runs the server, the runner and the CLI from their
+TypeScript sources. The rest is what each engine's own sandbox needs, because
+every specialist runs inside one.
+
+**Claude's sandbox** needs `bwrap` and `socat` on `PATH`, and on Ubuntu 24.04
+and later an AppArmor profile for `/usr/bin/bwrap` with `flags=(unconfined)`
+and `userns` (design section 3, probe P1). Ubuntu's stock
+`bwrap-userns-restrict` profile declares the same name and loads later, so a
+profile written from Claude Code's docs can be shadowed by it; only a live
+`bwrap`'s own confinement says whether the sandbox works (`docs/probes.md`, P1).
+What cross-agent reports: a missing `bwrap` or `socat` fails the task before
+Claude starts, with a reason naming what is missing (`claude sandbox refused:
+bwrap and socat not found on PATH; …`); a sandbox that engages and then cannot
+start a command fails the task with `claude sandbox failure: <the line Claude
+printed>` rather than letting it run unsandboxed.
+
+**Grok's sandbox** resolves its own list of runtime sockets it must deny —
+Docker's, containerd's, D-Bus's, systemd's and podman's among them — path by
+path, and refuses to start when it cannot resolve one. With rootful podman's
+socket enabled, `/run/podman` is created `0700 root`, and `grok --sandbox
+read-only` exits 1 before doing anything:
+
+```
+error: sandbox profile resolve failed: socket deny resolution failed: could not resolve runtime-socket deny path /run/podman/podman.sock: Permission denied (os error 13)
+error: this sandbox could not enforce its deny list on Linux: the required bwrap plan could not be prepared; see the error above for the specific cause. Refusing to start with denied paths unprotected.
+```
+
+The remedy keeps the socket itself private and lets the path be resolved: copy
+`/usr/lib/tmpfiles.d/podman.conf` to `/etc/tmpfiles.d/podman.conf` and change
+its `/run/podman` line to `D! /run/podman 0711 root root`, which holds from the
+next boot, and run `sudo chmod 0711 /run/podman` for the running system. What
+cross-agent reports: the task fails with `grok sandbox failure: error: sandbox
+profile resolve failed: …`, the first of those two lines, rather than a bare
+`engine exited 1` (`docs/probes.md`, "Grok's read-only sandbox and the
+runtime-socket deny list").
+
 ## Run the tests
 
 ```

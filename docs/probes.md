@@ -1180,7 +1180,7 @@ stop" and ran all six; it is the record, with the first archived beside it.
 | 5 | `printf home > $HOME/cross-agent-probe-6b-HOME.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
 | 6 | `curl -sS https://example.com -o /dev/null -w '%{http_code}'` | `/bin/bash -lc "curl -sS https://example.com -o /dev/null -w '%{http_code}'"` | 6, `curl: (6) Could not resolve host: example.com`, then `000` | — | the network denied: not 200 |
 
-**The transcript omits the commands that failed.** Codex 0.159.2 ran every step
+**The transcript omits the denied writes.** Codex 0.159.2 ran every step
 through its code-mode `exec` tool, a script calling `tools.exec_command({cmd:
 …})` with the step verbatim, one call per step, and its session rollout under
 `~/.codex/sessions/2026/09/30/` records all six calls with their exit codes and
@@ -1199,9 +1199,10 @@ worktree, and `~/.cache` outside it is not writable even though the worktree
 itself lies under `~/.cache`. So `tests/engines/codex.test.ts#codexI2Real`
 keeps its repository under `~/.cache/agent-team/cross-agent-tests/` on sound
 ground, and judging it by the files' presence stands; judging a Codex run by
-its `--json` items does not, because the items a denial would show are the ones
-missing — which touches the end-to-end verifier's reading of a Codex transcript
-as well. The control file, the worktree (`git worktree remove --force`) and the
+its `--json` items does not, because the items of the four denied writes are
+the ones missing — which touches the end-to-end verifier's reading of a Codex
+transcript as well, since an engine launch a sandbox refused could be missing
+the same way. The control file, the worktree (`git worktree remove --force`) and the
 branch were removed, and the sample left clean. Both runs' logs, prompts and
 rollouts are in the 6b archive's `a6/`.
 
