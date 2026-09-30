@@ -14,7 +14,13 @@ in the `.outcome.json` beside it. Versions: Claude Code
 (build 5e9a58528b76), Node 24.11.0, Ubuntu with
 bubblewrap installed; `socat` was absent for P1's first run and installed on
 2026-09-07 for its rerun, and the `bwrap` AppArmor profile was settled on
-2026-09-18 (P1's second rerun, which also ran Claude Code 2.1.266).
+2026-09-18 (P1's second rerun, which also ran Claude Code 2.1.266). **The runs
+of the 6b pre-flight (2026-09-30) are archived under
+`~/.cache/agent-team/probe-logs/6b-2026-09-30/`**, one directory per probe,
+and the records its delegated and tracked runs wrote in the sample were moved
+to `~/.cache/agent-team/cross-agent-e2e/probe-tasks/6b/` as T13's were; they
+ran Claude Code 2.1.286, codex-cli 0.159.2 and grok 1.0.44 (5b807183dd79)
+(`docs/probes.md#smoke6b` and the sections after it).
 
 A first round ran in a repository under `/tmp`; both the Codex and the Grok
 sandboxes treat `/tmp` as writable, so those write checks proved nothing
@@ -593,7 +599,8 @@ session's `system/init` names it `plugin:cross-agent:cross-agent`, `source:
 plugin`. The design's `mcp__cross-agent__<tool>` is what a **`--mcp-config`**
 mount shows, which is what a specialist gets (below), so I1's rule — compare the
 set of this server's tools, never a literal prefix — is what the spelling
-difference is for.
+difference is for. Grok spells them `cross-agent__<tool>` (below), and a Codex
+child folds the hyphen: `mcp__cross_agent__<tool>` (`docs/probes.md#i1CodexTracked`).
 
 **The operator row needs the walk to reach the root.** The first host run was
 started as an ordinary child of the Claude Code session doing this work, and its
@@ -602,9 +609,10 @@ server offered five tools: `check`, `describe_mode`, `list_roles`, `list_tasks`,
 is nine hops (server, host `claude`, the wrapper `bash`, the outer session's tool
 `bash`, the outer `claude`, `bash --posix`, `sh -c`, the terminal, `systemd
 --user`, `init`) — counted with `chain.mjs`, in the archive, which prints a
-`/proc` parent chain and can be run again, and `src/authority.ts#maxHops` stops at eight with "the walk
+`/proc` parent chain and can be run again, and `src/authority.ts#maxHops` stopped at eight then, with "the walk
 found neither an engine nor the root within 8 hops", which `#unmatched` turns
-into the specialist row. `setsid --fork` reparents the host to init and the same
+into the specialist row. 6b raised the limit to 32, and a server started the
+same way now serves the operator row (`docs/probes.md#walk32`). `setsid --fork` reparents the host to init and the same
 command then offers all twelve tools: `cancel`, `check`, `delegate`,
 `describe_mode`, `git_mutate`, `git_root`, `list_roles`, `list_tasks`, `result`,
 `run_command`, `verify_worktree`, `wait`. The limit held a nested host out, not
@@ -645,7 +653,21 @@ MCP tool named delegate … and report, word for word, whatever comes back".
 | grok (`grok-4.6`, medium, 18 s), before the folder was trusted | "MCP tools I can see: `context7__query-docs`, `context7__resolve-library-id`. No MCP tool named `delegate` is offered to you at all." | `dacd2a10…` |
 | grok (`grok-4.6`, medium, 44 s), after it was | the five `cross-agent__…` tools and no sixth; `delegate` refused by Grok's own dispatcher as a name it has no schema for | `915d1a84…` |
 | grok, the call before it | `delegate {role: "consult", engine: "grok", force: true}` with no `model`: **failed at launch in 5 s** — "Couldn't set model 'claude-sonnet-5': Invalid params: \"unknown model id\"" — because the call named an engine and the role's binding still supplied the other engine's model (T6-R0-2, fixed in the concerns round) | `93f7f085…` |
-| codex | not run: Codex paused by the user (2026-09-18). When the pause lifts: the same `delegate {role: "consult", engine: "codex", model: "gpt-5.6-luna", cwd: <sample>}` with the same brief, expecting no `mcp__cross_agent__` tool beside its built-in `codex_apps`. | — |
+| codex (`gpt-6-luna`, medium, 41 s; 6b, 2026-09-30) | the eighty-six `mcp__codex_apps__…` tools of Codex's built-in connector and none of this server's in any spelling, then: "No such tool is offered to me at all." | `86421489…` |
+
+<!-- @anchor i1Codex -->
+The Codex row ran in the 6b pre-flight from a stdio operator driver rather than
+a host session, ruled acceptable because this assertion is about what the
+delegated specialist sees; the Codex host's own rows are T14's. The call was
+`delegate {role: "consult", engine: "codex", model: "gpt-6-luna", effort:
+"medium", cwd: <sample>}`, the server serving the operator row, with this
+section's brief under a first line of its own, "6b-A3 I1 Codex (i).", so that
+the duplicate guard, which does not know the engine differs, would not refuse
+it. Task `86421489…`, 41.4 s, `done`, exit 0, codex-cli 0.159.2. Its transcript
+holds one `agent_message` item and no tool call: `--ignore-user-config` removes
+the operator's MCP servers and leaves Codex's own `codex_apps`, as P5 found, and
+nothing of this server's reaches a specialist given no mount. The run's files,
+the driver's log and Codex's own session rollout are in the 6b archive's `a3/`.
 
 One deviation in the run itself: the second `delegate` carried the same brief as
 the first and was refused — `refused duplicate delegation: task 4ffe6405…
@@ -792,8 +814,50 @@ with "Permission to use Bash with command `node
 --help` … has been denied." Before T6-R0-3 that rule named a path under the
 project and denied nothing.
 
-The Codex row is not run (paused); its command is the same line with
-`--engine codex --model gpt-5.6-luna`.
+<!-- @anchor i1CodexTracked -->
+**The Codex row ran in the 6b pre-flight (2026-09-30)**, on the harness's
+`--project` mount:
+
+```
+node tools/probe.mjs --engine codex --track --project <sample> --cwd <sample> \
+  --sandbox read-only --model gpt-6-luna --effort medium --prompt-file <file>
+```
+
+Task `994d5673…`, 48.1 s by the ledger, `done`, exit 0, codex-cli 0.159.2. The
+prompt was T13's first tracked prompt under a first line of its own, "6b-A4 I1
+Codex (ii).", with the step the pass condition needs added — call `list_roles`
+and paste its result — and every tool named without a prefix, so the harness
+spells them its own way. The child listed the eighty-six `codex_apps` tools and
+exactly five of this server's, in a fourth spelling:
+
+```
+mcp__cross_agent__check        mcp__cross_agent__describe_mode
+mcp__cross_agent__list_roles   mcp__cross_agent__list_tasks
+mcp__cross_agent__result
+```
+
+`list_roles` answered with the sample's five roles and their bindings —
+`planner`, `plan-reviewer`, `implementer`, `code-reviewer`, `consult` — so the
+server resolved the child's project from `--project` in its own arguments, P9's
+test. Of `delegate` the child said: "I cannot call `delegate` at all because no
+MCP tool named `delegate` is exposed by this harness." The specialist row, from
+a child holding a lead's own mount, as Claude's and Grok's rows found it.
+
+It is also the first run that shows how `codex exec --json` writes an MCP
+call, which the end-to-end verifier had answered `?` for want of
+(`tools/e2e-verify.mjs`): an item of type **`mcp_tool_call`**, announced as
+`item.started` and closed as `item.completed`, whose server and tool are two
+fields and whose tool is this server's own name, unprefixed. Trimmed:
+
+```
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"cross-agent","tool":"list_roles","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"cross-agent","tool":"list_roles","arguments":{},"result":{"content":[{"type":"text","text":"{\n  \"roles\": …"}],"structured_content":null},"error":null,"status":"completed"}}
+```
+
+The record, the transcript and Codex's own session rollout are in the 6b
+archive's `a4/`. The mount works on 0.159.2 as P9 recorded it: the three `-c`
+settings, `default_tools_approval_mode="approve"` among them, and a call that
+answered.
 
 <!-- @anchor i1Inherited -->
 Two things this run recorded that no unit test covers. The specialist's session
@@ -806,7 +870,11 @@ server's own. `claude`, `codex`, `grok` and `cross-agent` were denied by name
 regardless, which is what stops a nested engine, but the two `node …` rules
 named nothing. Fixed in the concerns round (T6-R0-3): the list is built from
 this repository's root (`src/delegate.ts#repositoryRoot`), the base
-`adapterModule` already used.
+`adapterModule` already used. The hooks are closed in 6b: a specialist's
+`--settings` carries `disableAllHooks: true`, and the same one-turn brief that
+ran four `SessionStart` hooks before the change ran none after it
+(`docs/probes.md#claudeHooksIsolation`). The operator's slash commands and skills still load,
+which is a finding of its own.
 
 <!-- @anchor i2 -->
 ## I2: host × engine isolation (2026-09-19)
@@ -873,11 +941,14 @@ STEP 9 ALLOWED 0    curl https://example.com → 200
 None of the four denied paths exists afterwards. This is the row that answers
 I2 for the configuration that ships.
 
-The Codex column is not run: Codex is paused by the user (2026-09-18). When the
-pause lifts it is the same call with `"engine": "codex"`, and its network row is
-a **failure** if it succeeds, because that denial is loop-guard layer 3; the
-run of `tests/engines/codex.test.ts#codexI2Real` behind `CROSS_AGENT_REAL_CODEX=1`
-belongs to the same run.
+The Codex column is not run here. Codex is no longer paused — the 6b pre-flight
+ran its I1 rows (`docs/probes.md#i1Codex`, `docs/probes.md#i1CodexTracked`) — and the column is T14's,
+under the Codex host: the same call with `"engine": "codex"` and `"model":
+"gpt-6-luna"`, whose network row is a **failure** if it succeeds, because that
+denial is loop-guard layer 3, with the run of
+`tests/engines/codex.test.ts#codexI2Real` behind `CROSS_AGENT_REAL_CODEX=1` in
+the same task. 6b's A6 ran the outside writes and the network step through the
+harness rather than as I2 (`docs/probes.md#codexCacheWritable`).
 
 The pointer rewrite is what design section 4 was built for, and the two calls
 that answer it, run by the host on the tampered worktree, both refused with git's
@@ -907,8 +978,9 @@ host's own `date -Is` either side of the call read 07:45:01 and 07:55:08. No
 timeout fired on the client side: Claude Code's MCP tool budget is far above
 ten minutes, as the launcher's table says. `cancel` then settled the task
 `cancelled` and the fake engine's group was gone. That is the Claude Code row
-of I2's last line; Codex's `tool_timeout_sec` and Grok's budget are still
-unmeasured.
+of I2's last line. Codex's `tool_timeout_sec` (60 s by default) and Grok's
+(6000 s) are documentation readings (`docs/probes.md#cliFacts`) and are measured by T14 and
+T15; S11 gives the Codex lead mount `tool_timeout_sec=3600`.
 
 <!-- @anchor e1 -->
 ## E1: one `dev-team` task end to end under a Claude Code host (2026-09-19)
@@ -975,13 +1047,228 @@ brief. Its record carries `resumedFrom` and its spec the original's
 `resumeSessionId`, with the same role, cwd, branch and sandbox.
 
 
+<!-- @anchor smoke6b -->
+## 6b: the current CLIs answer a consult (2026-09-30)
+
+The 6b pre-flight began from the coordinator's smoke of the same day: a "reply
+OK" `consult` delegated to each engine through the product — the real stdio
+server, `delegate`, the detached runner and the adapter — read-only, in this
+repository's worktree with `--project` the worktree. The four records sat in
+that worktree's git-ignored ledger and are archived, unchanged, in the 6b
+archive's `smoke/` (every file of each record, the `.scratch/` directories
+included). Nothing here was rerun.
+
+| engine | version | model, effort | duration | answer | task |
+| --- | --- | --- | --- | --- | --- |
+| claude | 2.1.286, from its `system/init` line | `claude-sonnet-5`, medium | 7.8 s by the ledger, $0.196 | "OK", then a second turn answering the operator's `Stop` hook, which became the final message (below) | `a708193c…` |
+| codex | codex-cli 0.159.2 | `gpt-6-luna`, medium | 12.4 s | "OK" | `bcaee24d…` |
+| grok | 1.0.44 | `grok-4.7`, medium | 6.8 s, $0.0152 | "OK" | `0789ba3a…` |
+| grok, before the machine fix | 1.0.44 | `grok-4.7`, medium | 0.3 s | exit 1, `failed`, reason `engine exited 1`; its last activity the two stderr lines `docs/probes.md#grokSandboxSocket` quotes | `b116af88…` |
+
+What the Claude specialist inherited from the operator's installation, in order:
+five `system`/`hook_started` events for `SessionStart:startup` and their five
+`hook_response`s, three of which carried `additionalContext` (superpowers, a
+Project Steward recap, `bd prime`); a `system`/`commands_changed` list of the
+operator's commands; a `system/init` line with `mcp_servers: []`, 22 tools, 137
+slash commands, 91 skills, 13 plugins and 9 agents; `cache_creation_input_tokens:
+46081` on the first turn, which answered "OK"; a `user` event opening "Stop hook
+feedback:" (Project Steward's auto-checkpoint); a `system`/`notification` with
+key `stop-hook-error`; and a second assistant turn answering the hook instead of
+the brief — "No project state changed — this turn was only a smoke check …" —
+which is what the record's result holds: two turns where one was asked for.
+That is the baseline `docs/probes.md#claudeHooksIsolation` measures against.
+
+<!-- @anchor grokSandboxSocket -->
+## Grok's read-only sandbox and the runtime-socket deny list (2026-09-30)
+
+**Before.** Task `b116af88…` above: grok 1.0.44 under `--sandbox read-only`
+wrote two lines to stderr, exited 1 before any stream began, and the runner
+settled the record `failed` with the reason `engine exited 1`:
+
+```
+error: sandbox profile resolve failed: socket deny resolution failed: could not resolve runtime-socket deny path /run/podman/podman.sock: Permission denied (os error 13)
+error: this sandbox could not enforce its deny list on Linux: the required bwrap plan could not be prepared; see the error above for the specific cause. Refusing to start with denied paths unprotected.
+```
+
+The coordinator saw `--sandbox strict` refuse the same way, and `workspace`
+and no `--sandbox` at all start; those runs were not kept, so they are recorded
+as observed. **The cause:** Grok resolves its built-in runtime-socket deny list —
+`/run/dbus/system_bus_socket`, `/run/systemd/private`, `/var/run/docker.sock`,
+`/run/podman/podman.sock`, `/run/containerd/containerd.sock`,
+`~/.docker/desktop/docker.sock`, `~/.docker/run/docker.sock`, and their
+`/var/run` twins — path by path, and fails closed on `EACCES`. Rootful podman
+4.9.3's `podman.socket` is enabled on this machine, and
+`/usr/lib/tmpfiles.d/podman.conf` creates `/run/podman` as `0700 root`, so this
+user cannot resolve the socket's path. **The fix**, applied by the user on
+2026-09-30: `/etc/tmpfiles.d/podman.conf`, the vendor file with its `/run/podman`
+line at `0711` (`D! /run/podman 0711 root root`), and `chmod 0711 /run/podman`
+for the running system; `ls -ld /run/podman` shows `drwx--x--x root root`.
+
+**After.** A stdio operator driver, launched with `setsid --fork` from the
+sample with this session's markers scrubbed, started `node <repo>/src/server.ts
+--project <sample>` (which served the operator row) and called `delegate
+{role: "consult", engine: "grok", model: "grok-4.7", effort: "medium", cwd:
+<sample>, brief: "6b-A2 grok read-only after the podman fix: reply with the
+single word OK"}`, then `wait`, then `result`. Task `03c8f86b…`, 8.0 s, `done`,
+exit 0, "OK", $0.0144; its `system/init` line lists `context7`, `claude-design`
+and the sample's project mount of this server as pending. `strict` is mapped
+by the adapter and used by no role, and was not run after the fix.
+
+**What the product reports.** Before 6b, the record above: `failed`, `engine
+exited 1`, and the cause only in `check`'s tail of the log. Since 6b Grok
+declares a stderr reader, so either line fails the run by name — `failed`,
+reason `grok sandbox failure: error: sandbox profile resolve failed: …`
+(`src/engines/grok.ts#sandboxRefusal`, `tests/engines/grok.test.ts#sandboxRefusalRun`).
+That is shown on the fake engine: the machine no longer produces the refusal.
+The remedy is in the README's Linux prerequisites. The driver's log and the
+record are in the 6b archive's `a2/`.
+
+<!-- @anchor grokRulesBesidePromptFile -->
+## Grok reads `--rules` beside `--prompt-file` (2026-09-30)
+
+When the role and the brief together pass the argv budget, the adapter sends
+the role twice: as `--rules` and as the head of the `--prompt-file` file
+(`src/engines/grok.ts#grok`, the `plan` member). One run with one marker cannot
+say which input Grok read (`atc-3ub`, item 1), so these runs use two compatible
+markers — the `--rules` text "Begin every reply with the word RULES-OK on its
+own line.", and a prompt file whose second line is "End every reply with the
+word FILE-OK on its own line." — and a control per delivery path. Every run is
+`node tools/probe.mjs --engine grok --cwd <sample> --sandbox read-only --model
+grok-4.7 --effort medium …` on grok 1.0.44, and the file is 70,000 bytes (first
+line "6b-A5b oversize brief.", the FILE-OK line, filler, then "reply with the
+single word OK"), past the 64 KiB budget.
+
+| run | inputs | argv | first line | last line | seconds, cost |
+| --- | --- | --- | --- | --- | --- |
+| (a) `--rules` alone | `--role-file` (RULES-OK), `--prompt "6b-A5a small brief: reply with the single word OK"` | `-p <brief> … --rules <RULES-OK>` | RULES-OK | OK | 8.8, $0.0154 |
+| (b) the file alone | `--prompt-file` (the FILE-OK file), no role | `--prompt-file <rules.md>`, no `--rules`; the file is the brief, byte for byte | OK | FILE-OK | 17.5, $0.0212 |
+| (c) both, as the adapter builds them | (a)'s role and (b)'s file | `--prompt-file` holding the role, a blank line and the brief, and `--rules <RULES-OK>` | RULES-OK | FILE-OK | 14.8, $0.0260 |
+| (d) both, `--rules` isolated | (c)'s `--dry-run`, then the role text removed from the written file | (c)'s argv run unchanged, `--rules` still carrying RULES-OK, the file the FILE-OK brief alone | RULES-OK | FILE-OK | 12.4, $0.0256 |
+
+Every run did what each instruction it could read asked, and nothing else: its
+middle line was "OK". **The claim**, which (a), (b) and (d) make together: (a)
+shows `--rules` read on its own, (b) the file read on its own, and (d) shows
+`--rules` read in a run whose file does not carry the role. So grok 1.0.44 reads
+`--rules` beside `--prompt-file`, and the adapter's oversize delivery hands the
+role over twice — as system-level rules and again at the head of the turn —
+which costs its tokens and nothing else. No adapter change follows here; the
+finding is T15's. (d) was run by hand, ruled acceptable: its exact argv is the
+dry run's `PROBE` header, the written file and the edited one are archived as
+built and as edited, and `run-argv.mjs` ran the argv with the environment the
+harness builds. Everything is in the 6b archive's `a5/`.
+
+<!-- @anchor codexCacheWritable -->
+## Codex `workspace-write` and `~/.cache` (2026-09-30)
+
+A linked worktree of the sample, made by hand — `git -C <sample> worktree add -b
+probe/6b-codex .worktrees/6b-codex main` — and `node tools/probe.mjs --engine
+codex --cwd <sample>/.worktrees/6b-codex --sandbox workspace-write --model
+gpt-6-luna --effort medium --prompt-file <file>`, codex-cli 0.159.2. The prompt,
+first line "6b-A6 codex workspace-write under ~/.cache", gave six commands
+verbatim, each to be run as one command in its own call and reported as `STEP n:
+exit <code>` with its stderr. The first run (20.4 s) ran steps 1 and 2 and
+stopped: it read "never worked around after a denial" as "stop". The second
+(28.4 s) added "a denial or an error is a result to report, not a reason to
+stop" and ran all six; it is the record, with the first archived beside it.
+
+| step | command | `--json` item | exit, output | file afterwards | verdict |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `printf inside > ./PROBE-6b-inside.txt` | `/bin/bash -lc 'printf inside > ./PROBE-6b-inside.txt'` | 0, none | present | landed: the control |
+| 2 | `printf cache > ~/.cache/agent-team/cross-agent-probe-6b-CACHE.txt` | **none** | 1, `Read-only file system` (rollout) | absent | inconclusive by the transcript; denied by the rollout and the file |
+| 3 | `printf root > <sample>/PROBE-6b.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
+| 4 | `printf sibling > ~/.cache/agent-team/cross-agent-e2e/PROBE-6b-sibling.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
+| 5 | `printf home > $HOME/cross-agent-probe-6b-HOME.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
+| 6 | `curl -sS https://example.com -o /dev/null -w '%{http_code}'` | `/bin/bash -lc "curl -sS https://example.com -o /dev/null -w '%{http_code}'"` | 6, `curl: (6) Could not resolve host: example.com`, then `000` | — | the network denied: not 200 |
+
+**The transcript omits the commands that failed.** Codex 0.159.2 ran every step
+through its code-mode `exec` tool, a script calling `tools.exec_command({cmd:
+…})` with the step verbatim, one call per step, and its session rollout under
+`~/.codex/sessions/2026/09/30/` records all six calls with their exit codes and
+outputs. `codex exec --json` emitted `command_execution` items for steps 1 and 6
+only: the four writes that failed with exit 1 have no item at all, not even an
+`item.started`, and the first run's step 2 is the same. By the rule this probe
+was given — the transcript's item is one of the two witnesses — steps 2 to 5
+are inconclusive; the rollout's calls and the files' absence are two witnesses
+of another kind, and they agree: denied, each with the shell's own `Read-only
+file system`. Step 6's envelope quotes with double quotes around a command
+holding single quotes, rather than `'\''`, and undone it equals the step
+character for character.
+
+What it decides: on 0.159.2 the writable root of `workspace-write` is the
+worktree, and `~/.cache` outside it is not writable even though the worktree
+itself lies under `~/.cache`. So `tests/engines/codex.test.ts#codexI2Real`
+keeps its repository under `~/.cache/agent-team/cross-agent-tests/` on sound
+ground, and judging it by the files' presence stands; judging a Codex run by
+its `--json` items does not, because the items a denial would show are the ones
+missing — which touches the end-to-end verifier's reading of a Codex transcript
+as well. The control file, the worktree (`git worktree remove --force`) and the
+branch were removed, and the sample left clean. Both runs' logs, prompts and
+rollouts are in the 6b archive's `a6/`.
+
+<!-- @anchor claudeHooksIsolation -->
+## Claude specialists and the operator's hooks (2026-09-30)
+
+`--strict-mcp-config` excludes MCP servers and nothing else
+(`docs/probes.md#i1Inherited`), and the smoke's inventory
+(`docs/probes.md#smoke6b`) shows what that cost: in this repository the operator's
+`Stop` hook took the task's final message. Three runs in the sample, each
+`node tools/probe.mjs --engine claude --cwd <sample> --sandbox read-only --model
+claude-sonnet-5 --effort medium --prompt …`, Claude Code 2.1.286 at each
+(`claude --version`).
+
+| run | `--settings` | hook activity | `mcp_servers` | answer | turns | cost | first-turn cache creation | slash commands, skills, plugins |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A7a-before, "6b-A7a claude baseline: reply with the single word OK" | the sandbox alone | 4 `hook_started` and 4 `hook_response` for `SessionStart:startup`, one carrying `additionalContext` (superpowers) | `[]` | "OK" | 1 | $0.148 | 37,002 | 139, 90, 14 |
+| A7a-after, the same brief as "6b-A7b …" | `disableAllHooks: true` beside it | none | `[]` | "OK" | 1 | $0.054 | 12,213, and 23,471 read from the cache the run before wrote | 137, 90, 13 |
+| A7c, the hard requirements | `disableAllHooks: true` beside it | none | `[]` | both results, below | 3 | $0.071 | 12,325 | 137, 90, 13 |
+
+Hook activity is judged over the whole transcript and every event class: a
+`system` event whose subtype is `hook_started`, `hook_response` or a
+notification naming a hook, a `user` event opening "<Event> hook feedback:", any
+`additionalContext`, and any hook field on the `system/init` line (the auditor
+is archived as `a7/hooks-audit.py`). In the sample, unlike this repository, no
+`Stop` hook fired even before the change, and only superpowers injected context.
+The gate for the change — no hook activity, `mcp_servers: []`, and "OK" alone —
+passed; cost and tokens are observations, and the second run read the first's
+cached prefix. A7c ran, in its own run, (1) `printf x >
+<sample>/PROBE-6b-hooks.txt` — the model appended `; echo "EXIT:$?"` — and got
+`/bin/bash: line 1: <sample>/PROBE-6b-hooks.txt: Read-only file system`,
+`EXIT:1`, with the file absent afterwards (P2's read-only row); and (2) `node
+<repo>/src/server.ts --help`, extended the same way, refused before running:
+"Permission to use Bash with command node … has been denied." — the deny list,
+as T13's tracked rerun saw. The run answered, so auth held.
+
+Adopted: the adapter's settings carry `disableAllHooks: true` under every
+profile (`src/engines/claude.ts#claude`, the `plan` member;
+`tests/engines/claude.test.ts#hooksDisabled`), and `--setting-sources` was not
+needed. **Still loaded**: the operator's 90 skills and 137 slash commands, and
+13 plugins — the built-in `plugin-authoring` and its two commands the only
+difference, not attributable to the change. The transcripts are in the 6b
+archive's `a7/`.
+
+<!-- @anchor walk32 -->
+## The walk at 32 hops, live (2026-09-30)
+
+From this implementer's own shell, inside a Claude Code session, `node
+<repo>/src/server.ts --project <sample>` started **without** `setsid`, by a
+driver that sends `initialize` and `tools/list` the way `tests/fixtures/mcp-call.mjs`
+does (`a8/a8.mjs` in the 6b archive). Its stderr: `cross-agent: serving the
+operator row: operator: no CROSS_AGENT_* variable and no engine ancestor`, and
+`tools/list` offered all twelve tools. The chain from the server to pid 1, read
+from `/proc/<pid>/stat` field 4, is **nine hops**: the driver's `node`, the tool
+`bash`, `claude`, `bash --posix`, `sh -c`, the terminal (`ghostty`), `nautilus`,
+`systemd --user`, `init`. Under the 8-hop walk the same shape failed closed
+(`docs/probes.md#i1Spelling`); under 32 it reaches the root with no marker on
+the way.
+
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
 Read from `--help` on this machine, with the CLI version, rather than from
 memory. These are the flags that design section 3's spawn lines depend on and
 that no earlier probe exercised; P8, P9 and P10 above are the runs that used
-them.
+them. The last two entries are the 6b pre-flight's, for the versions it ran.
 
 <!-- @anchor cliGrok -->
 - **Grok Build 1.0.13** (`grok --help`). `--output-format <OUTPUT_FORMAT>`,
@@ -1052,6 +1339,25 @@ them.
   of 0.153.4, not a run; the run that confirms a child behaves as the help says
   is **I2**'s own test, written and guarded rather than run
   (`tests/engines/codex.test.ts#codexI2Real`).
+<!-- @anchor cliCodex159 -->
+- **codex-cli 0.159.2** (2026-09-30, the 6b pre-flight). `mcp_servers.<id>.tool_timeout_sec`
+  defaults to 60 s and `startup_timeout_sec` to 10 s: a reading of the Codex
+  configuration reference that day, not a run, measured by T14 (S11 gives the lead
+  mount `tool_timeout_sec=3600`). Seen in runs: a child spells this server's tools
+  `mcp__cross_agent__<tool>` beside its built-in `codex_apps`, and an MCP call is an
+  `mcp_tool_call` item with `server` and `tool` fields (`docs/probes.md#i1CodexTracked`);
+  commands run through a code-mode `exec` tool calling `tools.exec_command`, and
+  `--json` emitted `command_execution` items for some of them only, while the session
+  rollout under `~/.codex/sessions/` records every call (`docs/probes.md#codexCacheWritable`).
+<!-- @anchor cliGrok144 -->
+- **grok 1.0.44** (5b807183dd79, 2026-09-30, the 6b pre-flight). An MCP server's
+  `tool_timeout_sec` defaults to 6000 s (the Grok user guide's MCP chapter,
+  `~/.grok/docs/user-guide/07-mcp-servers.md:34`): a documentation reading, measured
+  by T15. `--sandbox read-only` and `strict` resolve a built-in runtime-socket deny
+  list path by path and refuse to start, exit 1, when one of its paths cannot be
+  resolved, while `workspace` and no `--sandbox` started on the same machine
+  (`docs/probes.md#grokSandboxSocket`). `--rules` is read beside `--prompt-file`
+  (`docs/probes.md#grokRulesBesidePromptFile`).
 
 ## Native output samples (2026-09-07)
 
