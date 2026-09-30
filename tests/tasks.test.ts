@@ -518,6 +518,20 @@ test("a delegation racing a cascade is either refused or cancelled with the rest
   }
 });
 
+// @anchor unknownTaskReads
+test("check and result on an unknown task answer that there is none and write nothing", async (t) => {
+  // The helper's repository with its config taken away: a project nothing has configured or
+  // delegated in, where a read has no business creating the ledger (atc-s96.51).
+  const p = await project(t, { roles: {} }, [{ key: "consult" }]);
+  fs.rmSync(path.join(p.root, ".cross-agent"), { recursive: true, force: true });
+  const exclude = path.join(p.root, ".git", "info", "exclude");
+  const before = fs.readFileSync(exclude, "utf8");
+  assert.deepEqual(await check(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+  assert.deepEqual(result(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent")), false, "no ledger directory");
+  assert.equal(fs.readFileSync(exclude, "utf8"), before, "no exclusion line");
+});
+
 test("a cancel names a task nobody has rather than inventing one", async (t) => {
   const p = await projectWithRoles(t);
   assert.deepEqual(await cancel(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });

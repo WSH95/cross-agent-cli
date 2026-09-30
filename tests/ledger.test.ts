@@ -7,7 +7,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
+import { create, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
 import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
@@ -585,6 +585,25 @@ test("first ledger use appends each missing exclusion once", async (t) => {
     await change(root, record.id, { status: "running" }, now + 1);
     scan(root);
     assert.equal(fs.readFileSync(exclude, "utf8"), first);
+  }
+});
+
+// @anchor unknownReadWritesNothing
+test("a read of an unknown task writes nothing: no ledger directory, no exclusion line", (t) => {
+  // Before 6b `read` resolved its path through `initialize`, so asking after a task nobody
+  // had created made the ledger directory and appended both exclusions (atc-s96.51). A
+  // read is a question about the project, and only `create` may answer it by writing.
+  for (const existing of [undefined, "# existing\n"]) {
+    const root = project(t);
+    const exclude = path.join(root, ".git", "info", "exclude");
+    fs.mkdirSync(path.join(root, ".git", "info"), { recursive: true });
+    if (existing !== undefined) fs.writeFileSync(exclude, existing);
+    const id = newTaskId();
+    assert.equal(find(root, id), null);
+    assert.throws(() => read(root, id), (error) => (error as NodeJS.ErrnoException).code === "ENOENT");
+    assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false, "no ledger directory");
+    if (existing === undefined) assert.equal(fs.existsSync(exclude), false, "an absent exclude file stays absent");
+    else assert.equal(fs.readFileSync(exclude, "utf8"), existing, "an existing one stays byte-identical");
   }
 });
 

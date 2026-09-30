@@ -180,9 +180,14 @@ function initialize(projectRoot: string): string {
   return directory;
 }
 
+/**
+ * Where a record lives, and nothing more: resolving a path writes nothing, so a read of a
+ * task nobody created leaves a project exactly as it was. `create` is what makes the
+ * ledger, and every other caller runs after a `create` (design section 2).
+ */
 function recordPath(projectRoot: string, id: string): string {
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id)) throw new Error("invalid task id");
-  return path.join(initialize(projectRoot), `${id}.json`);
+  return path.join(path.resolve(projectRoot, ".cross-agent", "tasks"), `${id}.json`);
 }
 
 export class InvalidRecordError extends Error {
@@ -305,10 +310,11 @@ export function newTaskId(): string {
 
 export function create(projectRoot: string, input: CreateTask, now = Date.now()): TaskRecord {
   const id = input.id ?? newTaskId();
-  // `recordPath` creates the task directory and holds an id a caller minted to the one
-  // alphabet every reader resolves a record by.
+  // `recordPath` holds an id a caller minted to the one alphabet every reader resolves a
+  // record by, before anything is written. The first record is then what creates the task
+  // directory and adds the ledger's exclusions: this is the one caller of `initialize`.
   const file = recordPath(projectRoot, id);
-  const directory = path.dirname(file);
+  const directory = initialize(projectRoot);
   const record: TaskRecord = {
     id,
     role: input.role,

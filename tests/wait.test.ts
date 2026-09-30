@@ -152,6 +152,20 @@ test("a settled task is answered on the first read, with the tail of its result"
   assert.deepEqual(await wait(p.root, "no-such-task", { timeoutSeconds: 1 }), { ok: false, reason: "no task no-such-task" });
 });
 
+// @anchor unknownTaskWait
+test("a wait on an unknown task answers that there is none and writes nothing", async (t) => {
+  // The helper's repository with its config taken away: `wait` reads the defaults a project
+  // with no config has, and a read of a task nobody created must not create the ledger to
+  // say so (atc-s96.51).
+  const p = await project(t, { roles: {} }, [{ key: "consult" }]);
+  fs.rmSync(path.join(p.root, ".cross-agent"), { recursive: true, force: true });
+  const exclude = path.join(p.root, ".git", "info", "exclude");
+  const before = fs.readFileSync(exclude, "utf8");
+  assert.deepEqual(await wait(p.root, "no-such-task", { timeoutSeconds: 1 }), { ok: false, reason: "no task no-such-task" });
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent")), false, "no ledger directory");
+  assert.equal(fs.readFileSync(exclude, "utf8"), before, "no exclusion line");
+});
+
 // @anchor checkAnswersWhile
 test("check answers while a wait is pending, and an aborted wait returns the status it found", async (t) => {
   // Nothing stalls in this test: it is about the two calls living side by side.
