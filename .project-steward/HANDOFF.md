@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-30T22:08:40Z
+updated_at: 2026-09-30T22:36:03Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -42,12 +42,12 @@ every Codex row is recorded as not run with the command that runs it later
 ## In flight
 
 2026-09-30: task 6b (pre-flight probes and hardening: `.56`, `.47`, `.49`,
-`.50`, `.51`, `.53`, `atc-3ub`; claimed) is being implemented on the task
-branch from its reviewed brief (`task-6b-brief.md` v3 in the SDD directory):
-eight commits so far (`9f852d2`..`e9add0c`: the tracked mount, the ledger read,
-gitroot's reason, `killGroup` removed, the file-backed chain, 32 hops, the
-runner re-scan, Grok's refusal by name); the verifier, probes A5–A8, the
-hooks decision and the docs remain. It runs before S11; S11's brief is being refreshed and reviewed meanwhile
+`.50`, `.51`, `.53`, `atc-3ub`; claimed) is implemented on the task branch —
+twelve commits `cb87b01..9066dfd` (634 tests, 633 pass, 1 skipped; citations
+clean; e2e-verify 8 pass) — and is in code review; report
+`task-6b-report.md` in the SDD directory. Open from it: Codex 0.159.2's `--json`
+omits sandbox-denied commands, so the verifier must read Codex rollouts
+before any Codex-lead or Codex-host run. It runs before S11; S11's brief is being refreshed and reviewed meanwhile
 (`task-7-brief.md`). The branch `task/cross-agent-m3` is fast-forwarded to `main` at
 `cb87b01` (6b's BASE; `npm test` 617 / 616 / 1 skipped). A consult smoke on
 current CLIs passes on all three engines, but only after a machine fix:
