@@ -18,15 +18,19 @@ Add the answer to the item when it is resolved.
 - [ ] Under a Claude Code host, should Claude-engine specialists use the
       host's own Agent tool instead of a nested `claude -p`, to share the
       prompt cache? (after T13's end-to-end run)
-- [ ] The authority walk stops at 8 hops. A Claude Code host started inside
+- [x] The authority walk stops at 8 hops. A Claude Code host started inside
       another Claude Code session puts the MCP server 9 hops from init, so it
       fails closed to the specialist row and offers no `delegate` (T13; an
       operator at a terminal is 7 hops, `setsid --fork` is 4). Raise the
       limit, or document `setsid` for nested hosts? Measure under VS Code and
-      the desktop app first. (`atc-s96.53`)
-- [ ] A Grok specialist inside a linked worktree reaches no MCP server at
+      the desktop app first. (`atc-s96.53`) **Raise it to 32** (user,
+      2026-09-30): the walk still stops at the first engine record or
+      `CROSS_AGENT_*` marker, so only the too-deep refusal moves; T14 and T15
+      record the hop counts under the Codex and Grok hosts.
+- [x] A Grok specialist inside a linked worktree reaches no MCP server at
       all, because Grok reads `./.grok/config.toml` per directory and a
       worktree is its own directory (T13, `grok mcp doctor` in the worktree).
       That is the safe direction; reaching one needs a user-scope `grok mcp
       add`, a change to your Grok configuration. Leave it, or mount it
-      user-wide? (T15)
+      user-wide? (T15) **Leave it** (user, 2026-09-30): no user-scope mount;
+      T15 records the behaviour.
