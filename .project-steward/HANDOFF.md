@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-19T17:02:17Z
+updated_at: 2026-09-30T19:46:18Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -41,11 +41,16 @@ every Codex row is recorded as not run with the command that runs it later
 
 ## In flight
 
-Nothing is running. The branch `task/cross-agent-m3` and its worktree
-`.worktrees/cross-agent-m3` stay in place for S11; the worktree holds a
-git-ignored `.cross-agent/` (a `solo` config and the records of the
-controller's review delegations) — the review harness, not the product.
-Open beads worth knowing before S11: `atc-s96.56` (the verifier's residual
+2026-09-30: task 6b (pre-flight probes and hardening: `.56`, `.47`, `.49`,
+`.50`, `.51`, `.53`, `atc-3ub`; claimed) is being planned, and runs before
+S11. The branch `task/cross-agent-m3` is fast-forwarded to `main` at
+`cb87b01` (6b's BASE; `npm test` 617 / 616 / 1 skipped). A consult smoke on
+current CLIs passes on all three engines, but only after a machine fix:
+grok 1.0.44's `read-only` and `strict` sandboxes refused to start because
+`/run/podman` was `0700 root` (see `RISKS.md` for the fix and rollback).
+The worktree holds a git-ignored `.cross-agent/` (a `solo` config and the
+records of the controller's review delegations) — the review harness, not
+the product. Open beads worth knowing: `atc-s96.56` (the verifier's residual
 launcher cases — `echo claude` counts as a launch; `claude;true`,
 `$(claude)` and a bare backticked `claude` are missed; so is `node
 --experimental-strip-types src/cli.ts` — and two non-positional citation
@@ -57,16 +62,15 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
 
 ## Next steps
 
-1. **S11 — engine placement** (`atc-s96.24`, remainder). Brief:
-   `.superpowers/sdd/the-development-of-this-calm-planet/task-7-brief.md`
-   (its addendum lists the T13 facts it builds on).
-   First rebase the branch onto `main` (`main`'s later commits touch only
-   `VERIFY.md` and `.project-steward/`), then record BASE
-   (`git -C .worktrees/cross-agent-m3 rev-parse HEAD`). After each task run
+1. **Task 6b first**, then **S11 — engine placement** (`atc-s96.24`,
+   remainder). S11's brief,
+   `.superpowers/sdd/the-development-of-this-calm-planet/task-7-brief.md`,
+   needs refreshing: Codex is available again, so E2 runs, and the Codex
+   lead needs `tool_timeout_sec` (Codex's per-tool default is 60 s).
+   After each task run
    `node tools/check-citations.mjs --since <BASE>` — it must report 0 drifted
    and 0 not judged — because `npm test` cannot see a citation that moved.
-2. **Before E4–E7 rely on it**, do `atc-s96.56` (the verifier's residual
-   regex cases and two non-positional citation bundles). **Then** T14 (`.14`,
+2. **Then** T14 (`.14`,
    Codex packaging), T15
    (`.15`, Grok packaging; the sample folder is trusted; `.53`'s hop
    measurement and the read-only Grok probe row belong here), T16

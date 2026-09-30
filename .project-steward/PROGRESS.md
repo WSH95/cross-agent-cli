@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-30T19:46:18Z — claude
+[auto-checkpoint] [auto-checkpoint] Workflow records removed (66cd043) and the user's hop-budget/Grok-mount answers recorded (cb87b01); branch at cb87b01, baseline 617/616/1; grok 1.0.44 read-only sandbox fixed on this machine (/run/podman 0711, RISKS.md); task 6b claimed and in planning.
+
 ### 2026-09-19T17:02:17Z — claude
 T13 complete and merged at e9cbac0 (617 tests, 616 pass); handover written for S11
 
