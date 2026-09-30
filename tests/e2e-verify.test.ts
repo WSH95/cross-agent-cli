@@ -389,6 +389,32 @@ test("a shell command that starts an engine is an offence through a shell's own 
     { claude: claudeLog("for x in 1; do claude -p hi; done") },
     // A quoted command for a shell of the specialist's own, beside Codex's own envelope.
     { claude: claudeLog('sh -c "grok -p hi"') },
+    // A wrapper's own options, with the operands some of them take (6b-R1-1).
+    { claude: claudeLog("sudo -u root claude -p hi") },
+    { claude: claudeLog("env -u FOO claude") },
+    { claude: claudeLog("nice -n 10 claude") },
+    { claude: claudeLog("timeout -s KILL 60 claude") },
+    { claude: claudeLog("timeout -k 5 60 claude") },
+    { claude: claudeLog("stdbuf -o L claude") },
+    { claude: claudeLog("exec -a x claude") },
+    { claude: claudeLog('env FOO="hello world" claude -p hi') },
+    // A shell or `eval` given the command as words, however the shell's options are spelled,
+    // and one shell's `-c` inside another's — Codex's own envelope around an inner shell.
+    { claude: claudeLog("bash --login -c 'claude -p hi'") },
+    { claude: claudeLog("eval claude -p hi") },
+    { claude: claudeLog("sh -c claude") },
+    { claude: claudeLog("bash -c claude") },
+    { claude: claudeLog('sh -c "bash -c claude"') },
+    { codex: codexLog("/bin/bash -lc 'bash -c claude'") },
+    // A command another program runs for it: `find`'s `-exec`, `xargs`, a remote shell.
+    { claude: claudeLog("find . -exec claude -p hi \\;") },
+    { claude: claudeLog("printf 'hi\\n' | xargs -I{} claude -p {}") },
+    { claude: claudeLog("ssh localhost 'claude -p hi'") },
+    // `node` loading this server as a module, before any script.
+    { claude: claudeLog("node --import src/server.ts other.js") },
+    // A heredoc or here-string is a script to the shell that reads it.
+    { claude: claudeLog("bash << 'EOF'\nclaude -p hi\nEOF") },
+    { claude: claudeLog('bash <<< "claude -p hi"') },
   ]) {
     const root = await project(t, logs);
     const { code, out } = await run(root);
@@ -444,12 +470,55 @@ test("reading a file that happens to be named like one of them is not a launch",
     "echo do claude",
     // `node` running something else, whatever options it was given first.
     "node --import x.mjs other.js",
+    // A shell, `eval` or an engine's name as an argument is a word being printed (6b-R1-1).
+    'echo eval "claude"',
+    'echo sh -c "grok"',
+    "echo /bin/bash -lc 'claude'",
+    // `command -v` and `-V` describe a command without running it.
+    "command -v claude",
+    "command -V codex",
+    "if command -v grok >/dev/null; then echo found; fi",
+    // A parenthesis inside a quoted pattern is part of the pattern.
+    'grep -rnE "(claude|codex|grok)" src/',
+    "rg '(claude)' docs",
+    // Options of `node`'s own that take an operand hold that operand, not a script.
+    "node --title src/server.ts other.js",
+    "node --env-file src/server.ts",
+    "node -C src/server.ts other.js",
+    // A heredoc handed to anything but a shell is data, and so is a comment.
+    "cat > notes.md << 'EOF'\nclaude -p hi\nEOF",
+    "cat <<- EOF\n\tclaude -p hi\n\tEOF",
+    "# claude -p hi",
   ]) {
     const root = await project(t, { claude: claudeLog(command) });
     const { code, out } = await run(root);
     assert.equal(verdict(out, scan), "pass", `${command}\n${out}`);
     assert.equal(code, 0, out);
   }
+});
+
+// @anchor inlineCodeUnjudged
+test("an engine named inside an interpreter's inline code is answered with a question mark", async (t) => {
+  // A launch written as another language's code cannot be read by a shell's rules, and a
+  // mention of the name in that code cannot be told from a launch: neither pass nor FAIL.
+  for (const command of [
+    `python3 -c "print('claude')"`,
+    `python3 -c 'import subprocess; subprocess.run(["claude", "-p", "hi"])'`,
+    `node -e "require('child_process').execSync('codex exec -')"`,
+    `perl -e 'system("grok -p hi")'`,
+    `ruby -e 'system("claude")'`,
+    // A program an interpreter reads from a heredoc is inline code too.
+    `python3 << 'PY'\nimport subprocess\nsubprocess.run(["claude", "-p", "hi"])\nPY`,
+  ]) {
+    const root = await project(t, { claude: claudeLog(command) });
+    const { code, out } = await run(root);
+    assert.equal(verdict(out, scan), "?", `${command}\n${out}`);
+    assert.match(row(out, scan), /inline code/, out);
+    assert.equal(code, 2, out);
+  }
+  // The same interpreters with nothing of an engine in their code are read as what they are.
+  const quiet = await project(t, { claude: claudeLog(`python3 -c "print(1 + 1)"`) });
+  assert.equal(verdict((await run(quiet)).out, scan), "pass");
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {

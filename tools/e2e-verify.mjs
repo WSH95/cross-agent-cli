@@ -192,51 +192,22 @@ const knownEvents = new Set([
   "system", "assistant", "user", "result", "rate_limit_event", "error",
   "thread.started", "turn.started", "turn.completed", "turn.failed",
 ]);
-// What counts as a launch is what the deny list denies (`src/guard.ts#denyTargets`): the
-// command word `claude`, `codex`, `grok`, `cross-agent` or any binary this project
-// configured under `engines.<e>.bin`, bare or path-qualified, and `node` running a path
-// that ends `src/server.ts` or `src/cli.ts`, relative or absolute — AGENTS.md spells the
-// server `node src/server.ts`, and the CLI is `package.json`'s `bin`. A command word is
-// read wherever one can stand: at the start of the line; after `|`, `&`, `;`, `(`, `{`, a
-// newline, a backtick or `$(`; at the start of the quoted argument of a shell's `-c` or of
-// `eval`, which is how Codex runs everything (`/bin/bash -lc '…'`, P9, P10); and after any
-// run of words that hand the rest of the line to a command — the shell's reserved words
-// that begin one (`if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!`), leading
-// `VAR=value` assignments, and a fixed list of exec wrappers: `sudo`, `env`, `exec`,
-// `nohup`, `setsid`, `time`, `nice`, `command`, `xargs` and `stdbuf`, each with any `-`
-// flags after it, and `timeout` with its duration. A bare word is never an opener, quoted
-// or not: `echo claude`, `ls /opt/wrapper`, `grep -rn "claude" …`, `grep node src/cli.ts`
-// and `cat node src/cli.ts` name a word or a file, which is reading, and so do
-// `not-claude`, `FOO=claude`, `~/.claude` and `.grok`. Between `node` and its path any
-// number of node's own options may stand, each either a flag with an optional attached
-// value or one of the options that take a separate operand — `--import`, `-r`,
-// `--require`, `--loader`, `--experimental-loader`, `--env-file`, `--env-file-if-exists`,
-// `-C`, `--conditions`, `--input-type`, `--title` — with its operand, that form tried
-// first; a node running any other path is not this repository's. A name or a path ends at
-// the end of the line, whitespace, `|`, `&`, `;`, `)`, a backtick or a quote.
+// What counts as a launch is what the deny list denies (`src/guard.ts#denyTargets`): a
+// command whose word is `claude`, `codex`, `grok`, `cross-agent` or a binary this project
+// configured under `engines.<e>.bin`, and `node` running `src/server.ts` or `src/cli.ts`.
+// Which word is the command is a shell's question, so a small tokenizer answers it rather
+// than a pattern (`launcherFor`, below): a pattern read either too little or too much of
+// the line around a name. The tokenizer splits a command line into the simple commands a
+// shell would run and judges each one's command word; how it does so is at `launcherFor`.
+// Its verdict is `launch`, `pass`, or `?` for an engine named inside another language's
+// inline code (`python3 -c`, `node -e`, `perl -e`, `ruby -e`), which no shell reading can
+// tell from a mention and which is therefore never a pass.
 //
-// This is stricter than the deny list, on purpose, in its wrappers, assignments and
-// reserved words. A deny rule is matched by the engine against the command it is asked to
-// run (`Bash(claude *)`), by that engine's own matcher; this reads what ran, and an engine
-// started behind `sudo`, `timeout 60` or `FOO=1` is an engine all the same.
-const configuredBins = Object.values(config.engines ?? {})
-  .map((engine) => engine?.bin)
-  .filter((bin) => typeof bin === "string" && bin !== "");
-const escape = (value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-// Where a command word can stand, before any prefix words.
-const COMMAND = "(?:^|[\\n|&;({`]|\\$\\(|(?:^|[\\s/])(?:(?:ba|da|k|z)?sh(?:\\s+-[A-Za-z]+)*\\s+-[A-Za-z]*c|eval)\\s+(?=['\"]))";
-// Words that run the next one: reserved words, assignments, exec wrappers.
-const WORD = "[^\\s'\"|&;]";
-const PREFIX = `(?:(?:if|then|elif|else|while|until|do|!|[A-Za-z_][A-Za-z0-9_]*=${WORD}*`
-  + `|(?:${WORD}*\\/)?(?:sudo|env|exec|nohup|setsid|time|nice|command|xargs|stdbuf)(?:\\s+-${WORD}*)*`
-  + `|(?:${WORD}*\\/)?timeout(?:\\s+-${WORD}*)*\\s+${WORD}+)\\s+)*`;
-const NODE_OPTIONS = "(?:\\s+(?:(?:--import|-r|--require|--loader|--experimental-loader|--env-file|--env-file-if-exists|-C|--conditions|--input-type|--title)\\s+[^\\s'\"|&;]+|--?[A-Za-z][\\w-]*(?:=[^\\s'\"]*)?))*";
-const CLOSE = "(?=$|[\\s|&;)`'\"])";
-const NAMES = ["claude", "codex", "grok", "cross-agent", ...configuredBins].map(escape).join("|");
-const launcher = new RegExp(
-  `${COMMAND}\\s*['"]?${PREFIX}(?:(?:${WORD}*\\/)?(?:${NAMES})`
-  + `|(?:${WORD}*\\/)?node${NODE_OPTIONS}\\s+['"]?(?:[^\\s'"]*\\/)?src\\/(?:server|cli)\\.(?:ts|js))${CLOSE}`,
-);
+// It is stricter than the deny list, on purpose. A deny rule is matched by the engine
+// against the command it is asked to run (`Bash(claude *)`), by that engine's own matcher;
+// this reads what ran, so an engine behind `sudo -u root`, `timeout -k 5 60`, `FOO=1`, an
+// inner `bash -c`, `eval`, `find -exec`, `xargs` or `ssh` is an engine all the same.
+const launch = launcherFor(config);
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
 const unreadable = [];
@@ -304,10 +275,17 @@ for (const record of run) {
   for (const name of calls) {
     if (!lead && isDelegate(name)) { offences.push(`${record.id.slice(0, 8)} called ${name}`); offended = true; }
   }
+  const uncertain = [];
   for (const command of commands) {
-    if (launcher.test(command)) { offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`); offended = true; }
+    const judged = launch.judge(command);
+    if (judged.verdict === "launch") { offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`); offended = true; }
+    else if (judged.verdict === "?") uncertain.push(judged.at);
   }
   if (offended) { scanned++; continue; }
+  if (uncertain.length > 0) {
+    unreadable.push(`${record.id.slice(0, 8)}: inline code names an engine, which no shell reading can judge (${uncertain[0]})`);
+    continue;
+  }
   if (understood === 0 || unparsable > 0 || unknownItems.length > 0) {
     unreadable.push(unknownItems.length > 0
       ? `${record.id.slice(0, 8)}: event${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`
@@ -346,6 +324,398 @@ function git(...argv) {
   } catch (error) {
     fail(`git ${argv.join(" ")}: ${String(error.stderr ?? error.message).trim()}`);
   }
+}
+
+/**
+ * The launcher judge. `judge(line)` reads a shell command line and `judgeArgv(words)` a
+ * simple command already split into words (an argv an engine recorded); each answers
+ * `{verdict: "launch" | "pass" | "?", at}`, `at` naming the simple command that decided.
+ *
+ * The line is cut into simple commands at `|`, `||`, `&&`, `;`, `&`, a newline, `(`, `)`
+ * and a `{` or `}` standing alone, with single quotes, double quotes and backslashes
+ * honoured, a comment dropped, a redirection's target never taken for a word, and the body
+ * of every `$(…)`, backtick and `<(…)` judged as a command line of its own. In each simple
+ * command it passes over leading `NAME=value` assignments (a quoted value is one word), the
+ * reserved words that begin a command (`if`, `then`, `elif`, `else`, `while`, `until`,
+ * `do`, `!`), and the wrappers that run the rest of the line — `sudo`, `doas`, `env`,
+ * `exec`, `nohup`, `setsid`, `time`, `timeout` with its duration, `nice`, `command`,
+ * `stdbuf`, `xargs` — with their options and the operands those options take, clustered or
+ * not; `command -v` and `-V` only describe a command, and pass. The word it arrives at
+ * decides by its basename: an engine's name or a configured binary is a launch; `node` is
+ * one when its script — past its flags, with `--title`, `--env-file`,
+ * `--env-file-if-exists`, `-C`, `--conditions` and `--input-type` holding their operands —
+ * or a module it loads with `--import`, `-r`, `--require`, `--loader` or
+ * `--experimental-loader` ends in `src/server.ts` or `src/cli.ts`. A shell (`sh`, `bash`,
+ * `dash`, `zsh`, `ksh`, whatever its options) given `-c` has its payload judged as a line,
+ * and so do `eval`'s arguments, the command `find` runs for `-exec`, `-execdir`, `-ok` and
+ * `-okdir`, and the remote command of `ssh`. A heredoc's body and a here-string are the
+ * command's stdin: a script for a shell or `ssh` with no command of its own, judged as a
+ * line; program text for an interpreter with no script of its own; and data for anything
+ * else. An interpreter's inline code that names an engine — `python3 -c`, `node -e` or
+ * `-p`, `perl -e`, `ruby -e`, or a program it reads from stdin — is `?`. Anything else — a
+ * word being printed, searched for or listed — passes.
+ */
+function launcherFor(settings) {
+  const bins = Object.values(settings.engines ?? {}).map((engine) => engine?.bin)
+    .filter((bin) => typeof bin === "string" && bin !== "");
+  const basename = (word) => word.slice(word.lastIndexOf("/") + 1);
+  const engineNames = new Set(["claude", "codex", "grok", "cross-agent", ...bins.map(basename)]);
+  const binPaths = new Set(bins);
+  const mentions = new RegExp(`(?:^|[^\\w-])(?:${[...engineNames, ...bins].map((name) => name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|")})(?![\\w-])`);
+  const shells = new Set(["sh", "bash", "dash", "zsh", "ksh"]);
+  const reserved = new Set(["if", "then", "elif", "else", "while", "until", "do", "!"]);
+  // Each wrapper's options that take a separate operand; any other `-…` word is a flag.
+  const wrappers = new Map([
+    ["sudo", ["-u", "-g", "-C", "-c", "-D", "-p", "-R", "-r", "-T", "-t", "-U", "--user", "--group", "--close-from",
+      "--login-class", "--chdir", "--prompt", "--chroot", "--role", "--command-timeout", "--type", "--other-user", "--host"]],
+    ["doas", ["-u", "-C"]],
+    ["env", ["-u", "-C", "--unset", "--chdir"]],
+    ["exec", ["-a"]],
+    ["nohup", []],
+    ["setsid", []],
+    ["time", ["-f", "-o", "--format", "--output"]],
+    ["timeout", ["-s", "-k", "--signal", "--kill-after"]],
+    ["nice", ["-n", "--adjustment"]],
+    ["command", []],
+    ["stdbuf", ["-i", "-o", "-e", "--input", "--output", "--error"]],
+    ["xargs", ["-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter", "--eof", "--replace",
+      "--max-lines", "--max-args", "--max-procs", "--max-chars", "--process-slot-var"]],
+  ]);
+  const sshOperands = ["-B", "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l", "-m", "-O", "-o", "-P",
+    "-p", "-Q", "-R", "-S", "-W", "-w"];
+  const nodeLoaders = new Set(["--import", "-r", "--require", "--loader", "--experimental-loader"]);
+  const nodeOperands = new Set(["--title", "--env-file", "--env-file-if-exists", "-C", "--conditions", "--input-type"]);
+  const nodeInline = new Set(["-e", "--eval", "-p", "--print", "-pe", "-ep"]);
+  const isEntryPoint = (word) => typeof word === "string" && /(?:^|\/)src\/(?:server|cli)\.(?:ts|js)$/.test(word);
+  const pass = { verdict: "pass", at: "" };
+  const rank = { pass: 0, "?": 1, launch: 2 };
+  const worse = (left, right) => (rank[right.verdict] > rank[left.verdict] ? right : left);
+  const shown = (words) => words.join(" ").slice(0, 80);
+  const depthLimit = 8;
+
+  /** Past the options of a getopt-style command: clusters, attached values, `--`. */
+  function afterOptions(words, i, takes, dashAlone = false) {
+    while (i < words.length) {
+      const word = words[i];
+      if (word === "--") return i + 1;
+      if (word === "-" && dashAlone) { i++; continue; }
+      if (!word.startsWith("-") || word === "-") return i;
+      if (word.startsWith("--")) { i += !word.includes("=") && takes.includes(word) ? 2 : 1; continue; }
+      // A cluster: the first letter that takes an operand takes the rest of the word, or
+      // the next word when it is the last letter.
+      let next = i + 1;
+      for (let k = 1; k < word.length; k++) {
+        if (takes.includes(`-${word[k]}`)) { if (k === word.length - 1) next = i + 2; break; }
+      }
+      i = next;
+    }
+    return i;
+  }
+
+  /**
+   * A command line as the simple commands a shell would run — each its words and the text
+   * its heredocs and here-strings hand it on stdin — and its substitutions' bodies.
+   */
+  function simpleCommands(text) {
+    const commands = [];
+    const substitutions = [];
+    let current = { words: [], stdin: [] };
+    let word = null;
+    let target = null;
+    const pending = [];
+    function endWord() {
+      if (word === null) return;
+      const value = word;
+      word = null;
+      if (target === "herestring") { current.stdin.push(value); target = null; }
+      else if (target === "heredoc") { pending.push({ ...heredocMark(value), owner: current }); target = null; }
+      else if (target === "file") target = null;
+      else if (value === "{" || value === "}") endCommand(false);
+      else current.words.push(value);
+    }
+    function endCommand(finishWord = true) {
+      if (finishWord) endWord();
+      if (current.words.length > 0 || current.stdin.length > 0) commands.push(current);
+      current = { words: [], stdin: [] };
+    }
+    // A heredoc's delimiter as the shell reads it: quotes removed, `<<-` stripping tabs.
+    function heredocMark(value) {
+      const strip = value.startsWith("\u0000-");
+      return { delimiter: strip ? value.slice(2) : value, strip };
+    }
+    // At a newline, every heredoc opened on the line just ended takes its body, in order.
+    function readHeredocs(from) {
+      let k = from;
+      for (const doc of pending.splice(0)) {
+        const lines = [];
+        while (k < text.length) {
+          const newline = text.indexOf("\n", k);
+          const line = text.slice(k, newline === -1 ? text.length : newline);
+          k = newline === -1 ? text.length : newline + 1;
+          if ((doc.strip ? line.replace(/^\t+/, "") : line) === doc.delimiter) break;
+          lines.push(line);
+        }
+        doc.owner.stdin.push(lines.join("\n"));
+      }
+      return k;
+    }
+    const append = (value) => { word = (word ?? "") + value; };
+    // The index of the `)` closing a `(` opened just before `start`, quotes skipped.
+    const closeParen = (start) => {
+      let depth = 1;
+      for (let k = start; k < text.length; k++) {
+        const c = text[k];
+        if (c === "\\") k++;
+        else if (c === "'") { const q = text.indexOf("'", k + 1); k = q === -1 ? text.length : q; }
+        else if (c === '"') { k = closeDouble(k + 1); }
+        else if (c === "(") depth++;
+        else if (c === ")" && --depth === 0) return k;
+      }
+      return text.length;
+    };
+    const closeDouble = (start) => {
+      for (let k = start; k < text.length; k++) {
+        if (text[k] === "\\") k++;
+        else if (text[k] === '"') return k;
+      }
+      return text.length;
+    };
+    const closeBacktick = (start) => {
+      for (let k = start; k < text.length; k++) {
+        if (text[k] === "\\") k++;
+        else if (text[k] === "`") return k;
+      }
+      return text.length;
+    };
+    const closeBrace = (start) => {
+      let depth = 1;
+      for (let k = start; k < text.length; k++) {
+        if (text[k] === "\\") k++;
+        else if (text[k] === "{") depth++;
+        else if (text[k] === "}" && --depth === 0) return k;
+      }
+      return text.length;
+    };
+    // `$(…)`, `$((…))`, `${…}` and a backtick at `i`, inside or outside double quotes: the
+    // index after it, with a command substitution's body collected for judging.
+    const expansion = (i) => {
+      if (text[i] === "`") {
+        const end = closeBacktick(i + 1);
+        substitutions.push(text.slice(i + 1, end).replace(/\\([`$\\])/g, "$1"));
+        append("`…`");
+        return end + 1;
+      }
+      if (text[i + 1] === "(") {
+        const end = closeParen(i + 2);
+        if (text[i + 2] === "(") append(text.slice(i, end + 1));
+        else { substitutions.push(text.slice(i + 2, end)); append("$(…)"); }
+        return end + 1;
+      }
+      const end = closeBrace(i + 2);
+      append(text.slice(i, end + 1));
+      return end + 1;
+    };
+    let i = 0;
+    while (i < text.length) {
+      const c = text[i];
+      if (c === "\\") {
+        if (text[i + 1] === "\n") { i += 2; continue; }
+        append(text[i + 1] ?? ""); i += 2; continue;
+      }
+      if (c === "'") {
+        const end = text.indexOf("'", i + 1);
+        append(text.slice(i + 1, end === -1 ? text.length : end));
+        i = end === -1 ? text.length : end + 1;
+        continue;
+      }
+      if (c === '"') {
+        append("");
+        i++;
+        while (i < text.length && text[i] !== '"') {
+          if (text[i] === "\\" && "$`\"\\\n".includes(text[i + 1] ?? "")) {
+            if (text[i + 1] !== "\n") append(text[i + 1]);
+            i += 2;
+          } else if (text[i] === "`" || (text[i] === "$" && (text[i + 1] === "(" || text[i + 1] === "{"))) {
+            i = expansion(i);
+          } else { append(text[i]); i++; }
+        }
+        i++;
+        continue;
+      }
+      if (c === "`" || (c === "$" && (text[i + 1] === "(" || text[i + 1] === "{"))) { i = expansion(i); continue; }
+      if (c === "#" && word === null) {
+        const newline = text.indexOf("\n", i);
+        i = newline === -1 ? text.length : newline;
+        continue;
+      }
+      if (c === "\n") { endCommand(); i = pending.length > 0 ? readHeredocs(i + 1) : i + 1; continue; }
+      if (c === ";" || c === "|" || c === "(" || c === ")") { endCommand(); i++; continue; }
+      if (c === "&" && text[i + 1] !== ">") { endCommand(); i++; continue; }
+      if (c === "<" || c === ">" || c === "&") {
+        // A process substitution is a command. A redirection's operator is none: the word
+        // after `<<` is a heredoc's delimiter, after `<<<` a here-string, and after any other
+        // its file; a descriptor number before it belongs to it.
+        if ((c === "<" || c === ">") && text[i + 1] === "(") {
+          const end = closeParen(i + 2);
+          substitutions.push(text.slice(i + 2, end));
+          append("<(…)");
+          i = end + 1;
+          continue;
+        }
+        if (word !== null && /^\d+$/.test(word)) word = null;
+        endWord();
+        if (text.startsWith("<<<", i)) { target = "herestring"; i += 3; continue; }
+        if (text.startsWith("<<", i)) {
+          target = "heredoc";
+          i += 2;
+          if (text[i] === "-") { append("\u0000-"); i++; }
+          while (text[i] === " " || text[i] === "\t") i++;
+          continue;
+        }
+        let k = i + 1;
+        while (k < text.length && "<>|".includes(text[k])) k++;
+        if (text[k] === "&") {
+          k++;
+          while (k < text.length && /[\d-]/.test(text[k])) k++;
+          i = k;
+          continue;
+        }
+        target = "file";
+        i = k;
+        continue;
+      }
+      if (c === " " || c === "\t" || c === "\r") { endWord(); i++; continue; }
+      append(c);
+      i++;
+    }
+    endCommand();
+    return { commands, substitutions };
+  }
+
+  function judge(text, depth = 0) {
+    if (depth > depthLimit) return { verdict: "?", at: String(text).slice(0, 80) };
+    const { commands, substitutions } = simpleCommands(String(text));
+    let verdict = pass;
+    for (const command of commands) verdict = worse(verdict, judgeArgv(command.words, depth, command.stdin));
+    for (const body of substitutions) verdict = worse(verdict, judge(body, depth + 1));
+    return verdict;
+  }
+
+  function judgeArgv(words, depth = 0, stdin = []) {
+    if (depth > depthLimit) return { verdict: "?", at: shown(words) };
+    // What a heredoc or here-string hands the command: a script to a shell or `ssh` that
+    // has no command of its own, program text to an interpreter that has none, and data to
+    // anything else.
+    const script = stdin.join("\n");
+    let i = 0;
+    while (i < words.length && (reserved.has(words[i]) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) i++;
+    if (i >= words.length) return pass;
+    const word = words[i];
+    const name = basename(word);
+    if (engineNames.has(name) || binPaths.has(word)) return { verdict: "launch", at: shown(words) };
+    if (name === "command") {
+      const options = [];
+      let k = i + 1;
+      while (k < words.length && words[k].startsWith("-") && words[k] !== "--") options.push(words[k++]);
+      if (options.some((option) => /[vV]/.test(option))) return pass;
+      return judgeArgv(words.slice(words[k] === "--" ? k + 1 : k), depth, stdin);
+    }
+    if (name === "env") {
+      for (let k = i + 1; k < words.length && words[k].startsWith("-"); k++) {
+        const split = words[k] === "-S" || words[k] === "--split-string" ? words[k + 1]
+          : words[k].startsWith("--split-string=") ? words[k].slice(15) : words[k].startsWith("-S") && words[k].length > 2 ? words[k].slice(2) : undefined;
+        if (split !== undefined) {
+          const rest = words.slice(words[k] === "-S" || words[k] === "--split-string" ? k + 2 : k + 1);
+          return judgeArgv([...(simpleCommands(split).commands[0]?.words ?? []), ...rest], depth + 1, stdin);
+        }
+      }
+    }
+    if (wrappers.has(name)) {
+      let k = afterOptions(words, i + 1, wrappers.get(name), name === "env");
+      if (name === "timeout") k++;
+      return judgeArgv(words.slice(k), depth, stdin);
+    }
+    if (shells.has(name)) {
+      let command = false;
+      let k = i + 1;
+      while (k < words.length) {
+        const option = words[k];
+        if (option === "--") { k++; break; }
+        if (!/^[-+]/.test(option) || option.length < 2) break;
+        if (option.startsWith("--")) { k += option === "--rcfile" || option === "--init-file" ? 2 : 1; continue; }
+        if (option.startsWith("-") && option.includes("c")) command = true;
+        k += /[oO]$/.test(option) ? 2 : 1;
+      }
+      if (command) return k < words.length ? judge(words[k], depth + 1) : pass;
+      return k >= words.length && script !== "" ? judge(script, depth + 1) : pass;
+    }
+    if (name === "eval") return judge(words.slice(i + 1).join(" "), depth + 1);
+    if (name === "find") {
+      let verdict = pass;
+      for (let k = i + 1; k < words.length; k++) {
+        if (!["-exec", "-execdir", "-ok", "-okdir"].includes(words[k])) continue;
+        const end = words.findIndex((value, index) => index > k && (value === ";" || value === "+"));
+        const run = words.slice(k + 1, end === -1 ? words.length : end);
+        verdict = worse(verdict, judgeArgv(run, depth + 1));
+        k = end === -1 ? words.length : end;
+      }
+      return verdict;
+    }
+    if (name === "ssh") {
+      const host = afterOptions(words, i + 1, sshOperands);
+      if (host + 1 < words.length) return judge(words.slice(host + 1).join(" "), depth + 1);
+      return script !== "" ? judge(script, depth + 1) : pass;
+    }
+    if (name === "node" || name === "nodejs") return nodeRun(words, i, script);
+    if (/^python[\d.]*$/.test(name) || name === "perl" || name === "ruby") return inlineCode(name, words, i, script);
+    return pass;
+  }
+
+  /** `node`: its inline code, the modules it loads, and the script it runs. */
+  function nodeRun(words, i, script) {
+    for (let k = i + 1; k < words.length; k++) {
+      const word = words[k];
+      if (word === "--") return isEntryPoint(words[k + 1]) ? { verdict: "launch", at: shown(words) } : pass;
+      if (word === "-") return mentions.test(script) ? { verdict: "?", at: shown(words) } : pass;
+      if (!word.startsWith("-")) return isEntryPoint(word) ? { verdict: "launch", at: shown(words) } : pass;
+      const equals = word.indexOf("=");
+      const option = equals === -1 ? word : word.slice(0, equals);
+      const value = equals === -1 ? undefined : word.slice(equals + 1);
+      if (nodeInline.has(option)) {
+        const code = value ?? words[k + 1] ?? "";
+        return mentions.test(code) ? { verdict: "?", at: shown(words) } : pass;
+      }
+      if (nodeLoaders.has(option)) {
+        const operand = value ?? words[++k];
+        if (isEntryPoint(operand)) return { verdict: "launch", at: shown(words) };
+      } else if (nodeOperands.has(option) && value === undefined) k++;
+    }
+    // No script: the program is what stdin holds.
+    return mentions.test(script) ? { verdict: "?", at: shown(words) } : pass;
+  }
+
+  /** Python's `-c`, Perl's `-e`/`-E` and Ruby's `-e`: code no shell reading can judge. */
+  function inlineCode(name, words, i, script) {
+    const letters = name === "perl" ? "eE" : name === "ruby" ? "e" : "c";
+    const fromStdin = mentions.test(script) ? { verdict: "?", at: shown(words) } : pass;
+    for (let k = i + 1; k < words.length; k++) {
+      const word = words[k];
+      if (word === "-") return fromStdin;
+      if (!word.startsWith("-") || word === "--") return pass;
+      if (name.startsWith("python") && (word === "-m" || word.startsWith("-m"))) return pass;
+      const at = [...word.slice(1)].findIndex((letter) => letters.includes(letter));
+      if (at === -1 || word.startsWith("--")) {
+        if (name.startsWith("python") && ["-W", "-X", "-Q"].includes(word)) k++;
+        continue;
+      }
+      const attached = word.slice(at + 2);
+      const code = attached !== "" ? attached : words[k + 1] ?? "";
+      return mentions.test(code) ? { verdict: "?", at: shown(words) } : pass;
+    }
+    return fromStdin;
+  }
+
+  return { judge: (line) => judge(line), judgeArgv: (argv) => judgeArgv(argv) };
 }
 
 function readJson(file) {
