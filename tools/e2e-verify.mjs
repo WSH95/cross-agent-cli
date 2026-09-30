@@ -32,6 +32,7 @@
 // be read at all exits 2 as well, with the reason on stderr.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -212,6 +213,14 @@ const knownEvents = new Set([
 // this reads what ran, so an engine behind `sudo -u root`, `timeout -k 5 60`, `FOO=1`, an
 // inner `bash -c`, `eval`, `find -exec`, `xargs` or `ssh` is an engine all the same.
 const launch = launcherFor(config);
+// Codex's `--json` is not the whole of what a Codex specialist ran: codex-cli 0.159.2
+// wrote no item for the commands its sandbox denied, while its session rollout under
+// `$CODEX_HOME/sessions/` recorded every call (A6, `docs/probes.md#codexCacheWritable`).
+// So each Codex record's rollout, found by the record's `sessionId`, is read as well, and
+// every command it shows attempted is judged like the transcript's own; a Codex record
+// with no rollout to read is `?`, named.
+const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
+let rolloutFiles;
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
 const unreadable = [];
@@ -227,6 +236,7 @@ for (const record of run) {
   }
   const calls = [];
   const commands = [];
+  const argvs = [];
   const unknownItems = [];
   // Codex announces an item and completes it under one id: one call, however many lines.
   const seenItems = new Set();
@@ -279,23 +289,43 @@ for (const record of run) {
     if (knownEvents.has(event.type)) understood++;
     else unknownItems.push(String(event.type));
   }
+  // A Codex record's rollout: the commands it shows attempted join the transcript's own.
+  let rolloutGap;
+  if (record.engine === "codex") {
+    const files = typeof record.sessionId === "string" && record.sessionId !== "" ? rolloutsOf(record.sessionId) : [];
+    if (files.length === 0) {
+      rolloutGap = `no Codex session rollout for ${record.sessionId || "a record with no session id"} under ${path.join(codexHome, "sessions")}`;
+    }
+    for (const file of files) {
+      const read = rolloutCommands(file);
+      commands.push(...read.lines);
+      argvs.push(...read.argvs);
+      if (read.unreadable.length > 0 && rolloutGap === undefined) rolloutGap = `its rollout holds ${read.unreadable[0]}`;
+    }
+  }
   // What was read is judged first. An offence found has been read far enough to be an
   // offence, and an unread line beside it makes it no less true; `?` is for a transcript
   // that offended nowhere this tool could read, not for one that offended and also holds
   // a line it could not parse.
-  let offended = false;
-  for (const name of calls) {
-    if (!lead && isDelegate(name)) { offences.push(`${record.id.slice(0, 8)} called ${name}`); offended = true; }
-  }
+  const found = new Set();
   const uncertain = [];
-  for (const command of commands) {
-    const judged = launch.judge(command);
-    if (judged.verdict === "launch") { offences.push(`${record.id.slice(0, 8)} ran ${command.slice(0, 60)}`); offended = true; }
+  for (const name of calls) {
+    if (!lead && isDelegate(name)) found.add(`${record.id.slice(0, 8)} called ${name}`);
+  }
+  // A launch is named by the simple command that decided, so one command the transcript and
+  // its rollout both show — as Codex's `/bin/bash -lc '…'`, the script's `cmd` and the
+  // item's argv — is named once.
+  for (const judged of [...commands.map((command) => launch.judge(command)), ...argvs.map((argv) => launch.judgeArgv(argv))]) {
+    if (judged.verdict === "launch") found.add(`${record.id.slice(0, 8)} ran ${judged.at}`);
     else if (judged.verdict === "?") uncertain.push(judged.at);
   }
-  if (offended) { scanned++; continue; }
+  if (found.size > 0) { offences.push(...found); scanned++; continue; }
   if (uncertain.length > 0) {
     unreadable.push(`${record.id.slice(0, 8)}: inline code names an engine, which no shell reading can judge (${uncertain[0]})`);
+    continue;
+  }
+  if (rolloutGap !== undefined) {
+    unreadable.push(`${record.id.slice(0, 8)}: ${rolloutGap}`);
     continue;
   }
   if (understood === 0 || unparsable > 0 || unknownItems.length > 0) {
@@ -728,6 +758,98 @@ function launcherFor(settings) {
   }
 
   return { judge: (line) => judge(line), judgeArgv: (argv) => judgeArgv(argv) };
+}
+
+/** Every rollout file under `$CODEX_HOME/sessions/` named for this Codex session. */
+function rolloutsOf(sessionId) {
+  if (rolloutFiles === undefined) {
+    const root = path.join(codexHome, "sessions");
+    try {
+      rolloutFiles = readdirSync(root, { recursive: true }).map((name) => path.join(root, String(name)))
+        .filter((file) => path.basename(file).startsWith("rollout-") && file.endsWith(".jsonl"));
+    } catch {
+      rolloutFiles = [];
+    }
+  }
+  return rolloutFiles.filter((file) => file.endsWith(`-${sessionId}.jsonl`));
+}
+
+/**
+ * The commands a Codex rollout shows attempted, whether or not they ran: the command lines
+ * a code-mode `exec` script hands `tools.exec_command` (as `cmd`) or `tools.write_stdin`
+ * (as `chars`), an older `shell`/`exec_command` function call's or a `local_shell_call`'s,
+ * and the argv of every `CommandExecution` item and `exec_command_begin` event. What it
+ * cannot read — a line that is not JSON, a command a script computes rather than writes —
+ * is named, because it could be the command this scan is looking for.
+ */
+function rolloutCommands(file) {
+  const read = { lines: [], argvs: [], unreadable: [] };
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { read.unreadable.push("a line that is not JSON"); continue; }
+    const payload = entry?.payload ?? {};
+    if (entry?.type === "response_item" && payload.type === "custom_tool_call" && payload.name === "exec") {
+      const script = String(payload.input ?? "");
+      for (const [call, key] of [["exec_command", "cmd"], ["write_stdin", "chars"]]) {
+        for (const at of [...script.matchAll(new RegExp(`\\b${call}\\s*\\(`, "g"))].map((match) => match.index)) {
+          const value = literalAfter(script, at, key);
+          if (value === null) read.unreadable.push(`a ${call} call whose ${key} is computed`);
+          else read.lines.push(value);
+        }
+      }
+    } else if (entry?.type === "response_item" && payload.type === "function_call" && ["shell", "exec_command", "local_shell", "container.exec"].includes(payload.name)) {
+      let args;
+      try { args = JSON.parse(payload.arguments ?? "{}"); } catch { read.unreadable.push(`a ${payload.name} call whose arguments are not JSON`); continue; }
+      if (typeof args?.cmd === "string") read.lines.push(args.cmd);
+      else if (typeof args?.command === "string") read.lines.push(args.command);
+      else if (Array.isArray(args?.command)) read.argvs.push(args.command.map(String));
+      else read.unreadable.push(`a ${payload.name} call with no command`);
+    } else if (entry?.type === "response_item" && payload.type === "local_shell_call") {
+      if (Array.isArray(payload.action?.command)) read.argvs.push(payload.action.command.map(String));
+      else read.unreadable.push("a local_shell_call with no command");
+    } else if (entry?.type === "event_msg" && payload.type === "item_completed" && payload.item?.type === "CommandExecution") {
+      if (Array.isArray(payload.item.command)) read.argvs.push(payload.item.command.map(String));
+    } else if (entry?.type === "event_msg" && payload.type === "exec_command_begin" && Array.isArray(payload.command)) {
+      read.argvs.push(payload.command.map(String));
+    }
+  }
+  return read;
+}
+
+/**
+ * The string literal a script passes as `key` in the object it hands the call at `at`, or
+ * `null` when that value is anything but a literal: a JavaScript string in any of its three
+ * quotes, a template only when it holds no substitution.
+ */
+function literalAfter(script, at, key) {
+  const open = script.indexOf("{", at);
+  if (open === -1) return null;
+  const property = new RegExp(`(?:^|[{,\\s])["']?${key}["']?\\s*:\\s*`, "g");
+  property.lastIndex = open;
+  const match = property.exec(script);
+  if (match === null) return null;
+  let k = match.index + match[0].length;
+  const quote = script[k];
+  if (!["'", '"', "`"].includes(quote)) return null;
+  let value = "";
+  for (k++; k < script.length && script[k] !== quote; k++) {
+    if (quote === "`" && script[k] === "$" && script[k + 1] === "{") return null;
+    if (script[k] !== "\\") { value += script[k]; continue; }
+    const next = script[++k];
+    if (next === "n") value += "\n";
+    else if (next === "t") value += "\t";
+    else if (next === "r") value += "\r";
+    else if (next === "0") value += "\0";
+    else if (next === "x") { value += String.fromCharCode(parseInt(script.slice(k + 1, k + 3), 16)); k += 2; }
+    else if (next === "u" && script[k + 1] === "{") { const end = script.indexOf("}", k); value += String.fromCodePoint(parseInt(script.slice(k + 2, end), 16)); k = end; }
+    else if (next === "u") { value += String.fromCharCode(parseInt(script.slice(k + 1, k + 5), 16)); k += 4; }
+    else if (next === "\n") continue;
+    else value += next ?? "";
+  }
+  return k < script.length ? value : null;
 }
 
 function readJson(file) {

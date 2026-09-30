@@ -2640,11 +2640,22 @@ guessed at. Under an engine-placed lead the lead's own records below the
 effective depth cap are judged by the lead row, whose `delegate` is no offence,
 and the depth condition uses that cap — the lower of the mode's placement cap
 and `limits.maxDepth`, which is 1 when the file omits it
-(`tests/e2e-verify.test.ts#engineLeadRow`, `#effectiveCap`, `#unshippedMode`).
-One gap is known: codex-cli 0.159.2's `--json` carried no `command_execution`
-item for four writes its sandbox denied, though its own session rollout
-recorded them, so a denied command — an engine launch among them — may be
-missing from the transcript this scan reads (`docs/probes.md#codexCacheWritable`).
+(`tests/e2e-verify.test.ts#engineLeadRow`, `#effectiveCap`, `#unshippedMode`); `--lead-role`
+renames that lead and never changes a shipped mode's placement or cap
+(`#leadRoleNamesOnly`). A Codex transcript is not the whole of what its
+specialist ran: codex-cli 0.159.2's `--json` carried no `command_execution` item
+for four writes its sandbox denied, while its own session rollout recorded every
+call (`docs/probes.md#codexCacheWritable`). So the scan also reads each Codex
+record's rollout — `$CODEX_HOME/sessions/**/rollout-*-<sessionId>.jsonl`,
+`CODEX_HOME` defaulting to `~/.codex` — and judges every command it shows
+attempted, denied ones included; a Codex record with no rollout to read answers
+`?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`). Whether a command is a
+launch is a shell's question, so a small tokenizer answers it rather than a
+pattern: simple commands at operators and substitutions, quotes and escapes
+honoured, assignments, reserved words and exec wrappers passed over with their
+options' operands, the command word deciding, and `-c` payloads, `eval`, `find
+-exec`, `xargs` and `ssh` judged recursively; an engine named inside an
+interpreter's inline code answers `?` (`tests/e2e-verify.test.ts#inlineCodeUnjudged`).
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three

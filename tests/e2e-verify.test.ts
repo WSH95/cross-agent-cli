@@ -21,9 +21,15 @@ async function run(project: string): Promise<{ code: number; out: string }> {
   return runWith(project, []);
 }
 
+/**
+ * The verifier over `project`, with `CODEX_HOME` the fixture's own: Codex's session
+ * rollouts are read from there, never from the machine's `~/.codex`.
+ */
 async function runWith(project: string, extra: string[]): Promise<{ code: number; out: string }> {
   try {
-    const { stdout } = await exec(process.execPath, [verify, "--project", project, ...extra], { encoding: "utf8" });
+    const { stdout } = await exec(process.execPath, [verify, "--project", project, ...extra], {
+      encoding: "utf8", env: { ...process.env, CODEX_HOME: codexHome(project) },
+    });
     return { code: 0, out: stdout };
   } catch (error) {
     const failure = error as { code?: number; stdout?: string };
@@ -88,6 +94,34 @@ const codexMcpCall = (tool: string) => [
   JSON.stringify({ type: "turn.completed" }),
 ].join("\n") + "\n";
 
+/** Where a fixture project keeps the Codex home its rollouts are read from: ignored by git. */
+const codexHome = (project: string) => path.join(project, ".cross-agent", "codex-home");
+
+/**
+ * A Codex session rollout as codex-cli 0.159.2 writes it, trimmed from A6's archived one
+ * (`docs/probes.md#codexCacheWritable`): the session's own line, then for each command
+ * the code-mode `exec` call whose script runs it through `tools.exec_command` and that
+ * call's output — and, for a command that exited 0, the `CommandExecution` item Codex also
+ * recorded. A6's denied writes have the call and the output and no item, as here.
+ */
+const rolloutOf = (sessionId: string, commands: Array<{ cmd: string; exit: number; output?: string }>) => [
+  { timestamp: "2026-09-30T21:49:05.892Z", type: "session_meta", payload: {
+    session_id: sessionId, id: sessionId, cwd: "/sample/.worktrees/6b-codex", originator: "codex_exec", cli_version: "0.159.2", source: "exec" } },
+  ...commands.flatMap(({ cmd, exit, output = "" }, n) => [
+    { timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: {
+      type: "custom_tool_call", status: "completed", call_id: `call_${n}`, name: "exec",
+      input: `const r = await tools.exec_command({cmd:${JSON.stringify(cmd)}, max_output_tokens:1000});\ntext(JSON.stringify(r));\n` } },
+    ...(exit === 0 ? [{ timestamp: "2026-09-30T21:49:14.422Z", type: "event_msg", payload: {
+      type: "item_completed", thread_id: sessionId, item: {
+        type: "CommandExecution", id: `exec-${n}`, command: ["/bin/bash", "-lc", cmd], status: "completed", exit_code: 0 } } }] : []),
+    { timestamp: "2026-09-30T21:49:14.428Z", type: "response_item", payload: {
+      type: "custom_tool_call_output", call_id: `call_${n}`, output: [
+        { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" },
+        { type: "input_text", text: JSON.stringify({ exit_code: exit, output }) }] } },
+  ]),
+  { timestamp: "2026-09-30T21:49:29.557Z", type: "event_msg", payload: { type: "task_complete", last_agent_message: "done" } },
+].map((line) => JSON.stringify(line)).join("\n") + "\n";
+
 const journalSteps = ["worktree-created", "git", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"];
 
 /** One task record and its log; a bare string is a log for an implementer at depth 1. */
@@ -99,6 +133,13 @@ interface RecordSpec {
   role?: string;
   depth?: number;
   parentTaskId?: string;
+  /** A Codex record's thread id, which names its rollout. */
+  sessionId?: string;
+  /**
+   * A Codex record's session rollout: its text, or `null` for none at all. A Codex record
+   * given neither gets one holding the commands its own log ran, as Codex writes both.
+   */
+  rollout?: string | null;
 }
 
 /**
@@ -151,14 +192,28 @@ async function project(
     const spec: RecordSpec = typeof value === "string" ? { body: value } : value;
     n++;
     const id = spec.id ?? `task${n}`;
+    const engine = spec.engine ?? key;
     const logPath = path.join(root, ".cross-agent", "tasks", `${id}.ndjson`);
     await writeFile(logPath, spec.body);
+    const sessionId = spec.sessionId ?? (engine === "codex" ? `01a0f44a-eb7a-7603-ae3a-${String(n).padStart(12, "0")}` : undefined);
     await writeFile(path.join(root, ".cross-agent", "tasks", `${id}.json`), JSON.stringify({
-      id, role: spec.role ?? "implementer", engine: spec.engine ?? key, status: "done", depth: spec.depth ?? 1,
+      id, role: spec.role ?? "implementer", engine, status: "done", depth: spec.depth ?? 1,
       ...(spec.parentTaskId === undefined ? {} : { parentTaskId: spec.parentTaskId }),
+      ...(sessionId === undefined ? {} : { sessionId }),
       createdAt: n, updatedAt: n + 1,
       logPath, resultPath: path.join(root, ".cross-agent", "tasks", `${id}.out`),
     }));
+    if (engine === "codex" && sessionId !== undefined && spec.rollout !== null) {
+      const ran = spec.body.split("\n").flatMap((line) => {
+        try {
+          const item = JSON.parse(line)?.item;
+          return item?.type === "command_execution" && typeof item.command === "string" ? [{ cmd: item.command, exit: 0 }] : [];
+        } catch { return []; }
+      });
+      const directory = path.join(codexHome(root), "sessions", "2026", "09", "30");
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, `rollout-2026-09-30T17-49-05-${sessionId}.jsonl`), spec.rollout ?? rolloutOf(sessionId, ran));
+    }
   }
   return root;
 }
@@ -270,7 +325,48 @@ test("a Codex item announced and then completed is one call and one command in t
     JSON.stringify({ type: "turn.completed" }),
   ].join("\n") + "\n" });
   const ran = row((await run(launching)).out, scan);
-  assert.equal(ran.match(/ran \/bin\/bash/g)?.length, 1, ran);
+  assert.equal(ran.match(/ran claude -p hi/g)?.length, 1, ran);
+});
+
+// @anchor codexRolloutRead
+test("a Codex record's session rollout is read: a launch only it shows fails, and none at all is a question", async (t) => {
+  // Codex 0.159.2's `--json` carried no item for the commands its sandbox denied, while its
+  // rollout recorded every call (A6). So each Codex record's rollout is read too (6b-R1-3).
+  const log = codexLog("/bin/bash -lc 'printf inside > ./PROBE-6b-inside.txt'");
+  const denied = await project(t, { codex: { body: log, sessionId: "01a0f44a-eb7a-7603-ae3a-02f2d355c7ee", rollout: rolloutOf(
+    "01a0f44a-eb7a-7603-ae3a-02f2d355c7ee", [
+      { cmd: "printf inside > ./PROBE-6b-inside.txt", exit: 0 },
+      { cmd: "claude -p hi", exit: 1, output: "Error: getaddrinfo EAI_AGAIN api.anthropic.com" },
+    ]) } });
+  const deniedRun = await run(denied);
+  assert.equal(verdict(deniedRun.out, scan), "FAIL", deniedRun.out);
+  assert.match(row(deniedRun.out, scan), /task1 ran claude -p hi/);
+  assert.equal(deniedRun.code, 1);
+
+  const benign = await project(t, { codex: { body: log, sessionId: "01a0f44a-eb7a-7603-ae3a-02f2d355c7ef", rollout: rolloutOf(
+    "01a0f44a-eb7a-7603-ae3a-02f2d355c7ef", [
+      { cmd: "printf inside > ./PROBE-6b-inside.txt", exit: 0 },
+      { cmd: "printf cache > ~/.cache/agent-team/cross-agent-probe-6b-CACHE.txt", exit: 1,
+        output: "/bin/bash: line 1: /home/wsh/.cache/agent-team/cross-agent-probe-6b-CACHE.txt: Read-only file system\n" },
+    ]) } });
+  const benignRun = await run(benign);
+  assert.equal(verdict(benignRun.out, scan), "pass", benignRun.out);
+  assert.equal(benignRun.code, 0, benignRun.out);
+
+  // No rollout: the commands the sandbox denied are nowhere else, so the record is a
+  // question, named — never a pass.
+  const missing = await project(t, { codex: { body: log, sessionId: "01a0f44a-eb7a-7603-ae3a-02f2d355c7f0", rollout: null } });
+  const missingRun = await run(missing);
+  assert.equal(verdict(missingRun.out, scan), "?", missingRun.out);
+  assert.match(row(missingRun.out, scan), /task1: no Codex session rollout for 01a0f44a-eb7a-7603-ae3a-02f2d355c7f0/);
+  assert.equal(missingRun.code, 2);
+
+  // A code-mode call whose command is computed rather than written cannot be read either.
+  const computed = rolloutOf("01a0f44a-eb7a-7603-ae3a-02f2d355c7f1", []).replace('{"timestamp":"2026-09-30T21:49:29.557Z"',
+    JSON.stringify({ type: "response_item", payload: { type: "custom_tool_call", call_id: "call_x", name: "exec",
+      input: "const tool = ['cla', 'ude'].join(''); await tools.exec_command({cmd: tool + ' -p hi'});" } }) + '\n{"timestamp":"2026-09-30T21:49:29.557Z"');
+  const opaque = await project(t, { codex: { body: log, sessionId: "01a0f44a-eb7a-7603-ae3a-02f2d355c7f1", rollout: computed } });
+  assert.equal(verdict((await run(opaque)).out, scan), "?");
 });
 
 // The lead's own record under engine placement. An engine-placed lead is a specialist
