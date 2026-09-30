@@ -26,8 +26,13 @@ export interface AuthorityOptions {
   maxDepth: number;
 }
 
-/** Enough for any `sh -c` wrapper an engine puts between itself and a server it starts. */
-const maxHops = 8;
+/**
+ * Enough for a host nested inside another session — nine hops or more below its own
+ * terminal on the machine T13 measured — and any wrapper an engine puts between itself
+ * and a server it starts. Past it the walk fails closed, as it does on every other
+ * failure (the user's decision of 2026-09-30).
+ */
+const maxHops = 32;
 const authoritative = new Set<TaskStatus>(["running", "stalled"]);
 const markers = ["CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"] as const;
 

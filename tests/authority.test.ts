@@ -195,8 +195,11 @@ function engineIdentity(pid: number): EngineIdentity {
   return { ...identityOf(pid)!, pgid: readProcessStat(pid)!.pgid };
 }
 
-/** Asks the resolver process of `exchange` for its authority under `options`. */
-function asker(exchange: string) {
+/**
+ * Asks the resolver process of `exchange` for its authority under `options`. The wait
+ * covers the whole chain's start as well as the answer, so a long chain gives it longer.
+ */
+function asker(exchange: string, timeoutMs = 10_000) {
   let n = 0;
   return async (options: { leadRole?: string; maxDepth: number }): Promise<Authority> => {
     n++;
@@ -204,7 +207,7 @@ function asker(exchange: string) {
     fs.writeFileSync(`${request}.tmp`, JSON.stringify(options));
     fs.renameSync(`${request}.tmp`, request);
     const answer = path.join(exchange, `answer-${n}.json`);
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + timeoutMs;
     while (!fs.existsSync(answer)) {
       assert.ok(Date.now() < deadline, `no answer to request ${n}`);
       await delay(10);
@@ -260,7 +263,7 @@ test("a specialist's own server refuses delegate by name, with the task its ance
   // reason the walk resolved — which names the task the ancestry matched, so a transcript
   // can tell "specialist by ancestry" from the fail-closed paths that look the same in a
   // tool list ("CROSS_AGENT_TASK present and no record matches", "the walk found neither
-  // an engine nor the root within 8 hops").
+  // an engine nor the root within 32 hops").
   assert.deepEqual(replied.tools?.slice().sort(), ["check", "describe_mode", "list_roles", "list_tasks", "result"]);
   // And the same sentence on stderr, so a transcript that never called a tool outside the
   // row still says which row this server resolved and why. It is written at the **first
@@ -410,17 +413,22 @@ test("an identity from another boot, or an engine not carrying its task, matches
 });
 
 // @anchor walkReachesEngine
-test("the walk reaches an engine eight hops up and fails closed at nine", async (t) => {
+test("the walk reaches an engine thirty-two hops up and fails closed at thirty-three", async (t) => {
+  // Real processes, one node process per wrapper: the boundary is the walk over a real
+  // `/proc`, and a host nested inside another session sits nine hops or more below its
+  // own terminal before any wrapper of an engine's is counted (design, "The walk").
   const { project, exchange } = workspace(t);
-  for (const wrappers of [7, 8]) {
+  for (const wrappers of [31, 32]) {
     const lead = task(project, "lead");
     const dir = fs.mkdtempSync(path.join(exchange, `hops-${wrappers + 1}-`));
     // Only the engine carries the task, so nothing but the walk can find it.
     const pid = chain(t, [engine(taskEnv(lead.id, 1)), ...Array.from({ length: wrappers }, () => wrapper({})), resolver(project, dir, {})]);
     await update(project, lead.id, { status: "running", engineIdentity: engineIdentity(pid) });
-    const authority = await asker(dir)({ leadRole: "lead", maxDepth: 1 });
-    assert.deepEqual(authority, wrappers === 7
+    const authority = await asker(dir, 60_000)({ leadRole: "lead", maxDepth: 1 });
+    assert.deepEqual(authority, wrappers === 31
       ? { row: "lead", reason: `lead by ancestry: task ${lead.id} (lead, running)`, taskId: lead.id, depth: 0 }
-      : { row: "specialist", reason: "specialist: the walk found neither an engine nor the root within 8 hops", depth: 0 });
+      : { row: "specialist", reason: "specialist: the walk found neither an engine nor the root within 32 hops", depth: 0 });
+    // The first chain is ended before the second starts, so the test never holds both.
+    process.kill(-pid, "SIGKILL");
   }
 });
