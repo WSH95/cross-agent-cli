@@ -11,8 +11,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { currentBootId, readProcessStat } from "../src/ledger.ts";
 import type { EngineIdentity } from "../src/ledger.ts";
-import { findByEnvironment, foreignEngine, groupAlive, terminateGroup, terminateGroupByPid } from "../src/process.ts";
-import type { FoundProcess } from "../src/process.ts";
+import { findByEnvironment, foreignEngine, foreignEngineSettled, groupAlive, terminateGroup, terminateGroupByPid } from "../src/process.ts";
+import type { EnvironmentScan, FoundProcess } from "../src/process.ts";
 import { poll, pollDeadlineMs } from "./helpers/project.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
@@ -556,6 +556,54 @@ test("foreignEngine names the engine or the blind spot a launch must stand down 
   assert.match(foreignEngine({ found: [entry(1101, true)], unreadable: 1 })!, /\b1\b/);
   // Both at once: the engine it can name beats the count it cannot.
   assert.match(foreignEngine({ found: [entry(2202, false)], unreadable: 1 })!, /\b2202\b/);
+});
+
+// @anchor foreignEngineSettled
+test("foreignEngineSettled scans again only while the reason is an environment it could not read", async () => {
+  const entry = (pid: number, self: boolean): FoundProcess =>
+    ({ pid, startTime: "4200", pgid: pid, sid: pid, leader: true, self });
+  /** Scans answered from a script, the last one repeating, and how many were taken. */
+  const scripted = (...answers: EnvironmentScan[]) => {
+    let calls = 0;
+    return { scan: () => answers[Math.min(calls++, answers.length - 1)], calls: () => calls };
+  };
+  const retries: Array<[number, string]> = [];
+  const options = { attempts: 4, delayMs: 20, onRetry: (attempt: number, reason: string) => { retries.push([attempt, reason]); } };
+
+  // An engine it can name is an answer, not a blind spot: no wait makes it go away.
+  const found = scripted({ found: [entry(2202, false)], unreadable: 0 });
+  assert.equal(await foreignEngineSettled(found.scan, options), "engine 2202 already carries task");
+  assert.equal(found.calls(), 1);
+  assert.deepEqual(retries, []);
+
+  // A candidate unreadable once and then gone: one retry, named, and then the launch.
+  const cleared = scripted({ found: [], unreadable: 1 }, { found: [], unreadable: 0 });
+  assert.equal(await foreignEngineSettled(cleared.scan, options), null);
+  assert.equal(cleared.calls(), 2);
+  assert.deepEqual(retries, [[1, "environ unreadable for 1 processes"]]);
+
+  // One that stays unreadable is still the reason to stand down, after exactly `attempts`
+  // scans, and the waits between them are real ones.
+  retries.length = 0;
+  const stuck = scripted({ found: [], unreadable: 1 });
+  const started = performance.now();
+  assert.equal(await foreignEngineSettled(stuck.scan, options), "environ unreadable for 1 processes");
+  assert.ok(performance.now() - started >= 3 * options.delayMs - 5, "three waits between four scans");
+  assert.equal(stuck.calls(), 4);
+  assert.deepEqual(retries.map(([attempt]) => attempt), [1, 2, 3]);
+
+  // An engine that appears on a later scan is answered on that scan.
+  retries.length = 0;
+  const appeared = scripted({ found: [], unreadable: 1 }, { found: [entry(2202, false)], unreadable: 0 });
+  assert.equal(await foreignEngineSettled(appeared.scan, options), "engine 2202 already carries task");
+  assert.equal(appeared.calls(), 2);
+
+  // Nothing in the way: one scan and no retry.
+  retries.length = 0;
+  const clean = scripted({ found: [entry(1101, true)], unreadable: 0 });
+  assert.equal(await foreignEngineSettled(clean.scan, options), null);
+  assert.equal(clean.calls(), 1);
+  assert.deepEqual(retries, []);
 });
 
 test("terminateGroup escalates, names what it could not end, and never throws", async (t) => {

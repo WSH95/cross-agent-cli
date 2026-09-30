@@ -118,7 +118,7 @@ spawned it**. Every engine CLI spawns its MCP servers as children of the
 engine process, and the ledger already records each engine's identity as
 `engineIdentity` — `{pid, startTime, bootId, pgid}`
 (`src/ledger.ts#EngineIdentity`, `#ProcessIdentity`), written at
-`src/runner.ts:247-258`.
+`src/runner.ts#acknowledge`.
 
 **The walk.** At each hop the server reads `/proc/<pid>/stat` through
 `readProcessStat` (`src/ledger.ts#readProcessStat`), which returns `ppid` —
@@ -671,15 +671,15 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   `<id>.ndjson` is the engine's native event stream, with lines the engine wrote
   to stderr prefixed `stderr ` (`src/engines/spawn.ts:139`), not a verbatim tee;
   `<id>.out` is the final message; `<id>.runner.log` is the runner's own
-  diagnostic trail (`src/runner.ts:16`). Ids are 18 random bytes in base64url
+  diagnostic trail (`src/runner.ts#runnerLog`). Ids are 18 random bytes in base64url
   (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
-  (`src/runner.ts:288-296`). `.cross-agent/` and `.worktrees/` are added to
+  (`src/runner.ts#taskArgument`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` on first use (`src/ledger.ts#initialize`).
 - Launch protocol: `delegate` creates the record as `launching` with a
   `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts#create`); the
   runner, once started, writes `running` with its own identity and the engine's
-  identity in one atomic acknowledgement (`src/runner.ts:247-258`), conditional
+  identity in one atomic acknowledgement (`src/runner.ts#acknowledge`), conditional
   on the record still being `launching`. Both identities carry `{pid, startTime,
   bootId}`, the engine's with its `pgid` as well
   (`src/ledger.ts#ProcessIdentity`, `#EngineIdentity`); `bootId` is read once
@@ -692,7 +692,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   (section 5, layer 1), `parentTaskId` for cascade ownership (the lead model)
   and `resumedFrom` for the resume chain, all three written by `delegate` where
   the task begins, and `acknowledgedAt`, written by the acknowledgement above
-  and by nothing else (`src/runner.ts:255-257`), so a stall clock measures from
+  and by nothing else (`src/runner.ts#acknowledge`), so a stall clock measures from
   the moment the engine was answered for rather than from a launch nobody
   answered. There is **no launch token**: `create` writes none
   (`src/ledger.ts#create`), and a token on the *runner's* argv could not
@@ -702,7 +702,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   - **Identifying a stranded engine.** The engine carries
     `CROSS_AGENT_TASK=<id>` in its environment, and it is the **runner** that
     puts it there, from the id of the record it was started for
-    (`src/runner.ts:238-241`), beside the two paths it takes from the same
+    (`src/runner.ts#engineTaskId`), beside the two paths it takes from the same
     record. `guard.childEnv` sets the same assignment in the environment it
     prepares for a spec (`src/guard.ts#childEnv`), but nothing validates a spec
     (`validateSpec` checks only that `adapterModule` is absolute,
@@ -716,7 +716,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     kill.
   - **Exclusive ownership.** The runner holds `runner-<id>.lock` for its whole
     lifetime, and a second runner for the same task takes it with a zero wait,
-    fails, and exits 1 without touching the record (`src/runner.ts:175-187`),
+    fails, and exits 1 without touching the record (`src/runner.ts#runnerLock`),
     so one task can never own two engines at once.
   - **No sequential duplicate either.** The lock cannot stop one runner
     following another: a runner killed between its spawn and its
@@ -729,12 +729,12 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     process carrying the id that is not this runner, its own group or its own
     session, and an environment the scan could not read, because one of those
     could be that engine. The runner logs `not launching task <id>: <reason>`
-    and exits 1 without spawning (`src/runner.ts:212-216`); reconciliation then
+    and exits 1 without spawning (`src/runner.ts#preSpawnScan`); reconciliation then
     adopts what is already there. The runner is started with the **server's
     own** environment and never the spec's (`src/delegate.ts#startRunner`), so
     the only process carrying `CROSS_AGENT_TASK=<id>` is the engine — the
     runner puts the assignment there itself, on the engine alone
-    (`src/runner.ts:238-241`). Excluding `self` is not optional all the same: a
+    (`src/runner.ts#engineTaskId`). Excluding `self` is not optional all the same: a
     server that runs inside an engine carries that engine's task id, and so do
     the children it starts, so a scan that counted them would have a task stand
     down for itself. The unreadable case is decided by the asymmetry: standing
@@ -755,25 +755,25 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   environment. The runner rebuilds the spawn from that file and the record, so
   it never needs the server; three fields of the request come from the record
   rather than the spec — `logPath`, `resultPath`, and `CROSS_AGENT_TASK` in
-  the engine's environment (`src/runner.ts:238-241`) — because the record, not
+  the engine's environment (`src/runner.ts#engineTaskId`) — because the record, not
   the spec, names what this runner spawns. The adapter module path is always an
   entry of the fixed built-in table of section 3; config cannot name one.
 - `src/runner.ts`: a detached process per task (`node src/runner.ts --project
   <root> --task <id>`) that owns the engine child in its own process group,
   tees events, updates `lastEventAt` on a 2-second interval
-  (`src/runner.ts:269-277`), and on engine exit writes the terminal record and
+  (`src/runner.ts#activityInterval`), and on engine exit writes the terminal record and
   `<id>.out` itself, so completion survives the MCP server. On SIGTERM
-  (`src/runner.ts:192`) it writes `cancelling` itself (`src/runner.ts:110-112`),
+  (`src/runner.ts#sigterm`) it writes `cancelling` itself (`src/runner.ts#cancellingClaim`),
   terminates the engine group, and writes `cancelled`
-  (`src/runner.ts:91-170`). Group cleanup always precedes terminal
-  settlement (`src/runner.ts:122`). The `cancelling` write is a claim the
+  (`src/runner.ts#settle`). Group cleanup always precedes terminal
+  settlement (`src/runner.ts#stopBeforeSettle`). The `cancelling` write is a claim the
   teardown may skip: a record already `cancelling` is the server's own write of
   this same cancel, and one that is `orphaned` may not pass through `cancelling`
   at all, because the ledger allows `orphaned → failed | cancelled` and
   nothing else — so from either the runner settles `cancelled` from where the
-  record is (`src/runner.ts:109-120`, `:162-165`, bead `atc-s96.39`). The
+  record is (`src/runner.ts#cancellingClaim`, `#settleCancelled`, bead `atc-s96.39`). The
   settlement also reads the record for itself when it has none
-  (`src/runner.ts:105`), so a cancel or a lost lock arriving before the first
+  (`src/runner.ts#settleReadsRecord`), so a cancel or a lost lock arriving before the first
   read settles rather than exiting through `fatal` (bead `atc-s96.29`); both are
   recorded (`tests/runner.test.ts#runnerStartsAgainst`, `#cancelLandsAcknowledgement`). Three rulings from the
   reviews attach to this same teardown path:
@@ -782,30 +782,30 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     `release` (`src/locks.ts#Lock`, `#AcquireOptions`, `#acquire`) — the
     kernel has already let the next waiter in, so a holder that carried on would
     be acting on exclusivity it no longer has. The runner registers `onLost` for
-    `runner-<id>.lock` (`src/runner.ts:178-181`): it stops the engine group and
+    `runner-<id>.lock` (`src/runner.ts#runnerLock`): it stops the engine group and
     settles `failed` with the reason `runner lock lost`. `update`'s own short
     lock ignores `lost`; it is released in the same call that took it.
   - **A group with no identity is still terminated.** If the leader exits
     after spawning a descendant and before `identityOf` succeeds, the runner
-    has no `engineIdentity` to name the group with (`src/runner.ts:248-250`).
+    has no `engineIdentity` to name the group with (`src/runner.ts#acknowledge`).
     But the detached spawn made `handle.pid` both the group and the session id,
     and the kernel keeps that id reserved while any member lives, so the runner
     terminates the group by scanning `/proc` for members holding that id
     (`src/process.ts#terminateGroupByPid`) before settling `failed`
-    (`src/runner.ts:62-67`). Killing the direct child alone would settle the
+    (`src/runner.ts#stopEngine`). Killing the direct child alone would settle the
     task with its descendants still running.
   - **`truncated` on every settlement.** The evidence patch the runner writes
     carries `truncated: outcome.truncated` whether the task ends `done`,
-    `failed` or `cancelled` (`src/runner.ts:131`), because a completed task can
+    `failed` or `cancelled` (`src/runner.ts#evidence`), because a completed task can
     be missing the tail of its log too; the `; output truncated` suffix on a
-    failure's `reason` stays (`src/runner.ts:145`).
+    failure's `reason` stays (`src/runner.ts#truncatedReason`).
 - **The three cancel writers, all built.** `cancel` claims the record
   `cancelling` and sends SIGTERM to the runner it verified, then waits
   `limits.cancelGraceSeconds` **plus a second** for the runner to settle the
   task itself — a second longer than the runner's own SIGTERM grace, because a
   runner escalating on an engine that ignores SIGTERM is working, and killing it
   there would throw away the evidence it is about to write
-  (`src/tasks.ts#terminate`, `src/config.ts#limitDefaults`, `src/runner.ts:122`).
+  (`src/tasks.ts#terminate`, `src/config.ts#limitDefaults`, `src/runner.ts#stopBeforeSettle`).
   A runner it can see is dead is not waited for. Past the grace it re-reads the
   record — the runner that acknowledged meanwhile is a different process from
   the one it claimed against — SIGKILLs that runner and ends the engine group by
@@ -818,9 +818,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   section 2, B5-i). An environment it could not read, or an engine that is this
   server's own, is named in the outcome and left for another pass. The second
   writer is the runner itself, which answers that SIGTERM
-  (`src/runner.ts:109-120`) and, before it has spawned anything, stands down on
+  (`src/runner.ts#cancellingClaim`) and, before it has spawned anything, stands down on
   a record that is already `cancelling` and settles it without an engine
-  (`src/runner.ts:209-222`). The third is reconciliation, whose `cancelling`
+  (`src/runner.ts#standDown`). The third is reconciliation, whose `cancelling`
   case runs the same scan (`src/reconcile.ts#judge`). So the terminal writers are
   the runner (`done`, `failed`, `cancelled`) and, only when the runner is dead
   and the engine group is verified dead, the reconciler (`cancelled` or
@@ -833,7 +833,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   **inside** the lock (`src/ledger.ts#update`); there is no `TerminalTaskError`,
   because a caller that must distinguish "I wrote it" from "someone else owns
   it" needs a value, not an exception — any non-throwing return would
-  otherwise make the runner's `write()` true (`src/runner.ts:35-50`) and let it
+  otherwise make the runner's `write()` true (`src/runner.ts#write`) and let it
   carry on as if acknowledged. The lock is required, not optional: a predicate
   without cross-process exclusion still interleaves, and a stale reconciliation
   could otherwise overwrite a runner's fresh `running` write and make the runner
@@ -858,9 +858,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   first and `orphaned` second would hand the stranded engine a lead's authority
   for as long as the second write was delayed or refused.
 - **Acknowledgement and cancellation.** The runner acknowledges with `expect:
-  status === "launching"` (`src/runner.ts:255-256`). On `applied: false` with
+  status === "launching"` (`src/runner.ts#acknowledge`). On `applied: false` with
   `record.status === "cancelling"` it **treats the refusal as a cancel**
-  (`src/runner.ts:260-264`): stop the engine group, then write `cancelled` with
+  (`src/runner.ts#acknowledgementRefused`): stop the engine group, then write `cancelled` with
   both identities, again conditionally. Mapping it to "someone else settled
   this" would kill the engine and skip settlement, leaving the record
   `cancelling` forever. The acceptance is eventual `cancelled` with identities
@@ -963,7 +963,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   (`src/process.ts#waitFor`), and `killStrays` waits with the same one. The
   runner runs the same ladder from the same
   place in both its branches — `terminateGroup` when it captured an identity
-  and `terminateGroupByPid` when it did not (`src/runner.ts:54-68`) — and
+  and `terminateGroupByPid` when it did not (`src/runner.ts#stopEngine`) — and
   differs only in throwing where the reconciler reports, because a terminal
   record written over an engine still running would be a lie about the task.
   One thing changed when its identity branch joined the ladder: at a zero
@@ -1128,7 +1128,7 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   `git_mutate` takes it as an argument, so that module stays a function of what
   it is handed (`src/gitmutate.ts#GitMutateOptions`); `update`'s callers read it
   once per process, per pass or per call, through `lockWaitSeconds(projectRoot)`
-  or the config the call has already loaded (`src/runner.ts:19`,
+  or the config the call has already loaded (`src/runner.ts#lockWait`,
   `src/reconcile.ts#reconcile`, `src/process.ts#terminateOrphans`,
   `src/tasks.ts#check`, `src/wait.ts#wait`), a helper that answers with the documented
   5 when no config can be read (`src/config.ts#lockWaitSeconds`) — locks are
@@ -1160,8 +1160,8 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   own caller but never mutates the result the caller already holds
   (`src/engines/spawn.ts:114-116`, `:225`) — a late error cannot rewrite a
   delivered outcome. `SpawnResult.truncated` is persisted on the task record
-  for every settlement (`src/runner.ts:131`) and appended to `reason` when the
-  task failed (`src/runner.ts:145`), so an operator reading a failure knows
+  for every settlement (`src/runner.ts#evidence`) and appended to `reason` when the
+  task failed (`src/runner.ts#truncatedReason`), so an operator reading a failure knows
   whether the evidence is complete.
 - **The worktree reservation**, computed and consulted by both callers that may
   let something write: `git_mutate` (section 4) and `delegate`
@@ -1467,7 +1467,7 @@ another's. Neither falls back to `process.env`:
 spec's, so one binary is judged and spawned and a configured `engines.<e>.bin`
 reaches both (`atc-s96.10.1`, closed). Config-declared adapter modules are not
 supported, and the reason is in the code: the runner imports the spec's
-`adapterModule` into its own process, unsandboxed (`src/runner.ts:214-215`), and
+`adapterModule` into its own process, unsandboxed (`src/runner.ts#adapterImport`), and
 `validateSpec` checks only that the path is absolute
 (`src/ledger.ts#validateSpec`). Making that path config-controlled would turn a
 config file into arbitrary code execution in the orchestrator.
@@ -2643,7 +2643,7 @@ reading for ever, so that one polls on and answers when the task settles, when
 it stalls again after another `stallMinutes` of silence, or at the timeout. The
 resolution of all of this is the runner's two-second activity interval, which is
 how often a live engine's `lastEventAt` reaches the record
-(`src/runner.ts:269-279`). A `wait` that finds the ledger out of step with the
+(`src/runner.ts#activityInterval`). A `wait` that finds the ledger out of step with the
 kernel — a launch past its deadline, a task whose runner is gone, which is what
 `orphaned` means — runs one reconciliation pass, once per call, and reports what
 it settled (`src/reconcile.ts#reconcileAndCleanup`). Evidence outranks silence:

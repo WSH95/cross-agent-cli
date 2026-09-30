@@ -1680,3 +1680,155 @@ test("a completion over a record another writer orphaned settles nothing", async
     assert.match(h.runnerLog(), /someone else settled the task/);
   } finally { await h.cleanup(); }
 });
+
+/**
+ * A process of this user's whose environment no read may open: a session-and-group leader
+ * started after the record from a binary carrying a file capability (`ping`) or a setgid
+ * bit (`ssh-agent`), which the kernel makes non-dumpable. The runner's pre-spawn scan
+ * counts it as a candidate that could be the engine for as long as it lives, which is what
+ * holds the re-scan window open (atc-s96.49). Its denial is read here first, so a machine
+ * that offers neither binary skips the test by name; the harness kills it however the
+ * test ends.
+ */
+async function unreadableCandidate(h: ReturnType<typeof harness>): Promise<{ pid: number; clear(): void } | { skip: string }> {
+  const offers: Array<[string, string[]]> = [["ping", ["-i", "1", "127.0.0.1"]], ["ssh-agent", ["-D", "-a", path.join(h.root, "agent.sock")]]];
+  for (const [bin, args] of offers) {
+    const tracked = h.track(spawn(bin, args, { detached: true, stdio: "ignore" }));
+    const pid = tracked.child.pid;
+    if (pid === undefined) continue;
+    // Past execve, or gone: only then is a denial the binary's own and not the exec window.
+    await poll(() => {
+      const stat = ledger.readProcessStat(pid);
+      if (stat === null || stat.state === "Z") return true;
+      try { return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8") !== ""; } catch { return true; }
+    }, Boolean);
+    const stat = ledger.readProcessStat(pid);
+    let denied = false;
+    try { fs.readFileSync(`/proc/${pid}/environ`); } catch (error) { denied = ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code!); }
+    const clear = () => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } };
+    if (denied && stat !== null && stat.state !== "Z" && stat.pgid === pid && stat.sid === pid
+      && fs.statSync(`/proc/${pid}`).uid === process.getuid!()) return { pid, clear };
+    clear();
+  }
+  return { skip: "no binary here starts a same-user process whose environ cannot be read (neither ping with a file capability nor setgid ssh-agent)" };
+}
+
+/** The runner's diagnostic so far, empty before its first line. */
+function diagnostics(h: ReturnType<typeof harness>): string {
+  const file = path.join(path.dirname(h.recordFile), `${h.record.id}.runner.log`);
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+}
+
+/**
+ * No engine was launched for the task: none announced itself, none recorded its argv, no
+ * process of it is alive, the adapter was never asked for a spawn plan, and the runner never
+ * said it was launching. The last two are written synchronously at the launch decision, so
+ * they witness an engine the settlement ended before its own first line could run.
+ */
+function noEngineLaunched(h: ReturnType<typeof harness>): void {
+  assert.deepEqual(h.engineLaunches(), [], "no engine announced itself");
+  assert.equal(fs.existsSync(h.invocation), false, "no engine recorded its argv");
+  assert.deepEqual(ownedProcesses(h.root), [], "no process carrying the task's engine environment is alive");
+  assert.equal(fs.existsSync(path.join(h.root, "request.json")), false, "the adapter was never asked for a spawn plan");
+  assert.doesNotMatch(diagnostics(h), /launching claude/, "the runner never said it was launching");
+}
+
+// @anchor cancelDuringRescan
+test("a cancel during the pre-spawn re-scan settles cancelled and launches no engine", async (t) => {
+  const h = harness();
+  try {
+    const candidate = await unreadableCandidate(h);
+    if ("skip" in candidate) return t.skip(candidate.skip);
+    const child = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
+    await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
+    // The settlement's first write is held in flight on the record lock until the re-scan
+    // has come back clean: settling while the retry still waits would exit before it, and
+    // then nothing this test asserts would depend on the re-check after the await.
+    const file = lockPath(h.root, recordLockName(h.record.id));
+    const held = await acquire(file, { operation: "test writer", waitSeconds: 60 });
+    t.after(() => held.release());
+    child.child.kill("SIGTERM");
+    await poll(() => fs.existsSync(h.markers.cancelled), Boolean);
+    await poll(() => lockChildren(file).length, (count) => count === 2);
+    candidate.clear();
+    await poll(() => diagnostics(h), (text) => /re-scan clean/.test(text));
+    await held.release();
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    const settled = h.read();
+    assert.equal(settled.status, "cancelled");
+    assert.equal(settled.exitCode, null);
+    noEngineLaunched(h);
+  } finally { await h.cleanup(); }
+});
+
+// @anchor settledDuringRescan
+test("a settlement another writer makes during the pre-spawn re-scan is left as written, and no engine launches", async (t) => {
+  const h = harness();
+  try {
+    const candidate = await unreadableCandidate(h);
+    if ("skip" in candidate) return t.skip(candidate.skip);
+    const child = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
+    await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
+    // Durable before the candidate goes: the retry that comes back clean reads it.
+    const external = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
+    candidate.clear();
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.deepEqual(h.read(), external);
+    assert.match(diagnostics(h), /re-scan clean/);
+    assert.match(diagnostics(h), /someone else settled the task/);
+    noEngineLaunched(h);
+  } finally { await h.cleanup(); }
+});
+
+// @anchor lockLostDuringRescan
+test("a runner lock lost during the pre-spawn re-scan settles failed and launches no engine", async (t) => {
+  const h = harness();
+  try {
+    const candidate = await unreadableCandidate(h);
+    if ("skip" in candidate) return t.skip(candidate.skip);
+    // An engine wrongly spawned here would outlive the settlement: the teardown has already
+    // stopped the nothing it owned before its `failed` write, so the process witness sees it.
+    const child = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations, FAKE_ENGINE_SCRIPT: "stall" } });
+    await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
+    const file = lockPath(h.root, recordLockName(h.record.id));
+    const held = await acquire(file, { operation: "test writer", waitSeconds: 60 });
+    t.after(() => held.release());
+    const holder = await poll(() => holderOf(lockPath(h.root, runnerLockName(h.record.id))), (pid) => pid !== null);
+    process.kill(holder!, "SIGKILL");
+    await poll(() => diagnostics(h), (text) => /runner lock lost/.test(text));
+    await poll(() => lockChildren(file).length, (count) => count === 2);
+    candidate.clear();
+    await poll(() => diagnostics(h), (text) => /re-scan clean/.test(text));
+    await held.release();
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    const failed = h.read();
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.reason, "runner lock lost");
+    noEngineLaunched(h);
+  } finally { await h.cleanup(); }
+});
+
+// @anchor clearedDuringRescan
+test("a candidate that clears during the pre-spawn re-scan is followed by the launch", async (t) => {
+  const h = harness();
+  try {
+    const candidate = await unreadableCandidate(h);
+    if ("skip" in candidate) return t.skip(candidate.skip);
+    const child = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
+    await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
+    candidate.clear();
+    const done = await poll(h.read, terminal);
+    assert.equal(done.status, "done", diagnostics(h));
+    // One visible stand-down used to be the price of a process that was unreadable for a
+    // moment; the retry is what turns it into the launch the delegation asked for.
+    assert.match(diagnostics(h), /re-scanning: environ unreadable for \d+ processes \(attempt 1 of 4\)/);
+    assert.match(diagnostics(h), /re-scan clean \(attempt [2-4] of 4\)\n\S+ launching claude\n/);
+    assert.equal(h.engineLaunches().length, 1);
+    assert.deepEqual(h.audit().map(({ record }) => record.status), ["running", "done"]);
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+  } finally { await h.cleanup(); }
+});

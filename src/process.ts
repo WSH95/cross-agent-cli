@@ -486,3 +486,28 @@ export function foreignEngine(scan: EnvironmentScan): string | null {
   if (scan.unreadable > 0) return `environ unreadable for ${scan.unreadable} processes`;
   return null;
 }
+
+/**
+ * `foreignEngine` over a scan taken up to `attempts` times, `delayMs` apart, for as long as
+ * the only reason to stand down is an environment the scan could not read. Such a process
+ * can be unreadable for a moment and then gone — a candidate that exits, a setuid helper
+ * finishing — and a launch that stood down on the first reading turned that moment into a
+ * failed delegate (bead atc-s96.49). A foreign engine is answered on the scan that finds
+ * it, because no wait makes one go away and reconciliation is what adopts it; and a
+ * candidate that stays unreadable is still the answer, after the last attempt. The wait is
+ * a timer, so the caller's own events run inside it: a caller acting on the answer checks
+ * again whatever it checked before it waited (`src/runner.ts`).
+ */
+export async function foreignEngineSettled(
+  scan: () => EnvironmentScan,
+  options: { attempts: number; delayMs: number; onRetry?: (attempt: number, reason: string) => void },
+): Promise<string | null> {
+  for (let attempt = 1; ; attempt++) {
+    const scanned = scan();
+    const reason = foreignEngine(scanned);
+    if (reason === null) return null;
+    if (scanned.found.some((entry) => !entry.self) || attempt >= options.attempts) return reason;
+    options.onRetry?.(attempt, reason);
+    await delay(options.delayMs);
+  }
+}
