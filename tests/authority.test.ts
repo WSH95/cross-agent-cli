@@ -156,12 +156,18 @@ function groupMembers(pgid: number): number[] {
 /**
  * Starts `links` as one chain, each the child of the one before, the first detached the
  * way a runner starts an engine; returns the first one's pid. The whole chain shares that
- * process group, which is killed when the test ends.
+ * process group, which is killed when the test ends. The links are written once to a
+ * file of the chain's own, which each link reads to start the next
+ * (`tests/fixtures/spawn-child.mjs`), so no link's environment grows with the chain.
  */
 function chain(t: TestContext, links: Link[]): number {
-  const outer = links.reduceRight<Link | undefined>((child, link) =>
-    child === undefined ? link : { ...link, env: { ...link.env, SPAWN_CHILD: JSON.stringify(child) } }, undefined)!;
-  const child = spawn(outer.argv[0], outer.argv.slice(1), { detached: true, stdio: "ignore", env: outer.env });
+  const directory = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-chain-"));
+  const file = path.join(directory, "chain.json");
+  fs.writeFileSync(file, JSON.stringify(links));
+  const [first] = links;
+  const child = spawn(first.argv[0], first.argv.slice(1), {
+    detached: true, stdio: "ignore", env: { ...first.env, SPAWN_CHAIN: file, SPAWN_CHAIN_AT: "0" },
+  });
   child.once("error", () => {});
   const pid = child.pid!;
   t.after(async () => {
@@ -171,6 +177,7 @@ function chain(t: TestContext, links: Link[]): number {
       assert.ok(Date.now() < deadline, `the chain under ${pid} outlived its test`);
       await delay(10);
     }
+    fs.rmSync(directory, { recursive: true, force: true });
   });
   return pid;
 }
