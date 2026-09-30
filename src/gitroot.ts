@@ -1,4 +1,4 @@
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
 import { GitRunError, globalOptions, revision, run } from "./gitmutate.ts";
@@ -324,7 +324,9 @@ function reservationFault(projectRoot: string, target: string): string | null {
 /**
  * The repository `git_root` works on: the project root's own git directory. It is the
  * repository's main worktree, so `.git` is a real directory — a pointer file or a symlink
- * there is the redirection the verifier refuses inside a worktree (design section 4).
+ * there is the redirection the verifier refuses inside a worktree (design section 4). A
+ * pointer that leads back to a main worktree is refused naming it, because a server
+ * started inside a task's worktree has one repair and the operator needs its path.
  */
 export async function repositoryAt(projectRoot: string): Promise<{ gitDir: string; workTree: string } | { reason: string }> {
   let workTree: string;
@@ -334,14 +336,41 @@ export async function repositoryAt(projectRoot: string): Promise<{ gitDir: strin
     return { reason: `cannot resolve the project root ${projectRoot}: ${message(error)}` };
   }
   const gitDir = path.join(workTree, ".git");
+  let entry: Awaited<ReturnType<typeof lstat>>;
   try {
-    if (!(await lstat(gitDir)).isDirectory()) {
-      return { reason: `${gitDir} is not a directory; git_root runs at the repository's own main worktree` };
-    }
+    entry = await lstat(gitDir);
   } catch (error) {
     return { reason: `cannot read ${gitDir}: ${message(error)}` };
   }
+  if (!entry.isDirectory()) {
+    const main = entry.isFile() ? await mainWorktreeOf(workTree, gitDir) : null;
+    return {
+      reason: main === null
+        ? `${gitDir} is not a directory; git_root runs at the repository's own main worktree`
+        : `${gitDir} is a worktree pointer; git_root runs at the repository's main worktree ${main} — point --project or CROSS_AGENT_PROJECT there`,
+    };
+  }
   return { gitDir, workTree };
+}
+
+/**
+ * The main worktree a linked worktree's `.git` pointer leads back to, or null when it
+ * cannot be followed: the pointer's `gitdir: <dir>` is the worktree's own git directory,
+ * `<dir>/commondir` names the repository's common one, and that directory's parent is the
+ * main worktree. Anything else — no `gitdir:` line, no `commondir` — is not a pointer this
+ * can read, and the refusal stays the general one.
+ */
+async function mainWorktreeOf(workTree: string, pointer: string): Promise<string | null> {
+  try {
+    const gitdir = /^gitdir: (.+?)\s*$/.exec(await readFile(pointer, "utf8"));
+    if (gitdir === null) return null;
+    const dir = path.resolve(workTree, gitdir[1]);
+    const common = (await readFile(path.join(dir, "commondir"), "utf8")).trim();
+    if (common === "") return null;
+    return await realpath(path.resolve(dir, common, ".."));
+  } catch {
+    return null;
+  }
 }
 
 /**
