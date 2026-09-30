@@ -255,6 +255,24 @@ test("Codex's MCP call item is read: a specialist's own tools pass and its deleg
   assert.equal(refused.code, 1, refused.out);
 });
 
+// @anchor oneItemOneDetail
+test("a Codex item announced and then completed is one call and one command in the detail", async (t) => {
+  // Codex writes a call as `item.started` and again as `item.completed`, under one id; the
+  // detail of a FAIL names each once (6b-R1-6).
+  const delegating = await project(t, { codex: codexMcpCall("delegate") });
+  const called = row((await run(delegating)).out, scan);
+  assert.equal(called.match(/called delegate/g)?.length, 1, called);
+  const command = { id: "item_1", type: "command_execution", command: "/bin/bash -lc 'claude -p hi'", aggregated_output: "", exit_code: null, status: "in_progress" };
+  const launching = await project(t, { codex: [
+    JSON.stringify({ type: "thread.started", thread_id: "t" }),
+    JSON.stringify({ type: "item.started", item: command }),
+    JSON.stringify({ type: "item.completed", item: { ...command, exit_code: 1, status: "failed" } }),
+    JSON.stringify({ type: "turn.completed" }),
+  ].join("\n") + "\n" });
+  const ran = row((await run(launching)).out, scan);
+  assert.equal(ran.match(/ran \/bin\/bash/g)?.length, 1, ran);
+});
+
 // The lead's own record under engine placement. An engine-placed lead is a specialist
 // record too — the ledger holds it at depth 1 — but its server holds the lead row, so its
 // `delegate` calls are the row's own and not offences; below the effective cap only.

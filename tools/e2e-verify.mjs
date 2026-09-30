@@ -228,6 +228,8 @@ for (const record of run) {
   const calls = [];
   const commands = [];
   const unknownItems = [];
+  // Codex announces an item and completes it under one id: one call, however many lines.
+  const seenItems = new Set();
   let understood = 0;
   let unparsable = 0;
   for (const line of readFileSync(log, "utf8").split("\n")) {
@@ -260,8 +262,14 @@ for (const record of run) {
       if (!codexItems.has(item.type)) { unknownItems.push(String(item.type)); continue; }
       if (item.type === "mcp_tool_call" && typeof item.tool !== "string") { unknownItems.push("mcp_tool_call without a tool"); continue; }
       understood++;
+      // An id counts as seen once it has given its command or its call, so a start that
+      // lacked one never hides the completion that carries it.
+      const key = typeof item.id === "string" ? `${item.type}:${item.id}` : null;
+      if (key !== null && seenItems.has(key)) continue;
       if (item.type === "command_execution" && typeof item.command === "string") commands.push(item.command);
-      if (item.type === "mcp_tool_call") calls.push(item.tool);
+      else if (item.type === "mcp_tool_call") calls.push(item.tool);
+      else continue;
+      if (key !== null) seenItems.add(key);
       continue;
     }
     // Everything else an engine says about itself — a session line, a hook, a rate-limit
