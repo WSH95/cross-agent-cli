@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-30T22:56:49Z — claude
+[auto-checkpoint] [auto-checkpoint] 6b code review round 1 done (no Critical; three Important in the verifier); fix round 1 in progress; beads .57 (Claude specialists' skills/commands) and .58 (suite temp-dir leak) filed; T14/T15 briefs in plan review.
+
 ### 2026-09-30T22:36:03Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b implemented (cb87b01..9066dfd, 634/633/1, gates green) and in code review; T14/T15 briefs being planned; S11 and T16 briefs reviewed.
 

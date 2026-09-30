@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-30T22:36:03Z
+updated_at: 2026-09-30T22:56:49Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -44,8 +44,11 @@ every Codex row is recorded as not run with the command that runs it later
 2026-09-30: task 6b (pre-flight probes and hardening: `.56`, `.47`, `.49`,
 `.50`, `.51`, `.53`, `atc-3ub`; claimed) is implemented on the task branch —
 twelve commits `cb87b01..9066dfd` (634 tests, 633 pass, 1 skipped; citations
-clean; e2e-verify 8 pass) — and is in code review; report
-`task-6b-report.md` in the SDD directory. Open from it: Codex 0.159.2's `--json`
+clean; e2e-verify 8 pass). Code review round 1 (three seats) found no Critical
+and three Important — the verifier's launcher grammar (misses and false FAILs),
+`--lead-role` overriding a shipped mode, and the verifier not reading Codex
+rollouts — and fix round 1 is in progress (`task-6b-findings-round-1.md`,
+report `task-6b-report.md`, both in the SDD directory). Open from it: Codex 0.159.2's `--json`
 omits sandbox-denied commands, so the verifier must read Codex rollouts
 before any Codex-lead or Codex-host run. It runs before S11; S11's brief is being refreshed and reviewed meanwhile
 (`task-7-brief.md`). The branch `task/cross-agent-m3` is fast-forwarded to `main` at
