@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-30T21:16:42Z — claude
+[auto-checkpoint] [auto-checkpoint] Task 6b's brief passed two plan reviews (v3) and is being implemented on task/cross-agent-m3 from cb87b01; S11's brief refreshed (v2 reviewed: eight findings accepted; v3 in progress).
+
 ### 2026-09-30T19:46:18Z — claude
 [auto-checkpoint] [auto-checkpoint] Workflow records removed (66cd043) and the user's hop-budget/Grok-mount answers recorded (cb87b01); branch at cb87b01, baseline 617/616/1; grok 1.0.44 read-only sandbox fixed on this machine (/run/podman 0711, RISKS.md); task 6b claimed and in planning.
 

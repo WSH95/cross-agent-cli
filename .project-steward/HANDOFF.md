@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-30T19:46:18Z
+updated_at: 2026-09-30T21:16:42Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -42,8 +42,10 @@ every Codex row is recorded as not run with the command that runs it later
 ## In flight
 
 2026-09-30: task 6b (pre-flight probes and hardening: `.56`, `.47`, `.49`,
-`.50`, `.51`, `.53`, `atc-3ub`; claimed) is being planned, and runs before
-S11. The branch `task/cross-agent-m3` is fast-forwarded to `main` at
+`.50`, `.51`, `.53`, `atc-3ub`; claimed) is being implemented on the task
+branch from its reviewed brief (`task-6b-brief.md` v3 in the SDD directory),
+and runs before S11; S11's brief is being refreshed and reviewed meanwhile
+(`task-7-brief.md`). The branch `task/cross-agent-m3` is fast-forwarded to `main` at
 `cb87b01` (6b's BASE; `npm test` 617 / 616 / 1 skipped). A consult smoke on
 current CLIs passes on all three engines, but only after a machine fix:
 grok 1.0.44's `read-only` and `strict` sandboxes refused to start because
