@@ -74,16 +74,45 @@ const codexLog = (command: string, extraItem?: Record<string, unknown>) => [
   JSON.stringify({ type: "turn.completed" }),
 ].join("\n") + "\n";
 
+/**
+ * The item Codex 0.159.2 writes for an MCP tool call, from I1's tracked Codex row (task
+ * `994d5673…`, `docs/probes.md#i1CodexTracked`), trimmed: the server and the tool are two
+ * fields, and the same item arrives as `item.started` and then `item.completed`.
+ */
+const codexMcpCall = (tool: string) => [
+  JSON.stringify({ type: "thread.started", thread_id: "t" }),
+  JSON.stringify({ type: "turn.started" }),
+  JSON.stringify({ type: "item.started", item: { id: "item_1", type: "mcp_tool_call", server: "cross-agent", tool, arguments: {}, result: null, error: null, status: "in_progress" } }),
+  JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "mcp_tool_call", server: "cross-agent", tool, arguments: {}, result: { content: [{ type: "text", text: "…" }], structured_content: null }, error: null, status: "completed" } }),
+  JSON.stringify({ type: "item.completed", item: { id: "item_2", type: "agent_message", text: "done" } }),
+  JSON.stringify({ type: "turn.completed" }),
+].join("\n") + "\n";
+
 const journalSteps = ["worktree-created", "git", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"];
+
+/** One task record and its log; a bare string is a log for an implementer at depth 1. */
+interface RecordSpec {
+  body: string;
+  /** The key the record is listed under, when the key is only a label. */
+  engine?: string;
+  id?: string;
+  role?: string;
+  depth?: number;
+  parentTaskId?: string;
+}
 
 /**
  * A finished project as an end-to-end run leaves one: a repository on `main` with one
  * commit, a journal, and one task record per delegation with the log each engine wrote.
+ * `mode` and `limits` are the config's own, and `null` leaves the key out of the file.
  */
 async function project(
   t: TestContext,
-  logs: Record<string, string>,
-  options: { steps?: unknown; journal?: string; others?: Record<string, unknown> } = {},
+  logs: Record<string, string | RecordSpec>,
+  options: {
+    steps?: unknown; journal?: string; others?: Record<string, unknown>;
+    mode?: string | null; limits?: Record<string, number> | null;
+  } = {},
 ): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), "e2e-verify-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -97,9 +126,11 @@ async function project(
   await mkdir(path.join(root, ".cross-agent", "tasks"), { recursive: true });
   await mkdir(path.join(root, ".cross-agent", "journal"), { recursive: true });
   await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({
+    ...(options.mode === null ? {} : { mode: options.mode ?? "dev-team" }),
     // A command that runs and exits zero, so the suite row is a pass and the exit status
     // is about the rows this file is testing.
-    mode: "dev-team", project: { defaultBranch: "main", testCommand: "true" }, limits: { maxDepth: 1 },
+    project: { defaultBranch: "main", testCommand: "true" },
+    ...(options.limits === null ? {} : { limits: options.limits ?? { maxDepth: 1 } }),
     // A configured binary is a deny target of its own (`src/guard.ts#denyTargets`), so
     // the scan has to know this project's.
     engines: { claude: { bin: "/opt/wrapper" } },
@@ -116,16 +147,27 @@ async function project(
     await utimes(file, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
   }
   let n = 0;
-  for (const [engine, body] of Object.entries(logs)) {
-    const id = `task${++n}`;
+  for (const [key, value] of Object.entries(logs)) {
+    const spec: RecordSpec = typeof value === "string" ? { body: value } : value;
+    n++;
+    const id = spec.id ?? `task${n}`;
     const logPath = path.join(root, ".cross-agent", "tasks", `${id}.ndjson`);
-    await writeFile(logPath, body);
+    await writeFile(logPath, spec.body);
     await writeFile(path.join(root, ".cross-agent", "tasks", `${id}.json`), JSON.stringify({
-      id, role: "implementer", engine, status: "done", depth: 1, createdAt: 1, updatedAt: 2,
+      id, role: spec.role ?? "implementer", engine: spec.engine ?? key, status: "done", depth: spec.depth ?? 1,
+      ...(spec.parentTaskId === undefined ? {} : { parentTaskId: spec.parentTaskId }),
+      createdAt: n, updatedAt: n + 1,
       logPath, resultPath: path.join(root, ".cross-agent", "tasks", `${id}.out`),
     }));
   }
   return root;
+}
+
+/** The whole report line for one condition. */
+function row(out: string, name: string): string {
+  const line = out.split("\n").find((entry) => entry.includes(name));
+  assert.ok(line !== undefined, `no line for ${name} in:\n${out}`);
+  return line;
 }
 
 const scan = "no delegate call and no engine launch in any specialist transcript";
@@ -182,7 +224,7 @@ test("an offence already found is not withdrawn because another line went unread
 
   // The same for Codex: a command that starts an engine beside an item type this build
   // cannot read is still that command.
-  const mixed = codexLog("/bin/bash -lc 'claude --version'", { id: "item_2", type: "mcp_tool_call", tool: "whatever" });
+  const mixed = codexLog("/bin/bash -lc 'claude --version'", { id: "item_2", type: "tool_invocation", tool: "whatever" });
   const withCodex = await project(t, { codex: mixed });
   const codexRun = await run(withCodex);
   assert.equal(verdict(codexRun.out, scan), "FAIL", codexRun.out);
@@ -190,14 +232,119 @@ test("an offence already found is not withdrawn because another line went unread
 });
 
 test("a Codex item type no archived run has shown makes the scan answer, not guess", async (t) => {
-  // The only Codex items any archived `--json` transcript holds are `agent_message` and
-  // `command_execution` (`docs/probes.md`, the native samples). How Codex names an MCP
-  // call is unknown until I1's Codex row runs, so a log carrying any other item type is
-  // evidence this tool cannot read — never a pass, and never an invented offence either.
-  const root = await project(t, { codex: codexLog("/bin/bash -lc 'true'", { id: "item_2", type: "mcp_tool_call", tool: "mcp__cross_agent__delegate" }) });
+  // The Codex items archived runs hold are `agent_message`, `command_execution` and, since
+  // I1's tracked Codex row, `mcp_tool_call` (`docs/probes.md#i1CodexTracked`). A log
+  // carrying any other item type is evidence this tool cannot read — never a pass, and
+  // never an invented offence either, however its fields are spelled.
+  const root = await project(t, { codex: codexLog("/bin/bash -lc 'true'", { id: "item_2", type: "tool_invocation", tool: "mcp__cross_agent__delegate" }) });
   const { code, out } = await run(root);
   assert.equal(verdict(out, scan), "?", out);
   assert.equal(code, 2, out);
+});
+
+// @anchor codexMcpItem
+test("Codex's MCP call item is read: a specialist's own tools pass and its delegate is an offence", async (t) => {
+  const reading = await project(t, { codex: codexMcpCall("list_roles") });
+  const read = await run(reading);
+  assert.equal(verdict(read.out, scan), "pass", read.out);
+  assert.equal(read.code, 0, read.out);
+  const delegating = await project(t, { codex: codexMcpCall("delegate") });
+  const refused = await run(delegating);
+  assert.equal(verdict(refused.out, scan), "FAIL", refused.out);
+  assert.match(row(refused.out, scan), /task1 called delegate/);
+  assert.equal(refused.code, 1, refused.out);
+});
+
+// The lead's own record under engine placement. An engine-placed lead is a specialist
+// record too — the ledger holds it at depth 1 — but its server holds the lead row, so its
+// `delegate` calls are the row's own and not offences; below the effective cap only.
+const leadAndChild = (leadBody: string, childBody = claudeLog("python3 -m unittest discover -s tests -t .")) => ({
+  lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: leadBody },
+  implementer: { engine: "claude", id: "impl1", role: "implementer", depth: 2, parentTaskId: "lead1", body: childBody },
+});
+const depth = "every record at depth <=";
+
+// @anchor engineLeadRow
+test("an engine-placed lead's own delegate calls are its row's, below the effective cap", async (t) => {
+  // (i) dev-team-engine, the cap the mode needs: the lead's call is not an offence, and the
+  // row says whose record was judged by the lead row.
+  const exempt = await project(t, leadAndChild(claudeDelegate), { mode: "dev-team-engine", limits: { maxDepth: 2 } });
+  const passed = await run(exempt);
+  assert.equal(verdict(passed.out, scan), "pass", passed.out);
+  assert.match(row(passed.out, scan), /lead1/);
+  assert.equal(verdict(passed.out, depth), "pass", passed.out);
+  assert.equal(passed.code, 0, passed.out);
+
+  // (ii) The same log on the implementer the lead delegated to: a specialist's delegate.
+  const child = await project(t, leadAndChild(claudeLog("true"), claudeDelegate), { mode: "dev-team-engine", limits: { maxDepth: 2 } });
+  assert.equal(verdict((await run(child)).out, scan), "FAIL");
+
+  // (iii) The lead row carries no engine launch: a lead that also runs `claude -p` offends.
+  const launching = await project(t, leadAndChild(claudeDelegate + claudeLog("claude -p hi")), { mode: "dev-team-engine", limits: { maxDepth: 2 } });
+  const launched = await run(launching);
+  assert.equal(verdict(launched.out, scan), "FAIL", launched.out);
+  assert.match(row(launched.out, scan), /lead1 ran claude -p hi/);
+
+  // (vi) Codex's item on the lead's own record, at depth 1 under cap 2.
+  const codexLead = await project(t, { lead: { engine: "codex", id: "lead1", role: "lead", depth: 1, body: codexMcpCall("delegate") } },
+    { mode: "dev-team-engine", limits: { maxDepth: 2 } });
+  assert.equal(verdict((await run(codexLead)).out, scan), "pass");
+});
+
+// @anchor effectiveCap
+test("the effective cap is the lower of the mode's placement and the configured limit, which defaults to 1", async (t) => {
+  // (iv) The config lowered the cap to 1: a lead at depth 1 is at the cap, which holds it
+  // to the specialist row (design section 5), so its delegate is an offence.
+  const capped = await project(t, { lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate } },
+    { mode: "dev-team-engine", limits: { maxDepth: 1 } });
+  const cappedRun = await run(capped);
+  assert.equal(verdict(cappedRun.out, scan), "FAIL", cappedRun.out);
+  assert.match(row(cappedRun.out, depth), /min\(.*2.*1\)|placement 2.*maxDepth 1/);
+
+  // (v) A limit above the mode's cap raises nothing: the cap stays 2, so a record at
+  // depth 3 fails the depth row, and a lead at depth 1 is still exempt.
+  const raised = await project(t, {
+    lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate },
+    deep: { engine: "claude", id: "deep1", role: "implementer", depth: 3, parentTaskId: "lead1", body: claudeLog("true") },
+  }, { mode: "dev-team-engine", limits: { maxDepth: 5 } });
+  const raisedRun = await run(raised);
+  assert.equal(verdict(raisedRun.out, depth), "FAIL", raisedRun.out);
+  assert.match(row(raisedRun.out, depth), /<= 2/);
+  assert.match(row(raisedRun.out, depth), /deep1=3|deep1/);
+  assert.equal(verdict(raisedRun.out, scan), "pass", raisedRun.out);
+
+  // (vii) No `limits` at all, and (viii) `limits` without `maxDepth`: the loader's own
+  // default of 1 applies, never the placement's 2, so the lead is capped and a record at
+  // depth 2 is too deep.
+  for (const limits of [null, { stallMinutes: 15 }]) {
+    const defaulted = await project(t, leadAndChild(claudeDelegate), { mode: "dev-team-engine", limits });
+    const out = (await run(defaulted)).out;
+    assert.equal(verdict(out, scan), "FAIL", `${JSON.stringify(limits)}\n${out}`);
+    assert.equal(verdict(out, depth), "FAIL", `${JSON.stringify(limits)}\n${out}`);
+    assert.match(row(out, depth), /<= 1/);
+  }
+});
+
+// @anchor unshippedMode
+test("a host-placed mode, or one this repository does not ship, exempts no lead", async (t) => {
+  // An absent mode is the loader's default, `dev-team`, whose lead is the host: a record
+  // named `lead` is nobody's lead row.
+  const hosted = await project(t, { lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate } }, { mode: null });
+  assert.equal(verdict((await run(hosted)).out, scan), "FAIL");
+
+  // A mode the repository does not ship cannot be read, so the depth row takes the config's
+  // limit as it stands and says so, and no record is exempt.
+  const unknown = await project(t, { lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: claudeDelegate } },
+    { mode: "my-team", limits: { maxDepth: 3 } });
+  const unknownRun = await run(unknown);
+  assert.equal(verdict(unknownRun.out, scan), "FAIL", unknownRun.out);
+  assert.match(row(unknownRun.out, depth), /<= 3/);
+  assert.match(row(unknownRun.out, depth), /my-team/);
+
+  // `--lead-role` names the engine-placed lead the verifier cannot look up.
+  const named = await runWith(unknown, ["--lead-role", "lead"]);
+  assert.equal(verdict(named.out, scan), "pass", named.out);
+  assert.match(row(named.out, depth), /<= 2/);
 });
 
 test("a shell command that starts an engine is an offence through a shell's own quoting", async (t) => {
@@ -222,10 +369,31 @@ test("a shell command that starts an engine is an offence through a shell's own 
     { codex: codexLog("/bin/bash -lc 'node src/server.ts'") },
     // And the binary this project configured, which is the fourth kind of deny target.
     { claude: claudeLog("/opt/wrapper -p hello") },
+    // A separator with no space after it, a command substitution and a backtick each open
+    // a command, and each closes one as well.
+    { claude: claudeLog("claude;true") },
+    { claude: claudeLog("echo $(claude)") },
+    { claude: claudeLog("echo `claude`") },
+    // `node`'s own options before the path, the ones that take a separate operand among them.
+    { claude: claudeLog("node --experimental-strip-types src/cli.ts") },
+    { claude: claudeLog("node --import x.mjs ./src/server.ts") },
+    { claude: claudeLog("node -r ./hook.cjs src/cli.ts") },
+    { claude: claudeLog("node --require ./hook.cjs --import=y.mjs src/server.ts") },
+    // A word that runs the next one: an exec wrapper, a leading assignment, a reserved word.
+    { claude: claudeLog("sudo claude -p hi") },
+    { claude: claudeLog("env FOO=1 claude") },
+    { claude: claudeLog("FOO=1 claude -p hi") },
+    { claude: claudeLog("timeout 60 codex exec -") },
+    { claude: claudeLog("setsid --fork claude -p hi") },
+    { claude: claudeLog("sudo node src/server.ts") },
+    { claude: claudeLog("for x in 1; do claude -p hi; done") },
+    // A quoted command for a shell of the specialist's own, beside Codex's own envelope.
+    { claude: claudeLog('sh -c "grok -p hi"') },
   ]) {
     const root = await project(t, logs);
     const { code, out } = await run(root);
-    assert.equal(verdict(out, scan), "FAIL", out);
+    const said = Object.values(logs)[0].split("\n")[1];
+    assert.equal(verdict(out, scan), "FAIL", `${said}\n${out}`);
     assert.equal(code, 1, out);
   }
 });
@@ -266,6 +434,16 @@ test("reading a file that happens to be named like one of them is not a launch",
     "rg node src/cli.ts",
     "grep node src/server.ts",
     "echo node src/cli.ts",
+    "grep node src/cli.ts",
+    "cat node src/cli.ts",
+    // An engine's name, or this project's configured binary, as an argument is a word too,
+    // and so is a quoted one: only a shell's own `-c` argument opens a command in quotes.
+    "echo claude",
+    "ls /opt/wrapper",
+    'grep -rn "claude" README.md',
+    "echo do claude",
+    // `node` running something else, whatever options it was given first.
+    "node --import x.mjs other.js",
   ]) {
     const root = await project(t, { claude: claudeLog(command) });
     const { code, out } = await run(root);
