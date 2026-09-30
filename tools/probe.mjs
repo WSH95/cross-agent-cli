@@ -25,7 +25,10 @@
 // `delegate` does — a non-lead role at depth 1, `CROSS_AGENT_PROJECT` in the child
 // environment, and the `lead` mount field pointing at this server, which is what lets the
 // child see any cross-agent tool at all — writes it with a `launching` record through the
-// public ledger API, and starts the real detached runner. Integration probe I1's second
+// public ledger API, and starts the real detached runner. The mount names the project as
+// `--project <root>` in the server's arguments and carries no environment: that is the
+// design's mount spec, `--project` outranks `CROSS_AGENT_PROJECT`, and Codex's builder
+// refuses a mount that carries an environment at all. Integration probe I1's second
 // assertion is what needs it: the engine lists exactly the specialist row and its own
 // `delegate` is refused naming the task id.
 //
@@ -158,8 +161,9 @@ async function track() {
     scratchDir,
     env: childEnv(process.env, 0, record.id, childLineage([], { taskId: record.id, role: roleKey, cwd }), "subscription", projectRoot),
     // What an engine-placed lead is given, handed to a specialist on purpose: the run is
-    // about what the server does with a child that *can* reach it, which is authority.
-    lead: { command: process.execPath, args: [path.join(repoRoot, "src", "server.ts")], env: { CROSS_AGENT_PROJECT: projectRoot } },
+    // about what the server does with a child that *can* reach it, which is authority. The
+    // project travels as `--project`, the one form every engine's mount accepts.
+    lead: { command: process.execPath, args: [path.join(repoRoot, "src", "server.ts"), "--project", projectRoot] },
     adapterModule: path.join(repoRoot, "src", "engines", `${engine}.ts`),
     logPath: undefined, resultPath: undefined,
   });

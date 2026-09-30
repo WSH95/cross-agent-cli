@@ -740,7 +740,13 @@ role at depth 1, `CROSS_AGENT_PROJECT` in the child environment — and adds the
 one field a specialist never gets, the `lead` mount pointing at this server, so
 that the child *can* reach it and the only thing left deciding what it may do is
 ancestry. It writes the record through the public ledger API and starts the real
-detached runner.
+detached runner. Since 6b (2026-09-30) that mount names the project as
+`--project <root>` in the server's arguments and carries no environment
+(`tests/probe.test.ts#trackedLeadMount`), which is the form both engines' mounts
+accept: Codex's builder refuses a mount that carries an environment at all
+(`src/engines/codex.ts#codex`, the `leadMount` member). T13's Claude run below
+predates that and passed the project as `env: {CROSS_AGENT_PROJECT}`, which
+Claude's `--mcp-config` file carries and Codex's `-c` settings cannot.
 
 ```
 node tools/probe.mjs --engine claude --track --project <sample> --cwd <sample> \
