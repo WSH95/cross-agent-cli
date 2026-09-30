@@ -25,6 +25,14 @@ const rulesLimit = 100 * 1024;
 const promptLimit = 64 * 1024;
 
 /**
+ * A sandbox that cannot be enforced, as Grok reports it. Its bubblewrap plan resolves the
+ * binary's own runtime-socket deny list path by path, and a path it may not resolve —
+ * rootful podman's `/run/podman`, created `0700 root` — refuses the whole run before any
+ * stream begins: two lines on stderr and exit 1 (probe A2, `docs/probes.md#grokSandboxSocket`).
+ */
+const sandboxRefusal = /sandbox profile resolve failed|could not enforce its deny list/;
+
+/**
  * Grok Build, on the spawn line P2 and P8 recorded and the `streaming-messages-json`
  * output P8 adopted (design section 3).
  */
@@ -39,6 +47,9 @@ const grok = {
   // every `git_mutate`, which is what design section 4 means by detected, not prevented.
 
   // Grok's sandbox is the binary's own, so the binary resolving is the whole of the check.
+  // Whether its bubblewrap plan can resolve its deny list is not checked here: that list
+  // is the binary's own, so a check would encode it and go stale, and the run reports the
+  // failure itself, which `parseStderrLine` reads.
   sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
     const bin = engineBin("grok", env);
     return commandPath(bin, env) === null
@@ -180,6 +191,16 @@ const grok = {
       default:
         return null;
     }
+  },
+
+  /**
+   * The run-time verdict on a sandbox that could not start (A2). Grok refuses with two
+   * stderr lines and exit 1 before any stream, so without this the record would say only
+   * `engine exited 1`; with it the failure is named, as P1's is for Claude. The pipeline
+   * records the first such line and stops asking, so this stays a pure function of one line.
+   */
+  parseStderrLine(line: string): EngineEvent | null {
+    return sandboxRefusal.test(line) ? { kind: "error", text: `grok sandbox failure: ${line}` } : null;
   },
 
   /**

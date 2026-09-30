@@ -72,15 +72,27 @@ function requestFor(dirs: ReturnType<typeof layout>, patch: Partial<SpawnRequest
 /**
  * A stand-in for the `grok` binary, reached the way a configured one is
  * (`CROSS_AGENT_GROK_BIN`). It runs the fake engine in its own process, so
- * `process.argv.slice(2)` there is exactly the argv the adapter built. Grok asks nothing
- * more of it than that: it writes no result file and this adapter reads no stderr.
+ * `process.argv.slice(2)` there is exactly the argv the adapter built. It writes
+ * `GROK_SHIM_STDERR` to stderr first when the case under test needs a diagnostic, and
+ * with `GROK_SHIM_EXIT` it stops there with that status, as grok does when its sandbox
+ * refuses to start: two stderr lines, no stream at all (A2). Grok writes no result file.
  */
 function shim(directory: string): string {
   const file = path.join(directory, "grok-shim.mjs");
-  writeFileSync(file, `#!${process.execPath}\nawait import(${JSON.stringify(pathToFileURL(fake).href)});\n`);
+  writeFileSync(file,
+    `#!${process.execPath}\n`
+    + 'if (process.env.GROK_SHIM_STDERR) process.stderr.write(process.env.GROK_SHIM_STDERR + "\\n");\n'
+    + 'if (process.env.GROK_SHIM_EXIT) process.exitCode = Number(process.env.GROK_SHIM_EXIT);\n'
+    + `else await import(${JSON.stringify(pathToFileURL(fake).href)});\n`);
   chmodSync(file, 0o755);
   return file;
 }
+
+// What grok 1.0.44 wrote to stderr, verbatim, when rootful podman's socket directory was
+// `0700 root` and its read-only sandbox could not resolve the runtime-socket deny list
+// (task `b116af88…`, 2026-09-30; `docs/probes.md#grokSandboxSocket`). It then exited 1.
+const socketRefusal = "error: sandbox profile resolve failed: socket deny resolution failed: could not resolve runtime-socket deny path /run/podman/podman.sock: Permission denied (os error 13)";
+const denyListRefusal = "error: this sandbox could not enforce its deny list on Linux: the required bwrap plan could not be prepared; see the error above for the specific cause. Refusing to start with denied paths unprotected.";
 
 test("the built-in table answers for grok with this adapter", () => {
   assert.equal(adapterFor("grok"), grok);
@@ -445,14 +457,49 @@ test("a line grok's vocabulary does not cover is not an event", () => {
 });
 
 // @anchor grokDeclaresFinish
-test("grok declares no finish and no stderr reader: its output is a line stream", () => {
+test("grok declares the stderr reader and no finish: its output is a line stream", () => {
   const adapter: EngineAdapter = grok;
   assert.equal(adapter.finish, undefined);
   assert.equal(Object.hasOwn(grok, "finish"), false);
-  // The sandbox is Grok's own and it reports its failures in the stream, so stderr stays
-  // log evidence and nothing more.
-  assert.equal(adapter.parseStderrLine, undefined);
-  assert.equal(Object.hasOwn(grok, "parseStderrLine"), false);
+  // A sandbox that cannot enforce its deny list refuses to start with two stderr lines and
+  // no stream at all, so stderr is where that verdict is read (A2).
+  assert.equal(typeof adapter.parseStderrLine, "function");
+});
+
+// @anchor grokSandboxRefusal
+test("grok's stderr reader names a sandbox that cannot enforce its deny list, and nothing else", () => {
+  for (const line of [socketRefusal, denyListRefusal]) {
+    assert.deepEqual(grok.parseStderrLine(line), { kind: "error", text: `grok sandbox failure: ${line}` });
+  }
+  // Everything else on stderr stays log evidence: a warning, a note, an empty line.
+  for (const line of ["", "warning: model grok-4.7 is in preview", "loading config from /home/op/.grok/config.toml", "error: rate limited, retrying"]) {
+    assert.equal(grok.parseStderrLine(line), null, line);
+  }
+});
+
+// @anchor sandboxRefusalRun
+test("a sandbox that refuses to start fails the run by name rather than as a bare exit 1", async (t) => {
+  const dirs = layout(t);
+  const request = requestFor(dirs, {
+    sandbox: sandboxFor("grok", "read-only"),
+    env: {
+      FAKE_ENGINE_FORMAT: "grok", FAKE_ENGINE_SCRIPT: "ok", GROK_SHIM_STDERR: `${socketRefusal}\n${denyListRefusal}`,
+      GROK_SHIM_EXIT: "1", CROSS_AGENT_GROK_BIN: shim(dirs.root),
+    },
+  });
+  const handle = spawnEngine(grok, request, {});
+  t.after(() => { handle.kill("SIGKILL"); });
+  const result = await handle.result;
+
+  assert.equal(result.ok, false);
+  assert.equal(result.exitCode, 1);
+  // One event, the first line: the run has failed, and the cause follows it into the log.
+  // The runner's reason is the last error's text, so the record says why rather than
+  // `engine exited 1`.
+  assert.deepEqual(result.events, [{ kind: "error", text: `grok sandbox failure: ${socketRefusal}` }]);
+  assert.equal(result.finalMessage, `grok sandbox failure: ${socketRefusal}`);
+  const log = readFileSync(request.logPath, "utf8");
+  for (const line of [socketRefusal, denyListRefusal]) assert.ok(log.includes(`stderr ${line}\n`), line);
 });
 
 // @anchor grokFinalMessage
