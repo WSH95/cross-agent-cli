@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-30T23:40:33Z — claude
+[auto-checkpoint] [auto-checkpoint] 6b fix round 1 landed (b320ec0..50a7e37; 639/638/1; gates green); round-2 reviews running.
+
 ### 2026-09-30T22:56:49Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b code review round 1 done (no Critical; three Important in the verifier); fix round 1 in progress; beads .57 (Claude specialists' skills/commands) and .58 (suite temp-dir leak) filed; T14/T15 briefs in plan review.
 
