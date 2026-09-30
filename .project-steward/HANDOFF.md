@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-30T21:43:46Z
+updated_at: 2026-09-30T22:08:40Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -75,11 +75,11 @@ and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
    After each task run
    `node tools/check-citations.mjs --since <BASE>` — it must report 0 drifted
    and 0 not judged — because `npm test` cannot see a citation that moved.
-2. **Then** T14 (`.14`,
+2. **Then** T16 (`.16`, the operator CLI; its brief `task-10-brief.md` v2 is in
+   plan review), then T14 (`.14`,
    Codex packaging), T15
    (`.15`, Grok packaging; the sample folder is trusted; `.53`'s hop
-   measurement and the read-only Grok probe row belong here), T16
-   (`task-10-brief.md`), docs nits (`.42`), the go/no-go (`.18`), the final
+   measurement and the read-only Grok probe row belong here), docs nits (`.42`), the go/no-go (`.18`), the final
    whole-branch review, wrap.
 3. **Merges.** Rebase `task/cross-agent-m3` onto `main` (main's own commits
    touch only `.project-steward/`, `AGENTS.md`, `VERIFY.md`), fast-forward,

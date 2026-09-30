@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-09-30T22:08:40Z — claude
+[auto-checkpoint] [auto-checkpoint] S11 brief passed plan review (round 3 clean; optimization after 6b merges); T16 moved ahead of T14/T15, its brief v2 in plan review; 6b still implementing.
+
 ### 2026-09-30T21:43:46Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b in implementation: eight commits on task/cross-agent-m3 (9f852d2..e9add0c); S11 brief at v4 under its third plan review.
 
