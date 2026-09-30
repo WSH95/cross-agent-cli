@@ -415,8 +415,8 @@ test("an identity from another boot, or an engine not carrying its task, matches
 // @anchor walkReachesEngine
 test("the walk reaches an engine thirty-two hops up and fails closed at thirty-three", async (t) => {
   // Real processes, one node process per wrapper: the boundary is the walk over a real
-  // `/proc`, and a host nested inside another session sits nine hops or more below its
-  // own terminal before any wrapper of an engine's is counted (design, "The walk").
+  // `/proc`, and a host nested inside another session sits nine hops or more below pid 1
+  // before any wrapper of an engine's is counted (design, "The walk").
   const { project, exchange } = workspace(t);
   for (const wrappers of [31, 32]) {
     const lead = task(project, "lead");

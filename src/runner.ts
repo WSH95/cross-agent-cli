@@ -263,8 +263,8 @@ async function run(projectRoot: string, id: string): Promise<void> {
     // engine — the rule `adopt` applies. What it never stands down for is itself: the
     // server starts it with `CROSS_AGENT_TASK` in its own environment, and the lock child
     // inherits it, so both carry the id and neither is an engine. An unreadable one is
-    // scanned for again, four times 250 ms apart — about a second, well inside the launch
-    // deadline — because such a process can be gone a moment later (bead atc-s96.49).
+    // scanned for again — four scans, 250 ms apart, 750 ms of waiting in all, well inside the
+    // launch deadline — because such a process can be gone a moment later (atc-s96.49).
     const since = record.createdAt;
     const attempts = 4;
     let retried = 0;

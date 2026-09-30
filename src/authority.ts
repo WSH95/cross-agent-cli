@@ -27,8 +27,8 @@ export interface AuthorityOptions {
 }
 
 /**
- * Enough for a host nested inside another session — nine hops or more below its own
- * terminal on the machine T13 measured — and any wrapper an engine puts between itself
+ * Enough for a host nested inside another session — nine hops or more below pid 1 on
+ * the machine T13 and 6b measured — and any wrapper an engine puts between itself
  * and a server it starts. Past it the walk fails closed, as it does on every other
  * failure (the user's decision of 2026-09-30).
  */

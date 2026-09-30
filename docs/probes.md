@@ -1174,7 +1174,7 @@ stop" and ran all six; it is the record, with the first archived beside it.
 | step | command | `--json` item | exit, output | file afterwards | verdict |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `printf inside > ./PROBE-6b-inside.txt` | `/bin/bash -lc 'printf inside > ./PROBE-6b-inside.txt'` | 0, none | present | landed: the control |
-| 2 | `printf cache > ~/.cache/agent-team/cross-agent-probe-6b-CACHE.txt` | **none** | 1, `Read-only file system` (rollout) | absent | inconclusive by the transcript; denied by the rollout and the file |
+| 2 | `printf cache > ~/.cache/agent-team/cross-agent-probe-6b-CACHE.txt` | **none** | 1, `Read-only file system` (rollout) | absent | denied: the rollout and the file |
 | 3 | `printf root > <sample>/PROBE-6b.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
 | 4 | `printf sibling > ~/.cache/agent-team/cross-agent-e2e/PROBE-6b-sibling.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
 | 5 | `printf home > $HOME/cross-agent-probe-6b-HOME.txt` | **none** | 1, `Read-only file system` (rollout) | absent | as step 2 |
@@ -1186,23 +1186,26 @@ through its code-mode `exec` tool, a script calling `tools.exec_command({cmd:
 `~/.codex/sessions/2026/09/30/` records all six calls with their exit codes and
 outputs. `codex exec --json` emitted `command_execution` items for steps 1 and 6
 only: the four writes that failed with exit 1 have no item at all, not even an
-`item.started`, and the first run's step 2 is the same. By the rule this probe
-was given — the transcript's item is one of the two witnesses — steps 2 to 5
-are inconclusive; the rollout's calls and the files' absence are two witnesses
-of another kind, and they agree: denied, each with the shell's own `Read-only
-file system`. Step 6's envelope quotes with double quotes around a command
-holding single quotes, rather than `'\''`, and undone it equals the step
+`item.started`, and the first run's step 2 is the same. The rule this probe was
+given takes the transcript's item as one of two witnesses; where `--json` omits
+the item, the rollout's record of the call stands as that witness instead,
+because the rollout is the engine's own event log and not the model's wording
+(the controller's ruling on 6b's review, 6b-R1-4). With the files' absence as
+the other, steps 2 to 5 are **denied**, each exit 1 with the shell's own
+`Read-only file system`. Step 6's envelope quotes with double quotes around a
+command holding single quotes, rather than `'\''`, and undone it equals the step
 character for character.
 
 What it decides: on 0.159.2 the writable root of `workspace-write` is the
 worktree, and `~/.cache` outside it is not writable even though the worktree
-itself lies under `~/.cache`. So `tests/engines/codex.test.ts#codexI2Real`
-keeps its repository under `~/.cache/agent-team/cross-agent-tests/` on sound
-ground, and judging it by the files' presence stands; judging a Codex run by
-its `--json` items does not, because the items of the four denied writes are
-the ones missing — which touches the end-to-end verifier's reading of a Codex
-transcript as well, since an engine launch a sandbox refused could be missing
-the same way. The control file, the worktree (`git worktree remove --force`) and the
+itself lies under `~/.cache` — the answer `atc-3ub` item 2 asked for. So
+`tests/engines/codex.test.ts#codexI2Real` keeps its repository under
+`~/.cache/agent-team/cross-agent-tests/` on sound ground, and judging it by the
+files' presence stands; judging a Codex run by its `--json` items alone does
+not, because the items of the four denied writes are the ones missing. An engine
+launch a sandbox refused could be missing the same way, so the end-to-end
+verifier reads each Codex record's rollout as well
+(`tests/e2e-verify.test.ts#codexRolloutRead`). The control file, the worktree (`git worktree remove --force`) and the
 branch were removed, and the sample left clean. Both runs' logs, prompts and
 rollouts are in the 6b archive's `a6/`.
 

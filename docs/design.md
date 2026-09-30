@@ -125,7 +125,7 @@ engine process, and the ledger already records each engine's identity as
 stat field 4, the element before `pgrp` — beside `startTime`, `state`, `pgid`
 and `sid`. Starting at its own parent, the walk follows `ppid` for at most **32
 hops** — enough for a host nested inside another session, which sits nine or
-more hops below its own terminal (`docs/probes.md#walk32`), and for any wrapper
+more hops below pid 1 (`docs/probes.md#walk32`), and for any wrapper
 an engine puts in between — and ends without a match only at a process whose
 `ppid` is 0, the root (`src/authority.ts#maxHops`, the user's decision of
 2026-09-30). The walk **fails
@@ -738,8 +738,8 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
     process carrying the id that is not this runner, its own group or its own
     session, and an environment the scan could not read, because one of those
     could be that engine. An environment it could not read is scanned for
-    again, four times 250 ms apart — about a second, inside the 30 s launch
-    deadline — because a process of this user's can be unreadable for a moment
+    again — four scans, 250 ms apart, 750 ms of waiting in all, inside the 30 s
+    launch deadline — because a process of this user's can be unreadable for a moment
     and then gone, and standing down on the first reading turned that moment
     into a failed delegate (`src/process.ts#foreignEngineSettled`, bead
     `atc-s96.49`); a foreign engine is answered on the scan that finds it. The
