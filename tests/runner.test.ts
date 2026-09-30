@@ -473,14 +473,19 @@ test("process helpers reject stale identities and signal only the verified group
     const identity = { ...helpers.identityOf(child.child.pid!)!, pgid: child.child.pid! };
     assert.equal(identity.startTime, proc(identity.pid)?.startTime);
     assert.equal(helpers.groupAlive(identity), true);
+    // A stale or malformed identity names no group, so the ladder answers `dead` without
+    // sending anything: a signal to it could reach whatever now holds that pid or group.
+    const unsent = t.mock.method(process, "kill", () => { throw new Error("signalled an unverified identity"); });
     for (const invalid of [
       { ...identity, startTime: "0" }, { ...identity, pid: 0 }, { ...identity, pid: -1 },
       { ...identity, pgid: process.pid }, { ...identity, pgid: 0 }, { ...identity, pgid: 1 },
       { ...identity, pid: 1.5 }, { ...identity, startTime: "bad" },
     ]) {
       assert.equal(helpers.groupAlive(invalid), false);
-      assert.equal(helpers.killGroup(invalid, "SIGKILL"), false);
+      assert.equal(await helpers.terminateGroup(invalid, { termGrace: 0, killGrace: 0 }), "dead");
     }
+    assert.equal(unsent.mock.callCount(), 0);
+    unsent.mock.restore();
     assert.equal(living(identity), true);
     assert.equal(helpers.identityOf(-1), null);
     assert.equal(helpers.identityOf(2_147_483_647), null);
@@ -489,11 +494,15 @@ test("process helpers reject stale identities and signal only the verified group
     await poll(() => child.closed, Boolean);
     assert.equal(living(descendant), true);
     assert.equal(helpers.groupAlive(identity), true, "surviving verified descendants keep the group alive");
-    assert.equal(helpers.killGroup(identity, "SIGKILL"), true);
-    await poll(() => helpers.groupAlive(identity), (alive) => !alive);
+    // The descendant ignores SIGTERM, so it is the ladder's SIGKILL that ends the group.
+    assert.equal(await helpers.terminateGroup(identity, { termGrace: 0, killGrace: 2000 }), "dead");
     assert.equal(living(descendant), false);
-    assert.equal(helpers.killGroup(identity, "SIGKILL"), false);
-    await t.test("a non-leader identity is never signalled, and proc errors propagate", () => {
+    assert.equal(helpers.groupAlive(identity), false);
+    const after = t.mock.method(process, "kill", () => { throw new Error("signalled a dead group"); });
+    assert.equal(await helpers.terminateGroup(identity, { termGrace: 0, killGrace: 0 }), "dead");
+    assert.equal(after.mock.callCount(), 0);
+    after.mock.restore();
+    await t.test("a non-leader identity is never signalled, and proc errors propagate", async () => {
       // This process is not a group leader, so its own identity names no group and must
       // reach no signal at all. (An ESRCH between the scan and the signal of a real
       // group is the next test's; mocking it here would test nothing, because the
@@ -501,7 +510,7 @@ test("process helpers reject stale identities and signal only the verified group
       const current = { ...proc(process.pid)!, bootId: ledger.currentBootId };
       assert.notEqual(current.pgid, current.pid);
       const mocked = t.mock.method(process, "kill", () => { throw new Error("signalled a non-leader identity"); });
-      assert.equal(helpers.killGroup(current, "SIGTERM"), false);
+      assert.equal(await helpers.terminateGroup(current, { termGrace: 0, killGrace: 0 }), "dead");
       assert.equal(mocked.mock.callCount(), 0);
       mocked.mock.restore();
       const denied = Object.assign(new Error("denied"), { code: "EACCES" });
@@ -534,15 +543,26 @@ test("group helpers find descendants of a reaped leader without a prior scan", a
     assert.equal(proc(identity.pid), null);
     assert.equal(living(descendant), true);
     assert.equal(helpers.groupAlive(identity), true, "the kernel scan finds the member by process group and session");
-    const missing = Object.assign(new Error("gone"), { code: "ESRCH" });
-    const mocked = t.mock.method(process, "kill", () => { throw missing; });
-    assert.equal(helpers.killGroup(identity, "SIGKILL"), false, "a group gone between the scan and the signal is not an error");
-    mocked.mock.restore();
-    assert.equal(living(descendant), true);
-    assert.equal(helpers.killGroup(identity, "SIGKILL"), true);
+    // A group gone between the scan and the signal is not an error: the signal's ESRCH is
+    // the group having died first. The stand-in ends the group for real and then answers
+    // the way the kernel answers for a group that has already gone, and both ladders —
+    // by identity and by the pid a detached spawn made its group — take that as the end.
+    const kill = process.kill.bind(process);
+    const vanishing = (pid: number) => {
+      kill(pid, "SIGKILL");
+      throw Object.assign(new Error("gone"), { code: "ESRCH" });
+    };
+    const first = t.mock.method(process, "kill", vanishing);
+    assert.equal(await helpers.terminateGroupByPid(identity.pid, { termGrace: 0, killGrace: 2000 }), true);
+    assert.ok(first.mock.callCount() >= 1, "the ladder signalled the group it found");
+    first.mock.restore();
     await poll(() => living(descendant), (alive) => !alive);
     assert.equal(helpers.groupAlive(identity), false);
-    assert.equal(helpers.killGroup(identity, "SIGKILL"), false);
+    const unsent = t.mock.method(process, "kill", () => { throw new Error("signalled a dead group"); });
+    assert.equal(await helpers.terminateGroup(identity, { termGrace: 0, killGrace: 0 }), "dead");
+    assert.equal(await helpers.terminateGroupByPid(identity.pid, { termGrace: 0, killGrace: 0 }), true);
+    assert.equal(unsent.mock.callCount(), 0);
+    unsent.mock.restore();
   } finally { await h.cleanup(); }
 });
 

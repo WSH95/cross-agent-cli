@@ -278,17 +278,6 @@ export function strandedEngine(taskId: string, since: number): {
   };
 }
 
-export function killGroup(identity: EngineIdentity, signal: NodeJS.Signals): boolean {
-  if (!groupAlive(identity)) return false;
-  try {
-    process.kill(-identity.pgid, signal);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
-    throw error;
-  }
-}
-
 export interface TerminateOptions {
   /** How long SIGTERM is given before SIGKILL. */
   termGrace?: number;
@@ -353,8 +342,9 @@ function stillRunning(entry: FoundProcess): boolean {
 export async function killStrays(strays: readonly FoundProcess[]): Promise<string[]> {
   const failed = new Map<number, string>();
   const signal = (stray: FoundProcess, value: NodeJS.Signals) => {
-    // Verified immediately before the signal, as killGroup verifies a group: a pid that
-    // left between the scan and here can already belong to an unrelated process.
+    // Verified immediately before the signal, as `terminateGroup` verifies a group before
+    // each of its own: a pid that left between the scan and here can already belong to an
+    // unrelated process.
     if (!stillRunning(stray)) return;
     try {
       process.kill(stray.pid, value);
