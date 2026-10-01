@@ -1271,7 +1271,8 @@ the way.
 
 S11's runs, in the order they ran: E3, a Claude lead under a Claude Code host;
 B2, a Codex lead's tool call past Codex's 60-second default and the environment
-its server receives; E2, a Codex lead; then the five failure injections. Their raw
+its server receives; E2, a Codex lead; then the five failure injections; and, at
+the review's fix round, E2b and E2c, E2's host clause run again. Their raw
 evidence — host transcripts, records, specs, `.ndjson` logs, runner logs, ask
 files, journals, Codex rollouts, `/proc` readings and the scripts that took them —
 is in `~/.cache/agent-team/probe-logs/s11-2026-10-01/`, one directory per run, and
@@ -1282,8 +1283,8 @@ the records of every run but E2 and E3 were moved, after their reading, to
 `dev-team-engine` before the first run — `limits.maxDepth` 2, the planner on
 Codex, both reviewers on Grok (the code reviewer read-only), the implementer and
 `consult` on Claude, and the lead on Claude for E3 and the injections and on Codex
-for B2 and E2 — and is left so (`config/` in the archive holds every version and
-its diff).
+for B2, E2, E2b and E2c — and is left so, the lead on Codex as E2c left it
+(`config/` in the archive holds every version and its diff).
 
 Every run's verdict is the verifier's —
 `node tools/e2e-verify.mjs --project <sample> --since <lead id> --slug <slug>`,
@@ -1688,6 +1689,72 @@ The five injections leave the sample's `main` at `a832c1b`: E3's `81cec9d` and
 E2's `7a5c15f`, I3's merge and its revert, I4's `slug_join` merged by its lead, and
 the operator's I5 commit and its revert — clean, the root worktree alone, no
 `task/*` branch, the suite green.
+
+<!-- @anchor e2Host -->
+## E2's host clause, run again: E2b and E2c (2026-10-01)
+
+The review found E2's host outside the launcher's list of host calls — two
+read-only `git` commands through its own shell — and the source of it in the
+launcher: the paragraphs above its engine-placement section, the reconciliation
+pass among them, ordered loop steps with no placement condition. Once each of them
+named `host` placement and the engine section said who reconciles
+(`tests/skills.test.ts#launcherRoutesPlacement`, `#engineWhoReconciles`), the E1
+host ran two more short `dev-team-engine` tasks under a Codex lead (`gpt-6-luna`,
+medium), each started with `setsid --fork` from the sample. Grok had updated itself
+to 1.0.46 (2765805b9442) by then; a read-only probe through the adapter answered
+first, in the shape 1.0.44 wrote (`e2b/grok-1046-smoke.log`). Each run's records
+were moved to `probe-tasks/s11/` after its reading; its evidence is in `e2b/` and
+`e2c/`.
+
+**E2b**, "S11-E2b: add `slug_initials(text) -> str` beside `slugify` …; use the
+slug s11-e2b". The host ran 386 s over 9 turns ($0.25) and called `describe_mode`,
+`list_roles`, one `delegate` of the lead, one `wait` and `result`, and nothing
+through a shell: the calls clause holds (`e2b/audit-host.txt`). The lead,
+`33fde77f…`, ran 362 s: planner 27 s, plan reviewer 108 s (approve), implementer
+32 s (85 tests), code reviewer 92 s (ready), the merge `a832c1b` → `efa2d27`, the
+suite at the root, the worktree and the branch removed. The verdict, `node
+tools/e2e-verify.mjs --project <sample> --since 33fde77f… --slug s11-e2b`: seven
+`pass` and a `?` on condition 8, "its rollout's script holds a regular expression
+naming an engine, which cannot be told from a command". The reading
+(`e2b/verify-reading-rollout.txt`): the lead's first script, line 11, filters
+`ALL_TOOLS` through a regular expression naming `cross-agent` and calls nothing;
+25 `exec` scripts and six top-level code-mode `wait`s, and no command item; the one
+failed `McpToolCall` is `git_root` called with no arguments, refused `-32602`
+before anything ran. Neither a launch nor a specialist's `delegate`. Depth and
+lineage: PASS. `result` was the result file byte for byte (1001 bytes) — and the
+host's closing message was a list of its own, not that report: the launcher's
+closing paragraph asked every host for one. That list is now host placement's,
+and under engine placement the closing message is the report verbatim
+(`tests/skills.test.ts#engineHostHandsOff`).
+
+**E2c**, "S11-E2c: add `slug_word_count(text) -> int` beside `slug_words` …; use
+the slug s11-e2c", under that text. The host ran 250 s over 8 turns ($0.21) and
+called `describe_mode`, `list_roles`, one `delegate` of the lead, one `wait` and
+`result`, and nothing through a shell; its closing message is the lead's report
+byte for byte, with nothing before or after it (`e2c/presentation-reading.txt`).
+The lead, `84a1c550…`, ran 232 s: planner 21 s, plan reviewer 43 s (approve),
+implementer 28 s (87 tests), code reviewer 40 s (ready), the merge `efa2d27` →
+`15e9f4e`, the suite at the root, the worktree and the branch removed. The verdict,
+`node tools/e2e-verify.mjs --project <sample> --since 84a1c550… --slug s11-e2c`:
+seven `pass` and a `?`, "its rollout holds delegate: 1 occurrences but only 0
+direct calls followed". The reading (`e2c/verify-reading-rollout.txt`): line 13's
+tool-discovery filter names `delegate` in a regular expression and calls nothing;
+the four `delegate`s are direct calls in four scripts; two code-mode `wait`s; no
+command item. Depth and lineage: PASS. The rollout also shows the root guard at
+work: the lead's first `worktree add` named
+`…/cross-agent-e2c/slugkit/.worktrees/s11-e2c`, a path outside the mode's worktree
+directory, and `git_root` refused it before running git; the lead's refusal check
+followed — `git_root log --oneline --max-count=5 task/s11-e2c`, exit 128, no such
+branch — and then the add with the right path. Three read verbs it gave a `slug`
+were refused too ("journals nothing, so it takes no slug") and repeated without
+one. Both leads' reports name each specialist's task id and verdict and leave out
+the duration `roles/lead.md` asks for.
+
+In both runs the lead's server carried the lead's own markers, and the one other
+server, the Grok plan reviewer's from the sample's `.grok/config.toml`, carried the
+reviewer's (`e2b/proc-lead.json`, `e2c/proc-lead.json`). E2b and E2c leave the
+sample's `main` at `15e9f4e`, clean, the root worktree alone, no `task/*` branch,
+87 tests green.
 
 
 <!-- @anchor cliFacts -->

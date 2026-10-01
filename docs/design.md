@@ -3516,9 +3516,15 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   because the sample's ledger holds every earlier run's records and journals;
   each met seven, and each `?` on condition 8 was read and recorded as neither a
   launch nor a `delegate` of a specialist: E3's lead transcript holds Claude Code's
-  `tool_progress` heartbeats, an event the verifier does not model, and E2's lead
-  rollout a tool-discovery script naming `delegate` in a regular expression
-  (`docs/probes.md#e3`, `#e2`). Codex's and Grok's hosts are step 12.
+  `tool_progress` heartbeats, which the verifier has since learned in the shape E3
+  recorded (`tests/e2e-verify.test.ts#claudeHeartbeat`), and E2's lead rollout a
+  tool-discovery script naming `delegate` in a regular expression, which stays a
+  question by the verifier's contract (`docs/probes.md#e3`, `#e2`). E2's host ran two
+  read-only `git` commands of its own; once the launcher's host-loop paragraphs
+  named `host` placement, E2b's host kept to the launcher's calls but closed on a
+  list of its own, and E2c's, under the launcher's closing paragraph conditioned
+  too, closed on the lead's report verbatim (`docs/probes.md#e2Host`). Codex's and
+  Grok's hosts are step 12.
 - **Docs:** every changed claim in this document matches a checked `file:line`
   or `file#symbol` in this repository or a recorded probe. `npm test` runs the
   checker, which proves a citation still lands **inside** its file; it cannot
