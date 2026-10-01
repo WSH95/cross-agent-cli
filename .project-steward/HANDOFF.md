@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T11:18:09Z
+updated_at: 2026-10-01T13:01:57Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -75,14 +75,17 @@ verbs refuse under `CROSS_AGENT_TASK`, `_DEPTH` or `_LINEAGE`. Filed from it: `.
 `.68` (one source for the status list and the task-id alphabet).
 
 T14 (`atc-s96.14` with `.61`, Codex packaging, I1/I2 under a Codex host, E4 and E5)
-is **in flight** on `task/cross-agent-m3` from `6a13c0c`; its brief and report are
-`task-8-brief.md` / `task-8-report.md` under
-`.superpowers/sdd/the-development-of-this-calm-planet/`. It backs up
-`~/.codex/config.toml` to `~/.codex/config.toml.bak-t14-<date>` before installing the
-plugin through a local marketplace, and leaves the plugin installed but disabled; the
-restore (the two `codex plugin … remove` verbs, then the backup copied back) is the
-wrap's, recorded verbatim in its report. If this session ends mid-T14, check
-`codex plugin list` and the backup before any Codex session. Task 11 (docs nits
+is **implemented on `task/cross-agent-m3`** (11 commits over `6a13c0c`, head
+`79fad04`; not merged): `npm test` 731 / 730 / 1 skipped; checker 1123, 0 misses;
+E5 (a Codex host, a Claude lead) 8 pass; E4 (a Codex host, `dev-team`) 7 pass and a
+`?` a person read as two in-worktree patches (`.69` teaches the verifier that shape).
+The shipped mount runs `./.codex-plugin/serve`, which needs `CROSS_AGENT_PROJECT`.
+Code review round 1 is running. **The operator's Codex config is changed until the
+wrap:** the plugin `cross-agent@agent-team-cli` is installed from a local marketplace
+(`~/.cache/agent-team/codex-plugin-export/dac519b…`) and disabled
+(`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added three
+trust entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the
+restore commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
 brief v1 (`task-11-brief.md`) awaiting its plan review; `.64` and `.66` go to T15.
 

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T13:01:57Z — claude
+[auto-checkpoint] T14 implemented (79fad04; 731/730/1; E5 8 pass, E4 7 + a person-read ?); plugin installed and disabled, config backup kept; code review round 1 running; beads .69 .70 filed.
+
 ### 2026-10-01T11:18:09Z — claude
 [auto-checkpoint] T14 in flight from 6a13c0c (Codex config backed up before its plugin install; restore at wrap); task 11 brief v1 drafted.
 
