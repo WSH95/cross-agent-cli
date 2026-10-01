@@ -21,15 +21,20 @@ import { discoverProject, parseFlags } from "./project.ts";
  */
 export const EXIT = { ok: 0, error: 1, usage: 2, precondition: 3, running: 4, needsOperator: 5, stalled: 6 } as const;
 
-const PROTOCOL = [
-  `  ${EXIT.ok}  ok`,
-  `  ${EXIT.error}  error: something this command did not anticipate failed`,
-  `  ${EXIT.usage}  usage: the command line could not be read`,
-  `  ${EXIT.precondition}  precondition: the project, the mode, the ask or the task is not in the state the verb needs`,
-  `  ${EXIT.running}  still running: a task the verb reads has not settled (step 13's verbs)`,
-  `  ${EXIT.needsOperator}  needs the operator: a lead is waiting on an open ask (step 13's verbs)`,
-  `  ${EXIT.stalled}  stalled: a task's engine has been silent past limits.stallMinutes (step 13's verbs)`,
-].join("\n");
+/** The exit protocol as help prints it, in either form. */
+const PROTOCOL: ReadonlyArray<{ code: number; meaning: string }> = [
+  { code: EXIT.ok, meaning: "ok" },
+  { code: EXIT.error, meaning: "error: something this command did not anticipate failed" },
+  { code: EXIT.usage, meaning: "usage: the command line could not be read" },
+  { code: EXIT.precondition, meaning: "precondition: the project, the mode, the ask or the task is not in the state the verb needs" },
+  { code: EXIT.running, meaning: "still running: a task the verb reads has not settled (step 13's verbs)" },
+  { code: EXIT.needsOperator, meaning: "needs the operator: a lead is waiting on an open ask (step 13's verbs)" },
+  { code: EXIT.stalled, meaning: "stalled: a task's engine has been silent past limits.stallMinutes (step 13's verbs)" },
+];
+
+/** Which project a verb reads when no `--project` names one. */
+const PROJECT_RULE = "Without --project, init writes in the current directory, and every other verb reads the project "
+  + "the server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json, then the git toplevel.";
 
 export interface CliOutput {
   out: (text: string) => void;
@@ -232,14 +237,27 @@ function usageOf(verb?: Verb): string {
   return `usage: ${first}\n${rest.map((line) => `  ${line}\n`).join("")}`;
 }
 
-function help(): string {
-  return `usage: cross-agent <verb> [arguments] [--project <root>] [--json] [--help]\n\n`
+/** Help, as text or as the one JSON document `--json` asks for: the same verbs, rule and protocol. */
+function help(json: boolean): string {
+  const usage = usageLines()[0];
+  if (json) {
+    const document = {
+      ok: true, usage, verbs: Object.values(verbs).map((verb) => ({ usage: verb.usage, summary: verb.summary })),
+      json: "--json prints one JSON document on stdout, whatever the exit", project: PROJECT_RULE, exit: PROTOCOL,
+    };
+    return `${JSON.stringify(document, null, 2)}\n`;
+  }
+  // The rule wrapped as the rest of the help is, at the width it always had.
+  const words = `--json prints one JSON document on stdout, whatever the exit; --help prints this. ${PROJECT_RULE}`.split(" ");
+  const lines: string[] = [];
+  for (const word of words) {
+    if (lines.length > 0 && `${lines[lines.length - 1]} ${word}`.length <= 96) lines[lines.length - 1] += ` ${word}`;
+    else lines.push(word);
+  }
+  return `usage: ${usage}\n\n`
     + Object.values(verbs).map((verb) => `  ${verb.usage}\n      ${verb.summary}\n`).join("")
-    + "\n--json prints one JSON document on stdout, whatever the exit; --help prints this. Without\n"
-    + "--project, init writes in the current directory, and every other verb reads the project the\n"
-    + "server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json, then the\n"
-    + "git toplevel.\n\n"
-    + `exit codes:\n${PROTOCOL}\n`;
+    + `\n${lines.join("\n")}\n\n`
+    + `exit codes:\n${PROTOCOL.map((entry) => `  ${entry.code}  ${entry.meaning}`).join("\n")}\n`;
 }
 
 /** Whether the command line asks for JSON: `--json` anywhere before a `--` that ends the flags. */
@@ -322,7 +340,7 @@ export async function runCli(
     return EXIT.usage;
   };
   if (name === "help" || (name === undefined && rest.includes("--help"))) {
-    write.out(help());
+    write.out(help(json));
     return EXIT.ok;
   }
   if (name === undefined || !Object.hasOwn(verbs, name)) {
@@ -332,7 +350,7 @@ export async function runCli(
   const parsed = parse(name, verb, rest);
   if ("reason" in parsed) return usageError(parsed.reason, verb);
   if (parsed.help) {
-    write.out(help());
+    write.out(help(json));
     return EXIT.ok;
   }
   let answered: Answer;

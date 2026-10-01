@@ -60,8 +60,9 @@ task id.
 
 The brief is the whole of what the specialist knows about *this* task: what to
 do, where, what counts as done, and the shape of the closing report you will
-read back. It is not where the role's standing duties go — `delegate` launches a
-specialist with the mode's own prompt for its role, the same text `describe_mode`
+read back. It is not where the role's standing duties go — `delegate` launches each
+task with the mode's own prompt for its role, a specialist's under `host` placement
+and the lead's under `engine`, the same text `describe_mode`
 serves you under `roles[].prompt`, or with the `prompt` bound in
 `.cross-agent/config.json` where a project sets one. Read that text before you
 write the brief: what the role is already told is what your brief need not
@@ -133,8 +134,9 @@ is `limits.stallMinutes`.
 
 ## A needs-work round
 
-A second round on the same task is `delegate` with `resume: <task id>` and an
-amended brief — the findings verbatim and what to do about them. The call still
+A second round on the same task — a specialist's under `host` placement, a failed
+lead's under `engine` — is `delegate` with `resume: <task id>` and an amended brief:
+the findings verbatim and what to do about them. The call still
 carries every key a first call does: the same `role` and `cwd` as the original,
 and `branch` for a role that works in a worktree. They are not optional and they
 are not defaults — the schema requires `role`, `brief` and `cwd`, and the resume
@@ -166,13 +168,16 @@ Under `host` placement this pass is yours: run it before the first task of a
 session, after any interruption, and after **any** `git_mutate` or `git_root` call
 that came back `ok: false` — whether or not it carried an exit code. Under
 `engine` placement it is the lead's own step 1 while a lead is live, and yours only
-when no lead is live and none will be continued (`## Engine placement`). A refusal
+for the leftovers of a lead that failed or was killed and will not be resumed
+(`## Engine placement`) — never at the start of a session, when you delegate the lead
+and leave the root to it. A refusal
 is not a claim that nothing happened: a `worktree add` that failed while checking
 out has already created the directory, a rebase stopped on a conflict has left the
 worktree mid-rebase, and a command killed at the output cap stopped wherever it was.
 
-Whenever the pass is yours — under `host` placement, or under `engine` with no lead
-live — read, in this order: `list_tasks`, which reconciles the ledger and names any
+Whenever the pass is yours — under `host` placement, or under `engine` for the
+leftovers of a lead that failed or was killed and will not be resumed — read, in
+this order: `list_tasks`, which reconciles the ledger and names any
 record file no reader could judge; the task's journal at
 `.cross-agent/journal/<slug>.json`, whose steps are the git steps that actually
 completed; `git_root {args: ["worktree", "list", "--porcelain"]}`; `git_root
@@ -247,12 +252,12 @@ of the server — each is one `delegate` that names its own engine, because a se
 engine reading the work is the point of asking. Under `engine` placement they are
 not yours: the lead's loop orders its own reviews, and you delegate no specialist.
 
-- **review** — `delegate {role: "consult", cwd: <project root>, engine: <the
+- **review** — under `host` placement, `delegate {role: "consult", cwd: <project root>, engine: <the
   engine the user named>, brief: <the diff and what to look for>}`. Attach the
   diff under review, `git diff <base>...HEAD` for committed work or the working
   tree where nothing is committed, and ask for findings by severity, each with
   `file:line` and what to do about it.
-- **critique** — `delegate {role: "consult", cwd: <project root>, engine: <the
+- **critique** — under `host` placement, `delegate {role: "consult", cwd: <project root>, engine: <the
   engine the user named>, brief: <the file and the question>}`. Name the plan or
   design file and ask for the adversarial reading: what it assumes without saying
   so, what it leaves undefined, where it would fail first, and what a reviewer
@@ -298,9 +303,9 @@ comes after it.
   worktree of this repository and with every other session working in it.
 - Root git runs through `git_root` and `run_command`, and a worktree's git
   metadata through `git_mutate` — yours under `host` placement, the lead's under
-  `engine` placement but for the pass `## Engine placement` hands you once no lead
-  is live — and never through a shell `git`: the journal is one document, and a
-  step nobody wrote is a gap in it.
+  `engine` placement but for the pass `## Engine placement` hands you over a dead
+  lead's leftovers — and never through a shell `git`: the journal is one document,
+  and a step nobody wrote is a gap in it.
 - A mid-session change to `.cross-agent/config.json`'s `mode` needs a server
   restart. `list_roles` names that drift; the tools this server registered are
   the ones its own mode declared.
@@ -330,7 +335,9 @@ that failed or was killed is continued, not started again: `delegate {role:
 <lead.role>, cwd: <project root>, resume: <lead id>, brief}`, and the server
 appends to that brief every question the lead's chain asked so far with its status
 and answer — which is how an answer you gave a lead that died waiting reaches the
-one that continues it.
+one that continues it. A resume refused because an ask file cannot be read names that
+file: an unreadable ask file is the operator's to repair or remove by hand before the
+lead is resumed, and a cancel names the same files under `asksNotCancelled`.
 
 When the lead settles, `result {task_id: <lead id>}` is its closing report, the
 whole of it — `wait`'s tail of it is not the report. Show it to the user whole, as
@@ -350,13 +357,14 @@ look: the root check is the lead's step 1, and what it found is in its report.
 placement needs. The steps are the lead's, and a step the lead did not take is one
 its journal and its report do not have.
 
-Who reconciles follows from who is live. While a lead is live — any status short
-of `done`, `failed` or `cancelled` — the lead does, as its step 1, and you leave the
-root to it. A lead that failed or was killed is reported to the user, and continued by the
-resume above when the user wants the run finished: the lead that continues it
-reconciles first, its step 1 reading the journal its chain wrote. When no lead is
-live and none will be continued — the user stops the run there, or nothing of it
-is left but a leftover, as when a lead dies between `worktree remove` and `branch
--d` — the pass of `## Between tasks: reconcile` is yours: run it as written there,
-through `list_tasks`, `git_root`, `git_mutate` and `verify_worktree`, on the
-leftovers it names and on nothing else, and never through a shell `git`.
+Who reconciles follows from who is live. At the start of a session you delegate the
+lead and touch nothing at the root, and while a lead is live — any status short of
+`done`, `failed` or `cancelled` — the root check is its step 1, never yours. A lead
+that failed or was killed is reported to the user, and continued by the resume above
+when the user wants the run finished: the lead that continues it reconciles first,
+its step 1 reading the journal its chain wrote. Only the leftovers of a lead that
+failed or was killed and will not be resumed — the user stops the run there, or
+nothing of it is left but a leftover, as when a lead dies between `worktree remove`
+and `branch -d` — make the pass of `## Between tasks: reconcile` yours: run it as
+written there, through `list_tasks`, `git_root`, `git_mutate` and `verify_worktree`,
+on those leftovers and on nothing else, and never through a shell `git`.

@@ -241,6 +241,16 @@ test("--json prints one JSON document on stdout whatever the exit, a usage error
   assert.match((await usage(["--json"], ["init", "answer", "report"])).error, /no command/);
   assert.match((await usage(["report", "--json", "--bogus", "x"], ["report"])).error, /--bogus/);
   assert.match((await usage(["answer", "only-one", "--json"], ["answer"])).error, /answer takes <ask-id> <text>/);
+  // Help is one document too: the verbs, the project rule and the exit protocol.
+  for (const args of [["--json", "--help"], ["help", "--json"], ["report", "--help", "--json"], ["--help", "--json"]]) {
+    const ran = await run(args, root);
+    assert.equal(ran.code, 0, `${args.join(" ")}: ${ran.stderr}`);
+    const help = JSON.parse(ran.stdout) as { ok: boolean; usage: string; verbs: Array<{ usage: string; summary: string }>; project: string; exit: Array<{ code: number; meaning: string }> };
+    assert.equal(help.ok, true);
+    assert.deepEqual(help.verbs.map((verb) => verb.usage.split(" ")[1]), ["init", "answer", "report"], args.join(" "));
+    assert.deepEqual(help.exit.map((entry) => entry.code), [0, 1, 2, 3, 4, 5, 6]);
+    assert.match(help.project, /init writes in the current directory/);
+  }
   // `--json` after `--` is an argument, not the flag: that command line reads as text.
   const text = await run(["report", "--", "--json"], root);
   assert.equal(text.code, 2);

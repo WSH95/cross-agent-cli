@@ -414,10 +414,16 @@ cancels or resumes it, and reads its closing report through `result`, and never
 runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
 placement"; `tests/skills.test.ts#launcherRoutesPlacement`, which fails on any
 paragraph outside that section ordering a loop step without naming `host`).
-Reconciliation follows who is live: the lead's step 1 while a lead is, the
-continuing lead's when the user resumes a failed one, and the host's own pass
-through `git_root` only once no lead is live and none will be continued, as the
-operator's was after I4 (`tests/skills.test.ts#engineWhoReconciles`). Under `engine`
+Reconciliation follows who is live: the lead's step 1 while a lead is, and at the
+start of a session too, when the host delegates the lead and leaves the root to it;
+the continuing lead's when the user resumes a failed one; and the host's own pass
+through `git_root` only over the leftovers of a lead that failed or was killed and
+will not be resumed, as the operator's was after I4
+(`tests/skills.test.ts#engineWhoReconciles`). An ask file a resume cannot read is
+the operator's to repair or remove by hand before the lead is resumed. The test
+that holds the paragraphs outside that section to naming `host` judges each list
+item on its own and catches a bare `delegate` as well as a spelled one
+(`tests/skills.test.ts#routingGuardBites`). Under `engine`
 placement the loop reaches the lead through the engine's own instruction file —
 `--append-system-prompt-file` on Claude, `-c model_instructions_file=` on Codex
 (P9, item 4 above) — composed once by `delegate`: the mode's loop verbatim, a
@@ -2478,7 +2484,10 @@ engine without editing a portable mode.
 ### 7. The skills
 
 Both skills are written. `skills/cross-agent/SKILL.md` is the launcher, with
-the paragraphs every mode shares; `modes/dev-team/SKILL.md` is the ten-step loop
+the paragraphs every mode shares, those every host-placed mode shares — the merge
+policy, the `review` and `critique` verbs, the reconciliation pass, each naming
+`host` placement — and an engine-placement section for the rest;
+`modes/dev-team/SKILL.md` is the ten-step loop
 below, `modes/solo/SKILL.md` the zero-ceremony one, and
 `modes/dev-team-engine/SKILL.md` the same ten steps for a lead in an engine: every
 root step through `git_root` and `run_command`, every question through `ask`, no
@@ -2847,8 +2856,8 @@ and 4 still running, 5 needs the operator, 6 stalled — defined and documented
 now, and exited with by the verbs step 13 adds. Every verb takes `--project`,
 `--json` — one JSON document on stdout whatever the exit: a 2 is `{ok: false,
 error, usage}`, a 1 `{ok: false, error}`, and a 3 its reason
-(`tests/cli.test.ts#jsonOnEveryExit`) — and `--help`, which prints the verbs and
-the protocol. The `--flag <value>` pairs go through the parser the server's own
+(`tests/cli.test.ts#jsonOnEveryExit`) — and `--help`, which prints the verbs, the
+project rule and the protocol, as text or, under `--json`, as that one document. The `--flag <value>` pairs go through the parser the server's own
 argv does, so adding one does not break the other (`src/project.ts#parseFlags`,
 `#discoverProject`). Three verbs ship. `cross-agent init [--mode <name>]
 [--project <root>]` writes the bind-time config for a mode

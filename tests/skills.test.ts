@@ -81,6 +81,33 @@ const hostManifestKeys = new Set(["tool_timeout_sec"]);
 const loopSteps = new Set(["git_root", "git_mutate", "run_command", "verify_worktree"]);
 
 /**
+ * The units of `text` that order a loop step — a root or worktree git call, a test run, a
+ * `delegate` with or without its arguments — without naming `host` placement. A unit is a
+ * blank-line block, cut further at every list item, so one bullet that names `host` cannot
+ * stand in for its siblings: an engine-placed host reads a bullet on its own.
+ */
+function unconditionedSteps(text: string): string[] {
+  const units: string[] = [];
+  for (const block of text.split(/\n\s*\n/)) {
+    let unit: string[] = [];
+    for (const line of block.split("\n")) {
+      if (/^\s*(?:[-*]|\d+\.)\s/.test(line) && unit.length > 0) {
+        units.push(unit.join("\n"));
+        unit = [];
+      }
+      unit.push(line);
+    }
+    if (unit.length > 0) units.push(unit.join("\n"));
+  }
+  return units.flatMap((unit) => {
+    const steps = namesCalled(unit).filter((name) => loopSteps.has(name));
+    const delegates = /`delegate(?:`|\s*\{)/.test(unit);
+    if ((steps.length === 0 && !delegates) || /`host`/.test(unit)) return [];
+    return [`${[...steps, ...(delegates ? ["delegate"] : [])].join(", ")}: ${flat(unit).slice(0, 160)}`];
+  });
+}
+
+/**
  * Every call-shaped name in `text` names a tool the mode registers for `row`, a key one of
  * those tools takes, or a host's own manifest key.
  */
@@ -180,20 +207,56 @@ test("the launcher reads a settled task's final message through result, never fr
   assert.match(flat(engineSection().section), /`result \{task_id: <lead id>\}`[^.]*closing report/);
 });
 
+// @anchor routingGuardBites
+test("the placement guard catches an unconditioned bullet beside a conditioned one, and a bare delegate", () => {
+  // The round-2 review's three mutations, each of which the paragraph-level guard passed:
+  // a bullet in a list whose other bullet names `host`, and a `delegate` with no brace.
+  const { rest } = engineSection();
+  const pushBullet = "- Never `git push`, and never a bare `git stash`";
+  const eitherBullet = "- Either one is a task of the `host` loop";
+  assert.ok(rest.includes(pushBullet) && rest.includes(eitherBullet), "the anchors the mutations need are still there");
+  const mutations: Array<[string, string]> = [
+    ["an unconditioned bullet among the guardrails",
+      rest.replace(pushBullet, "- Read the root with `git_root {args: [\"status\"]}` before you report.\n" + pushBullet)],
+    ["a specialist's delegation among the review bullets",
+      rest.replace(eitherBullet, "- **audit** — `delegate {role: \"consult\", cwd: <project root>, engine: <the engine the user named>, brief: <the code>}`.\n" + eitherBullet)],
+    ["a delegate written without its arguments",
+      `${rest}\n\nOnce the plan is approved, \`delegate\` the implementer with it.\n`],
+  ];
+  // Each mutation adds exactly one unit to whatever the text holds now, so the guard is
+  // shown to bite whether or not the launcher itself is already clean.
+  const base = unconditionedSteps(rest).length;
+  for (const [what, mutated] of mutations) {
+    assert.equal(unconditionedSteps(mutated).length, base + 1, `the guard misses ${what}`);
+  }
+  assert.deepEqual(unconditionedSteps(rest), [], "and the launcher itself names host placement wherever it orders a loop step");
+});
+
 // @anchor engineWhoReconciles
-test("under engine placement the launcher says who reconciles: the live lead, a resumed one, or the host once none is", () => {
+test("under engine placement the launcher says who reconciles: the live lead, a resumed one, or the host for a dead lead's leftovers alone", () => {
   // I4 is the case the section has to allow: a lead killed between `worktree remove` and
   // `branch -d` leaves a branch nobody live will delete, and the operator's pass deleted it
   // through `git_root`, journaling `branch-deleted`.
   const section = flat(engineSection().section);
   assert.match(section, /[Ww]hile a lead is live[^.]*step 1/, "a live lead reconciles, as its step 1");
   assert.match(section, /continues it reconciles first/, "a resumed lead reconciles before anything else");
-  assert.match(section, /no lead is live and none will be continued[^.]*`## Between tasks: reconcile`[^.]*yours/,
+  assert.match(section, /[Oo]nly the leftovers of a lead that failed or was killed and will not be resumed[^.]*`## Between tasks: reconcile` yours/,
     "and only then is the pass the host's");
   assert.match(section, /never through a shell `git`/);
   // The pass itself says the same from its side.
   const pass = flat(sectionOf(launcher(), "Between tasks: reconcile"));
   assert.match(pass, /[Uu]nder `engine` placement[^.]*lead's (own )?step 1 while a lead is live/);
+  // No lead is live before the host's first `delegate` either, and that is not the
+  // hand-off: the pass is the host's for a dead lead's leftovers alone, and at the start of
+  // a session the host delegates the lead and leaves the root to its step 1.
+  assert.match(section, /leftovers of a lead that failed or was killed and (that )?will not be resumed/);
+  assert.match(section, /[Aa]t the start of a session[^.]*delegate the lead[^.]*nothing at the root/);
+  assert.match(pass, /`engine`[^.]*leftovers of a lead that failed or was killed/);
+  for (const sentence of flat(launcher()).split(/(?<=[.:;])\s+/)) {
+    if (/no lead (is )?live/.test(sentence)) assert.match(sentence, /leftover/, `a hand-off on "no lead live" alone: ${sentence}`);
+  }
+  // A damaged ask file that refuses a resume is nobody's to delete but the operator's.
+  assert.match(section, /unreadable ask file[^.]*operator's to repair or remove by hand[^.]*before the lead is resumed/);
 });
 
 // @anchor engineHostHandsOff
@@ -256,7 +319,7 @@ test("the launcher documents review and critique as verbs it composes, each nami
   // Each verb is one `delegate` of the role every mode carries, spelled with the keys
   // the schema requires: a verb the launcher cannot spell is a verb nobody can call.
   for (const verb of ["review", "critique"]) {
-    assert.match(text, new RegExp(`\\*\\*${verb}\\*\\* — \`delegate \\{role: "consult", cwd: <project root>, engine: `));
+    assert.match(text, new RegExp(`\\*\\*${verb}\\*\\* — under \`host\` placement, \`delegate \\{role: "consult", cwd: <project root>, engine: `));
   }
   assert.match(text, /Attach the diff under review/);
   assert.match(text, /git diff <base>\.\.\.HEAD/);
@@ -308,17 +371,11 @@ test("the launcher routes on placement and names the mailbox tools and the repor
   // paragraph says every mode runs its loop in the host session.
   assert.doesNotMatch(rest, /`list_asks|`answer \{|`ask \{/);
   assert.doesNotMatch(flat(rest), /every mode runs its loop in your own session/);
-  // Every paragraph outside the section that orders a loop step — a root or worktree git
-  // call, a test run, a specialist's delegation — says it is host placement's. E2's host
-  // read "Between tasks" and ran its reads through its own shell, because nothing there
-  // said the pass was not an engine-placed host's.
-  for (const paragraph of rest.split(/\n\s*\n/)) {
-    const steps = namesCalled(paragraph).filter((name) => loopSteps.has(name));
-    const delegates = /`delegate \{/.test(paragraph);
-    if (steps.length === 0 && !delegates) continue;
-    assert.match(paragraph, /`host`/,
-      `a paragraph orders ${[...steps, ...(delegates ? ["delegate {…}"] : [])].join(", ")} without naming host placement: ${flat(paragraph).slice(0, 160)}`);
-  }
+  // Every paragraph and every list item outside the section that orders a loop step — a
+  // root or worktree git call, a test run, a delegation — says it is host placement's.
+  // E2's host read "Between tasks" and ran its reads through its own shell, because
+  // nothing there said the pass was not an engine-placed host's.
+  assert.deepEqual(unconditionedSteps(rest), [], "units that order a loop step without naming host placement");
   // The host starts the lead and watches it; the loop's own steps are the lead's.
   const flatSection = flat(section);
   assert.match(flatSection, /`delegate \{role: <lead\.role>, cwd: <project root>, brief\}`/);
