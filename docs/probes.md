@@ -1471,9 +1471,13 @@ Every `delegate` is the lead's own, on the lead row: neither a launch nor a
 
 **Depth and lineage.** The lead at depth 1 alone in its lineage; the four
 specialists at depth 2, each the lead's child with the lead first in its spec's
-lineage: PASS. B2's reading is confirmed on this run: the lead's server carried
-all four markers, equal to its engine's, and a second server pid that appeared
-mid-run carried them too (`e2/proc-lead.json`).
+lineage: PASS. B2's reading is confirmed on this run: the lead's server, the Codex
+process's own child, carried all four markers, equal to its engine's
+(`e2/proc-lead.json`). The one other server the reading found, from 04:19:20 UTC,
+was not the lead's: its parent was the Grok plan reviewer, which started it from
+the sample's project-scope `.grok/config.toml` (T13's I1 mount), and it carried
+the reviewer's own markers — depth 2, the reviewer's task id, the lead first in its
+lineage.
 
 <!-- @anchor e2Approval -->
 **Approval escalation.** All 27 `mcp_tool_call` items completed, none with an
