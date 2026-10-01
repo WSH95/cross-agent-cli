@@ -299,8 +299,9 @@ test("a host offered none of this server's tools tells the user the server did n
   // Grok's half: the attach is a trusted project's own file naming this checkout.
   assert.match(before, /Grok, only in a trusted project whose `\.grok\/config\.toml` names this checkout/);
   // And Grok lists an MCP server's tools behind its own search: a Grok host that sees none in
-  // its tool list has not yet looked (T15: nine of ten Grok hosts' first lines listed none).
-  assert.match(before, /Grok host[^.]*`search_tool`[^.]*before/);
+  // its tool list has not yet looked (T15: nine of ten Grok hosts' first lines listed none). The
+  // search comes before the instruction to stop, which a host reading in order would follow first.
+  assert.match(before, /Grok host[^.]*`search_tool`[^.]*before[\s\S]*tell the user[^.]*stop/);
 });
 
 // @anchor engineHostShowsRoster
