@@ -36,7 +36,9 @@ or found one already there, and 3 when the mode or the directory is not there.
 
 If no `describe_mode` is offered to you, under any prefix, this server did not start
 for your session, and nothing below can run without it: tell the user the server did
-not start, and stop rather than do the team's work yourself. Under Codex the plugin
+not start, and stop rather than do the team's work yourself. A Grok host looks first:
+Grok lists an MCP server's tools behind its own `search_tool`, so search it for
+`cross-agent` before you conclude they are missing. Under Codex the plugin
 starts it only when `CROSS_AGENT_PROJECT` names the project before `codex` starts,
 and says nothing when it does not; under Grok, only in a trusted project whose
 `.grok/config.toml` names this checkout. The README's install section for your host

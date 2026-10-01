@@ -76,6 +76,11 @@ function namesCalled(text: string): string[] {
 // per-server MCP tool timeout is one of the two numbers the launcher's budget table is made of.
 const hostManifestKeys = new Set(["tool_timeout_sec"]);
 
+// A host's own tools, which this server never registers: Grok reaches an MCP server's tools
+// through `search_tool` and `use_tool`, and the launcher tells a Grok host to search before it
+// concludes this server's are missing.
+const hostOwnTools = new Set(["search_tool", "use_tool"]);
+
 // The calls a loop's own steps are made of, besides delegating its specialists: under
 // engine placement they are the lead's while a lead is live.
 const loopSteps = new Set(["git_root", "git_mutate", "run_command", "verify_worktree"]);
@@ -115,7 +120,7 @@ function assertToolsExist(text: string, mode: string, row: "operator" | "lead", 
   const tools = registry(mode);
   const keys = parameters(tools);
   for (const name of namesCalled(text)) {
-    if (keys.has(name) || hostManifestKeys.has(name)) continue;
+    if (keys.has(name) || hostManifestKeys.has(name) || hostOwnTools.has(name)) continue;
     const tool = tools.get(name);
     assert.ok(tool !== undefined, `${where} calls ${name}, which ${mode} registers no tool for`);
     assert.ok(tool.rows.includes(row), `${where} calls ${name}, which is not offered to the ${row} row`);
@@ -283,7 +288,7 @@ test("under engine placement the host runs no command on the project and shows t
 });
 
 // @anchor hostWithoutTools
-test("a host offered none of this server's tools tells the user the server did not start, and why under Codex", () => {
+test("a host offered none of this server's tools tells the user the server did not start, and why under Codex and Grok", () => {
   // T14's probe (c): a Codex session started without `CROSS_AGENT_PROJECT` was offered the
   // plugin's skill while the plugin's server never started, and nothing said so (atc-s96.71).
   const before = flat(sectionOf(launcher(), "Before anything"));
@@ -291,6 +296,11 @@ test("a host offered none of this server's tools tells the user the server did n
   assert.match(before, /server did not start/);
   assert.match(before, /tell the user[^.]*stop/);
   assert.match(before, /Codex[^.]*`CROSS_AGENT_PROJECT`[^.]*before `codex` starts/);
+  // Grok's half: the attach is a trusted project's own file naming this checkout.
+  assert.match(before, /Grok, only in a trusted project whose `\.grok\/config\.toml` names this checkout/);
+  // And Grok lists an MCP server's tools behind its own search: a Grok host that sees none in
+  // its tool list has not yet looked (T15: nine of ten Grok hosts' first lines listed none).
+  assert.match(before, /Grok host[^.]*`search_tool`[^.]*before/);
 });
 
 // @anchor engineHostShowsRoster
@@ -329,6 +339,9 @@ test("under engine placement the host's one read outside its two commands is thi
   const section = flat(engineSection().section);
   assert.match(section, /`cross-agent report` and `cross-agent answer` are the only commands of yours this placement needs/);
   assert.match(section, /one exception[^.]*this skill's own `SKILL\.md`/);
+  // The exception is that one file: a sentence that also let the host read the project would
+  // undo the hands-off rule it qualifies.
+  assert.match(section, /this skill's own `SKILL\.md` is yours too, and it is the one file you read\./);
 });
 
 
@@ -341,7 +354,7 @@ test("the launcher's budget table gives every host a wait that fits inside its t
   assert.match(text, /Codex[^|]*\|[^|]*`\.codex-plugin\/plugin\.json`[^|]*lead mount[^|]*`docs\/probes\.md#codexHostTimeout`[^|]*\|/,
     "Codex's row names the plugin manifest and the lead mount, and cites the measured wait");
   // Grok's per-server key, its default, and the run that held a 600 s `wait` inside it (T15's B3).
-  assert.match(text, /Grok[^|]*\|[^|]*`tool_timeout_sec`[^|]*6000[^|]*`docs\/probes\.md#grokToolTimeout`[^|]*\|[^|]*600/,
+  assert.match(text, /Grok[^|]*\|[^|]*`tool_timeout_sec`[^|]*6000[^|]*`docs\/probes\.md#grokToolTimeout`[^|]*\|\s*600\s*\|/,
     "Grok's row names the per-server key and its default, and cites the measured wait");
   assert.match(text, /Time limits/, "the table is the design's own budget, cited");
 });
