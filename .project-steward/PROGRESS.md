@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T10:01:49Z — claude
+[auto-checkpoint] T16 fix round 1 landed (223873e; 722/721/1; checker 1080, 0/0); round-2 re-review running.
+
 ### 2026-10-01T09:17:49Z — claude
 [auto-checkpoint] T16 implemented on the task branch (d28533d; 719/718/1; checker 0/0); code review round 1 running; beads .67 and .68 filed.
 
