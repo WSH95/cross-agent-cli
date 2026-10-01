@@ -7,8 +7,9 @@
   "skills": "./skills/",
   "mcpServers": {
     "cross-agent": {
-      "command": "node",
-      "args": ["${PLUGIN_ROOT}/src/server.ts"],
+      "command": "./.codex-plugin/serve",
+      "cwd": ".",
+      "env_vars": ["CROSS_AGENT_PROJECT"],
       "default_tools_approval_mode": "approve",
       "startup_timeout_sec": 30,
       "tool_timeout_sec": 3600

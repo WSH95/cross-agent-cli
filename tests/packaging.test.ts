@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,7 +68,7 @@ test("the skills directory the plugin ships by convention holds the launcher ski
 // root and installs a plugin from a marketplace: a directory holding
 // `.agents/plugins/marketplace.json`, which here is this repository, offering itself as its
 // one plugin. Codex runs the plugin from a copy of it in its own cache, so the manifest names
-// the server through `${PLUGIN_ROOT}` and nothing that belongs to one checkout.
+// nothing that belongs to one checkout, and the server starts in that copy (probe B1).
 
 /** The servers a Codex manifest declares, inline. */
 function codexServers(manifest: Record<string, unknown>): Record<string, Record<string, unknown>> {
@@ -94,17 +96,28 @@ test("the Codex manifest names this plugin at package.json's version and ships t
 });
 
 // @anchor codexManifestMounts
-test("the Codex manifest starts this server from the plugin root in the session's own directory, with a call budget and no approval prompt", () => {
+test("the Codex manifest starts this server through a launcher in the plugin's own directory, for the project the operator names, with a call budget and no approval prompt", () => {
   const servers = codexServers(json(".codex-plugin/plugin.json"));
   assert.deepEqual(Object.keys(servers), ["cross-agent"]);
   const server = servers["cross-agent"];
-  assert.equal(server.command, "node");
-  assert.deepEqual(server.args, ["${PLUGIN_ROOT}/src/server.ts"]);
-  const entry = path.join(repoRoot, (server.args as string[])[0].replace("${PLUGIN_ROOT}/", ""));
-  assert.ok(fs.statSync(entry).isFile(), `${entry} is not a file`);
-  // No `cwd`: the server starts where the session runs, and finds the project from there
-  // (`src/project.ts#discoverProject`). A `cwd` inside the plugin would find the cache copy.
-  assert.equal(Object.hasOwn(server, "cwd"), false);
+  // codex-cli 0.159.3 substitutes `${PLUGIN_ROOT}` nowhere — `node ${PLUGIN_ROOT}/src/server.ts`
+  // was spawned as written and died at once — runs a relative `command` from the server's
+  // working directory, which is the session's when no `cwd` is given (`execve` ENOENT), and
+  // resolves a `cwd` against the plugin root (probe B1). So the server starts in the plugin's
+  // own directory, `cwd: "."`, through a launcher there.
+  assert.equal(server.command, "./.codex-plugin/serve");
+  assert.equal(Object.hasOwn(server, "args"), false);
+  assert.equal(server.cwd, ".");
+  const launcher = path.join(repoRoot, ".codex-plugin", "serve");
+  assert.ok(fs.statSync(launcher).isFile(), `${launcher} is not a file`);
+  assert.notEqual(fs.statSync(launcher).mode & 0o111, 0, `${launcher} is not executable`);
+  // From the plugin's directory no project can be discovered, so the operator names it in
+  // `CROSS_AGENT_PROJECT`, which Codex passes on only by name. A task's markers are never
+  // among the names: a host's server resolves the operator row from a clean environment.
+  assert.deepEqual(server.env_vars, ["CROSS_AGENT_PROJECT"]);
+  for (const marker of ["CROSS_AGENT_DEPTH", "CROSS_AGENT_TASK", "CROSS_AGENT_LINEAGE"]) {
+    assert.equal((server.env_vars as string[]).includes(marker), false, marker);
+  }
   // A `wait` is a 600 s call, and Codex gives an MCP call 60 s unless the server says otherwise.
   assert.equal(server.tool_timeout_sec, 3600);
   // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
@@ -112,9 +125,39 @@ test("the Codex manifest starts this server from the plugin root in the session'
   assert.equal(server.startup_timeout_sec, 30);
   // Whether the server runs is the operator's configuration's to say, never the product's.
   assert.equal(Object.hasOwn(server, "enabled"), false);
-  // A value belongs to one machine, and Codex gives a stdio server the seven names it needs.
+  // A value belongs to one machine; Codex gives a stdio server seven names of its own.
   assert.equal(Object.hasOwn(server, "env"), false);
-  assert.equal(Object.hasOwn(server, "env_vars"), false);
+});
+
+// @anchor codexLauncherRunsServer
+test("the Codex launcher runs the server beside it for the project the operator names, and without one does not start", () => {
+  // A `node` that prints what it was asked to run, first on PATH: the launcher's job is the
+  // path it hands node — this checkout's `src/server.ts`, whether started relative to the
+  // plugin root, as Codex starts it, or by an absolute path — and its refusal to start a
+  // server that could only find the project from the plugin's own directory.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-"));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-project-"));
+  try {
+    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@"\n', { mode: 0o755 });
+    const base = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const server = path.join(repoRoot, "src", "server.ts");
+    for (const [command, cwd] of [["./.codex-plugin/serve", repoRoot], [path.join(repoRoot, ".codex-plugin", "serve"), project]]) {
+      const printed = execFileSync(command, ["--flag"], { cwd, env: { ...base, CROSS_AGENT_PROJECT: project }, encoding: "utf8" })
+        .trimEnd().split("\n");
+      assert.deepEqual(printed, [fs.realpathSync(cwd), fs.realpathSync(server), "--flag"], `${command} from ${cwd}`);
+    }
+    for (const value of [undefined, ""]) {
+      const env: NodeJS.ProcessEnv = { ...base, CROSS_AGENT_PROJECT: value };
+      if (value === undefined) delete env.CROSS_AGENT_PROJECT;
+      const refused = spawnSync("./.codex-plugin/serve", [], { cwd: repoRoot, env, encoding: "utf8" });
+      assert.notEqual(refused.status, 0, `CROSS_AGENT_PROJECT=${value}`);
+      assert.equal(refused.stdout, "", "node was never run");
+      assert.match(refused.stderr, /CROSS_AGENT_PROJECT/);
+    }
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
 });
 
 // @anchor codexMarketplace

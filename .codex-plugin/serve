@@ -1,0 +1,13 @@
+#!/bin/sh
+# Codex starts this plugin's MCP server through this file, in the plugin's own directory
+# (`.codex-plugin/plugin.json`, `cwd: "."`): codex-cli 0.159.3 substitutes `${PLUGIN_ROOT}`
+# nowhere and runs a relative command from the server's working directory. From there no
+# project can be discovered: the directory is Codex's cache copy of this repository, and a
+# copy that carries a `.git` would lead discovery back to the checkout it was copied from.
+# So the server serves the project the operator names in CROSS_AGENT_PROJECT, and without
+# one it does not start.
+if [ -z "${CROSS_AGENT_PROJECT:-}" ]; then
+  echo "cross-agent: not started: under Codex this server runs in its plugin's directory and serves only the project CROSS_AGENT_PROJECT names; export CROSS_AGENT_PROJECT=<project root> before starting codex" >&2
+  exit 1
+fi
+exec node "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/src/server.ts" "$@"
