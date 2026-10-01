@@ -289,8 +289,9 @@ const launch = launcherFor(config);
 // the transcript shows, and one whose rollout holds a tool call this reader does not
 // classify, including changed command-field shapes, are `?`, named. codex-cli 0.159.3's own
 // `wait` on a code-mode cell that yielded, a `function_call` whose arguments decode to exactly
-// `{cell_id, yield_time_ms}` or those and `max_tokens`, is a call that runs no command
-// (`codeModeWait`); a `wait` in any other shape is unclassified. An output carrying a
+// `{cell_id, yield_time_ms}` or those and `max_tokens`, its payload carrying exactly the keys the
+// recorded ones do, is a call that runs no command (`codeModeWait`); a `wait` in any other
+// shape, or with any other field, is unclassified. An output carrying a
 // command is judged like the call; any other unclassified item with a field naming a tool,
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
 // code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
@@ -1829,7 +1830,7 @@ function rolloutCommands(file) {
     } else if (entry?.type === "response_item" && type === "function_call") {
       if (name.startsWith("mcp__")) { read.calls.push(name); continue; }
       if (quietTools.has(name)) continue;
-      if (name === "wait" && codeModeWait(payload.arguments)) continue;
+      if (name === "wait" && codeModeWait(payload)) continue;
       if (!commandTools.has(name) && name !== "write_stdin") { unclassified(`function_call ${name}`); continue; }
       let args;
       try {
@@ -1869,20 +1870,29 @@ function rolloutCommands(file) {
 }
 
 /**
- * Whether a `function_call`'s arguments are codex-cli 0.159.3's own `wait` on a code-mode cell
- * that yielded: a JSON string decoding to exactly `{cell_id: string, yield_time_ms: number}`,
- * with `max_tokens: number` beside them or not — E2c's lead rollout, line 86, and S11's B2,
- * line 32 (`docs/probes.md#s11CodexLeadTimeout`). It names a cell and no command, and the cell
- * is a script this reader reads in its own `exec` call. Any other shape is not this call.
+ * Whether a `function_call` payload is codex-cli 0.159.3's own `wait` on a code-mode cell that
+ * yielded, in the shape every recorded one has (E2c's lead rollout, line 86; S11's B2, line 32;
+ * the 36 in S11's and T14's archives): exactly the keys `type`, `id`, `name`, `arguments`,
+ * `call_id` and `internal_chat_message_metadata_passthrough`, the last exactly `{turn_id,
+ * create_time}`, and `arguments` a JSON string decoding to exactly `{cell_id: string,
+ * yield_time_ms: number}`, with `max_tokens: number` beside them or not. It names a cell and no
+ * command, and the cell is a script this reader reads in its own `exec` call. A payload with any
+ * other key, at its top or in its passthrough, is not this call, whatever its arguments say.
  */
-function codeModeWait(text) {
-  if (typeof text !== "string") return false;
+function codeModeWait(payload) {
+  const exactly = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+  if (!exactly(payload, ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"])) return false;
+  if (typeof payload.id !== "string" || typeof payload.call_id !== "string") return false;
+  const passthrough = payload.internal_chat_message_metadata_passthrough;
+  if (!exactly(passthrough, ["turn_id", "create_time"]) || typeof passthrough.turn_id !== "string"
+    || !Number.isFinite(passthrough.create_time)) return false;
+  if (typeof payload.arguments !== "string") return false;
   let value;
-  try { value = JSON.parse(text); } catch { return false; }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const keys = Object.keys(value).sort();
-  const shape = Object.hasOwn(value, "max_tokens") ? ["cell_id", "max_tokens", "yield_time_ms"] : ["cell_id", "yield_time_ms"];
-  if (keys.length !== shape.length || keys.some((key, k) => key !== shape[k])) return false;
+  try { value = JSON.parse(payload.arguments); } catch { return false; }
+  const shape = value !== null && typeof value === "object" && Object.hasOwn(value, "max_tokens")
+    ? ["cell_id", "yield_time_ms", "max_tokens"] : ["cell_id", "yield_time_ms"];
+  if (!exactly(value, shape)) return false;
   return typeof value.cell_id === "string" && Number.isFinite(value.yield_time_ms)
     && (!Object.hasOwn(value, "max_tokens") || Number.isFinite(value.max_tokens));
 }

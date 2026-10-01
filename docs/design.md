@@ -2785,8 +2785,9 @@ item, or changes a known command field's shape (`#codexRolloutUnclassified`,
 `#rolloutItemShapes`). codex-cli 0.159.3's own `wait` on a code-mode cell that
 yielded — a `function_call` whose arguments decode to exactly `{cell_id,
 yield_time_ms}`, with `max_tokens` or without — names a cell and no command, and
-is classified as a call that runs none in those two recorded shapes and no other
-(`#codexCodeModeWait`). An output carrying a command is judged like the call, and a
+is classified as a call that runs none in those two recorded shapes and no other,
+its payload carrying exactly the keys every recorded one carries, so a field beside
+them or inside its passthrough leaves the call unclassified (`#codexCodeModeWait`). An output carrying a command is judged like the call, and a
 tool-bearing item is one with a field naming a tool, its arguments or a command,
 by any spelling, on it or one object below (`#rolloutOutputs`). A code-mode
 script is tokenized as JavaScript: a direct `exec_command` or `write_stdin` call

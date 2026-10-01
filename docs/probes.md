@@ -2247,7 +2247,9 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   is waited on with Codex's own top-level `wait` function, `{cell_id,
   yield_time_ms}` with or without `max_tokens`, which runs no command. The end-to-end
   verifier answered `?` on it in E2, E2b and E2c, each read by a person; since T14 it
-  classifies it as a call that runs no command, in exactly those two shapes
+  classifies it as a call that runs no command, in exactly those two shapes and with
+  exactly the payload keys every recorded one carries (`type`, `id`, `name`,
+  `arguments`, `call_id`, and a passthrough of `turn_id` and `create_time`)
   (`tests/e2e-verify.test.ts#codexCodeModeWait`). Codex does not confine a mounted server to its own
   sandbox: a read-only lead's server wrote the project's ledger. The binary's strings, read on
   2026-10-01 for T14 — a reading, not a run: a plugin manifest is `.codex-plugin/plugin.json`

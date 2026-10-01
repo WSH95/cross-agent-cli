@@ -1344,19 +1344,36 @@ test("6b-W-6: an output carrying a command is judged like the call, and a tool-b
 });
 
 // @anchor codexCodeModeWait
+// The two recorded payloads, verbatim: E2c's lead rollout, line 86, and S11's B2, line 32
+// (`docs/probes.md#s11CodexLeadTimeout`), which carries no `max_tokens`. Every archived
+// code-mode `wait` has exactly these payload keys and this passthrough.
+const e2cWait = {
+  type: "function_call", id: "fc_01972f92cc52d25e016abe0abc8b4487d281b41bdc999d7303", name: "wait",
+  arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_JAvEhP3zi4gqfzMoe4qd67kR",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a0f658-ae9d-78c0-9325-899bfcb9a5f6", create_time: 1790839480.816802 },
+};
+const b2Wait = {
+  type: "function_call", id: "fc_053969cea5577e64016abddd68352487d2a9975b2c72a823f9", name: "wait",
+  arguments: "{\"cell_id\":\"3\",\"yield_time_ms\":600000}", call_id: "call_kdEVlzpG4pMgR2PDTZlZUtts",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a0f5a8-5641-72e1-a374-0142d06114fa", create_time: 1790827879.263279 },
+};
 const codexCodeModeWait = [
-  // E2c's lead rollout, line 86, trimmed to the fields the reader reads; then B2's shape,
-  // which carries no `max_tokens` (`docs/probes.md#s11CodexLeadTimeout`, line 32).
-  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_x" }, "pass"],
-  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"3\",\"yield_time_ms\":600000}", call_id: "call_y" }, "pass"],
-  // Any other shape is a call this reader has not seen, whatever its name.
-  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: 1000, cmd: "claude -p hi" }), call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: 11, yield_time_ms: 30000 }), call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: "30000" }), call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: "1000" }), call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11" }), call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",", call_id: "call_x" }, "?"],
-  [{ type: "function_call", name: "wait", arguments: { cell_id: "11", yield_time_ms: 30000 }, call_id: "call_x" }, "?"],
+  [e2cWait, "pass"],
+  [b2Wait, "pass"],
+  // Any other shape is a call this reader has not seen, whatever its name: other arguments,
+  [{ ...e2cWait, arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: 1000, cmd: "claude -p hi" }) }, "?"],
+  [{ ...e2cWait, arguments: JSON.stringify({ cell_id: 11, yield_time_ms: 30000 }) }, "?"],
+  [{ ...e2cWait, arguments: JSON.stringify({ cell_id: "11", yield_time_ms: "30000" }) }, "?"],
+  [{ ...e2cWait, arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: "1000" }) }, "?"],
+  [{ ...e2cWait, arguments: JSON.stringify({ cell_id: "11" }) }, "?"],
+  [{ ...e2cWait, arguments: "{\"cell_id\":\"11\"," }, "?"],
+  [{ ...e2cWait, arguments: { cell_id: "11", yield_time_ms: 30000 } }, "?"],
+  // a field beside them on the payload, a field inside its passthrough, a passthrough of
+  // another shape, and a payload missing a key the recorded ones carry.
+  [{ ...e2cWait, command: "claude -p hidden" }, "?"],
+  [{ ...e2cWait, internal_chat_message_metadata_passthrough: { ...e2cWait.internal_chat_message_metadata_passthrough, command: "claude -p hidden" } }, "?"],
+  [{ ...e2cWait, internal_chat_message_metadata_passthrough: { turn_id: "01a0f658-ae9d-78c0-9325-899bfcb9a5f6", create_time: "1790839480" } }, "?"],
+  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_x" }, "?"],
 ] as const;
 test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no command, in exactly its recorded shapes", async (t) => {
   // codex-cli 0.159.3 waits on a code-mode cell that yielded with a `wait` function of its own,
