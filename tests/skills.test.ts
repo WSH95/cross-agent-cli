@@ -611,6 +611,15 @@ function delegateCalls(text: string): string[] {
   return [...flat(text).matchAll(/`(delegate \{[^`]*)`/g)].map(([, call]) => call);
 }
 
+/**
+ * A key of a call's object where a key stands — first, or after a comma — spelled
+ * `name: value` or bare as in the launcher's `delegate {role, brief, cwd}`: the key, never
+ * the word, so a brief placeholder that mentions a branch is no `branch` key.
+ */
+function objectKey(name: string): RegExp {
+  return new RegExp(`[{,]\\s*${name}\\s*[:,}]`);
+}
+
 test("every delegate call the launcher and the loops spell names the keys the schema requires", () => {
   // `role`, `brief` and `cwd` are required on every call, resume included, and a role
   // that works in a worktree is refused without the branch it is on
@@ -624,10 +633,10 @@ test("every delegate call the launcher and the loops spell names the keys the sc
   for (const [where, text] of documents) {
     for (const call of delegateCalls(text)) {
       checked++;
-      assert.match(call, /\brole\b/, `${where} spells a delegate call with no role: ${call}`);
-      assert.match(call, /\bcwd\b/, `${where} spells a delegate call with no cwd: ${call}`);
+      assert.match(call, objectKey("role"), `${where} spells a delegate call with no role: ${call}`);
+      assert.match(call, objectKey("cwd"), `${where} spells a delegate call with no cwd: ${call}`);
       if (/cwd: <worktree path>/.test(call)) {
-        assert.match(call, /\bbranch\b/, `${where} spells a worktree delegation with no branch: ${call}`);
+        assert.match(call, objectKey("branch"), `${where} spells a worktree delegation with no branch: ${call}`);
       }
     }
   }
