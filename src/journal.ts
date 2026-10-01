@@ -87,11 +87,15 @@ function fault(value: unknown): string | null {
   // Every reader takes each step's name, time, SHAs and arguments as written, so a step
   // that does not read is the journal's damage, named with its file, and never a crash in
   // whichever reader meets it first.
-  for (const [index, value] of journal.steps.entries()) {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return `steps[${index}] must be an object`;
-    const step = value as Record<string, unknown>;
+  // A time is a date's: finite, and within the ±8.64e15 ms a `Date` holds, or no reader can
+  // print when the step ran.
+  for (const [index, entry] of journal.steps.entries()) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return `steps[${index}] must be an object`;
+    const step = entry as Record<string, unknown>;
     if (typeof step.step !== "string") return `steps[${index}].step must be a string`;
-    if (typeof step.at !== "number" || !Number.isFinite(step.at)) return `steps[${index}].at must be a finite number`;
+    if (typeof step.at !== "number" || !Number.isFinite(step.at) || Math.abs(step.at) > 8.64e15) {
+      return `steps[${index}].at must be a time in milliseconds a date can hold, within ±8.64e15`;
+    }
     for (const field of ["before", "after", "defaultSha"] as const) {
       if (step[field] !== undefined && typeof step[field] !== "string") return `steps[${index}].${field} must be a string`;
     }

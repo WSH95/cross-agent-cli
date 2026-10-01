@@ -801,6 +801,16 @@ test("show reads one task as the ledger holds it and exits by its status: settle
   assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, readJournal(root, seeded.slug));
   assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, seeded.journal);
   assert.deepEqual((JSON.parse(three.stdout) as Shown).lastActivity, seeded.log.slice(-3));
+  // An outcome written with a time no date can hold is printed as the number it is, and the
+  // exit is still the record's.
+  const { writeOutcome } = await import("../src/ledger.ts");
+  writeOutcome(root, byStatus.done.id, { ...seeded.outcome, at: 1e300 });
+  const [far, farJson] = await runEach([["show", byStatus.done.id], ["show", byStatus.done.id, "--json"]], root);
+  assert.equal(far.code, 0, far.stderr);
+  assert.match(far.stdout, new RegExp(`^id: ${byStatus.done.id}$`, "m"));
+  assert.match(far.stdout, /^outcome: done, exit 0, session seeded-session, at 1e\+300$/m);
+  assert.equal(farJson.code, 0, farJson.stdout);
+  assert.equal((JSON.parse(farJson.stdout) as { outcome: { at: number } }).outcome.at, 1e300);
   for (const refused of [zero, word, none]) {
     assert.equal(refused.code, 2, refused.stderr);
     assert.match(refused.stderr, /usage: cross-agent show/);
@@ -871,7 +881,12 @@ test("journal renders one journal whole or lists every slug; a missing one is 3,
   // A step that does not read is the same damage, named the same way, never a crash
   // halfway through printing the steps before it.
   const head = { slug: "damaged", branch: "task/damaged", defaultBranch: "main" };
-  for (const step of ["null", '{"step":"committed"}', '{"step":7,"at":1}', '{"step":"git","at":1e400}', '{"step":"git","at":1,"args":"status"}']) {
+  for (const step of [
+    "null", '{"step":"committed"}', '{"step":7,"at":1}', '{"step":"git","at":1e400}', '{"step":"git","at":1,"args":"status"}',
+    '{"step":"git","at":1,"before":5}', '{"step":"git","at":1,"args":["status",1]}',
+    // Finite, and still no time a date can hold: the renderer would refuse it.
+    '{"step":"git","at":1e300}',
+  ]) {
     fs.writeFileSync(damaged, `${JSON.stringify(head).slice(0, -1)},"steps":[{"step":"worktree-created","at":1},${step}]}`);
     const [stepText, stepJson] = await runEach([["journal", "damaged"], ["journal", "damaged", "--json"]], root);
     assert.equal(stepText.code, 1, `${step}: ${stepText.stderr}`);
@@ -884,18 +899,23 @@ test("journal renders one journal whole or lists every slug; a missing one is 3,
   // A task whose journal does not read is still shown: the record is what the operator came
   // to read, the journal's error is named beside it, and the exit is the record's.
   const own = path.join(directory, `${slug}.json`);
-  fs.writeFileSync(own, "{not json");
-  const [shownText, shownJson] = await runEach([["show", seeded.worktreeTask.id], ["show", seeded.worktreeTask.id, "--json"]], root);
-  assert.equal(shownText.code, 0, shownText.stderr);
-  assert.match(shownText.stdout, new RegExp(`^id: ${seeded.worktreeTask.id}$`, "m"));
-  assert.match(shownText.stderr, new RegExp(`^cross-agent: invalid journal ${literally(own)}: `, "m"));
-  assert.equal(shownJson.code, 0);
-  assert.equal(shownJson.stderr, "");
   const { find } = await import("../src/ledger.ts");
-  const withoutJournal = JSON.parse(shownJson.stdout) as { record: TaskRecord; journal: unknown; journalError: string };
-  assert.deepEqual(withoutJournal.record, find(root, seeded.worktreeTask.id));
-  assert.equal(withoutJournal.journal, null);
-  assert.ok(withoutJournal.journalError.startsWith(`invalid journal ${own}: `), withoutJournal.journalError);
+  const farStep = JSON.stringify({
+    slug, branch: seeded.branch, defaultBranch: "main", steps: [{ step: "worktree-created", at: 1 }, { step: "git", at: 1e300 }],
+  });
+  for (const damage of ["{not json", farStep]) {
+    fs.writeFileSync(own, damage);
+    const [shownText, shownJson] = await runEach([["show", seeded.worktreeTask.id], ["show", seeded.worktreeTask.id, "--json"]], root);
+    assert.equal(shownText.code, 0, `${damage}: ${shownText.stderr}`);
+    assert.match(shownText.stdout, new RegExp(`^id: ${seeded.worktreeTask.id}$`, "m"));
+    assert.match(shownText.stderr, new RegExp(`^cross-agent: invalid journal ${literally(own)}: `, "m"));
+    assert.equal(shownJson.code, 0, damage);
+    assert.equal(shownJson.stderr, "");
+    const withoutJournal = JSON.parse(shownJson.stdout) as { record: TaskRecord; journal: unknown; journalError: string };
+    assert.deepEqual(withoutJournal.record, find(root, seeded.worktreeTask.id));
+    assert.equal(withoutJournal.journal, null);
+    assert.ok(withoutJournal.journalError.startsWith(`invalid journal ${own}: `), withoutJournal.journalError);
+  }
   // The bare listing is 0 with nothing to list.
   for (const entry of fs.readdirSync(directory)) fs.rmSync(path.join(directory, entry));
   const empty = await run(["journal", "--json"], root);
@@ -937,6 +957,19 @@ test("list-asks shows every ask in the order asked, exits 5 while one it printed
   const after = await run(["list-asks"], root);
   assert.equal(after.code, 0, after.stderr);
   assert.match(after.stderr, /invalid ask file/);
+
+  // An ask whose times no date can hold is listed with every other, its times the numbers
+  // they are.
+  const { asksDirectory } = await import("../src/mailbox.ts");
+  const far = { id: "f".repeat(36), taskId: asks.open.taskId, question: "From the far future?", createdAt: 1e300, status: "answered", answer: "Later.", answeredAt: 1e300 };
+  fs.writeFileSync(path.join(asksDirectory(root), `${far.id}.json`), JSON.stringify(far));
+  const [listed, listedJson] = await runEach([["list-asks"], ["list-asks", "--json"]], root);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.deepEqual(listed.stdout.split("\n").filter((line) => /^[0-9a-f]{36} {2}/.test(line)).map((line) => line.split("  ")[0]), [asks.answered.id, asks.open.id, far.id]);
+  assert.match(listed.stdout, new RegExp(`^${far.id} {2}answered {2}task ${far.taskId} {2}1e\\+300 {2}From the far future\\?$`, "m"));
+  assert.match(listed.stdout, /^ {4}answer: Later\. {2}answeredAt 1e\+300$/m);
+  assert.equal(listedJson.code, 0, listedJson.stdout);
+  assert.deepEqual((JSON.parse(listedJson.stdout) as { asks: Array<{ id: string }> }).asks.map((ask) => ask.id), [asks.answered.id, asks.open.id, far.id]);
 });
 
 // @anchor cliUsage
