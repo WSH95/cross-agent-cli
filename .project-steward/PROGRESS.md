@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T15:22:23Z — claude
+[auto-checkpoint] T14 merged (main 827739c; VERIFY dbb5e18; 735/734/1); .14 .61 closed; beads .72–.74 filed; T15 next.
+
 ### 2026-10-01T14:46:35Z — claude
 [auto-checkpoint] T14 fix round 1 landed (8e79b89; 735/734/1; checker 1142, 0/0); plugin reinstalled from the f3272a2 export and disabled; round-2 re-review running.
 

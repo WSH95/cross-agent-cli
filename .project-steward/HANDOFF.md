@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T14:46:35Z
+updated_at: 2026-10-01T15:22:23Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -74,23 +74,20 @@ verbs refuse under `CROSS_AGENT_TASK`, `_DEPTH` or `_LINEAGE`. Filed from it: `.
 (a lock taken before the ledger exists leaves an unexcluded `.cross-agent/`) and
 `.68` (one source for the status list and the task-id alphabet).
 
-T14 (`atc-s96.14` with `.61`, Codex packaging, I1/I2 under a Codex host, E4 and E5)
-is **implemented on `task/cross-agent-m3`** (21 commits over `6a13c0c`, head
-`8e79b89` after fix round 1; not merged): `npm test` 735 / 734 / 1 skipped; checker 1142, 0 misses;
-E5 (a Codex host, a Claude lead) 8 pass; E4 (a Codex host, `dev-team`) 7 pass and a
-`?` a person read as two in-worktree patches (`.69` teaches the verifier that shape).
-The shipped mount runs `./.codex-plugin/serve`, which needs `CROSS_AGENT_PROJECT`.
-Review round 1 found two Important issues, fixed in fix round 1 and now in re-review (`task-8-findings-round-1.md`):
-- the guarded Codex I2 test's rollout proof could pass vacuously;
-- both Codex attaches drop the task markers, so a Codex session started inside a task
-  would resolve the operator row (loop-guard layer 2; the fix adds them to `env_vars`,
-  with probes). **The operator's Codex config is changed until the
-wrap:** the plugin `cross-agent@agent-team-cli` is installed from a local marketplace
-(the export `~/.cache/agent-team/codex-plugin-export/f3272a2…`; an older `dac519b…` export
+T14 (`atc-s96.14` with `.61`, Codex packaging) is **merged** — `main` at `827739c`
+(24 commits over `7d1ef63`), `VERIFY.md` T14 section at `dbb5e18`; `npm test` 735 /
+734 / 1 skipped; checker 1142, 0 misses. The Codex plugin ships as
+`.codex-plugin/plugin.json` with its `serve` launcher (it needs `CROSS_AGENT_PROJECT`;
+`env_vars` whitelists the project and the three task markers, so a Codex session
+started inside a task keeps the specialist row); E5 8 pass, E4 7 pass and a `?` a
+person read as two in-worktree patches; `codexI2Real` green under a positive rollout
+proof. Filed: `.69`, `.71`–`.74`. **The operator's Codex config is changed until the
+wrap:** the plugin is installed from a clean export
+(`~/.cache/agent-team/codex-plugin-export/f3272a2…`; an older `dac519b…` export
 stays for the wrap to delete) and disabled
-(`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added four
-trust entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the
-restore commands are in `task-8-report.md`. Task 11 (docs nits
+(`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added four trust
+entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the restore
+commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
 brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimization pass
 runs after T15 merges). T15's brief v3 (`task-9-brief.md`) is ready for dispatch after
