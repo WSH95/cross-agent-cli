@@ -648,6 +648,139 @@ async function settled(handle: ReturnType<typeof spawnEngine>, which: string, ms
   }
 }
 
+/** What `tools/e2e-verify.mjs --read-rollout` prints for one Codex thread. */
+interface RolloutReading {
+  files: string[];
+  calls: Array<{
+    kind: string; line: number; commands?: string[]; computed?: string[]; direct?: boolean;
+    output?: { exit_code: number; text: string } | null; reason?: string;
+  }>;
+  unreadable: string[];
+}
+
+/**
+ * The end-to-end verifier's reading of one thread, read as a process because the verifier
+ * runs on import. With no `codexHome` it reads `~/.codex`, where the engines wrote theirs.
+ */
+async function readThread(thread: string, codexHome?: string): Promise<RolloutReading> {
+  const { promisify } = await import("node:util");
+  const { execFile } = await import("node:child_process");
+  const verifier = fileURLToPath(new URL("../../tools/e2e-verify.mjs", import.meta.url));
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (codexHome === undefined) delete env.CODEX_HOME;
+  else env.CODEX_HOME = codexHome;
+  const { stdout } = await promisify(execFile)(process.execPath, [verifier, "--read-rollout", thread],
+    { encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 });
+  return JSON.parse(stdout) as RolloutReading;
+}
+
+/**
+ * Why a thread's rollout does not prove that each of `steps` ran as written and ended as it
+ * must — nothing when it does. The proof is positive: every call in the thread is a code-mode
+ * `exec` whose script is the one shape whose printed exit is its command's own (`direct`,
+ * `tools/e2e-verify.mjs#directScript`), with no command the reader could not follow, running
+ * one step; each step ran in exactly one such call; and that call's output is exit 0 for
+ * `inside` and a denial for every other step. A script of any other shape fails the proof
+ * wherever it stands, because what it prints is its own word and not a command's result, and
+ * a cell beside the steps could change what theirs print.
+ */
+function attemptProofFailures(reading: RolloutReading, steps: readonly string[], inside: string): string[] {
+  const failures: string[] = [];
+  if (reading.unreadable.length > 0) failures.push(`the rollout holds what this reader cannot read: ${JSON.stringify(reading.unreadable)}`);
+  for (const call of reading.calls) {
+    if (call.kind !== "exec") { failures.push(`line ${call.line}: a ${call.kind} call, not a step's exec`); continue; }
+    const running = `line ${call.line} (${call.commands?.length ? call.commands.join(" ; ") : "no command read"})`;
+    if (call.direct !== true) failures.push(`${running}: an exec script of another shape than a step's`);
+    if ((call.computed ?? []).length > 0) failures.push(`${running}: commands the reader could not follow: ${JSON.stringify(call.computed)}`);
+    if (call.commands?.length !== 1 || !steps.includes(call.commands[0])) failures.push(`${running}: not one step`);
+  }
+  const execs = reading.calls.filter((call) => call.kind === "exec");
+  for (const command of steps) {
+    const ran = execs.filter((call) => call.commands?.includes(command));
+    if (ran.length !== 1) {
+      failures.push(`${command}: ${ran.length} exec calls ran it; the rollout's exec commands are ${JSON.stringify(execs.map((call) => call.commands))}`);
+      continue;
+    }
+    const [call] = ran;
+    if (!call.output) {
+      failures.push(`${command} (line ${call.line}): no output paired with it — ${call.reason}`);
+    } else if (command === inside) {
+      if (call.output.exit_code !== 0) failures.push(`${command} was refused inside the worktree: ${call.output.text}`);
+    } else {
+      if (call.output.exit_code === 0) failures.push(`${command} exited 0 on a resumed session`);
+      if (!/Read-only file system|Permission denied|Operation not permitted/.test(call.output.text)) failures.push(`${command}: no denial in ${JSON.stringify(call.output.text)}`);
+    }
+  }
+  return failures;
+}
+
+/**
+ * The whole script `codexI2Real`'s brief gives for one step: the one shape whose printed exit
+ * is its command's own, the only shape `attemptProofFailures` accepts.
+ */
+function stepScript(command: string): string {
+  return `const r = await tools.exec_command({cmd: ${JSON.stringify(command)}});\n`
+    + "text(JSON.stringify({exit_code: r.exit_code, output: r.output}));";
+}
+
+/**
+ * A Codex thread's rollout in the fixture style of `tests/e2e-verify.test.ts#rolloutOf`: the
+ * session's line, then each cell's code-mode `exec` call and its output, the output holding
+ * `printed` as the cell's script printed it.
+ */
+function writeThread(codexHome: string, thread: string, cells: ReadonlyArray<{ script: string; printed: string }>): void {
+  const directory = path.join(codexHome, "sessions", "2026", "10", "01");
+  mkdirSync(directory, { recursive: true });
+  const lines = [
+    { timestamp: "2026-10-01T12:05:34.000Z", type: "session_meta", payload: { id: thread, cwd: "/project/.worktrees/i2", cli_version: "0.159.3", source: "exec" } },
+    ...cells.flatMap(({ script, printed }, n) => [
+      { timestamp: "2026-10-01T12:05:40.000Z", type: "response_item", payload: { type: "custom_tool_call", status: "completed", call_id: `call_${n}`, name: "exec", input: script } },
+      { timestamp: "2026-10-01T12:05:40.100Z", type: "response_item", payload: { type: "custom_tool_call_output", call_id: `call_${n}`, output: [
+        { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" }, { type: "input_text", text: printed }] } },
+    ]),
+  ];
+  writeFileSync(path.join(directory, `rollout-2026-10-01T08-05-34-${thread}.jsonl`), lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+}
+
+// @anchor codexI2ProofShape
+test("I2's proof holds only for exec calls whose scripts printed their own command's result: a step only written down fails it", async (t) => {
+  // The shape `codexI2Real`'s run 2 wrote for every step (`<archive>/b6/codexI2Real/run2/`,
+  // rollout lines 24-43), and four scripts that print the same denial without proving the
+  // command ran or that the exit is its own.
+  const home = scratch(t);
+  const inside = 'echo resumed >> "/project/.worktrees/i2/notes.md"';
+  const outside = ['echo root >> "/project/ROOT-WRITE.txt"', 'echo git >> "/project/.git/cross-agent-probe-write.txt"',
+    'echo home >> "/home/someone/cross-agent-codex-i2-x.txt"', 'echo sibling >> "/project/.worktrees/other-WRITE.txt"'];
+  const steps = [inside, ...outside];
+  const runTwo = (command: string) => `const r = await tools.exec_command({cmd:'${command}'});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n`;
+  const printed = (exit: number) => JSON.stringify({ exit_code: exit, output: exit === 0 ? "" : "/bin/bash: line 1: /project/x: Read-only file system\n" });
+  const proven = steps.map((command, n) => ({ script: runTwo(command), printed: printed(n === 0 ? 0 : 1) }));
+  let serial = 0;
+  const failuresOf = async (cells: ReadonlyArray<{ script: string; printed: string }>) => {
+    const thread = `01a0f75b-0b4e-7701-b712-${String(++serial).padStart(12, "0")}`;
+    writeThread(home, thread, cells);
+    return attemptProofFailures(await readThread(thread, home), steps, inside);
+  };
+  assert.deepEqual(await failuresOf(proven), [], "run 2's shape proves every step");
+  assert.deepEqual(await failuresOf(proven.map((cell, n) => ({ ...cell, script: stepScript(steps[n]) }))), [],
+    "the script the guarded run's brief gives proves every step");
+  const root = JSON.stringify(outside[0]);
+  for (const [what, script] of [
+    ["a function that would run the write, never called", `const skipped = () => tools.exec_command({cmd:${root}});\ntext(JSON.stringify({exit_code: 1, output: "Read-only file system"}));\n`],
+    ["the write run and a denial printed by hand", `const r = await tools.exec_command({cmd:${root}});\ntext(JSON.stringify({exit_code: 1, output: "Read-only file system"}));\n`],
+    ["one statement more", `const r = await tools.exec_command({cmd:${root}});\nconst n = 1;\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n`],
+    ["a command the script computes", `const c = ${root};\nconst r = await tools.exec_command({cmd: c});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n`],
+  ] as const) {
+    const cells = proven.map((cell, n) => (n === 1 ? { script, printed: printed(1) } : cell));
+    const failures = await failuresOf(cells);
+    assert.ok(failures.some((failure) => failure.includes(outside[0])), `${what} proves the root write: ${JSON.stringify(failures)}`);
+  }
+  // Five proven steps and one script of another shape beside them, whose effect on the cells
+  // after it this reader cannot bound.
+  const extra = await failuresOf([proven[0], { script: "globalThis.seen = 1;\ntext(\"ok\");\n", printed: "ok" }, ...proven.slice(1)]);
+  assert.ok(extra.length > 0, "a script of another shape in the thread leaves the proof unmade");
+});
+
 // @anchor codexI2Real
 test("I2: a real Codex run reads the prompt from stdin on both heads and is denied P2's writes on a resume", async (t) => {
   if (!realCodex) return t.skip("set CROSS_AGENT_REAL_CODEX=1 to run this against the real binary");
@@ -714,15 +847,15 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   const second = requestFor(dirs, {
     cwd: canonicalPath(worktree), env, model, effort: "medium", resumeSessionId: thread,
     // A model once ran step 3 against the worktree's own `.git` instead of the root's, so the
-    // brief asks for each command character for character; an altered one still fails below.
-    brief: "Run the five shell commands below, in this order, each exactly as written: copy it character for "
-      + "character, every path as given, even one that looks wrong to you. One shell command per step, each in its "
-      + "own call, never combined into a script, and never retried or worked around. A denial or an "
-      + "error is a result to report, not a reason to stop: report it and go on to the next step until all five "
-      + "have run. After each step write one report line, `STEP n: exit <code>`, followed by that command's "
-      + "stderr exactly as printed, or `(no stderr)`. These five steps are the whole of this turn: read no file "
-      + "and run no other command.\n\n"
-      + steps.map((command, n) => `Step ${n + 1}:\n    ${command}`).join("\n"),
+    // brief asks for each script character for character; an altered one still fails below.
+    brief: "Run the five steps below, in this order. Each step is one exec call whose whole script is the two "
+      + "lines given for it, copied character for character: every path as given, even one that looks wrong to "
+      + "you, and nothing added, removed or changed. One exec call per step, never two steps in one call, and "
+      + "never retried or worked around. A denial or an error is a result to report, not a reason to stop: report "
+      + "it and go on to the next step until all five have run. After each step write one report line, "
+      + "`STEP n: exit <code>`, followed by that command's stderr exactly as printed, or `(no stderr)`. These five "
+      + "steps are the whole of this turn: read no file and run no other command.\n\n"
+      + steps.map((command, n) => `Step ${n + 1}:\n${stepScript(command).split("\n").map((line) => `    ${line}`).join("\n")}`).join("\n"),
     protectedPaths: first.protectedPaths,
   });
   const resumed = spawnEngine(codex, second, {});
@@ -731,37 +864,16 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   assert.equal(outcome.ok, true, outcome.events.at(-1)?.text);
   t.diagnostic(`codexI2Real: the resumed turn's answer: ${outcome.finalMessage}`);
 
-  // What the engine's own event log says was attempted, read by the verifier's reader as
-  // a process (it runs on import), with `CODEX_HOME` unset as the engines ran: for each
-  // step, exactly one `exec` call ran that command alone, and its own output's exit is
-  // 0 inside the worktree and a denial outside it. A command only mentioned, a step folded
-  // into another's script, or an output that cannot be paired fails here.
-  const verifier = fileURLToPath(new URL("../../tools/e2e-verify.mjs", import.meta.url));
-  const readerEnv: NodeJS.ProcessEnv = { ...process.env };
-  delete readerEnv.CODEX_HOME;
-  const { stdout } = await promisify(execFile)(process.execPath, [verifier, "--read-rollout", thread],
-    { encoding: "utf8", env: readerEnv, maxBuffer: 64 * 1024 * 1024 });
-  const reading = JSON.parse(stdout) as {
-    files: string[];
-    calls: Array<{ kind: string; commands?: string[]; output?: { exit_code: number; text: string } | null; reason?: string; line: number }>;
-    unreadable: string[];
-  };
+  // What the engine's own event log says was attempted, read by the verifier's reader with
+  // `CODEX_HOME` unset as the engines ran: every call in the thread is one step's exec in the
+  // one shape whose printed exit is its command's own, and each step's exit is 0 inside the
+  // worktree and a denial outside it (`attemptProofFailures`, held to its regressions by
+  // `codexI2ProofShape`). A command only written down, a step folded into another's script,
+  // an exit printed by hand, or an output that cannot be paired fails here.
+  const reading = await readThread(thread);
   t.diagnostic(`codexI2Real: thread ${thread}; rollout read: ${JSON.stringify(reading.files)}`);
   assert.equal(reading.files.length, 1, `the thread's rollout: ${JSON.stringify(reading.files)}`);
-  const execs = reading.calls.filter((call) => call.kind === "exec");
-  for (const command of steps) {
-    const ran = execs.filter((call) => call.commands?.includes(command));
-    assert.equal(ran.length, 1, `${command}: ${ran.length} exec calls ran it; the rollout's exec commands are ${JSON.stringify(execs.map((call) => call.commands))}`);
-    const [call] = ran;
-    assert.deepEqual(call.commands, [command], `${command} shares its exec call (line ${call.line}) with another`);
-    assert.ok(call.output, `${command} (line ${call.line}): no output paired with it — ${call.reason}`);
-    if (command === inside) {
-      assert.equal(call.output.exit_code, 0, `${command} was refused inside the worktree: ${call.output.text}`);
-    } else {
-      assert.notEqual(call.output.exit_code, 0, `${command} exited 0 on a resumed session`);
-      assert.match(call.output.text, /Read-only file system|Permission denied|Operation not permitted/, `${command}: ${call.output.text}`);
-    }
-  }
+  assert.deepEqual(attemptProofFailures(reading, steps, inside), [], "the rollout proves each step ran as written");
 
   // What the filesystem says, the second witness: the in-worktree write landed and none of
   // the four outside it did.

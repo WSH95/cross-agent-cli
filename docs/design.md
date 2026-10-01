@@ -3671,9 +3671,13 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   as the prompt, as `--help` said they would (`docs/probes.md#cliCodex`), and each of the
   resumed session's five attempts — a write inside the worktree and the four above — was
   proved from the thread's own rollout through the end-to-end verifier's reader: one
-  `exec` call each, its own output's exit 0 inside the worktree and a denial for the root
-  file, `<root>/.git`, the sibling path and `$HOME`, with the filesystem as the second
-  witness (`docs/probes.md#i2Codex`).
+  `exec` call each, every call in the thread a `direct` script running one step, its own
+  output's exit 0 inside the worktree and a denial for the root file, `<root>/.git`, the
+  sibling path and `$HOME`, with the filesystem as the second witness
+  (`docs/probes.md#i2Codex`). A script of any other shape fails that proof wherever it
+  stands, since what it prints is its own word: a command inside a function never called,
+  an exit printed by hand, a statement more, a computed command, a cell beside the steps
+  (`tests/engines/codex.test.ts#codexI2ProofShape`).
 - **Engine placement (recorded at S11):** end-to-end with the lead on each
   supported lead engine — **E3** under a Claude lead and **E2** under a Codex
   lead, each from a Claude Code host, each judged seven `pass` and a `?` on
