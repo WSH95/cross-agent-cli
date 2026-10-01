@@ -410,7 +410,10 @@ test("report renders every task newest first, then each final message, three-val
     return record;
   };
   const base = Date.now() - 3_600_000;
-  await seed("planner", "done", base, "The plan.\n");
+  // A final message is the engine's own text, and a Markdown table in it — or any line
+  // shaped like a row — must not be read as one of the report's rows.
+  const plan = "The plan.\n\n| a | b |\n| --- | --- |\nrole | engine\n";
+  await seed("planner", "done", base, plan);
   await seed("plan-reviewer", "done", base + 1_000, null);
   await seed("implementer", "failed", base + 2_000, "BLOCKED: no such file.\n");
   await seed("code-reviewer", "cancelled", base + 3_000, "");
@@ -436,10 +439,13 @@ test("report renders every task newest first, then each final message, three-val
     // Settled two transitions after it was created, ten seconds apart.
     "planner", "claude", "claude-sonnet-5", "medium", "20s", "passed", seeded[0].id,
   ]);
-  // Then each task's final message, read from its record's result file.
-  assert.match(ran.stdout, /The plan\./);
-  assert.match(ran.stdout, /BLOCKED: no such file\./);
+  // Then each task's final message, read from its record's result file, every line of it
+  // indented under its heading, so the rows above are the only column-0 lines holding " | ".
+  assert.match(ran.stdout, /^ {4}BLOCKED: no such file\.$/m);
   assert.ok(ran.stdout.indexOf(`## ${seeded[2].id}`) < ran.stdout.indexOf(`## ${seeded[0].id}`), "the messages in the order of the lines");
+  const heading = `## ${seeded[0].id} — planner, passed\n\n`;
+  const message = ran.stdout.slice(ran.stdout.indexOf(heading) + heading.length).split("\n## ")[0];
+  assert.equal(message, plan.split("\n").map((line) => (line === "" ? "" : `    ${line}`)).join("\n"));
 
   // --since keeps the tasks created at or after that task's own creation.
   const since = await run(["report", "--project", root, "--since", seeded[6].id], root);
@@ -457,7 +463,7 @@ test("report renders every task newest first, then each final message, three-val
   assert.equal(tasks.length, seeded.length);
   assert.deepEqual(tasks.at(-1), {
     id: seeded[0].id, role: "planner", engine: "claude", model: "claude-sonnet-5", effort: "medium",
-    status: "done", durationSeconds: 20, outcome: "passed", result: "The plan.\n",
+    status: "done", durationSeconds: 20, outcome: "passed", result: plan,
   });
   assert.equal(tasks.find((task) => task.id === seeded[1].id)!.result, null);
 });

@@ -701,6 +701,15 @@ interface ReportedTask {
   result: string | null;
 }
 
+/**
+ * A final message as the report prints it: every line indented four spaces under its
+ * heading, a blank line left blank, so the rows above are the only column-0 lines that hold
+ * ` | ` and a Markdown table inside a message is never read as one of them.
+ */
+function indented(message: string): string {
+  return message.replace(/\n+$/, "").split("\n").map((line) => (line === "" ? "" : `    ${line}`)).join("\n");
+}
+
 function reported(record: TaskRecord, now: number): ReportedTask {
   let result: string | null = null;
   try {
@@ -742,11 +751,14 @@ const reportVerb: Verb = {
     const rows = tasks.map((task) => [
       task.role, task.engine, task.model ?? "-", task.effort ?? "-", `${task.durationSeconds}s`, task.outcome, task.id,
     ].join(" | "));
-    const messages = tasks.map((task) => `## ${task.id} — ${task.role}, ${task.outcome}\n\n${task.result ?? "(no result file)"}`);
+    const messages = tasks.map((task) => {
+      const body = indented(task.result ?? "(no result file)");
+      return `## ${task.id} — ${task.role}, ${task.outcome}\n${body === "" ? "" : `\n${body}\n`}`;
+    });
     return {
       code: EXIT.ok,
       document: { tasks, ...(invalid.length === 0 ? {} : { invalid }) },
-      text: tasks.length === 0 ? "" : `${rows.join("\n")}\n\n${messages.map((entry) => entry.replace(/\n*$/, "\n")).join("\n")}`,
+      text: tasks.length === 0 ? "" : `${rows.join("\n")}\n\n${messages.join("\n")}`,
       ...(invalid.length === 0 ? {} : { notes: invalid.map((entry) => `cross-agent: invalid task record ${entry.file}: ${entry.reason}\n`).join("") }),
     };
   },
