@@ -2308,7 +2308,7 @@ server's text>}}`.
 
 **The result cap (A2).** `describe_mode` answers 19,856 bytes under `dev-team`, 24,608 under
 `dev-team-engine` and 3,463 under `solo` at `e436132` (24,880 under `dev-team-engine` after
-the lead's report line grew, `40eb844`), and Grok cuts an MCP tool's answer at `[mcp]
+the lead's report line grew, `624ada2`), and Grok cuts an MCP tool's answer at `[mcp]
 max_output_bytes`, 20,000 bytes by default. Under the default the host's `describe_mode`
 `tool_result` held 20,437 bytes: the first 19.5 KB and Grok's note "[MCP output truncated:
 showing first 19.5 KB of 24.0 KB. Full output written to: <session>/mcp/call-…-2.json …]",
