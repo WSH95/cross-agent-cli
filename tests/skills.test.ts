@@ -629,12 +629,40 @@ function delegateCalls(text: string): string[] {
 }
 
 /**
- * A key of a call's object where a key stands — first, or after a comma — spelled
- * `name: value` or bare as in the launcher's `delegate {role, brief, cwd}`: the key, never
- * the word, so a brief placeholder that mentions a branch is no `branch` key.
+ * The keys of a `delegate {…}` literal, in order, read at its top level: the name that starts
+ * the object or follows a comma there, spelled `name: value` or bare, as in the launcher's
+ * `delegate {role, brief, cwd}`. A value is stepped over whole — a quoted string, a
+ * `<placeholder>`, a nested `{…}`, `[…]` or `(…)` — so a `, branch:` inside one is no key.
  */
-function objectKey(name: string): RegExp {
-  return new RegExp(`[{,]\\s*${name}\\s*[:,}]`);
+function delegateKeys(call: string): string[] {
+  const body = call.slice(call.indexOf("{") + 1, call.lastIndexOf("}"));
+  const segments = [""];
+  let quote = "";
+  let angles = 0;
+  let depth = 0;
+  for (let index = 0; index < body.length; index++) {
+    const c = body[index];
+    if (quote === "" && angles === 0 && depth === 0 && c === ",") {
+      segments.push("");
+      continue;
+    }
+    segments[segments.length - 1] += c;
+    if (quote !== "") {
+      if (c === "\\") segments[segments.length - 1] += body[++index] ?? "";
+      else if (c === quote) quote = "";
+    } else if (angles > 0) {
+      // Inside a placeholder only its own brackets count: an apostrophe there is prose.
+      if (c === "<") angles++;
+      else if (c === ">") angles--;
+    } else if (c === "<") angles++;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === "{" || c === "[" || c === "(") depth++;
+    else if (c === "}" || c === "]" || c === ")") depth--;
+  }
+  return segments.flatMap((text) => {
+    const key = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::|$)/.exec(text);
+    return key === null ? [] : [key[1]];
+  });
 }
 
 test("every delegate call the launcher and the loops spell names the keys the schema requires", () => {
@@ -650,14 +678,26 @@ test("every delegate call the launcher and the loops spell names the keys the sc
   for (const [where, text] of documents) {
     for (const call of delegateCalls(text)) {
       checked++;
-      assert.match(call, objectKey("role"), `${where} spells a delegate call with no role: ${call}`);
-      assert.match(call, objectKey("cwd"), `${where} spells a delegate call with no cwd: ${call}`);
+      const keys = delegateKeys(call);
+      assert.ok(keys.includes("role"), `${where} spells a delegate call with no role: ${call}`);
+      assert.ok(keys.includes("cwd"), `${where} spells a delegate call with no cwd: ${call}`);
       if (/cwd: <worktree path>/.test(call)) {
-        assert.match(call, objectKey("branch"), `${where} spells a worktree delegation with no branch: ${call}`);
+        assert.ok(keys.includes("branch"), `${where} spells a worktree delegation with no branch: ${call}`);
       }
     }
   }
   assert.ok(checked >= 6, `only ${checked} delegate calls found; the loops spell more than that`);
+});
+
+// @anchor delegateKeysTopLevel
+test("a delegate literal's keys are read at its top level, never inside a value", () => {
+  assert.deepEqual(delegateKeys("delegate {role, brief, cwd}"), ["role", "brief", "cwd"]);
+  assert.deepEqual(delegateKeys('delegate {role: "implementer", cwd: <worktree path>, branch: <branch>, brief}'), ["role", "cwd", "branch", "brief"]);
+  // A key's name inside a value — a quoted string or a placeholder, commas and apostrophes
+  // in it — is no key of the literal.
+  assert.deepEqual(delegateKeys('delegate {role: "implementer", brief: "review this, branch: task/x", cwd: <worktree path>}'), ["role", "brief", "cwd"]);
+  assert.deepEqual(delegateKeys('delegate {role: "consult", brief: <look here, cwd: /tmp, then report>}'), ["role", "brief"]);
+  assert.deepEqual(delegateKeys('delegate {role: "consult", brief: <the implementer\'s notes, branch: and all>, cwd: <project root>}'), ["role", "brief", "cwd"]);
 });
 
 test("the two dev-team modes carry the same role prompts, byte for byte", () => {
