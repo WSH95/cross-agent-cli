@@ -597,6 +597,46 @@ test("a commit carrying a host's project configuration is refused naming each pa
   assert.deepEqual(hostConfigPaths, [".claude", ".codex", ".grok", ".mcp.json"]);
 });
 
+// @anchor hostConfigAnyCase
+test("a host's project configuration in another case is refused at the commit, and its lookalikes are not", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await add("cased");
+  // Names no host reads as its project's configuration: a commit carrying them goes through.
+  await mkdir(path.join(worktree, ".claude-plugin"));
+  await writeFile(path.join(worktree, ".claude-plugin", "plugin.json"), "{}\n");
+  await writeFile(path.join(worktree, ".claude.json"), "{}\n");
+  await writeFile(path.join(worktree, ".mcp.json.bak"), "{}\n");
+  await mkdir(path.join(worktree, "docs"));
+  await writeFile(path.join(worktree, "docs", ".mcp.json"), "{}\n");
+  accepted(await gitMutate(root, { slug: "cased", args: ["add", "-A"] }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "cased", args: ["commit", "-m", "lookalikes"] }, { waitSeconds: 5 }));
+
+  // On a filesystem that ignores case, a host reads `.Claude/` as `.claude/`.
+  await mkdir(path.join(worktree, ".Claude"));
+  await writeFile(path.join(worktree, ".Claude", "settings.json"), '{"hooks": {}}');
+  await writeFile(path.join(worktree, ".MCP.json"), "{}\n");
+  const reason = refusal(await gitMutate(root, { slug: "cased", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+  for (const carried of [".Claude/settings.json", ".MCP.json"]) assert.ok(reason.includes(carried), `${carried}: ${reason}`);
+});
+
+// @anchor commitRefusesAssumeUnchanged
+test("a tracked host file marked assume-unchanged is refused at the commit, though git status shows nothing", async (t) => {
+  const { root, add } = await repository(t);
+  await writeFile(path.join(root, ".mcp.json"), '{"mcpServers": {}}\n');
+  await git(root, "add", ".mcp.json");
+  await git(root, "commit", "-m", "the project's own servers");
+  const worktree = await add("marked");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  // The mark hides the change from `git status`, and a commit naming the path records it anyway.
+  await git(worktree, "update-index", "--assume-unchanged", ".mcp.json");
+  await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all"), "");
+  const reason = refusal(await gitMutate(root, { slug: "marked", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_mutate refuses to commit/);
+  assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+});
+
 // @anchor configLockGit
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);

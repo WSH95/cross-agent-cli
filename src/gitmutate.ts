@@ -73,13 +73,21 @@ export const globalOptions = new Set(["--git-dir", "--work-tree", "-C", "-c"]);
  * Where each host reads a project's own configuration: Claude Code's `.claude/` (settings
  * and hooks) and `.mcp.json` (MCP servers), Codex's `.codex/`, Grok's `.grok/config.toml`
  * (plugins and servers). Each is loaded by the operator's own host session, outside any
- * sandbox, so none of them reaches the root through a task: `git_mutate` refuses a commit
- * that would carry one (`hostConfigFault`) and `git_root` a merge
- * (`src/gitroot.ts#smuggled`). `AGENTS.md` and `CLAUDE.md` were considered and are not
- * here: a host reads them as instruction text and starts nothing from them, and they are
- * ordinary team edits the code reviewer reads in the diff.
+ * sandbox, so none of them reaches the root through a task: `git_root` refuses a merge that
+ * would carry one (`src/gitroot.ts#smuggled`), which is the gate, and `git_mutate` a commit
+ * (`hostConfigFault`), which is the early warning. `AGENTS.md` and `CLAUDE.md` were
+ * considered and are not here: a host reads them as instruction text and starts nothing
+ * from them, and they are ordinary team edits the code reviewer reads in the diff.
  */
 export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok", ".mcp.json"];
+
+/**
+ * `hostConfigPaths` as both git tools match them: in any case, since a host on a filesystem
+ * that ignores case reads `.Claude/` as `.claude/`, and as these names alone, so
+ * `.claude-plugin/`, `.claude.json`, `.mcp.json.bak` and a `.mcp.json` below the root are
+ * none of them.
+ */
+export const hostConfigPathspecs: readonly string[] = hostConfigPaths.map((entry) => `:(icase)${entry}`);
 
 function argumentFault(args: unknown): string | null {
   if (!Array.isArray(args) || args.length === 0) return "git_mutate needs a git subcommand: args is empty";
@@ -175,21 +183,32 @@ export async function revision(gitDir: string, workTree: string, branch: string)
  * configuration. The worktree is read, not the index alone, because `commit -a`, `commit
  * --include` and `commit -- <path>` record what the index does not hold: one `status` over
  * the four paths names what is staged, changed or untracked there, and nothing
- * `.gitignore` covers. Git sees no empty directory, so an empty `.claude/` an engine
- * leaves behind is never named.
+ * `.gitignore` covers. A tracked file marked assume-unchanged is one `status` says nothing
+ * about while a commit naming it records it anyway, so `ls-files -v`, which tags such a file
+ * in lowercase, is read beside it. Git sees no empty directory, so an empty `.claude/` an
+ * engine leaves behind is never named. This is the early warning; the merge is the gate,
+ * and it refuses what this does not see (`src/gitroot.ts#smuggled`).
  */
 async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
-  const ran = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...hostConfigPaths]);
-  if (ran.exitCode !== 0) {
-    return `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git status exited ${ran.exitCode}`}`;
-  }
-  // Each line is `XY <path>`, a rename's `XY <old> -> <new>`, as git prints it.
-  const paths = ran.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  const unread = (ran: Ran, verb: string) =>
+    `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git ${verb} exited ${ran.exitCode}`}`;
+  const status = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...hostConfigPathspecs]);
+  if (status.exitCode !== 0) return unread(status, "status");
+  const listed = await run(gitDir, workTree, ["ls-files", "-v", "--", ...hostConfigPathspecs]);
+  if (listed.exitCode !== 0) return unread(listed, "ls-files");
+  // Each status line is `XY <path>`, a rename's `XY <old> -> <new>`, as git prints it; each
+  // `ls-files -v` line is `<tag> <path>`.
+  const carried = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  const marked = listed.stdout.split("\n").filter((line) => /^[a-z] /.test(line)).map((line) => line.slice(2))
+    .filter((entry) => !carried.includes(entry))
+    .map((entry) => `${entry} (marked assume-unchanged, which hides its changes from git status)`);
+  const paths = [...carried, ...marked];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
-    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json — loads hooks, MCP servers or plugins "
-    + "in the operator's own host session and is never committed through a task; remove it from the worktree, "
-    + "or ignore it if it is the operator's own, and commit again";
+    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case — loads hooks, MCP servers "
+    + "or plugins in the operator's own host session and is never committed through a task; remove it from the worktree, "
+    + "or ignore it if it is the operator's own, clear any assume-unchanged mark on it (update-index --no-assume-unchanged), "
+    + "and commit again";
 }
 
 /**

@@ -2252,8 +2252,10 @@ is about to arrive — which is the one path a specialist has to the root. A
 `info/exclude`, so `git add -A` there stages `.cross-agent/`, the lead's commit
 carries it, and a fast-forward lands it at the root. So `merge --ff-only`
 refuses, before git merges anything, when `git diff --name-only
-<defaultBranch>...<ref> -- .cross-agent <worktreeDir>` names any path, and the
-refusal lists them (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
+<defaultBranch>...<ref> -- .cross-agent <worktreeDir> :(icase).claude
+:(icase).codex :(icase).grok :(icase).mcp.json` names any path — the last four
+are a host's project configuration, the next paragraph's — and the refusal lists
+every one (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
 up: the loop's own commit step is `git_mutate ["add", "-A", "--", ".",
 ":(exclude).cross-agent", ":(exclude).worktrees"]`, so the ordinary case never
 stages either directory (`skills/cross-agent/SKILL.md` for a one-shot, with the
@@ -2269,22 +2271,33 @@ the operator's own session, outside any sandbox. A writable specialist can add
 one in its worktree, or un-ignore `.grok/` where the README's recipe ignores it,
 and the loop's step 6 stages it; until this build the diff a code reviewer read
 was the only thing that would catch it. So the four paths are one list
-(`src/gitmutate.ts#hostConfigPaths`), read by both git tools: `git_mutate`
-refuses a `commit`, in any form, while `git status --porcelain
---untracked-files=all` over those paths names anything in the worktree —
-staged, changed or untracked — read under `git.lock` before the command runs
-(`src/gitmutate.ts#hostConfigFault`, `#mutate`), and `merge --ff-only` diffs
-them beside `.cross-agent` and the worktree directory
-(`src/gitroot.ts#smuggled`); each refusal names the paths
-(`tests/gitmutate.test.ts#commitRefusesHostConfig`,
-`tests/gitroot.test.ts#mergeRefusesHostConfig`). A removal of a tracked one is
+(`src/gitmutate.ts#hostConfigPaths`), matched in any case — a host on a
+filesystem that ignores case reads `.Claude/` as `.claude/` — and as those names
+alone, so `.claude-plugin/`, `.claude.json`, `.mcp.json.bak` and a `.mcp.json`
+below the root pass (`#hostConfigPathspecs`), and both git tools read it. The
+root merge is the gate: `merge --ff-only` diffs the four beside `.cross-agent`
+and the worktree directory, so whatever a branch carries, however it came to
+carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
+`tests/gitroot.test.ts#mergeRefusesHostConfig`, `#mergeHostConfigAnyCase`,
+`#mergeNamesEveryPath`). `git_mutate`'s refusal of a `commit` is the early
+warning, where the lead can still have the file taken out: `git status
+--porcelain --untracked-files=all` over the four names anything in the worktree
+— staged, changed or untracked — and `git ls-files -v` any tracked one marked
+assume-unchanged, which hides a change from that status while a commit naming
+the path records it; both are read under `git.lock` before the command runs
+(`src/gitmutate.ts#hostConfigFault`, `#mutate`;
+`tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
+`#commitRefusesAssumeUnchanged`). The commit check does not see a git alias for
+`commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
+`commit --amend` over an older commit that already carries one; the merge
+refuses each of those. A removal of a tracked one is
 carried the same way, in a commit as in a merge: a server or a hook taken away
 changes the operator's session as much as one added. The commit's rule reads the
 worktree rather than the index because `commit -a`, `commit --include` and a
 pathspec commit record what the index does not hold; the price is that an
 untracked host file `.gitignore` does not cover blocks a commit even unstaged,
-and the refusal says what clears it: remove the file, or ignore it if it is the
-operator's own. Git sees no empty directory, so an empty `.claude/`
+and the refusal says what clears it: remove the file, ignore it if it is the
+operator's own, or clear its assume-unchanged mark. Git sees no empty directory, so an empty `.claude/`
 subdirectory an engine leaves in a worktree — the T13 sample's root holds an
 empty `.claude/.cc-writes/` — is never refused. Both team loops name the four
 where they say what step 6 and step 9 refuse
@@ -3780,9 +3793,11 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the exclusions are written once however often and however concurrently they
   are asked for (`tests/ledger.test.ts#excludeLedgerIdempotent`,
   `#excludeLedgerConcurrent`). A host's project configuration is refused at the
-  worktree's commit and at the merge
-  (`tests/gitmutate.test.ts#commitRefusesHostConfig`,
-  `tests/gitroot.test.ts#mergeRefusesHostConfig`), and both team loops name it
+  worktree's commit — in any case, and marked assume-unchanged — and at the
+  merge, which names every path it carries
+  (`tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
+  `#commitRefusesAssumeUnchanged`, `tests/gitroot.test.ts#mergeRefusesHostConfig`,
+  `#mergeHostConfigAnyCase`, `#mergeNamesEveryPath`), and both team loops name it
   where they say what those refuse (`tests/skills.test.ts#loopsNameHostConfig`).
   The statuses, the id alphabet and the runner log path each have one exported
   source (`tests/ledger.test.ts#taskStatusesOneSource`). The suite leaves no

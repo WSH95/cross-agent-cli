@@ -251,6 +251,55 @@ test("a merge carrying a host's project configuration is refused before git runs
   assert.equal(await git(root, "ls-files", "--", ".codex", ".mcp.json"), "", "and the root tracks none of it");
 });
 
+// @anchor mergeHostConfigAnyCase
+test("a merge carrying a host's project configuration in another case is refused, and one carrying its lookalikes is not", async (t) => {
+  const { root } = await repository(t);
+  // Names no host reads as its project's configuration: the merge goes through.
+  const lookalikes = path.join(root, ".worktrees", "lookalikes");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/lookalikes", lookalikes, "main"], slug: "lookalikes" }, { waitSeconds: 5 }));
+  fs.mkdirSync(path.join(lookalikes, ".claude-plugin"));
+  fs.writeFileSync(path.join(lookalikes, ".claude-plugin", "plugin.json"), "{}\n");
+  fs.writeFileSync(path.join(lookalikes, ".claude.json"), "{}\n");
+  fs.writeFileSync(path.join(lookalikes, ".mcp.json.bak"), "{}\n");
+  fs.mkdirSync(path.join(lookalikes, "docs"));
+  fs.writeFileSync(path.join(lookalikes, "docs", ".mcp.json"), "{}\n");
+  await git(lookalikes, "add", "-A");
+  await git(lookalikes, "commit", "-m", "lookalikes");
+  accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/lookalikes"], slug: "lookalikes" }, { waitSeconds: 5 }));
+
+  // On a filesystem that ignores case, a host reads `.Codex/` as `.codex/`.
+  const cased = path.join(root, ".worktrees", "cased");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/cased", cased, "main"], slug: "cased" }, { waitSeconds: 5 }));
+  fs.mkdirSync(path.join(cased, ".Codex"));
+  fs.writeFileSync(path.join(cased, ".Codex", "config.toml"), '[mcp_servers.elsewhere]\ncommand = "/tmp/not-a-server"\n');
+  fs.writeFileSync(path.join(cased, ".MCP.json"), "{}\n");
+  await git(cased, "add", "-A");
+  await git(cased, "commit", "-m", "a host's configuration, cased");
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/cased"], slug: "cased" }, { waitSeconds: 5 }));
+  assert.match(reason, /\.Codex\/config\.toml/);
+  assert.match(reason, /\.MCP\.json/);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+});
+
+// @anchor mergeNamesEveryPath
+test("a merge refusal names every path the branch would carry, however many", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "many");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/many", directory, "main"], slug: "many" }, { waitSeconds: 5 }));
+  fs.mkdirSync(path.join(directory, ".claude"));
+  for (const name of ["a.json", "b.json", "c.json"]) fs.writeFileSync(path.join(directory, ".claude", name), "{}\n");
+  fs.mkdirSync(path.join(directory, ".grok"));
+  fs.writeFileSync(path.join(directory, ".grok", "config.toml"), "[plugins]\n");
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-m", "four host files");
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/many"], slug: "many" }, { waitSeconds: 5 }));
+  for (const carried of [".claude/a.json", ".claude/b.json", ".claude/c.json", ".grok/config.toml"]) {
+    assert.ok(reason.includes(carried), `${carried}: ${reason}`);
+  }
+  assert.doesNotMatch(reason, /…/);
+});
+
 test("the merge fields are written once and a second merge on one slug is refused", async (t) => {
   const { root } = await repository(t);
   const directory = path.join(root, ".worktrees", "once");
