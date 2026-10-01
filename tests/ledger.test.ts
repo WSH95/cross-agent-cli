@@ -7,7 +7,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
+import { create, excludeLedger, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
 import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
@@ -618,6 +618,59 @@ test("ledger initialization skips absent git directories and worktree pointer fi
   const record = create(linked, input(linked), now);
   assert.deepEqual(read(linked, record.id), record);
   assert.equal(fs.readFileSync(path.join(linked, ".git"), "utf8"), pointer);
+});
+
+// @anchor excludeLedgerIdempotent
+test("excludeLedger writes each exclusion once and nothing else, and nothing at all outside a .git directory", (t) => {
+  // A repository with no exclude file: the two lines, once however often it is asked, and no ledger.
+  const root = project(t);
+  fs.mkdirSync(path.join(root, ".git"));
+  const exclude = path.join(root, ".git", "info", "exclude");
+  excludeLedger(root);
+  excludeLedger(root);
+  assert.equal(fs.readFileSync(exclude, "utf8"), ".cross-agent/\n.worktrees/\n");
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false, "an exclusion creates no ledger");
+
+  // What a file already holds is kept byte for byte, its missing final newline supplied.
+  const existing = project(t);
+  fs.mkdirSync(path.join(existing, ".git", "info"), { recursive: true });
+  fs.writeFileSync(path.join(existing, ".git", "info", "exclude"), "# existing");
+  excludeLedger(existing);
+  assert.equal(fs.readFileSync(path.join(existing, ".git", "info", "exclude"), "utf8"), "# existing\n.cross-agent/\n.worktrees/\n");
+
+  // No `.git` at all, and a `.git` that is a linked worktree's pointer file: nothing written.
+  const plain = project(t);
+  excludeLedger(plain);
+  assert.deepEqual(fs.readdirSync(plain), []);
+  const linked = project(t);
+  const pointer = "gitdir: /nonexistent/common/.git/worktrees/ledger\n";
+  fs.writeFileSync(path.join(linked, ".git"), pointer);
+  excludeLedger(linked);
+  assert.deepEqual(fs.readdirSync(linked), [".git"]);
+  assert.equal(fs.readFileSync(path.join(linked, ".git"), "utf8"), pointer);
+});
+
+// @anchor excludeLedgerConcurrent
+test("eight first callers of excludeLedger at once leave each exclusion once and no temporary behind", async (t) => {
+  const root = project(t);
+  const info = path.join(root, ".git", "info");
+  fs.mkdirSync(info, { recursive: true });
+  fs.writeFileSync(path.join(info, "exclude"), "# existing\n");
+  // Separate processes, as two first lock takers are: each reads, finds both lines missing,
+  // and writes the whole file, so whichever rename lands last carries what the first did.
+  const script = `import { excludeLedger } from ${JSON.stringify(new URL("../src/ledger.ts", import.meta.url).href)}; excludeLedger(process.argv[1]);`;
+  const children = Array.from({ length: 8 }, () =>
+    spawn(process.execPath, ["--input-type=module", "-e", script, "--", root], { stdio: ["ignore", "ignore", "pipe"] }));
+  const exits = await Promise.all(children.map(async (child) => {
+    let stderr = "";
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
+    const [code] = await once(child, "close");
+    return { code, stderr };
+  }));
+  for (const exit of exits) assert.equal(exit.code, 0, exit.stderr);
+  assert.equal(fs.readFileSync(path.join(info, "exclude"), "utf8"), "# existing\n.cross-agent/\n.worktrees/\n");
+  assert.deepEqual(fs.readdirSync(info), ["exclude"]);
 });
 
 test("create writes the fields a cascade, a resume and a stall clock read", (t) => {

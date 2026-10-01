@@ -4,7 +4,8 @@ import { loadConfig } from "./config.ts";
 import { GitRunError, globalOptions, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
-import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
+import { projectLock } from "./ledger.ts";
+import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 
@@ -451,7 +452,7 @@ export async function gitRoot(
   let claim: Lock | undefined;
   if (verb.step === "worktree-removed") {
     try {
-      claim = await acquire(lockPath(projectRoot, spawnLockName()), { waitSeconds: options.waitSeconds, operation });
+      claim = await projectLock(projectRoot, spawnLockName(), { waitSeconds: options.waitSeconds, operation });
     } catch (error) {
       return { ok: false, reason: message(error) };
     }
@@ -463,7 +464,7 @@ export async function gitRoot(
     }
     let lock: Lock;
     try {
-      lock = await acquire(lockPath(projectRoot, gitLockName()), { waitSeconds: options.waitSeconds, operation });
+      lock = await projectLock(projectRoot, gitLockName(), { waitSeconds: options.waitSeconds, operation });
     } catch (error) {
       return { ok: false, reason: message(error) };
     }

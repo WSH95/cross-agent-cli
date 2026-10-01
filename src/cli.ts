@@ -523,8 +523,7 @@ const cancelVerb: Verb = {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
     const [id] = parsed.positionals;
-    // A task nobody has is answered as `cancel` answers it, and before its lock: the lock
-    // would create `.cross-agent/locks/` in a project that has no ledger at all.
+    // A task nobody has is answered as `cancel` answers it, and before its lock.
     if (!scan(found.root).records.some((record) => record.id === id)) return refused(`no task ${id}`);
     // The operator's cancel names no lead, so any task of the project, as the tool cancels
     // for the operator row.

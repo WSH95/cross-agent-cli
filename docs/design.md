@@ -753,7 +753,10 @@ names, the per-cwd reservation in `src/reservation.ts`, and both locks under
 rulings are stated here as decisions too. Step 7's first half (T10b,
 `atc-s96.10`) built what was left of this section's own callers: `delegate` and
 `cancel` (`src/delegate.ts`, `src/tasks.ts`), which are what take `spawn.lock`,
-read the reservation, refuse on an unreadable record and write `cancelling`;
+read the reservation, refuse on an unreadable record and write `cancelling` —
+`cancel` looks the task up before the lock as well, so a task nobody has is
+refused with nothing locked and nothing created (`src/tasks.ts#cancel`,
+`tests/tasks.test.ts#cancelUnknownWritesNothing`);
 the reconciliation triggers; and the four delegation fields of the record.
 Everything below is built, the operator CLI's listing among it
 (`src/cli.ts#tasksVerb`).
@@ -767,8 +770,14 @@ Everything below is built, the operator CLI's listing among it
   (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
   (`src/runner.ts#taskArgument`). `.cross-agent/` and `.worktrees/` are added to
-  `.git/info/exclude` by the first `create`, which is the one caller of
-  `initialize`; every other reader resolves a record's path and writes nothing,
+  `.git/info/exclude` by whichever comes first, the first `create` — the one
+  caller of `initialize` — or the first project lock, which can precede any
+  record and is what would otherwise make `.cross-agent/locks/` unexcluded
+  (`src/ledger.ts#excludeLedger`, `#projectLock`,
+  `tests/gitmutate.test.ts#gitMutateUninitializedExcluded`). The file is written
+  whole, through a temporary and a rename, so two first callers leave each entry
+  once (`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`).
+  Every other reader resolves a record's path and writes nothing,
   so `find` and `read` of a task nobody created leave no directory and no
   exclusion line behind (`src/ledger.ts#initialize`, `#create`,
   `tests/ledger.test.ts#unknownReadWritesNothing`, bead `atc-s96.51`).
@@ -1222,16 +1231,20 @@ Everything below is built, the operator CLI's listing among it
   the holder dies, so a dead holder needs no TTL, no stale detection, and no
   rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
   reclaim, was refuted in T5's plan review: a reclaim by pathname can rename the
-  winner's fresh lock, so two reclaimers could both succeed.) Four locks, all
-  four named in one place and resolved through `lockPath`
-  (`src/locks.ts#lockPath`): `spawn.lock` around `delegate`'s validate-and-spawn
+  winner's fresh lock, so two reclaimers could both succeed.) Five locks, all
+  five named in one place and resolved through `lockPath`
+  (`src/locks.ts#lockPath`), and taken through `src/ledger.ts#projectLock`, which
+  writes the ledger's exclusions before a lock can make `.cross-agent/locks/`:
+  `spawn.lock` around `delegate`'s validate-and-spawn
   and around the whole of a `git_mutate` call (`src/locks.ts#spawnLockName`,
   `src/gitmutate.ts#gitMutate`); `record-<id>.lock` around every ledger
   read-check-rename, taken inside `update` (`src/locks.ts#recordLockName`);
   `runner-<id>.lock` held by a runner for its lifetime
-  (`src/locks.ts#runnerLockName`); and `git.lock` around every lead git
+  (`src/locks.ts#runnerLockName`); `ask-<id>.lock` around each write to one ask,
+  an answer or a cancel ("The lead model", item 3; `src/locks.ts#askLockName`);
+  and `git.lock` around every lead git
   mutation, taken by `git_mutate` inside its `spawn.lock`
-  (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`). All four are taken by
+  (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`). All five are taken by
   built code today: `delegate` and `cancel` hold `spawn.lock` — the one around
   validate-and-spawn, the other around the parent's claim and the snapshot of
   its descendants (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). **One

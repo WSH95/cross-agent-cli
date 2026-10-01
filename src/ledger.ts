@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { acquire, lockPath, recordLockName } from "./locks.ts";
+import type { AcquireOptions, Lock } from "./locks.ts";
 import type { SpawnRequest } from "./engines/types.ts";
 
 export type TaskStatus = "launching" | "running" | "stalled" | "orphaned" | "cancelling" | "done" | "failed" | "cancelled";
@@ -157,12 +158,18 @@ const patchFields = new Set<string>([
   "depth", "parentTaskId", "resumedFrom", "acknowledgedAt",
 ] satisfies (keyof TaskPatch)[]);
 
-function initialize(projectRoot: string): string {
-  const directory = path.resolve(projectRoot, ".cross-agent", "tasks");
-  fs.mkdirSync(directory, { recursive: true });
+/**
+ * Adds `.cross-agent/` and `.worktrees/` to the repository's `info/exclude` where either
+ * is missing, and nothing else: no ledger, no lock directory, and nothing at all where
+ * `.git` is not a directory (a linked worktree's pointer file, or no repository). The
+ * file is written whole, through a temporary beside it and a rename, rather than appended
+ * to: two first callers that both read it before either wrote compute the same text, so
+ * whichever rename lands last leaves each entry once. A temporary a crash leaves is
+ * `.exclude.<random>.tmp`, which git does not read.
+ */
+export function excludeLedger(projectRoot: string): void {
   const gitDirectory = path.resolve(projectRoot, ".git");
-  if (!fs.statSync(gitDirectory, { throwIfNoEntry: false })?.isDirectory()) return directory;
-
+  if (!fs.statSync(gitDirectory, { throwIfNoEntry: false })?.isDirectory()) return;
   const exclude = path.join(gitDirectory, "info", "exclude");
   let existing = "";
   try {
@@ -172,12 +179,32 @@ function initialize(projectRoot: string): string {
   }
   const lines = new Set(existing.split(/\r?\n/));
   const missing = [".cross-agent/", ".worktrees/"].filter((line) => !lines.has(line));
-  if (missing.length > 0) {
-    fs.mkdirSync(path.dirname(exclude), { recursive: true });
-    const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-    fs.appendFileSync(exclude, separator + missing.join("\n") + "\n");
-  }
+  if (missing.length === 0) return;
+  fs.mkdirSync(path.dirname(exclude), { recursive: true });
+  const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  writeTextAtomic(exclude, existing + separator + missing.map((line) => `${line}\n`).join(""));
+}
+
+/** The ledger's directory, made by the first record, with the ledger's exclusions written first. */
+function initialize(projectRoot: string): string {
+  excludeLedger(projectRoot);
+  const directory = path.resolve(projectRoot, ".cross-agent", "tasks");
+  fs.mkdirSync(directory, { recursive: true });
   return directory;
+}
+
+/**
+ * A project lock, taken once the ledger's exclusions are in place. The first lock makes
+ * `.cross-agent/locks/` (`src/locks.ts#acquire`), and a project lock can come before any
+ * record does — `delegate`, `cancel` and `git_mutate` take `spawn.lock` ahead of their
+ * own refusals — so a lock taken without this, in a repository nobody initialized, would
+ * leave an untracked `.cross-agent/` for `git status` to show. Every project lock in
+ * `src/` is taken here; `src/locks.ts` keeps the names and the paths, and imports nothing
+ * of the project.
+ */
+export async function projectLock(projectRoot: string, name: string, options: AcquireOptions): Promise<Lock> {
+  excludeLedger(projectRoot);
+  return acquire(lockPath(projectRoot, name), options);
 }
 
 /**
@@ -280,7 +307,11 @@ function readRecord(file: string): TaskRecord {
  * write. A value that cannot be serialized leaves nothing behind, temporary included.
  */
 export function writeAtomic(file: string, value: unknown): void {
-  const contents = JSON.stringify(value, null, 2) + "\n";
+  writeTextAtomic(file, JSON.stringify(value, null, 2) + "\n");
+}
+
+/** `writeAtomic`'s text form: a `.<name>.<random>.tmp` beside the file, renamed over it, removed on failure. */
+function writeTextAtomic(file: string, contents: string): void {
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(12).toString("base64url")}.tmp`);
   const fd = fs.openSync(temporary, "wx");
   try {
@@ -312,7 +343,8 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
   const id = input.id ?? newTaskId();
   // `recordPath` holds an id a caller minted to the one alphabet every reader resolves a
   // record by, before anything is written. The first record is then what creates the task
-  // directory and adds the ledger's exclusions: this is the one caller of `initialize`.
+  // directory, and adds the ledger's exclusions where no project lock has written them
+  // first (`projectLock`): this is the one caller of `initialize`.
   const file = recordPath(projectRoot, id);
   const directory = initialize(projectRoot);
   const record: TaskRecord = {
@@ -463,7 +495,7 @@ export async function update(
   // One read, one check, one rename, all inside the record lock. The lock is what makes
   // the check mean anything: a predicate without cross-process exclusion still
   // interleaves, so a stale writer could overwrite a fresh one between the two.
-  const lock = await acquire(lockPath(projectRoot, recordLockName(id)), {
+  const lock = await projectLock(projectRoot, recordLockName(id), {
     operation: `update task ${id}`, waitSeconds: options.waitSeconds,
   });
   try {

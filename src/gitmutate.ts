@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { loadConfig } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
-import { acquire, gitLockName, lockPath, spawnLockName } from "./locks.ts";
+import { projectLock } from "./ledger.ts";
+import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import type { Reservations } from "./reservation.ts";
@@ -188,7 +189,7 @@ export async function gitMutate(
   // the reservation check below from racing a delegation about to take this workspace.
   let claim: Lock;
   try {
-    claim = await acquire(lockPath(projectRoot, spawnLockName()), {
+    claim = await projectLock(projectRoot, spawnLockName(), {
       waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
     });
   } catch (error) {
@@ -278,7 +279,7 @@ async function mutate(
   // 3. One mutation at a time across the project.
   let lock: Lock;
   try {
-    lock = await acquire(lockPath(projectRoot, gitLockName()), {
+    lock = await projectLock(projectRoot, gitLockName(), {
       waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
     });
   } catch (error) {

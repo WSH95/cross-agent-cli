@@ -11,9 +11,9 @@ import type { LineageEntry } from "./guard.ts";
 import { run } from "./gitmutate.ts";
 import { gitRoot, repositoryAt, trackedStateFault } from "./gitroot.ts";
 import { removeJournal } from "./journal.ts";
-import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
+import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
-import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { spawnLockName } from "./locks.ts";
 import { asksSection, lineageAsks } from "./mailbox.ts";
 import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
@@ -283,7 +283,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   const waitSeconds = config.limits.lockWaitSeconds;
   let claim;
   try {
-    claim = await acquire(lockPath(projectRoot, spawnLockName()), {
+    claim = await projectLock(projectRoot, spawnLockName(), {
       operation: `delegate ${request.role}`, waitSeconds,
     });
   } catch (error) {

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Authority } from "../src/authority.ts";
 import { delegate } from "../src/delegate.ts";
@@ -14,6 +15,7 @@ import { answerAsk, createAsk, readAsk } from "../src/mailbox.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
 import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
+import { git } from "./helpers/git.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
 import { snapshot } from "./helpers/seed.ts";
@@ -634,4 +636,22 @@ test("check and result on an unknown task answer that there is none and write no
 test("a cancel names a task nobody has rather than inventing one", async (t) => {
   const p = await projectWithRoles(t);
   assert.deepEqual(await cancel(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+});
+
+// @anchor cancelUnknownWritesNothing
+test("a cancel of a task nobody has, in a repository nobody initialized, locks nothing and writes nothing", async (t) => {
+  // One empty commit and nothing of this project's: no config, no ledger, no lock directory.
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-uninitialized-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  await git(root, "init", "-b", "main");
+  await git(root, "commit", "--allow-empty", "-m", "initial");
+  const excludeFile = path.join(root, ".git", "info", "exclude");
+  const exclude = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile) : null;
+
+  // The config read answers defaults for a project with no file, and the lookup refuses
+  // before `spawn.lock` could make `.cross-agent/locks/`.
+  assert.deepEqual(await cancel(root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false, "no lock directory, no ledger");
+  assert.deepEqual(fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile) : null, exclude, "the exclude file is as git init left it");
+  assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
 });

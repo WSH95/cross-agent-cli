@@ -8,7 +8,8 @@ import { repositoryAt, trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
-import { acquire, gitLockName, lockPath } from "./locks.ts";
+import { projectLock } from "./ledger.ts";
+import { gitLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { verifyWorktree } from "./worktree.ts";
 
@@ -259,7 +260,7 @@ export async function runCommand(
   const unwritten = (reason: string): { ok: false; reason: string } =>
     ({ ok: false, reason: `the suite passed in ${cwd}, but its journal step could not be written: ${reason}` });
   try {
-    lock = await acquire(lockPath(projectRoot, gitLockName()), {
+    lock = await projectLock(projectRoot, gitLockName(), {
       waitSeconds: config.limits.lockWaitSeconds, operation: `run_command tests-passed ${slug}`,
     });
   } catch (error) {

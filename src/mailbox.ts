@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig, lockWaitSeconds } from "./config.ts";
-import { newTaskId, writeAtomic } from "./ledger.ts";
-import { acquire, askLockName, lockPath } from "./locks.ts";
+import { newTaskId, projectLock, writeAtomic } from "./ledger.ts";
+import { askLockName } from "./locks.ts";
 
 // The mailbox an engine-placed lead asks its operator through (design, "The lead model",
 // item 3). One JSON document per question under `<root>/.cross-agent/asks/`, written by the
@@ -237,7 +237,7 @@ export async function answerAsk(projectRoot: string, id: string, answer: string,
   if (!isAskId(id)) return { applied: false, reason: notAnAskId(id), ask: null };
   const found = readAsk(projectRoot, id);
   if (found.ask === null) return { applied: false, reason: noAsk(id, found), ask: null };
-  const lock = await acquire(lockPath(projectRoot, askLockName(id)), {
+  const lock = await projectLock(projectRoot, askLockName(id), {
     operation: `answer ask ${id}`, waitSeconds: options.waitSeconds ?? lockWaitSeconds(projectRoot),
   });
   try {
@@ -282,7 +282,7 @@ export async function cancelAsks(
   }
   for (const open of asks) {
     try {
-      const lock = await acquire(lockPath(projectRoot, askLockName(open.id)), {
+      const lock = await projectLock(projectRoot, askLockName(open.id), {
         operation: `cancel ask ${open.id}`, waitSeconds: options.waitSeconds ?? lockWaitSeconds(projectRoot),
       });
       try {

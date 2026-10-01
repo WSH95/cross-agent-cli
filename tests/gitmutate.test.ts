@@ -662,3 +662,20 @@ setInterval(() => {}, 1 << 30);
     await closed;
   }
 });
+
+// @anchor gitMutateUninitializedExcluded
+test("git_mutate in a repository nobody initialized leaves its lock directory excluded and nothing for git status to show", async (t) => {
+  // One empty commit and nothing of this project's: `spawn.lock` is the first thing that
+  // could make `.cross-agent/`, ahead of any record.
+  const temporary = await mkdtemp(path.join(tmpdir(), "cross-agent-gitmutate-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const root = await realpath(temporary);
+  await git(root, "init", "-b", "main");
+  await git(root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false",
+    "commit", "--allow-empty", "-m", "initial");
+
+  refusal(await gitMutate(root, { slug: "s", args: ["status"] }, { waitSeconds: 1 }));
+  assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
+  const lines = fs.readFileSync(path.join(root, ".git", "info", "exclude"), "utf8").split(/\r?\n/);
+  assert.ok(lines.includes(".cross-agent/") && lines.includes(".worktrees/"), lines.join("\n"));
+});

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockWaitSeconds } from "./config.ts";
-import { isTerminal, read, readSpec, update, writeOutcome } from "./ledger.ts";
-import { acquire, lockPath, runnerLockName } from "./locks.ts";
+import { isTerminal, projectLock, read, readSpec, update, writeOutcome } from "./ledger.ts";
+import { runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { findByEnvironment, foreignEngineSettled, identityOf, terminateGroup, terminateGroupByPid } from "./process.ts";
 import { spawnEngine } from "./engines/spawn.ts";
@@ -209,7 +209,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
   // own two engines. It is never released: the kernel releases it when this runner dies.
   // A second runner takes it with a zero wait, fails, and leaves the record alone.
   try {
-    await acquire(lockPath(projectRoot, runnerLockName(id)), {
+    await projectLock(projectRoot, runnerLockName(id), {
       operation: `run task ${id}`, waitSeconds: 0,
       // The lock is this runner's claim to be the only one for the task. If the kernel
       // has dropped it, another runner may already be starting, so this one gives up

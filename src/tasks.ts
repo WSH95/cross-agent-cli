@@ -2,9 +2,10 @@ import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig, lockWaitSeconds } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
-import { currentBootId, find, isProcessAlive, isTerminal, read, scan, tailLines, update } from "./ledger.ts";
+import { currentBootId, find, isProcessAlive, isTerminal, projectLock, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
-import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { spawnLockName } from "./locks.ts";
+import type { Lock } from "./locks.ts";
 import { asksDirectory, cancelAsks } from "./mailbox.ts";
 import type { AskNotCancelled } from "./mailbox.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
@@ -329,12 +330,16 @@ export async function cancel(projectRoot: string, taskId: string, options: Cance
   }
   const waitSeconds = config.limits.lockWaitSeconds;
   const grace = Math.max(0, config.limits.cancelGraceSeconds) * 1000;
+  // A task no record carries is refused before the lock, with nothing locked and nothing
+  // created: a project nothing was delegated in stays as it was. The lookup under the lock
+  // below is still the one the decision is taken on.
+  if (!scan(projectRoot).records.some((record) => record.id === taskId)) return { ok: false, reason: `no task ${taskId}` };
 
   let target: TaskRecord;
   let snapshot: TaskRecord[];
-  let claim: Awaited<ReturnType<typeof acquire>>;
+  let claim: Lock;
   try {
-    claim = await acquire(lockPath(projectRoot, spawnLockName()), { operation: `cancel task ${taskId}`, waitSeconds });
+    claim = await projectLock(projectRoot, spawnLockName(), { operation: `cancel task ${taskId}`, waitSeconds });
   } catch (error) {
     // A caller that could not even take the lock is told so, as `delegate` tells it.
     return { ok: false, reason: error instanceof Error ? error.message : String(error) };
