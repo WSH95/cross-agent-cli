@@ -177,3 +177,34 @@ test("the Claude and Codex manifests agree on the plugin's name, version and des
   const claude = json(".claude-plugin/plugin.json");
   for (const key of ["name", "version", "description"]) assert.equal(codex[key], claude[key], key);
 });
+
+// @anchor codexFallbackSnippet
+test("the Codex fallback is the table codex mcp add writes plus its two keys, and the README installs, checks and removes both attaches", () => {
+  const file = path.join(repoRoot, "assets", "codex", "mcp_servers.toml");
+  assert.ok(fs.existsSync(file), "assets/codex/mcp_servers.toml is missing");
+  // `codex mcp add cross-agent -- node <repo>/src/server.ts` writes the first three lines; the
+  // other two are what a `wait` and `codex exec` need, as in the plugin's mount.
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
+  assert.deepEqual(lines, [
+    "[mcp_servers.cross-agent]",
+    'command = "node"',
+    'args = ["<repo>/src/server.ts"]',
+    "tool_timeout_sec = 3600",
+    'default_tools_approval_mode = "approve"',
+  ]);
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const claude = readme.indexOf("## Install it in Claude Code");
+  const start = readme.indexOf("## Install it in Codex");
+  const end = readme.indexOf("## Run the tests");
+  assert.ok(claude >= 0 && start > claude && end > start, "the Codex section follows Claude Code's and precedes the tests");
+  const section = readme.slice(start, end);
+  for (const words of [
+    "codex plugin marketplace add", "codex plugin add cross-agent@agent-team-cli", "codex plugin list", "codex plugin remove",
+    "codex plugin marketplace remove", "codex mcp add cross-agent", "assets/codex/mcp_servers.toml", "~/.codex/skills/cross-agent",
+    "codex mcp remove cross-agent",
+    // The plugin's one extra step, and the switch that keeps its server off until a session asks.
+    "CROSS_AGENT_PROJECT", "plugins.cross-agent@agent-team-cli.enabled=true",
+  ]) {
+    assert.ok(section.includes(words), `the Codex section names ${words}`);
+  }
+});
