@@ -286,6 +286,9 @@ test("the launcher's budget table gives every host a wait that fits inside its t
   const text = flat(launcher());
   assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");
   assert.match(text, /Codex[^|]*\|[^|]*`tool_timeout_sec`[^|]*3600[^|]*\|[^|]*600/, "Codex's row names the manifest key and this repo's value");
+  // Where Codex's 3600 lives, and the run that measured a 600 s `wait` inside it (T14's B3).
+  assert.match(text, /Codex[^|]*\|[^|]*`\.codex-plugin\/plugin\.json`[^|]*lead mount[^|]*`docs\/probes\.md#codexHostTimeout`[^|]*\|/,
+    "Codex's row names the plugin manifest and the lead mount, and cites the measured wait");
   assert.match(text, /Grok[^|]*\|[^|]*\|[^|]*300/, "Grok's row, until T15 settles its timeout");
   assert.match(text, /Time limits/, "the table is the design's own budget, cited");
 });
