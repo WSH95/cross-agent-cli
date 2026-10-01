@@ -58,7 +58,7 @@ async function runEach(lines: string[][], cwd: string, env: NodeJS.ProcessEnv = 
 }
 
 /** Every verb, in the order usage lists them. */
-const usageOrder = ["init", "modes", "tasks", "show", "log", "journal", "list-asks", "answer", "report"];
+const usageOrder = ["init", "modes", "tasks", "show", "log", "cancel", "verify-worktree", "git", "journal", "list-asks", "answer", "report"];
 
 function scratch(t: TestContext): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-")));
@@ -562,7 +562,7 @@ test("the read verbs leave a seeded ledger byte for byte", async (t) => {
   const reads = [
     ...everyRecord(seeded).map((record) => ["show", record.id]),
     ["log", seeded.byStatus.done.id], ["journal"], ["journal", seeded.slug], ["list-asks"], ["tasks"], ["tasks", "--status", "stalled"],
-    ["report"], ["modes"],
+    ["report"], ["modes"], ["verify-worktree", seeded.worktree, seeded.branch],
   ];
   const lines = reads.flatMap((args) => [args, [...args, "--json"]]);
   const ran = await runEach(lines, root);
@@ -898,9 +898,13 @@ test("every verb refuses a flag it does not take and a wrong argument count as u
   const wrong = [
     ["init", "--since", "x"], ["modes", "--bogus", "x"], ["tasks", "--lines", "3"], ["show", "x", "--status", "running"],
     ["log", "x", "--reconcile"], ["journal", "--status", "x"], ["list-asks", "--since", "x"], ["answer", "a", "b", "--mode", "x"],
-    ["report", "--lines", "2"],
-    ["show"], ["log"], ["answer", "a"],
+    ["report", "--lines", "2"], ["cancel", "x", "--status", "running"], ["verify-worktree", "a", "b", "--lines", "3"],
+    ["git", "s", "--since", "x", "--", "status"],
+    ["show"], ["log"], ["answer", "a"], ["cancel"], ["verify-worktree", "a"], ["git", "--", "status"],
     ["modes", "x"], ["tasks", "x"], ["show", "a", "b"], ["log", "a", "b"], ["journal", "a", "b"], ["list-asks", "x"],
+    ["cancel", "a", "b"], ["verify-worktree", "a", "b", "c"], ["git", "a", "b", "--", "status"],
+    // git's arguments come after `--`, and there has to be one.
+    ["git", "s"], ["git", "s", "status"], ["git", "s", "--"],
   ];
   const ran = await runEach(wrong, root);
   ran.forEach((result, index) => {
@@ -919,4 +923,210 @@ test("every verb refuses a flag it does not take and a wrong argument count as u
   assert.equal(alone.code, 2);
   assert.match(alone.stderr, /no command/);
   assert.equal(fs.readdirSync(root).length, 0, "a refused command line writes nothing");
+});
+
+// @anchor cliCancel
+test("cancel cascades from a lead, leaves first and the lead last, and a second cancel answers each task as already settled", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, lead, runningChild, doneChild } = seeded;
+  const { find } = await import("../src/ledger.ts");
+  const { listAsks } = await import("../src/mailbox.ts");
+  const doneFile = path.join(root, ".cross-agent", "tasks", `${doneChild.id}.json`);
+  const doneBytes = fs.readFileSync(doneFile);
+  const [damaged] = listAsks(root).invalid;
+
+  const first = await run(["cancel", lead.id, "--json"], root);
+  assert.equal(first.code, 0, first.stdout);
+  const cancelled = JSON.parse(first.stdout) as { ok: boolean; outcomes: Array<{ id: string; outcome: string; reason?: string }>; asksCancelled: string[]; asksNotCancelled?: unknown[] };
+  // The children first, in the order the cascade took them, and the lead last.
+  assert.deepEqual(cancelled.outcomes.at(-1), { id: lead.id, outcome: "cancelled" });
+  assert.deepEqual(new Map(cancelled.outcomes.slice(0, -1).map((entry) => [entry.id, entry])), new Map([
+    [runningChild.id, { id: runningChild.id, outcome: "cancelled" }],
+    [doneChild.id, { id: doneChild.id, outcome: "already done" }],
+  ]));
+  // The lead asked nothing; the damaged ask file names no task, so it could be the lead's,
+  // and is named rather than skipped — beside a verdict it does not change.
+  assert.deepEqual(cancelled, {
+    ok: true, outcomes: cancelled.outcomes, asksCancelled: [], asksNotCancelled: [{ file: damaged.file, reason: damaged.reason }],
+  });
+  for (const id of [lead.id, runningChild.id]) assert.equal(find(root, id)!.status, "cancelled");
+  assert.equal(find(root, runningChild.id)!.reason, "cancelled; the runner did not settle it");
+
+  // A second cancel settles nothing more: what the first cancelled is already cancelled, and
+  // the child that had finished keeps its own status and its own bytes.
+  fs.rmSync(seeded.brokenAsk);
+  const [again, againJson] = await runEach([["cancel", lead.id], ["cancel", lead.id, "--json"]], root);
+  assert.equal(again.code, 0, again.stderr);
+  assert.equal(again.stderr, "");
+  const lines = again.stdout.split("\n");
+  for (const expected of [`${runningChild.id} already cancelled`, `${doneChild.id} already done`, `${lead.id} already cancelled`]) {
+    assert.ok(lines.includes(expected), `${expected} in ${again.stdout}`);
+  }
+  assert.equal(lines.indexOf(`${lead.id} already cancelled`), 2, "the lead's line is the cascade's last");
+  assert.ok(lines.includes("asks cancelled: none"));
+  assert.doesNotMatch(again.stdout, /not cancelled/);
+  const settled = JSON.parse(againJson.stdout) as typeof cancelled;
+  assert.equal(againJson.code, 0);
+  assert.equal(Object.hasOwn(settled, "asksNotCancelled"), false);
+  assert.deepEqual(settled.outcomes.at(-1), { id: lead.id, outcome: "already cancelled" });
+  assert.deepEqual(fs.readFileSync(doneFile), doneBytes, "a done child is never written by a cancel");
+
+  // A task nobody has is a 3, named, before any lock is taken.
+  const unknown = await run(["cancel", nobody], root);
+  assert.equal(unknown.code, 3);
+  assert.match(unknown.stderr, new RegExp(`^cross-agent: no task ${nobody}$`, "m"));
+  const bare = await bareRepository(t);
+  assert.equal((await run(["cancel", nobody], bare)).code, 3);
+  assert.equal(fs.existsSync(path.join(bare, ".cross-agent")), false, "a cancel of nothing creates no lock directory");
+});
+
+// @anchor cliVerifyWorktree
+test("verify-worktree verifies a linked worktree on its branch, and refuses the main worktree and a wrong branch", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, worktree, branch } = seeded;
+  const { verifyWorktree } = await import("../src/worktree.ts");
+  const verified = await verifyWorktree(root, worktree, branch);
+  assert.ok(!("reason" in verified));
+  const [text, json, relative, main, mainJson, wrong] = await runEach([
+    ["verify-worktree", worktree, branch], ["verify-worktree", worktree, branch, "--json"],
+    ["verify-worktree", path.relative(root, worktree), branch, "--json"],
+    ["verify-worktree", root, "main"], ["verify-worktree", root, "main", "--json"], ["verify-worktree", worktree, "task/other"],
+  ], root);
+  assert.equal(text.code, 0, text.stderr);
+  assert.equal(text.stdout, `verified: ${verified.workTree} on ${branch}\ngit dir: ${verified.gitDir}\ncommon dir: ${verified.commonDir}\n`);
+  assert.deepEqual(JSON.parse(json.stdout), verified);
+  // A relative path is the operator's, read against the working directory.
+  assert.equal(relative.code, 0, relative.stderr);
+  assert.deepEqual(JSON.parse(relative.stdout), verified);
+  assert.equal(main.code, 3);
+  assert.equal(main.stdout, "");
+  assert.match(main.stderr, /^refused: \S+ is not a linked worktree of /m);
+  assert.deepEqual(JSON.parse(mainJson.stdout), await verifyWorktree(root, root, "main"));
+  assert.equal(wrong.code, 3);
+  assert.match(wrong.stderr, /^refused: Worktree branch \S+ does not match the requested branch task\/other\.$/m);
+});
+
+// @anchor cliGit
+test("git runs one subcommand in the verified worktree as git_mutate does: 0 journaled, 1 for git's own failure, 3 for a refusal", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, slug, worktree } = seeded;
+  // A task record nobody can read holds every workspace (design section 2, E2), and the CLI
+  // refuses on it exactly as the tool does, naming the file, before git runs.
+  const held = await run(["git", slug, "--", "status"], root);
+  assert.equal(held.code, 3);
+  assert.ok(held.stderr.includes(seeded.brokenTask), held.stderr);
+  fs.rmSync(seeded.brokenTask);
+
+  const before = await git(worktree, "rev-parse", "HEAD");
+  const committed = await run(["git", slug, "--json", "--", "commit", "--allow-empty", "-m", "msg"], root);
+  assert.equal(committed.code, 0, committed.stdout);
+  const mutated = JSON.parse(committed.stdout) as { ok: boolean; exitCode: number; journal: { step: string; before: string; after: string; args: string[] } };
+  assert.equal(mutated.ok, true);
+  assert.equal(mutated.journal.step, "committed");
+  assert.equal(mutated.journal.before, before);
+  assert.notEqual(mutated.journal.after, before);
+  assert.equal(mutated.journal.after, await git(worktree, "rev-parse", "HEAD"));
+  assert.deepEqual(mutated.journal.args, ["commit", "--allow-empty", "-m", "msg"]);
+  const journaled = await run(["journal", slug, "--json"], root);
+  assert.deepEqual((JSON.parse(journaled.stdout) as { steps: unknown[] }).steps.at(-1), mutated.journal);
+
+  // Everything after `--` is git's, a flag-shaped word included.
+  const status = await run(["git", slug, "--", "status", "--short", "--branch"], root);
+  assert.equal(status.code, 0, status.stderr);
+  assert.match(status.stdout, new RegExp(`^## ${literally(seeded.branch)}$`, "m"));
+  const head = await git(worktree, "rev-parse", "HEAD");
+  assert.match(status.stdout, new RegExp(`^journal: git ${head}→${head}$`, "m"));
+
+  // git ran and failed: a 1, its own words printed, the answer whole under --json.
+  const [failed, failedJson] = await runEach([
+    ["git", slug, "--", "checkout", "no-such-ref"], ["git", slug, "--json", "--", "checkout", "no-such-ref"],
+  ], root);
+  assert.equal(failedJson.code, 1);
+  const refusal = JSON.parse(failedJson.stdout) as { ok: boolean; exitCode: number; stderr: string; reason: string };
+  assert.equal(refusal.ok, false);
+  assert.equal(refusal.exitCode, 1);
+  assert.match(refusal.stderr, /no-such-ref/);
+  assert.equal(failedJson.stderr, "");
+  assert.equal(failed.code, 1);
+  assert.ok(failed.stderr.includes(refusal.stderr), failed.stderr);
+  assert.match(failed.stderr, /exited 1/);
+
+  // A refusal before git ran: a 3.
+  const fault = await run(["git", slug, "--", "status", "--git-dir=/x"], root);
+  assert.equal(fault.code, 3);
+  assert.match(fault.stderr, /--git-dir=\/x is refused/);
+
+  // A held git.lock refuses after the project's own lockWaitSeconds, which is 1 here.
+  const { acquire, gitLockName, lockPath } = await import("../src/locks.ts");
+  const lock = await acquire(lockPath(root, gitLockName()), { operation: "a test holding the git lock", waitSeconds: 0 });
+  t.after(() => lock.release());
+  const started = performance.now();
+  const blocked = await run(["git", slug, "--", "status"], root);
+  const elapsed = performance.now() - started;
+  await lock.release();
+  assert.equal(blocked.code, 3, blocked.stderr);
+  assert.match(blocked.stderr, /git\.lock is held by another process \(waited 1s\)/);
+  assert.ok(elapsed < 4_000, `the refusal took ${Math.round(elapsed)} ms against a one-second wait`);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing ran while the lock was held");
+});
+
+// @anchor cliRefusesInsideEngine
+test("a verb that writes refuses inside a task's environment, naming the marker, and the reads answer as they do outside one", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, slug, asks, byStatus, lead } = seeded;
+  const state = path.join(root, ".cross-agent");
+  const fresh = scratch(t);
+  const env = (variables: Record<string, string>) => ({ ...suiteEnv, ...variables });
+  const writes: Array<{ args: string[]; cwd: string }> = [
+    { args: ["init", "--mode", "solo"], cwd: fresh },
+    { args: ["answer", asks.open.id, "text"], cwd: root },
+    { args: ["cancel", byStatus.running.id], cwd: root },
+    { args: ["git", slug, "--", "status"], cwd: root },
+    { args: ["tasks", "--reconcile"], cwd: root },
+  ];
+  for (const [variable, value] of [["CROSS_AGENT_TASK", lead.id], ["CROSS_AGENT_DEPTH", "2"], ["CROSS_AGENT_LINEAGE", `lead:${root}`]]) {
+    const before = snapshot(state);
+    for (const { args, cwd } of writes) {
+      const [text, json] = [await run(args, cwd, undefined, env({ [variable]: value })), await run([args[0], "--json", ...args.slice(1)], cwd, undefined, env({ [variable]: value }))];
+      const refusal = new RegExp(`^${variable} is set in this environment: ${args[0]} is an operator's command, and an engine reaches the project through its server, never this CLI$`);
+      assert.equal(text.code, 3, `${variable}: ${args.join(" ")}: ${text.stderr}`);
+      assert.equal(text.stdout, "");
+      assert.match(text.stderr.replace(/^cross-agent: /, "").trimEnd(), refusal);
+      assert.equal(json.code, 3, `${variable}: ${args.join(" ")} --json`);
+      const document = JSON.parse(json.stdout) as { ok: boolean; reason: string };
+      assert.equal(document.ok, false);
+      assert.match(document.reason, refusal);
+    }
+    // Nothing was written: no config, the ask open and byte for byte, the record running, no
+    // journal step and no lock file — the whole state directory as it was.
+    assert.deepEqual(snapshot(state), before, `${variable}: nothing under .cross-agent/ changed`);
+    assert.deepEqual(fs.readdirSync(fresh), [], `${variable}: init wrote nothing`);
+  }
+  const { find } = await import("../src/ledger.ts");
+  const { readAsk } = await import("../src/mailbox.ts");
+  assert.equal(find(root, byStatus.running.id)!.status, "running");
+  assert.equal(readAsk(root, asks.open.id)!.status, "open");
+
+  // The reads are the same answers with the marker as without it.
+  const reads = [
+    ["tasks"], ["show", byStatus.done.id], ["log", byStatus.done.id], ["journal", slug], ["list-asks"], ["modes"], ["report"],
+    ["verify-worktree", seeded.worktree, seeded.branch],
+  ].map((args) => [...args, "--json"]);
+  const outside = await runEach(reads, root);
+  const inside = await runEach(reads, root, env({ CROSS_AGENT_TASK: lead.id }));
+  // Two runs a moment apart: the seconds a running task has run are the only difference.
+  const steady = (text: string) => JSON.parse(text, (key, value) => (key === "durationSeconds" || key === "elapsedSeconds" ? undefined : value));
+  outside.forEach((ran, index) => {
+    assert.equal(inside[index].code, ran.code, reads[index].join(" "));
+    assert.deepEqual(steady(inside[index].stdout), steady(ran.stdout), reads[index].join(" "));
+  });
+
+  // The project variable alone is the operator's own way to name a project, and refuses nothing.
+  const elsewhere = scratch(t);
+  const named = await run(["answer", asks.open.id, "named by CROSS_AGENT_PROJECT"], elsewhere, undefined, env({ CROSS_AGENT_PROJECT: root }));
+  assert.equal(named.code, 0, named.stderr);
+  assert.equal(readAsk(root, asks.open.id)!.answer, "named by CROSS_AGENT_PROJECT");
+  const initialized = await run(["init", "--mode", "solo"], fresh, undefined, env({ CROSS_AGENT_PROJECT: root }));
+  assert.equal(initialized.code, 0, initialized.stderr);
+  assert.ok(fs.existsSync(path.join(fresh, CONFIG_PATH)));
 });

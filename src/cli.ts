@@ -2,18 +2,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig } from "./config.ts";
+import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
+import { gitMutate } from "./gitmutate.ts";
+import type { GitMutateRequest } from "./gitmutate.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
 import { find, isProcessAlive, isTerminal, readOutcome, scan, tailLines } from "./ledger.ts";
 import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
 import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
-import { builtInModesDir, loadMode } from "./modes.ts";
-import type { ModeLead, Workspace } from "./modes.ts";
+import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
+import type { EffectiveGitPolicy, ModeLead, Workspace } from "./modes.ts";
 import { discoverProject, parseFlags } from "./project.ts";
-import { listTasks, result } from "./tasks.ts";
+import { cancel, listTasks, result } from "./tasks.ts";
+import type { Outcome } from "./tasks.ts";
+import { verifyWorktree } from "./worktree.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
 // one parser and one exit protocol. Each verb calls the function its tool calls, with the
@@ -22,7 +26,8 @@ import { listTasks, result } from "./tasks.ts";
 // the stall `wait` and `check` wrote rather than taking a reading of its own. `init` writes
 // the bind-time config for a mode; `answer` replies to an engine-placed lead's question
 // without a host session; `report` renders the per-task log from the ledger, which is where
-// that log comes from under engine placement.
+// that log comes from under engine placement. Every verb that writes is the operator's, and
+// is refused inside a task's environment (`taskMarker`).
 
 /** The exit protocol, one for every verb. */
 export const EXIT = { ok: 0, error: 1, usage: 2, precondition: 3, running: 4, needsOperator: 5, stalled: 6 } as const;
@@ -48,6 +53,13 @@ const PROJECT_RULE = "Without --project, init writes in the current directory, a
 /** The eight statuses `tasks --status` filters by, as `list_tasks` takes them (`src/ledger.ts#TaskStatus`). */
 const TASK_STATUSES: readonly TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
+/**
+ * The variables `childEnv` sets to mark a task's process tree (`src/guard.ts#childEnv`). The
+ * fourth one it sets, `CROSS_AGENT_PROJECT`, is no marker: it is also the operator's own way
+ * to name a project (`PROJECT_RULE`).
+ */
+const TASK_MARKERS = ["CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"] as const;
+
 export interface CliOutput {
   out: (text: string) => void;
   err: (text: string) => void;
@@ -58,6 +70,8 @@ interface Parsed {
   values: Record<string, string>;
   /** The flags given that take no value. */
   booleans: ReadonlySet<string>;
+  /** What followed `--`, for a verb that takes a variadic tail; empty for every other verb. */
+  rest: string[];
   json: boolean;
 }
 
@@ -91,8 +105,15 @@ interface Verb {
   flags: Record<string, string>;
   /** Flags that take no value, each given at most once. */
   booleans?: string[];
+  /** A variadic tail, named: everything after `--`, verbatim and never read as flags, and at least one word of it. */
+  rest?: string;
   /** A value on the command line this verb cannot read, judged before anything runs: a 2, as a wrong flag is. */
   check?(parsed: Parsed): string | null;
+  /**
+   * Whether this command line writes the project — a config, an ask, a record, a lock, git
+   * metadata. Writing is an operator's power, refused inside a task's environment.
+   */
+  writes: boolean | ((parsed: Parsed) => boolean);
   run(parsed: Parsed, context: Context): Promise<Answer>;
 }
 
@@ -197,6 +218,12 @@ function taskNamed(root: string, id: string): TaskRecord | null {
   return /^[A-Za-z0-9_-]+$/.test(id) ? find(root, id) : null;
 }
 
+/** A damaged ask file's reason, less the file name the mailbox already put at its head (`src/mailbox.ts#listAsks`). */
+function askFault(file: string, reason: string): string {
+  const named = `invalid ask ${file}: `;
+  return reason.startsWith(named) ? reason.slice(named.length) : reason;
+}
+
 /** A journal's steps, one line each: when, which step, the SHAs around it, and what it ran. */
 function journalSteps(journal: Journal): string[] {
   return journal.steps.map((entry) => [
@@ -211,6 +238,7 @@ const initVerb: Verb = {
   summary: "write .cross-agent/config.json, binding every role of a mode to an engine",
   positionals: [],
   flags: { "--mode": "name" },
+  writes: true,
   async run(parsed, context) {
     const mode = parsed.values["--mode"] ?? DEFAULT_MODE;
     let root: string;
@@ -257,6 +285,7 @@ const modesVerb: Verb = {
   summary: "the installed modes, the active one marked, each with its roles",
   positionals: [],
   flags: {},
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -316,6 +345,8 @@ const tasksVerb: Verb = {
   flags: { "--status": "status" },
   booleans: ["--reconcile"],
   check: statusCheck(TASK_STATUSES),
+  // The reconciling read writes what `list_tasks` would; the plain one writes nothing.
+  writes: (parsed) => parsed.booleans.has("--reconcile"),
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -357,6 +388,7 @@ const showVerb: Verb = {
   positionals: ["id"],
   flags: { "--lines": "n" },
   check: linesCheck,
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -435,6 +467,7 @@ const logVerb: Verb = {
   positionals: ["id"],
   flags: { "--lines": "n" },
   check: linesCheck,
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -447,12 +480,120 @@ const logVerb: Verb = {
   },
 };
 
+/** An outcome the cascade finished with: the task is settled, by this cancel or before it. */
+function settledOutcome(outcome: Outcome): boolean {
+  return outcome.outcome.startsWith("already ") || ["cancelled", "done", "failed"].includes(outcome.outcome);
+}
+
+const cancelVerb: Verb = {
+  usage: "cross-agent cancel <id> [--project <root>]",
+  summary: "cancel a task and every task it delegated, leaves first, and its lineage's open asks",
+  positionals: ["id"],
+  flags: {},
+  writes: true,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const [id] = parsed.positionals;
+    // A task nobody has is answered as `cancel` answers it, and before its lock: the lock
+    // would create `.cross-agent/locks/` in a project that has no ledger at all.
+    if (!scan(found.root).records.some((record) => record.id === id)) return refused(`no task ${id}`);
+    // The operator's cancel names no lead, so any task of the project, as the tool cancels
+    // for the operator row.
+    const cancelled = await cancel(found.root, id);
+    if (!cancelled.ok) return refused(cancelled.reason, cancelled);
+    const lines = cancelled.outcomes.map((entry) => `${entry.id} ${entry.outcome}${entry.reason === undefined ? "" : ` — ${entry.reason}`}\n`);
+    lines.push(`asks cancelled: ${cancelled.asksCancelled.length === 0 ? "none" : cancelled.asksCancelled.join(", ")}\n`);
+    // An ask file a cancel could not write is the operator's to repair by hand, and changes
+    // no verdict: the cascade's own outcomes are the answer.
+    for (const entry of cancelled.asksNotCancelled ?? []) {
+      lines.push(`ask not cancelled ${"id" in entry ? `${entry.id}: ${entry.reason}` : `${entry.file}: ${askFault(entry.file, entry.reason)}`}\n`);
+    }
+    // A task still active after the cascade is what a second cancel retries.
+    const code = cancelled.outcomes.every(settledOutcome) ? EXIT.ok : EXIT.running;
+    return { code, document: cancelled, text: lines.join("") };
+  },
+};
+
+const verifyWorktreeVerb: Verb = {
+  usage: "cross-agent verify-worktree <path> <branch> [--project <root>]",
+  summary: "verify a linked worktree and its exact branch, as verify_worktree does",
+  positionals: ["path", "branch"],
+  flags: {},
+  writes: false,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const [target, branch] = parsed.positionals;
+    // No drift check: the tool's compares the config with the mode its server serves, and
+    // this command serves none.
+    const verified = await verifyWorktree(found.root, path.resolve(context.cwd, target), branch);
+    if ("reason" in verified) return { code: EXIT.precondition, document: verified, text: `refused: ${verified.reason}\n` };
+    return {
+      code: EXIT.ok, document: verified,
+      text: `verified: ${verified.workTree} on ${verified.branch}\ngit dir: ${verified.gitDir}\ncommon dir: ${verified.commonDir}\n`,
+    };
+  },
+};
+
+const gitVerb: Verb = {
+  usage: "cross-agent git <slug> [--path <dir>] [--branch <name>] [--project <root>] -- <git arguments…>",
+  summary: "one git subcommand in a verified worktree, under the project's locks and journaled, as git_mutate runs it",
+  positionals: ["slug"],
+  rest: "git arguments",
+  flags: { "--path": "dir", "--branch": "name" },
+  writes: true,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    // The policy the tool acts under: the mode's own, or the implicit one a mode with no
+    // worktree role uses (`src/modes.ts#gitPolicy`).
+    let policy: EffectiveGitPolicy;
+    try {
+      policy = gitPolicy(loadConfigWithMode(found.root).mode);
+    } catch (error) {
+      return refused(message(error));
+    }
+    const [slug] = parsed.positionals;
+    const where = parsed.values["--path"];
+    const branch = parsed.values["--branch"];
+    const request: GitMutateRequest = {
+      slug, args: parsed.rest,
+      // A path on the operator's command line is the operator's, read against the working directory.
+      ...(where === undefined ? {} : { path: path.resolve(context.cwd, where) }),
+      ...(branch === undefined ? {} : { branch }),
+    };
+    const ran = await gitMutate(found.root, request, {
+      waitSeconds: lockWaitSeconds(found.root), dir: policy.worktreeDir, branchPattern: policy.branchPattern,
+    });
+    const own = (text: string | undefined) => (text === undefined || text === "" || text.endsWith("\n") ? text ?? "" : `${text}\n`);
+    if (ran.ok) {
+      const { step, before, after } = ran.journal;
+      const notes = own(ran.stderr) + (ran.lockLost
+        ? "cross-agent: lock lost while git ran: the command is done and journaled, but another mutation or a delegation may have run beside it\n"
+        : "");
+      return {
+        code: EXIT.ok, document: ran, text: `${own(ran.stdout)}journal: ${step} ${before ?? "-"}→${after ?? "-"}\n`,
+        ...(notes === "" ? {} : { notes }),
+      };
+    }
+    // git ran and said so: its exit code is the answer's, and so are its own words. A step
+    // that could not be journaled after a zero exit carries that zero, and is the same 1.
+    if (ran.exitCode !== undefined) {
+      return { code: EXIT.error, document: ran, text: own(ran.stdout), stream: "stdout", notes: `${own(ran.stderr)}cross-agent: ${ran.reason}\n` };
+    }
+    // Everything else is a refusal before git ran.
+    return refused(ran.reason, ran);
+  },
+};
+
 const journalVerb: Verb = {
   usage: "cross-agent journal [<slug>] [--project <root>]",
   summary: "one task's git journal, step by step, or with no slug the slug of every journal",
   positionals: [],
   optional: ["slug"],
   flags: {},
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -489,6 +630,7 @@ const listAsksVerb: Verb = {
   positionals: [],
   flags: { "--status": "status" },
   check: statusCheck(askStatuses),
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -502,11 +644,8 @@ const listAsksVerb: Verb = {
         : "")).join("");
     // A damaged file is named, never thrown: the asks that do read are still the answer, and
     // the file is the operator's to repair or remove by hand.
-    const notes = listed.invalid.map((entry) => {
-      const prefix = `invalid ask ${entry.file}: `;
-      const reason = entry.reason.startsWith(prefix) ? entry.reason.slice(prefix.length) : entry.reason;
-      return `cross-agent: invalid ask file ${entry.file}: ${reason}${entry.taskId === undefined ? "" : ` (task ${entry.taskId})`}\n`;
-    }).join("");
+    const notes = listed.invalid.map((entry) => `cross-agent: invalid ask file ${entry.file}: ${askFault(entry.file, entry.reason)}`
+      + `${entry.taskId === undefined ? "" : ` (task ${entry.taskId})`}\n`).join("");
     // An open ask in what this command printed is a lead waiting on the operator; the
     // filter scopes the verdict as it scopes the listing.
     const code = listed.asks.some((ask) => ask.status === "open") ? EXIT.needsOperator : EXIT.ok;
@@ -519,6 +658,7 @@ const answerVerb: Verb = {
   summary: "answer an engine-placed lead's open question; the first answer stands",
   positionals: ["ask-id", "text"],
   flags: {},
+  writes: true,
   async run(parsed, context) {
     const [id, text] = parsed.positionals;
     const found = await project(parsed, context);
@@ -582,6 +722,7 @@ const reportVerb: Verb = {
   summary: "every task, newest first — role, engine, model, effort, duration, outcome, id — then each final message",
   positionals: [],
   flags: { "--since": "task id" },
+  writes: false,
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
@@ -618,6 +759,9 @@ const verbs: Record<string, Verb> = {
   tasks: tasksVerb,
   show: showVerb,
   log: logVerb,
+  cancel: cancelVerb,
+  "verify-worktree": verifyWorktreeVerb,
+  git: gitVerb,
   journal: journalVerb,
   "list-asks": listAsksVerb,
   answer: answerVerb,
@@ -682,10 +826,23 @@ function split(argv: readonly string[]): { verb?: string; rest: string[] } {
   return { rest };
 }
 
-/** The positionals a verb takes, as its refusal names them. */
+/** The arguments a verb takes, as its refusal names them. */
 function shape(verb: Verb): string {
-  const names = [...verb.positionals.map((each) => `<${each}>`), ...(verb.optional ?? []).map((each) => `[<${each}>]`)];
+  const names = [
+    ...verb.positionals.map((each) => `<${each}>`), ...(verb.optional ?? []).map((each) => `[<${each}>]`),
+    ...(verb.rest === undefined ? [] : [`-- <${verb.rest}…>`]),
+  ];
   return names.length === 0 ? "no arguments" : names.join(" ");
+}
+
+/**
+ * The marker a task's environment carries, when this command line writes and the
+ * environment carries one, or null. A verb that writes is an operator's power, and the deny
+ * list keeps only the launch forms it names out of an engine's hands (`src/guard.ts#denyTargets`).
+ */
+function taskMarker(verb: Verb, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): string | null {
+  const writes = typeof verb.writes === "function" ? verb.writes(parsed) : verb.writes;
+  return writes ? TASK_MARKERS.find((variable) => env[variable] !== undefined) ?? null : null;
 }
 
 /**
@@ -700,10 +857,12 @@ function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { h
   const positionals: string[] = [];
   const seen = new Set<string>();
   const booleans = new Set<string>();
+  let rest: string[] | undefined;
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index];
     if (token === "--") {
-      positionals.push(...argv.slice(index + 1));
+      if (verb.rest === undefined) positionals.push(...argv.slice(index + 1));
+      else rest = argv.slice(index + 1);
       break;
     }
     if (token === "--json" || token === "--help") {
@@ -723,7 +882,7 @@ function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { h
   }
   const flags = parseFlags(pairs, { ...verb.flags, "--project": "root" });
   if ("reason" in flags) return flags;
-  const parsed: Parsed = { positionals, values: flags.values, booleans, json: seen.has("--json") };
+  const parsed: Parsed = { positionals, values: flags.values, booleans, rest: rest ?? [], json: seen.has("--json") };
   if (seen.has("--help")) return { ...parsed, help: true };
   const most = verb.positionals.length + (verb.optional?.length ?? 0);
   if (positionals.length < verb.positionals.length || positionals.length > most) {
@@ -731,6 +890,9 @@ function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { h
   }
   if (positionals.some((each) => each === "")) {
     return { reason: `${name}'s ${[...verb.positionals, ...(verb.optional ?? [])].join(" and ")} must not be empty` };
+  }
+  if (verb.rest !== undefined && parsed.rest.length === 0) {
+    return { reason: `${name} takes its ${verb.rest} after --, and ${rest === undefined ? "there is no --" : "nothing follows it"}` };
   }
   const fault = verb.check?.(parsed) ?? null;
   if (fault !== null) return { reason: fault };
@@ -765,9 +927,14 @@ export async function runCli(
     write.out(help(json));
     return EXIT.ok;
   }
+  // Checked on the command line as read, so a usage error is still a 2 and help is still
+  // help, and before the verb runs, so a refused write has written nothing.
+  const marker = taskMarker(verb, parsed, env);
   let answered: Answer;
   try {
-    answered = await verb.run(parsed, { cwd, env });
+    answered = marker !== null
+      ? refused(`${marker} is set in this environment: ${name} is an operator's command, and an engine reaches the project through its server, never this CLI`)
+      : await verb.run(parsed, { cwd, env });
   } catch (error) {
     if (error instanceof UsageError) return usageError(error.message, verb);
     // Nothing a verb anticipated: the message, as the one document under `--json`.
