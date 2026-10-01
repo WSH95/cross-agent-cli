@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T02:54:38Z
+updated_at: 2026-10-01T02:57:17Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -41,46 +41,24 @@ every Codex row is recorded as not run with the command that runs it later
 
 ## In flight
 
-2026-09-30: task 6b (pre-flight probes and hardening: `.56`, `.47`, `.49`,
-`.50`, `.51`, `.53`, `atc-3ub`; claimed) is implemented on the task branch —
-twelve commits `cb87b01..9066dfd` (634 tests, 633 pass, 1 skipped; citations
-clean; e2e-verify 8 pass). Code review round 1 (three seats) found no Critical
-and three Important — the verifier's launcher grammar (misses and false FAILs),
-`--lead-role` overriding a shipped mode, and the verifier not reading Codex
-rollouts — fixed in two rounds: `b320ec0..50a7e37` (a shell tokenizer, `--lead-role`
-narrowed, Codex rollouts read) and `6d52315..48a8227` (the verifier's contract:
-`pass` only for what its grammar understands, `?` for anything unmodeled beside
-an engine name). Suite 645 / 644 / 1 skipped; gates green. Round 3 still
-found launch shapes in the same classes, so after two implementer iterations
-a class-level escalation (`task-6b-findings-round-3.md`, 6b-E-1 … 6) changed
-`tools/e2e-verify.mjs`, its tests and the design's verifier paragraph
-(`0f9ff3a`); the final three-seat review approved the classes and the task,
-and a wrap-up commit (`fbaf358`) closed six narrow in-class gaps (suite 659 /
-658 / 1 skipped; verifier tests 40/40; dispatch probe 347/347; sample 8 pass).
-6b is ready to merge. Beads filed: `atc-s96.59` (U+2028 server bug, for S11),
-`atc-s96.60` (verifier shapes outside its classes). Earlier: round 3 of the
-reviews ran (`task-6b-findings-round-{1,2}.md`, report
-`task-6b-report.md`). Found by dogfooding: `src/server.ts` reads stdin with
-`readline`, which splits on U+2028/U+2029, so a request carrying either hangs
-the caller (bead `atc-s96.59`, folded into S11). Open from it: Codex 0.159.2's `--json`
-omits sandbox-denied commands, so the verifier must read Codex rollouts
-before any Codex-lead or Codex-host run. It runs before S11; S11's brief is being refreshed and reviewed meanwhile
-(`task-7-brief.md`). The branch `task/cross-agent-m3` is fast-forwarded to `main` at
-`cb87b01` (6b's BASE; `npm test` 617 / 616 / 1 skipped). A consult smoke on
-current CLIs passes on all three engines, but only after a machine fix:
-grok 1.0.44's `read-only` and `strict` sandboxes refused to start because
-`/run/podman` was `0700 root` (see `RISKS.md` for the fix and rollback).
-The worktree holds a git-ignored `.cross-agent/` (a `solo` config and the
-records of the controller's review delegations) — the review harness, not
-the product. Open beads worth knowing: `atc-s96.56` (the verifier's residual
-launcher cases — `echo claude` counts as a launch; `claude;true`,
-`$(claude)` and a bare backticked `claude` are missed; so is `node
---experimental-strip-types src/cli.ts` — and two non-positional citation
-bundles at `docs/design.md` ~1572 and ~3176; do it before E4–E7 rely on
-the verifier), `atc-3ub` (two
-unprobed facts: `--rules` beside `--prompt-file`; Codex `workspace-write`
-and `~/.cache`), `atc-s96.53` (the authority hop budget under other hosts),
-`atc-s96.49` (the transient environ stand-down flake), `.42` (docs nits).
+2026-10-01: task 6b (pre-flight probes and hardening) is **merged** — `main` at
+`d428145` (24 commits over `cb87b01`), `VERIFY.md` 6b section at `a0d97b6`;
+`npm test` 659 / 658 / 1 skipped; checker 909 citations, 0 misses. Beads closed:
+`.47`, `.49`, `.50`, `.51`, `.56`, `atc-3ub`; `.53` stays open for the Codex and
+Grok hosts' hop counts. What it established: the current CLIs (claude 2.1.286,
+codex-cli 0.159.2 — now 0.159.3 on the PATH, grok 1.0.44) answer a consult;
+Grok's read-only sandbox needed `/run/podman` at 0711 on this machine
+(`RISKS.md`); Claude specialists run with the operator's hooks disabled; the
+authority walk allows 32 hops; the end-to-end verifier fails closed by class —
+on a named line `pass` needs positive understanding — and reads Codex rollouts
+(keep `~/.codex/sessions` until a Codex run is verified). Filed:
+`atc-s96.57` (Claude specialists still load skills and commands), `.58` (the
+suite's temp-dir leak), `.59` (U+2028/U+2029 in a request hang the server —
+for S11), `.60` (verifier shapes outside its classes).
+
+Next: S11's brief (`task-7-brief.md` v4, plan-reviewed clean) gets its one
+optimization pass with 6b's final facts and `.59`, then dispatch. T16, T14 and
+T15's briefs are plan-reviewed and wait for their predecessors.
 
 ## Next steps
 
