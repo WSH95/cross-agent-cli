@@ -1908,7 +1908,7 @@ that a server started inside a suite serves the specialist row
 (`src/runcommand.ts#commandEnv`). Codex hands a stdio server only the variables `env_vars`
 names, so with `CROSS_AGENT_PROJECT` alone a `codex exec` started from such a suite handed
 its server no marker, and the server, with no engine of the ledger's among its ancestors,
-served the operator row. Read live on the install of `dac519b` (`fix1/probe-b-before/`): a
+served the operator row. Read live on the install of `bbf2460` (`dac519b` before the merge's rebase, the name its export directory keeps; `fix1/probe-b-before/`): a
 host started with `CROSS_AGENT_PROJECT` and `CROSS_AGENT_DEPTH=1` and no task id ran a
 server whose environment held B2's nine names and no `CROSS_AGENT_DEPTH`, and the session's
 tools, as the host's own code-mode cell printed them (`text(JSON.stringify(ALL_TOOLS.map(t
@@ -1919,7 +1919,7 @@ tools, as the host's own code-mode cell printed them (`text(JSON.stringify(ALL_T
 (`tests/packaging.test.ts#codexManifestMounts`, `#codexFallbackSnippet`), and `codex mcp list
 --json` reads the four for each: the plugin's from the operator's configuration with the
 per-session enable, the fallback's from a scratch `CODEX_HOME` (`fix1/reinstall/`,
-`fix1/snippet-check/`). The plugin was reinstalled from a clean export of `f3272a2`: `codex
+`fix1/snippet-check/`). The plugin was reinstalled from a clean export of `6d86c9e` (`f3272a2` before the merge's rebase, the name its export directory keeps): `codex
 plugin add`, run between 14:17:03.142Z and 14:17:03.207Z, wrote `enabled = true`, and the
 file was set back to `false` at 14:17:03.224Z (`timeline.txt`); the copy is `diff
 -rq`-identical to the worktree on `src/`, `modes/`, `skills/` and `.codex-plugin/`. Then three
@@ -2083,7 +2083,7 @@ slug t14-e4." The sample was switched to `dev-team` with `limits.maxDepth: 1` fo
 reviewer on Grok (`grok-4.7`), the code reviewer on Claude (`claude-sonnet-5`, read-only),
 each at medium — a Codex specialist in a read-only root role and in a writable worktree
 role inside a whole loop, under a Codex host, for the first time. The plugin's copy was
-installed from `dac519b`, `diff -rq`-clean against the worktree. The host ran 468 s,
+installed from `bbf2460` (`dac519b` before the merge's rebase), `diff -rq`-clean against the worktree. The host ran 468 s,
 1,744,918 tokens in and 5,067 out, and ran the loop itself through the plugin's server:
 
 ```
