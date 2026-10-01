@@ -742,6 +742,11 @@ test("show reads one task as the ledger holds it and exits by its status: settle
   const { find } = await import("../src/ledger.ts");
   const verdict: Record<string, number> = { launching: 4, running: 4, stalled: 6, orphaned: 4, cancelling: 4, done: 0, failed: 0, cancelled: 0 };
   const records = Object.values(byStatus);
+  // A runner writes its final message before it settles the record, so an unsettled task
+  // can have a result file already: the message is the settled record's, never this one's.
+  const early = "written before the record settled\n";
+  const unsettled = records.filter((record) => !["done", "failed", "cancelled"].includes(record.status));
+  for (const record of unsettled) fs.writeFileSync(record.resultPath, early);
   const lines = records.flatMap((record) => [["show", record.id], ["show", record.id, "--json"]]);
   const ran = await runEach(lines, root);
   type Shown = { record: TaskRecord; elapsedSeconds: number; lastActivity: string[]; result: string | null; outcome: unknown; journal: unknown; runnerLog: string };
@@ -773,7 +778,12 @@ test("show reads one task as the ledger holds it and exits by its status: settle
   assert.match(doneText, new RegExp(`^result: ${literally(byStatus.done.resultPath)}$`, "m"));
   assert.match(doneText, /^outcome: done, exit 0, session seeded-session, at \S+$/m);
   // Nothing unsettled has a final message, and a settled one with no file says so.
-  for (const status of ["launching", "running", "stalled", "orphaned", "cancelling"]) assert.equal(shown.get(status)!.result, null, status);
+  for (const record of unsettled) {
+    assert.equal(shown.get(record.status)!.result, null, record.status);
+    const text = ran[2 * records.indexOf(record)].stdout;
+    assert.doesNotMatch(text, /final message/, record.status);
+    assert.ok(!text.includes(early), `${record.status}: an unsettled task's result file is not its message`);
+  }
   assert.equal(shown.get("running")!.record.lastEventAt! < Date.now() - 3_000_000, true, "the quiet record is an hour silent");
 
   const [missingFile, missingJson, worktreeJson, three, zero, word, unknown, none] = await runEach([

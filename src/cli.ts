@@ -399,7 +399,10 @@ const showVerb: Verb = {
     const record = taskNamed(found.root, id);
     if (record === null) return refused(`no task ${id}`);
     const now = Date.now();
-    const settled = result(found.root, record.id);
+    // Everything shown is this one record's: an unsettled one has no final message whatever
+    // its result file holds, and `result` reads the record again, so a runner that settled
+    // between the two reads would put its message beside a `running` status.
+    const settled = isTerminal(record.status) ? result(found.root, record.id) : null;
     const runnerLog = path.join(found.root, ".cross-agent", "tasks", `${record.id}.runner.log`);
     const document: {
       record: TaskRecord; elapsedSeconds: number; lastActivity: string[]; result: string | null;
@@ -408,7 +411,7 @@ const showVerb: Verb = {
       record,
       elapsedSeconds: elapsedSeconds(record, now),
       lastActivity: tailLines(record.logPath, lineCount(parsed, 10)),
-      result: settled.ok && "result" in settled ? settled.result : null,
+      result: settled !== null && settled.ok && "result" in settled ? settled.result : null,
       outcome: readOutcome(found.root, record),
       journal: record.worktree === undefined ? null : readJournal(found.root, record.worktree.slug),
       runnerLog,
