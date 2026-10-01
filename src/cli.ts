@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_PATH, DEFAULT_MODE, initConfig } from "./config.ts";
+import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig } from "./config.ts";
 import { isTerminal, scan } from "./ledger.ts";
 import type { TaskRecord } from "./ledger.ts";
 import { answerAsk } from "./mailbox.ts";
@@ -129,6 +129,16 @@ const answer: Verb = {
     const [id, text] = parsed.positionals;
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
+    // Discovery falls back to a git toplevel with no config, which runs solo and asks
+    // nothing: an ask file left there belongs to no lead this project can run, and
+    // answering it would write in a project nobody configured. Checked before any write.
+    const configFile = path.join(found.root, CONFIG_PATH);
+    if (!fs.existsSync(configFile)) return refused(`${found.root} holds no ${CONFIG_PATH}: no engine-placed lead of this project asks anything`);
+    try {
+      loadConfig(found.root);
+    } catch (error) {
+      return refused(message(error));
+    }
     // An id that could not name a file names no ask either.
     if (!/^[A-Za-z0-9_-]+$/.test(id)) return refused(`no ask ${id}`, { applied: false, reason: `no ask ${id}`, ask: null });
     const answered = await answerAsk(found.root, id, text);

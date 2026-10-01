@@ -270,14 +270,15 @@ test("answer replies to an open ask from a terminal: the first answer is 0, a se
 
 // @anchor answerWritesNothing
 test("answer in a project with no config or no mailbox is a 3, and writes nothing", async (t) => {
-  // A repository nobody initialized is a project — it runs solo at its toplevel — with no
-  // ask in it; a directory no project holds is not one at all.
+  // A repository nobody initialized is a project — it runs solo at its toplevel — but no
+  // lead of it asks anything, so `answer` refuses it at the config; a directory no project
+  // holds is not one at all.
   const bare = scratch(t);
   await exec("git", ["-C", bare, "init", "-b", "main"]);
   const before = fs.readdirSync(bare).sort();
   const unknown = await run(["answer", "a".repeat(36), "yes"], bare);
   assert.equal(unknown.code, 3, unknown.stderr);
-  assert.match(unknown.stderr, /no ask/);
+  assert.match(unknown.stderr, /holds no \.cross-agent\/config\.json/);
   assert.deepEqual(fs.readdirSync(bare).sort(), before, "no .cross-agent/, no lock, no mailbox");
 
   const nowhere = scratch(t);
@@ -287,6 +288,22 @@ test("answer in a project with no config or no mailbox is a 3, and writes nothin
   const named = await run(["answer", "a".repeat(36), "yes", "--project", nowhere], bare);
   assert.equal(named.code, 3, named.stderr);
   assert.match(named.stderr, /holds no \.cross-agent\/config\.json/);
+
+  // An open ask in a repository whose config is gone: discovery still finds the git
+  // toplevel, and the answer is refused there before anything is written.
+  const root = await engineProject(t);
+  const { createAsk } = await import("../src/mailbox.ts");
+  const open = createAsk(root, { taskId: "lead1", question: "Which slug?" });
+  const askFile = path.join(root, ".cross-agent", "asks", `${open.id}.json`);
+  const asked = fs.readFileSync(askFile, "utf8");
+  fs.rmSync(path.join(root, CONFIG_PATH));
+  const locks = path.join(root, ".cross-agent", "locks");
+  const lockedBefore = fs.existsSync(locks) ? fs.readdirSync(locks).sort() : [];
+  const configless = await run(["answer", open.id, "use s11-i2"], root);
+  assert.equal(configless.code, 3, configless.stderr);
+  assert.match(configless.stderr, /config\.json/);
+  assert.equal(fs.readFileSync(askFile, "utf8"), asked, "the ask is as it was");
+  assert.deepEqual(fs.existsSync(locks) ? fs.readdirSync(locks).sort() : [], lockedBefore, "and no lock was taken for it");
 });
 
 // @anchor reportVerb

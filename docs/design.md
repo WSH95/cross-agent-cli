@@ -2851,7 +2851,9 @@ otherwise leave a project tree nobody asked for. `cross-agent answer <ask-id>
 <text>` answers an engine-placed lead's open question through the function the
 `answer` tool calls (`src/cli.ts#answerVerb`, `src/mailbox.ts#answerAsk`): 0 and
 the record, or 3 for a second answer — naming when the first landed — a
-cancelled ask or one nobody asked, and an unknown ask writes nothing. `cross-agent
+cancelled ask or one nobody asked, and an unknown ask writes nothing. A project
+with no config, found as a git toplevel when nothing else names one, is a 3 before
+anything is read or locked: no lead of it can have asked (`tests/cli.test.ts#answerWritesNothing`). `cross-agent
 report [--since <task id>]` renders every task of the ledger newest first — role,
 engine, model, effort, duration, outcome, id — then each task's final message,
 the outcome three-valued: `passed` for `done`, `failed` for `failed` and
