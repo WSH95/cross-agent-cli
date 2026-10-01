@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T08:06:19Z
+updated_at: 2026-10-01T09:17:49Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -64,7 +64,16 @@ as no launch; the mailbox, the CLI's `answer`/`report` and exit protocol, and
 the launcher's placement routing are built. The sample
 (`~/.cache/agent-team/cross-agent-e2e/slugkit`) is clean on its `main` at
 `15e9f4e`, in `dev-team-engine` (T14 switches it for E4). Follow-up beads
-`.61`–`.66`. Next: T16 (the operator CLI), then T14 and T15.
+`.61`–`.66`.
+
+T16 (`atc-s96.16`, the operator CLI) is **implemented on `task/cross-agent-m3`**
+(5 commits over `a8d1577`, head `d28533d`; not merged): the nine remaining verbs
+on S11's dispatcher, reads that write nothing, and the writing verbs refused
+under the task markers. `npm test` there: 719 / 718 / 1 skipped; checker 1072
+citations, 0 misses, `--since a8d1577` 0/0. Code review round 1 is running.
+Filed from its report: `.67` (a lock taken before the ledger exists leaves an
+unexcluded `.cross-agent/`) and `.68` (one source for the status list and the
+task-id alphabet). Then T14 and T15.
 
 
 ## Next steps
