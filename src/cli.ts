@@ -495,9 +495,13 @@ const logVerb: Verb = {
   },
 };
 
-/** An outcome the cascade finished with: the task is settled, by this cancel or before it. */
+/**
+ * An outcome the cascade finished with: the task is settled, by this cancel or before it.
+ * Any other outcome — an active status, or `unknown` for a record the cascade could not
+ * read back — is a task a second cancel retries.
+ */
 function settledOutcome(outcome: Outcome): boolean {
-  return outcome.outcome.startsWith("already ") || ["cancelled", "done", "failed"].includes(outcome.outcome);
+  return outcome.outcome.startsWith("already ") || isTerminal(outcome.outcome as TaskStatus);
 }
 
 const cancelVerb: Verb = {
