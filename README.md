@@ -69,9 +69,12 @@ package is linked; everywhere else the same command is `node
 ~/Documents/agent-team-cli/src/cli.ts init --mode dev-team`. Either way `init`
 writes `.cross-agent/config.json` with every role bound to a default you then
 edit, adds `.cross-agent/` and the mode's worktree directory to `.gitignore`,
-and leaves an existing config alone. The server discovers that
-project from the host session's working directory, so a session started
-anywhere inside it runs that project's team.
+and leaves an existing config alone. Commit that `.gitignore` change before the
+team's first task (`git add .gitignore && git commit -m '…' -- .gitignore`): a
+loop's first step stops unless `git status --porcelain --untracked-files=normal`
+prints nothing at the project's root. The server discovers that project from the
+host session's working directory, so a session started anywhere inside it runs
+that project's team.
 
 ### Prerequisites on Linux
 
@@ -252,6 +255,8 @@ session on the machine, so the attach lives in the project:
 ```
 cd ~/code/my-project
 cross-agent init --mode dev-team
+echo '.grok/' >> .gitignore
+git add .gitignore && git commit -m 'Ignore cross-agent and Grok state' -- .gitignore
 mkdir -p .grok
 cat >> .grok/config.toml <<EOF
 [plugins]
@@ -265,11 +270,24 @@ EOF
 
 `init` comes first because the server finds its project from where it runs: Grok starts
 the plugin's server in the session's own working directory, and the server serves the
-project whose `.cross-agent/config.json` it finds there or above it. `paths` takes an
-absolute path, which is why the lines are written through the shell: Grok expands no `~`
-there, and a `~/Documents/…` entry loaded no plugin at all. If the file already holds a
-`[plugins]` or an `[mcp]` table, add the lines to that table instead; TOML refuses a table
-declared twice.
+project whose `.cross-agent/config.json` it finds there or above it. `cross-agent` is on
+`PATH` only where the package is linked; elsewhere the command is `node
+~/Documents/agent-team-cli/src/cli.ts init --mode dev-team`, as in the Claude Code section.
+`.grok/` goes into `.gitignore` beside `init`'s own entries because its file names your
+checkout's path, and because a committed `.grok/config.toml` would reach every task
+worktree: Grok takes a linked worktree as a project of its own, so it would load the
+plugin for every worktree specialist, and a specialist's edit to the file could reach your
+root through the merge. Commit that `.gitignore` change before the team's first task, as
+the Claude Code section says: a loop's first step stops on anything `git status
+--porcelain --untracked-files=normal` prints. `paths` takes an absolute path, which is why
+the lines are written through the shell: Grok expands no `~` there, and a `~/Documents/…`
+entry loaded no plugin at all.
+
+The heredoc is for a project whose `.grok/config.toml` has no `[plugins]` or `[mcp]` table
+yet: TOML refuses a table, or a key, declared twice. Where the file has them, edit them
+instead: add the checkout's path to the existing `paths` array and `"cross-agent"` to the
+existing `enabled` array, and set `max_output_bytes` under `[mcp]` to 100000 unless it is
+already larger, keeping the larger value.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,880 under
@@ -282,8 +300,9 @@ A project's `.grok/config.toml` counts only in a folder Grok trusts: a headless 
 an untrusted folder loads no project plugin and starts no project server. Trust the
 project once, by accepting Grok's prompt the first time you open it there or by starting
 Grok there with `--trust`; Grok's own guide says the grant is recorded in
-`~/.grok/trusted_folders.toml` and covers the repository's subdirectories, though not a
-nested checkout.
+`~/.grok/trusted_folders.toml` and covers the repository's subdirectories but not a nested
+checkout, yet a linked worktree under a trusted project was reported trusted, as a project
+root of its own (`docs/probes.md`, "A Grok specialist in a linked worktree (B5)").
 
 To check the attach, from the project:
 
@@ -312,23 +331,26 @@ server gets that default: its calls' `mcp_tool_call_started` events read `timeou
 Grok host, at 600.003 s by Grok's own record of the call (`docs/probes.md`, "B3: a
 ten-minute wait under a Grok host").
 
-To remove it, delete the `[plugins]` lines and the `[mcp]` table from the project's
-`.grok/config.toml`, or the file if they were all it held. That is the whole attach: it
-writes nothing under `~/.grok/`, installs no plugin and reads the checkout where it is.
-The folder's trust stays in `~/.grok/trusted_folders.toml`, which is yours to keep or edit.
+To remove it, take out of the project's `.grok/config.toml` only what the attach added:
+the checkout's path from `paths`, `"cross-agent"` from `enabled`, and `max_output_bytes`,
+restored to its earlier value, or deleted where the attach added it; where the recipe
+wrote the whole file, delete the file. That is the whole attach: it writes nothing under
+`~/.grok/`, installs no plugin and reads the checkout where it is. The folder's trust
+stays in `~/.grok/trusted_folders.toml`, which is yours to keep or edit.
 
-Three things hold for every Grok session attached this way:
+Four things hold for every Grok session attached this way:
 
 - **Grok is never a lead.** A `dev-team-engine` project binds its `lead` to Claude or
   Codex; the config refuses a Grok lead, and `delegate` refuses to launch one. Every other
   role may run on Grok.
 - **A Grok specialist working in a linked worktree reaches no server.** Grok reads a
   project's `.grok/config.toml` from the session's directory up to its git root, and a
-  linked worktree is a root of its own, so the attach is not there: `grok mcp doctor` run
-  in one lists no project source, and a Grok code reviewer in E6's worktree mounted no
-  server (`docs/probes.md`, "A Grok specialist in a linked worktree (B5)"). Only a mount
-  at user scope would change that, and none is installed. A Grok specialist at the project
-  root inherits the attach and gets the specialist row's five read tools.
+  linked worktree is a root of its own, holding no `.grok/` while `.grok/` stays ignored,
+  so the attach is not there: `grok mcp doctor` run in one lists no project source, and a
+  Grok code reviewer in E6's worktree mounted no server (`docs/probes.md`, "A Grok
+  specialist in a linked worktree (B5)"). Only a mount at user scope would change that,
+  and none is installed. A Grok specialist at the project root inherits the attach and
+  gets the specialist row's five read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
   plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
   `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a
@@ -336,6 +358,11 @@ Three things hold for every Grok session attached this way:
   specialist's tools, never the operator's: a host started with `CROSS_AGENT_DEPTH=1` and
   no task was served the specialist row's five (`docs/probes.md`, "The hop count and the
   server's environment under a Grok host (B4)").
+- **The launcher skill reaches a Grok specialist at the root.** The attach carries the
+  `cross-agent` skill with the server, so a Grok specialist working at the project root is
+  offered the launcher too — every one T15 ran there listed it — while its row still has
+  no `delegate`: a specialist that follows the skill is refused by the server, never
+  served.
 
 ## Run the tests
 

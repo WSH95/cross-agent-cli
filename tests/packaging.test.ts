@@ -266,22 +266,45 @@ test("the README attaches Grok per project through the project's own .grok/confi
   const start = readme.indexOf("## Install it in Grok");
   const end = readme.indexOf("## Run the tests");
   assert.ok(codex >= 0 && start > codex && end > start, "the Grok section follows Codex's and precedes the tests");
-  const section = readme.slice(start, end);
+  // What the section says, rather than where its lines wrapped.
+  const section = readme.slice(start, end).replace(/\s+/g, " ");
   for (const words of [
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
-    // which finds the project by the config it holds.
-    "cross-agent init",
+    // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
+    "cross-agent init", "node ~/Documents/agent-team-cli/src/cli.ts init",
+    // `.grok/` ignored beside `init`'s entries and the change committed: a loop's first step stops
+    // on a dirty tree, and a committed `.grok/config.toml` would reach every task worktree, which
+    // Grok takes as a project of its own.
+    "echo '.grok/' >> .gitignore", "git add .gitignore && git commit", "Commit that `.gitignore` change",
+    "every task worktree",
     // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
     // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
     ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/agent-team-cli"]', 'enabled = ["cross-agent"]',
     "[mcp]", "max_output_bytes = 100000",
+    // Into a file that already has the tables, the attach is merged, never declared twice.
+    "add the checkout's path to the existing `paths` array", 'and `"cross-agent"` to the existing `enabled` array',
+    "unless it is already larger",
     // A project file counts only in a trusted folder.
     "--trust",
     // The checks, the host spelling, and the operator row's count under the engine-placed mode.
     "grok inspect --json", "grok mcp doctor cross-agent", "cross-agent__", "fourteen",
-    // The way back, and what the attach never touches.
-    "To remove it", "~/.grok/",
+    // The way back takes out only what the attach added, and the attach never touches ~/.grok/.
+    "To remove it", "only what the attach added", "restored to its earlier value", "~/.grok/",
+    // What a Grok specialist at the attached root is offered beside the server.
+    "The launcher skill reaches a Grok specialist at the root",
   ]) {
     assert.ok(section.includes(words), `the Grok section names ${words}`);
   }
+});
+
+// @anchor readmeInitThenCommit
+test("the README has the operator commit init's .gitignore change before a team's first task", () => {
+  // A loop's first step stops unless the root's `git status --porcelain --untracked-files=normal`
+  // prints nothing, and `init` itself leaves `.gitignore` modified or new.
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const start = readme.indexOf("## Install it in Claude Code");
+  assert.ok(start >= 0, "the README has a Claude Code section");
+  const section = readme.slice(start, readme.indexOf("\n## ", start + 1)).replace(/\s+/g, " ");
+  assert.ok(section.includes("Commit that `.gitignore` change"), "the Claude Code section says to commit init's .gitignore change");
+  assert.ok(section.includes("git status --porcelain --untracked-files=normal"), "and says why: the first step's clean-tree check");
 });
