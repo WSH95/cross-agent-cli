@@ -2,6 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
@@ -676,23 +677,45 @@ test("excludeLedger writes each exclusion once and nothing else, and nothing at 
 
 // @anchor excludeLedgerConcurrent
 test("eight first callers of excludeLedger at once leave each exclusion once and no temporary behind", async (t) => {
+  const children: ChildProcess[] = [];
+  // Registered before the directory's removal, so a child still waiting at the barrier when a
+  // check below fails is gone before its directory is.
+  t.after(() => { for (const child of children) child.kill("SIGKILL"); });
   const root = project(t);
   const info = path.join(root, ".git", "info");
   fs.mkdirSync(info, { recursive: true });
   fs.writeFileSync(path.join(info, "exclude"), "# existing\n");
-  // Separate processes, as two first lock takers are: each reads, finds both lines missing,
-  // and writes the whole file, so whichever rename lands last carries what the first did.
-  const script = `import { excludeLedger } from ${JSON.stringify(new URL("../src/ledger.ts", import.meta.url).href)}; excludeLedger(process.argv[1]);`;
-  const children = Array.from({ length: 8 }, () =>
-    spawn(process.execPath, ["--input-type=module", "-e", script, "--", root], { stdio: ["ignore", "ignore", "pipe"] }));
-  const exits = await Promise.all(children.map(async (child) => {
+  // Separate processes, as two first lock takers are. Node's start-up spaces them out, so each
+  // says it is ready and then waits at a barrier the parent opens once all eight are there:
+  // they read the file together, each finds both lines missing and writes the whole file, and
+  // whichever rename lands last carries what the first did.
+  const barrier = path.join(root, "barrier");
+  fs.mkdirSync(barrier);
+  const go = path.join(barrier, "go");
+  const script = [
+    'import fs from "node:fs";',
+    `import { excludeLedger } from ${JSON.stringify(new URL("../src/ledger.ts", import.meta.url).href)};`,
+    "const [root, barrier, go] = process.argv.slice(1);",
+    'fs.writeFileSync(`${barrier}/ready-${process.pid}`, "");',
+    // A barrier that never opens ends the child rather than leaving it spinning.
+    "const deadline = Date.now() + 30000;",
+    "while (!fs.existsSync(go)) if (Date.now() > deadline) process.exit(3);",
+    "excludeLedger(root);",
+  ].join("\n");
+  for (let index = 0; index < 8; index++) {
+    children.push(spawn(process.execPath, ["--input-type=module", "-e", script, "--", root, barrier, go], { stdio: ["ignore", "ignore", "pipe"] }));
+  }
+  // Each child's close is listened for before anything is awaited, so none is lost.
+  const exits = children.map(async (child) => {
     let stderr = "";
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
     const [code] = await once(child, "close");
     return { code, stderr };
-  }));
-  for (const exit of exits) assert.equal(exit.code, 0, exit.stderr);
+  });
+  await poll(() => fs.readdirSync(barrier).filter((name) => name.startsWith("ready-")).length, (ready) => ready === 8);
+  fs.writeFileSync(go, "");
+  for (const exit of await Promise.all(exits)) assert.equal(exit.code, 0, exit.stderr);
   assert.equal(fs.readFileSync(path.join(info, "exclude"), "utf8"), "# existing\n.cross-agent/\n.worktrees/\n");
   assert.deepEqual(fs.readdirSync(info), ["exclude"]);
 });
