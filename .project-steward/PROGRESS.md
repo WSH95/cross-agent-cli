@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T17:06:23Z — claude
+[auto-checkpoint] T15 in flight (4 commits on the branch: attach, budget row, launcher/mode fixes, probes; E6/E7 to come); task 12 brief v1 plan-reviewed (loop ended, folds before dispatch).
+
 ### 2026-10-01T15:24:13Z — claude
 [auto-checkpoint] T15 in flight from e436132 (changes the sample's project-scoped Grok attach; repoints at the root at its close); task 12 brief being drafted.
 

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T15:24:13Z
+updated_at: 2026-10-01T17:06:23Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -93,8 +93,9 @@ brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimizati
 runs after T15 merges). T15 (`atc-s96.15`, Grok packaging, E6 and E7; with `.64`, `.66`, `.70`, `.71`) is
 **in flight** from `e436132` (brief `task-9-brief.md` v3, report `task-9-report.md`); it
 changes the sample's project-scoped Grok attach (`<sample>/.grok/`) and repoints it at
-the root checkout as its last step. Task 12's brief (go/no-go, final review, close) is
-being drafted.
+the root checkout as its last step. Task 12 (go/no-go, final review, close) has a brief
+v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
+runs before dispatch.
 
 
 ## Next steps
