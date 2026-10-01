@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T18:06:36Z — claude
+[auto-checkpoint] T15 implemented and fix round 1 landed (d2abd01; 742/741/1; checker 1199, 0/0; E6, E7 8 pass); the sample's Grok attach points at the root checkout; round-2 review running.
+
 ### 2026-10-01T17:06:23Z — claude
 [auto-checkpoint] T15 in flight (4 commits on the branch: attach, budget row, launcher/mode fixes, probes; E6/E7 to come); task 12 brief v1 plan-reviewed (loop ended, folds before dispatch).
 

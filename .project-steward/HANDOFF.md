@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T17:06:23Z
+updated_at: 2026-10-01T18:06:36Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -91,9 +91,11 @@ commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
 brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimization pass
 runs after T15 merges). T15 (`atc-s96.15`, Grok packaging, E6 and E7; with `.64`, `.66`, `.70`, `.71`) is
-**in flight** from `e436132` (brief `task-9-brief.md` v3, report `task-9-report.md`); it
-changes the sample's project-scoped Grok attach (`<sample>/.grok/`) and repoints it at
-the root checkout as its last step. Task 12 (go/no-go, final review, close) has a brief
+**implemented on `task/cross-agent-m3`** (10 commits over `e436132`, head `d2abd01` after
+fix round 1; not merged): `npm test` 742 / 741 / 1 skipped; checker 1199, 0 misses; E6
+and E7 each 8 pass. The Grok attach is project-scoped (each project's own
+`.grok/config.toml` names the checkout under `[plugins]`, ignored by `.gitignore`); the
+sample's attach now points at the root checkout. Round-2 review is running. Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 
