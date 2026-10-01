@@ -845,3 +845,85 @@ E6 $0.291, B0 $0.533). Codex specialists 682,863 tokens in / 4,839 out. Fix roun
 
 Note: `VERIFY.md`'s M2 line "Grok's `--prompt-file` fallback is `--help`-verified only (T15)" was
 answered before T15, by T13's E2BIG fix and 6b's A5 (`docs/probes.md#grokRulesBesidePromptFile`).
+
+## T11 — the docs nits and the small follow-ups (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `71696ff`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — twenty commits over `0f8374c` (the task's nine, fix round 1's seven, the wrap-up's four) |
+| `npm test` at the root | 769 tests: 768 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `71696ff` |
+| citation checker | 1257 citations in 2 files (0 by line, 1257 by symbol), 0 misses; `--since 17de337`: 0 drifted, 0 not judged (at `17de337`: 1199, 37 by line) |
+| temporary directories | `ls -1d /tmp/* \| sort` around one `npm test`: 42 new entries at `17de337` (39 empty `cross-agent-bin-*`, 3 `cross-agent-*` projects), as at `6a13c0c` and `157b6b4`; 0 at `b717c92`, `6bb6122`, `0e19e65`, `8040e3a` and `2124be0` |
+| reconcile | `bash -c 'for i in 1 2 3 4 5; do timeout 180 node --test tests/reconcile.test.ts \|\| exit 1; done'`: exit 0, five `ℹ pass 33`, 0 fail, 8.3 s each, no `ENOTEMPTY`, nothing under `/tmp/cross-agent-reconcile-*` and no helper left, at `2124be0` |
+| beads | `atc-s96.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75` |
+
+Landed: the design's last 37 line citations as anchors (0 by line), and the checker's header naming
+its lexer limits and their causes, pinned; a sandbox profile the engine does not declare refused
+naming the engine once; the README's loop guard as built, the three built-in modes, Codex's trust
+entries; `Reconciled.errors` documented as reported; Claude Code's refused foreground `sleep` in the
+CLI facts; the delegate-literal check reading top-level keys; no temporary directory left by the
+suite, reconcile's teardowns drained in order before the directory goes, and a hand-spawned helper
+heard and cleaned up from its spawn; a damaged ask read by id a refusal naming the file, an
+answered or cancelled ask with a time no date can hold refused with that time as its number, and a
+lead's `list_asks` naming only its own lineage's damaged files; the ledger's exclusions written
+whole ahead of the first project lock, through a link and at their mode, raced at a barrier whose
+failed child fails the wait, and `cancel` looking before it locks; a host's project configuration
+(`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, in any case) refused at the worktree's commit — and
+changed under an assume-unchanged mark, though not for the mark alone — and at the root's merge,
+which names every path, the loops naming it; one source for the statuses, the id alphabet and the
+runner log path.
+
+### The uninitialized repository, by hand
+
+Run first at `6bb6122`, and re-run against an export of `8040e3a` and at `2124be0`, each byte for
+byte identical; output verbatim but for two paths, `<worktree>` the task worktree and `<scratch>`
+the scratch directory's absolute path in the one line that prints it:
+
+    $ git init -b main uninit && git -C uninit commit --allow-empty -m init
+    $ sha256sum uninit/.git/info/exclude
+    6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1  uninit/.git/info/exclude
+    $ node -e 'import("<worktree>/src/tasks.ts").then((m) => m.cancel(process.argv[1], "no-such-task")).then((r) => console.log(JSON.stringify(r)))' uninit
+    {"ok":false,"reason":"no task no-such-task"}
+    $ test ! -e uninit/.cross-agent; echo $?
+    0
+    $ sha256sum uninit/.git/info/exclude
+    6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1  uninit/.git/info/exclude
+    $ git -C uninit status --porcelain --untracked-files=all | wc -l
+    0
+    $ node -e 'import("<worktree>/src/gitmutate.ts").then((m) => m.gitMutate(process.argv[1], { slug: "s", args: ["status"] }, { waitSeconds: 1 })).then((r) => console.log(JSON.stringify(r)))' uninit
+    {"ok":false,"reason":"Cannot resolve the project root and worktree path: ENOENT: no such file or directory, realpath '<scratch>/uninit/.worktrees/s'"}
+    $ git -C uninit status --porcelain --untracked-files=all | wc -l
+    0
+    $ grep -c cross-agent uninit/.git/info/exclude
+    1
+    $ ls -A uninit/.git/info
+    exclude
+    $ ls -A uninit
+    .cross-agent
+    .git
+
+The cancel locks nothing and writes nothing; `git_mutate`'s `spawn.lock` makes `.cross-agent/locks/`
+and finds it already excluded, with no temporary left beside `exclude`.
+
+### Tests
+
+`tests/citations.test.ts#lexerContinuedString`, `#lexerRegexAfterParen`;
+`tests/spawn.test.ts#spawnRefusesProfileOnce`; `tests/reconcile.test.ts#teardownDrainsAll`,
+`#handSpawnedHelper`; `tests/mailbox.test.ts#readAskDamaged`, `#askTimeOutOfRange`;
+`tests/server.test.ts#listAsksLeadDamaged`, `#answerToolTimeOutOfRange`;
+`tests/cli.test.ts#answerDamagedAsk`, `#answerTimeOutOfRange`;
+`tests/tasks.test.ts#cancelUnknownWritesNothing`;
+`tests/gitmutate.test.ts#gitMutateUninitializedExcluded`, `#commitRefusesHostConfig`,
+`#hostConfigAnyCase`, `#commitRefusesAssumeUnchanged`, `#commitUnderIgnoreStat`;
+`tests/gitroot.test.ts#mergeRefusesHostConfig`, `#mergeHostConfigAnyCase`, `#mergeNamesEveryPath`;
+`tests/skills.test.ts#loopsNameHostConfig`, `#delegateKeysTopLevel`;
+`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`, `#excludeLedgerKeepsFile`,
+`#taskStatusesOneSource`; and `list_tasks`'s status enum read from `taskStatuses`
+(`tests/server.test.ts`).
+
+Deviations: A5's matcher became a top-level key reader (R1-7), because the launcher's
+`delegate {role, brief, cwd}` is shorthand and `skills/` was out of scope; the design's "Four
+locks" and "base64url" ids were corrected beside the passages this task changed; R1-2 landed as
+the controller ruled, keeping the asks' time policy T16 chose; an assume-unchanged host file is
+refused only when its bytes differ from the index (W-2), since `core.ignoreStat` marks every
+tracked file.
