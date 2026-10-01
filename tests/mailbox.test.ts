@@ -47,7 +47,7 @@ test("ask writes an open record and blocks until an answer reaches it, within a 
   assert.deepEqual(await asking, { ok: true, id: open.id, status: "answered", answer: "use s11-i2" });
   assert.ok(performance.now() - started < 1000, "the waiting call reads the answer on its next poll");
 
-  const stored = readAsk(p.root, open.id)!;
+  const stored = readAsk(p.root, open.id).ask!;
   assert.equal(stored.status, "answered");
   assert.equal(stored.answer, "use s11-i2");
   assert.equal(typeof stored.answeredAt, "number");
@@ -89,7 +89,7 @@ test("an ask id from outside the caller's lineage, or one nobody wrote, is refus
     { ok: false, reason: `no ask ${"0".repeat(36)}` });
   // A question with no text is no question.
   assert.equal((await ask(p.root, { taskId: "lead-b", lineageIds: ["lead-b"], question: "", timeoutSeconds: 0 })).ok, false);
-  assert.equal(readAsk(p.root, theirs.id)!.status, "open", "a refusal touches nothing");
+  assert.equal(readAsk(p.root, theirs.id).ask!.status, "open", "a refusal touches nothing");
 });
 
 // @anchor firstAnswerWins
@@ -102,7 +102,7 @@ test("the first answer wins: of two at once exactly one applies, and the other n
   assert.equal(applied.length, 1);
   assert.equal(refused.length, 1);
   const winner = applied[0].ask!;
-  assert.equal(readAsk(p.root, question.id)!.answer, winner.answer, "the stored answer is the one that applied");
+  assert.equal(readAsk(p.root, question.id).ask!.answer, winner.answer, "the stored answer is the one that applied");
   const reason = refused[0].applied ? "" : refused[0].reason;
   assert.match(reason, new RegExp(`answeredAt ${winner.answeredAt}`));
   assert.match(reason, new RegExp(new Date(winner.answeredAt!).toISOString().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -113,7 +113,7 @@ test("the first answer wins: of two at once exactly one applies, and the other n
   const late = await answerAsk(p.root, cancelledAsk.id, "yes");
   assert.equal(late.applied, false);
   assert.match(late.applied ? "" : late.reason, /cancelled/);
-  assert.equal(readAsk(p.root, cancelledAsk.id)!.answer, undefined);
+  assert.equal(readAsk(p.root, cancelledAsk.id).ask!.answer, undefined);
   const unknown = await answerAsk(p.root, "f".repeat(36), "yes");
   assert.deepEqual(unknown, { applied: false, reason: `no ask ${"f".repeat(36)}`, ask: null });
 });
@@ -170,13 +170,13 @@ test("cancelAsks cancels the open asks of a lineage under each ask's lock, and l
   assert.deepEqual(result.cancelled.sort(), [open.id, earlier.id].sort());
   assert.deepEqual(result.failures, []);
   for (const id of [open.id, earlier.id]) {
-    const record = readAsk(p.root, id)!;
+    const record = readAsk(p.root, id).ask!;
     assert.equal(record.status, "cancelled", id);
     assert.equal(record.cancelledAt, 5_000, id);
   }
-  assert.equal(readAsk(p.root, answered.id)!.status, "answered");
-  assert.equal(readAsk(p.root, answered.id)!.cancelledAt, undefined);
-  assert.equal(readAsk(p.root, stranger.id)!.status, "open");
+  assert.equal(readAsk(p.root, answered.id).ask!.status, "answered");
+  assert.equal(readAsk(p.root, answered.id).ask!.cancelledAt, undefined);
+  assert.equal(readAsk(p.root, stranger.id).ask!.status, "open");
   // A lead asked again after its ask was cancelled learns so at once.
   assert.deepEqual(await ask(p.root, { taskId: "lead-a", lineageIds: ["lead-a"], id: open.id, timeoutSeconds: 30 }),
     { ok: true, id: open.id, status: "cancelled" });
@@ -218,6 +218,42 @@ test("a damaged ask counts as a lineage's when it names that lineage or no task 
   assert.ok("file" in failure && failure.file === asksDir(p.root), JSON.stringify(failure));
 });
 
+// @anchor readAskDamaged
+test("a damaged ask read by id is a value naming the file, which ask and answer refuse as they refuse an unknown one", async (t) => {
+  const p = await mailboxProject(t);
+  fs.mkdirSync(asksDir(p.root), { recursive: true });
+  // Unparsable, so it names no task.
+  const torn = path.join(asksDir(p.root), "torn.json");
+  fs.writeFileSync(torn, "{not json");
+  const unparsable = readAsk(p.root, "torn");
+  assert.equal(unparsable.ask, null);
+  assert.ok(unparsable.ask === null && unparsable.invalid !== null, JSON.stringify(unparsable));
+  assert.deepEqual(Object.keys(unparsable.invalid).sort(), ["file", "reason"], "no task: it could be anyone's");
+  assert.equal(unparsable.invalid.file, torn);
+  assert.match(unparsable.invalid.reason, /invalid ask .*unparsable JSON/);
+
+  // Parsable as far as the task it names, and damaged after it.
+  const named = path.join(asksDir(p.root), "named.json");
+  const bytes = JSON.stringify({ id: "named", taskId: "lead-a", question: 1 });
+  fs.writeFileSync(named, bytes);
+  const damaged = readAsk(p.root, "named");
+  assert.ok(damaged.ask === null && damaged.invalid !== null, JSON.stringify(damaged));
+  assert.equal(damaged.invalid.file, named);
+  assert.equal(damaged.invalid.taskId, "lead-a");
+  assert.match(damaged.invalid.reason, /question must be a string$/);
+  const { reason } = damaged.invalid;
+
+  // Refused before its lock, as an ask nobody wrote is, and the file is left as it was.
+  assert.deepEqual(await answerAsk(p.root, "named", "yes"), { applied: false, reason, ask: null });
+  assert.equal(fs.readFileSync(named, "utf8"), bytes);
+  assert.equal(fs.existsSync(lockPath(p.root, askLockName("named"))), false, "no lock was taken for it");
+  assert.deepEqual(await ask(p.root, { taskId: "lead-a", lineageIds: ["lead-a"], id: "named", timeoutSeconds: 0 }), { ok: false, reason });
+  assert.equal(fs.readFileSync(named, "utf8"), bytes);
+
+  // An ask nobody wrote is still no ask and no damage.
+  assert.deepEqual(readAsk(p.root, "a".repeat(36)), { ask: null, invalid: null });
+});
+
 // @anchor malformedAskId
 test("an id no ask file could carry is refused by value, by one predicate, and reads and writes nothing", async (t) => {
   const p = await mailboxProject(t);
@@ -235,7 +271,7 @@ test("an id no ask file could carry is refused by value, by one predicate, and r
 test("reading, listing, answering or cancelling in a project with no mailbox writes nothing", async (t) => {
   const p = await mailboxProject(t);
   fs.rmSync(path.join(p.root, ".cross-agent"), { recursive: true, force: true });
-  assert.equal(readAsk(p.root, "a".repeat(36)), null);
+  assert.deepEqual(readAsk(p.root, "a".repeat(36)), { ask: null, invalid: null });
   assert.deepEqual(listAsks(p.root), { asks: [], invalid: [] });
   assert.deepEqual(await answerAsk(p.root, "a".repeat(36), "yes"), { applied: false, reason: `no ask ${"a".repeat(36)}`, ask: null });
   assert.deepEqual(await cancelAsks(p.root, ["lead1"]), { cancelled: [], failures: [] });

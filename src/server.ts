@@ -13,7 +13,7 @@ import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
-import { answerAsk, ask, askStatuses, listAsks } from "./mailbox.ts";
+import { answerAsk, ask, askStatuses, lineageAsks, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
@@ -431,7 +431,8 @@ function callerLineage(projectRoot: string, authority: Authority): string[] {
  * The mailbox (design, "The lead model", item 3), registered only under engine placement:
  * a host-placed lead is the operator's own session and asks natively. `ask` is the lead's —
  * a specialist is unauthorized to ask, not unable to reach this server — `answer` is the
- * operator's, and `list_asks` is both rows', the lead seeing only its own lineage's asks.
+ * operator's, and `list_asks` is both rows', the lead seeing only its own lineage's asks and
+ * the damaged files that may be its own (`src/mailbox.ts#lineageAsks`).
  */
 function mailboxTools(projectRoot: string): ToolDefinition[] {
   return [
@@ -466,11 +467,14 @@ function mailboxTools(projectRoot: string): ToolDefinition[] {
         if (status !== undefined && !askStatuses.includes(status as AskStatus)) {
           throw new RpcError(-32602, `list_asks status must be one of ${askStatuses.join(", ")}`);
         }
-        const listed = listAsks(projectRoot, {
-          ...(context.authority.row === "lead" ? { taskIds: callerLineage(projectRoot, context.authority) } : {}),
-          ...(status === undefined ? {} : { status: status as AskStatus }),
-        });
-        return answer({ ok: true, ...listed });
+        const filter = status as AskStatus | undefined;
+        if (context.authority.row === "lead") {
+          // Its own lineage's asks, and of the damaged files only those that may be its own:
+          // one naming a task of the lineage, or no task a reader could find.
+          const { asks, unreadable } = lineageAsks(projectRoot, callerLineage(projectRoot, context.authority), filter);
+          return answer({ ok: true, asks, invalid: unreadable });
+        }
+        return answer({ ok: true, ...listAsks(projectRoot, filter === undefined ? {} : { status: filter }) });
       },
     },
     {

@@ -451,12 +451,12 @@ test("a cancelled lead cancels its open asks, leaves an answered one alone, and 
   assert.deepEqual(result.asksCancelled.sort(), [open.id, earlier.id].sort());
   assert.equal(result.asksNotCancelled, undefined, "every open ask was written");
   for (const id of [open.id, earlier.id]) {
-    const ask = readAsk(p.root, id)!;
+    const ask = readAsk(p.root, id).ask!;
     assert.equal(ask.status, "cancelled", id);
     assert.equal(typeof ask.cancelledAt, "number", id);
   }
-  assert.deepEqual(readAsk(p.root, answered.id), { ...answered, status: "answered", answer: "yes", answeredAt: readAsk(p.root, answered.id)!.answeredAt });
-  assert.equal(readAsk(p.root, stranger.id)!.status, "open", "another lead's question is not this cancel's");
+  assert.deepEqual(readAsk(p.root, answered.id).ask, { ...answered, status: "answered", answer: "yes", answeredAt: readAsk(p.root, answered.id).ask!.answeredAt });
+  assert.equal(readAsk(p.root, stranger.id).ask!.status, "open", "another lead's question is not this cancel's");
 
   // A task that never asked anything reports that it cancelled none.
   const planner = await launch(p, { role: "planner", cwd: p.root });

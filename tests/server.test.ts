@@ -752,7 +752,7 @@ test("ask records the caller's own task, waits on its lineage's asks by id, and 
   assert.equal(asked.isError, false);
   assert.deepEqual(asked.body, { ok: true, id: asked.body.id, status: "open", hint: `call ask again with id ${asked.body.id}` });
   const { readAsk, createAsk } = await import("../src/mailbox.ts");
-  assert.equal(readAsk(root, asked.body.id as string)!.taskId, resumed.id, "the question is the calling task's own");
+  assert.equal(readAsk(root, asked.body.id as string).ask!.taskId, resumed.id, "the question is the calling task's own");
 
   // The record it continues asked before it died: still this lead's to wait on.
   const inherited = createAsk(root, { taskId: first.id, question: "Delete the branch?" });
@@ -843,6 +843,38 @@ test("list_asks shows the operator every ask and a lead its own lineage's, and a
   ] as const) {
     assert.equal(((await operatorCall("tools/call", { name, arguments: args as Json })).error as Json)?.code, -32602, `${name} ${JSON.stringify(args)}`);
   }
+});
+
+// @anchor listAsksLeadDamaged
+test("list_asks names a lead only the damaged asks that may be its own, and a damaged ask asked or answered by id is a refusal", async (t) => {
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  const { resumed, stranger } = ledgerOfOneLead(root);
+  const asks = path.join(root, ".cross-agent", "asks");
+  await mkdir(asks, { recursive: true });
+  // One that names another lineage's task, and one that names no task a reader could find.
+  const x1 = path.join(asks, "x1.json");
+  const x2 = path.join(asks, "x2.json");
+  await writeFile(x1, JSON.stringify({ id: "x1", taskId: stranger.id, question: 1 }));
+  await writeFile(x2, "{not json");
+  const operatorCall = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => operator });
+  const leadCall = inProcess({
+    tools: projectTools(root, { mode: devTeamEngine }),
+    authority: () => ({ row: "lead", reason: "test", taskId: resumed.id, depth: 1 }),
+  });
+  const files = (reply: Json) => (payload(reply).body.invalid as Json[]).map((entry) => entry.file).sort();
+
+  assert.deepEqual(files(await operatorCall("tools/call", { name: "list_asks", arguments: {} })), [x1, x2]);
+  assert.deepEqual(files(await leadCall("tools/call", { name: "list_asks", arguments: {} })), [x2]);
+
+  // By id, the damage is the tool's refusal, named, and never a protocol error.
+  const asked = await leadCall("tools/call", { name: "ask", arguments: { id: "x1", timeout_seconds: 0 } });
+  assert.equal(asked.error, undefined, JSON.stringify(asked));
+  assert.equal(payload(asked).isError, true);
+  assert.match(payload(asked).body.reason as string, /x1\.json/);
+  const answered = await operatorCall("tools/call", { name: "answer", arguments: { ask_id: "x1", text: "yes" } });
+  assert.equal(answered.error, undefined, JSON.stringify(answered));
+  assert.equal(payload(answered).isError, true);
+  assert.match(payload(answered).body.reason as string, /x1\.json/);
 });
 
 // @anchor listTasksMarks

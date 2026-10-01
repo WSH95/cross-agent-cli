@@ -310,6 +310,9 @@ that spelling, so nothing in the matrix depends on it.
    question, createdAt, status: "open" | "answered" | "cancelled", answer?,
    answeredAt?, cancelledAt?}`, its id from the ledger's alphabet, written whole,
    and a read of an ask nobody wrote creates nothing (`src/mailbox.ts#readAsk`);
+   a damaged one is answered as a value naming the file, so `ask`, `answer` and
+   `cross-agent answer` refuse it rather than throw (`#AskRead`,
+   `tests/mailbox.test.ts#readAskDamaged`);
    an id outside that alphabet names no ask either, and `ask`, `answer` and
    `cross-agent answer` refuse it by value through one predicate
    (`src/mailbox.ts#isAskId`, `tests/mailbox.test.ts#malformedAskId`).
@@ -335,7 +338,9 @@ that spelling, so nothing in the matrix depends on it.
    history as the whole (`tests/delegate.test.ts#resumeRefusesUnreadableAsk`),
    and a cancel names it, and a mailbox it cannot list, under
    `asksNotCancelled` beside its cascade's outcomes, never instead of them
-   (`tests/tasks.test.ts#cancelSurvivesMailbox`). The mailbox
+   (`tests/tasks.test.ts#cancelSurvivesMailbox`). `list_asks` shows a lead those
+   files and the operator every one (`src/server.ts#mailboxTools`,
+   `tests/server.test.ts#listAsksLeadDamaged`). The mailbox
    sidesteps every relay limit the OpenMausBot reference carries: cards that die
    with the turn, a three-per-five-minute wake budget, a four-minute ask cap, a
    fifteen-minute auto-deny. It is registered under engine placement only, and
@@ -3050,7 +3055,9 @@ handler passes:
   question through the function the `answer` tool calls
   (`src/cli.ts#answerVerb`, `src/mailbox.ts#answerAsk`): 0 and the record, or 3
   for a second answer — naming when the first landed — a cancelled ask or one
-  nobody asked, and an unknown ask writes nothing. A project with no config,
+  nobody asked, and an unknown ask writes nothing. A damaged ask file is a 3 as
+  well, naming the file, and is left as it was
+  (`tests/cli.test.ts#answerDamagedAsk`). A project with no config,
   found as a git toplevel when nothing else names one, is a 3 before anything is
   read or locked: no lead of it can have asked
   (`tests/cli.test.ts#answerWritesNothing`).

@@ -317,7 +317,7 @@ test("answer replies to an open ask from a terminal: the first answer is 0, a se
   assert.equal(answered.code, 0, answered.stderr);
   assert.match(answered.stdout, new RegExp(open.id));
   assert.match(answered.stdout, /use s11-i2/);
-  const record = readAsk(root, open.id)!;
+  const record = readAsk(root, open.id).ask!;
   assert.equal(record.status, "answered");
   assert.equal(record.answer, "use s11-i2");
 
@@ -325,7 +325,7 @@ test("answer replies to an open ask from a terminal: the first answer is 0, a se
   const second = await run(["answer", open.id, "something else", "--project", root], root);
   assert.equal(second.code, 3);
   assert.match(second.stderr, new RegExp(`answeredAt ${record.answeredAt}`));
-  assert.equal(readAsk(root, open.id)!.answer, "use s11-i2");
+  assert.equal(readAsk(root, open.id).ask!.answer, "use s11-i2");
   const asJson = await run(["answer", open.id, "again", "--project", root, "--json"], root);
   assert.equal(asJson.code, 3);
   assert.deepEqual(JSON.parse(asJson.stdout), { applied: false, reason: JSON.parse(asJson.stdout).reason, ask: record });
@@ -348,7 +348,17 @@ test("answer replies to an open ask from a terminal: the first answer is 0, a se
   const third = createAsk(root, { taskId: "lead3", question: "Merge?" });
   const json = await run(["--json", "answer", third.id, "yes"], root);
   assert.equal(json.code, 0, json.stderr);
-  assert.deepEqual(JSON.parse(json.stdout), { applied: true, ask: readAsk(root, third.id) });
+  assert.deepEqual(JSON.parse(json.stdout), { applied: true, ask: readAsk(root, third.id).ask });
+});
+
+// @anchor answerDamagedAsk
+test("answer to a damaged ask file is a 3 naming the file, as an unknown ask is, and leaves it as it was", async (t) => {
+  const seeded = await seededProject(t);
+  const before = fs.readFileSync(seeded.brokenAsk, "utf8");
+  const ran = await run(["answer", "broken", "text", "--project", seeded.root], seeded.root);
+  assert.equal(ran.code, 3, ran.stderr);
+  assert.ok(ran.stderr.includes(seeded.brokenAsk), ran.stderr);
+  assert.equal(fs.readFileSync(seeded.brokenAsk, "utf8"), before);
 });
 
 // @anchor answerWritesNothing
@@ -1192,7 +1202,7 @@ test("a verb that writes refuses inside a task's environment, naming the marker,
   const { find } = await import("../src/ledger.ts");
   const { readAsk } = await import("../src/mailbox.ts");
   assert.equal(find(root, byStatus.running.id)!.status, "running");
-  assert.equal(readAsk(root, asks.open.id)!.status, "open");
+  assert.equal(readAsk(root, asks.open.id).ask!.status, "open");
 
   // The reads are the same answers with the marker as without it.
   const reads = [
@@ -1212,7 +1222,7 @@ test("a verb that writes refuses inside a task's environment, naming the marker,
   const elsewhere = scratch(t);
   const named = await run(["answer", asks.open.id, "named by CROSS_AGENT_PROJECT"], elsewhere, undefined, env({ CROSS_AGENT_PROJECT: root }));
   assert.equal(named.code, 0, named.stderr);
-  assert.equal(readAsk(root, asks.open.id)!.answer, "named by CROSS_AGENT_PROJECT");
+  assert.equal(readAsk(root, asks.open.id).ask!.answer, "named by CROSS_AGENT_PROJECT");
   const initialized = await run(["init", "--mode", "solo"], fresh, undefined, env({ CROSS_AGENT_PROJECT: root }));
   assert.equal(initialized.code, 0, initialized.stderr);
   assert.ok(fs.existsSync(path.join(fresh, CONFIG_PATH)));

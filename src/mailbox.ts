@@ -111,15 +111,38 @@ function parseAsk(file: string): AskRecord {
   return parsed as AskRecord;
 }
 
-/** The ask, or null when nobody asked it. A read creates nothing, the mailbox directory included. */
-export function readAsk(projectRoot: string, id: string): AskRecord | null {
+/** A file no reader could judge, named the same way whichever reader met it. */
+function invalidAsk(file: string, error: unknown): InvalidAsk {
+  const taskId = error instanceof AskFault ? error.taskId : undefined;
+  return { file, reason: error instanceof Error ? error.message : String(error), ...(taskId === undefined ? {} : { taskId }) };
+}
+
+/**
+ * One ask read by id: its record, or no record and the damaged file where there is one —
+ * named as `listAsks` names it, with the task it still names — or null where nobody asked
+ * it. Every reader by id refuses both kinds of absence by value.
+ */
+export type AskRead = { ask: AskRecord } | { ask: null; invalid: InvalidAsk | null };
+
+/**
+ * The ask by id, as a value: a damaged file is an answer about the mailbox, not an error in
+ * the reader, so `ask`, `answer` and `cross-agent answer` refuse it as they refuse an ask
+ * nobody wrote. A read creates nothing, the mailbox directory included; only an id that
+ * could leave the mailbox, a caller's own misuse, throws.
+ */
+export function readAsk(projectRoot: string, id: string): AskRead {
   const file = askPath(projectRoot, id);
   try {
-    return parseAsk(file);
+    return { ask: parseAsk(file) };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ask: null, invalid: null };
+    return { ask: null, invalid: invalidAsk(file, error) };
   }
+}
+
+/** Why a read by id found no ask to act on: the damaged file's reason, or that nobody asked it. */
+function noAsk(id: string, read: { invalid: InvalidAsk | null }): string {
+  return read.invalid?.reason ?? `no ask ${id}`;
 }
 
 export interface AskFilter {
@@ -151,8 +174,7 @@ export function listAsks(projectRoot: string, filter: AskFilter = {}): { asks: A
     } catch (error) {
       // A file that vanished between the listing and its read is gone, not invalid.
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      const taskId = error instanceof AskFault ? error.taskId : undefined;
-      invalid.push({ file, reason: (error as Error).message, ...(taskId === undefined ? {} : { taskId }) });
+      invalid.push(invalidAsk(file, error));
     }
   }
   return {
@@ -208,18 +230,20 @@ function when(at: number): string {
 /**
  * The operator's answer to one ask. The first one wins: under the ask's own lock the record
  * is read again, and an ask already answered or cancelled refuses, naming when the first
- * answer landed. An ask nobody wrote is refused before anything is locked, so answering in
- * a project with no mailbox writes nothing at all.
+ * answer landed. An ask nobody wrote, and a damaged file, are refused before anything is
+ * locked, so answering in a project with no mailbox writes nothing at all.
  */
 export async function answerAsk(projectRoot: string, id: string, answer: string, options: WriteOptions = {}): Promise<AnswerResult> {
   if (!isAskId(id)) return { applied: false, reason: notAnAskId(id), ask: null };
-  if (readAsk(projectRoot, id) === null) return { applied: false, reason: `no ask ${id}`, ask: null };
+  const found = readAsk(projectRoot, id);
+  if (found.ask === null) return { applied: false, reason: noAsk(id, found), ask: null };
   const lock = await acquire(lockPath(projectRoot, askLockName(id)), {
     operation: `answer ask ${id}`, waitSeconds: options.waitSeconds ?? lockWaitSeconds(projectRoot),
   });
   try {
-    const current = readAsk(projectRoot, id);
-    if (current === null) return { applied: false, reason: `no ask ${id}`, ask: null };
+    const read = readAsk(projectRoot, id);
+    if (read.ask === null) return { applied: false, reason: noAsk(id, read), ask: null };
+    const current = read.ask;
     if (current.status === "answered") {
       return { applied: false, reason: `refused answer to ask ${id}: it was answered at ${when(current.answeredAt!)}, and the first answer stands`, ask: current };
     }
@@ -262,7 +286,10 @@ export async function cancelAsks(
         operation: `cancel ask ${open.id}`, waitSeconds: options.waitSeconds ?? lockWaitSeconds(projectRoot),
       });
       try {
-        const current = readAsk(projectRoot, open.id);
+        const read = readAsk(projectRoot, open.id);
+        // Damaged since it was listed: this ask's failure, named. Gone, or no longer open: not this cancel's.
+        if (read.ask === null && read.invalid !== null) failures.push({ id: open.id, reason: read.invalid.reason });
+        const current = read.ask;
         if (current?.status !== "open") continue;
         writeAtomic(askPath(projectRoot, open.id), { ...current, status: "cancelled", cancelledAt: options.now ?? Date.now() } satisfies AskRecord);
         cancelled.push(open.id);
@@ -331,13 +358,13 @@ export async function ask(projectRoot: string, options: AskOptions): Promise<Ask
   if (options.id !== undefined) {
     if (!isAskId(options.id)) return { ok: false, reason: notAnAskId(options.id) };
     const found = readAsk(projectRoot, options.id);
-    if (found === null) return { ok: false, reason: `no ask ${options.id}` };
+    if (found.ask === null) return { ok: false, reason: noAsk(options.id, found) };
     // A lead waits on its own lineage's questions and nobody else's: a resumed lead's
     // lineage reaches the record it continues, so the original's question is still its own.
-    if (!options.lineageIds.includes(found.taskId)) {
-      return { ok: false, reason: `refused ask ${options.id}: it was asked by task ${found.taskId}, which is not in task ${options.taskId}'s lineage` };
+    if (!options.lineageIds.includes(found.ask.taskId)) {
+      return { ok: false, reason: `refused ask ${options.id}: it was asked by task ${found.ask.taskId}, which is not in task ${options.taskId}'s lineage` };
     }
-    record = found;
+    record = found.ask;
   } else {
     if (typeof options.question !== "string" || options.question.trim() === "") {
       return { ok: false, reason: "ask needs a question, or the id of one this task already asked" };
@@ -347,8 +374,9 @@ export async function ask(projectRoot: string, options: AskOptions): Promise<Ask
   const pollMs = Math.max(1, options.pollMs ?? 1000);
   const deadline = Date.now() + (options.timeoutSeconds ?? waitDefaultSeconds) * 1000;
   while (true) {
-    const current = readAsk(projectRoot, record.id);
-    if (current === null) return { ok: false, reason: `no ask ${record.id}` };
+    const read = readAsk(projectRoot, record.id);
+    if (read.ask === null) return { ok: false, reason: noAsk(record.id, read) };
+    const current = read.ask;
     const settled = settledAnswer(current);
     if (settled !== null) return settled;
     if (options.signal?.aborted) return aborted(current);
@@ -360,7 +388,7 @@ export async function ask(projectRoot: string, options: AskOptions): Promise<Ask
       // The abort is the caller's: the record is read once more so the answer carries it as
       // it is now, and nothing about it is written.
       const now = readAsk(projectRoot, record.id);
-      return now === null ? { ok: false, reason: `no ask ${record.id}` } : aborted(now);
+      return now.ask === null ? { ok: false, reason: noAsk(record.id, now) } : aborted(now.ask);
     }
   }
 }
