@@ -404,16 +404,28 @@ const showVerb: Verb = {
     // between the two reads would put its message beside a `running` status.
     const settled = isTerminal(record.status) ? result(found.root, record.id) : null;
     const runnerLog = path.join(found.root, ".cross-agent", "tasks", `${record.id}.runner.log`);
+    // A journal that does not read is named beside the record rather than in its place: the
+    // record is what the operator came to read, and the journal's file is theirs to repair.
+    let journal: Journal | null = null;
+    let journalError: string | undefined;
+    if (record.worktree !== undefined) {
+      try {
+        journal = readJournal(found.root, record.worktree.slug);
+      } catch (error) {
+        journalError = message(error);
+      }
+    }
     const document: {
       record: TaskRecord; elapsedSeconds: number; lastActivity: string[]; result: string | null;
-      outcome: TaskOutcome | null; journal: Journal | null; runnerLog: string;
+      outcome: TaskOutcome | null; journal: Journal | null; journalError?: string; runnerLog: string;
     } = {
       record,
       elapsedSeconds: elapsedSeconds(record, now),
       lastActivity: tailLines(record.logPath, lineCount(parsed, 10)),
       result: settled !== null && settled.ok && "result" in settled ? settled.result : null,
       outcome: readOutcome(found.root, record),
-      journal: record.worktree === undefined ? null : readJournal(found.root, record.worktree.slug),
+      journal,
+      ...(journalError === undefined ? {} : { journalError }),
       runnerLog,
     };
 
@@ -460,7 +472,7 @@ const showVerb: Verb = {
       lines.push(document.result === null ? "\nfinal message: no result file\n" : `\nfinal message:\n${document.result.replace(/\n*$/, "\n")}`);
     }
     const code = isTerminal(record.status) ? EXIT.ok : record.status === "stalled" ? EXIT.stalled : EXIT.running;
-    return { code, document, text: lines.join("") };
+    return { code, document, text: lines.join(""), ...(journalError === undefined ? {} : { notes: `cross-agent: ${journalError}\n` }) };
   },
 };
 

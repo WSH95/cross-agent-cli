@@ -769,7 +769,8 @@ test("show reads one task as the ledger holds it and exits by its status: settle
   assert.deepEqual(done.lastActivity, seeded.log.slice(-10));
   assert.deepEqual(done.outcome, seeded.outcome);
   assert.equal(done.result, seeded.finalMessage);
-  assert.equal(done.journal, null);
+  // Only a task given a worktree has a journal; none of these was given one.
+  for (const record of records) assert.equal(shown.get(record.status)!.journal, null, record.status);
   assert.equal(done.elapsedSeconds, 20, "a settled task's time stops at its settlement");
   const doneText = ran[2 * records.indexOf(byStatus.done)].stdout;
   assert.ok(doneText.endsWith(`\nfinal message:\n${seeded.finalMessage}`), doneText);
@@ -794,6 +795,7 @@ test("show reads one task as the ledger holds it and exits by its status: settle
   assert.equal(missingFile.code, 0, missingFile.stderr);
   assert.match(missingFile.stdout, /\nfinal message: no result file\n$/);
   assert.equal((JSON.parse(missingJson.stdout) as Shown).result, null);
+  assert.equal((JSON.parse(missingJson.stdout) as Shown).journal, null);
   const { readJournal } = await import("../src/journal.ts");
   assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, readJournal(root, seeded.slug));
   assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, seeded.journal);
@@ -865,6 +867,34 @@ test("journal renders one journal whole or lists every slug; a missing one is 3,
   assert.ok(broken.stderr.includes(`invalid journal ${damaged}`), broken.stderr);
   assert.equal(brokenJson.code, 1);
   assert.ok((JSON.parse(brokenJson.stdout) as { error: string }).error.includes(damaged));
+  // A step that does not read is the same damage, named the same way, never a crash
+  // halfway through printing the steps before it.
+  const head = { slug: "damaged", branch: "task/damaged", defaultBranch: "main" };
+  for (const step of ["null", '{"step":"committed"}', '{"step":7,"at":1}', '{"step":"git","at":1e400}', '{"step":"git","at":1,"args":"status"}']) {
+    fs.writeFileSync(damaged, `${JSON.stringify(head).slice(0, -1)},"steps":[{"step":"worktree-created","at":1},${step}]}`);
+    const [stepText, stepJson] = await runEach([["journal", "damaged"], ["journal", "damaged", "--json"]], root);
+    assert.equal(stepText.code, 1, `${step}: ${stepText.stderr}`);
+    assert.equal(stepText.stdout, "", step);
+    assert.ok(stepText.stderr.includes(`invalid journal ${damaged}`), `${step}: ${stepText.stderr}`);
+    assert.equal(stepJson.code, 1, step);
+    assert.ok((JSON.parse(stepJson.stdout) as { error: string }).error.includes(damaged), step);
+  }
+
+  // A task whose journal does not read is still shown: the record is what the operator came
+  // to read, the journal's error is named beside it, and the exit is the record's.
+  const own = path.join(directory, `${slug}.json`);
+  fs.writeFileSync(own, "{not json");
+  const [shownText, shownJson] = await runEach([["show", seeded.worktreeTask.id], ["show", seeded.worktreeTask.id, "--json"]], root);
+  assert.equal(shownText.code, 0, shownText.stderr);
+  assert.match(shownText.stdout, new RegExp(`^id: ${seeded.worktreeTask.id}$`, "m"));
+  assert.match(shownText.stderr, new RegExp(`^cross-agent: invalid journal ${literally(own)}: `, "m"));
+  assert.equal(shownJson.code, 0);
+  assert.equal(shownJson.stderr, "");
+  const { find } = await import("../src/ledger.ts");
+  const withoutJournal = JSON.parse(shownJson.stdout) as { record: TaskRecord; journal: unknown; journalError: string };
+  assert.deepEqual(withoutJournal.record, find(root, seeded.worktreeTask.id));
+  assert.equal(withoutJournal.journal, null);
+  assert.ok(withoutJournal.journalError.startsWith(`invalid journal ${own}: `), withoutJournal.journalError);
   // The bare listing is 0 with nothing to list.
   for (const entry of fs.readdirSync(directory)) fs.rmSync(path.join(directory, entry));
   const empty = await run(["journal", "--json"], root);

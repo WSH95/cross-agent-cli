@@ -84,6 +84,21 @@ function fault(value: unknown): string | null {
     if (typeof journal[field] !== "string") return `${field} must be a string`;
   }
   if (!Array.isArray(journal.steps)) return "steps must be an array";
+  // Every reader takes each step's name, time, SHAs and arguments as written, so a step
+  // that does not read is the journal's damage, named with its file, and never a crash in
+  // whichever reader meets it first.
+  for (const [index, value] of journal.steps.entries()) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return `steps[${index}] must be an object`;
+    const step = value as Record<string, unknown>;
+    if (typeof step.step !== "string") return `steps[${index}].step must be a string`;
+    if (typeof step.at !== "number" || !Number.isFinite(step.at)) return `steps[${index}].at must be a finite number`;
+    for (const field of ["before", "after", "defaultSha"] as const) {
+      if (step[field] !== undefined && typeof step[field] !== "string") return `steps[${index}].${field} must be a string`;
+    }
+    if (step.args !== undefined && (!Array.isArray(step.args) || step.args.some((argument) => typeof argument !== "string"))) {
+      return `steps[${index}].args must be an array of strings`;
+    }
+  }
   return null;
 }
 
