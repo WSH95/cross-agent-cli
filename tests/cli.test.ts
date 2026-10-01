@@ -8,12 +8,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
+import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir } from "../src/modes.ts";
+import { git } from "./helpers/git.ts";
+import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
+import type { SeededProject } from "./helpers/seed.ts";
 
-// `cross-agent`, the operator's own entry point (design section 10): a table of verbs —
-// `init`, `answer` and `report` so far — over one parser and one exit protocol. Every exit
-// code below is the protocol's: 0 ok, 1 an error nothing anticipated, 2 a command line it
-// cannot read, 3 a precondition the verb needs and does not have.
+// `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
+// one parser and one exit protocol. Every exit code below is the protocol's: 0 ok, 1 an
+// error nothing anticipated, 2 a command line it cannot read, 3 a precondition the verb
+// needs and does not have, 4 a task still running, 5 a lead waiting on the operator, 6 a
+// task stalled.
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
@@ -25,16 +30,35 @@ interface Ran {
   stderr: string;
 }
 
-/** The CLI as a host runs it: its own process, its own exit code. */
-async function run(args: string[], cwd: string, bin: string[] = [process.execPath, cli]): Promise<Ran> {
+/** The CLI as a host runs it: its own process, its own exit code, the environment it is given. */
+async function run(args: string[], cwd: string, bin: string[] = [process.execPath, cli], env: NodeJS.ProcessEnv = suiteEnv): Promise<Ran> {
   try {
-    const { stdout, stderr } = await exec(bin[0], [...bin.slice(1), ...args], { cwd, env: suiteEnv, encoding: "utf8" });
+    const { stdout, stderr } = await exec(bin[0], [...bin.slice(1), ...args], { cwd, env, encoding: "utf8" });
     return { code: 0, stdout, stderr };
   } catch (error) {
     const failure = error as { code?: number; stdout?: string; stderr?: string };
     return { code: failure.code ?? -1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
   }
 }
+
+/**
+ * Command lines that read and write nothing, each its own process as `run` makes it, four at
+ * a time, answered in the order given: what each one prints does not depend on the others.
+ */
+async function runEach(lines: string[][], cwd: string, env: NodeJS.ProcessEnv = suiteEnv): Promise<Ran[]> {
+  const results: Ran[] = new Array(lines.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, lines.length) }, async () => {
+    while (next < lines.length) {
+      const index = next++;
+      results[index] = await run(lines[index], cwd, undefined, env);
+    }
+  }));
+  return results;
+}
+
+/** Every verb, in the order usage lists them. */
+const usageOrder = ["init", "modes", "tasks", "show", "log", "journal", "list-asks", "answer", "report"];
 
 function scratch(t: TestContext): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-")));
@@ -157,7 +181,7 @@ test("a mode this build does not have is a precondition, and a command line it c
   assert.equal(fs.existsSync(path.join(root, "absent")), false);
 
   for (const args of [
-    [], ["modes"], ["init", "--mode"], ["init", "--mode", "solo", "extra"], ["init", "--engine", "codex"],
+    [], ["modes", "extra"], ["init", "--mode"], ["init", "--mode", "solo", "extra"], ["init", "--engine", "codex"],
     ["init", "--mode", "solo", "--mode", "dev-team"], ["--mode", "solo"], ["init", "--mode", ""],
     ["report", "extra"], ["answer", "only-an-id"], ["answer", "id", "text", "more"],
     ["report", "--since"], ["report", "--mode", "solo"], ["answer", "id", "text", "--since", "x"],
@@ -197,7 +221,7 @@ test("the exit protocol is one set of codes, and --help prints it beside every v
   for (const args of [["--help"], ["help"], ["init", "--help"], ["report", "--help"], ["answer", "--help"]]) {
     const ran = await run(args, root);
     assert.equal(ran.code, 0, `${args.join(" ")}: ${ran.stderr}`);
-    for (const verb of ["init", "answer", "report"]) assert.match(ran.stdout, new RegExp(`cross-agent ${verb}`), `${args.join(" ")} names ${verb}`);
+    for (const verb of usageOrder) assert.match(ran.stdout, new RegExp(`cross-agent ${verb}`), `${args.join(" ")} names ${verb}`);
     for (const [code, word] of [[0, "ok"], [1, "error"], [2, "usage"], [3, "precondition"], [4, "still running"], [5, "needs the operator"], [6, "stalled"]] as const) {
       assert.match(ran.stdout, new RegExp(`^\\s*${code}\\s+${word}`, "m"), `${args.join(" ")}: exit ${code}`);
     }
@@ -237,8 +261,8 @@ test("--json prints one JSON document on stdout whatever the exit, a usage error
     for (const verb of verbs) assert.ok(document.usage.some((line) => line.startsWith(`cross-agent ${verb}`)), `${args.join(" ")}: usage names ${verb}`);
     return document;
   };
-  assert.match((await usage(["--json", "no-such-verb"], ["init", "answer", "report"])).error, /unknown command "no-such-verb"/);
-  assert.match((await usage(["--json"], ["init", "answer", "report"])).error, /no command/);
+  assert.match((await usage(["--json", "no-such-verb"], usageOrder)).error, /unknown command "no-such-verb"/);
+  assert.match((await usage(["--json"], usageOrder)).error, /no command/);
   assert.match((await usage(["report", "--json", "--bogus", "x"], ["report"])).error, /--bogus/);
   assert.match((await usage(["answer", "only-one", "--json"], ["answer"])).error, /answer takes <ask-id> <text>/);
   // Help is one document too: the verbs, the project rule and the exit protocol.
@@ -247,7 +271,7 @@ test("--json prints one JSON document on stdout whatever the exit, a usage error
     assert.equal(ran.code, 0, `${args.join(" ")}: ${ran.stderr}`);
     const help = JSON.parse(ran.stdout) as { ok: boolean; usage: string; verbs: Array<{ usage: string; summary: string }>; project: string; exit: Array<{ code: number; meaning: string }> };
     assert.equal(help.ok, true);
-    assert.deepEqual(help.verbs.map((verb) => verb.usage.split(" ")[1]), ["init", "answer", "report"], args.join(" "));
+    assert.deepEqual(help.verbs.map((verb) => verb.usage.split(" ")[1]), usageOrder, args.join(" "));
     assert.deepEqual(help.exit.map((entry) => entry.code), [0, 1, 2, 3, 4, 5, 6]);
     assert.match(help.project, /init writes in the current directory/);
   }
@@ -452,4 +476,447 @@ test("report over an empty or absent ledger is 0, says nothing, and creates noth
   const configured = await run(["report", "--json", "--project", root], root);
   assert.deepEqual(JSON.parse(configured.stdout), { tasks: [] });
   assert.equal(fs.existsSync(path.join(root, ".cross-agent", "tasks")), false);
+});
+
+/** A git repository with one empty commit and nothing of this project's in it: no config, no ledger. */
+async function bareRepository(t: TestContext): Promise<string> {
+  const root = scratch(t);
+  await git(root, "init", "-b", "main");
+  await git(root, "commit", "--allow-empty", "-m", "initial");
+  return root;
+}
+
+/** A task id of the ledger's alphabet that no ledger holds. */
+const nobody = "0123456789abcdef0123456789abcdef0123";
+
+// @anchor cliReadsWriteNothingUninitialized
+test("the read verbs write nothing in an uninitialized repository", async (t) => {
+  const root = await bareRepository(t);
+  const excludeFile = path.join(root, ".git", "info", "exclude");
+  const exclude = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile) : null;
+  // The repository is the project, as the server would find it: no `--project`, no config.
+  const reads: Array<[string[], number]> = [
+    [["modes"], 0], [["tasks"], 0], [["tasks", "--status", "running"], 0], [["show", nobody], 3], [["log", nobody], 3],
+    [["journal"], 0], [["journal", "some-slug"], 3], [["list-asks"], 0], [["list-asks", "--status", "open"], 0], [["report"], 0],
+  ];
+  const lines = reads.flatMap(([args]) => [args, [...args, "--json"]]);
+  const ran = await runEach(lines, root);
+  const documents = new Map<string, unknown>();
+  ran.forEach((result, index) => {
+    const args = lines[index];
+    const code = reads[Math.floor(index / 2)][1];
+    assert.equal(result.code, code, `${args.join(" ")}: ${result.stderr}`);
+    if (args.at(-1) === "--json") {
+      assert.equal(result.stderr, "", `${args.join(" ")}: under --json stderr is empty`);
+      documents.set(args.slice(0, -1).join(" "), JSON.parse(result.stdout));
+    } else if (code === 3) {
+      assert.equal(result.stdout, "", `${args.join(" ")}: a refusal, asked for as text, is stderr's`);
+      assert.match(result.stderr, /^cross-agent: no (task|journal) /);
+    }
+  });
+  // Every listing is empty, and an empty listing is an answer.
+  assert.deepEqual(documents.get("tasks"), { ok: true, tasks: [], invalid: [], errors: [], skipped: [], reconciled: false });
+  assert.deepEqual(documents.get("tasks --status running"), { ok: true, tasks: [], invalid: [], errors: [], skipped: [], reconciled: false });
+  assert.deepEqual(documents.get("journal"), { slugs: [] });
+  assert.deepEqual(documents.get("report"), { tasks: [] });
+  assert.deepEqual(documents.get("list-asks"), { asks: [], invalid: [] });
+  assert.deepEqual(documents.get("list-asks --status open"), { asks: [], invalid: [] });
+  assert.deepEqual(documents.get(`show ${nobody}`), { ok: false, reason: `no task ${nobody}` });
+  assert.deepEqual(documents.get(`log ${nobody}`), { ok: false, reason: `no task ${nobody}` });
+  assert.deepEqual(documents.get("journal some-slug"), { ok: false, reason: "no journal some-slug" });
+  // A repository with no config runs `solo` on the defaults, and that is the active mode.
+  const modes = documents.get("modes") as { active: string; installed: boolean; modes: Array<{ id: string; active: boolean }> };
+  assert.equal(modes.active, "solo");
+  assert.equal(modes.installed, true);
+  assert.deepEqual(modes.modes.filter((mode) => mode.active).map((mode) => mode.id), ["solo"]);
+
+  // And the repository is exactly as `git init` left it.
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false, "no state directory");
+  assert.deepEqual(fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile) : null, exclude, ".git/info/exclude untouched");
+  assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+/** Every record the seeded ledger holds, in the order it was created. */
+function everyRecord(seeded: SeededProject): TaskRecord[] {
+  const { byStatus } = seeded;
+  return [
+    byStatus.done, seeded.doneWithoutResult, byStatus.failed, byStatus.cancelled, byStatus.orphaned, byStatus.cancelling,
+    byStatus.stalled, byStatus.running, seeded.lead, seeded.runningChild, seeded.doneChild, seeded.worktreeTask, byStatus.launching,
+  ];
+}
+
+/** `text` as a regular expression that matches it literally. */
+function literally(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+}
+
+// @anchor cliReadsLeaveSeededLedger
+test("the read verbs leave a seeded ledger byte for byte", async (t) => {
+  const seeded = await seededProject(t);
+  const { root } = seeded;
+  const state = path.join(root, ".cross-agent");
+  const before = snapshot(state);
+  // The damaged files are part of what must not change: a read that repaired, moved or
+  // removed either would show here.
+  for (const name of [path.join("tasks", "broken.json"), path.join("asks", "broken.json")]) assert.ok(Object.hasOwn(before, name), name);
+  const reads = [
+    ...everyRecord(seeded).map((record) => ["show", record.id]),
+    ["log", seeded.byStatus.done.id], ["journal"], ["journal", seeded.slug], ["list-asks"], ["tasks"], ["tasks", "--status", "stalled"],
+    ["report"], ["modes"],
+  ];
+  const lines = reads.flatMap((args) => [args, [...args, "--json"]]);
+  const ran = await runEach(lines, root);
+  ran.forEach((result, index) => {
+    assert.ok([0, 4, 5, 6].includes(result.code), `${lines[index].join(" ")}: exit ${result.code}: ${result.stderr}`);
+  });
+  // The quiet record is past the stall threshold — its engine has said nothing for an hour
+  // under `stallMinutes: 0.02` — and `show` reports the status the ledger holds.
+  const quiet = seeded.byStatus.running;
+  const shown = ran[lines.findIndex((args) => args[0] === "show" && args[1] === quiet.id && args[2] === "--json")];
+  assert.equal(shown.code, 4);
+  assert.equal((JSON.parse(shown.stdout) as { record: TaskRecord }).record.status, "running");
+  assert.deepEqual(snapshot(state), before, "every file under .cross-agent/ is as it was, and nothing was added");
+
+  // The same record under `check`, which is a reader of the stall clock, is written stalled:
+  // the reading `show` declined to take is one there was to take.
+  const { check } = await import("../src/tasks.ts");
+  const checked = await check(root, quiet.id);
+  assert.equal(checked.ok && checked.status, "stalled");
+});
+
+// @anchor cliTasksReconcileFlag
+test("tasks --reconcile is the one read that reconciles", async (t) => {
+  const root = await bareRepository(t);
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const { create, update } = await import("../src/ledger.ts");
+  // Running, its runner gone and no engine named: the first thing a pass settles.
+  const record = create(root, { role: "planner", brief: "seeded", cwd: root, engine: "claude", depth: 1 });
+  assert.equal((await update(root, record.id, { status: "running", runnerIdentity: await deadIdentity() })).applied, true);
+  const broken = path.join(root, ".cross-agent", "tasks", "broken.json");
+  fs.writeFileSync(broken, "{not a record");
+  const state = path.join(root, ".cross-agent");
+  const before = snapshot(state);
+  const recordName = path.join("tasks", `${record.id}.json`);
+  const brokenName = path.join("tasks", "broken.json");
+
+  const [text, json] = await runEach([["tasks"], ["tasks", "--json"]], root);
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, new RegExp(`^${record.id}\\s+running \\(runner gone\\)\\s`, "m"));
+  assert.match(text.stdout, new RegExp(`^invalid task record ${literally(broken)}: \\S`, "m"));
+  assert.match(text.stdout, /^not reconciled: pass --reconcile$/m);
+  const listed = JSON.parse(json.stdout) as { reconciled: boolean; tasks: Array<{ id: string; status: string }>; invalid: Array<{ file: string; reason: string }> };
+  assert.equal(listed.reconciled, false);
+  assert.deepEqual(listed.tasks.map((task) => [task.id, task.status]), [[record.id, "running"]]);
+  assert.deepEqual(listed.invalid.map((entry) => entry.file), [broken]);
+  assert.ok(listed.invalid[0].reason.length > 0);
+  assert.deepEqual(snapshot(state), before, "a listing without --reconcile changes no file");
+
+  const reconciled = await run(["tasks", "--reconcile", "--json"], root);
+  assert.equal(reconciled.code, 0, reconciled.stderr);
+  const after = JSON.parse(reconciled.stdout) as typeof listed & { tasks: Array<{ reason?: string }> };
+  assert.equal(after.reconciled, true);
+  assert.deepEqual(after.tasks.map((task) => [task.id, task.status, task.reason]), [[record.id, "failed", "runner lost"]]);
+  assert.deepEqual(after.invalid.map((entry) => entry.file), [broken]);
+  assert.ok(after.invalid[0].reason.length > 0);
+  const now = snapshot(state);
+  assert.notEqual(now[recordName], before[recordName], "the pass wrote the record it settled");
+  assert.equal(now[brokenName], before[brokenName], "and left the damaged file alone");
+  for (const name of Object.keys(now).filter((each) => !Object.hasOwn(before, each))) {
+    assert.ok(name === "locks" || name.startsWith(`locks${path.sep}`), `${name} is new, and only a lock may be`);
+  }
+  const human = await run(["tasks", "--reconcile"], root);
+  assert.equal(human.code, 0, human.stderr);
+  assert.match(human.stdout, new RegExp(`^${record.id}\\s+failed\\s`, "m"));
+  assert.match(human.stdout, new RegExp(`^invalid task record ${literally(broken)}: \\S`, "m"));
+  assert.match(human.stdout, /^reconciled$/m);
+});
+
+// @anchor cliModes
+test("modes lists the installed modes with the active one marked, and a config naming none of them is a 3", async (t) => {
+  const root = await bareRepository(t);
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const [text, json] = await runEach([["modes"], ["modes", "--json"]], root);
+  assert.equal(text.code, 0, text.stderr);
+  assert.equal(text.stderr, "");
+  const heads = text.stdout.split("\n").filter((line) => /^[* ] \S+ \S+ — /.test(line));
+  assert.deepEqual(heads.map((line) => line.split(" — ")[0]), ["* dev-team 0.1.0", "  dev-team-engine 0.1.0", "  solo 0.1.0"]);
+  assert.match(text.stdout, /^ {6}implementer \(worktree, workspace-write\)$/m);
+  assert.match(text.stdout, /^ {6}consult \(root, read-only\)$/m);
+
+  const listed = JSON.parse(json.stdout) as {
+    active: string; installed: boolean; reason?: string;
+    modes: Array<{ id: string; lead: unknown; active: boolean; roles: Array<Record<string, unknown>> }>;
+  };
+  assert.equal(listed.active, "dev-team");
+  assert.equal(listed.installed, true);
+  assert.equal(listed.reason, undefined);
+  assert.deepEqual(listed.modes.map((mode) => [mode.id, mode.active]), [["dev-team", true], ["dev-team-engine", false], ["solo", false]]);
+  // Each mode as the loader reads it: what `describe_mode` would say of it, less the text.
+  const { loadMode } = await import("../src/modes.ts");
+  for (const mode of listed.modes) {
+    const loaded = loadMode(builtInModesDir(), mode.id);
+    assert.deepEqual(mode, {
+      id: loaded.id, release: loaded.release, name: loaded.name, summary: loaded.summary, lead: loaded.lead,
+      roles: loaded.roles.map((role) => ({ key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault })),
+      active: loaded.id === "dev-team",
+    });
+  }
+
+  // A config naming a mode this build does not have: every other verb that loads it would
+  // refuse, so this is a 3 — and what is installed is still the answer, on stdout.
+  const configFile = path.join(root, CONFIG_PATH);
+  fs.writeFileSync(configFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(configFile, "utf8")), mode: "no-such-mode" }));
+  const [missingText, missingJson] = await runEach([["modes"], ["modes", "--json"]], root);
+  assert.equal(missingText.code, 3);
+  assert.match(missingText.stdout, /^ {2}dev-team 0\.1\.0 — /m);
+  assert.doesNotMatch(missingText.stdout, /^\*/m, "nothing installed is active");
+  assert.match(missingText.stderr, /^cross-agent: mode "no-such-mode" in \S+ is not installed; this build has dev-team, dev-team-engine, solo$/m);
+  assert.equal(missingJson.code, 3);
+  assert.equal(missingJson.stderr, "");
+  const missing = JSON.parse(missingJson.stdout) as typeof listed;
+  assert.equal(missing.active, "no-such-mode");
+  assert.equal(missing.installed, false);
+  assert.match(missing.reason!, /no-such-mode/);
+  assert.deepEqual(missing.modes.map((mode) => mode.id), ["dev-team", "dev-team-engine", "solo"]);
+
+  // A config that does not load is the precondition before anything is listed.
+  fs.writeFileSync(configFile, "{ not json");
+  const unreadable = await run(["modes"], root);
+  assert.equal(unreadable.code, 3);
+  assert.equal(unreadable.stdout, "");
+  assert.match(unreadable.stderr, /config\.json/);
+});
+
+// @anchor cliTasks
+test("tasks lists the ledger newest first without a pass, filtered by status, and names the damaged file", async (t) => {
+  const seeded = await seededProject(t);
+  const { root } = seeded;
+  const brokenBytes = fs.readFileSync(seeded.brokenTask);
+  const { listTasks } = await import("../src/tasks.ts");
+  const [text, json, stalledText, stalledJson] = await runEach([
+    ["tasks"], ["tasks", "--json"], ["tasks", "--status", "stalled"], ["tasks", "--status", "stalled", "--json"],
+  ], root);
+  assert.equal(text.code, 0, text.stderr);
+  assert.equal(text.stderr, "");
+  const listed = await listTasks(root, undefined, { reconcile: false });
+  assert.deepEqual(JSON.parse(json.stdout), { ...listed, reconciled: false });
+  // Newest first, the fresh launch at the top.
+  const newestFirst = everyRecord(seeded).map((record) => record.id).reverse();
+  const rows = text.stdout.split("\n").filter((line) => /^[0-9a-f]{36}\s/.test(line));
+  assert.deepEqual(rows.map((line) => line.split(/\s+/)[0]), newestFirst);
+  // A runner the record names and that is gone is shown as gone; a launch names none yet.
+  for (const record of everyRecord(seeded)) {
+    const row = rows.find((line) => line.startsWith(record.id))!;
+    const gone = !["done", "failed", "cancelled", "launching"].includes(record.status);
+    assert.equal(row.includes(`${record.status} (runner gone)`), gone, row);
+    assert.match(row, new RegExp(`\\s${literally(`${record.engine}/${record.model ?? "-"}/${record.effort ?? "-"}`)}\\s+1\\s+\\S+\\s+${literally(record.cwd)}$`), row);
+  }
+  // The damaged file, by name and reason, in both forms, and its bytes as they were.
+  assert.deepEqual(listed.invalid.map((entry) => entry.file), [seeded.brokenTask]);
+  assert.ok(listed.invalid[0].reason.length > 0);
+  assert.ok(text.stdout.includes(`invalid task record ${seeded.brokenTask}: ${listed.invalid[0].reason}\n`));
+  assert.match(text.stdout, /\nnot reconciled: pass --reconcile\n$/);
+  assert.deepEqual(fs.readFileSync(seeded.brokenTask), brokenBytes);
+
+  assert.equal(stalledText.code, 0, stalledText.stderr);
+  assert.deepEqual(stalledText.stdout.split("\n").filter((line) => /^[0-9a-f]{36}\s/.test(line)).map((line) => line.split(/\s+/)[0]), [seeded.byStatus.stalled.id]);
+  assert.deepEqual(JSON.parse(stalledJson.stdout), { ...(await listTasks(root, "stalled", { reconcile: false })), reconciled: false });
+
+  for (const args of [["tasks", "--status", "nope"], ["tasks", "--reconcile", "x"], ["tasks", "--reconcile", "--reconcile"], ["tasks", "--status"]]) {
+    const refused = await run(args, root);
+    assert.equal(refused.code, 2, `${args.join(" ")}: ${refused.stderr}`);
+    assert.match(refused.stderr, /usage: cross-agent tasks/);
+  }
+});
+
+// @anchor cliShow
+test("show reads one task as the ledger holds it and exits by its status: settled 0, stalled 6, anything else 4", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, byStatus } = seeded;
+  const { find } = await import("../src/ledger.ts");
+  const verdict: Record<string, number> = { launching: 4, running: 4, stalled: 6, orphaned: 4, cancelling: 4, done: 0, failed: 0, cancelled: 0 };
+  const records = Object.values(byStatus);
+  const lines = records.flatMap((record) => [["show", record.id], ["show", record.id, "--json"]]);
+  const ran = await runEach(lines, root);
+  type Shown = { record: TaskRecord; elapsedSeconds: number; lastActivity: string[]; result: string | null; outcome: unknown; journal: unknown; runnerLog: string };
+  const shown = new Map<string, Shown>();
+  records.forEach((record, index) => {
+    const [text, json] = [ran[2 * index], ran[2 * index + 1]];
+    assert.equal(text.code, verdict[record.status], `${record.status}: ${text.stderr}`);
+    assert.equal(json.code, verdict[record.status], record.status);
+    // Whatever the verdict, the record is the answer, and it is stdout's.
+    assert.equal(text.stderr, "", record.status);
+    assert.match(text.stdout, new RegExp(`^id: ${record.id}$`, "m"));
+    assert.match(text.stdout, new RegExp(`^status: ${record.status}$`, "m"));
+    const document = JSON.parse(json.stdout) as Shown;
+    assert.deepEqual(document.record, find(root, record.id));
+    assert.equal(document.runnerLog, path.join(root, ".cross-agent", "tasks", `${record.id}.runner.log`));
+    shown.set(record.status, document);
+  });
+  // The settled task with every file: its activity, its outcome and its message, whole.
+  const done = shown.get("done")!;
+  assert.deepEqual(done.lastActivity, seeded.log.slice(-10));
+  assert.deepEqual(done.outcome, seeded.outcome);
+  assert.equal(done.result, seeded.finalMessage);
+  assert.equal(done.journal, null);
+  assert.equal(done.elapsedSeconds, 20, "a settled task's time stops at its settlement");
+  const doneText = ran[2 * records.indexOf(byStatus.done)].stdout;
+  assert.ok(doneText.endsWith(`\nfinal message:\n${seeded.finalMessage}`), doneText);
+  assert.match(doneText, new RegExp(`^log: ${literally(byStatus.done.logPath)}$`, "m"));
+  assert.match(doneText, new RegExp(`^runner log: ${literally(done.runnerLog)}$`, "m"));
+  assert.match(doneText, new RegExp(`^result: ${literally(byStatus.done.resultPath)}$`, "m"));
+  assert.match(doneText, /^outcome: done, exit 0, session seeded-session, at \S+$/m);
+  // Nothing unsettled has a final message, and a settled one with no file says so.
+  for (const status of ["launching", "running", "stalled", "orphaned", "cancelling"]) assert.equal(shown.get(status)!.result, null, status);
+  assert.equal(shown.get("running")!.record.lastEventAt! < Date.now() - 3_000_000, true, "the quiet record is an hour silent");
+
+  const [missingFile, missingJson, worktreeJson, three, zero, word, unknown, none] = await runEach([
+    ["show", seeded.doneWithoutResult.id], ["show", seeded.doneWithoutResult.id, "--json"], ["show", seeded.worktreeTask.id, "--json"],
+    ["show", byStatus.done.id, "--lines", "3", "--json"], ["show", byStatus.done.id, "--lines", "0"], ["show", byStatus.done.id, "--lines", "x"],
+    ["show", nobody], ["show"],
+  ], root);
+  assert.equal(missingFile.code, 0, missingFile.stderr);
+  assert.match(missingFile.stdout, /\nfinal message: no result file\n$/);
+  assert.equal((JSON.parse(missingJson.stdout) as Shown).result, null);
+  const { readJournal } = await import("../src/journal.ts");
+  assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, readJournal(root, seeded.slug));
+  assert.deepEqual((JSON.parse(worktreeJson.stdout) as Shown).journal, seeded.journal);
+  assert.deepEqual((JSON.parse(three.stdout) as Shown).lastActivity, seeded.log.slice(-3));
+  for (const refused of [zero, word, none]) {
+    assert.equal(refused.code, 2, refused.stderr);
+    assert.match(refused.stderr, /usage: cross-agent show/);
+  }
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.stdout, "");
+  assert.match(unknown.stderr, new RegExp(`^cross-agent: no task ${nobody}$`, "m"));
+});
+
+// @anchor cliLog
+test("log prints the tail of a task's engine stream, and a task whose engine has said nothing is an empty answer", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, byStatus } = seeded;
+  const [text, json, three, fresh, freshJson, unknown, zero] = await runEach([
+    ["log", byStatus.done.id], ["log", byStatus.done.id, "--json"], ["log", byStatus.done.id, "--lines", "3"],
+    ["log", byStatus.launching.id], ["log", byStatus.launching.id, "--json"], ["log", nobody], ["log", byStatus.done.id, "--lines", "0"],
+  ], root);
+  assert.equal(text.code, 0, text.stderr);
+  // Fifty lines by default, and the seeded stream has twelve: all of it, verbatim.
+  assert.equal(text.stdout, `${seeded.log.join("\n")}\n`);
+  assert.deepEqual(JSON.parse(json.stdout), { id: byStatus.done.id, logPath: byStatus.done.logPath, lines: seeded.log });
+  assert.equal(three.stdout, `${seeded.log.slice(-3).join("\n")}\n`);
+  assert.equal(fresh.code, 0, fresh.stderr);
+  assert.equal(fresh.stdout, "");
+  assert.deepEqual(JSON.parse(freshJson.stdout), { id: byStatus.launching.id, logPath: byStatus.launching.logPath, lines: [] });
+  assert.equal(unknown.code, 3);
+  assert.match(unknown.stderr, /no task/);
+  assert.equal(zero.code, 2);
+});
+
+// @anchor cliJournal
+test("journal renders one journal whole or lists every slug; a missing one is 3, a slug it cannot read 2, a damaged one 1", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, slug } = seeded;
+  const [text, json, bare, bareJson, missing, dots] = await runEach([
+    ["journal", slug], ["journal", slug, "--json"], ["journal"], ["journal", "--json"], ["journal", "no-such-slug"], ["journal", ".."],
+  ], root);
+  assert.equal(text.code, 0, text.stderr);
+  const { readJournal } = await import("../src/journal.ts");
+  assert.deepEqual(JSON.parse(json.stdout), readJournal(root, slug));
+  assert.deepEqual(JSON.parse(json.stdout), seeded.journal);
+  for (const [field, value] of [["slug", slug], ["branch", seeded.branch], ["worktree", seeded.worktree], ["defaultBranch", "main"]]) {
+    assert.match(text.stdout, new RegExp(`^${field}: ${literally(value)}$`, "m"));
+  }
+  // One line per step: when, which, the SHAs around it, the default branch's, what ran.
+  for (const step of seeded.journal.steps) {
+    assert.match(text.stdout, new RegExp(`^  ${literally(new Date(step.at).toISOString())}  ${step.step}  ${step.before ?? "-"}→${step.after}  defaultSha ${step.defaultSha}  args ${literally(step.args!.join(" "))}$`, "m"));
+  }
+  assert.equal(bare.code, 0, bare.stderr);
+  assert.equal(bare.stdout, `${slug}\n`);
+  assert.deepEqual(JSON.parse(bareJson.stdout), { slugs: [slug] });
+  assert.equal(missing.code, 3);
+  assert.match(missing.stderr, /^cross-agent: no journal no-such-slug$/m);
+  // A slug no journal file could have is a command line this build cannot read.
+  assert.equal(dots.code, 2);
+  assert.match(dots.stderr, /invalid slug/);
+  assert.match(dots.stderr, /usage: cross-agent journal/);
+
+  // A journal that does not read is the operator's file to repair, and the error names it.
+  const directory = path.join(root, ".cross-agent", "journal");
+  const damaged = path.join(directory, "damaged.json");
+  fs.writeFileSync(damaged, "{}");
+  const [broken, brokenJson] = await runEach([["journal", "damaged"], ["journal", "damaged", "--json"]], root);
+  assert.equal(broken.code, 1);
+  assert.ok(broken.stderr.includes(`invalid journal ${damaged}`), broken.stderr);
+  assert.equal(brokenJson.code, 1);
+  assert.ok((JSON.parse(brokenJson.stdout) as { error: string }).error.includes(damaged));
+  // The bare listing is 0 with nothing to list.
+  for (const entry of fs.readdirSync(directory)) fs.rmSync(path.join(directory, entry));
+  const empty = await run(["journal", "--json"], root);
+  assert.equal(empty.code, 0, empty.stderr);
+  assert.deepEqual(JSON.parse(empty.stdout), { slugs: [] });
+});
+
+// @anchor cliListAsks
+test("list-asks shows every ask in the order asked, exits 5 while one it printed is open, and names a damaged file", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, asks } = seeded;
+  const { listAsks } = await import("../src/mailbox.ts");
+  const [text, json, answered, answeredJson, nope] = await runEach([
+    ["list-asks"], ["list-asks", "--json"], ["list-asks", "--status", "answered"], ["list-asks", "--status", "answered", "--json"],
+    ["list-asks", "--status", "nope"],
+  ], root);
+  // An open ask is a lead waiting on the operator, and the listing is still stdout's.
+  assert.equal(text.code, 5);
+  assert.equal(json.code, 5);
+  assert.deepEqual(JSON.parse(json.stdout), listAsks(root));
+  const heads = text.stdout.split("\n").filter((line) => /^[0-9a-f]{36} {2}/.test(line));
+  assert.deepEqual(heads.map((line) => line.split("  ")[0]), [asks.answered.id, asks.open.id], "in the order asked");
+  assert.match(heads[1], new RegExp(`^${asks.open.id} {2}open {2}task ${asks.open.taskId} {2}${literally(new Date(asks.open.createdAt).toISOString())} \\(\\d+s ago\\) {2}Which slug\\?$`));
+  assert.match(text.stdout, /^ {4}answer: Yes, onto main\. {2}answeredAt \S+ \(\d+s ago\)$/m);
+  assert.doesNotMatch(text.stdout, /second line|run the suite/, "each question and answer by its first line");
+  // The damaged file is named on stderr and in the document, and changes no verdict.
+  assert.match(text.stderr, new RegExp(`^cross-agent: invalid ask file ${literally(seeded.brokenAsk)}: unparsable JSON`, "m"));
+  assert.deepEqual((JSON.parse(json.stdout) as { invalid: Array<{ file: string }> }).invalid.map((entry) => entry.file), [seeded.brokenAsk]);
+  assert.equal(answered.code, 0, answered.stderr);
+  assert.deepEqual(answered.stdout.split("\n").filter((line) => /^[0-9a-f]{36} {2}/.test(line)).map((line) => line.split("  ")[0]), [asks.answered.id]);
+  assert.match(answered.stderr, /invalid ask file/);
+  assert.deepEqual(JSON.parse(answeredJson.stdout), listAsks(root, { status: "answered" }));
+  assert.equal(nope.code, 2);
+  assert.match(nope.stderr, /usage: cross-agent list-asks/);
+
+  // Answered, the open one is open no longer, and nothing printed waits on the operator.
+  const reply = await run(["answer", asks.open.id, "the seeded slug"], root);
+  assert.equal(reply.code, 0, reply.stderr);
+  const after = await run(["list-asks"], root);
+  assert.equal(after.code, 0, after.stderr);
+  assert.match(after.stderr, /invalid ask file/);
+});
+
+// @anchor cliUsage
+test("every verb refuses a flag it does not take and a wrong argument count as usage, and help names every verb and code", async (t) => {
+  const root = scratch(t);
+  const wrong = [
+    ["init", "--since", "x"], ["modes", "--bogus", "x"], ["tasks", "--lines", "3"], ["show", "x", "--status", "running"],
+    ["log", "x", "--reconcile"], ["journal", "--status", "x"], ["list-asks", "--since", "x"], ["answer", "a", "b", "--mode", "x"],
+    ["report", "--lines", "2"],
+    ["show"], ["log"], ["answer", "a"],
+    ["modes", "x"], ["tasks", "x"], ["show", "a", "b"], ["log", "a", "b"], ["journal", "a", "b"], ["list-asks", "x"],
+  ];
+  const ran = await runEach(wrong, root);
+  ran.forEach((result, index) => {
+    const args = wrong[index];
+    assert.equal(result.code, 2, `${args.join(" ")}: ${result.stderr}`);
+    assert.match(result.stderr, new RegExp(`usage: cross-agent ${args[0]} `), args.join(" "));
+    assert.equal(result.stdout, "", args.join(" "));
+  });
+  const { EXIT, VERB_NAMES } = await import("../src/cli.ts");
+  assert.deepEqual(VERB_NAMES, usageOrder);
+  const helped = await run(["--help"], root);
+  assert.equal(helped.code, 0, helped.stderr);
+  for (const verb of VERB_NAMES) assert.match(helped.stdout, new RegExp(`^ {2}cross-agent ${verb} `, "m"), verb);
+  for (const code of Object.values(EXIT)) assert.match(helped.stdout, new RegExp(`^ {2}${code} {2}\\S`, "m"), `exit ${code}`);
+  const alone = await run([], root);
+  assert.equal(alone.code, 2);
+  assert.match(alone.stderr, /no command/);
+  assert.equal(fs.readdirSync(root).length, 0, "a refused command line writes nothing");
 });

@@ -3,22 +3,28 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig } from "./config.ts";
-import { isTerminal, scan } from "./ledger.ts";
-import type { TaskRecord } from "./ledger.ts";
-import { answerAsk } from "./mailbox.ts";
+import type { SandboxProfile } from "./engines/registry.ts";
+import { listJournals, readJournal } from "./journal.ts";
+import type { Journal } from "./journal.ts";
+import { find, isProcessAlive, isTerminal, readOutcome, scan, tailLines } from "./ledger.ts";
+import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
+import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
+import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, loadMode } from "./modes.ts";
+import type { ModeLead, Workspace } from "./modes.ts";
 import { discoverProject, parseFlags } from "./project.ts";
+import { listTasks, result } from "./tasks.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
-// one parser and one exit protocol. `init` writes the bind-time config for a mode; `answer`
-// replies to an engine-placed lead's question without a host session; `report` renders the
-// per-task log from the ledger, which is where that log comes from under engine placement.
-// The other verbs of section 10 are step 13's, on this same table.
+// one parser and one exit protocol. Each verb calls the function its tool calls, with the
+// options the tool's handler passes, and a verb that only reads writes nothing: `tasks`
+// lists without a reconciliation pass unless `--reconcile` asks for one, and `show` reports
+// the stall `wait` and `check` wrote rather than taking a reading of its own. `init` writes
+// the bind-time config for a mode; `answer` replies to an engine-placed lead's question
+// without a host session; `report` renders the per-task log from the ledger, which is where
+// that log comes from under engine placement.
 
-/**
- * The exit protocol, one for every verb. 4, 5 and 6 are defined and documented now so a
- * script can rely on them; the verbs step 13 adds are the ones that exit with them.
- */
+/** The exit protocol, one for every verb. */
 export const EXIT = { ok: 0, error: 1, usage: 2, precondition: 3, running: 4, needsOperator: 5, stalled: 6 } as const;
 
 /** The exit protocol as help prints it, in either form. */
@@ -27,14 +33,20 @@ const PROTOCOL: ReadonlyArray<{ code: number; meaning: string }> = [
   { code: EXIT.error, meaning: "error: something this command did not anticipate failed" },
   { code: EXIT.usage, meaning: "usage: the command line could not be read" },
   { code: EXIT.precondition, meaning: "precondition: the project, the mode, the ask or the task is not in the state the verb needs" },
-  { code: EXIT.running, meaning: "still running: a task the verb reads has not settled (step 13's verbs)" },
-  { code: EXIT.needsOperator, meaning: "needs the operator: a lead is waiting on an open ask (step 13's verbs)" },
-  { code: EXIT.stalled, meaning: "stalled: a task's engine has been silent past limits.stallMinutes (step 13's verbs)" },
+  { code: EXIT.running, meaning: "still running: a task the verb names has not settled" },
+  { code: EXIT.needsOperator, meaning: "needs the operator: a lead is waiting on an open ask" },
+  { code: EXIT.stalled, meaning: "stalled: a task's engine has been silent past limits.stallMinutes" },
 ];
+
+/** The codes whose text is the answer itself, and goes to stdout: a verdict, not a failure. */
+const VERDICTS = new Set<number>([EXIT.ok, EXIT.running, EXIT.needsOperator, EXIT.stalled]);
 
 /** Which project a verb reads when no `--project` names one. */
 const PROJECT_RULE = "Without --project, init writes in the current directory, and every other verb reads the project "
   + "the server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json, then the git toplevel.";
+
+/** The eight statuses `tasks --status` filters by, as `list_tasks` takes them (`src/ledger.ts#TaskStatus`). */
+const TASK_STATUSES: readonly TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
 export interface CliOutput {
   out: (text: string) => void;
@@ -44,6 +56,8 @@ export interface CliOutput {
 interface Parsed {
   positionals: string[];
   values: Record<string, string>;
+  /** The flags given that take no value. */
+  booleans: ReadonlySet<string>;
   json: boolean;
 }
 
@@ -56,9 +70,13 @@ interface Context {
 interface Answer {
   code: number;
   document: unknown;
-  /** stdout when the code is 0, stderr otherwise. */
   text: string;
-  /** For stderr beside a successful answer — a warning — and never under `--json`, where the document carries it. */
+  /**
+   * Where `text` goes without `--json`: stdout for an answer that carries a verdict — 0, 4,
+   * 5 and 6 — and stderr for 1, 2 and 3, unless the verb says otherwise.
+   */
+  stream?: "stdout" | "stderr";
+  /** For stderr whatever the code, and never under `--json`, where the document carries it. */
   notes?: string;
 }
 
@@ -67,10 +85,22 @@ interface Verb {
   usage: string;
   summary: string;
   positionals: string[];
+  /** Positionals that may follow the required ones, in order. */
+  optional?: string[];
   /** Value flags beyond `--project`, as `parseFlags` takes them. */
   flags: Record<string, string>;
+  /** Flags that take no value, each given at most once. */
+  booleans?: string[];
+  /** A value on the command line this verb cannot read, judged before anything runs: a 2, as a wrong flag is. */
+  check?(parsed: Parsed): string | null;
   run(parsed: Parsed, context: Context): Promise<Answer>;
 }
+
+/**
+ * A command-line argument only the function it reaches can judge, refused there: a 2 like
+ * any other command line this build cannot read, rather than the 1 of a throw.
+ */
+class UsageError extends Error {}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -86,8 +116,97 @@ async function project(parsed: Parsed, context: Context): Promise<{ root: string
   return discoverProject(named === undefined ? [] : ["--project", named], context.env, context.cwd);
 }
 
-// @anchor initVerb
-const init: Verb = {
+/** A time as ISO-8601, with how long ago it was. */
+function stamp(at: number, now: number): string {
+  return `${new Date(at).toISOString()} (${Math.max(0, Math.round((now - at) / 1000))}s ago)`;
+}
+
+/**
+ * How long a task has run: to now while it is active, and to its settlement once it is not,
+ * as `check` reckons `elapsedSeconds` (`src/tasks.ts#check`).
+ */
+function elapsedSeconds(task: { status: TaskStatus; createdAt: number; updatedAt: number }, now: number): number {
+  const until = isTerminal(task.status) ? task.updatedAt : now;
+  return Math.max(0, Math.round((until - task.createdAt) / 1000));
+}
+
+/** Seconds as a person reads a span: `45s`, `12m05s`, `3h04m`, `2d03h`. */
+function span(seconds: number): string {
+  const two = (value: number) => String(value).padStart(2, "0");
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m${two(seconds % 60)}s`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h${two(Math.floor(seconds / 60) % 60)}m`;
+  return `${Math.floor(seconds / 86_400)}d${two(Math.floor(seconds / 3_600) % 24)}h`;
+}
+
+/** What runs a task, as one cell: `engine/model/effort`, `-` for what is not set. */
+function runsOn(task: { engine: string; model?: string | null; effort?: string | null }): string {
+  return `${task.engine}/${task.model ?? "-"}/${task.effort ?? "-"}`;
+}
+
+/** Rows as columns two spaces apart, each padded to its widest cell but the last. */
+function columns(rows: string[][]): string {
+  const widths = rows[0].map((_, index) => Math.max(...rows.map((row) => row[index].length)));
+  return rows.map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]))).join("  ").trimEnd())
+    .map((line) => `${line}\n`).join("");
+}
+
+/** The words of `text` in lines of at most `width` characters, a longer word on a line of its own. */
+function wrap(text: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const word of text.split(/\s+/).filter((each) => each !== "")) {
+    if (lines.length > 0 && `${lines[lines.length - 1]} ${word}`.length <= width) lines[lines.length - 1] += ` ${word}`;
+    else lines.push(word);
+  }
+  return lines;
+}
+
+function firstLine(text: string): string {
+  return text.split("\n", 1)[0];
+}
+
+/** `--status` checked against the statuses the function it reaches filters by. */
+function statusCheck(allowed: readonly string[]): (parsed: Parsed) => string | null {
+  return (parsed) => {
+    const status = parsed.values["--status"];
+    return status === undefined || allowed.includes(status) ? null : `--status must be one of ${allowed.join(", ")}, not ${JSON.stringify(status)}`;
+  };
+}
+
+/**
+ * `--lines` as `check` takes it: a positive whole number, written as one. A count that is not
+ * one has no reading, and `tailLines` would answer the whole window for it (`src/tasks.ts#check`).
+ */
+function linesCheck(parsed: Parsed): string | null {
+  const value = parsed.values["--lines"];
+  if (value === undefined || (/^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0)) return null;
+  return `--lines must be a positive whole number, not ${JSON.stringify(value)}`;
+}
+
+function lineCount(parsed: Parsed, fallback: number): number {
+  const value = parsed.values["--lines"];
+  return value === undefined ? fallback : Number(value);
+}
+
+/**
+ * The record `id` names, or null when it names none. An id outside the ledger's alphabet
+ * names none either, and is answered as an unknown one is rather than thrown at
+ * (`src/ledger.ts#find`, whose path refuses it).
+ */
+function taskNamed(root: string, id: string): TaskRecord | null {
+  return /^[A-Za-z0-9_-]+$/.test(id) ? find(root, id) : null;
+}
+
+/** A journal's steps, one line each: when, which step, the SHAs around it, and what it ran. */
+function journalSteps(journal: Journal): string[] {
+  return journal.steps.map((entry) => [
+    new Date(entry.at).toISOString(), entry.step, `${entry.before ?? "-"}→${entry.after ?? "-"}`,
+    ...(entry.defaultSha === undefined ? [] : [`defaultSha ${entry.defaultSha}`]),
+    ...(entry.args === undefined ? [] : [`args ${entry.args.join(" ")}`]),
+  ].join("  "));
+}
+
+const initVerb: Verb = {
   usage: "cross-agent init [--mode <name>] [--project <root>]",
   summary: "write .cross-agent/config.json, binding every role of a mode to an engine",
   positionals: [],
@@ -124,8 +243,278 @@ const init: Verb = {
   },
 };
 
-// @anchor answerVerb
-const answer: Verb = {
+/** One installed mode as `modes` lists it, or the reason its directory does not load. */
+type ListedMode =
+  | {
+    id: string; release: string; name: string; summary: string; lead: ModeLead;
+    roles: Array<{ key: string; title: string; workspace: Workspace; sandboxDefault: SandboxProfile }>;
+    active: boolean;
+  }
+  | { id: string; reason: string };
+
+const modesVerb: Verb = {
+  usage: "cross-agent modes [--project <root>]",
+  summary: "the installed modes, the active one marked, each with its roles",
+  positionals: [],
+  flags: {},
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    // The name `describe_mode` reads, from the config or, with none, the mode a project
+    // with no config runs as (`src/config.ts#defaultConfig`).
+    let active: string;
+    try {
+      active = loadConfig(found.root).mode;
+    } catch (error) {
+      return refused(message(error));
+    }
+    const shelf = builtInModesDir();
+    // A directory that does not load is listed with its reason: a broken mode is reported,
+    // not hidden.
+    const listed = fs.readdirSync(shelf, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .map((name): ListedMode => {
+        try {
+          const mode = loadMode(shelf, name);
+          return {
+            id: mode.id, release: mode.release, name: mode.name, summary: mode.summary, lead: mode.lead,
+            roles: mode.roles.map((role) => ({ key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault })),
+            active: mode.id === active,
+          };
+        } catch (error) {
+          return { id: name, reason: message(error) };
+        }
+      });
+    const installed = listed.some((entry) => !("reason" in entry) && entry.id === active);
+    const text = listed.map((entry) => {
+      if ("reason" in entry) return `  ${entry.id}: ${entry.reason}\n`;
+      return `${entry.active ? "*" : " "} ${entry.id} ${entry.release} — ${entry.name}\n`
+        + wrap(entry.summary, 92).map((line) => `    ${line}\n`).join("")
+        + "    roles:\n"
+        + entry.roles.map((role) => `      ${role.key} (${role.workspace.kind}, ${role.sandboxDefault})\n`).join("");
+    }).join("");
+    if (installed) return { code: EXIT.ok, document: { active, installed, modes: listed }, text };
+    // The config names a mode this build does not have, so every verb that loads it refuses;
+    // the listing is still the answer to what is installed, and the reason says what to fix.
+    const broken = listed.find((entry) => "reason" in entry && entry.id === active);
+    const reason = broken !== undefined && "reason" in broken ? broken.reason
+      : `mode ${JSON.stringify(active)} in ${path.join(found.root, CONFIG_PATH)} is not installed; this build has `
+        + listed.filter((entry) => !("reason" in entry)).map((entry) => entry.id).join(", ");
+    return {
+      code: EXIT.precondition, document: { active, installed, modes: listed, reason }, text,
+      stream: "stdout", notes: `cross-agent: ${reason}\n`,
+    };
+  },
+};
+
+const tasksVerb: Verb = {
+  usage: "cross-agent tasks [--status <status>] [--reconcile] [--project <root>]",
+  summary: "every task, newest first, as the ledger holds it; --reconcile runs list_tasks' reconciliation pass first",
+  positionals: [],
+  flags: { "--status": "status" },
+  booleans: ["--reconcile"],
+  check: statusCheck(TASK_STATUSES),
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const reconcile = parsed.booleans.has("--reconcile");
+    // Without the flag a read and only a read: no pass, so nothing is settled, killed or
+    // locked, and what the next pass would settle is shown as it stands (`src/tasks.ts#listTasks`).
+    const listed = await listTasks(found.root, parsed.values["--status"] as TaskStatus | undefined, { reconcile });
+    // A task view carries no identity, so whether a runner still lives is one more read of
+    // the records the listing viewed, and a `/proc` read per active one.
+    const records = new Map(scan(found.root).records.map((record) => [record.id, record]));
+    const now = Date.now();
+    const lines: string[] = [];
+    if (listed.tasks.length === 0) lines.push("no tasks\n");
+    else {
+      lines.push(columns([
+        ["id", "status", "role", "engine/model/effort", "depth", "age", "cwd"],
+        ...listed.tasks.map((task) => {
+          // A launching record names no runner yet; any other active one whose runner is not
+          // alive is what the next reconciliation pass settles.
+          const gone = !isTerminal(task.status) && task.status !== "launching" && !isProcessAlive(records.get(task.id)?.runnerIdentity);
+          return [
+            task.id, gone ? `${task.status} (runner gone)` : task.status, task.role, runsOn(task), String(task.depth),
+            span(elapsedSeconds(task, now)), task.cwd,
+          ];
+        }),
+      ]));
+    }
+    lines.push(...listed.invalid.map((entry) => `invalid task record ${entry.file}: ${entry.reason}\n`));
+    lines.push(...listed.errors.map((entry) => `not judged: task ${entry.id}: ${entry.reason}\n`));
+    lines.push(...listed.skipped.map((entry) => `not cleaned up: task ${entry.id}: ${entry.reason}\n`));
+    lines.push(reconcile ? "reconciled\n" : "not reconciled: pass --reconcile\n");
+    return { code: EXIT.ok, document: { ...listed, reconciled: reconcile }, text: lines.join("") };
+  },
+};
+
+const showVerb: Verb = {
+  usage: "cross-agent show <id> [--lines <n>] [--project <root>]",
+  summary: "one task: its record, its last activity, its outcome, its journal and its final message",
+  positionals: ["id"],
+  flags: { "--lines": "n" },
+  check: linesCheck,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const [id] = parsed.positionals;
+    // What `check` and `result` read, and no stall reading: the status is the one the last
+    // `wait` or `check` wrote, because those two are the stall clock's only readers and
+    // this command writes nothing (design, "Time limits").
+    const record = taskNamed(found.root, id);
+    if (record === null) return refused(`no task ${id}`);
+    const now = Date.now();
+    const settled = result(found.root, record.id);
+    const runnerLog = path.join(found.root, ".cross-agent", "tasks", `${record.id}.runner.log`);
+    const document: {
+      record: TaskRecord; elapsedSeconds: number; lastActivity: string[]; result: string | null;
+      outcome: TaskOutcome | null; journal: Journal | null; runnerLog: string;
+    } = {
+      record,
+      elapsedSeconds: elapsedSeconds(record, now),
+      lastActivity: tailLines(record.logPath, lineCount(parsed, 10)),
+      result: settled.ok && "result" in settled ? settled.result : null,
+      outcome: readOutcome(found.root, record),
+      journal: record.worktree === undefined ? null : readJournal(found.root, record.worktree.slug),
+      runnerLog,
+    };
+
+    const lines: string[] = [];
+    const field = (name: string, value: string | number | null | undefined) => {
+      if (value !== undefined && value !== null) lines.push(`${name}: ${value}\n`);
+    };
+    field("id", record.id);
+    field("status", record.status);
+    field("role", record.role);
+    field("engine", runsOn(record));
+    field("depth", record.depth ?? 0);
+    field("parentTaskId", record.parentTaskId);
+    field("resumedFrom", record.resumedFrom);
+    field("cwd", record.cwd);
+    if (record.worktree !== undefined) field("worktree", `${record.worktree.path} on ${record.worktree.branch}, slug ${record.worktree.slug}`);
+    field("createdAt", stamp(record.createdAt, now));
+    field("updatedAt", stamp(record.updatedAt, now));
+    if (typeof record.acknowledgedAt === "number") field("acknowledgedAt", stamp(record.acknowledgedAt, now));
+    if (typeof record.lastEventAt === "number") field("lastEventAt", stamp(record.lastEventAt, now));
+    if (record.runnerIdentity) {
+      const gone = !isTerminal(record.status) && !isProcessAlive(record.runnerIdentity);
+      field("runner", `pid ${record.runnerIdentity.pid}${gone ? " (gone)" : ""}`);
+    }
+    if (record.engineIdentity) field("engine process", `pid ${record.engineIdentity.pid}, group ${record.engineIdentity.pgid}`);
+    field("sessionId", record.sessionId);
+    field("exitCode", record.exitCode);
+    field("reason", record.reason);
+    if (record.truncated === true) field("truncated", "true: the engine's output may be missing its tail");
+    field("log", record.logPath);
+    field("runner log", runnerLog);
+    field("result", record.resultPath);
+    lines.push(document.lastActivity.length === 0 ? "\nno activity yet\n"
+      : `\nlast activity:\n${document.lastActivity.map((line) => `  ${line}\n`).join("")}`);
+    if (document.outcome !== null) {
+      const { kind, exitCode, sessionId, reason, truncated, at } = document.outcome;
+      lines.push(`\noutcome: ${[kind, `exit ${exitCode ?? "-"}`, `session ${sessionId ?? "-"}`, `at ${new Date(at).toISOString()}`,
+        ...(reason === undefined ? [] : [`reason ${reason}`]), ...(truncated === true ? ["truncated"] : [])].join(", ")}\n`);
+    }
+    if (document.journal !== null) {
+      lines.push(`\njournal ${document.journal.slug} on ${document.journal.branch}:\n${journalSteps(document.journal).map((line) => `  ${line}\n`).join("")}`);
+    }
+    if (isTerminal(record.status)) {
+      lines.push(document.result === null ? "\nfinal message: no result file\n" : `\nfinal message:\n${document.result.replace(/\n*$/, "\n")}`);
+    }
+    const code = isTerminal(record.status) ? EXIT.ok : record.status === "stalled" ? EXIT.stalled : EXIT.running;
+    return { code, document, text: lines.join("") };
+  },
+};
+
+const logVerb: Verb = {
+  usage: "cross-agent log <id> [--lines <n>] [--project <root>]",
+  summary: "the last lines of one task's engine event stream, as the engine wrote them",
+  positionals: ["id"],
+  flags: { "--lines": "n" },
+  check: linesCheck,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const [id] = parsed.positionals;
+    const record = taskNamed(found.root, id);
+    if (record === null) return refused(`no task ${id}`);
+    // A task whose engine has said nothing yet has an empty log, and that is an answer.
+    const lines = tailLines(record.logPath, lineCount(parsed, 50));
+    return { code: EXIT.ok, document: { id: record.id, logPath: record.logPath, lines }, text: lines.map((line) => `${line}\n`).join("") };
+  },
+};
+
+const journalVerb: Verb = {
+  usage: "cross-agent journal [<slug>] [--project <root>]",
+  summary: "one task's git journal, step by step, or with no slug the slug of every journal",
+  positionals: [],
+  optional: ["slug"],
+  flags: {},
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const [slug] = parsed.positionals;
+    if (slug === undefined) {
+      const slugs = listJournals(found.root);
+      return { code: EXIT.ok, document: { slugs }, text: slugs.map((each) => `${each}\n`).join("") };
+    }
+    let journal: Journal | null;
+    try {
+      journal = readJournal(found.root, slug);
+    } catch (error) {
+      // A slug the journal refuses to name a file by is a command line this build cannot
+      // read (`src/journal.ts#journalFile`); any other throw is a journal that does not read,
+      // which names its file for the operator to repair, and is the 1 it is.
+      if (message(error).startsWith("invalid slug ")) throw new UsageError(message(error));
+      throw error;
+    }
+    if (journal === null) return refused(`no journal ${slug}`);
+    const fields = [
+      `slug: ${journal.slug}\n`, `branch: ${journal.branch}\n`,
+      ...(journal.worktree === undefined ? [] : [`worktree: ${journal.worktree}\n`]),
+      `defaultBranch: ${journal.defaultBranch}\n`,
+      ...(journal.defaultShaBeforeMerge === undefined ? [] : [`defaultShaBeforeMerge: ${journal.defaultShaBeforeMerge}\n`]),
+      ...(journal.branchHead === undefined ? [] : [`branchHead: ${journal.branchHead}\n`]),
+    ];
+    return { code: EXIT.ok, document: journal, text: `${fields.join("")}steps:\n${journalSteps(journal).map((line) => `  ${line}\n`).join("")}` };
+  },
+};
+
+const listAsksVerb: Verb = {
+  usage: "cross-agent list-asks [--status <open|answered|cancelled>] [--project <root>]",
+  summary: "the questions engine-placed leads have put to the operator, in the order asked",
+  positionals: [],
+  flags: { "--status": "status" },
+  check: statusCheck(askStatuses),
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    const status = parsed.values["--status"] as AskStatus | undefined;
+    // The operator's listing: every ask, as `list_asks` answers the operator row.
+    const listed = listAsks(found.root, status === undefined ? {} : { status });
+    const now = Date.now();
+    const text = listed.asks.map((ask) => `${ask.id}  ${ask.status}  task ${ask.taskId}  ${stamp(ask.createdAt, now)}  ${firstLine(ask.question)}\n`
+      + (ask.status === "answered" && ask.answer !== undefined && ask.answeredAt !== undefined
+        ? `    answer: ${firstLine(ask.answer)}  answeredAt ${stamp(ask.answeredAt, now)}\n`
+        : "")).join("");
+    // A damaged file is named, never thrown: the asks that do read are still the answer, and
+    // the file is the operator's to repair or remove by hand.
+    const notes = listed.invalid.map((entry) => {
+      const prefix = `invalid ask ${entry.file}: `;
+      const reason = entry.reason.startsWith(prefix) ? entry.reason.slice(prefix.length) : entry.reason;
+      return `cross-agent: invalid ask file ${entry.file}: ${reason}${entry.taskId === undefined ? "" : ` (task ${entry.taskId})`}\n`;
+    }).join("");
+    // An open ask in what this command printed is a lead waiting on the operator; the
+    // filter scopes the verdict as it scopes the listing.
+    const code = listed.asks.some((ask) => ask.status === "open") ? EXIT.needsOperator : EXIT.ok;
+    return { code, document: listed, text, ...(notes === "" ? {} : { notes }) };
+  },
+};
+
+const answerVerb: Verb = {
   usage: "cross-agent answer <ask-id> <text> [--project <root>]",
   summary: "answer an engine-placed lead's open question; the first answer stands",
   positionals: ["ask-id", "text"],
@@ -180,17 +569,15 @@ function reported(record: TaskRecord, now: number): ReportedTask {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const terminal = isTerminal(record.status);
-  // A settled task's duration stops at its settlement, as `check` reports it.
-  const until = terminal ? record.updatedAt : now;
   const outcome = !terminal || result === null ? "unknown" : record.status === "done" ? "passed" : "failed";
   return {
     id: record.id, role: record.role, engine: record.engine, model: record.model ?? null, effort: record.effort ?? null,
-    status: record.status, durationSeconds: Math.max(0, Math.round((until - record.createdAt) / 1000)), outcome, result,
+    // A settled task's duration stops at its settlement, as `check` reports it.
+    status: record.status, durationSeconds: elapsedSeconds(record, now), outcome, result,
   };
 }
 
-// @anchor reportVerb
-const report: Verb = {
+const reportVerb: Verb = {
   usage: "cross-agent report [--since <task id>] [--project <root>]",
   summary: "every task, newest first — role, engine, model, effort, duration, outcome, id — then each final message",
   positionals: [],
@@ -224,7 +611,21 @@ const report: Verb = {
   },
 };
 
-const verbs: Record<string, Verb> = { init, answer, report };
+/** The verbs, in the order usage lists them. */
+const verbs: Record<string, Verb> = {
+  init: initVerb,
+  modes: modesVerb,
+  tasks: tasksVerb,
+  show: showVerb,
+  log: logVerb,
+  journal: journalVerb,
+  "list-asks": listAsksVerb,
+  answer: answerVerb,
+  report: reportVerb,
+};
+
+/** Every verb's name, in the order usage lists them: what the docs are held to (`tests/cli.test.ts#cliDocsNameVerbs`). */
+export const VERB_NAMES: readonly string[] = Object.freeze(Object.keys(verbs));
 
 /** The usage lines for one verb, or for the whole table: what a 2 prints, as text or as JSON. */
 function usageLines(verb?: Verb): string[] {
@@ -248,12 +649,7 @@ function help(json: boolean): string {
     return `${JSON.stringify(document, null, 2)}\n`;
   }
   // The rule wrapped as the rest of the help is, at the width it always had.
-  const words = `--json prints one JSON document on stdout, whatever the exit; --help prints this. ${PROJECT_RULE}`.split(" ");
-  const lines: string[] = [];
-  for (const word of words) {
-    if (lines.length > 0 && `${lines[lines.length - 1]} ${word}`.length <= 96) lines[lines.length - 1] += ` ${word}`;
-    else lines.push(word);
-  }
+  const lines = wrap(`--json prints one JSON document on stdout, whatever the exit; --help prints this. ${PROJECT_RULE}`, 96);
   return `usage: ${usage}\n\n`
     + Object.values(verbs).map((verb) => `  ${verb.usage}\n      ${verb.summary}\n`).join("")
     + `\n${lines.join("\n")}\n\n`
@@ -286,16 +682,24 @@ function split(argv: readonly string[]): { verb?: string; rest: string[] } {
   return { rest };
 }
 
+/** The positionals a verb takes, as its refusal names them. */
+function shape(verb: Verb): string {
+  const names = [...verb.positionals.map((each) => `<${each}>`), ...(verb.optional ?? []).map((each) => `[<${each}>]`)];
+  return names.length === 0 ? "no arguments" : names.join(" ");
+}
+
 /**
- * One verb's command line: its positionals, `--json` and `--help` once each, `--` ending the
- * flags, and every `--flag <value>` pair through `parseFlags` — the parser the server's own
- * argv goes through — so an unknown flag, a missing or empty value and a repeat are each a
- * reason rather than a guess (`src/project.ts#parseFlags`).
+ * One verb's command line: its positionals, `--json` and `--help` once each, the verb's
+ * boolean flags once each, `--` ending the flags, and every `--flag <value>` pair through
+ * `parseFlags` — the parser the server's own argv goes through — so an unknown flag, a
+ * missing or empty value and a repeat are each a reason rather than a guess
+ * (`src/project.ts#parseFlags`). Then the verb's own check of the values it was given.
  */
 function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { help: boolean }) | { reason: string } {
   const pairs: string[] = [];
   const positionals: string[] = [];
   const seen = new Set<string>();
+  const booleans = new Set<string>();
   for (let index = 0; index < argv.length; index++) {
     const token = argv[index];
     if (token === "--") {
@@ -305,6 +709,9 @@ function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { h
     if (token === "--json" || token === "--help") {
       if (seen.has(token)) return { reason: `${token} given twice` };
       seen.add(token);
+    } else if (verb.booleans?.includes(token)) {
+      if (booleans.has(token)) return { reason: `${token} given twice` };
+      booleans.add(token);
     } else if (token.startsWith("--")) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith("--")) return { reason: `${token} needs a value` };
@@ -316,13 +723,18 @@ function parse(name: string, verb: Verb, argv: readonly string[]): (Parsed & { h
   }
   const flags = parseFlags(pairs, { ...verb.flags, "--project": "root" });
   if ("reason" in flags) return flags;
-  if (seen.has("--help")) return { positionals, values: flags.values, json: seen.has("--json"), help: true };
-  if (positionals.length !== verb.positionals.length) {
-    const wanted = verb.positionals.length === 0 ? "no arguments" : verb.positionals.map((each) => `<${each}>`).join(" ");
-    return { reason: `${name} takes ${wanted}, not ${positionals.length === 0 ? "none" : positionals.map((each) => JSON.stringify(each)).join(" ")}` };
+  const parsed: Parsed = { positionals, values: flags.values, booleans, json: seen.has("--json") };
+  if (seen.has("--help")) return { ...parsed, help: true };
+  const most = verb.positionals.length + (verb.optional?.length ?? 0);
+  if (positionals.length < verb.positionals.length || positionals.length > most) {
+    return { reason: `${name} takes ${shape(verb)}, not ${positionals.length === 0 ? "none" : positionals.map((each) => JSON.stringify(each)).join(" ")}` };
   }
-  if (positionals.some((each) => each === "")) return { reason: `${name}'s ${verb.positionals.join(" and ")} must not be empty` };
-  return { positionals, values: flags.values, json: seen.has("--json"), help: false };
+  if (positionals.some((each) => each === "")) {
+    return { reason: `${name}'s ${[...verb.positionals, ...(verb.optional ?? [])].join(" and ")} must not be empty` };
+  }
+  const fault = verb.check?.(parsed) ?? null;
+  if (fault !== null) return { reason: fault };
+  return { ...parsed, help: false };
 }
 
 /** The exit code this command line earns, by the protocol `EXIT` names. */
@@ -357,6 +769,7 @@ export async function runCli(
   try {
     answered = await verb.run(parsed, { cwd, env });
   } catch (error) {
+    if (error instanceof UsageError) return usageError(error.message, verb);
     // Nothing a verb anticipated: the message, as the one document under `--json`.
     if (parsed.json) write.out(`${JSON.stringify({ ok: false, error: message(error) }, null, 2)}\n`);
     else write.err(`cross-agent: ${message(error)}\n`);
@@ -364,11 +777,10 @@ export async function runCli(
   }
   if (parsed.json) {
     write.out(`${JSON.stringify(answered.document, null, 2)}\n`);
-  } else if (answered.code === EXIT.ok) {
-    write.out(answered.text);
-    if (answered.notes !== undefined) write.err(answered.notes);
   } else {
-    write.err(answered.text);
+    if ((answered.stream ?? (VERDICTS.has(answered.code) ? "stdout" : "stderr")) === "stdout") write.out(answered.text);
+    else write.err(answered.text);
+    if (answered.notes !== undefined) write.err(answered.notes);
   }
   return answered.code;
 }
