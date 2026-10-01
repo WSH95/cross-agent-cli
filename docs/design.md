@@ -2285,26 +2285,27 @@ and the worktree directory, so whatever a branch carries, however it came to
 carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
 `tests/gitroot.test.ts#mergeRefusesHostConfig`, `#mergeHostConfigAnyCase`,
 `#mergeNamesEveryPath`). `git_mutate`'s refusal of a `commit` is the early
-warning, where the lead can still have the file taken out: `git status
---porcelain --untracked-files=all` over the four names anything in the worktree
-— staged, changed or untracked — and `git ls-files -v` any tracked one marked
-assume-unchanged whose working-tree bytes differ from its index entry, a change
-the mark hides from that status while a commit naming the path records it. The
-mark alone carries nothing, since git marks every tracked file so under
-`core.ignoreStat`, and both reads are taken under `git.lock` before the command
-runs (`src/gitmutate.ts#hostConfigFault`, `#differsFromIndex`, `#mutate`;
-`tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
-`#commitRefusesAssumeUnchanged`, `#commitUnderIgnoreStat`). The commit check does not see a git alias for
+warning, where the lead can still have the file taken out:
+`git status --porcelain --untracked-files=all` over the four names anything in
+the worktree — staged, changed or untracked — and `git ls-files -v` any tracked
+one marked assume-unchanged whose working-tree bytes differ from its index
+entry, a change the mark hides from that status while a commit naming the path
+records it. The mark alone carries nothing, since git marks every tracked file
+so under `core.ignoreStat`, and both reads are taken under `git.lock` before the
+command runs (`src/gitmutate.ts#hostConfigFault`, `#differsFromIndex`,
+`#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
+`#hostConfigAnyCase`, `#commitRefusesAssumeUnchanged`,
+`#commitUnderIgnoreStat`). The commit check does not see a git alias for
 `commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
 `commit --amend` over an older commit that already carries one; the merge
-refuses each of those. A removal of a tracked one is
-carried the same way, in a commit as in a merge: a server or a hook taken away
-changes the operator's session as much as one added. The commit's rule reads the
-worktree rather than the index because `commit -a`, `commit --include` and a
-pathspec commit record what the index does not hold; the price is that an
-untracked host file `.gitignore` does not cover blocks a commit even unstaged,
-and the refusal says what clears it: remove the file, ignore it if it is the
-operator's own, or clear its assume-unchanged mark. Git sees no empty directory, so an empty `.claude/`
+refuses each of those. A removal of a tracked one is carried the same way, in a
+commit as in a merge: a server or a hook taken away changes the operator's
+session as much as one added. The commit's rule reads the worktree rather than
+the index because `commit -a`, `commit --include` and a pathspec commit record
+what the index does not hold; the price is that an untracked host file
+`.gitignore` does not cover blocks a commit even unstaged, and the refusal says
+what clears it: remove the file, ignore it if it is the operator's own, or clear
+its assume-unchanged mark. Git sees no empty directory, so an empty `.claude/`
 subdirectory an engine leaves in a worktree — the T13 sample's root holds an
 empty `.claude/.cc-writes/` — is never refused. Both team loops name the four
 where they say what step 6 and step 9 refuse
