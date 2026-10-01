@@ -5,6 +5,7 @@ import type { CrossAgentConfig } from "./config.ts";
 import { currentBootId, find, isProcessAlive, isTerminal, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { cancelAsks } from "./mailbox.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import type { FoundProcess } from "./process.ts";
 import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid } from "./process.ts";
@@ -185,7 +186,16 @@ export interface CancelOptions {
   leadTaskId?: string;
 }
 
-export type CancelResult = { ok: true; outcomes: Outcome[] } | { ok: false; reason: string };
+export type CancelResult =
+  | {
+    ok: true;
+    outcomes: Outcome[];
+    /** The open asks of the cancelled task's lineage, now `cancelled`: a cancelled lead asks nothing. */
+    asksCancelled: string[];
+    /** Open asks this cancel could not write, each with its reason; a later cancel retries them. */
+    asksNotCancelled?: Array<{ id: string; reason: string }>;
+  }
+  | { ok: false; reason: string };
 
 async function waitForTerminal(projectRoot: string, id: string, timeout: number): Promise<TaskRecord | null> {
   const deadline = performance.now() + timeout;
@@ -362,6 +372,12 @@ export async function cancel(projectRoot: string, taskId: string, options: Cance
     ? { id: taskId, outcome: `already ${target.status}` }
     : await attempt(taskId));
 
+  // Its questions go with it: an open ask of this task's lineage — its own, and those of the
+  // records it continues — is cancelled, and an answer that landed first is kept (design,
+  // "The lead model", item 3). Only a lead asks, and a lead delegates no lead, so the
+  // lineage is the whole of what this cancel could have left asking.
+  const asks = await cancelAsks(projectRoot, lineageIds(scan(projectRoot).records, taskId), { waitSeconds });
+
   // What is still active is what a later cancel retries, and saying so is the whole
   // difference between a partial failure and a cascade that reported success over one.
   for (const record of descendants(scan(projectRoot).records, taskId)) {
@@ -371,5 +387,8 @@ export async function cancel(projectRoot: string, taskId: string, options: Cance
       reason: outcomes.get(record.id)?.reason ?? "still active after the cascade; cancel again to retry",
     });
   }
-  return { ok: true, outcomes: [...outcomes.values()] };
+  return {
+    ok: true, outcomes: [...outcomes.values()], asksCancelled: asks.cancelled,
+    ...(asks.failures.length === 0 ? {} : { asksNotCancelled: asks.failures }),
+  };
 }

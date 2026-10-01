@@ -13,11 +13,13 @@ import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
+import { answerAsk, ask, askStatuses, listAsks } from "./mailbox.ts";
+import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
-import { cancel, check, listTasks, ownedBy, result } from "./tasks.ts";
+import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
 import { scan } from "./ledger.ts";
 import type { TaskStatus } from "./ledger.ts";
 import { wait } from "./wait.ts";
@@ -411,6 +413,86 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
   ];
 }
 
+/** A wait-shaped budget in seconds, checked as `wait` checks its own: finite and not negative. */
+function timeoutSeconds(args: Json, name: string): number | undefined {
+  const value = optional(args, "timeout_seconds", "number", name) as number | undefined;
+  if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+    throw new RpcError(-32602, `${name}'s timeout_seconds must be a finite number of seconds, not ${value}`);
+  }
+  return value;
+}
+
+/** The lineage ids of the lead this call serves: its own record and those it continues. */
+function callerLineage(projectRoot: string, authority: Authority): string[] {
+  return authority.taskId === undefined ? [] : lineageIds(scan(projectRoot).records, authority.taskId);
+}
+
+/**
+ * The mailbox (design, "The lead model", item 3), registered only under engine placement:
+ * a host-placed lead is the operator's own session and asks natively. `ask` is the lead's —
+ * a specialist is unauthorized to ask, not unable to reach this server — `answer` is the
+ * operator's, and `list_asks` is both rows', the lead seeing only its own lineage's asks.
+ */
+function mailboxTools(projectRoot: string): ToolDefinition[] {
+  return [
+    {
+      name: "ask",
+      description: "Put a question to the operator and wait for the answer, up to timeout_seconds. A timeout answers status open with the ask's id: call ask again with that id to keep waiting on the same question. Asks are answered through list_asks and answer, or cross-agent answer.",
+      inputSchema: {
+        type: "object",
+        properties: { question: { type: "string" }, id: { type: "string" }, timeout_seconds: { type: "number" } },
+      },
+      rows: ["lead"],
+      handler: async (args, context) => {
+        const values = fields(args, "ask");
+        const id = optional(values, "id", "string", "ask") as string | undefined;
+        const question = id === undefined ? requiredString(values, "question", "ask") : optional(values, "question", "string", "ask") as string | undefined;
+        const taskId = context.authority.taskId;
+        if (taskId === undefined) return answer({ ok: false, reason: "ask needs the task this lead runs as, and this call resolved none" });
+        return answer(await ask(projectRoot, {
+          taskId, lineageIds: callerLineage(projectRoot, context.authority),
+          ...(id === undefined ? {} : { id }), ...(question === undefined ? {} : { question }),
+          timeoutSeconds: timeoutSeconds(values, "ask"), signal: context.signal,
+        }));
+      },
+    },
+    {
+      name: "list_asks",
+      description: "The questions an engine-placed lead has put to the operator, in the order they were asked, each with its status and answer. A lead sees only its own.",
+      inputSchema: { type: "object", properties: { status: { type: "string", enum: [...askStatuses] } } },
+      rows: ["operator", "lead"],
+      handler: (args, context) => {
+        const status = optional(fields(args, "list_asks"), "status", "string", "list_asks") as string | undefined;
+        if (status !== undefined && !askStatuses.includes(status as AskStatus)) {
+          throw new RpcError(-32602, `list_asks status must be one of ${askStatuses.join(", ")}`);
+        }
+        const listed = listAsks(projectRoot, {
+          ...(context.authority.row === "lead" ? { taskIds: callerLineage(projectRoot, context.authority) } : {}),
+          ...(status === undefined ? {} : { status: status as AskStatus }),
+        });
+        return answer({ ok: true, ...listed });
+      },
+    },
+    {
+      name: "answer",
+      description: "Answer a lead's open question. The first answer wins: a later one, or an answer to a cancelled question, is refused.",
+      inputSchema: {
+        type: "object",
+        properties: { ask_id: { type: "string" }, text: { type: "string" } },
+        required: ["ask_id", "text"],
+      },
+      rows: ["operator"],
+      handler: async (args) => {
+        const values = fields(args, "answer");
+        const answered = await answerAsk(projectRoot, requiredString(values, "ask_id", "answer"), requiredString(values, "text", "answer"));
+        return answered.applied
+          ? answer({ ok: true, ask: answered.ask })
+          : answer({ ok: false, reason: answered.reason, ...(answered.ask === null ? {} : { ask: answered.ask }) });
+      },
+    },
+  ];
+}
+
 /** The tools for the project at `projectRoot`, each with the rows of the permission matrix it is offered to. */
 export function projectTools(projectRoot: string, options: ToolOptions): ToolDefinition[] {
   const { mode } = options;
@@ -493,10 +575,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
       handler: async (args, context) => {
         const values = fields(args, "wait");
         const taskId = requiredString(values, "task_id", "wait");
-        const timeoutSeconds = optional(values, "timeout_seconds", "number", "wait") as number | undefined;
-        if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 0)) {
-          throw new RpcError(-32602, `wait's timeout_seconds must be a finite number of seconds, not ${timeoutSeconds}`);
-        }
+        const budget = timeoutSeconds(values, "wait");
         // A lead waits on the tasks it delegated and no others; the operator waits on any.
         // A task nobody has is that first, as `cancel` reports it: a lead asking after a
         // task id that does not exist has not been refused anything.
@@ -508,7 +587,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
             return answer({ ok: false, reason: `refused wait on task ${taskId}: lead task ${leadTaskId} did not delegate it` });
           }
         }
-        return answer(await wait(projectRoot, taskId, { timeoutSeconds, signal: context.signal }));
+        return answer(await wait(projectRoot, taskId, { timeoutSeconds: budget, signal: context.signal }));
       },
     },
     {
@@ -553,15 +632,33 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
       description: "Every task of this project after a reconciliation pass, newest first, with the records no reader could judge.",
       inputSchema: { type: "object", properties: { status: { type: "string", enum: statuses } } },
       rows: ["operator", "lead", "specialist"],
-      handler: async (args) => {
+      handler: async (args, context) => {
         const status = optional(fields(args, "list_tasks"), "status", "string", "list_tasks") as string | undefined;
         if (status !== undefined && !statuses.includes(status)) {
           throw new RpcError(-32602, `list_tasks status must be one of ${statuses.join(", ")}`);
         }
-        return answer(await listTasks(projectRoot, status as TaskStatus | undefined));
+        const listed = await listTasks(projectRoot, status as TaskStatus | undefined);
+        const leadTaskId = context.authority.row === "lead" ? context.authority.taskId : undefined;
+        if (leadTaskId === undefined) return answer(listed);
+        // A lead reads the roster to settle leftovers before it starts, and must never take
+        // itself for one: its own records — the one it runs as and those it continues — are
+        // marked `self`, and what it owns by lineage, which is all it may wait on, resume or
+        // cancel, `own` (design, "The lead model", item 2). The operator owns no task.
+        const { records } = scan(projectRoot);
+        const self = new Set(lineageIds(records, leadTaskId));
+        return answer({
+          ...listed,
+          tasks: listed.tasks.map((task) => ({
+            ...task,
+            ...(self.has(task.id) ? { self: true } : {}),
+            ...(ownedBy(records, leadTaskId, task.id) ? { own: true } : {}),
+          })),
+        });
       },
     },
     ...worktreeTools(projectRoot, mode),
+    // The mailbox exists where a lead runs in an engine and nowhere else.
+    ...(mode.lead.placement === "engine" ? mailboxTools(projectRoot) : []),
   ];
 }
 

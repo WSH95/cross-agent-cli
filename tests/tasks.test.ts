@@ -10,6 +10,7 @@ import { delegate } from "../src/delegate.ts";
 import { create, currentBootId, read, update, writeSpec } from "../src/ledger.ts";
 import type { TaskRecord } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
+import { answerAsk, createAsk, readAsk } from "../src/mailbox.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "../src/tasks.ts";
 import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
@@ -395,6 +396,41 @@ test("a cascade cancels the leaves first, then the lead, and reports one outcome
   for (const id of [childA.id, childB.id, grandchild.id]) {
     assert.ok(p.record(lead.id).updatedAt >= p.record(id).updatedAt, id);
   }
+});
+
+// @anchor cancelledLeadAsks
+test("a cancelled lead cancels its open asks, leaves an answered one alone, and names what it cancelled", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  const worktree = await p.worktree("task/asking");
+  const first = await seed(p.root, { role: "lead", cwd: p.root, status: "failed" });
+  const lead = await launch(p, { role: "lead", cwd: p.root, brief: "the lead that asks" });
+  // The chain a resume makes: the record this lead continues asked before it died.
+  assert.equal((await update(p.root, lead.id, { resumedFrom: first.id })).applied, true);
+  await launch(p, { role: "implementer", cwd: worktree, branch: "task/asking", authority: leadRow(lead.id) });
+  const open = createAsk(p.root, { taskId: lead.id, question: "Which slug?" });
+  const earlier = createAsk(p.root, { taskId: first.id, question: "Before the resume?" });
+  const answered = createAsk(p.root, { taskId: lead.id, question: "Merge?" });
+  const stranger = createAsk(p.root, { taskId: "another-lead", question: "Not this lead's?" });
+  assert.equal((await answerAsk(p.root, answered.id, "yes")).applied, true);
+
+  const result = await cancel(p.root, lead.id);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.asksCancelled.sort(), [open.id, earlier.id].sort());
+  assert.equal(result.asksNotCancelled, undefined, "every open ask was written");
+  for (const id of [open.id, earlier.id]) {
+    const ask = readAsk(p.root, id)!;
+    assert.equal(ask.status, "cancelled", id);
+    assert.equal(typeof ask.cancelledAt, "number", id);
+  }
+  assert.deepEqual(readAsk(p.root, answered.id), { ...answered, status: "answered", answer: "yes", answeredAt: readAsk(p.root, answered.id)!.answeredAt });
+  assert.equal(readAsk(p.root, stranger.id)!.status, "open", "another lead's question is not this cancel's");
+
+  // A task that never asked anything reports that it cancelled none.
+  const planner = await launch(p, { role: "planner", cwd: p.root });
+  const quiet = await cancel(p.root, planner.id);
+  assert.equal(quiet.ok, true);
+  if (quiet.ok) assert.deepEqual(quiet.asksCancelled, []);
 });
 
 test("an orphaned lead settles its children first, then its own group, from where it is", async (t) => {

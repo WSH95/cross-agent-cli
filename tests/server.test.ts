@@ -697,6 +697,193 @@ test("the worktree provider's tools are registered for the operator and the lead
   assert.deepEqual(refused.error, { code: -32602, message: "unknown tool: ask" });
 });
 
+// The built-in engine-placed mode, whose server carries the mailbox.
+const devTeamEngine: Mode = loadMode(builtInModesDir(), "dev-team-engine");
+const twelve = [
+  "describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks",
+  "verify_worktree", "git_mutate", "git_root", "run_command",
+];
+
+/** The JSON a tool answered with, and whether it answered as a refusal. */
+function payload(reply: Json): { body: Json; isError: boolean } {
+  const result = reply.result as Json;
+  assert.ok(result, JSON.stringify(reply));
+  return { body: JSON.parse(((result.content as Json[])[0].text as string)) as Json, isError: result.isError === true };
+}
+
+// @anchor mailboxRows
+test("under engine placement the mailbox is three more tools, each offered to its rows of the matrix", async (t) => {
+  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const names = async (mode: Mode, row: Authority["row"]) => {
+    const request = inProcess({ tools: projectTools(root, { mode }), authority: () => ({ row, reason: "test", depth: 0 }) });
+    return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
+  };
+  // The operator answers and lists; the lead asks and lists its own; a specialist does neither.
+  assert.deepEqual(await names(devTeamEngine, "operator"), [...twelve, "list_asks", "answer"]);
+  assert.deepEqual(await names(devTeamEngine, "lead"), [...twelve, "ask", "list_asks"]);
+  assert.deepEqual(await names(devTeamEngine, "specialist"), ["describe_mode", "list_roles", "check", "result", "list_tasks"]);
+  // A host-placed mode has no lead to ask anything, and so no mailbox at all.
+  for (const id of ["dev-team", "solo"]) {
+    const mode = loadMode(builtInModesDir(), id);
+    for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(mode, row), twelve, `${id} ${row}`);
+  }
+
+  // Outside its rows a mailbox tool is refused by this server's own name, with the evidence.
+  const operatorReason = "operator: no CROSS_AGENT_* variable and no engine ancestor";
+  const asked = await inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => ({ row: "operator", reason: operatorReason, depth: 0 }) })(
+    "tools/call", { name: "ask", arguments: { question: "Which slug?" } });
+  assert.deepEqual(asked.error, { code: -32602, message: `ask is not available to a operator server: ${operatorReason}` });
+  const leadReason = "lead by ancestry: task L (lead, running)";
+  const answered = await inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => ({ row: "lead", reason: leadReason, taskId: "L", depth: 1 }) })(
+    "tools/call", { name: "answer", arguments: { ask_id: "x", text: "yes" } });
+  assert.deepEqual(answered.error, { code: -32602, message: `answer is not available to a lead server: ${leadReason}` });
+});
+
+/** A lead resumed once, a child of each of its records, and a task of nobody's: the ownership fixture. */
+function ledgerOfOneLead(root: string) {
+  const first = create(root, { role: "lead", brief: "the lead's first record", cwd: root, engine: "claude", depth: 1 });
+  const resumed = create(root, { role: "lead", brief: "the lead, resumed", cwd: root, engine: "claude", depth: 1, resumedFrom: first.id });
+  const before = create(root, { role: "planner", brief: "delegated before the resume", cwd: root, engine: "codex", depth: 2, parentTaskId: first.id });
+  const after = create(root, { role: "planner", brief: "delegated after it", cwd: root, engine: "codex", depth: 2, parentTaskId: resumed.id });
+  const stranger = create(root, { role: "consult", brief: "nobody's", cwd: root, engine: "codex", depth: 1 });
+  return { first, resumed, before, after, stranger };
+}
+
+// @anchor askCarriesCaller
+test("ask records the caller's own task, waits on its lineage's asks by id, and refuses anyone else's", async (t) => {
+  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { first, resumed, stranger } = ledgerOfOneLead(root);
+  const lead = { row: "lead" as const, reason: `lead by ancestry: task ${resumed.id} (lead, running)`, taskId: resumed.id, depth: 1 };
+  const request = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => lead });
+  const ask = async (args: Json) => request("tools/call", { name: "ask", arguments: args });
+
+  const asked = payload(await ask({ question: "Which slug?", timeout_seconds: 0 }));
+  assert.equal(asked.isError, false);
+  assert.deepEqual(asked.body, { ok: true, id: asked.body.id, status: "open", hint: `call ask again with id ${asked.body.id}` });
+  const { readAsk, createAsk } = await import("../src/mailbox.ts");
+  assert.equal(readAsk(root, asked.body.id as string)!.taskId, resumed.id, "the question is the calling task's own");
+
+  // The record it continues asked before it died: still this lead's to wait on.
+  const inherited = createAsk(root, { taskId: first.id, question: "Delete the branch?" });
+  assert.deepEqual(payload(await ask({ id: inherited.id, timeout_seconds: 0 })).body,
+    { ok: true, id: inherited.id, status: "open", hint: `call ask again with id ${inherited.id}` });
+  const theirs = createAsk(root, { taskId: stranger.id, question: "Not this lead's?" });
+  const refused = payload(await ask({ id: theirs.id, timeout_seconds: 0 }));
+  assert.equal(refused.isError, true);
+  assert.match(refused.body.reason as string, new RegExp(`refused ask ${theirs.id}`));
+
+  // What this server cannot read is a protocol error, as `wait`'s is.
+  for (const args of [{}, { question: "" }, { question: 5 }, { id: 5 }, { question: "Q?", timeout_seconds: -1 }, { question: "Q?", timeout_seconds: "soon" }]) {
+    assert.equal(((await ask(args as Json)).error as Json)?.code, -32602, JSON.stringify(args));
+  }
+});
+
+// @anchor cancelledEndsAsk
+test("notifications/cancelled ends a pending ask within 100ms, and the reply is still sent", async (t) => {
+  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { resumed } = ledgerOfOneLead(root);
+  const server = createServer({
+    tools: projectTools(root, { mode: devTeamEngine }),
+    authority: () => ({ row: "lead", reason: "test", taskId: resumed.id, depth: 1 }),
+  });
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const replies: Json[] = [];
+  output.setEncoding("utf8");
+  output.on("data", (chunk: string) => {
+    for (const line of chunk.split("\n")) if (line.trim()) replies.push(JSON.parse(line) as Json);
+  });
+  server.connect(input, output);
+  const send = (message: Json) => input.write(JSON.stringify(message) + "\n");
+
+  send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "ask", arguments: { question: "Still there?", timeout_seconds: 600 } } });
+  const { listAsks } = await import("../src/mailbox.ts");
+  await waitFor(() => listAsks(root).asks.length === 1);
+  send({ jsonrpc: "2.0", id: 2, method: "ping" });
+  await waitFor(() => replies.some((message) => message.id === 2));
+  assert.equal(replies.some((message) => message.id === 1), false, "the ask must still be pending");
+
+  const cancelled = performance.now();
+  send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1, reason: "the user moved on" } });
+  await waitFor(() => replies.some((message) => message.id === 1));
+  assert.ok(performance.now() - cancelled < 100, "a cancelled ask answers within 100ms");
+  const { body } = payload(replies.find((message) => message.id === 1) as Json);
+  assert.deepEqual(body, { ok: true, id: listAsks(root).asks[0].id, status: "open", cancelled: true });
+  assert.equal(listAsks(root).asks[0].status, "open", "the question is still the operator's to answer");
+});
+
+// @anchor listAsksRows
+test("list_asks shows the operator every ask and a lead its own lineage's, and answer is the first one's", async (t) => {
+  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { first, resumed, stranger } = ledgerOfOneLead(root);
+  const { createAsk } = await import("../src/mailbox.ts");
+  const mine = createAsk(root, { taskId: first.id, question: "Mine, from before the resume?" }, 1_000);
+  const theirs = createAsk(root, { taskId: stranger.id, question: "Theirs?" }, 2_000);
+  const operatorCall = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => operator });
+  const leadCall = inProcess({
+    tools: projectTools(root, { mode: devTeamEngine }),
+    authority: () => ({ row: "lead", reason: "test", taskId: resumed.id, depth: 1 }),
+  });
+  const ids = (reply: Json) => (payload(reply).body.asks as Json[]).map((entry) => entry.id);
+
+  assert.deepEqual(ids(await operatorCall("tools/call", { name: "list_asks", arguments: {} })), [mine.id, theirs.id]);
+  assert.deepEqual(ids(await leadCall("tools/call", { name: "list_asks", arguments: {} })), [mine.id]);
+
+  // The operator answers; a second answer is refused, naming when the first landed.
+  const answered = payload(await operatorCall("tools/call", { name: "answer", arguments: { ask_id: mine.id, text: "use s11-i2" } }));
+  assert.equal(answered.isError, false);
+  assert.equal(answered.body.ok, true);
+  assert.equal((answered.body.ask as Json).answer, "use s11-i2");
+  const again = payload(await operatorCall("tools/call", { name: "answer", arguments: { ask_id: mine.id, text: "no" } }));
+  assert.equal(again.isError, true);
+  assert.match(again.body.reason as string, new RegExp(`answeredAt ${(answered.body.ask as Json).answeredAt}`));
+
+  assert.deepEqual(ids(await operatorCall("tools/call", { name: "list_asks", arguments: { status: "open" } })), [theirs.id]);
+  assert.deepEqual(ids(await leadCall("tools/call", { name: "list_asks", arguments: { status: "answered" } })), [mine.id]);
+  assert.deepEqual(ids(await leadCall("tools/call", { name: "list_asks", arguments: { status: "open" } })), []);
+  for (const [name, args] of [
+    ["list_asks", { status: "elsewhere" }], ["list_asks", { status: 1 }],
+    ["answer", {}], ["answer", { ask_id: mine.id }], ["answer", { ask_id: mine.id, text: "" }], ["answer", { ask_id: 1, text: "yes" }],
+  ] as const) {
+    assert.equal(((await operatorCall("tools/call", { name, arguments: args as Json })).error as Json)?.code, -32602, `${name} ${JSON.stringify(args)}`);
+  }
+});
+
+// @anchor listTasksMarks
+test("list_tasks marks a lead's own records self and the tasks it owns own, and marks nothing for the operator", async (t) => {
+  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { first, resumed, before, after, stranger } = ledgerOfOneLead(root);
+  const tasksOf = async (authority: Authority) => {
+    const request = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => authority });
+    const listed = payload(await request("tools/call", { name: "list_tasks", arguments: {} })).body;
+    return new Map((listed.tasks as Json[]).map((task) => [task.id as string, task]));
+  };
+
+  const asLead = await tasksOf({ row: "lead", reason: "test", taskId: resumed.id, depth: 1 });
+  // The lead's own records are the one it runs as and the ones it continues; what it owns
+  // is what any of them delegated (the resume-chain rule).
+  for (const id of [resumed.id, first.id]) {
+    assert.equal(asLead.get(id)!.self, true, id);
+    assert.equal(asLead.get(id)!.own, undefined, id);
+  }
+  for (const id of [before.id, after.id]) {
+    assert.equal(asLead.get(id)!.own, true, id);
+    assert.equal(asLead.get(id)!.self, undefined, id);
+  }
+  assert.equal(asLead.get(stranger.id)!.self, undefined);
+  assert.equal(asLead.get(stranger.id)!.own, undefined);
+
+  // The operator owns nothing by lineage and is no task's self.
+  for (const task of (await tasksOf(operator)).values()) {
+    assert.equal(Object.hasOwn(task, "self") || Object.hasOwn(task, "own"), false, task.id as string);
+  }
+});
+
 // @anchor describeModeServes
 test("describe_mode serves the active mode's loop and roles to every row, and refuses a mode that is not there", async (t) => {
   const modes = modesRoot(t);
