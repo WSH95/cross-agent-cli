@@ -594,3 +594,142 @@ FIFO at the record's path that would serve a second read a settled record), `#cl
 `#cliGit` (the held `git.lock` refused in under 4 s against a one-second wait),
 `#cliJournal`, `#cliListAsks`, `#cliRefusesInsideEngine`, `#cliWritesFailsClosed`,
 `#cliUsage`, `#cliDocsNameVerbs`, and `#reportVerb`'s table case.
+## T14 — Codex packaging, I1 and I2 under a Codex host, E4 and E5 (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `827739c`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 24 commits over `7d1ef63` (eleven, fix round 1's ten, the wrap-up's two, and the commit references re-pointed to the merged commits) |
+| `npm test` at the root | 735 tests: 734 pass, 0 fail, 1 skipped (the Codex I2 test, guarded behind `CROSS_AGENT_REAL_CODEX=1`; it ran green under it, last under the positive proof of fix round 1), on `main` at `827739c` |
+| citation checker | 1142 citations in 2 files (37 by line, 1105 by symbol), 0 misses; `--since 6a13c0c`: 0 drifted, 0 not judged |
+| packaging | `.codex-plugin/plugin.json`: `skills: "./skills/"`; the server inline, `command: "./.codex-plugin/serve"`, `cwd: "."`, `env_vars: ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]`, `tool_timeout_sec: 3600`, `default_tools_approval_mode: "approve"`, `startup_timeout_sec: 30`, no `enabled`; `.codex-plugin/serve` refuses without `CROSS_AGENT_PROJECT` and stops if its own root does not resolve; `.agents/plugins/marketplace.json` offers `cross-agent` from `"./"`; fallback `assets/codex/mcp_servers.toml` with the same `env_vars` |
+| install | a `git archive` export of `HEAD` in a directory of its own, `codex plugin marketplace add <export>`, `codex plugin add cross-agent@agent-team-cli`; Codex runs a copy taken at install (`~/.codex/plugins/cache/agent-team-cli/cross-agent/0.0.1/`); at close, installed from the export of `6d86c9e` (`f3272a2` before the merge's rebase, the name its export directory keeps), disabled; the operator's `~/.codex/config.toml` is backed up as `~/.codex/config.toml.bak-t14-2026-10-01`, and the wrap restores it |
+| exposure | the plugin-level key: `[plugins."cross-agent@agent-team-cli"] enabled = false` in the operator's file, `-c plugins.cross-agent@agent-team-cli.enabled=true` per session; `[mcp_servers.cross-agent] enabled = false` stops Codex loading its config; file windows 11:29:15–11:32:40Z, 11:54:05–11:56:18Z (B5), and under 82 ms at fix round 1's reinstall |
+| host | `codex exec --json -o <run>/host.last.txt -C <target> -s workspace-write -m gpt-6-luna -c model_reasoning_effort="medium" [-c plugins.cross-agent@agent-team-cli.enabled=true] -`, `setsid --fork` from the target, markers scrubbed, `CROSS_AGENT_PROJECT=<target>`; the per-session flag on every host that had the server but B5's; B4(b)'s nested host without `setsid`; E5's second turn `codex exec resume <thread> -` |
+| engines | Claude Code 2.1.286, codex-cli 0.159.3, grok 1.0.46 (2765805b9442), node 24.11.0; `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium, the hosts included |
+| sample | `~/.cache/agent-team/cross-agent-e2e/slugkit`, `main` `15e9f4e` → `23980ed` (E4) → `583bfda` (E5); 95 tests green |
+| raw evidence | `~/.cache/agent-team/probe-logs/t14-2026-10-01/` (fix round 1's under `fix1/`); probe records under `~/.cache/agent-team/cross-agent-e2e/probe-tasks/t14/`; named in `docs/probes.md#t14` |
+| how a run is judged | `node tools/e2e-verify.mjs --project <sample> --since <first id> --slug <slug>`, `CODEX_HOME` unset, plus the depth-and-lineage reading for E5 |
+
+Landed: the Codex plugin, its launcher and marketplace entry, the fallback snippet and the README's
+Codex section (install from a clean export); the plugin's whitelist of the project and a task's
+markers; the verifier's `--read-rollout` mode, with `direct` per `exec`, and its reading of Codex
+0.159.3's code-mode `wait` by its whole payload; the guarded I2 test reading `finalMessage`, adding
+the resumed sibling write and proving every attempt from the rollout by a positive proof; the
+launcher's Codex budget row.
+
+E4 and E5 ran on the `bbf2460` install (`dac519b` before the merge's rebase), whose `env_vars` named `CROSS_AGENT_PROJECT` alone; probe (a) shows the shipped four-name mount behaves the same from a clean shell (`docs/probes.md#codexMarkers`).
+
+### E4 — one `dev-team` task under a Codex host, `placement: host`
+
+Task "T14-E4: add `unslugify(slug: str) -> str` beside `slugify`, with tests". Host 468 s, 1,744,918
+tokens in / 5,067 out; six `wait`s (27.0, 141.2, 17.0, 77.1, 37.1, 22.0 s by their own items), no
+refusal; the loop's own calls and the log append, no engine launch.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `9ed6c4fc…` | planner | codex | gpt-6-luna | medium | 28 s | plan |
+| `376e3fae…` | plan-reviewer | grok | grok-4.7 | medium | 143 s | revise |
+| `35cb5547…` | planner (`resume` of `9ed6c4fc…`) | codex | gpt-6-luna | medium | 19 s | revised plan |
+| `70aa060c…` | plan-reviewer (round 2) | grok | grok-4.7 | medium | 79 s | approve |
+| `920c667b…` | implementer | codex | gpt-6-luna | medium | 38 s | 87 → 90 tests green |
+| `de1e73ec…` | code-reviewer | claude | claude-sonnet-5 (read-only) | medium | 24 s | ready, commit `23980ed` |
+
+`tools/e2e-verify.mjs --since 9ed6c4fc… --slug t14-e4` gave 7 pass, 0 fail, 1 without evidence: only the
+root worktree; no `task/*` branch; a clean tree; 90 tests on `main` at `23980ed`; six records with their
+logs at depth 1 against a cap of 1; the journal `worktree-created, git, committed, git, merged,
+tests-passed, worktree-removed, branch-deleted`; condition 8 `?` on the Codex implementer's
+`file_change` items, read: two patches to files inside the task's worktree, no command and no call —
+neither a launch nor a `delegate`. The implementer's and code reviewer's specs carry `protectedPaths`;
+all six carry deny targets rooted at the plugin's copy: the first whole loop with both under a Codex
+plugin host.
+
+Deviations: none from the loop; step 8's rebase ran; the needs-work round was the plan reviewer's own.
+
+### E5 — one `dev-team-engine` task under a Codex host, a Claude lead
+
+Task "T14-E5: add `slug_hash(text: str, length: int = 8) -> str` …". Host: turn 1 779 s, turn 2 150 s
+(a resume of the same thread), 2,030,354 tokens in / 5,036 out; calls `describe_mode`, `list_roles`,
+one `delegate` of the lead, two `wait`s (600.008 s → running; 107.1 s → done), `list_tasks`, three
+`list_asks`, `answer`, `result`.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `a74b6420…` | lead | claude | claude-sonnet-5 | medium | 984 s | the loop, one ask; closing report through `result` |
+| `4e3fe4c9…` | planner | codex | gpt-6-luna | medium | 32 s | plan |
+| `0965332e…` | plan-reviewer | grok | grok-4.7 | medium | 133 s | revise |
+| `5e0db051…` | planner (`resume`) | codex | gpt-6-luna | medium | 22 s | revised plan |
+| `c080b7b7…` | plan-reviewer (round 2) | grok | grok-4.7 | medium | 144 s | revise → the lead asked the operator |
+| `113916c3…` | implementer | claude | claude-sonnet-5 | medium | 28 s | 90 → 95 tests green |
+| `c3f723e9…` | code-reviewer | codex | gpt-6-luna (read-only) | medium | 29 s | ready |
+
+`tools/e2e-verify.mjs --since a74b6420… --slug t14-e5`: 8 pass, 0 fail, 0 without evidence (95 tests at
+`583bfda`; seven records, cap 2; every Codex record judged from its rollout; the lead by the lead row).
+Depth and lineage: PASS. The lead's server carried all four markers. `result` = the result file byte
+for byte; the host's closing message opens with it verbatim, nothing before or after; `cross-agent
+report` renders E4's and E5's thirteen tasks `passed`.
+
+Deviations: the host's one shell command, `cat` of the plugin copy's `skills/cross-agent/SKILL.md` —
+Codex reading the skill it was offered — is outside the launcher's "`cross-agent report` and
+`cross-agent answer` are the only commands of yours this placement needs" (T15's to settle,
+`atc-s96.66`, `.70`); and the first turn ended on the lead's question (headless, no user to answer
+it), so the operator's answer reached the run by resuming the host's own thread, whose `answer`
+applied it.
+
+### Depth, from the MCP server's position (Codex host)
+
+| host | processes from the server to pid 1 | row served |
+|---|---|---|
+| Codex, `codex exec` started with `setsid --fork` (B3, E4) | 4 (`node`, `codex exec`, `systemd --user`, `init`) | operator |
+| Codex, the same command from an agent session's own shell, no `setsid` | 10 (`node`, `codex exec`, `bash`, `claude`, `bash --posix`, `sh -c`, `ghostty`, `nautilus`, `systemd --user`, `init`) | operator, fourteen tools |
+| Codex at a terminal; the Codex desktop app | not run: the user's hands | — |
+
+### Probes
+
+- **B1, the mount**: the Claude manifest alone installs and finds the skill but mounts no server;
+  codex-cli 0.159.3 substituted no `${PLUGIN_ROOT}` in the inline `command`, `args` or `cwd` forms B1
+  ran and runs a relative command from the session's directory, so the shipped form starts the server
+  in the plugin's copy through its launcher, the project named by `CROSS_AGENT_PROJECT`. The copy takes
+  the whole marketplace directory; from it discovery finds nothing (an export's copy) or a repository
+  the operator did not name (a checkout's).
+- **B2, environment**: the seven, `PWD`, `CROSS_AGENT_PROJECT`; no marker from a clean shell; not
+  confined; its stderr surfaced nowhere.
+- **Markers (fix round 1)**: with `env_vars` naming the project alone, a host started with
+  `CROSS_AGENT_DEPTH=1` and no task id, as `run_command` gives a suite, served the operator's fourteen.
+  With the four names: from a clean shell the server holds no marker, not even an empty one, and lists
+  the fourteen; with `CROSS_AGENT_DEPTH=1` it holds `CROSS_AGENT_DEPTH=1` and lists the specialist
+  row's five; without `CROSS_AGENT_PROJECT` no server starts and `codex exec` reports nothing.
+- **B3, the ten-minute wait**: one `wait` through the plugin, 600.004 s by its own item, the child still
+  running; a copy declaring 60 s cut the same call at 60 s.
+- **I1 (B5)**: Claude no MCP tool; Codex `codex_apps` only — `--ignore-user-config` drops the user's
+  plugins; Grok exactly the five specialist tools.
+- **I2 (B6)**: every outside write denied on all three; Claude and Grok reach the network, Codex does
+  not; Grok's pointer rewrite refused by `verify_worktree` and `git_mutate` with nothing mutated;
+  `codexI2Real` green, each resumed attempt proved from the rollout, last (run 3) under the positive
+  proof: five `direct` calls, nothing computed or unreadable.
+
+### Codex 0.159.3, as packaged
+
+- A plugin server's `McpToolCall` carries `pluginId`. `--json` writes an `apply_patch` edit as a
+  `file_change` item. A headless host may call Codex's own `request_user_input_async` and `sleep`.
+- `codex exec` writes `[projects."<dir>"] trust_level = "trusted"` for an untrusted repository it runs
+  in, with no prompt, under `--ignore-user-config` too.
+- A whitelisted name the session does not have is left out of a stdio server's environment, not
+  passed empty. A plugin server that exits at start is reported nowhere under `codex exec`.
+- `codex plugin add` writes `enabled = true` on every install; `codex plugin remove` leaves an empty
+  `~/.codex/plugins/cache/agent-team-cli/`.
+
+### The sample at close
+
+`dev-team-engine`, `limits.maxDepth` 2, the lead on claude/claude-sonnet-5, the planner and code
+reviewer on codex/gpt-6-luna (the code reviewer read-only), the plan reviewer on grok/grok-4.7, the
+implementer and `consult` on claude/claude-sonnet-5, all at medium; `project.*` unchanged. `main` at
+`583bfda`, clean, the root worktree alone, no `task/*` branch, 95 tests green; 29 records (S11's
+sixteen, E4's six, E5's seven).
+
+### Cost of the recorded runs
+
+$1.852 in dollars on the subscriptions: B5 $0.182, B6 $0.272, E4 $0.264, E5 $1.134; fix round 1 ran
+Codex alone. Codex reports tokens only: the hosts 5,590,071 in / 40,841 out over twenty-one sessions
+(E4 1,744,918 / 5,067; E5's two turns 2,030,354 / 5,036; fix round 1's four marker probes 285,866 /
+8,152); the specialists B5 22,493 / 1,637, B6 151,085 / 1,315, E4 260,949 / 2,738, E5 228,873 / 2,972;
+`codexI2Real` 80,686 / 906, 80,026 / 793 and 98,154 / 1,015.
