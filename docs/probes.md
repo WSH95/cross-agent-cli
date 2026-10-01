@@ -1972,9 +1972,9 @@ per step, by the filesystem and each engine's own log:
 Claude's and Codex's denials read "Read-only file system", Grok's "Permission denied". The
 Codex child's own record is its rollout: the verifier's reader decoded every command
 exactly (`--read-rollout`, `b6/codex-child-rollout-reading.json`), and each step's exit is
-in the output of its own `exec` call, which the child's script printed in its own words
-rather than as Codex's `{exit_code, output}` document, so the reader paired no exit and
-said why; a person read them (`b6/codex-raw-outputs.txt`). Every engine's sandbox started
+in the output of its own `exec` call. A cell's output is whatever its script prints, and
+this child's scripts printed each exit in their own words, read off the tool's result, so
+the reader paired no exit and said why; a person read them (`b6/codex-raw-outputs.txt`). Every engine's sandbox started
 from a server Codex launched: Claude's and Grok's `bwrap`, seen by task id while they ran,
 and Codex's own, its turn's policy `workspace-write` and its denials the sandbox's.
 

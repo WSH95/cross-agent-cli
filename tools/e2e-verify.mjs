@@ -12,8 +12,9 @@
 //
 // `--read-rollout` judges nothing: it prints, as one JSON document, what the rollout reader
 // below makes of that session's rollouts — every tool call, each code-mode `exec` with the
-// commands it decoded and the exit code of its own output, paired by `call_id` — and exits 0
-// before any project is read (`readRollout`). A test that must prove what a Codex child
+// commands it decoded, whether its script is the one shape that prints its command's own
+// result (`directScript`), and the exit code its output holds, paired by `call_id` — and exits
+// 0 before any project is read (`readRollout`). A test that must prove what a Codex child
 // attempted reads it through this, so the reader that proves it is the one verdicts use.
 //
 // The depth cap is the one the server ran under (`src/config.ts#effectiveMaxDepth`): the
@@ -1705,12 +1706,15 @@ async function readRollout(options) {
 
 /**
  * Each tool call a rollout file shows, by its 1-based line: a code-mode `exec` with the
- * commands `scriptRead` followed, decoded and in order, its `computed` reasons, and the one
- * `custom_tool_call_output` of its `call_id` read for the `{exit_code, output}` JSON Codex
- * writes there — `output: null` with a `reason` when there is no output, more than one, or no
- * single exit code in it; another custom tool by its name; a `function_call` with its
- * arguments decoded, or `null` when they are not a JSON string. Pairing is by `call_id`
- * alone, because only the output that answers a call says how that call ended.
+ * commands `scriptRead` followed, decoded and in order, its `computed` reasons, whether its
+ * script is the one shape whose printed exit is its command's own (`direct`, `directScript`),
+ * and the one `custom_tool_call_output` of its `call_id` read for an `{exit_code, output}`
+ * JSON — `output: null` with a `reason` when there is no output, more than one, or no single
+ * exit code in it; another custom tool by its name; a `function_call` with its arguments
+ * decoded, or `null` when they are not a JSON string. Codex writes into a cell's output only
+ * what the cell's script prints, so a paired exit is the command's own only where `direct`
+ * says the script printed that command's result unaltered. Pairing is by `call_id` alone,
+ * because only the output that answers a call says what its script printed.
  */
 function rolloutCalls(file) {
   let text;
@@ -1747,7 +1751,8 @@ function rolloutCalls(file) {
     }
     if (payload.name !== "exec") return { ...call, kind: "custom_tool_call", name: payload.name ?? null };
     const script = typeof payload.input === "string" ? scriptRead(payload.input) : { commands: [], computed: [], error: "exec input is not a script string" };
-    const read = { ...call, kind: "exec", commands: script.commands, computed: script.computed, ...(script.error === undefined ? {} : { error: script.error }) };
+    const read = { ...call, kind: "exec", commands: script.commands, computed: script.computed,
+      direct: typeof payload.input === "string" && directScript(payload.input), ...(script.error === undefined ? {} : { error: script.error }) };
     const answers = typeof payload.call_id === "string" ? outputs.get(payload.call_id) ?? [] : [];
     const paired = typeof payload.call_id !== "string" ? { reason: "the call has no call_id" }
       : answers.length === 0 ? { reason: `no output for ${payload.call_id}` }
@@ -1755,6 +1760,53 @@ function rolloutCalls(file) {
           : exitOf(answers[0]);
     return paired.output === undefined ? { ...read, output: null, reason: paired.reason } : { ...read, output: paired.output };
   });
+}
+
+/**
+ * Whether a code-mode `exec` script is the one shape whose printed exit is its command's own:
+ * exactly
+ *
+ *   const R = await tools.exec_command({cmd: <one string literal>});
+ *   text(JSON.stringify({exit_code: R.exit_code, output: R.output}));
+ *
+ * read as tokens (`scriptTokens`) with comments set aside and each `;` optional, `R` one name
+ * throughout and none of `tools`, `text` or `JSON`. The one command runs, awaited, and the
+ * script prints that run's own exit and output and nothing else, so the cell's output is that
+ * command's result. Any other script — another statement, an option beside `cmd`, a computed
+ * command, a function never called, an exit printed by hand — is not this shape: what it
+ * prints is the script's word and not the command's.
+ */
+function directScript(source) {
+  let tokens;
+  try { tokens = scriptTokens(source).filter((token) => token.kind !== "comment"); } catch { return false; }
+  let at = 0;
+  let binding;
+  const take = (kind, text) => {
+    const token = tokens[at];
+    if (token?.kind !== kind) return false;
+    if (text !== undefined && (kind === "string" ? token.value : token.text) !== text) return false;
+    at++;
+    return true;
+  };
+  const name = (text) => take("name", text);
+  const punct = (text) => take("punct", text);
+  const bound = () => {
+    const token = tokens[at];
+    if (token?.kind !== "name" || ["tools", "text", "JSON", "await", "const", "let", "var"].includes(token.text)) return false;
+    if (binding === undefined) binding = token.text;
+    else if (token.text !== binding) return false;
+    at++;
+    return true;
+  };
+  const semicolon = () => { if (tokens[at]?.kind === "punct" && tokens[at].text === ";") at++; return true; };
+  return name("const") && bound() && punct("=") && name("await") && name("tools") && punct(".") && name("exec_command")
+    && punct("(") && punct("{") && (name("cmd") || take("string", "cmd")) && punct(":") && take("string") && punct("}") && punct(")")
+    && semicolon()
+    && name("text") && punct("(") && name("JSON") && punct(".") && name("stringify") && punct("(") && punct("{")
+    && name("exit_code") && punct(":") && bound() && punct(".") && name("exit_code") && punct(",")
+    && name("output") && punct(":") && bound() && punct(".") && name("output")
+    && punct("}") && punct(")") && punct(")") && semicolon()
+    && at === tokens.length;
 }
 
 /**

@@ -2805,10 +2805,15 @@ Codex host E4's Codex implementer showed a shape the table still answers `?`: co
 0.159.3's `--json` writes an `apply_patch` edit as a `file_change` item, which a person read
 as patches to files inside the task's worktree (`docs/probes.md#e4`).
 `--read-rollout <session id>` prints what that reader makes of one session's
-rollout — each code-mode `exec` with the commands it decoded and the exit code of
-its one output, paired by `call_id` — and judges nothing, so a test that has to
-prove what a Codex child attempted proves it through the reader every verdict uses
-(`tools/e2e-verify.mjs#readRollout`, `tests/e2e-verify.test.ts#readRollout`).
+rollout — each code-mode `exec` with the commands it decoded, the exit code its one
+output holds, paired by `call_id`, and whether its script is `direct` — and judges
+nothing, so a test that has to prove what a Codex child attempted proves it through
+the reader every verdict uses (`tools/e2e-verify.mjs#readRollout`,
+`tests/e2e-verify.test.ts#readRollout`). A cell's output is whatever its script printed,
+so a paired exit is the command's own only for a `direct` script: one awaited
+`exec_command` with a literal `cmd`, its result printed as `{exit_code, output}` read off
+that result, and no other statement (`tools/e2e-verify.mjs#directScript`,
+`tests/e2e-verify.test.ts#readRolloutDirect`).
 
 Whether a command is a launch is a shell's question, and the scan's contract for
 it is that **`pass` on a named line requires positive understanding**: every

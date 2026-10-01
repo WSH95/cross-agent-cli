@@ -1430,8 +1430,9 @@ test("--read-rollout reports each call the reader decoded, an exec paired with i
   assert.deepEqual(paired.report, {
     files: [paired.file],
     calls: [
-      { file: paired.file, line: 2, call_id: "call_0", kind: "exec", commands: [escaped], computed: [], output: { exit_code: 0, text: "" } },
-      { file: paired.file, line: 5, call_id: "call_1", kind: "exec", commands: ["echo root >> ../../ROOT-WRITE.txt"], computed: [],
+      { file: paired.file, line: 2, call_id: "call_0", kind: "exec", commands: [escaped], computed: [], direct: false,
+        output: { exit_code: 0, text: "" } },
+      { file: paired.file, line: 5, call_id: "call_1", kind: "exec", commands: ["echo root >> ../../ROOT-WRITE.txt"], computed: [], direct: false,
         output: { exit_code: 1, text: "/bin/bash: line 1: ../../ROOT-WRITE.txt: Read-only file system\n" } },
     ],
     unreadable: [],
@@ -1507,6 +1508,41 @@ test("--read-rollout reports each call the reader decoded, an exec paired with i
   const bare = await readRolloutOf(t, "", null);
   assert.equal(bare.code, 2);
   assert.match(bare.err, /--read-rollout takes a Codex session id/);
+});
+
+// @anchor readRolloutDirect
+// The one script shape whose printed exit is its command's own: one awaited `exec_command`
+// with a literal `cmd` and nothing else in its argument, its result printed through exactly
+// `{exit_code, output}` read off that result, and no other statement. `codexI2Real`'s run 2
+// wrote it (rollout lines 24-43, `<archive>/b6/codexI2Real/run2/`); the cell's output is
+// whatever its script prints, so any other script's printed exit proves nothing.
+const directScript = (cmd: string) => `const r = await tools.exec_command({cmd:${JSON.stringify(cmd)}});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n`;
+const notDirect = [
+  // A function that would run the write, never called, and an exit printed by hand.
+  'const skipped = () => tools.exec_command({cmd: "echo root >> /project/ROOT-WRITE.txt"});\ntext(JSON.stringify({exit_code: 1, output: "Read-only file system"}));\n',
+  // The command run, and a different exit printed.
+  'const r = await tools.exec_command({cmd: "echo root >> /project/ROOT-WRITE.txt"});\ntext(JSON.stringify({exit_code: 1, output: "Read-only file system"}));\n',
+  // One statement more than the shape.
+  'const r = await tools.exec_command({cmd: "echo root >> /project/ROOT-WRITE.txt"});\nconst n = 1;\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n',
+  // A command the script computes.
+  'const c = "echo root >> /project/ROOT-WRITE.txt";\nconst r = await tools.exec_command({cmd: c});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n',
+  // A6's own form: an option beside `cmd`, and the result printed whole.
+  'const r = await tools.exec_command({cmd:"echo root >> /project/ROOT-WRITE.txt", max_output_tokens:1000});\ntext(JSON.stringify(r));\n',
+  // Two commands in one script.
+  'const r = await tools.exec_command({cmd:"ls"});\nconst s = await tools.exec_command({cmd:"pwd"});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n',
+];
+test("--read-rollout marks direct only an exec whose script prints its one literal command's own result, unaltered", async (t) => {
+  const id = "01a0f44a-eb7a-7603-ae3a-000000007101";
+  const steps = [{ script: directScript('echo resumed >> "/project/.worktrees/i2/notes.md"') }, { script: "// @exec: {\"yield_time_ms\": 10000}\n" + directScript("ls") },
+    ...notDirect.map((script) => ({ script }))];
+  const { code, report, err } = await readRolloutOf(t, id, rolloutOf(id, steps));
+  assert.equal(code, 0, err);
+  const execs = report.calls.filter((call: { kind: string }) => call.kind === "exec");
+  assert.equal(execs.length, steps.length);
+  assert.deepEqual(execs.map((call: { direct: boolean }) => call.direct), [true, true, ...notDirect.map(() => false)],
+    JSON.stringify(execs.map((call: { line: number; direct: boolean }) => [call.line, call.direct])));
+  assert.deepEqual(execs[0].commands, ['echo resumed >> "/project/.worktrees/i2/notes.md"']);
+  assert.deepEqual(execs[0].computed, []);
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
