@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T13:01:57Z
+updated_at: 2026-10-01T14:08:49Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -80,14 +80,20 @@ is **implemented on `task/cross-agent-m3`** (11 commits over `6a13c0c`, head
 E5 (a Codex host, a Claude lead) 8 pass; E4 (a Codex host, `dev-team`) 7 pass and a
 `?` a person read as two in-worktree patches (`.69` teaches the verifier that shape).
 The shipped mount runs `./.codex-plugin/serve`, which needs `CROSS_AGENT_PROJECT`.
-Code review round 1 is running. **The operator's Codex config is changed until the
+Review round 1 found two Important issues, now in fix round 1 (`task-8-findings-round-1.md`):
+- the guarded Codex I2 test's rollout proof could pass vacuously;
+- both Codex attaches drop the task markers, so a Codex session started inside a task
+  would resolve the operator row (loop-guard layer 2; the fix adds them to `env_vars`,
+  with probes). **The operator's Codex config is changed until the
 wrap:** the plugin `cross-agent@agent-team-cli` is installed from a local marketplace
 (`~/.cache/agent-team/codex-plugin-export/dac519b…`) and disabled
 (`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added three
 trust entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the
 restore commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
-brief v1 (`task-11-brief.md`) awaiting its plan review; `.64` and `.66` go to T15.
+brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimization pass
+runs after T15 merges). T15's brief v3 (`task-9-brief.md`) is ready for dispatch after
+T14 merges; it takes `.64`, `.66` and `.70`.
 
 
 ## Next steps
