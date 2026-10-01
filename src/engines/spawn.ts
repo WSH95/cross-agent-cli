@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from "node:child_process";
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { sandboxFor } from "./registry.ts";
-import type { EngineAdapter, EngineEvent, SandboxMode, SpawnRequest } from "./types.ts";
+import { profileFault, sandboxFor } from "./registry.ts";
+import type { EngineAdapter, EngineEvent, SpawnRequest } from "./types.ts";
 
 export interface SpawnResult {
   ok: boolean;
@@ -68,12 +68,17 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   if (request.engine !== adapter.name) {
     throw new Error(`${adapter.name} spawn refused: the launch spec names engine ${JSON.stringify(request.engine)}`);
   }
-  let declared: SandboxMode;
+  // The registry's words for a profile the engine does not declare leave the engine out,
+  // so the refusal names it once; an engine the registry has no adapter for is refused here
+  // the same way.
+  let fault: string | null;
   try {
-    declared = sandboxFor(request.engine, request.sandbox.profile).mode;
+    fault = profileFault(request.engine, request.sandbox.profile);
   } catch (error) {
-    throw new Error(`${adapter.name} sandbox refused: ${error instanceof Error ? error.message : String(error)}`);
+    fault = error instanceof Error ? error.message : String(error);
   }
+  if (fault !== null) throw new Error(`${adapter.name} sandbox refused: ${fault}`);
+  const declared = sandboxFor(request.engine, request.sandbox.profile).mode;
   if (declared !== request.sandbox.mode) {
     throw new Error(`${adapter.name} sandbox refused: profile ${JSON.stringify(request.sandbox.profile)} is ${declared}, not ${request.sandbox.mode}`);
   }

@@ -242,6 +242,27 @@ test("a mode its engine's map contradicts is refused before anything else happen
   assert.equal(existsSync(request.resultPath), false);
 });
 
+// @anchor spawnRefusesProfileOnce
+test("a profile the engine does not declare is refused naming the engine once", (t) => {
+  const { request } = task(t);
+  const adapter: EngineAdapter = {
+    ...generic,
+    sandboxSupport: () => assert.fail("must refuse before the capability check"),
+    plan: () => assert.fail("must refuse before planning"),
+  };
+  assert.throws(
+    () => spawnEngine(adapter, { ...request, sandbox: { mode: "read-only", profile: "strict" } }, {
+      spawn: () => { assert.fail("must refuse before spawning"); },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message, 'claude sandbox refused: no sandbox profile "strict"; it accepts read-only | workspace-write | off');
+      return true;
+    },
+  );
+  assert.equal(existsSync(request.logPath), false);
+});
+
 test("the capability check is asked about the environment the spawn will use", (t) => {
   const { request } = task(t);
   // `sandboxSupport` is where a configured `engines.<e>.bin` is judged, and the binary it
