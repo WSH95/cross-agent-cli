@@ -1266,6 +1266,105 @@ from `/proc/<pid>/stat` field 4, is **nine hops**: the driver's `node`, the tool
 the way.
 
 
+<!-- @anchor s11 -->
+## S11: engine placement, end to end (2026-10-01)
+
+S11's runs, in the order they ran: E3, a Claude lead under a Claude Code host;
+B2, a Codex lead's tool call past Codex's 60-second default and the environment
+its server receives; E2, a Codex lead; then the five failure injections. Their raw
+evidence — host transcripts, records, specs, `.ndjson` logs, runner logs, ask
+files, journals, Codex rollouts, `/proc` readings and the scripts that took them —
+is in `~/.cache/agent-team/probe-logs/s11-2026-10-01/`, one directory per run, and
+the records of every run but E2 and E3 were moved, after their reading, to
+`~/.cache/agent-team/cross-agent-e2e/probe-tasks/s11/`. Engines: Claude Code
+2.1.286, codex-cli 0.159.3, grok 1.0.44 (5b807183dd79); `claude-sonnet-5`,
+`gpt-6-luna` and `grok-4.7`, each at medium. The sample was switched to
+`dev-team-engine` before the first run — `limits.maxDepth` 2, the planner on
+Codex, both reviewers on Grok (the code reviewer read-only), the implementer and
+`consult` on Claude, and the lead on Claude for E3 and the injections and on Codex
+for B2 and E2 — and is left so (`config/` in the archive holds every version and
+its diff).
+
+Every run's verdict is the verifier's —
+`node tools/e2e-verify.mjs --project <sample> --since <lead id> --slug <slug>`,
+run with `CODEX_HOME` unset, as the engines ran — and beside it the ledger's
+depth-and-lineage reading (`scripts/depth-lineage.py` in the archive): the lead
+at depth 1 with `parentTaskId` null and a lineage of itself; every other record of
+the run at depth 2, the lead's child, its spec's `CROSS_AGENT_LINEAGE` the lead's
+entry first and its own second. The verifier's depth check is an upper bound and
+cannot see a child recorded one level too shallow; this reading can.
+
+<!-- @anchor e3 -->
+## E3: one `dev-team-engine` task under a Claude lead (2026-10-01)
+
+The E1 host (`VERIFY.md`, T13's command, started with `setsid --fork` from the
+sample), prompted with the task "S11-E3: add `is_slug(text) -> bool` beside
+`slugify`, with tests; use the slug s11-e3." and "Run it through the cross-agent
+skill." The host session ran 387 s over 8 turns ($0.248) and made only the
+launcher's calls: `describe_mode`, `list_roles`, one `delegate` of the lead, and
+one `wait`, which returned `done` at 360 s. The lead, `144d7771…`, ran the loop:
+
+```
+list_tasks                                   → its own record marked self: true
+describe_mode, list_roles
+git_root status / worktree list / branch --list task/*   → clean, main, none
+delegate planner (codex/gpt-6-luna)          → wait → result   32 s
+delegate plan-reviewer (grok/grok-4.7)       → wait            104 s, approve
+git_root worktree add -b task/s11-e3 .worktrees/s11-e3 main
+delegate implementer (claude/claude-sonnet-5) → wait           30 s, 73 tests OK
+git_mutate add -A … ; git_mutate commit       → 81cec9d
+delegate code-reviewer (grok, read-only)     → wait            90 s, ready
+git_mutate rebase main                       → up to date, a git step
+git_root merge --ff-only task/s11-e3         → main 5578d3c → 81cec9d
+run_command test where=root                  → 73 tests, OK
+git_root worktree remove …; git_root branch -d task/s11-e3
+```
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 144d7771…
+--slug s11-e3`: seven `pass`, and a `?` on condition 8, exit 2 —
+"144d7771: events this build cannot read (tool_progress)". The reading
+(`e3/verify-reading-tool-progress.txt`): the lead's transcript holds six
+`tool_progress` events, each `heartbeat: true`, keyed `elapsed_time_seconds,
+heartbeat, parent_tool_use_id, session_id, tool_name, tool_use_id, type, uuid`,
+each naming as its parent one of the lead's three `mcp__cross-agent__wait` calls
+— Claude Code 2.1.286's heartbeat for a tool call still in flight, 30 s apart.
+No event of the class carries a command or an input: neither a launch nor a
+`delegate`, and the run passes on that reading. The journal for `s11-e3` reads
+`worktree-created, git, committed, git, merged, tests-passed, worktree-removed,
+branch-deleted`, `defaultShaBeforeMerge` 5578d3c and `branchHead` 81cec9d.
+
+**Depth and lineage.** The lead at depth 1, `parentTaskId` null, spec
+`CROSS_AGENT_DEPTH` 1, its lineage itself; the four specialists at depth 2, each
+the lead's child, each spec at depth 2 with the lead first in its lineage: PASS.
+
+**The lead.** `/proc/<lead pid>/cmdline`, read while it ran
+(`e3/proc-lead.json`): `--strict-mcp-config --mcp-config
+<sample>/.cross-agent/tasks/144d7771….scratch/mcp-config.json` and a `--settings`
+value opening `{"disableAllHooks":true,…}` beside a sandbox that denies writes to
+the sample. Its one MCP server, the lead's own child, carried all four task markers
+with the spec's values: Claude starts a server with a copy of its own environment.
+Its `system/init` line lists `mcp_servers: [{"name":"cross-agent",…}]` and the
+fourteen tools of the lead row — the twelve and `ask` and `list_asks`. It called
+`describe_mode`, `list_roles`, `list_tasks`, `git_root` (seven times),
+`run_command`, `git_mutate` (three), `delegate` (four), `wait` (four) and
+`result`, read the config with its Read tool, ran **no shell command**, and its
+transcript holds **no hook activity** of A7's classes
+(`docs/probes.md#claudeHooksIsolation`). `list_tasks` marked only its own record
+`self`; E1's six settled records carried no mark. The lead's prose called every
+listed task its own, which was wrong and changed nothing: none was active.
+
+**The report.** `result {task_id: 144d7771…}` through an operator-row server returned
+the closing report equal, byte for byte, to the record's result file, with every
+field `roles/lead.md` names — the task, one line per specialist (role, engine,
+model, effort, duration, outcome, task id), the branch and commit, the merge, the
+suite on `main`, the cleanup, the questions asked (none) and what nobody verified.
+`node src/cli.ts report --project <sample> --since 144d7771…` rendered the five
+tasks, each `passed`, then each final message. The **host** did not call
+`result`: it relayed the report from `wait`'s 2000-character `resultTail` and
+its `lastActivity` line — the lead's `result` event — calling it verbatim while
+rewording four of its lines. The launcher now says the tail is not the report
+(`tests/skills.test.ts#resultIsReport`), and E2's host ran under that text.
+
 <!-- @anchor s11CodexLeadTimeout -->
 ## B2: a Codex lead's tool call past 60 s (2026-10-01)
 
@@ -1330,6 +1429,252 @@ held `CROSS_AGENT_DEPTH`, `CROSS_AGENT_LINEAGE`, `CROSS_AGENT_PROJECT` and
 child was recorded at depth 2, the lead's, the lead first in its lineage. The
 scrubbed case is pinned as the documented limit the setting closes
 (`tests/authority.test.ts#scrubbedLeadRow`).
+
+
+<!-- @anchor e2 -->
+## E2: one `dev-team-engine` task under a Codex lead (2026-10-01)
+
+The E1 host again, the sample's lead bound to Codex (`gpt-6-luna`, medium), the
+task "S11-E2: `slug_words` accepts `max_words: int | None`, with tests; use the
+slug s11-e2." and "Run it through the cross-agent skill." The host session ran 13
+turns ($0.284); it called `describe_mode`, `list_roles`, `list_tasks`, one
+`delegate` of the lead, one `wait` and `result`. The lead, `83750cc5…`, ran 490 s
+and the whole loop through 27 MCP calls — `list_tasks`, `describe_mode`,
+`list_roles`, `git_root` seven times, `delegate` four, `wait` four, `result` four,
+`run_command` twice (the setup in the worktree, the suite at the root) and
+`git_mutate` three times — each a code-mode `exec` script calling
+`tools.mcp__cross_agent__<tool>`: planner 24 s, plan reviewer 150 s (approve),
+implementer 28 s (77 tests), code reviewer 82 s (ready, one low-priority note on
+a negative `max_words`), merge `81cec9d` → `7a5c15f`, 77 tests at the root, the
+worktree and the branch removed. Its journal reads `worktree-created, git,
+committed, git, merged, tests-passed, worktree-removed, branch-deleted`.
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 83750cc5…
+--slug s11-e2`, `CODEX_HOME` unset as the engines ran: seven `pass`, and a `?` on
+condition 8, exit 2 — "83750cc5: its rollout holds delegate: 1 occurrences but
+only 0 direct calls followed". The verifier names a record's first doubt only, so
+the reading covers the whole rollout (`e2/verify-reading-rollout.txt`): 27 `exec`
+scripts, six top-level `function_call`s, no `CommandExecution` item and no
+command tool anywhere. The occurrence is the lead's first script, line 11, a
+tool-discovery filter, `ALL_TOOLS.filter(x =>
+/describe_mode|list_tasks|git_root|run_command|delegate|result|wait|ask|git_mutate|list_roles/i.test(…))`,
+which names `delegate` inside a regular expression and calls nothing. The six
+`function_call`s are Codex's own code-mode `wait` — `{"cell_id":"10",
+"yield_time_ms":30000}` four times and cell 21 twice — waiting on two `exec`
+cells that had yielded while their script's one `mcp__cross_agent__wait` call ran;
+they carry no command, and the verifier's 0.159.2 table does not yet classify the
+tool. Two `delegate` scripts failed before calling anything — a `SyntaxError` at
+line 39 and a `ReferenceError` at line 113 — and were retried as direct calls,
+which is why six scripts name `delegate` and four `McpToolCall` items carry it.
+Every `delegate` is the lead's own, on the lead row: neither a launch nor a
+`delegate` the scan looks for, and the run passes on that reading.
+
+**Depth and lineage.** The lead at depth 1 alone in its lineage; the four
+specialists at depth 2, each the lead's child with the lead first in its spec's
+lineage: PASS. B2's reading is confirmed on this run: the lead's server carried
+all four markers, equal to its engine's, and a second server pid that appeared
+mid-run carried them too (`e2/proc-lead.json`).
+
+<!-- @anchor e2Approval -->
+**Approval escalation.** All 27 `mcp_tool_call` items completed, none with an
+error, and neither the `.ndjson` nor the rollout holds `requires approval` or any
+other approval text: the mount's `default_tools_approval_mode="approve"` under
+`codex exec`'s approval policy `never` let every call run, and `git_mutate` and
+`git_root` ran in the server without a Codex prompt. The MCP item shape on
+0.159.3 is 0.159.2's — the `--json` `mcp_tool_call` pair and the rollout's
+`McpToolCall` keys — so `e2CodexItems` is not needed and the verifier and the
+adapter learn nothing new from this run.
+
+**The report.** `result {task_id: 83750cc5…}` returned the closing report, equal
+to the record's result file, with the fields `roles/lead.md` names, and
+`node src/cli.ts report --project <sample> --since 83750cc5…` rendered the five
+tasks, each `passed`. The **host** called `result` this time — E3's launcher
+change — but summarized the report rather than showing it, and ran two read-only
+`git` commands through its own shell, a status, worktree and branch check before
+it delegated the lead and a `git log` and status after: no loop step, but outside
+the launcher's list of host calls. The launcher now says the host runs no `git`
+and no test command of its own under this placement and shows the report whole
+(`tests/skills.test.ts#engineHostHandsOff`); no S11 run exercised that text.
+
+<!-- @anchor injectCancelLead -->
+## Injection: cancelling the lead settles every descendant (2026-10-01)
+
+A Claude lead, delegated through the operator driver with the task "S11-I1: add
+`slug_count(text) -> int`; use the slug s11-i1". The trigger: a `list_tasks` poll
+every five seconds through the driver, and the moment it showed the lead's
+implementer `running` — the planner and plan reviewer `done`, the worktree
+`task/s11-i1` created — `cancel {task_id: 97786228…}`. It answered one outcome per
+task of the lead's lineage: the implementer `01efc74c…` `cancelled`, the plan
+reviewer `73a86fea…` and the planner `911b72e1…` `already done`, the lead
+`cancelled`, and `asksCancelled: []`. `list_tasks` afterwards showed all four
+terminal, and a `/proc` scan for any process carrying one of the four ids — by
+the environment's `CROSS_AGENT_TASK` or the command line, never a pattern that
+could match the scanning shell — found none. The worktree `.worktrees/s11-i1` and
+the branch `task/s11-i1` stood, at `7a5c15f`, as a cancel leaves them: cancelling
+settles the task and does not undo what it wrote. The verifier, `--since
+97786228… --slug s11-i1`, for the conditions this stopping point allows: the root
+tree clean, the suite green on `main`, four records with their logs, every record
+at depth 2 or less — `pass`; only the root worktree, no `task/*` branch and the
+journal's steps `FAIL` by construction, the journal ending at `worktree-created`;
+condition 8 `?` on the lead's `tool_progress` heartbeats, six, each the child of
+one of its `wait` calls — read as in E3. The depth-and-lineage reading: PASS.
+Restored by hand: `git worktree remove --force .worktrees/s11-i1`, `git branch -D
+task/s11-i1`, the journal and the records moved to the archive.
+
+<!-- @anchor injectKilledLeadAsk -->
+## Injection: a killed lead's ask survives, and its answer reaches the resumed lead (2026-10-01)
+
+A Claude lead with the task "S11-I2: add `strip_slug_prefix(text, prefix)`; before
+creating the worktree, ask the operator to confirm the slug name and use the name
+they answer". It asked at once, 16 s in: "… I propose \"strip-slug-prefix\". Confirm
+this name, or give me a different one to use." When `list_asks {status: "open"}`
+showed it, the lead's engine — the session leader whose environment carries
+`CROSS_AGENT_TASK=600ea29f…`, its pid from the record's `engineIdentity` — got
+SIGKILL. The record settled `failed` by its runner, reason `engine exited SIGKILL`,
+and the ask file still read `open`.
+
+From a terminal, `node <repo>/src/cli.ts --project <sample> answer 6b4b78a6…
+"use s11-i2"` exited 0 printing the record, and the file read `answered`,
+`answeredAt` 1790829479769; a second answer exited 3, "it was answered at
+2026-10-01T04:37:59.769Z (answeredAt 1790829479769), and the first answer stands".
+`delegate {role: "lead", cwd: <sample>, resume: 600ea29f…, brief: <the task text
+again>}` wrote a spec whose brief is the task text followed by
+
+```
+## Asks so far
+- ask 6b4b78a625c977dd732410ca7a4c9af278ae: answered
+  question: For task S11-I2 (…), I need a slug for the branch/worktree (task/<slug>). I propose "strip-slug-prefix". Confirm this name, or give me a different one to use.
+  answer: use s11-i2
+```
+
+while the record's `briefHash` is the SHA-256 of the task text alone, its
+`resumedFrom` the killed lead and its spec's `resumeSessionId` the killed lead's
+Claude session. The resumed lead, `7775c52f…`, planned again; the plan reviewer
+answered "human decision", so it asked a second question, which the operator
+answered through the `answer` tool; it then ran two more plan and review rounds,
+each a `resume` of the planner and the plan reviewer, and called `git_root
+{args: ["worktree", "add", "-b", "task/s11-i2", <sample>/.worktrees/s11-i2,
+"main"], slug: "s11-i2"}` — the journal `s11-i2.json` opening with
+`worktree-created` — and ran its setup. It was cancelled there, the evidence
+complete: one outcome per task, its six children `already done`, itself
+`cancelled`, `asksCancelled: []` (both asks answered). The verifier, with the
+records put back for the reading: the first six conditions `pass`, the journal's
+`FAIL` by construction, condition 8 `?` on the resumed lead's heartbeats. The
+depth-and-lineage reading over the resume chain: both lead records at depth 1,
+each its own lineage, the six specialists the resumed lead's children at depth 2:
+PASS. Restored by hand: the worktree and the branch removed, the journal, the two
+asks and the eight records moved to the archive.
+
+<!-- @anchor injectRootSuiteFails -->
+## Injection: a suite that fails on `main` after the merge offers the revert and halts (2026-10-01)
+
+Before the run the operator changed `project.testCommand` to `python3 -m unittest
+discover -s tests -t . && test ! -e .cross-agent/FAIL-AT-ROOT` and created that
+marker at the root: a worktree has no `.cross-agent/`, so the suite passes in one
+and fails at the root (`i3/config.diff`, `i3/trigger-commands.txt`). A Claude lead,
+the task "S11-I3: add `truncate_slug(text, length)`; use the slug s11-i3". It ran
+the loop through a needs-work round on the plan — the plan reviewer said
+`revise`, and the planner and the reviewer were each continued by `resume` — and
+then the implementer (83 tests in the worktree), the code reviewer (ready), the
+rebase (a `git` step: `main` had not moved) and `git_root merge --ff-only
+task/s11-i3`, which moved `main` `7a5c15f` → `4fb584d`. Its root
+`run_command {which: "test", where: "root", slug: "s11-i3"}` answered `exitCode: 1`
+with a tail reading "Ran 83 tests … OK"; it ran it once more, got 1 again, and
+stopped. The journal `s11-i3.json` holds `worktree-created, git, committed, git,
+merged` — `merged` carrying `defaultShaBeforeMerge` 7a5c15f… and `branchHead`
+4fb584d… — and no `tests-passed`. Its final message, read through `result`, names
+the failure, the two runs and the tail, says it "did not run anything further"
+and left the branch and its worktree standing, and offers
+
+```
+git revert --no-edit 7a5c15fc8823ee5f599de25b638e42906bb70c68..4fb584d786693d8ce42ca20ce854bdda94f017a6
+```
+
+the journal's two SHAs; after the second root run it called nothing. The
+worktree `.worktrees/s11-i3` and the branch `task/s11-i3` stood. The verifier, for
+what this stopping point allows: the root tree clean, seven records with their
+logs, every record at depth 2 or less — `pass`; the standing worktree and
+branch, the suite on `main` (the marker) and the journal's missing steps `FAIL` by
+construction; condition 8 `?` on the lead's seven `tool_progress` heartbeats,
+each a child of a `wait` call. The depth-and-lineage reading: PASS. Restored by
+the operator's hands: `rm .cross-agent/FAIL-AT-ROOT`, `git revert --no-edit
+7a5c15f…..4fb584d…` (a new commit, `f742ac7`), `git worktree remove
+.worktrees/s11-i3`, `git branch -d task/s11-i3`, the test command restored; the
+suite at the root then green.
+
+
+<!-- @anchor injectAfterWorktreeRemove -->
+## Injection: an interruption after `worktree remove`, and the pass that deletes the branch (2026-10-01)
+
+A Claude lead, the task "S11-I4: add `slug_join(parts)`; use the slug s11-i4;
+after removing the worktree, ask the operator whether to delete the branch and
+delete it only on yes". It ran the loop — a plan revised once through `resume`,
+the implementer, the code reviewer, the rebase (a `git` step), the merge (`main`
+→ `fd6e3a9`), `tests-passed` at the root — then `git_root worktree remove` and
+asked: "The worktree for task/s11-i4 has been removed, and the branch is merged
+into main (fast-forward, now at fd6e3a9). Should I delete the branch task/s11-i4
+now?" With the journal at `worktree-removed` and that ask open, the lead's engine
+— the session leader carrying `CROSS_AGENT_TASK=269b1ee6…` — got SIGKILL. The
+record settled `failed`, `engine exited SIGKILL`; the branch stood with no
+worktree.
+
+The operator then ran the launcher's reconciliation pass ("Between tasks:
+reconcile") through an operator-row server, in its order
+(`i4/reconciliation-pass.txt`): `list_tasks`, nothing invalid, nothing it could
+not decide, the lead `failed` and its six children `done`; the journal
+`s11-i4.json`, its steps ending `merged, tests-passed, worktree-removed`; `git_root
+worktree list --porcelain`, the root alone on `main`; `git_root branch --list
+task/*`, `task/s11-i4`; `git_root status`, clean; no rebase state, since no
+worktree remains. A branch-only leftover whose journal records it is the pass's
+to delete: `git_root {args: ["branch", "-d", "task/s11-i4"], slug: "s11-i4"}`
+answered `Deleted branch task/s11-i4 (was fd6e3a9).` and journaled
+`branch-deleted`, and `git branch --list 'task/*'` was empty. This is the path the
+brief names first; the resumed lead answered "yes" was not taken. The verifier,
+`--since 269b1ee6… --slug s11-i4`, after the pass: seven `pass` — the journal now
+every step, `worktree-created, git, git, committed, git, merged, tests-passed,
+worktree-removed, branch-deleted` — and condition 8 `?` on the lead's nine
+`tool_progress` heartbeats, each a child of a `wait` call. The depth-and-lineage
+reading: PASS. A `cancel` of the dead lead then answered `already` for all seven
+tasks and `asksCancelled: ["fdb88222…"]`: its unanswered question cancelled with
+it. `main` keeps the merged `slug_join`; the records, the journal and the ask were
+moved to the archive.
+
+
+<!-- @anchor injectRebaseConflict -->
+## Injection: an interrupted rebase is aborted and reported (2026-10-01)
+
+A Claude lead, the task "S11-I5: rewrite `slugify`'s docstring to state its
+separator and stop-word rules; use the slug s11-i5". The trigger: the moment the
+journal showed `worktree-created`, the operator rewrote the same docstring lines
+on `main` by hand — the first line and the stop-word line, through
+`i5/hand-edit.py` at the root checkout — and committed them, `cdeb3de`. The lead
+went on: a plan revised once through `resume`, the implementer's own rewrite of
+those sentences with a test asserting them (83 tests), the lead's commit
+`31ce36a`, and the code reviewer's verdict **needs rebase**, naming `cdeb3de`. Its
+`git_mutate {slug: "s11-i5", args: ["rebase", "main"]}` answered `ok: false`,
+`exitCode` 1, git's own text — `CONFLICT (content): Merge conflict in
+slugkit/__init__.py`, "could not apply 31ce36a…" — and journaled nothing; `git_mutate
+… ["rebase", "--abort"]` followed and journaled a `git` step with those arguments;
+`.git/worktrees/s11-i5` then held no `rebase-merge` or `rebase-apply` directory. The
+lead dispatched nothing more and asked instead: "… Rebasing task/s11-i5 (commit
+31ce36a) onto main produces a conflict in slugkit/__init__.py on that exact text …
+I've aborted the rebase; the branch and worktree are untouched. How would you like
+to proceed?" The operator answered "Stop here …"; its closing report, read through
+`result`, names the conflicting file, the aborted rebase, the question and the
+answer, and the branch and worktree left standing, and its last calls were the two
+`git_mutate`s and the `ask`. The verifier, for what this stopping point allows: the
+root tree clean, the suite on `main`, seven records with their logs, every record
+at depth 2 or less — `pass`; the standing worktree, the branch and the journal's
+missing steps `FAIL` by construction; condition 8 `?` on the lead's thirteen
+`tool_progress` heartbeats, each a child of a `wait` call. The depth-and-lineage
+reading: PASS. Restored by hand: `git worktree remove .worktrees/s11-i5`, `git
+branch -D task/s11-i5`, `git revert --no-edit cdeb3de` (`a832c1b`), the journal,
+the ask and the records moved to the archive.
+
+The five injections leave the sample's `main` at `a832c1b`: E3's `81cec9d` and
+E2's `7a5c15f`, I3's merge and its revert, I4's `slug_join` merged by its lead, and
+the operator's I5 commit and its revert — clean, the root worktree alone, no
+`task/*` branch, the suite green.
 
 
 <!-- @anchor cliFacts -->
