@@ -733,3 +733,115 @@ Codex alone. Codex reports tokens only: the hosts 5,590,071 in / 40,841 out over
 (E4 1,744,918 / 5,067; E5's two turns 2,030,354 / 5,036; fix round 1's four marker probes 285,866 /
 8,152); the specialists B5 22,493 / 1,637, B6 151,085 / 1,315, E4 260,949 / 2,738, E5 228,873 / 2,972;
 `codexI2Real` 80,686 / 906, 80,026 / 793 and 98,154 / 1,015.
+
+## T15 — Grok packaging, I1 and I2 under a Grok host, and the end-to-end runs E6 and E7 (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `157b6b4`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 14 commits over `e5abf4d` (six, fix round 1's four, the wrap-up's three, and the commit references re-pointed to the merged commits) |
+| `npm test` at the root | 742 tests: 741 pass, 0 fail, 1 skipped (the guarded Codex I2 test), on `main` at `157b6b4` |
+| citation checker | 1199 citations in 2 files (37 by line, 1162 by symbol), 0 misses; `--since e436132`: 0 drifted, 0 not judged |
+| host command | `grok --prompt-file <run>/prompt.md --model grok-4.7 --reasoning-effort medium --permission-mode bypassPermissions --output-format streaming-messages-json`, `setsid --fork` from the sample, markers scrubbed, no `--sandbox` |
+| attach | the project's `.grok/config.toml`, kept out of git: `[plugins] paths = ["<repo>"]`, `enabled = ["cross-agent"]`; `[mcp] max_output_bytes = 100000`; the folder trusted. grok 1.0.46 reads `.claude-plugin/plugin.json` in place — `skills/` and the inline `mcpServers`, `${CLAUDE_PLUGIN_ROOT}` expanded — no copy, no Grok manifest, nothing under `~/.grok/` |
+| install / verify / remove | README "Install it in Grok": `cross-agent init`, `printf '\n.grok/\n' >> .gitignore` and that change committed (a project that already tracks `.grok/config.toml` untracks it in the same commit: `git rm --cached`, then a commit of the index), the heredoc writing `$HOME/Documents/agent-team-cli` (or, into existing tables, the absolute path and `"cross-agent"` added to the arrays, and the cap raised only where lower, its earlier value noted); `grok inspect --json`, `grok mcp doctor cross-agent` (fourteen under `dev-team-engine`, twelve under `dev-team`/`solo`); removal takes out only what the attach added, entry by entry, and deletes the file only if the attach's lines were all it held |
+| result cap | `describe_mode` 19,856 / 24,880 / 3,463 bytes (`dev-team` / `dev-team-engine` / `solo`); Grok's default cut at 20,000 bytes spilled the rest; with 100000 the answer arrived whole |
+| engines | Claude Code 2.1.286, codex-cli 0.159.3, grok 1.0.46 (2765805b9442), node 24.11.0; `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium, the hosts included |
+| sample | `main` `583bfda` → `1a56f2a` (E6) → `90281e2` (E7); 101 tests green |
+| raw evidence | `~/.cache/agent-team/probe-logs/t15-2026-10-01/` (fix round 1 under `fix1/`, the wrap-up under `wrap/`); probe records under `~/.cache/agent-team/cross-agent-e2e/probe-tasks/t15/`; named in `docs/probes.md#t15Attach` |
+| how a run is judged | `node tools/e2e-verify.mjs --project <sample> --since <first id> --slug <slug>`, `CODEX_HOME` unset, plus the depth-and-lineage reading for E7 |
+
+Landed: the README's Grok section and its tests (the `.grok/` ignore line, safe after a last line
+with no newline; the commit of `init`'s `.gitignore` on every host; a tracked `.grok/config.toml`
+untracked in that commit; the merge into existing tables and the removal of only the attach's
+entries); the launcher's Grok budget row (600, measured); the launcher's sentences for a host
+without tools (a Grok host searches before it stops), the roster before the lead, the headless
+host's open ask and the skill's own file; the lead's spelled report line.
+
+### E6 — one `dev-team` task under a Grok host, `placement: host`
+
+Task "add `slug_snake(text) -> str` … use the slug `t15-e6`". Host 330 s, 24 turns, $0.236; four
+`wait`s (21.0, 90.1, 26.0, 60.1 s by Grok's own records), no refusal; the loop's own calls, the log
+appended with Grok's `search_replace`, no shell command. Largest MCP result `describe_mode`, 20,692
+bytes with Grok's envelope.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `99215630…` | planner | codex | gpt-6-luna | medium | 24 s | plan |
+| `d366adf2…` | plan-reviewer | grok | grok-4.7 | medium | 92 s | approve |
+| `a4c77994…` | implementer | claude | claude-sonnet-5 | medium | 28 s | 95 → 98 tests |
+| `b04f904a…` | code-reviewer | grok | grok-4.7 (read-only, in the worktree) | medium | 62 s | ready, `1a56f2a` |
+
+`tools/e2e-verify.mjs --since 99215630… --slug t15-e6` under `dev-team`: 8 pass, 0 fail, 0 without
+evidence. Deviations: none from the loop.
+
+### E7 — one `dev-team-engine` task under a Grok host, a Claude lead
+
+Task "add `slug_title(text) -> str` … use the slug `t15-e7`". Host 501 s, 8 turns, $0.068: the skill
+read with Grok's `read_file`, `describe_mode` (the largest MCP result, 25,836 bytes with the
+envelope), `list_roles`, the roster, one `delegate` of the lead, one `wait` (459.6 s → done),
+`result`; no shell command, no loop step.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `46e6d4aa…` | lead | claude | claude-sonnet-5 | medium | 462 s | the loop, no ask; closing report through `result` |
+| `73f83ac5…` | planner | codex | gpt-6-luna | medium | 36 s | plan |
+| `eba563ca…` | plan-reviewer | grok | grok-4.7 | medium | 96 s | revise |
+| `fc53f286…` | planner (`resume`) | codex | gpt-6-luna | medium | 26 s | revised plan |
+| `b175523c…` | plan-reviewer (round 2) | grok | grok-4.7 | medium | 132 s | approve |
+| `54bfee1e…` | implementer | claude | claude-sonnet-5 | medium | 21 s | 98 → 101 tests |
+| `1d90f728…` | code-reviewer | grok | grok-4.7 (read-only, in the worktree) | medium | 57 s | ready, `90281e2` |
+
+`tools/e2e-verify.mjs --since 46e6d4aa… --slug t15-e7`: 8 pass, 0 fail, 0 without evidence. Depth
+and lineage: PASS. `result` = the result file byte for byte; the closing message opens with it;
+every specialist line in `cross-agent report`'s seven fields with its duration; `cross-agent report`
+renders all seven `passed`. Re-run under this configuration, E6's range (eleven records, cap 2) also
+reads 8 pass — a combined record check.
+
+### Depth, from the MCP server's position (Grok host)
+
+| host | processes from the server to pid 1 | row served |
+|---|---|---|
+| `grok` started with `setsid --fork` (A1, B0, B3, E6, E7) | 4 (`node`, `grok`, `systemd --user`, `init`) | operator |
+| the same, `CROSS_AGENT_DEPTH=1` exported and no task (`b4-depth1`) | 4 | specialist, five tools: "CROSS_AGENT_DEPTH present and no record matches" |
+| the same command from an agent session's own shell, no `setsid` | 11 (`node`, `grok`, `timeout`, `bash`, `claude`, `bash --posix`, `sh -c`, `ghostty`, `nautilus`, `systemd --user`, `init`) — 10 without the run's `timeout` wrapper | operator, fourteen tools |
+| Grok at a terminal; the desktop app | not run: the user's hands | — |
+
+### Probes
+
+- **The attach (A0–A2)**: no `--plugin-dir` on the headless `grok`; the project plugin path reads the
+  Claude manifest in place, skill and inline server; no `~` expansion in `paths`; the cap line;
+  `.grok/` kept out of git, since Grok takes a linked worktree as its own trusted project.
+- **I1 (B0)**: Claude no MCP tool; Codex nothing of ours (no `codex_apps` either); Grok exactly the
+  five, `delegate` never attempted, and the launcher skill offered to it at the root; the Grok
+  child's server served the specialist row with "its environment cannot be read" from inside
+  bubblewrap.
+- **I2 (B0) and the read-only row (B2)**: every outside write denied on all three; Claude and Grok
+  reach the network, Codex not (`curl: (6)`); Grok's pointer rewrite refused by `verify_worktree`; at
+  the root the read-only Grok child's cwd, `.git`, `$HOME` and sibling writes denied, `/tmp` and
+  `~/.grok` its exceptions, its network cut.
+- **A deny rule (B1, a driver run)**: gates a Grok child's calls to this server, does not hide the tools.
+- **The ten-minute wait (B3)**: 600.003 s by Grok's own record under its 6000 s default, intact.
+- **Environment (B4)**: Grok hands a stdio server the session's whole environment plus
+  `GROK_SESSION_ID`; layer 2 under a Grok host rests on that pass-through.
+- **The worktree mount (B5)**: a Grok specialist in a linked worktree mounts no server of ours, nor
+  gets the launcher skill, while `.grok/` is ignored: none of the three in worktrees listed the
+  skill, and all seven at the root did.
+- The operator's Claude Code plugin hooks run inside Grok children (the controller's bead).
+
+### The sample at close
+
+`dev-team-engine`, `limits.maxDepth` 2, the lead on claude/claude-sonnet-5, the planner on
+codex/gpt-6-luna, the plan reviewer and code reviewer on grok/grok-4.7 (the code reviewer read-only),
+the implementer and `consult` on claude/claude-sonnet-5, all at medium. `main` at `90281e2`, clean,
+the root worktree alone, 101 tests green; 40 records. `.grok/` ignored; `.grok/config.toml` repointed
+at the root checkout: `[plugins] paths = ["/home/wsh/Documents/agent-team-cli"]`, `enabled =
+["cross-agent"]`, `[mcp] max_output_bytes = 100000`; `grok mcp doctor cross-agent` reports fourteen
+tools.
+
+### Cost of the recorded runs
+
+$2.79 on the subscriptions: hosts $0.740 (two B4 hosts unrecorded), specialists $2.045 (E7 $1.086,
+E6 $0.291, B0 $0.533). Codex specialists 682,863 tokens in / 4,839 out. Fix round 1 and the wrap-up ran no engine.
+
+Note: `VERIFY.md`'s M2 line "Grok's `--prompt-file` fallback is `--help`-verified only (T15)" was
+answered before T15, by T13's E2BIG fix and 6b's A5 (`docs/probes.md#grokRulesBesidePromptFile`).
