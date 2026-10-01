@@ -566,6 +566,56 @@ test("an engine-placed lead's own delegate calls are its row's, below the effect
   assert.equal(verdict((await run(codexLead)).out, scan), "pass");
 });
 
+// E3's lead, trimmed from its archived transcript (`docs/probes.md#e3`): one `wait` call,
+// the three heartbeats Claude Code 2.1.286 wrote while it was in flight, verbatim, and the
+// call's result.
+const waitCall = "toolu_01LaxmRKeHQXzXSExFzkSdw1";
+const heartbeat = (beat: number, patch: Record<string, unknown> = {}, drop: string[] = []) => {
+  const event: Record<string, unknown> = {
+    type: "tool_progress", tool_use_id: `${waitCall}-heartbeat-${beat}`, tool_name: "mcp__cross-agent__wait",
+    parent_tool_use_id: waitCall, elapsed_time_seconds: 30 * (beat + 1), heartbeat: true,
+    session_id: "a2646510-2e81-48dc-8de7-03337657f559",
+    uuid: ["60f8d5c2-d5de-4464-aac8-acfba41cafa9", "d19e1ead-f65c-4e96-bd7b-5626080023dc", "fcdc0331-857f-4b15-a9fe-1a657ac73701"][beat],
+    ...patch,
+  };
+  for (const key of drop) delete event[key];
+  return JSON.stringify(event);
+};
+const waitedLead = (beats: string[]) => [
+  JSON.stringify({ type: "system", subtype: "init", session_id: "a2646510-2e81-48dc-8de7-03337657f559" }),
+  JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: waitCall, name: "mcp__cross-agent__wait", input: { task_id: "e564c7d923b8b3c8575feaef43b9e672c9a5", timeout_seconds: 600 } }] } }),
+  ...beats,
+  JSON.stringify({ type: "user", message: { role: "user", content: [{ tool_use_id: waitCall, type: "tool_result", content: [{ type: "text", text: '{"ok": true, "status": "done"}' }] }] } }),
+  JSON.stringify({ type: "result", subtype: "success", is_error: false }),
+].join("\n") + "\n";
+
+// @anchor claudeHeartbeat
+test("Claude Code's heartbeat for a call in flight is no call, in the shape E3 recorded and in no other", async (t) => {
+  const engine = { mode: "dev-team-engine", limits: { maxDepth: 2 } };
+  const recorded = await project(t, leadAndChild(waitedLead([heartbeat(0), heartbeat(1), heartbeat(2)])), engine);
+  const passed = await run(recorded);
+  assert.equal(verdict(passed.out, scan), "pass", passed.out);
+  assert.equal(passed.code, 0, passed.out);
+
+  // Every other shape of the event is one this build has not seen, and still a question.
+  for (const [why, beat] of [
+    ["not a heartbeat", heartbeat(0, { heartbeat: false })],
+    ["no heartbeat field", heartbeat(0, {}, ["heartbeat"])],
+    ["a field the recorded shape lacks", heartbeat(0, { input: { command: "claude -p hi" } })],
+    ["a recorded field missing", heartbeat(0, {}, ["uuid"])],
+    ["a parent no call of this transcript has", heartbeat(0, { parent_tool_use_id: "toolu_elsewhere", tool_use_id: "toolu_elsewhere-heartbeat-0" })],
+    ["a tool its parent call is not", heartbeat(0, { tool_name: "mcp__cross-agent__delegate" })],
+    ["an id that is not its parent's heartbeat", heartbeat(0, { tool_use_id: `${waitCall}-progress-0` })],
+    ["an elapsed time that is not a number", heartbeat(0, { elapsed_time_seconds: "30" })],
+  ] as const) {
+    const root = await project(t, leadAndChild(waitedLead([beat])), engine);
+    const { code, out } = await run(root);
+    assert.equal(verdict(out, scan), "?", `${why}: ${out}`);
+    assert.match(row(out, scan), /lead1: event this build cannot read \(tool_progress\)/, why);
+    assert.equal(code, 2, why);
+  }
+});
+
 // @anchor effectiveCap
 test("the effective cap is the lower of the mode's placement and the configured limit, which defaults to 1", async (t) => {
   // (iv) The config lowered the cap to 1: a lead at depth 1 is at the cap, which holds it

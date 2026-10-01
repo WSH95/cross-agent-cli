@@ -197,6 +197,24 @@ const knownEvents = new Set([
   "system", "assistant", "user", "result", "rate_limit_event", "error",
   "thread.started", "turn.started", "turn.completed", "turn.failed",
 ]);
+// One more event, read by its whole shape rather than its type: Claude Code 2.1.286's
+// heartbeat for a tool call still in flight, as E3's lead recorded six of them under its
+// `wait` calls (`docs/probes.md#e3`) — exactly these keys, `heartbeat: true`, an id that is
+// its parent's `-heartbeat-<n>`, and a parent that is a call of this transcript under the
+// same tool name. It carries no command, no input and no call of its own; the call it
+// reports on is judged as itself. Any other `tool_progress` is a shape this build has not
+// seen, and answers `?` as any unknown event does.
+const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "type", "uuid"];
+function recordedHeartbeat(event, calls) {
+  const keys = Object.keys(event).sort();
+  if (keys.length !== heartbeatKeys.length || keys.some((key, index) => key !== heartbeatKeys[index])) return false;
+  if (event.type !== "tool_progress" || event.heartbeat !== true) return false;
+  if (["parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "uuid"].some((key) => typeof event[key] !== "string")) return false;
+  if (typeof event.elapsed_time_seconds !== "number" || !Number.isFinite(event.elapsed_time_seconds) || event.elapsed_time_seconds < 0) return false;
+  const prefix = `${event.parent_tool_use_id}-heartbeat-`;
+  if (!event.tool_use_id.startsWith(prefix) || !/^\d+$/.test(event.tool_use_id.slice(prefix.length))) return false;
+  return calls.get(event.parent_tool_use_id) === event.tool_name;
+}
 // What counts as a launch is what the deny list denies (`src/guard.ts#denyTargets`): a
 // command whose word is `claude`, `codex`, `grok`, `cross-agent` or a binary this project
 // configured under `engines.<e>.bin`, and `node` running or loading `src/server.ts` or
@@ -288,6 +306,9 @@ for (const record of run) {
   const unknownItems = [];
   // Codex announces an item and completes it under one id: one call, however many lines.
   const seenItems = new Set();
+  // Every call a content block made, by its id: what a heartbeat names as its parent.
+  const callsById = new Map();
+  const heartbeats = [];
   let understood = 0;
   let unparsable = 0;
   for (const line of readFileSync(log, "utf8").split("\n")) {
@@ -295,12 +316,15 @@ for (const record of run) {
     let event;
     try { event = JSON.parse(line); } catch { unparsable++; continue; }
     if (typeof event !== "object" || event === null) { unparsable++; continue; }
+    // A heartbeat is judged once the whole transcript has been read, against its calls.
+    if (event.type === "tool_progress") { heartbeats.push(event); continue; }
     // Claude and Grok: `assistant` turns carrying content blocks.
     const content = event.message?.content;
     if (Array.isArray(content)) {
       understood++;
       for (const block of content) {
         if (block?.type !== "tool_use") continue;
+        if (typeof block.id === "string" && typeof block.name === "string") callsById.set(block.id, block.name);
         if (block.name === "use_tool") {
           // Grok's dispatcher: the tool it is dispatching to is the call.
           calls.push(block.input?.tool_name ?? block.input?.tool ?? block.input?.name);
@@ -335,6 +359,10 @@ for (const record of run) {
     // is closed: an unfamiliar top-level `type` is a shape this build has never seen, and
     // could be the very call the scan is looking for.
     if (knownEvents.has(event.type)) understood++;
+    else unknownItems.push(String(event.type));
+  }
+  for (const event of heartbeats) {
+    if (recordedHeartbeat(event, callsById)) understood++;
     else unknownItems.push(String(event.type));
   }
   // A Codex record's rollout: the commands and calls it shows attempted join the

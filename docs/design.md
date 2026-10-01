@@ -2733,7 +2733,12 @@ of its text — a Grok session's inherited slash commands include one called
 `delegate`, and the word proves nothing (`tools/e2e-verify.mjs`). That scan
 reads Claude's and Grok's `tool_use` blocks, Grok's `use_tool` dispatcher and
 Codex's `agent_message`, `command_execution` and `mcp_tool_call` items, and
-**nothing else**. I1's Codex row closed the last of those: a Codex MCP call is
+**nothing else** — but for one event it reads by its whole shape and passes as no
+call: Claude Code 2.1.286's heartbeat for a call still in flight, a `tool_progress`
+with `heartbeat: true`, exactly the keys E3's lead recorded, an id that is its
+parent's `-heartbeat-<n>`, and a parent that is a call of the same transcript under
+the same tool name (`docs/probes.md#e3`, `tests/e2e-verify.test.ts#claudeHeartbeat`);
+any other `tool_progress` still answers `?`. I1's Codex row closed the last of those: a Codex MCP call is
 an `mcp_tool_call` item whose `tool` field is this server's own name for the
 tool (`docs/probes.md#i1CodexTracked`, `tests/e2e-verify.test.ts#codexMcpItem`),
 and a Codex log carrying any other item type is still answered `?` rather than
