@@ -1008,7 +1008,8 @@ test("cancel cascades from a lead, leaves first and the lead last, and a second 
   // A second cancel settles nothing more: what the first cancelled is already cancelled, and
   // the child that had finished keeps its own status and its own bytes.
   fs.rmSync(seeded.brokenAsk);
-  const [again, againJson] = await runEach([["cancel", lead.id], ["cancel", lead.id, "--json"]], root);
+  const again = await run(["cancel", lead.id], root);
+  const againJson = await run(["cancel", lead.id, "--json"], root);
   assert.equal(again.code, 0, again.stderr);
   assert.equal(again.stderr, "");
   const lines = again.stdout.split("\n");
@@ -1091,9 +1092,8 @@ test("git runs one subcommand in the verified worktree as git_mutate does: 0 jou
   assert.match(status.stdout, new RegExp(`^journal: git ${head}→${head}$`, "m"));
 
   // git ran and failed: a 1, its own words printed, the answer whole under --json.
-  const [failed, failedJson] = await runEach([
-    ["git", slug, "--", "checkout", "no-such-ref"], ["git", slug, "--json", "--", "checkout", "no-such-ref"],
-  ], root);
+  const failed = await run(["git", slug, "--", "checkout", "no-such-ref"], root);
+  const failedJson = await run(["git", slug, "--json", "--", "checkout", "no-such-ref"], root);
   assert.equal(failedJson.code, 1);
   const refusal = JSON.parse(failedJson.stdout) as { ok: boolean; exitCode: number; stderr: string; reason: string };
   assert.equal(refusal.ok, false);
@@ -1253,4 +1253,72 @@ test("a verb that does not say it only reads is refused as a write inside a task
   assert.equal(taskMarker(verb(() => undefined) as never, parsed, inside), "CROSS_AGENT_DEPTH", "a rule that answers nothing is a write");
   // Outside a task's environment nothing is refused.
   assert.equal(taskMarker(verb() as never, parsed, {}), null);
+});
+
+// @anchor cliCancelStillActive
+test("a cancel that leaves a task of its cascade active exits 4, beside the ask file it could not read, and a second cancel finishes it", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, lead, runningChild, doneChild } = seeded;
+  const { find } = await import("../src/ledger.ts");
+  const { acquire, lockPath, recordLockName } = await import("../src/locks.ts");
+  const { listAsks } = await import("../src/mailbox.ts");
+  const [damaged] = listAsks(root).invalid;
+  // A writer holds the running child's record: the cascade's claim on it waits the project's
+  // one second and gives up, so the child is still running when the cascade is done.
+  const held = await acquire(lockPath(root, recordLockName(runningChild.id)), { operation: "a test holding the child's record", waitSeconds: 0 });
+  t.after(() => held.release());
+
+  const text = await run(["cancel", lead.id], root);
+  assert.equal(text.code, 4, text.stdout);
+  assert.equal(text.stderr, "", "a verdict, on stdout");
+  const lines = text.stdout.split("\n");
+  assert.ok(lines.some((line) => line.startsWith(`${runningChild.id} running — `) && line.includes("is held by another process")), text.stdout);
+  assert.ok(lines.includes(`${doneChild.id} already done`), text.stdout);
+  assert.equal(lines.indexOf(`${lead.id} cancelled`), 2, "the lead is settled last, whatever its children did");
+  assert.ok(lines.includes("asks cancelled: none"), text.stdout);
+  assert.ok(lines.includes(`ask not cancelled ${damaged.file}: ${damaged.reason.slice(`invalid ask ${damaged.file}: `.length)}`), text.stdout);
+  assert.equal(find(root, runningChild.id)!.status, "running");
+  assert.equal(find(root, lead.id)!.status, "cancelled");
+
+  const json = await run(["cancel", lead.id, "--json"], root);
+  assert.equal(json.code, 4, json.stdout);
+  const answer = JSON.parse(json.stdout) as { ok: boolean; outcomes: Array<{ id: string; outcome: string; reason?: string }>; asksNotCancelled: unknown };
+  assert.equal(answer.ok, true);
+  const still = answer.outcomes.find((entry) => entry.id === runningChild.id)!;
+  assert.equal(still.outcome, "running");
+  assert.match(still.reason!, /is held by another process \(waited 1s\)/);
+  assert.deepEqual(answer.outcomes.at(-1), { id: lead.id, outcome: "already cancelled" });
+  assert.deepEqual(answer.asksNotCancelled, [{ file: damaged.file, reason: damaged.reason }]);
+
+  // Released, the next cancel retries the task the cascade left and settles it.
+  await held.release();
+  const retried = await run(["cancel", lead.id, "--json"], root);
+  assert.equal(retried.code, 0, retried.stdout);
+  const settled = JSON.parse(retried.stdout) as typeof answer;
+  assert.deepEqual(settled.outcomes.find((entry) => entry.id === runningChild.id), { id: runningChild.id, outcome: "cancelled" });
+  assert.equal(find(root, runningChild.id)!.status, "cancelled");
+});
+
+// @anchor cliIdOutsideAlphabet
+test("an id no task file could have names no task: show, log and cancel answer 3 and write nothing", async (t) => {
+  const root = await bareRepository(t);
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const { create } = await import("../src/ledger.ts");
+  create(root, { role: "planner", brief: "seeded", cwd: root, engine: "claude", depth: 1 });
+  const state = path.join(root, ".cross-agent");
+  const before = snapshot(state);
+  for (const id of ["../tasks/x", "a.b", "x/y"]) {
+    const [show, showJson, log, logJson] = await runEach([["show", id], ["show", "--json", id], ["log", id], ["log", "--json", id]], root);
+    // `cancel` writes when it finds a task, so it runs on its own.
+    const cancel = await run(["cancel", id], root);
+    const cancelJson = await run(["cancel", "--json", id], root);
+    for (const [verb, text, json] of [["show", show, showJson], ["log", log, logJson], ["cancel", cancel, cancelJson]] as const) {
+      assert.equal(text.code, 3, `${verb} ${id}: ${text.stderr}`);
+      assert.equal(text.stdout, "", `${verb} ${id}`);
+      assert.equal(text.stderr, `cross-agent: no task ${id}\n`, `${verb} ${id}`);
+      assert.equal(json.code, 3, `${verb} --json ${id}`);
+      assert.deepEqual(JSON.parse(json.stdout), { ok: false, reason: `no task ${id}` }, `${verb} --json ${id}`);
+    }
+  }
+  assert.deepEqual(snapshot(state), before, "nothing under .cross-agent/ was written, no lock taken");
 });
