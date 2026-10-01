@@ -487,6 +487,55 @@ test("ping is answered while a slow tool call is pending", async () => {
   assert.equal(((slow.result as Json).content as Json[])[0].text, "slow done");
 });
 
+// @anchor linesSplitOnNewline
+test("stdin is split on newlines alone: U+2028 and U+2029 inside a string, and a CRLF ending, are one request each", async () => {
+  // JSON leaves both separators raw inside a string, and a brief carrying pasted text holds
+  // them; a reader that also broke lines there would hand the server three fragments, each
+  // answered -32700 with no id, and leave the client waiting on its own id for ever.
+  const received: unknown[] = [];
+  const server = createServer({
+    tools: [{
+      name: "echo",
+      description: "answers with the text it was given",
+      inputSchema: { type: "object", properties: { text: { type: "string" } } },
+      rows: ["operator"],
+      handler: (args) => {
+        received.push(args.text);
+        return { content: [{ type: "text", text: String(args.text) }] };
+      },
+    }],
+    authority: () => operator,
+  });
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const replies: Json[] = [];
+  output.setEncoding("utf8");
+  output.on("data", (chunk: string) => {
+    for (const line of chunk.split("\n")) if (line.trim()) replies.push(JSON.parse(line) as Json);
+  });
+  server.connect(input, output);
+
+  const separated = "before between after";
+  const request = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "echo", arguments: { text: separated } } });
+  // Sent raw, the way `JSON.stringify` writes them: nothing on this side escapes either.
+  assert.ok(request.includes(" ") && request.includes(" "), "the request carries both separators raw");
+  input.write(request + "\n");
+  await waitFor(() => replies.some((m) => m.id === 1));
+  assert.deepEqual(received, [separated], "the handler received the argument intact");
+  assert.equal((((replies.find((m) => m.id === 1) as Json).result as Json).content as Json[])[0].text, separated);
+  assert.equal(replies.some((m) => m.id === null), false, "no fragment of it was answered as a parse error");
+
+  // A request ending in CRLF is the same request.
+  input.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }) + "\r\n");
+  await waitFor(() => replies.some((m) => m.id === 2));
+  assert.deepEqual(replies.find((m) => m.id === 2), { jsonrpc: "2.0", id: 2, result: {} });
+
+  // A line that is not JSON is answered as one, and the next line on the connection is served.
+  input.write("not json\n" + JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }) + "\n");
+  await waitFor(() => replies.some((m) => m.id === 3));
+  assert.deepEqual(replies.filter((m) => m.id === null), [{ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }]);
+});
+
 // @anchor cancelledEndsWait
 test("notifications/cancelled ends the wait it names within 100ms, and the reply is still sent", async (t) => {
   const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });

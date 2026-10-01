@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { resolveAuthority } from "./authority.ts";
@@ -165,20 +164,44 @@ export function createServer(options: ServerOptions) {
     }
   }
 
+  /** One line of stdin, its `\r` already taken off: a message, or a parse error answered. */
+  function receive(line: string, output: Writable): void {
+    if (!line.trim()) return;
+    let message: Json;
+    try {
+      message = JSON.parse(line) as Json;
+    } catch {
+      output.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }) + "\n");
+      return;
+    }
+    void handle(message).then((reply) => {
+      if (reply) output.write(JSON.stringify(reply) + "\n");
+    });
+  }
+
+  // @anchor connectSplitsOnNewline
+  // A message is one line, and a line ends at `\n` alone. `node:readline` also ends one at
+  // U+2028 and U+2029, which JSON leaves raw inside a string: a brief carrying either
+  // arrived as fragments, each answered -32700 with no id, and its caller waited for ever
+  // (`atc-s96.59`). One trailing `\r` is taken off, so a CRLF client is still one message a
+  // line, and a last line with no newline is read when the stream ends, as readline did.
   function connect(input: Readable, output: Writable): void {
-    const lines = createInterface({ input, crlfDelay: Infinity });
-    lines.on("line", (line) => {
-      if (!line.trim()) return;
-      let message: Json;
-      try {
-        message = JSON.parse(line) as Json;
-      } catch {
-        output.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }) + "\n");
-        return;
+    let pending = "";
+    input.setEncoding("utf8");
+    input.on("data", (chunk: string) => {
+      pending += chunk;
+      let start = 0;
+      for (let newline = pending.indexOf("\n", start); newline !== -1; newline = pending.indexOf("\n", start)) {
+        const line = pending.slice(start, newline);
+        start = newline + 1;
+        receive(line.endsWith("\r") ? line.slice(0, -1) : line, output);
       }
-      void handle(message).then((reply) => {
-        if (reply) output.write(JSON.stringify(reply) + "\n");
-      });
+      pending = pending.slice(start);
+    });
+    input.on("end", () => {
+      const line = pending;
+      pending = "";
+      receive(line.endsWith("\r") ? line.slice(0, -1) : line, output);
     });
   }
 
