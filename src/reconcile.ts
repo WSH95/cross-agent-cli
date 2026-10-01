@@ -18,9 +18,16 @@ export interface Reconciled {
   /** Record files that could not be read, by name (design section 2, A4-a and E2). */
   invalid: InvalidRecord[];
   /**
-   * Records this pass could not judge: a group that would not die, a decision another
-   * writer overtook, an environment it could not read. Each keeps its status for the
-   * next pass, and one record's trouble never stops the others being judged.
+   * Per record, one of two kinds. A judgement this pass deferred, the record left as it
+   * was for the next pass: an engine group that would not die, an environment the scan
+   * could not read, an engine of this reconciler's own session, a launch decision another
+   * writer overtook, a judgement that threw. Or a diagnostic beside a write that applied,
+   * the record in `changed`: what the cleanup after the write could not finish, a stray
+   * the pass could not signal or an engine of its own session left running (`adopt`,
+   * `settleCancelled`). A `running`, `stalled` or `cancelling` record another writer
+   * moved on before the write is that writer's and is not reported (`judge`,
+   * `settleCancelled`), and one record's trouble never stops the others being judged
+   * (`judgeAll`).
    */
   errors: TaskError[];
 }

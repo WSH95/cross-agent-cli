@@ -4,9 +4,10 @@ One MCP server plus a launcher skill that run a team of headless `claude`,
 `codex`, and `grok` processes on your own subscriptions, each inside its own
 CLI's sandbox. A host is anything that can attach an MCP server and load a
 skill: Claude Code, Codex, and Grok today. What the team does is a **mode** —
-data, not code: the roles, the loop the lead runs, and a git policy — and the
-design builds in two, `dev-team`, the four-role worktree team (planner, plan
-reviewer, implementer, code reviewer), and `solo`, one consultant and no team.
+data, not code: the roles, the loop the lead runs, and a git policy — and three
+are built in: `dev-team`, the four-role worktree team (planner, plan reviewer,
+implementer, code reviewer); `dev-team-engine`, the same team with its loop in a
+lead the server launches; and `solo`, one consultant and no team.
 Every mode carries that consultant, and a project with no config at all runs as
 `solo` at its git toplevel, so a one-off delegation to another engine — read the
 code and answer, or take one change in a worktree of its own — costs no setup.
@@ -198,6 +199,14 @@ writes `enabled = true` again, so turn it off again after every reinstall. Do no
 `enabled = false` under `[mcp_servers.cross-agent]` while the plugin is installed:
 that declares a server with no command, and Codex then refuses to load its
 configuration at all.
+
+Codex writes to that file on its own as well: a session in a project with no trust
+entry adds `[projects."<path>"] trust_level = "trusted"` for it, with no prompt. A host
+session started as above did (`docs/probes.md`, "B3: a ten-minute wait under a Codex
+host"), and so does every Codex specialist the team runs in that project,
+`--ignore-user-config` notwithstanding (`docs/probes.md`, "I2 under a Codex host
+(B6)"). So a project the team has worked in is one Codex trusts afterwards, the
+entries outlive the repositories they name, and they are yours to delete.
 
 To remove it:
 
@@ -467,12 +476,14 @@ the permission matrix and it gets exactly that row — the four read tools plus
 `tools/call` by name and told why; and its own direct launches of `claude`,
 `codex`, `grok`, this server, or the CLI are denied at the Claude and Grok
 permission layers, while a Codex child cannot reach a model API at all
-because its sandbox denies the network. None of that is enforced at this
-commit: the depth reader, the lineage and duplicate checks, and the deny-list
-and exclusion argument builders exist in `src/guard.ts` under unit test, but
-the server registers no `delegate` and gates nothing, so the guard is still
-design rather than behaviour. A specialist that defeats its own CLI's
-permission rules is outside the guarantee.
+because its sandbox denies the network. All of it is built: the server
+resolves the row by ancestry on every request and offers exactly that row;
+`delegate` refuses a role its caller's lineage already holds in the same
+workspace, a duplicate of a delegation still running or finished within the
+window, and a resume that would change the task, and it hands every child its
+depth and lineage; and each engine's adapter puts the deny list and the
+exclusion flag its engine takes onto every spawn line it builds. A specialist
+that defeats its own CLI's permission rules is outside the guarantee.
 
 ## License
 

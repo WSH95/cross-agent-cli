@@ -1056,8 +1056,11 @@ Everything below is built, the operator CLI's listing among it
   reason}]`, each record's judgement runs inside its own boundary, and a record
   that could not be judged keeps its status for the next pass
   (`src/reconcile.ts#reconcile`): a group that survives SIGKILL, an EPERM from
-  `process.kill`, a decision another writer overtook. Those two are answers, not
-  exceptions, because **the escalation is one helper**: SIGTERM, a grace,
+  `process.kill`, a decision another writer overtook. A record whose write applied
+  but whose cleanup did not — a stray that could not be signalled, an engine of the
+  reconciler's own session left running — is in `changed`, with the trouble named
+  in `errors` (`src/reconcile.ts#adopt`, `#settleCancelled`). A surviving group and
+  an EPERM are answers, not exceptions, because **the escalation is one helper**: SIGTERM, a grace,
   SIGKILL, a shorter grace, written once as `terminate`
   (`src/process.ts#terminate`) and reached through `terminateGroup`
   (`#terminateGroup`). It never throws, and it **names** what it could not end:

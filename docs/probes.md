@@ -2779,7 +2779,13 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   `--append-system-prompt-file <path>` is accepted and honoured by the binary
   (P9). `--effort <level>`, "Effort level for the current session", read on
   this machine during T7; it is Claude's counterpart of Grok's
-  `--reasoning-effort` and no run has exercised it.
+  `--reasoning-effort` and no run has exercised it. Claude Code 2.1.286 refuses a
+  standalone foreground `sleep` in a headless child — "Blocked: standalone sleep
+  100. To wait for a condition, use Monitor with an until-loop" — and runs it in
+  the background instead, so a probe child that must stay busy for a measured
+  time goes to another engine: S11's B2 and T15's B3 each lost their first run to
+  it and gave the sleeper to Codex (`docs/probes.md#s11CodexLeadTimeout`,
+  `#grokToolTimeout`).
 <!-- @anchor cliCodex -->
 - **Codex 0.153.4** (`codex exec --help`, `codex exec resume --help`). `codex
   exec` takes `-c/--config <key=value>`, `-m/--model`, `-C/--cd <DIR>`,
