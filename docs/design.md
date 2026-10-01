@@ -756,7 +756,7 @@ Everything below is built, the operator CLI's listing among it
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
   writing a temporary file and renaming it (`src/ledger.ts#writeAtomic`);
   `<id>.ndjson` is the engine's native event stream, with lines the engine wrote
-  to stderr prefixed `stderr ` (`src/engines/spawn.ts:139`), not a verbatim tee;
+  to stderr prefixed `stderr ` (`src/engines/spawn.ts#stderrPrefixed`), not a verbatim tee;
   `<id>.out` is the final message; `<id>.runner.log` is the runner's own
   diagnostic trail (`src/runner.ts#runnerLog`). Ids are 18 random bytes in base64url
   (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
@@ -788,7 +788,7 @@ Everything below is built, the operator CLI's listing among it
   answered. There is **no launch token**: `create` writes none
   (`src/ledger.ts#create`), and a token on the *runner's* argv could not
   identify the engine anyway, because the engine is a separate detached spawn
-  with adapter-built argv (`src/engines/spawn.ts:229`, `:238`). Its two jobs are
+  with adapter-built argv (`src/engines/spawn.ts#adapterPlan`, `#detachedSpawn`). Its two jobs are
   done instead by two mechanisms that cannot be forged, and both are built:
   - **Identifying a stranded engine.** The engine carries
     `CROSS_AGENT_TASK=<id>` in its environment, and it is the **runner** that
@@ -1249,11 +1249,11 @@ Everything below is built, the operator CLI's listing among it
   `runner-<id>.lock`, whose whole purpose is an immediate failure, so the second
   runner takes it with a zero wait and exits.
 - **Bounded settlement.** `spawnEngine` settles on the child's `exit` plus a
-  bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts:254-267`)
-  and on `close` if that arrives first (`src/engines/spawn.ts:249`); on timeout
+  bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts#exitDrain`)
+  and on `close` if that arrives first (`src/engines/spawn.ts#closeSettles`); on timeout
   the data listeners are detached and the streams destroyed **before** the
   promise resolves, and the result carries `truncated: true`
-  (`src/engines/spawn.ts:258-265`). Settling on `close` alone hangs whenever a
+  (`src/engines/spawn.ts#drainExpired`). Settling on `close` alone hangs whenever a
   grandchild inherited stdout and holds it open: `handle.result` would never
   resolve and the task would stay `running` with no engine. Probe P3b records
   the shape of it — a nested `claude -p` still running when its parent's turn
@@ -1263,12 +1263,12 @@ Everything below is built, the operator CLI's listing among it
   stdout and stderr together, since a reader cannot tell which stream lost the
   tail; and finalisation happens exactly
   once, claiming the `settled` flag **before** the final flush
-  (`src/engines/spawn.ts:176-185`), so nothing entered twice and nothing after
+  (`src/engines/spawn.ts#completeOnce`), so nothing entered twice and nothing after
   the flush is read as a child still worth signalling, while a buffered partial
   line is still evidence and is flushed into the result. A stream or process
   error arriving after the result has resolved is recorded and returned to its
   own caller but never mutates the result the caller already holds
-  (`src/engines/spawn.ts:114-116`, `:225`) — a late error cannot rewrite a
+  (`src/engines/spawn.ts#lateError`, `#resolvedLatch`) — a late error cannot rewrite a
   delivered outcome. `SpawnResult.truncated` is persisted on the task record
   for every settlement (`src/runner.ts#evidence`) and appended to `reason` when the
   task failed (`src/runner.ts#truncatedReason`), so an operator reading a failure knows
@@ -1418,11 +1418,11 @@ engines the same way).
 Every adapter must apply the configured sandbox or refuse to spawn (fail
 closed); running without a sandbox requires a profile whose mode is `off`, and
 the refusal is thrown synchronously by the pipeline, before anything is planned
-or spawned (`src/engines/spawn.ts#spawnEngine`, `:79-83`).
+or spawned (`src/engines/spawn.ts#spawnEngine`, `#sandboxSupportCheck`).
 
 **The engine contract is adapter-owned and closed.** Flag knowledge is off
 `src/guard.ts`'s per-engine switches — where the comment that replaced them
-points at the contract instead (`src/guard.ts:120-121`) — and on
+points at the contract instead (`src/guard.ts#adapterOwnsFlags`) — and on
 `EngineAdapter` (`src/engines/types.ts#EngineAdapter`), which carries:
 
 - `sandboxProfiles: Record<string, SandboxMode>`
@@ -1496,23 +1496,25 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   `tests/engines/grok.test.ts#sandboxRefusalRun`), are invisible before the spawn
   and are not errors the engine reports in its stream, so the line is the
   verdict. The pipeline reads stderr for an adapter that declares this
-  and for no other (`src/engines/spawn.ts:92`, `:149-150`), so everywhere else
+  and for no other (`src/engines/spawn.ts#stderrParserBound`, `#parserForStream`), so everywhere else
   stderr stays log evidence and nothing more. Such an `error` event is **fatal**
-  — `ok` is false however the engine exited (`src/engines/spawn.ts:222`) —
+  — `ok` is false however the engine exited (`src/engines/spawn.ts#okVerdict`) —
   and it advances `lastEventAt` exactly as a stdout event does, deliberately: an
   engine whose every command dies in the sandbox is working, not stalled, and
   the stall detector must not be the thing that reports a failure the events
-  already carry (`src/engines/spawn.ts:163-166`). The pipeline records **one**
+  already carry (`src/engines/spawn.ts#stderrAdvancesClock`). The pipeline records **one**
   such event per run and stops asking after it, because a sandbox that engages
-  and then fails at its own setup repeats itself once per command; the latch is
-  the run's, not the adapter's, so `parseStderrLine` stays a pure function of
-  one line and a singleton adapter leaks nothing from one run into the next
-  (`src/engines/spawn.ts:105-107`, `:148`, `:162`).
+  and then fails at its own setup repeats itself once per command: the first
+  `error` event parsed from stderr sets a latch, and every stderr line after it
+  is skipped before the reader is asked, so it reaches the log and nothing
+  else. The latch is the run's, not the adapter's, so `parseStderrLine` stays a
+  pure function of one line and a singleton adapter leaks nothing from one run
+  into the next (`src/engines/spawn.ts#stderrFailedLatch`).
 - `finish?(rawStdout: string): EngineEvent[]`
   (`src/engines/types.ts#EngineAdapter`), for an engine whose output is one
   document at exit rather than a line stream. **No adapter declares it**, and
   the hook's only exercise is the fake engine's `grok-json` format
-  (`tests/fixtures/fake-engine.mjs:56-59`), which is the shape it exists for:
+  (`tests/fixtures/fake-engine.mjs#grokJsonFormat`), which is the shape it exists for:
   all three formats below are line streams, and a declared `finish` would only
   make the pipeline buffer raw stdout for a call with nothing to read
   (`tests/engines/claude.test.ts#claudeDeclaresFinish`, `tests/engines/codex.test.ts#codexDeclaresFinish`,
@@ -1520,9 +1522,9 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   built and tested all the same, because Grok's `json` mode is the fallback an
   adapter would need it for. The pipeline binds it once, before the spawn, and
   buffers raw stdout only for an adapter that declares it
-  (`src/engines/spawn.ts:90`, `:151`); it runs once at completion, after the
+  (`src/engines/spawn.ts#finishBound`, `#rawStdoutKept`); it runs once at completion, after the
   last byte and **before** `finalMessage`, and its events are appended, so a
-  late `session` or `result` still counts (`src/engines/spawn.ts:193-202`). A
+  late `session` or `result` still counts (`src/engines/spawn.ts#finishRuns`). A
   throwing `finish` is reported as this engine's error and the events parsed
   before it survive. `finalMessage(events, resultFileText)` then runs exactly as
   it did (`src/engines/types.ts#EngineAdapter`).
@@ -1538,7 +1540,7 @@ rather than trusts. The pipeline refuses a request whose `engine` is not the
 adapter the runner imported — otherwise the map the mode comes from would
 describe one engine while another builds the argv — then re-derives the mode
 and refuses a pair whose halves disagree, and only then keys the fail-closed
-check on the derived mode (`src/engines/spawn.ts:67-83`). The reservation
+check on the derived mode (`src/engines/spawn.ts#spawnChecks`). The reservation
 re-derives the same way and frees a workspace only when the carried mode and the
 derived mode both say `read-only` (`src/reservation.ts#reservesWorkspace`,
 section 2). So neither the pipeline nor the reservation rule has to know any
@@ -1556,7 +1558,7 @@ no change for it: each uses `scratchDir` as it is given. `SpawnPlan` carries the
 `files` an adapter's argv points at (`src/engines/types.ts#SpawnPlan`); the
 pipeline writes them, parents included and mode `0600`, before the spawn, and a
 file it cannot write is a launch failure with nothing spawned
-(`src/engines/spawn.ts:230-236`, `:269-272`). `LaunchSpec` is
+(`src/engines/spawn.ts#planFiles`, `#launchError`). `LaunchSpec` is
 `Omit<SpawnRequest, "logPath" | "resultPath">` (`src/ledger.ts#LaunchSpec`), so
 every one of those fields reaches the detached runner without a second shape to
 keep in step.
@@ -1683,7 +1685,7 @@ which is a property of the line, not of the pipeline.
   "Prerequisites on Linux" says how to set them up, beside Grok's own. The adapter
   answers the two failure modes in the two places each can be seen:
   `sandboxSupport()` names whichever of `bwrap` and `socat` is missing from
-  `PATH` before the spawn (`src/engines/claude.ts:28-35`), and
+  `PATH` before the spawn (`src/engines/claude.ts#claudeSandboxSupport`), and
   `parseStderrLine` turns the
   "Sandbox disabled" warning and the `apply-seccomp` message of a sandbox that
   engages but cannot start any command into a fatal `error` event during the
@@ -1815,10 +1817,10 @@ which is a property of the line, not of the pipeline.
   stays a fallback beside `json`, which remains the whole-output fallback for
   an adapter that declares `finish`; neither is sufficient on its own, because
   Grok's `json` mode prints one object at the end and nothing before it, which
-  leaves `lastEventAt` null for the whole run (`src/engines/spawn.ts:158-166`
+  leaves `lastEventAt` null for the whole run (`src/engines/spawn.ts#parsedEvent`
   advances it only on a parsed event) and so makes every Grok task look
   stalled and `check` show nothing. That shape is the fake engine's
-  `grok-json` format (`tests/fixtures/fake-engine.mjs:56-59`, `:95-97`,
+  `grok-json` format (`tests/fixtures/fake-engine.mjs#grokJsonFormat`, `#grokJsonResult`,
   `tests/spawn.test.ts#grokJsonFormat`), and it is what the pipeline's `finish` tests are
   run against, because it is the case the hook exists for
   (`tests/spawn.test.ts#declaredFinishCalled`, `#adapterDeclaresFinish`). `--effort` is an alias of
@@ -3153,7 +3155,7 @@ with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
   3: the runner imports that path unsandboxed and only its absoluteness is
   validated.
 - **An engine `doctor` / preflight** (`atc-s96.28`). The sandbox-or-refuse
-  rule already fails closed at spawn time (`src/engines/spawn.ts:80-83`), so a
+  rule already fails closed at spawn time (`src/engines/spawn.ts#sandboxSupportCheck`), so a
   preflight would report the same refusal one step earlier and could go stale
   between the two.
 - **`openmaus.package` as an import format.** Not planned: native modes only,
@@ -3223,16 +3225,16 @@ reason), and the loop-guard scope as a hard requirement.
    chosen by `FAKE_ENGINE_FORMAT`; `FAKE_ENGINE_SCRIPT` selects `ok`, `fail`,
    `stall`, `stall-ignore-term`, or the `quiet-then-active` T11 added for the
    stall detector — silent, then its format's lines, then alive and silent
-   again before a normal finish (`tests/fixtures/fake-engine.mjs:3-5`, `:28`,
-   `:63`). Its `grok` format emitted nothing until a final whole-output
+   again before a normal finish (`tests/fixtures/fake-engine.mjs#fakeEngineScripts`, `#quietThenActive`,
+   `#lingerAfterOutput`). Its `grok` format emitted nothing until a final whole-output
    object — Grok's `json` mode — until **T9
    rewrote it to the `streaming-messages-json` shape** P8 adopted, which is the
    `claude` case's lines with a Grok `system/init`
-   (`tests/fixtures/fake-engine.mjs:45-55`, `:86-94`); a fixture that cannot
+   (`tests/fixtures/fake-engine.mjs#grokFormat`, `#grokResult`); a fixture that cannot
    produce the adopted format cannot test the adapter that parses it. The
    whole-output shape stayed, as a fifth format `grok-json`, because the
    pipeline's `finish` tests need an engine that says nothing until exit
-   (`tests/fixtures/fake-engine.mjs:56-59`, `:95-97`). `tools/probe.mjs`, a
+   (`tests/fixtures/fake-engine.mjs#grokJsonFormat`, `#grokJsonResult`). `tools/probe.mjs`, a
    standalone harness that spawns one engine with the section 3 argv (no
    server, no runner) so the probes do not wait on feature tasks. It stays a
    manual tool, but not a second builder: round 1 of T13 moved it onto the

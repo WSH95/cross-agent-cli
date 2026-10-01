@@ -124,6 +124,7 @@ export function denyTargets(config: CrossAgentConfig, repoRoot: string): string[
   ];
 }
 
+// @anchor adapterOwnsFlags
 // The deny and exclusion argv each engine needs are its adapter's: `denyArgs(targets)`
 // and `exclusionArgs()` on `EngineAdapter` (design section 3).
 

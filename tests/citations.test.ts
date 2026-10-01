@@ -444,6 +444,44 @@ test("a comment marker or backtick inside a string, a line comment or a regular 
   assert.match(err, /5 citations in 1 file \(0 by line, 5 by symbol\); 0 misses/);
 });
 
+// The two limits the checker's header names, pinned as they are: a lexer that learns
+// either shape fails its test here, and the header changes with it.
+// @anchor lexerContinuedString
+test("a string continued by a trailing backslash is read as ending with its line, so a declaration inside it counts", async (t) => {
+  const dir = await rootWith(t, {
+    "continued.ts": [
+      "const text = \"start \\",
+      "export function inside() {}\";",
+      "export function after() {}",
+      "",
+    ].join("\n"),
+    "doc.md": "Inside the string (`continued.ts#inside`) and after it (`#after`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 0, out);
+  assert.match(err, /2 citations in 1 file \(0 by line, 2 by symbol\); 0 misses/);
+});
+
+// @anchor lexerRegexAfterParen
+test("a regular expression right after ) is read as a division, so a backtick inside it hides declarations until the next backtick", async (t) => {
+  const dir = await rootWith(t, {
+    "regex.ts": [
+      "if (ok) /`/.test(s);",
+      "export function hidden() {}",
+      "// a lone ` here ends what the regular expression opened",
+      "export function seen() {}",
+      "",
+    ].join("\n"),
+    "doc.md": "Hidden (`regex.ts#hidden`) and seen (`#seen`).\n",
+  });
+  const { code, out, err } = await run(["--root", dir, path.join(dir, "doc.md")]);
+  assert.equal(code, 1);
+  const lines = out.trim().split("\n");
+  assert.equal(lines.length, 1, out);
+  assert.match(lines[0], /doc\.md:1: regex\.ts#hidden — no such symbol$/);
+  assert.match(err, /2 citations in 1 file \(0 by line, 2 by symbol\); 1 miss$/m);
+});
+
 test("a fenced code block is not scanned, so an example citation is not a miss", async (t) => {
   const doc = await docWith(t, "Example:\n\n```\nsee `src/nowhere.ts:99999`\n```\n\nback to prose.\n");
   const { code, out } = await run([doc]);

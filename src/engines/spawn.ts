@@ -64,6 +64,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   // two are compared before anything is planned or spawned. The spec's engine must also
   // be the adapter module the runner imported, or the map the mode is derived from would
   // describe one engine while another builds the argv.
+  // @anchor spawnChecks
   if (request.engine !== adapter.name) {
     throw new Error(`${adapter.name} spawn refused: the launch spec names engine ${JSON.stringify(request.engine)}`);
   }
@@ -77,6 +78,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     throw new Error(`${adapter.name} sandbox refused: profile ${JSON.stringify(request.sandbox.profile)} is ${declared}, not ${request.sandbox.mode}`);
   }
   // Only a profile that maps to `off` may run without a sandbox.
+  // @anchor sandboxSupportCheck
   if (declared !== "off") {
     const support = adapter.sandboxSupport(request.env);
     if (!support.ok) throw new Error(`${adapter.name} sandbox refused: ${support.reason}`);
@@ -87,8 +89,10 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   // nothing, and its bytes are the log's alone. `parseStderrLine` is bound here for the
   // same reason and read the same way: an engine that writes a fatal line to stderr rather
   // than into its event stream declares it, and stderr is parsed for no other adapter.
+  // @anchor finishBound
   const finish = adapter.finish?.bind(adapter);
   const parseLine = adapter.parseLine.bind(adapter);
+  // @anchor stderrParserBound
   const parseStderrLine = adapter.parseStderrLine?.bind(adapter);
   const rawStdout: Buffer[] = [];
   const events: EngineEvent[] = [];
@@ -102,6 +106,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   let resolved = false;
   let stopping = false;
   let truncated = false;
+  // @anchor stderrFailedLatch
   // Per run, and only here: the adapters are pure functions of one line, so the latch that
   // keeps one sandbox failure from becoming hundreds of events belongs to the run.
   let stderrFailed = false;
@@ -111,6 +116,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
 
   function failure(source: string, error: unknown): string {
     const text = `${adapter.name} ${source}: ${error instanceof Error ? error.message : String(error)}`;
+    // @anchor lateError
     // The caller already holds the result: a late error cannot change what it holds. The
     // listeners stay attached, so it is still handled rather than thrown at the process.
     if (resolved) return text;
@@ -136,6 +142,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     if (!accepting) return;
     if (log !== undefined) {
       try {
+        // @anchor stderrPrefixed
         appendFileSync(log, stderr ? Buffer.concat([Buffer.from("stderr "), raw]) : raw);
       } catch (error) {
         failure("writing log", error);
@@ -146,8 +153,10 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     // command the engine tries, so the stderr reader is asked only until it reports a
     // failure: after that the run is already failed and the repetition is the log's alone.
     if (stderr && stderrFailed) return;
+    // @anchor parserForStream
     const parse = stderr ? parseStderrLine : parseLine;
     if (parse === undefined) return;
+    // @anchor rawStdoutKept
     if (!stderr && finish !== undefined) rawStdout.push(raw);
     let end = raw.length;
     if (raw[end - 1] === 10) {
@@ -155,11 +164,13 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
       if (raw[end - 1] === 13) end--;
     }
     try {
+      // @anchor parsedEvent
       const event = parse(raw.toString("utf8", 0, end));
       if (event !== null) {
         events.push(event);
         if (event.kind === "session" && sessionId === null) sessionId = event.sessionId;
         if (stderr && event.kind === "error") stderrFailed = true;
+        // @anchor stderrAdvancesClock
         // A stderr event advances lastEventAt exactly like a stdout one, deliberately: an
         // engine whose every command dies in the sandbox is working, not stalled, and the
         // stall detector must not be the thing that reports a failure the events already do.
@@ -173,6 +184,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
   const stdout = lineBuffer((raw) => record(raw, false));
   const stderr = lineBuffer((raw) => record(raw, true));
 
+  // @anchor completeOnce
   function complete(exitCode: number | null, signal: NodeJS.Signals | null) {
     if (settled) return;
     // Settled first, so nothing here can be entered twice and nothing here reads as a
@@ -190,6 +202,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     // The document the run was, read once, after the last byte of it and before the final
     // message is extracted: a session or a result that only the whole output carries is
     // still this run's, and still counts as evidence.
+    // @anchor finishRuns
     if (finish !== undefined) {
       try {
         for (const event of finish(Buffer.concat(rawStdout).toString("utf8"))) {
@@ -219,22 +232,27 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
       failure("writing result", error);
     }
     resolve({
+      // @anchor okVerdict
       ok: exitCode === 0 && signal === null && !events.some((event) => event.kind === "error"),
       exitCode, signal, sessionId, events, finalMessage, lastEventAt, truncated,
     });
+    // @anchor resolvedLatch
     resolved = true;
   }
 
   try {
+    // @anchor adapterPlan
     const plan = adapter.plan(request);
     // The adapter builds argv and names the files that argv points at; the pipeline puts
     // them in place, parents included, and invents no path of its own.
+    // @anchor planFiles
     for (const file of plan.files ?? []) {
       mkdirSync(path.dirname(file.path), { recursive: true });
       // A lead's mount config and a role prompt are this task's alone.
       writeFileSync(file.path, file.contents, { mode: 0o600 });
     }
     log = openSync(request.logPath, "a");
+    // @anchor detachedSpawn
     child = (options.spawn ?? spawn)(plan.bin, plan.argv, { cwd: plan.cwd, env: plan.env, detached: true });
     pid = child.pid;
     child.on("error", (error) => { failure("launch/process error", error); });
@@ -246,15 +264,18 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     child.stderr.on("error", (error) => { failure("stderr error", error); });
     child.stdin.on("error", (error) => { failure("stdin error", error); });
     // close follows exit and the closure of all stdio streams.
+    // @anchor closeSettles
     child.once("close", complete);
     // A descendant that inherited stdout holds those streams open for as long as it
     // lives, so close alone can never arrive (probe P3b). Exit starts a bounded drain
     // for the real tail; when it expires the streams are detached and destroyed before
     // the result is built, and the result says the evidence may be incomplete.
+    // @anchor exitDrain
     child.once("exit", (code, signal) => {
       drain = setTimeout(() => {
         const streams = child;
         if (settled || streams === undefined) return;
+        // @anchor drainExpired
         truncated = true;
         streams.stdout.off("data", stdout.write);
         streams.stdout.off("end", stdout.flush);
@@ -267,6 +288,7 @@ export function spawnEngine(adapter: EngineAdapter, request: SpawnRequest, optio
     });
     child.stdin.end(plan.stdin ?? "");
   } catch (error) {
+    // @anchor launchError
     failure("launch error", error);
     if (!child) complete(null, null);
   }

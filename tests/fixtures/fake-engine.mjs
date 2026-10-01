@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // A stand-in for a headless engine CLI. Records its invocation and stdin.
+// @anchor fakeEngineScripts
 //   FAKE_ENGINE_SCRIPT: ok (default) | fail | stall | stall-ignore-term |
 //     quiet-then-active (silent for FAKE_ENGINE_QUIET_MS, then its format's lines,
 //     then alive for FAKE_ENGINE_LINGER_MS before finishing as `ok` does)
@@ -25,6 +26,7 @@ const sessionId = `fake-${process.pid}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Number(ms)));
 // An engine the stall detector can read: nothing at all while a stall threshold passes,
 // then the lines below, then silence again while it is still alive and working.
+// @anchor quietThenActive
 if (script === "quiet-then-active") await sleep(process.env.FAKE_ENGINE_QUIET_MS ?? 3000);
 switch (format) {
   case "generic":
@@ -42,6 +44,7 @@ switch (format) {
     emit({ type: "turn.started" });
     emit({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "working" } });
     break;
+  // @anchor grokFormat
   case "grok":
     // `--output-format streaming-messages-json`, the format P8 adopted: NDJSON in the
     // Anthropic Messages API wire shape, so these are the `claude` case's lines. The
@@ -53,6 +56,7 @@ switch (format) {
       type: "message", role: "assistant", content: [{ type: "text", text: "working" }],
     } });
     break;
+  // @anchor grokJsonFormat
   case "grok-json":
     // Grok's `json` mode, which emits nothing until the final whole-output object: the
     // fallback for an adapter that declares `finish`.
@@ -60,6 +64,7 @@ switch (format) {
   default:
     throw new Error(`Unknown FAKE_ENGINE_FORMAT: ${format}`);
 }
+// @anchor lingerAfterOutput
 if (script === "quiet-then-active") await sleep(process.env.FAKE_ENGINE_LINGER_MS ?? 4000);
 if (script === "stall" || script === "stall-ignore-term") {
   if (script === "stall") process.on("SIGTERM", () => process.exit(143));
@@ -83,6 +88,7 @@ if (script === "stall" || script === "stall-ignore-term") {
         emit({ type: "turn.completed" });
       }
       break;
+    // @anchor grokResult
     case "grok":
       // Success and failure close down one path. A failed turn's message is in `errors`
       // and it carries no `result` field at all (P8).
@@ -92,6 +98,7 @@ if (script === "stall" || script === "stall-ignore-term") {
         : { type: "result", subtype: "success", is_error: false, duration_ms: 1, num_turns: 2,
           result: text, session_id: sessionId });
       break;
+    // @anchor grokJsonResult
     case "grok-json":
       process.stdout.write(JSON.stringify({ text, stopReason: failed ? "error" : "end_turn", sessionId }, null, 2) + "\n");
       break;

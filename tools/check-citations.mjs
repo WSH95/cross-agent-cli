@@ -18,6 +18,15 @@
 // comment or a template, and skips quotes, line comments and regular
 // expressions within a line. It is a lexical scan over lines, not a parse, so
 // a backtick inside a string inside `${…}` still reads as the template's end.
+// Two more limits come from reading one line at a time, and the tests pin both
+// as they are. A string literal continued onto the next line by a trailing
+// backslash is read as ending with its line, so the continued text is scanned
+// as code and a declaration-shaped line inside it counts as a symbol: a false
+// pass. A slash right after `)` is read as a division, so a regular expression
+// there (`if (ok) /…/.test(s)`) is scanned as code, and a backtick inside it
+// opens a template and hides every declaration until the next backtick: a
+// false miss. And an anchor comment counts only on a line of its own; one that
+// trails a statement is not read.
 //
 // It cannot check that the cited code says what the sentence claims. A
 // citation that still lands inside the file but now points at a different

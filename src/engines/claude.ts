@@ -25,6 +25,7 @@ const claude = {
    * that half is caught. No other platform's sandbox has been observed, so none is refused
    * here; the engine refuses on its own if its sandbox cannot start.
    */
+  // @anchor claudeSandboxSupport
   sandboxSupport(env: Readonly<NodeJS.ProcessEnv>): { ok: true } | { ok: false; reason: string } {
     if (process.platform !== "linux") return { ok: true };
     // The spawn's own PATH, not this process's: the child is what has to find them.
