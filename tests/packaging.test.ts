@@ -119,9 +119,13 @@ test("the Codex manifest starts this server through a launcher in the plugin's o
       // (probe B1). So the server starts in the plugin's own directory through a launcher there.
       command: "./.codex-plugin/serve",
       cwd: ".",
-      // From the plugin's directory no project can be discovered, so the operator names it in
-      // `CROSS_AGENT_PROJECT`, which Codex passes on only by name.
-      env_vars: ["CROSS_AGENT_PROJECT"],
+      // Codex hands a stdio server only the variables named here, beyond seven of its own. From
+      // the plugin's directory no project can be discovered, so the operator names it in
+      // `CROSS_AGENT_PROJECT`. A task's markers are named too: a Codex session started inside
+      // a task — a suite `run_command` runs carries `CROSS_AGENT_DEPTH` — hands them to its
+      // server, which then serves the specialist row (design section 5, layer 2). A clean
+      // shell has none to hand on (docs/probes.md#codexMarkers).
+      env_vars: ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"],
       // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
       default_tools_approval_mode: "approve",
       startup_timeout_sec: 30,
@@ -184,16 +188,18 @@ test("the Claude and Codex manifests agree on the plugin's name, version, descri
 });
 
 // @anchor codexFallbackSnippet
-test("the Codex fallback is the table codex mcp add writes plus its two keys, and the README installs, checks and removes both attaches", () => {
+test("the Codex fallback is the table codex mcp add writes plus the plugin mount's three keys, and the README installs, checks and removes both attaches", () => {
   const file = path.join(repoRoot, "assets", "codex", "mcp_servers.toml");
   assert.ok(fs.existsSync(file), "assets/codex/mcp_servers.toml is missing");
   // `codex mcp add cross-agent -- node <repo>/src/server.ts` writes the first three lines; the
-  // other two are what a `wait` and `codex exec` need, as in the plugin's mount.
+  // other three are the plugin mount's: the names Codex hands on, so that a session started
+  // inside a task hands its server the task's markers, and what a `wait` and `codex exec` need.
   const lines = fs.readFileSync(file, "utf8").split("\n").filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
   assert.deepEqual(lines, [
     "[mcp_servers.cross-agent]",
     'command = "node"',
     'args = ["<repo>/src/server.ts"]',
+    'env_vars = ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]',
     "tool_timeout_sec = 3600",
     'default_tools_approval_mode = "approve"',
   ]);

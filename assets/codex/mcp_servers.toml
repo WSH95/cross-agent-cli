@@ -1,11 +1,15 @@
 # cross-agent for Codex without the plugin (README, "Install it in Codex"): the table
 # `codex mcp add cross-agent -- node <repo>/src/server.ts` writes into ~/.codex/config.toml,
-# plus the two keys it does not write. Pasting this whole table, with <repo> replaced by the
+# plus the three keys it does not write. Pasting this whole table, with <repo> replaced by the
 # checkout's absolute path, replaces the `codex mcp add`. With no `cwd` the server starts in
 # the session's directory and finds the project from there, as under Claude Code.
 [mcp_servers.cross-agent]
 command = "node"
 args = ["<repo>/src/server.ts"]
+# Codex hands a stdio server only the variables named here, beyond seven of its own: the
+# project an operator names, and a task's markers, so that a session started inside a task
+# (a suite `run_command` runs carries CROSS_AGENT_DEPTH) serves the specialist row.
+env_vars = ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]
 # One `wait` is a 600 s call, and Codex gives an MCP call 60 s unless the server says otherwise.
 tool_timeout_sec = 3600
 # `codex exec` refuses every tool call that would ask for approval.
