@@ -1,0 +1,20 @@
+{
+  "name": "agent-team-cli",
+  "interface": {
+    "displayName": "agent-team-cli"
+  },
+  "plugins": [
+    {
+      "name": "cross-agent",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

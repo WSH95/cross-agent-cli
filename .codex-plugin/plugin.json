@@ -1,0 +1,17 @@
+{
+  "name": "cross-agent",
+  "version": "0.0.1",
+  "description": "Run headless claude, codex, and grok processes as a team: one MCP server plus a launcher skill, with the roles, the lead loop and the git policy kept as modes",
+  "author": { "name": "agent-team-cli" },
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "mcpServers": {
+    "cross-agent": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/src/server.ts"],
+      "default_tools_approval_mode": "approve",
+      "startup_timeout_sec": 30,
+      "tool_timeout_sec": 3600
+    }
+  }
+}
