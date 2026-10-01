@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T05:58:58Z
+updated_at: 2026-10-01T07:35:41Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -58,10 +58,14 @@ for S11), `.60` (verifier shapes outside its classes).
 
 S11 (`atc-s96.24`, with `.59`) is implemented on the task branch — fifteen
 commits `886ae9f..fd2da3d` (695 tests, 694 pass, 1 skipped; citations clean)
-— and is in code review; report `task-7-report.md`. E3 (Claude lead) and E2
-(Codex lead) each gave the verifier 7 pass and a `?` that a person read as no
-launch; the sample (`~/.cache/agent-team/cross-agent-e2e/slugkit`) is clean on
-its `main` at `a832c1b`, left in `dev-team-engine` (T14 switches it for E4).
+— then fix round 1, nine commits to `457bb26` (702 tests, 701 pass, 1 skipped):
+the launcher's host-loop paragraphs are host placement's, unreadable asks are
+refused, `answer` needs a config, and two more Codex-lead host runs (E2b, E2c)
+closed E2's host clause; round 2 of the reviews is running (report
+`task-7-report.md`). Every E-run gave the verifier 7 pass and a `?` a person
+read as no launch. The sample (`~/.cache/agent-team/cross-agent-e2e/slugkit`)
+is clean on its `main` at `15e9f4e`, left in `dev-team-engine` (T14 switches it
+for E4). Grok updated itself to 1.0.46.
 T16, T14 and T15's briefs are plan-reviewed and wait for their predecessors.
 
 ## Next steps

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T07:35:41Z — claude
+[auto-checkpoint] [auto-checkpoint] S11 fix round 1 landed (fd2da3d..457bb26; 702/701/1); E2b/E2c closed E2's host clause; round-2 reviews running.
+
 ### 2026-10-01T05:58:58Z — claude
 [auto-checkpoint] [auto-checkpoint] S11 implemented (886ae9f..fd2da3d; 695/694/1; E3 and E2 7 pass + person-read ?); code review round 1 running.
 
