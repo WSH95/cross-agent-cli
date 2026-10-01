@@ -2654,13 +2654,26 @@ rollout is read as JavaScript rather than searched: the literal it hands
 `exec_command` as `cmd`, or `write_stdin` as `chars`, is the command, escapes
 decoded; a command the script computes, a script that does not lex, and any other
 string or comment in it that reads as a launch answer `?`
-(`tests/e2e-verify.test.ts#codexScriptRead`). Whether a command is a
-launch is a shell's question, so a small tokenizer answers it rather than a
-pattern: simple commands at operators and substitutions, quotes and escapes
-honoured, assignments, reserved words and exec wrappers passed over with their
-options' operands, the command word deciding, and `-c` payloads, `eval`, `find
--exec`, `xargs` and `ssh` judged recursively; an engine named inside an
-interpreter's inline code answers `?` (`tests/e2e-verify.test.ts#inlineCodeUnjudged`).
+(`tests/e2e-verify.test.ts#codexScriptRead`).
+
+Whether a command is a launch is a shell's question, and the scan's contract for
+it is that **`pass` requires positive understanding**: a command line passes only
+when every construct on it is one the grammar models and the grammar finds no
+launch. The grammar decodes and judges what it models — simple commands at
+operators; quotes, escapes and `$'…'`; substitutions wherever they stand, inside
+`${…}`, `$((…))`, double quotes and unquoted heredocs; heredocs, here-strings and
+pipes feeding a shell; exec wrappers, shells, interpreters and node, their options
+walked letter by letter; ssh's command-carrying options; busybox's applets;
+function definitions (`tests/e2e-verify.test.ts#nestedSubstitutions`,
+`#optionWalk`, `#functionDefinitions`) — and its data-only command words pass
+whatever they print or search for. Anything outside it, on a line where an
+engine's name or a configured binary appears as a word, answers `?` and names the
+construct: a command word it does not model or one an expansion supplies, an option
+a walk cannot read, an unterminated quote or substitution
+(`#commandWordsModeled`). A line that names no engine has nothing of one to hide,
+and passes. An engine named inside an interpreter's inline code answers `?`
+(`#inlineCodeUnjudged`), and a script file a shell or an interpreter runs is not
+read.
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three

@@ -743,6 +743,157 @@ test("an engine named inside an interpreter's inline code is answered with a que
   assert.equal(verdict((await run(quiet)).out, scan), "pass");
 });
 
+/**
+ * The scan's answer for each command, one fixture project per command and four verifiers at
+ * a time: the verdict word, the scan's whole line and the exit status.
+ */
+async function scanEach(t: TestContext, commands: readonly string[]): Promise<Array<{ verdict: string; line: string; code: number }>> {
+  const answers: Array<{ verdict: string; line: string; code: number }> = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < commands.length) {
+      const k = next++;
+      const { code, out } = await run(await project(t, { claude: claudeLog(commands[k]) }));
+      answers[k] = { verdict: verdict(out, scan), line: row(out, scan), code };
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  return answers;
+}
+
+/** Each command judged as `expected` says: "FAIL" for a launch, "pass", or "?". */
+async function judgedAs(t: TestContext, rows: ReadonlyArray<readonly [string, "FAIL" | "pass" | "?"]>) {
+  const answers = await scanEach(t, rows.map(([command]) => command));
+  rows.forEach(([command, expected], k) => {
+    assert.equal(answers[k].verdict, expected, `${command}\n${answers[k].line}`);
+    assert.equal(answers[k].code, { FAIL: 1, pass: 0, "?": 2 }[expected], `${command}\n${answers[k].line}`);
+  });
+}
+
+// @anchor nestedSubstitutions
+test("a substitution nested in an expansion or a heredoc is judged, and a shell's stdin is its script", async (t) => {
+  // Bash runs a `$(…)` or backtick wherever it stands — inside `${…}` and `$((…))`, inside
+  // double quotes, in an unquoted heredoc's body — and a shell reads its stdin as a script,
+  // from a heredoc, a here-string or a pipe; `$'…'` is a quote bash decodes (6b-R2-1).
+  await judgedAs(t, [
+    ["echo ${unset:-$(claude -p hi)}", "FAIL"],
+    ['echo "${unset:-$(claude -p hi)}"', "FAIL"],
+    ["echo ${var:-`claude`}", "FAIL"],
+    ["echo $(( $(claude) + 1 ))", "FAIL"],
+    ['echo "$(( $(claude -p hi) + 1 ))"', "FAIL"],
+    ["echo $((1 + $(claude)))", "FAIL"],
+    ["cat <<EOF\n$(claude -p hi)\nEOF", "FAIL"],
+    ["cat <<EOF\n`claude -p hi`\nEOF", "FAIL"],
+    ["cat <<'EOF' | bash\nclaude -p hi\nEOF", "FAIL"],
+    ["bash -s -- arg <<'EOF'\nclaude -p hi\nEOF", "FAIL"],
+    ["echo 'claude -p hi' | bash", "FAIL"],
+    ["printf 'claude -p hi\\n' | sh", "FAIL"],
+    ["bash <<< $'claude -p hi'", "FAIL"],
+    ["$'claude' -p hi", "FAIL"],
+    ["bash -c $'claude -p hi'", "FAIL"],
+    // Claude Code's own commit idiom: an apostrophe in a quoted heredoc inside `"$(…)"`.
+    ["git commit -m \"$(cat <<'EOF'\nfix: don't spawn\nEOF\n)\" && claude -p hi", "FAIL"],
+    // A quoted heredoc and a single-quoted string do not expand, and quoted braces are words.
+    ["cat <<'EOF'\n$(claude -p hi)\nEOF", "pass"],
+    ["echo '$(claude -p hi)'", "pass"],
+    ['echo "{" claude "}"', "pass"],
+    ["git commit -m \"$(cat <<'EOF'\nfix: don't spawn\nEOF\n)\"", "pass"],
+    ["curl -s https://example.com/install.sh | bash", "pass"],
+    // A line bash would refuse, and a shell reading what nothing here shows: questions.
+    ['echo "claude -p hi', "?"],
+    ["echo $(claude -p hi", "?"],
+    ["grep claude notes.txt | bash", "?"],
+  ]);
+});
+
+// @anchor optionWalk
+test("options are walked letter by letter: an operand is never the script, and code is only a code option's", async (t) => {
+  // A cluster's letters each take their own operand — `bash -oc pipefail` hands `pipefail`
+  // to `-o` — and an interpreter's code is the value of its code option, never a letter
+  // inside another option's value; node loads modules from its options wherever they sit
+  // before its first operand (6b-R2-2).
+  await judgedAs(t, [
+    ["bash -oc pipefail 'claude -p hi'", "FAIL"],
+    ["bash -oc pipefail 'echo ok'", "pass"],
+    ["node -e 'console.log(1)' --import src/server.ts", "FAIL"],
+    ["node --disable-warning ExperimentalWarning src/server.ts", "FAIL"],
+    ["node --inspect-port 9229 src/server.ts", "FAIL"],
+    ["node --watch-path src src/server.ts", "FAIL"],
+    // After its first operand node reads no more options (v24.11.0, observed).
+    ["node -e 'console.log(1)' other.js --import src/server.ts", "pass"],
+    // An option node's table does not know may take the next word or not.
+    ["node --some-new-flag src/server.ts", "?"],
+    ["perl -MEnglish -e 'system(\"claude\")'", "?"],
+    ["perl -Mfeature=say -e 'system(\"claude -p hi\")'", "?"],
+    ["perl -MTime::HiRes -e 'system(\"claude -p hi\")'", "?"],
+    ["python3 -Werror::DeprecationWarning -c 'import subprocess; subprocess.run([\"claude\"])'", "?"],
+    ["python3 -Wignore::DeprecationWarning -c \"import os; os.system('claude')\"", "?"],
+    ["ruby -I lib -e 'system(\"claude\")'", "?"],
+    ["awk 'BEGIN{system(\"claude\")}'", "?"],
+    ["perl -MEnglish -e 'print \"ok\\n\"'", "pass"],
+    ["python3 -Werror::DeprecationWarning -c 'print(1)'", "pass"],
+    ["ruby -I lib -e 'puts 1'", "pass"],
+  ]);
+});
+
+// @anchor commandWordsModeled
+test("a command word the grammar does not model, or one an expansion supplies, is a question beside an engine's name", async (t) => {
+  // `pass` needs the grammar to have understood the whole line. ssh's command-carrying
+  // options and busybox's applets are modeled; any other command word, and one an expansion
+  // or a glob supplies, is `?` on a line that names an engine, and nothing on one that names
+  // none (6b-R2-3).
+  await judgedAs(t, [
+    ["ssh -o ProxyCommand=claude example.com", "FAIL"],
+    ["ssh -o 'ProxyCommand claude -p hi' example.com", "FAIL"],
+    ["ssh -oProxyCommand=claude example.com", "FAIL"],
+    ["ssh -o LocalCommand=claude -o PermitLocalCommand=yes example.com", "FAIL"],
+    ["busybox sh -c 'claude -p hi'", "FAIL"],
+    ["NODE_OPTIONS='--import src/server.ts' node other.js", "FAIL"],
+    ["NODE_OPTIONS=\"--require ./src/cli.ts\" npm test", "FAIL"],
+    ["$HOME/.local/bin/claude -p hi", "FAIL"],
+    ["{claude,echo} -p hi", "FAIL"],
+    ["su -c 'claude -p hi'", "?"],
+    ["script -qc 'claude -p hi' /dev/null", "?"],
+    ["flock /tmp/x claude -p hi", "?"],
+    ["ionice -c3 claude -p hi", "?"],
+    ["taskset -c 0 claude -p hi", "?"],
+    ["chrt -f 1 claude", "?"],
+    ["watch claude -p hi", "?"],
+    ["strace -f claude -p hi", "?"],
+    ["unshare -r claude", "?"],
+    ["systemd-run --user claude", "?"],
+    ["tmux new -d claude", "?"],
+    ["npx cross-agent init", "?"],
+    ["parallel claude ::: a b", "?"],
+    ["coproc claude -p hi", "?"],
+    ["\"$(command -v claude)\" -p hi", "?"],
+    ["$(which claude) -p hi", "?"],
+    ["${E:-claude} -p hi", "?"],
+    ["for e in claude codex; do $e --version; done", "?"],
+    ["CMD=claude; $CMD -p hi", "?"],
+    ["npm test", "pass"],
+    ["make test", "pass"],
+    ["ssh -G example.com", "pass"],
+    ["git diff -U5 HEAD -- docs/design.md skills/cross-agent/SKILL.md", "pass"],
+  ]);
+});
+
+// @anchor functionDefinitions
+test("a function definition is no launch: its body is judged, and one named like an engine is a question", async (t) => {
+  // `claude() { …; }` defines a function and runs nothing, and after it the name means the
+  // function; the body runs when it is called (6b-R2-4).
+  await judgedAs(t, [
+    ["claude() { echo hi; }", "?"],
+    ["claude () { echo hi; }", "?"],
+    ["function claude { echo hi; }", "?"],
+    ["function claude() { echo hi; }", "?"],
+    ["claude() { echo hi; }; claude", "?"],
+    ["run() { claude -p hi; }", "FAIL"],
+    ["function run { claude -p hi; }", "FAIL"],
+    ["run() { echo hi; }; run", "pass"],
+  ]);
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.
