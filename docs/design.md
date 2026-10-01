@@ -2875,10 +2875,11 @@ Node 24 strips from a `.ts` source as it does from any other. The rest of the
 verbs below are step 13 (`atc-s96.16`).
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
-log <id> | cancel <id> | answer <ask-id> <text> | report | verify-worktree
-<path> <branch> | git <slug> -- <args> | journal <slug>`. `modes` lists the
-installed modes and marks the active one; `answer` replies to a pending `ask`
-without a host session; `report` renders the per-task summary from the ledger
+log <id> | cancel <id> | answer <ask-id> <text> | list-asks | report |
+verify-worktree <path> <branch> | git <slug> -- <args> | journal <slug>`.
+`modes` lists the installed modes and marks the active one; `answer` replies to
+a pending `ask` without a host session, and `list-asks` shows a terminal the
+questions it can answer; `report` renders the per-task summary from the ledger
 and each task's final message. Under `host` placement `.cross-agent/log.md`
 already holds that summary, because the host appended it (section 7); under
 `engine` placement `report` is where the log comes from.
@@ -3393,7 +3394,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   dev-team-engine` binds the `lead` and writes the cap of 2 the placement needs,
   and `--mode solo` binds its one role and declares no git policy (`#initModeBinds`);
   `--project` writes where it names, in either flag order (`#initProjectWrites`); a mode this
-  build does not have is exit 1 with nothing written, and a command line it
+  build does not have is exit 3 with nothing written, and a command line it
   cannot read is exit 2 (`#modeBuildError`); and the shebang entry point runs as `bin`
   names it (`#shebangEntryPoint`). A config carrying a `workspace` or `cwd` key, or a role key
   the mode does not declare, is refused by key and rule

@@ -1481,10 +1481,13 @@ lineage.
 
 <!-- @anchor e2Approval -->
 **Approval escalation.** All 27 `mcp_tool_call` items completed, none with an
-error, and neither the `.ndjson` nor the rollout holds `requires approval` or any
-other approval text: the mount's `default_tools_approval_mode="approve"` under
-`codex exec`'s approval policy `never` let every call run, and `git_mutate` and
-`git_root` ran in the server without a Codex prompt. The MCP item shape on
+error, and neither the `.ndjson` nor the rollout holds an approval refusal — no
+`requires approval`, and no call refused for want of one. The approval text the
+rollout does hold is the policy itself: `approval_policy: never` in its turn
+context, "Approval policy is currently never" in the instructions Codex gives the
+model, and `exec_command`'s own schema. The mount's
+`default_tools_approval_mode="approve"` under that policy let every call run, and
+`git_mutate` and `git_root` ran in the server without a Codex prompt. The MCP item shape on
 0.159.3 is 0.159.2's — the `--json` `mcp_tool_call` pair and the rollout's
 `McpToolCall` keys — so `e2CodexItems` is not needed and the verifier and the
 adapter learn nothing new from this run.
@@ -1515,8 +1518,9 @@ terminal, and a `/proc` scan for any process carrying one of the four ids — by
 the environment's `CROSS_AGENT_TASK` or the command line, never a pattern that
 could match the scanning shell — found none. The worktree `.worktrees/s11-i1` and
 the branch `task/s11-i1` stood, at `7a5c15f`, as a cancel leaves them: cancelling
-settles the task and does not undo what it wrote. The verifier, `--since
-97786228… --slug s11-i1`, for the conditions this stopping point allows: the root
+settles the task and does not undo what it wrote. The verifier, `node
+tools/e2e-verify.mjs --project <sample> --since 97786228… --slug s11-i1`, for the
+conditions this stopping point allows: the root
 tree clean, the suite green on `main`, four records with their logs, every record
 at depth 2 or less — `pass`; only the root worktree, no `task/*` branch and the
 journal's steps `FAIL` by construction, the journal ending at `worktree-created`;
@@ -1561,7 +1565,8 @@ each a `resume` of the planner and the plan reviewer, and called `git_root
 "main"], slug: "s11-i2"}` — the journal `s11-i2.json` opening with
 `worktree-created` — and ran its setup. It was cancelled there, the evidence
 complete: one outcome per task, its six children `already done`, itself
-`cancelled`, `asksCancelled: []` (both asks answered). The verifier, with the
+`cancelled`, `asksCancelled: []` (both asks answered). The verifier, `node
+tools/e2e-verify.mjs --project <sample> --since 600ea29f… --slug s11-i2`, with the
 records put back for the reading: the first six conditions `pass`, the journal's
 `FAIL` by construction, condition 8 `?` on the resumed lead's heartbeats. The
 depth-and-lineage reading over the resume chain: both lead records at depth 1,
@@ -1576,7 +1581,8 @@ Before the run the operator changed `project.testCommand` to `python3 -m unittes
 discover -s tests -t . && test ! -e .cross-agent/FAIL-AT-ROOT` and created that
 marker at the root: a worktree has no `.cross-agent/`, so the suite passes in one
 and fails at the root (`i3/config.diff`, `i3/trigger-commands.txt`). A Claude lead,
-the task "S11-I3: add `truncate_slug(text, length)`; use the slug s11-i3". It ran
+`145440dc…`, the task "S11-I3: add `truncate_slug(text, length)`; use the slug
+s11-i3". It ran
 the loop through a needs-work round on the plan — the plan reviewer said
 `revise`, and the planner and the reviewer were each continued by `resume` — and
 then the implementer (83 tests in the worktree), the code reviewer (ready), the
@@ -1595,7 +1601,8 @@ git revert --no-edit 7a5c15fc8823ee5f599de25b638e42906bb70c68..4fb584d786693d8ce
 ```
 
 the journal's two SHAs; after the second root run it called nothing. The
-worktree `.worktrees/s11-i3` and the branch `task/s11-i3` stood. The verifier, for
+worktree `.worktrees/s11-i3` and the branch `task/s11-i3` stood. The verifier,
+`node tools/e2e-verify.mjs --project <sample> --since 145440dc… --slug s11-i3`, for
 what this stopping point allows: the root tree clean, seven records with their
 logs, every record at depth 2 or less — `pass`; the standing worktree and
 branch, the suite on `main` (the marker) and the journal's missing steps `FAIL` by
@@ -1634,7 +1641,8 @@ to delete: `git_root {args: ["branch", "-d", "task/s11-i4"], slug: "s11-i4"}`
 answered `Deleted branch task/s11-i4 (was fd6e3a9).` and journaled
 `branch-deleted`, and `git branch --list 'task/*'` was empty. This is the path the
 brief names first; the resumed lead answered "yes" was not taken. The verifier,
-`--since 269b1ee6… --slug s11-i4`, after the pass: seven `pass` — the journal now
+`node tools/e2e-verify.mjs --project <sample> --since 269b1ee6… --slug s11-i4`,
+after the pass: seven `pass` — the journal now
 every step, `worktree-created, git, git, committed, git, merged, tests-passed,
 worktree-removed, branch-deleted` — and condition 8 `?` on the lead's nine
 `tool_progress` heartbeats, each a child of a `wait` call. The depth-and-lineage
@@ -1647,8 +1655,8 @@ moved to the archive.
 <!-- @anchor injectRebaseConflict -->
 ## Injection: an interrupted rebase is aborted and reported (2026-10-01)
 
-A Claude lead, the task "S11-I5: rewrite `slugify`'s docstring to state its
-separator and stop-word rules; use the slug s11-i5". The trigger: the moment the
+A Claude lead, `6ee2a698…`, the task "S11-I5: rewrite `slugify`'s docstring to
+state its separator and stop-word rules; use the slug s11-i5". The trigger: the moment the
 journal showed `worktree-created`, the operator rewrote the same docstring lines
 on `main` by hand — the first line and the stop-word line, through
 `i5/hand-edit.py` at the root checkout — and committed them, `cdeb3de`. The lead
@@ -1666,7 +1674,8 @@ I've aborted the rebase; the branch and worktree are untouched. How would you li
 to proceed?" The operator answered "Stop here …"; its closing report, read through
 `result`, names the conflicting file, the aborted rebase, the question and the
 answer, and the branch and worktree left standing, and its last calls were the two
-`git_mutate`s and the `ask`. The verifier, for what this stopping point allows: the
+`git_mutate`s and the `ask`. The verifier, `node tools/e2e-verify.mjs --project
+<sample> --since 6ee2a698… --slug s11-i5`, for what this stopping point allows: the
 root tree clean, the suite on `main`, seven records with their logs, every record
 at depth 2 or less — `pass`; the standing worktree, the branch and the journal's
 missing steps `FAIL` by construction; condition 8 `?` on the lead's thirteen

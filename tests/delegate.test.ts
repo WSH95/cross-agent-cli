@@ -522,7 +522,7 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
     mcpServers: { "cross-agent": { command: process.execPath, args: [repositoryServer, "--project", p.root] } },
   });
 
-  // Codex: the four `-c` settings, under the flag that removes the operator's own servers.
+  // Codex: the five `-c` settings, under the flag that removes the operator's own servers.
   const codex = await argvOf("codex", "S11: a Codex lead's brief.");
   const settings = codex.argv.flatMap((value, index) => (codex.argv[index - 1] === "-c" && value.startsWith("mcp_servers.") ? [value] : []));
   assert.deepEqual(settings, [

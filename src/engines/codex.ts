@@ -96,9 +96,10 @@ const codex = {
    * lineage. The values are TOML, so the quotes are part of the argument.
    */
   leadMount(spec: LeadMountSpec, _scratchDir: string): LeadMount {
-    // No probed setting carries a server environment, and emitting an unprobed one would
-    // be the only flag in this file no run has exercised. A lead's project reaches it
-    // through `args` (`--project <root>`), so refusing here loses nothing.
+    // The markers reach the server by name, through the whitelist below, which B2 and E2
+    // exercised; no run has probed a setting that carries literal values, and emitting
+    // one would be the only flag in this file no run has exercised. A lead's project
+    // reaches it through `args` (`--project <root>`), so refusing a literal env loses nothing.
     if (spec.env !== undefined && Object.keys(spec.env).length > 0) {
       throw new Error("codex leadMount: no probed setting carries an env for a mounted server; pass what the lead needs in args");
     }
