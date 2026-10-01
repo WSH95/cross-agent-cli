@@ -123,8 +123,11 @@ No dependencies; Node 24 or later runs the TypeScript sources directly.
 
 `cross-agent <verb>` — or `node ~/Documents/agent-team-cli/src/cli.ts <verb>`
 where the package is not linked — is the operator's own entry point. Every verb
-takes `--project <root>` (otherwise the project is the one the server would
-find), `--json` for one JSON document on stdout, and `--help`.
+takes `--project <root>`, `--json` for one JSON document on stdout whatever the
+exit, and `--help`. Without `--project`, `init` writes in the current directory,
+and `answer` and `report` read the project the server would find:
+`CROSS_AGENT_PROJECT`, then the nearest `.cross-agent/config.json`, then the git
+toplevel.
 
 | verb | what it does |
 | --- | --- |
@@ -137,8 +140,8 @@ One exit protocol for every verb:
 | code | meaning |
 | --- | --- |
 | 0 | ok |
-| 1 | error: something the command did not anticipate failed |
-| 2 | usage: the command line could not be read (nothing on stdout) |
+| 1 | error: something the command did not anticipate failed — with `--json`, `{ok: false, error}` on stdout |
+| 2 | usage: the command line could not be read — with `--json`, `{ok: false, error, usage}` on stdout, and nothing there without it |
 | 3 | precondition: the project, the mode, the ask or the task is not in the state the verb needs — with `--json`, the reason is the document on stdout |
 | 4 | still running: a task the verb reads has not settled |
 | 5 | needs the operator: a lead is waiting on an open ask |

@@ -2840,8 +2840,9 @@ sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 command line it cannot read, 3 a precondition the verb needs and does not have,
 and 4 still running, 5 needs the operator, 6 stalled — defined and documented
 now, and exited with by the verbs step 13 adds. Every verb takes `--project`,
-`--json` — one JSON document on stdout; a 2 or a 1 prints nothing there, and a
-3 prints its reason as that document — and `--help`, which prints the verbs and
+`--json` — one JSON document on stdout whatever the exit: a 2 is `{ok: false,
+error, usage}`, a 1 `{ok: false, error}`, and a 3 its reason
+(`tests/cli.test.ts#jsonOnEveryExit`) — and `--help`, which prints the verbs and
 the protocol. The `--flag <value>` pairs go through the parser the server's own
 argv does, so adding one does not break the other (`src/project.ts#parseFlags`,
 `#discoverProject`). Three verbs ship. `cross-agent init [--mode <name>]

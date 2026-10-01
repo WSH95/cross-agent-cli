@@ -159,14 +159,18 @@ test("a mode this build does not have is a precondition, and a command line it c
   for (const args of [
     [], ["modes"], ["init", "--mode"], ["init", "--mode", "solo", "extra"], ["init", "--engine", "codex"],
     ["init", "--mode", "solo", "--mode", "dev-team"], ["--mode", "solo"], ["init", "--mode", ""],
-    ["init", "--json", "--json"], ["report", "extra"], ["answer", "only-an-id"], ["answer", "id", "text", "more"],
+    ["report", "extra"], ["answer", "only-an-id"], ["answer", "id", "text", "more"],
     ["report", "--since"], ["report", "--mode", "solo"], ["answer", "id", "text", "--since", "x"],
   ]) {
     const ran = await run(args, root);
     assert.equal(ran.code, 2, `${args.join(" ")}: ${ran.stderr}`);
     assert.match(ran.stderr, /usage: cross-agent/, args.join(" "));
-    assert.equal(ran.stdout, "", "a command line that cannot be read prints nothing a script would parse");
+    assert.equal(ran.stdout, "", "a command line that cannot be read, asked for as text, prints nothing on stdout");
   }
+  // Asked for as JSON, the same refusal is the one document on stdout (`#jsonOnEveryExit`).
+  const twice = await run(["init", "--json", "--json"], root);
+  assert.equal(twice.code, 2, twice.stderr);
+  assert.match((JSON.parse(twice.stdout) as { error: string }).error, /--json given twice/);
 });
 
 // @anchor shebangEntryPoint
@@ -198,6 +202,8 @@ test("the exit protocol is one set of codes, and --help prints it beside every v
       assert.match(ran.stdout, new RegExp(`^\\s*${code}\\s+${word}`, "m"), `${args.join(" ")}: exit ${code}`);
     }
     assert.match(ran.stdout, /--json/);
+    // `init` is the one verb that does not find its project as the server does: it makes one.
+    assert.match(ran.stdout.replace(/\s+/g, " "), /without --project, init writes in the current directory/i);
   }
   assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false, "help writes nothing");
 });
@@ -217,6 +223,44 @@ test("init --json prints one JSON document on stdout, for what it wrote and for 
   assert.equal(refused.code, 3);
   assert.equal((JSON.parse(refused.stdout) as { ok: boolean }).ok, false);
   assert.match((JSON.parse(refused.stdout) as { reason: string }).reason, /no-such-mode/);
+});
+
+// @anchor jsonOnEveryExit
+test("--json prints one JSON document on stdout whatever the exit, a usage error and an unanticipated one included", async (t) => {
+  const root = scratch(t);
+  const usage = async (args: string[], verbs: string[]) => {
+    const ran = await run(args, root);
+    assert.equal(ran.code, 2, `${args.join(" ")}: ${ran.stderr}`);
+    const document = JSON.parse(ran.stdout) as { ok: boolean; error: string; usage: string[] };
+    assert.equal(document.ok, false);
+    assert.equal(typeof document.error, "string");
+    for (const verb of verbs) assert.ok(document.usage.some((line) => line.startsWith(`cross-agent ${verb}`)), `${args.join(" ")}: usage names ${verb}`);
+    return document;
+  };
+  assert.match((await usage(["--json", "no-such-verb"], ["init", "answer", "report"])).error, /unknown command "no-such-verb"/);
+  assert.match((await usage(["--json"], ["init", "answer", "report"])).error, /no command/);
+  assert.match((await usage(["report", "--json", "--bogus", "x"], ["report"])).error, /--bogus/);
+  assert.match((await usage(["answer", "only-one", "--json"], ["answer"])).error, /answer takes <ask-id> <text>/);
+  // `--json` after `--` is an argument, not the flag: that command line reads as text.
+  const text = await run(["report", "--", "--json"], root);
+  assert.equal(text.code, 2);
+  assert.equal(text.stdout, "");
+  assert.match(text.stderr, /report takes no arguments/);
+
+  // An error nothing anticipated: a result file that is a directory cannot be read.
+  const project = await engineProject(t);
+  const { create } = await import("../src/ledger.ts");
+  const record = create(project, { role: "planner", brief: "b", cwd: project, engine: "claude", depth: 1 });
+  fs.mkdirSync(record.resultPath);
+  const broken = await run(["report", "--json"], project);
+  assert.equal(broken.code, 1, broken.stderr);
+  const error = JSON.parse(broken.stdout) as { ok: boolean; error: string };
+  assert.equal(error.ok, false);
+  assert.match(error.error, /EISDIR/);
+  const plain = await run(["report"], project);
+  assert.equal(plain.code, 1);
+  assert.equal(plain.stdout, "", "without --json an error is stderr's alone");
+  assert.match(plain.stderr, /EISDIR/);
 });
 
 /** A git repository holding a `dev-team-engine` config, as `init` writes it: the project an engine-placed lead asks in. */

@@ -221,18 +221,31 @@ const report: Verb = {
 
 const verbs: Record<string, Verb> = { init, answer, report };
 
+/** The usage lines for one verb, or for the whole table: what a 2 prints, as text or as JSON. */
+function usageLines(verb?: Verb): string[] {
+  if (verb !== undefined) return [`${verb.usage} [--json] [--help]`];
+  return ["cross-agent <verb> [arguments] [--project <root>] [--json] [--help]", ...Object.values(verbs).map((each) => each.usage)];
+}
+
 function usageOf(verb?: Verb): string {
-  if (verb !== undefined) return `usage: ${verb.usage} [--json] [--help]\n`;
-  return `usage: cross-agent <verb> [arguments] [--project <root>] [--json] [--help]\n`
-    + Object.values(verbs).map((each) => `  ${each.usage}\n`).join("");
+  const [first, ...rest] = usageLines(verb);
+  return `usage: ${first}\n${rest.map((line) => `  ${line}\n`).join("")}`;
 }
 
 function help(): string {
   return `usage: cross-agent <verb> [arguments] [--project <root>] [--json] [--help]\n\n`
     + Object.values(verbs).map((verb) => `  ${verb.usage}\n      ${verb.summary}\n`).join("")
-    + "\n--json prints one JSON document on stdout; --help prints this. Without --project the project is\n"
-    + "the one the server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json.\n\n"
+    + "\n--json prints one JSON document on stdout, whatever the exit; --help prints this. Without\n"
+    + "--project, init writes in the current directory, and every other verb reads the project the\n"
+    + "server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json, then the\n"
+    + "git toplevel.\n\n"
     + `exit codes:\n${PROTOCOL}\n`;
+}
+
+/** Whether the command line asks for JSON: `--json` anywhere before a `--` that ends the flags. */
+function wantsJson(argv: readonly string[]): boolean {
+  const end = argv.indexOf("--");
+  return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
 }
 
 /**
@@ -299,20 +312,25 @@ export async function runCli(
   argv: readonly string[], cwd: string, write: CliOutput, env: Readonly<NodeJS.ProcessEnv> = process.env,
 ): Promise<number> {
   const { verb: name, rest } = split(argv);
+  // Under `--json` stdout carries one document for every exit, a 1 and a 2 included, so a
+  // script parses what it gets rather than guessing from an empty stream; the person who
+  // asked for text reads stderr as before.
+  const json = wantsJson(argv);
+  const usageError = (error: string, verb?: Verb): number => {
+    if (json) write.out(`${JSON.stringify({ ok: false, error, usage: usageLines(verb) }, null, 2)}\n`);
+    else write.err(`cross-agent: ${error}\n${usageOf(verb)}`);
+    return EXIT.usage;
+  };
   if (name === "help" || (name === undefined && rest.includes("--help"))) {
     write.out(help());
     return EXIT.ok;
   }
   if (name === undefined || !Object.hasOwn(verbs, name)) {
-    write.err(`cross-agent: ${name === undefined ? "no command" : `unknown command ${JSON.stringify(name)}`}\n${usageOf()}`);
-    return EXIT.usage;
+    return usageError(name === undefined ? "no command" : `unknown command ${JSON.stringify(name)}`);
   }
   const verb = verbs[name];
   const parsed = parse(name, verb, rest);
-  if ("reason" in parsed) {
-    write.err(`cross-agent: ${parsed.reason}\n${usageOf(verb)}`);
-    return EXIT.usage;
-  }
+  if ("reason" in parsed) return usageError(parsed.reason, verb);
   if (parsed.help) {
     write.out(help());
     return EXIT.ok;
@@ -321,8 +339,9 @@ export async function runCli(
   try {
     answered = await verb.run(parsed, { cwd, env });
   } catch (error) {
-    // Nothing a verb anticipated: the message, and nothing a script would parse.
-    write.err(`cross-agent: ${message(error)}\n`);
+    // Nothing a verb anticipated: the message, as the one document under `--json`.
+    if (parsed.json) write.out(`${JSON.stringify({ ok: false, error: message(error) }, null, 2)}\n`);
+    else write.err(`cross-agent: ${message(error)}\n`);
     return EXIT.error;
   }
   if (parsed.json) {
