@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
@@ -123,6 +123,25 @@ function project(t: TestContext): string {
   return root;
 }
 
+/**
+ * A node process this file spawns by hand rather than through `processes(t)`. Its close is
+ * listened for, and its cleanup registered, before the caller awaits anything: a helper that
+ * ends first is still heard, since a listener added after its close would wait for an event
+ * that never comes again; and one whose wait fails is still ended, before its directory goes,
+ * since the cleanup waits for its close.
+ */
+function helper(t: TestContext, argv: string[], options: SpawnOptions = {}): { child: ChildProcess; closed: Promise<unknown[]> } {
+  const child = spawn(process.execPath, argv, { stdio: "ignore", ...options });
+  const closed = once(child, "close");
+  // A spawn that fails rejects it: whoever awaits it is told, and nobody else is.
+  closed.catch(() => {});
+  teardown(t, async () => {
+    child.kill("SIGKILL");
+    await closed.catch(() => {});
+  });
+  return { child, closed };
+}
+
 /** A project whose config sets one limit; the rest are the documented defaults. */
 function configure(root: string, lockWaitSeconds: number): void {
   fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
@@ -166,6 +185,15 @@ async function started(root: string, status: TaskStatus, at = now): Promise<Task
 function running(pid: number): boolean {
   const stat = readProcessStat(pid);
   return stat !== null && stat.state !== "Z" && stat.state !== "X";
+}
+
+/** Whether `pid` is a process whose environment carries this task's id: the one this file started for it. */
+function carries(pid: number, taskId: string): boolean {
+  try {
+    return fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").includes(`CROSS_AGENT_TASK=${taskId}`);
+  } catch {
+    return false;
+  }
 }
 
 // Reconciliation judges the kernel, so its tests use real processes. Each fixture is a
@@ -267,6 +295,32 @@ test("a test's teardowns all run in order whatever one of them throws, and its d
     { message: "teardown: a; b; c" },
   );
   assert.equal(removals, 1);
+});
+
+// @anchor handSpawnedHelper
+test("a hand-spawned helper is heard when it ends before anything awaits it, and ended before its directory goes when a wait fails", async (t) => {
+  project(t);
+  // It ends first: by the time this awaits its close, the listener `once` added at spawn has
+  // already fired and gone, and the promise it made still answers.
+  const quick = helper(t, ["-e", ""]);
+  await poll(() => quick.child.listenerCount("close"), (listeners) => listeners === 0);
+  assert.deepEqual(await quick.closed, [0, null]);
+
+  // A wait that fails ends the test body where it stands. The cleanup was registered at
+  // spawn, so the drain at the test's end still ends the helper, and before the removal.
+  const body = {} as TestContext;
+  teardowns.set(body, []);
+  let pid = 0;
+  await assert.rejects(async () => {
+    const slow = helper(body, ["-e", "setInterval(() => {}, 1000)"]);
+    pid = slow.child.pid!;
+    await poll(() => false, (seen) => seen, 100);
+  }, /timed out waiting for state/);
+  const callbacks = teardowns.get(body)!;
+  teardowns.delete(body);
+  let aliveAtRemoval: boolean | undefined;
+  await drainTeardowns(callbacks, () => { aliveAtRemoval = running(pid); });
+  assert.equal(aliveAtRemoval, false, "the helper had ended when its directory was removed");
 });
 
 test("reconcile fails unacknowledged launches only after their deadline", async (t) => {
@@ -646,16 +700,19 @@ sibling.kill("SIGKILL");
 `;
   const file = path.join(root, "reconciler.mjs");
   fs.writeFileSync(file, script);
-  const reconciler = spawn(process.execPath, [file, root, String(record.launchDeadline + 1), siblingFile, outcome], {
-    stdio: "ignore", env: { ...process.env, CROSS_AGENT_TASK: record.id },
+  const reconciler = helper(t, [file, root, String(record.launchDeadline + 1), siblingFile, outcome], {
+    env: { ...process.env, CROSS_AGENT_TASK: record.id },
   });
-  const sibling = Number(await poll(() => (fs.existsSync(siblingFile) ? fs.readFileSync(siblingFile, "utf8") : ""), (text) => text.length > 0));
+  // The reconciler's own child, ended after it whether or not this test or the pass got as
+  // far as ending it: by the pid it wrote, and only while that pid still carries this task,
+  // so a pid reused since is never signalled.
   teardown(t, async () => {
+    const sibling = fs.existsSync(siblingFile) ? Number(fs.readFileSync(siblingFile, "utf8")) : Number.NaN;
+    if (!Number.isInteger(sibling) || sibling <= 0 || !carries(sibling, record.id)) return;
     try { process.kill(sibling, "SIGKILL"); } catch { /* already gone */ }
-    reconciler.kill("SIGKILL");
     await poll(() => running(sibling), (alive) => !alive);
   });
-  const [code] = await once(reconciler, "close");
+  const [code] = await reconciler.closed;
 
   assert.equal(code, 0, "the reconciler survived its own pass");
   const result = JSON.parse(fs.readFileSync(outcome, "utf8")) as {

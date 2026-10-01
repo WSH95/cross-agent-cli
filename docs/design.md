@@ -3790,7 +3790,10 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   where it had left 42 directories. Reconcile's helpers die before their
   directory goes: every teardown a test registers runs in order whatever an
   earlier one did, and the directory's removal comes last
-  (`tests/reconcile.test.ts#teardownDrainsAll`).
+  (`tests/reconcile.test.ts#teardownDrainsAll`); a helper the file spawns by
+  hand has its close listened for and its cleanup registered before anything is
+  awaited, so one that ends first is still heard and one whose wait fails is
+  still ended (`#handSpawnedHelper`).
 - **P9 (recorded):** Claude clean — `--strict-mcp-config --mcp-config <file>`
   shows exactly this server's tools and none of the operator's, and
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —
