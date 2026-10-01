@@ -1,7 +1,8 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -1321,4 +1322,101 @@ test("an id no task file could have names no task: show, log and cancel answer 3
     }
   }
   assert.deepEqual(snapshot(state), before, "nothing under .cross-agent/ was written, no lock taken");
+});
+
+/**
+ * A command line run as its own process against a record whose file is a FIFO this test
+ * serves: the first read of the record gets `first`, any later read `later`, until the CLI
+ * exits. Every open here is non-blocking, so this process never waits in open(2) or on a
+ * clock: each turn yields to the event loop and looks again. A read is served only once the
+ * reader before it has closed its end — `/proc/<pid>/fd` says when — so no reader is ever
+ * handed two records in one stream.
+ */
+async function servedRecord(
+  t: TestContext, args: string[], cwd: string, fifo: string, first: string, later: string,
+): Promise<Ran & { served: number }> {
+  const child = spawn(process.execPath, [cli, ...args], { cwd, env: suiteEnv, stdio: ["ignore", "pipe", "pipe"] });
+  const stop = () => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); };
+  t.after(stop);
+  t.signal.addEventListener("abort", stop, { once: true });
+  let stdout = "";
+  let stderr = "";
+  child.stdout!.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+  child.stderr!.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+  let closed = false;
+  const exited = once(child, "close").then(([code]) => { closed = true; return code as number; });
+  const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+  // Whether the CLI holds the FIFO open: a read whose open(2) has returned.
+  const reading = () => {
+    let fds: string[];
+    try {
+      fds = fs.readdirSync(`/proc/${child.pid}/fd`);
+    } catch {
+      return false;
+    }
+    return fds.some((fd) => {
+      try {
+        return fs.readlinkSync(`/proc/${child.pid}/fd/${fd}`) === fifo;
+      } catch {
+        return false;
+      }
+    });
+  };
+  let served = 0;
+  while (!closed && !t.signal.aborted) {
+    let fd: number;
+    try {
+      // It succeeds only when a reader waits in its own open(2), which — the read before it
+      // having closed — is a new read of the record.
+      fd = fs.openSync(fifo, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENXIO") throw error;
+      await turn();
+      continue;
+    }
+    try {
+      fs.writeSync(fd, served === 0 ? first : later);
+      served++;
+      // Held open until the reader's descriptor shows: it cannot reach end-of-file while this
+      // end is open, so what it reads is this one record.
+      while (!reading() && !closed) await turn();
+    } finally {
+      fs.closeSync(fd);
+    }
+    while (reading() && !closed) await turn();
+  }
+  return { code: await exited, stdout, stderr, served };
+}
+
+// @anchor cliShowOneRead
+test("show takes a task's status, exit and final message from one read of its record, whatever a second read would say", { timeout: 30_000 }, async (t) => {
+  const root = await bareRepository(t);
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const { create, update } = await import("../src/ledger.ts");
+  const now = Date.now();
+  const record = create(root, { role: "planner", brief: "seeded", cwd: root, engine: "claude", depth: 1 }, now - 60_000);
+  const file = path.join(root, ".cross-agent", "tasks", `${record.id}.json`);
+  assert.equal((await update(root, record.id, { status: "running", acknowledgedAt: now - 30_000, lastEventAt: now - 30_000 }, now - 30_000)).applied, true);
+  const running = fs.readFileSync(file, "utf8");
+  assert.equal((await update(root, record.id, { status: "done", exitCode: 0 }, now - 1_000)).applied, true);
+  const done = fs.readFileSync(file, "utf8");
+  // A runner writes its final message and then settles the record. The FIFO stands for the
+  // moment between: the first read of the record finds it running, and any second read
+  // would find the task done, its message written.
+  fs.writeFileSync(record.resultPath, "the final message\n");
+  fs.rmSync(file);
+  await exec("mkfifo", [file]);
+  for (const args of [["show", record.id, "--json"], ["show", record.id]]) {
+    const shown = await servedRecord(t, args, root, file, running, done);
+    assert.equal(shown.code, 4, `${args.join(" ")}: ${shown.stderr}`);
+    if (args.includes("--json")) {
+      const document = JSON.parse(shown.stdout) as { record: TaskRecord; result: string | null };
+      assert.equal(document.record.status, "running");
+      assert.equal(document.result, null, "a running record has no final message");
+    } else {
+      assert.match(shown.stdout, /^status: running$/m);
+      assert.doesNotMatch(shown.stdout, /final message/);
+    }
+    assert.equal(shown.served, 1, `${args.join(" ")} read the record once`);
+  }
 });
