@@ -142,18 +142,20 @@ test("the Codex manifest starts this server through a launcher in the plugin's o
 test("the Codex launcher runs the server beside it for the project the operator names, and without one does not start", () => {
   // A `node` that prints what it was asked to run, first on PATH: the launcher's job is the
   // path it hands node — this checkout's `src/server.ts`, whether started relative to the
-  // plugin root, as Codex starts it, or by an absolute path — and its refusal to start a
-  // server that could only find the project from the plugin's own directory.
+  // plugin root, as Codex starts it, or by an absolute path — with the project the operator
+  // named still in its environment, since from a copy of a checkout discovery would find the
+  // checkout instead; and its refusal to start a server that could only find the project from
+  // the plugin's own directory.
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-"));
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-project-"));
   try {
-    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$PWD" "${CROSS_AGENT_PROJECT-(unset)}" "$@"\n', { mode: 0o755 });
     const base = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
     const server = path.join(repoRoot, "src", "server.ts");
     for (const [command, cwd] of [["./.codex-plugin/serve", repoRoot], [path.join(repoRoot, ".codex-plugin", "serve"), project]]) {
       const printed = execFileSync(command, ["--flag"], { cwd, env: { ...base, CROSS_AGENT_PROJECT: project }, encoding: "utf8" })
         .trimEnd().split("\n");
-      assert.deepEqual(printed, [fs.realpathSync(cwd), fs.realpathSync(server), "--flag"], `${command} from ${cwd}`);
+      assert.deepEqual(printed, [fs.realpathSync(cwd), project, fs.realpathSync(server), "--flag"], `${command} from ${cwd}`);
     }
     for (const value of [undefined, ""]) {
       const env: NodeJS.ProcessEnv = { ...base, CROSS_AGENT_PROJECT: value };
@@ -163,6 +165,26 @@ test("the Codex launcher runs the server beside it for the project the operator 
       assert.equal(refused.stdout, "", "node was never run");
       assert.match(refused.stderr, /CROSS_AGENT_PROJECT/);
     }
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+// @anchor codexLauncherRootUnresolved
+test("the Codex launcher that cannot resolve its own directory starts nothing", () => {
+  // The launcher's text read by a shell whose `$0` names a directory that does not exist, so
+  // the `cd` that finds the plugin root fails: it must stop there rather than hand node a path
+  // built from nothing (`/src/server.ts`).
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-"));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "codex-launcher-project-"));
+  try {
+    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, CROSS_AGENT_PROJECT: project };
+    const launcher = path.join(repoRoot, ".codex-plugin", "serve");
+    const stranded = spawnSync("sh", ["-c", '. "$1"', "/nonexistent/.codex-plugin/serve", launcher], { cwd: project, env, encoding: "utf8" });
+    assert.notEqual(stranded.status, 0, "the launcher went on without its root");
+    assert.equal(stranded.stdout, "", `node was run: ${stranded.stdout}`);
   } finally {
     fs.rmSync(bin, { recursive: true, force: true });
     fs.rmSync(project, { recursive: true, force: true });
