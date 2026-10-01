@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T14:08:49Z
+updated_at: 2026-10-01T14:46:35Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -75,19 +75,20 @@ verbs refuse under `CROSS_AGENT_TASK`, `_DEPTH` or `_LINEAGE`. Filed from it: `.
 `.68` (one source for the status list and the task-id alphabet).
 
 T14 (`atc-s96.14` with `.61`, Codex packaging, I1/I2 under a Codex host, E4 and E5)
-is **implemented on `task/cross-agent-m3`** (11 commits over `6a13c0c`, head
-`79fad04`; not merged): `npm test` 731 / 730 / 1 skipped; checker 1123, 0 misses;
+is **implemented on `task/cross-agent-m3`** (21 commits over `6a13c0c`, head
+`8e79b89` after fix round 1; not merged): `npm test` 735 / 734 / 1 skipped; checker 1142, 0 misses;
 E5 (a Codex host, a Claude lead) 8 pass; E4 (a Codex host, `dev-team`) 7 pass and a
 `?` a person read as two in-worktree patches (`.69` teaches the verifier that shape).
 The shipped mount runs `./.codex-plugin/serve`, which needs `CROSS_AGENT_PROJECT`.
-Review round 1 found two Important issues, now in fix round 1 (`task-8-findings-round-1.md`):
+Review round 1 found two Important issues, fixed in fix round 1 and now in re-review (`task-8-findings-round-1.md`):
 - the guarded Codex I2 test's rollout proof could pass vacuously;
 - both Codex attaches drop the task markers, so a Codex session started inside a task
   would resolve the operator row (loop-guard layer 2; the fix adds them to `env_vars`,
   with probes). **The operator's Codex config is changed until the
 wrap:** the plugin `cross-agent@agent-team-cli` is installed from a local marketplace
-(`~/.cache/agent-team/codex-plugin-export/dac519b…`) and disabled
-(`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added three
+(the export `~/.cache/agent-team/codex-plugin-export/f3272a2…`; an older `dac519b…` export
+stays for the wrap to delete) and disabled
+(`[plugins."cross-agent@agent-team-cli"] enabled = false`), and Codex added four
 trust entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the
 restore commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a

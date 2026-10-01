@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T14:46:35Z — claude
+[auto-checkpoint] T14 fix round 1 landed (8e79b89; 735/734/1; checker 1142, 0/0); plugin reinstalled from the f3272a2 export and disabled; round-2 re-review running.
+
 ### 2026-10-01T14:08:49Z — claude
 [auto-checkpoint] T14 review round 1: two Important (I2 proof vacuity; Codex attaches drop the task markers — loop-guard layer 2); fix round 1 in flight. Task 11 plan loop ended; T15 brief v3 ready.
 
