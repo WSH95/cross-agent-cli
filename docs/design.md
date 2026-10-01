@@ -312,8 +312,13 @@ that spelling, so nothing in the matrix depends on it.
    and a read of an ask nobody wrote creates nothing (`src/mailbox.ts#readAsk`);
    a damaged one is answered as a value naming the file, so `ask`, `answer` and
    `cross-agent answer` refuse it rather than throw (`#AskRead`,
-   `tests/mailbox.test.ts#readAskDamaged`);
-   an id outside that alphabet names no ask either, and `ask`, `answer` and
+   `tests/mailbox.test.ts#readAskDamaged`). The readers bound an ask's times by
+   finiteness alone, and the mailbox's refusals print a time no date can hold as
+   its number, as the operator CLI does, so `answer` and `cross-agent answer`
+   refuse an answered or cancelled ask carrying one as they refuse any other
+   (`src/mailbox.ts#printable`, `tests/mailbox.test.ts#askTimeOutOfRange`,
+   `tests/server.test.ts#answerToolTimeOutOfRange`, `tests/cli.test.ts#answerTimeOutOfRange`).
+   An id outside the ledger's alphabet names no ask either, and `ask`, `answer` and
    `cross-agent answer` refuse it by value through one predicate
    (`src/mailbox.ts#isAskId`, `tests/mailbox.test.ts#malformedAskId`).
    `ask` blocks up to `timeout_seconds` (default `waitDefaultSeconds`) and

@@ -886,6 +886,30 @@ test("list_asks names a lead only the damaged asks that may be its own, and a da
   assert.match(payload(answered).body.reason as string, /x1\.json/);
 });
 
+// @anchor answerToolTimeOutOfRange
+test("the answer tool refuses an answered or cancelled ask whose time no date can hold by value, its time printed as its number", async (t) => {
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
+  const asks = path.join(root, ".cross-agent", "asks");
+  await mkdir(asks, { recursive: true });
+  const operatorCall = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => operator });
+  const records: Array<[Json, RegExp]> = [
+    [{ id: "answered", taskId: "lead1", question: "Q", createdAt: 1, status: "answered", answer: "A", answeredAt: 1e100 },
+      /^refused answer to ask answered: it was answered at 1e\+100 \(answeredAt 1e\+100\)/],
+    [{ id: "cancelled", taskId: "lead1", question: "Q", createdAt: 1, status: "cancelled", cancelledAt: 1e100 },
+      /^refused answer to ask cancelled: it was cancelled at 1e\+100/],
+  ];
+  for (const [record, said] of records) {
+    await writeFile(path.join(asks, `${record.id as string}.json`), JSON.stringify(record));
+    const reply = await operatorCall("tools/call", { name: "answer", arguments: { ask_id: record.id, text: "yes" } });
+    // The tool's refusal, by value, and never a protocol error from a time it could not print.
+    assert.equal(reply.error, undefined, JSON.stringify(reply));
+    const { body, isError } = payload(reply);
+    assert.equal(isError, true);
+    assert.match(body.reason as string, said);
+    assert.deepEqual(body.ask, record);
+  }
+});
+
 // @anchor listTasksMarks
 test("list_tasks marks a lead's own records self and the tasks it owns own, and marks nothing for the operator", async (t) => {
   const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });

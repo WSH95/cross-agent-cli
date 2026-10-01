@@ -254,6 +254,25 @@ test("a damaged ask read by id is a value naming the file, which ask and answer 
   assert.deepEqual(readAsk(p.root, "a".repeat(36)), { ask: null, invalid: null });
 });
 
+// @anchor askTimeOutOfRange
+test("an answered or cancelled ask whose time no date can hold is refused by value, the time printed as its number", async (t) => {
+  const p = await mailboxProject(t);
+  fs.mkdirSync(asksDir(p.root), { recursive: true });
+  const records: Array<[Record<string, unknown>, string]> = [
+    [{ id: "answered", taskId: "lead-a", question: "Q", createdAt: 1, status: "answered", answer: "A", answeredAt: 1e100 },
+      "refused answer to ask answered: it was answered at 1e+100 (answeredAt 1e+100), and the first answer stands"],
+    [{ id: "cancelled", taskId: "lead-a", question: "Q", createdAt: 1, status: "cancelled", cancelledAt: 1e100 },
+      "refused answer to ask cancelled: it was cancelled at 1e+100 with the task that asked it"],
+  ];
+  for (const [record, reason] of records) {
+    const file = path.join(asksDir(p.root), `${record.id}.json`);
+    const bytes = JSON.stringify(record);
+    fs.writeFileSync(file, bytes);
+    assert.deepEqual(await answerAsk(p.root, record.id as string, "yes"), { applied: false, reason, ask: record });
+    assert.equal(fs.readFileSync(file, "utf8"), bytes, `${record.id} is left as it was`);
+  }
+});
+
 // @anchor malformedAskId
 test("an id no ask file could carry is refused by value, by one predicate, and reads and writes nothing", async (t) => {
   const p = await mailboxProject(t);

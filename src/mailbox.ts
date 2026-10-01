@@ -223,8 +223,18 @@ export type AnswerResult =
   | { applied: true; ask: AskRecord }
   | { applied: false; reason: string; ask: AskRecord | null };
 
+/**
+ * A time as ISO-8601, or the number itself where no date can hold it, as `src/cli.ts#iso`
+ * prints one: the readers bound a time by finiteness alone, and a refusal never throws on a
+ * time a reader accepted.
+ */
+function printable(at: number): string {
+  const date = new Date(at);
+  return Number.isNaN(date.getTime()) ? String(at) : date.toISOString();
+}
+
 function when(at: number): string {
-  return `${new Date(at).toISOString()} (answeredAt ${at})`;
+  return `${printable(at)} (answeredAt ${at})`;
 }
 
 /**
@@ -248,7 +258,7 @@ export async function answerAsk(projectRoot: string, id: string, answer: string,
       return { applied: false, reason: `refused answer to ask ${id}: it was answered at ${when(current.answeredAt!)}, and the first answer stands`, ask: current };
     }
     if (current.status === "cancelled") {
-      const at = current.cancelledAt === undefined ? "" : ` at ${new Date(current.cancelledAt).toISOString()}`;
+      const at = current.cancelledAt === undefined ? "" : ` at ${printable(current.cancelledAt)}`;
       return { applied: false, reason: `refused answer to ask ${id}: it was cancelled${at} with the task that asked it`, ask: current };
     }
     const record: AskRecord = { ...current, status: "answered", answer, answeredAt: options.now ?? Date.now() };

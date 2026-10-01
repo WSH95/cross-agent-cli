@@ -361,6 +361,22 @@ test("answer to a damaged ask file is a 3 naming the file, as an unknown ask is,
   assert.equal(fs.readFileSync(seeded.brokenAsk, "utf8"), before);
 });
 
+// @anchor answerTimeOutOfRange
+test("answer to an answered or cancelled ask whose time no date can hold is a 3, never a 1", async (t) => {
+  const root = await engineProject(t);
+  const asks = path.join(root, ".cross-agent", "asks");
+  fs.mkdirSync(asks, { recursive: true });
+  for (const record of [
+    { id: "answered", taskId: "lead1", question: "Q", createdAt: 1, status: "answered", answer: "A", answeredAt: 1e100 },
+    { id: "cancelled", taskId: "lead1", question: "Q", createdAt: 1, status: "cancelled", cancelledAt: 1e100 },
+  ]) {
+    fs.writeFileSync(path.join(asks, `${record.id}.json`), JSON.stringify(record));
+    const ran = await run(["answer", record.id, "yes", "--project", root], root);
+    assert.equal(ran.code, 3, `${record.id}: ${ran.stderr}`);
+    assert.match(ran.stderr, new RegExp(`refused answer to ask ${record.id}: it was (answered|cancelled) at 1e\\+100`));
+  }
+});
+
 // @anchor answerWritesNothing
 test("answer in a project with no config or no mailbox is a 3, and writes nothing", async (t) => {
   // A repository nobody initialized is a project — it runs solo at its toplevel — but no
