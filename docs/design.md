@@ -2652,15 +2652,20 @@ attempted, denied ones included; a Codex record with no rollout to read answers
 `?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`), and so does one whose
 rollout lacks a command the transcript shows, holds an unclassified tool-bearing
 item, or changes a known command field's shape (`#codexRolloutUnclassified`,
-`#rolloutItemShapes`). A code-mode script is tokenized as JavaScript: a direct
-`exec_command` or `write_stdin` call must give one object argument with a literal
-`cmd` or `chars`, without spread or computed keys. An independent inventory counts
+`#rolloutItemShapes`). An output carrying a command is judged like the call, and a
+tool-bearing item is one with a field naming a tool, its arguments or a command,
+by any spelling, on it or one object below (`#rolloutOutputs`). A code-mode
+script is tokenized as JavaScript: a direct `exec_command` or `write_stdin` call
+must give one object argument with a literal `cmd` or `chars`, without spread or
+computed keys. An independent inventory counts
 command-tool and delegate names in raw source and decoded token text; any excess
 over direct calls followed answers `?`, including names hidden by tokenization.
 Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
-`#codexScriptFailClosed`, `#scriptNameAccounting`).
+`#codexScriptFailClosed`, `#scriptNameAccounting`). A word after `.` or `?.` is a
+property, never a control keyword or one that opens a regular expression, and a
+regular expression's escapes are decoded for the inventory (`#memberNames`).
 
 Whether a command is a launch is a shell's question, and the scan's contract for
 it is that **`pass` on a named line requires positive understanding**: every
@@ -2674,7 +2679,8 @@ operators; quotes, escapes and `$'…'`; substitutions wherever they stand, insi
 pipes feeding a shell; exec wrappers, shells, interpreters and node, their options
 walked letter by letter; ssh's command-carrying options; busybox's applets;
 function definitions (`tests/e2e-verify.test.ts#nestedSubstitutions`,
-`#optionWalk`, `#functionDefinitions`). `--` ends option parsing; words after
+`#optionWalk`, `#functionDefinitions`); a `$'…'` inside `${…}`, whose decoded
+names count (`#parameterAnsiC`). `--` ends option parsing; words after
 inline node code and `--` are arguments (`#optionTerminators`). Expansions where
 an option, operand or code must be literal are `?` (`#expandedOperands`).
 `NODE_OPTIONS` assignments, including `+=`, are read for loaders in prefixes,
@@ -2684,17 +2690,24 @@ named startup files answer `?` (`#codeAssignments`).
 The data readers account for stdin and arguments as data except for execution
 options, code assignments and deferred arithmetic/subscript evaluation; quoted
 substitutions at those readers, including values carried into arithmetic on the
-same line, answer `?` (`#deferredArithmetic`). Known stdin left unconsumed by a
-modeled reader answers `?` if it names a target or judges as a launch; unknown
+same line, answer `?` (`#deferredArithmetic`), and a `[[ … ]]` or `(( … ))` after
+`if`, `while` or `!` is read as at a command's start, in `PROMPT_COMMAND` too
+(`#reservedArithmetic`). Known stdin left unconsumed by a modeled reader answers
+`?` if it names a target or judges as a launch; unknown
 stdin at a shell, wrapper or remote command answers `?` on a named line
-(`#unreadStdin`). Other unmodeled constructs on named lines are also `?`
+(`#unreadStdin`). A pipe into a `{ … }` or `( … )` group feeds every command in
+it; a later command reads what the earlier ones left, so a launch it reads is
+`?` (`#groupStdin`). Other unmodeled constructs on named lines are also `?`
 (`#commandWordsModeled`); malformed syntax (`#nestedSubstitutions`), `case`
 statements and engine-named functions cap the line at `?`. Otherwise a modeled
 launch takes precedence over a doubt. Inline interpreter code naming a target
-is `?` (`#inlineCodeUnjudged`). Script files remain unread, and stdin handed to an
-interpreter's file is treated as data. Unnamed lines pass unless a modeled launch
-or the recursion limit decides them; names assembled beyond the supported
-decoding are outside this transcript audit.
+is `?` (`#inlineCodeUnjudged`). Script files remain unread. Stdin is an
+interpreter's program only when it has no script or its script is stdin (`-`,
+`/dev/stdin`); given to inline code, a module or a script file it is input the code
+may read and run, which no modeled reader consumes, so it answers `?` when it
+names a target or judges as a launch (`#interpreterStdin`). Unnamed lines pass
+unless a modeled launch or the recursion limit decides them; names assembled
+beyond the supported decoding are outside this transcript audit.
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three

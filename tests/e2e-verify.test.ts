@@ -1187,6 +1187,112 @@ test("6b-E-6: unknown tool-bearing rollout items and changed field shapes are qu
   }
 });
 
+// @anchor groupStdin
+const groupStdin = [
+  ["echo 'claude -p hi' | { bash; }", "FAIL"],
+  ["echo 'claude -p hi' | { bash -s; }", "FAIL"],
+  ["echo 'claude -p hi' | { sudo -s; }", "?"],
+  ["echo 'claude -p hi' | { xargs bash; }", "?"],
+  ["printf '%s\\n' 'claude -p hi' | { bash; }", "?"],
+  // Every command in the group shares the pipe, not only its first; a later one reads what
+  // the commands before it left, which this grammar cannot know exactly.
+  ["echo 'claude -p hi' | { true; bash; }", "?"],
+  ["echo 'claude -p hi' | (true; bash)", "?"],
+  ["echo 'claude -p hi' | { cat; }", "pass"],
+  ["{ echo a; echo b; } | wc -l", "pass"],
+] as const;
+test("6b-W-1: a pipe into a `{ … }` or `( … )` group is the stdin of every command in it", async (t) => {
+  await judgedAs(t, groupStdin);
+});
+
+// @anchor interpreterStdin
+const interpreterStdin = [
+  ["python3 /dev/stdin <<'EOF'\nimport os; os.system('claude -p hi')\nEOF", "?"],
+  ["python3 - <<'EOF'\nimport os; os.system('claude -p hi')\nEOF", "?"],
+  ["python3 -c 'exec(input())' <<< '__import__(\"os\").system(\"claude -p hi\")'", "?"],
+  ["node -e 'eval(require(\"fs\").readFileSync(0, \"utf8\"))' <<< 'require(\"child_process\").execSync(\"claude -p hi\")'", "?"],
+  ["node /dev/stdin <<< 'require(\"child_process\").execSync(\"claude -p hi\")'", "?"],
+  ["perl -e 'eval join \"\", <STDIN>' <<< 'system(\"claude -p hi\")'", "?"],
+  // A script file's code is unknown, so stdin naming an engine is not data either.
+  ["python3 script.py <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["python3 -c 'print(1)' <<< 'hello'", "pass"],
+  ["echo '{\"a\": 1}' | python3 -m json.tool", "pass"],
+  ["python3 script.py < data.txt", "pass"],
+] as const;
+test("6b-W-2: stdin is not data to an interpreter whose script is stdin, or whose code is inline or unknown", async (t) => {
+  await judgedAs(t, interpreterStdin);
+});
+
+// @anchor parameterAnsiC
+const parameterAnsiC = [
+  ["eval ${x:-$'cl\\x61ude -p hi'}", "?"],
+  ["eval \"${x:-$'cl\\x61ude -p hi'}\"", "?"],
+  ["bash -c ${x:-$'cl\\x61ude -p hi'}", "?"],
+  ["echo ${x:-$'hello'}", "pass"],
+] as const;
+test("6b-W-3: `$'…'` inside `${…}` is decoded before the line's names are read", async (t) => {
+  await judgedAs(t, parameterAnsiC);
+});
+
+// @anchor reservedArithmetic
+const reservedArithmetic = [
+  ["x='a[$(claude -p hi)]'; if [[ $x -eq 0 ]]; then :; fi", "?"],
+  ["x='a[$(claude -p hi)]'; while [[ $x -eq 0 ]]; do :; done", "?"],
+  ["x='a[$(claude -p hi)]'; ! [[ $x -eq 0 ]]", "?"],
+  ["x='a[`claude -p hi`]'; if [[ $x -eq 0 ]]; then :; fi", "?"],
+  ["x='a[$(claude -p hi)]'; if (( x )); then :; fi", "?"],
+  ["PROMPT_COMMAND=\"x='a[\\$(claude -p hi)]'; if [[ \\$x -eq 0 ]]; then :; fi\" bash -i", "?"],
+  ["env PROMPT_COMMAND=\"x='a[\\$(claude -p hi)]'; if [[ \\$x -eq 0 ]]; then :; fi\" bash -i", "?"],
+  ["if [[ $n -eq 0 ]]; then echo zero; fi", "pass"],
+  ["if (( n > 0 )); then echo more; fi", "pass"],
+] as const;
+test("6b-W-4: arithmetic after `if`, `while` or `!` is arithmetic, on a line and in PROMPT_COMMAND", async (t) => {
+  await judgedAs(t, reservedArithmetic);
+});
+
+// @anchor memberNames
+const memberNames = [
+  ['const o={while:()=>4}; o.while() / await tools["exec_command"]({cmd:"claude -p hi"}) / 2;', "FAIL"],
+  [String.raw`const o={while:()=>4};` + "\n" + String.raw`o.while() / await tools["exec_command"]({cmd:"claude -p hi"}) / 2;`, "FAIL"],
+  ['const o={if:()=>4}; o.if() / 2; await tools.exec_command({cmd:"ls"});', "pass"],
+  // A name a regular expression's escapes spell is still counted against the calls followed.
+  [String.raw`const re=/exec_command/; await tools.exec_command({cmd:"ls"});`, "?"],
+] as const;
+test("6b-W-5: a word after `.` or `?.` is a property name, and a name only a misread could hide is still counted", async (t) => {
+  for (const [script, expected] of memberNames) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006605";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${script}\n${out}`);
+    assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+  }
+});
+
+// @anchor rolloutOutputs
+const rolloutOutputs = [
+  [{ event: { type: "exec_command_output", call_id: "c1", command: ["claude", "-p", "hi"] } }, "FAIL"],
+  [{ entry: { type: "custom_tool_call_output", call_id: "c2", item: { command: ["claude", "-p", "hi"] } } }, "FAIL"],
+  [{ event: { type: "item_completed", item: { type: "NewItem", toolName: "exec_command", args: { cmd: "ls" } } } }, "?"],
+  [{ event: { type: "item_completed", item: { type: "NewItem", data: { name: "exec_command" } } } }, "?"],
+  [{ entry: { type: "new_thing", toolName: "write_stdin" } }, "?"],
+  // Codex's own output shapes carry no command, and a FileChange item runs nothing.
+  [{ entry: { type: "custom_tool_call_output", call_id: "c3", name: "exec", output: "Running pnpm lint" } }, "pass"],
+  [{ event: { type: "item_completed", item: { type: "FileChange", changes: {} } } }, "pass"],
+] as const;
+test("6b-W-6: an output carrying a command is judged like the call, and a tool-bearing field makes an unclassified item a question", async (t) => {
+  for (const [step, expected] of rolloutOutputs) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006606";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, step as RolloutStep]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${JSON.stringify(step)}\n${out}`);
+    assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+  }
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.

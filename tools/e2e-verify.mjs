@@ -206,10 +206,11 @@ const knownEvents = new Set([
 //   launch. A name is an engine, configured bin or src/server.ts / src/cli.ts entry point
 //   anywhere in the raw text or decoded words, including nested quotes, assignments,
 //   heredocs, here-strings, redirection targets and comments (`namesTarget`, `namesInList`).
-// - Modeled constructs are decoded and judged: substitutions, `$'…'`, literal options and
-//   their operands, shell scripts on known stdin, interpreter code, node loaders, ssh's
-//   command options, busybox applets and function bodies. `--` ends option parsing;
-//   arguments after inline node code and `--` are data, not a script.
+// - Modeled constructs are decoded and judged: substitutions, `$'…'` (inside `${…}` too),
+//   literal options and their operands, shell scripts on known stdin, interpreter code,
+//   node loaders, ssh's command options, busybox applets and function bodies; a `[[ … ]]`,
+//   `(( … ))` or subshell after `if`, `while` or `!` is read as at a command's start. `--`
+//   ends option parsing; arguments after inline node code and `--` are data, not a script.
 // - The data commands (`dataOnly`) account for their stdin and arguments as data, except
 //   execution options, code-carrying assignments and arithmetic/subscript readers. Quoted
 //   substitutions given to such builtins, or carried into arithmetic on the same line,
@@ -220,14 +221,19 @@ const knownEvents = new Set([
 // - Known stdin left unconsumed by a modeled reader is `?` if it names a target or judges
 //   as a launch. Unknown stdin at a shell, wrapper (including sudo -s/-i and xargs) or
 //   remote command is `?` on a named line; xargs builds argv rather than forwarding stdin.
+//   A pipe into a `{ … }` or `( … )` group feeds every command in it; a later command reads
+//   what the earlier ones left, so a launch it reads is `?`.
 // - Unmodeled commands, expansions where a literal is needed, unknown options, malformed
 //   syntax and other unsupported constructs are `?` on named lines. Malformed syntax,
 //   case statements and engine-named functions cap the line at `?`; otherwise a modeled
 //   launch takes precedence over a doubt.
 // - Inline interpreter code naming a target is `?`: a shell reader cannot judge it.
-//   Script files are not read, and stdin handed to an interpreter's file is treated as
-//   data. Unnamed lines pass unless a modeled launch or the recursion limit decides them;
-//   names assembled beyond the supported decoding are outside this transcript audit.
+//   Script files are not read. Stdin is an interpreter's program only with no script or a
+//   script that is stdin (`-`, `/dev/stdin`); given to inline code, a module or a script
+//   file it is input the code may read and run, consumed by nobody, so it is `?` when it
+//   names a target or judges as a launch. Unnamed lines pass unless a modeled launch or the
+//   recursion limit decides them; names assembled beyond the supported decoding are
+//   outside this transcript audit.
 //
 // It is stricter than the deny list, on purpose. A deny rule is matched by the engine
 // against the command it is asked to run (`Bash(claude *)`), by that engine's own matcher;
@@ -241,14 +247,18 @@ const launch = launcherFor(config);
 // every command it shows attempted is judged like the transcript's own. The same contract
 // holds there: a Codex record with no rollout to read, one whose rollout lacks a command
 // the transcript shows, and one whose rollout holds a tool call this reader does not
-// classify, including changed command-field shapes, are `?`, named. A code-mode script is
-// tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin direct call must
-// give one object argument with a literal cmd/chars and no spread or computed key. The
-// raw source and decoded token text are also inventoried: more occurrences of a command
-// tool or delegate name than direct calls followed is `?`, even in comments or regexes.
-// Aliases, eval/Function/import, legacy octal escapes, role-dependent slashes the reader
-// cannot classify, and asides naming launches also answer `?`. This is a bounded reader,
-// not JavaScript execution; a positively read launch still takes precedence.
+// classify, including changed command-field shapes, are `?`, named. An output carrying a
+// command is judged like the call; any other unclassified item with a field naming a tool,
+// its arguments or a command, by any spelling, on it or one object below, is `?`. A
+// code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
+// direct call must give one object argument with a literal cmd/chars and no spread or
+// computed key. The raw source and decoded token text are also inventoried: more
+// occurrences of a command tool or delegate name than direct calls followed is `?`, even
+// in comments or regexes, whose escapes are decoded for it. Aliases, eval/Function/import,
+// legacy octal escapes, role-dependent slashes the reader cannot classify, and asides
+// naming launches also answer `?`; a word after `.` or `?.` is a property, never a control
+// keyword or one that opens a regular expression. This is a bounded reader, not
+// JavaScript execution; a positively read launch still takes precedence.
 const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
 // codex-cli 0.159.2's tools (A3's `ALL_TOOLS`): those that run a command, and those that run
 // nothing — patches, goals, images, MCP resources, plugins, the web — which a rollout may
@@ -446,10 +456,12 @@ function git(...argv) {
  * function definitions; `[[ … ]]` and `(( … ))`. Deferred arithmetic/subscript evaluation
  * is not performed: quoted substitutions at those readers are doubts on named lines.
  * Every `$(…)`, backtick and `<(…)`/`>(…)` is a command line of its own: in a word,
- * in double quotes, inside `${…}`, `$((…))` and `$[…]`, and in an unquoted heredoc's body.
- * What a command reads on stdin is known: a heredoc's body, a here-string, a file, or the
- * output of the command piped into it, which is known text for `echo`, `printf` and `cat`
- * of a heredoc, and unknown for anything else.
+ * in double quotes, inside `${…}`, `$((…))` and `$[…]`, and in an unquoted heredoc's body;
+ * a `$'…'` inside `${…}` is decoded too, so the names it spells count. What a command reads
+ * on stdin is known: a heredoc's body, a here-string, a file, or the output of the command
+ * piped into it, which is known text for `echo`, `printf` and `cat` of a heredoc, and
+ * unknown for anything else. A pipe into a `{ … }` or `( … )` group feeds every command in
+ * it: the first reads it whole, a later one only what the commands before it left.
  *
  * In each simple command, code-carrying assignments are judged by `assignmentCode`;
  * other leading assignments are data. Reserved words are passed over; the word left is the
@@ -483,7 +495,11 @@ function git(...argv) {
  *   letter against its own table; inline code (`-c`, `-e`, `-E`, an awk program or `-v`
  *   value, a program on stdin) that names an engine, `cross-agent`, a configured binary or
  *   an entry point is `?`; a script file is not read;
- * - `if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!` and `{` are passed over; `for`
+ * - for node and the interpreters alike, stdin is the program only when there is no script
+ *   or the script is stdin (`-`, `/dev/stdin`, `/dev/fd/0`); to inline code, a module or a
+ *   script file it is input the code may read and run, which no modeled reader consumes;
+ * - `if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!` and `{` are passed over, and a
+ *   `[[ … ]]`, `(( … ))` or subshell after them is read as at a command's start; `for`
  *   and `select` lists are data; arithmetic and subscript readers carrying deferred
  *   substitutions are unmodeled.
  * A `case` statement and a function named like an engine change what later words mean, and
@@ -629,7 +645,24 @@ function launcherFor(settings) {
   function lexList(text, start, closer) {
     const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null,
       named: false, arithmetic: false, deferred: false };
-    const newCommand = (pipeFrom) => ({ words: [], stdin: null, pipeFrom, funcDef: undefined, arith: false, cond: false });
+    // A `{ … }` or `( … )` group a pipe feeds: every command in it reads that pipe, the
+    // first one exactly, the rest after whatever came before them may have read.
+    const groups = [];
+    const newCommand = (pipeFrom) => {
+      const group = pipeFrom === null ? groups.findLast((entry) => entry.pipeFrom !== null) : undefined;
+      const shared = group !== undefined && group.used;
+      if (group !== undefined) group.used = true;
+      return { words: [], stdin: null, pipeFrom: pipeFrom ?? group?.pipeFrom ?? null, sharedStdin: shared,
+        funcDef: undefined, arith: false, cond: false };
+    };
+    const openGroup = (kind, pipeFrom, used) => groups.push({ kind, pipeFrom, used });
+    const closeGroup = (kind) => {
+      const at = groups.findLastIndex((entry) => entry.kind === kind);
+      if (at !== -1) groups.splice(at);
+    };
+    // Reserved words a `[[ … ]]`, `(( … ))` or subshell may follow at the start of a command.
+    const reservedOnly = (words) => words.every((word) => !word.quoted && !word.expansions
+      && ["if", "elif", "then", "else", "while", "until", "do", "!"].includes(word.value));
     let command = newCommand(null);
     let word = null;
     let redirect = null;
@@ -677,16 +710,22 @@ function launcherFor(settings) {
         command.words.push(done);
         return;
       }
-      if (command.words.length === 0 && plain && (done.value === "{" || done.value === "}")) { endCommand(); return; }
+      if (command.words.length === 0 && plain && done.value === "{") {
+        openGroup("{", command.pipeFrom, false);
+        endCommand();
+        return;
+      }
+      if (command.words.length === 0 && plain && done.value === "}") { closeGroup("{"); endCommand(); return; }
       // `function name {`: the definition ends where its body starts.
       const [keyword, defined] = command.words;
       if (plain && done.value === "{" && command.words.length === 2 && !keyword.quoted && keyword.value === "function") {
         command.funcDef = defined.value;
         command.words = [];
+        openGroup("{", null, false);
         endCommand();
         return;
       }
-      if (command.words.length === 0 && plain && done.value === "[[") command.cond = true;
+      if (plain && done.value === "[[" && reservedOnly(command.words)) command.cond = true;
       command.words.push(done);
     }
     function endCommand(pipe = false) {
@@ -725,6 +764,15 @@ function launcherFor(settings) {
       while (k < text.length) {
         const ch = text[k];
         if (ch === "\\") { k += 2; continue; }
+        // `$'…'` in a parameter's word or an array's element is decoded as bash decodes it
+        // (inside double quotes too: `extquote` is on by default), and its names count.
+        if (ch === "$" && text[k + 1] === "'" && (close === "}" || close === ")")) {
+          const decoded = decodeAnsiC(k);
+          if (namesTarget(decoded.value)) list.named = true;
+          if (!decoded.closed) return -1;
+          k = decoded.end;
+          continue;
+        }
         if (ch === "'" && close !== "))" && !doubleContext) {
           const end = text.indexOf("'", k + 1);
           if (end === -1) return -1;
@@ -814,8 +862,16 @@ function launcherFor(settings) {
       if (k >= text.length) return -1;
       return k + 1;
     }
-    // `$'…'` whose `$` is at `at`, decoded as bash decodes it. The index after its quote.
+    // `$'…'` whose `$` is at `at`, as a word's text. The index after its quote.
     function ansiC(at) {
+      const decoded = decodeAnsiC(at);
+      literal(decoded.value, true);
+      if (!decoded.closed) { list.problems.push("an unterminated quote"); return text.length; }
+      return decoded.end;
+    }
+    // `$'…'` whose `$` is at `at`, decoded as bash decodes it: its value, the index after its
+    // closing quote, and whether it closed.
+    function decodeAnsiC(at) {
       const simple = { a: "\x07", b: "\b", e: "\x1b", E: "\x1b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\v",
         "\\": "\\", "'": "'", '"': '"', "?": "?" };
       let k = at + 2;
@@ -840,9 +896,7 @@ function launcherFor(settings) {
         if (escape === "c" && k < text.length) { value += String.fromCharCode(text[k++].toUpperCase().charCodeAt(0) & 0x1f); continue; }
         value += `\\${escape}`;
       }
-      literal(value, true);
-      if (k >= text.length) { list.problems.push("an unterminated quote"); return text.length; }
-      return k + 1;
+      return k >= text.length ? { value, end: text.length, closed: false } : { value, end: k + 1, closed: true };
     }
     // At a newline, each heredoc opened on the line just ended takes its body, in order; an
     // unquoted one's body expands, so its substitutions are commands.
@@ -975,12 +1029,13 @@ function launcherFor(settings) {
           i += pair[0].length;
           continue;
         }
-        if (named.length === 0 && redirect === null) {
+        if (reservedOnly(named) && redirect === null) {
           if (text[i + 1] === "(") {
             const end = scanTo(i + 2, "))");
             if (end !== -1) { command.arith = true; i = end; continue; }
           }
           depth++;
+          openGroup("(", command.pipeFrom, true);
           i++;
           continue;
         }
@@ -991,7 +1046,7 @@ function launcherFor(settings) {
       }
       if (c === ")") {
         finishWord();
-        if (depth > 0) { depth--; endCommand(); i++; continue; }
+        if (depth > 0) { depth--; closeGroup("("); endCommand(); i++; continue; }
         if (closer === ")") {
           endCommand();
           list.end = i;
@@ -1028,8 +1083,13 @@ function launcherFor(settings) {
     const inner = { depth: context.depth, named, deferred };
     let verdict = pass;
     let cap = null;
-    const arithmetic = list.arithmetic || list.commands.some((command) => command.arith
-      || (command.words[0]?.value === "[[" && command.words.some((word) => /^-(?:eq|ne|lt|le|gt|ge|v)$/.test(word.value))));
+    // A `[[ … ]]` comparing integers evaluates its operands as arithmetic, after `if`,
+    // `while` or `!` as much as at a command's start.
+    const conditional = (words) => {
+      const at = words.findIndex((word) => !(!word.quoted && !word.expansions && ["if", "elif", "then", "else", "while", "until", "do", "!"].includes(word.value)));
+      return at !== -1 && words[at].value === "[[" && !words[at].quoted && words.slice(at).some((word) => /^-(?:eq|ne|lt|le|gt|ge|v)$/.test(word.value));
+    };
+    const arithmetic = list.arithmetic || list.commands.some((command) => command.arith || conditional(command.words));
     if (named && deferred && arithmetic) verdict = doubt("arithmetic may evaluate a quoted substitution or subscript", list.text);
     for (const nested of list.nested) verdict = worse(verdict, judgeList(nested, { ...inner, depth: context.depth + 1 }));
     for (const command of list.commands) {
@@ -1321,11 +1381,19 @@ function launcherFor(settings) {
     return worse(scriptOnStdin(command, deeper, line), unread);
   }
 
-  /** What a command reads on stdin: text, something unknown, or nothing given. */
+  /**
+   * What a command reads on stdin: text, something unknown, or nothing given. A later command
+   * in a piped group reads what the commands before it left, so its text is `shared`.
+   */
   function stdinOf(command) {
     if (command.stdin !== null) return command.stdin;
     if (command.pipeFrom === null) return null;
-    const producer = command.pipeFrom;
+    const output = outputOf(command.pipeFrom);
+    return command.sharedStdin ? { ...output, shared: true } : output;
+  }
+
+  /** What a command writes to a pipe, as far as this grammar knows it. */
+  function outputOf(producer) {
     let k = 0;
     while (k < producer.words.length && isAssignment(producer.words[k])) k++;
     const words = producer.words.slice(k);
@@ -1348,6 +1416,7 @@ function launcherFor(settings) {
     if (stdin === null) return pass;
     if (stdin.kind === "text") {
       const judged = judgeText(stdin.text, deeper);
+      if (judged.verdict === "launch" && stdin.shared) return doubt("a script on stdin that commands before it in its group may have read part of", stdin.text);
       if (judged.verdict === "pass" && !stdin.exact && names(stdin.text)) return doubt("a script on stdin this grammar cannot read exactly, beside an engine's name", stdin.text);
       return judged;
     }
@@ -1437,22 +1506,31 @@ function launcherFor(settings) {
     return read;
   }
 
-  /** `node`: the modules it loads, the script it runs, and its inline code. */
+  // A script operand that is stdin itself: the program is what stdin holds.
+  const stdinScripts = new Set(["-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"]);
+
+  /**
+   * `node`: the modules it loads, the script it runs, and its inline code. Stdin is its
+   * program only with no script or a script that is stdin; to inline code or a script file
+   * it is input the code may read and run, so it is left to `unreadInput`.
+   */
   function nodeRun(words, command, context) {
-    command.stdinRead = true;
     const line = values(words).join(" ");
     const read = nodeWalk(words);
     if (read.launch) return launchAt(words);
     if (read.script !== undefined && isEntryPoint(read.script)) return read.known ? launchAt(words) : doubt(unmodeled, line);
     const unread = !read.known && (context.named || namesTarget(line)) ? doubt(unmodeled, line) : pass;
     if (read.code.length > 0) return worse(read.code.some(namesTarget) ? doubt(inline, line) : pass, unread);
-    if (read.script !== undefined) return unread;
+    if (read.script !== undefined && !stdinScripts.has(read.script)) return unread;
     return worse(programOnStdin(command, context, line), unread);
   }
 
-  /** Python, Perl, Ruby and awk: inline code that names an engine is a question. */
+  /**
+   * Python, Perl, Ruby and awk: inline code that names an engine is a question. Stdin is the
+   * program only with no script or a script that is stdin; to inline code, a module or a
+   * script file it is input the code may read and run, so it is left to `unreadInput`.
+   */
   function interpreterRun(name, words, command, context) {
-    command.stdinRead = true;
     const line = values(words).join(" ");
     const kind = name.startsWith("python") ? "python" : name.startsWith("perl") ? "perl" : name.startsWith("ruby") ? "ruby" : "awk";
     const spec = { python: { ...pythonSpec, codeEnds: true }, perl: perlSpec, ruby: rubySpec, awk: awkSpec }[kind];
@@ -1473,7 +1551,7 @@ function launcherFor(settings) {
     }
     if (code.length > 0) return worse(code.some(namesTarget) ? doubt(inline, line) : pass, unread);
     if (kind === "awk") return unread;
-    if (walk.k < words.length && words[walk.k].value !== "-") return unread;
+    if (walk.k < words.length && !stdinScripts.has(words[walk.k].value)) return unread;
     return worse(programOnStdin(command, context, line), unread);
   }
 
@@ -1576,11 +1654,12 @@ function rolloutShows(shown, command) {
  * keystrokes of a `write_stdin` call and the argv of a `local_shell_call`; the argv of every
  * `CommandExecution` item and `exec_command_begin` event; and the tool of every
  * `McpToolCall` item and `mcp__…` call. The tool calls of codex-cli 0.159.2's that run
- * nothing (`quietTools`) are classified as such. Any other tool-call entry, a line that is
- * not JSON, a script that does not read and a command a script computes are named, because
- * each could be the one this scan looks for. No verdict reads a call's output: an attempt
- * counts whether it ran, failed or was refused, and the refused ones are the ones `--json`
- * leaves out (A6).
+ * nothing (`quietTools`) are classified as such. An output carrying a command is judged
+ * like the call. Any other tool-call entry or item with a field naming a tool, its
+ * arguments or a command, a line that is not JSON, a script that does not read and a
+ * command a script computes are named, because each could be the one this scan looks for.
+ * No verdict reads a call's result: an attempt counts whether it ran, failed or was
+ * refused, and the refused ones are the ones `--json` leaves out (A6).
  */
 function rolloutCommands(file) {
   const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [] };
@@ -1588,8 +1667,25 @@ function rolloutCommands(file) {
   try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
   const unclassified = (what) => read.unreadable.push(`a tool call this reader does not classify (${what})`);
   const argv = (value) => Array.isArray(value) && value.length > 0 && value.every((word) => typeof word === "string");
-  const toolBearing = (value) => value !== null && typeof value === "object"
-    && ["name", "tool", "tool_name", "arguments", "command", "cmd", "input", "action"].some((key) => Object.hasOwn(value, key));
+  // A field naming a tool, its arguments or a command, by any spelling, on a payload, on its
+  // item, or on an object one level below either (`data.name`).
+  const toolKey = /^(?:name|tool|tool_?name|tool_?call|args?|arguments|argv|params|parameters|function|func|fn|command|commands|cmd|cmd_?line|input|action|script|call|exec|program)$/i;
+  const holder = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  const toolBearing = (value) => holder(value) && Object.keys(value)
+    .some((key) => toolKey.test(key) || (holder(value[key]) && Object.keys(value[key]).some((inner) => toolKey.test(inner))));
+  // The commands an entry carries in a `command`, `cmd`, `cmdline` or `argv` field, there or
+  // one object below: a string is a command line, an argv of strings an argv, anything else
+  // a shape this reader does not know.
+  const carried = (value, depth = 0) => {
+    if (!holder(value)) return;
+    for (const [key, field] of Object.entries(value)) {
+      if (/^(?:command|cmd|cmd_?line|argv)$/i.test(key)) {
+        if (typeof field === "string") read.lines.push(field);
+        else if (argv(field)) read.argvs.push(field);
+        else unclassified(`a ${key} field that is neither a command line nor an argv`);
+      } else if (depth < 1 && holder(field)) carried(field, depth + 1);
+    }
+  };
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let entry;
@@ -1638,7 +1734,11 @@ function rolloutCommands(file) {
     } else if (entry?.type === "event_msg" && type === "exec_command_begin") {
       if (argv(payload.command)) read.argvs.push(payload.command);
       else unclassified("exec_command_begin command is not an argv of strings");
-    } else if (!type.endsWith("_output") && (toolBearing(payload) || toolBearing(payload.item))) {
+    } else if (type.endsWith("_output")) {
+      // An output carrying a command is judged like the call that ran it.
+      carried(payload);
+      carried(payload.item);
+    } else if (toolBearing(payload) || toolBearing(payload.item)) {
       unclassified(payload.item?.type ?? type);
     }
   }
@@ -1680,8 +1780,15 @@ function scriptRead(source) {
     const before = toolCounts(raw);
     for (const [name, count] of toolCounts(text)) named.set(name, (named.get(name) ?? 0) + Math.max(0, count - (before.get(name) ?? 0)));
   };
+  // A regular expression's text is source a misread slash may have swallowed: its escapes
+  // are decoded for the inventory as a string's would be.
+  const decodeEscapes = (text) => text
+    .replace(/\\u\{([0-9a-fA-F]{1,6})\}/g, (all, hex) => (parseInt(hex, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(hex, 16)) : all))
+    .replace(/\\u([0-9a-fA-F]{4})/g, (all, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\x([0-9a-fA-F]{2})/g, (all, hex) => String.fromCharCode(parseInt(hex, 16)));
   const inventory = (list) => {
     for (const token of list) {
+      if (token.kind === "regex") countDecoded(decodeEscapes(token.text), token.text);
       if (token.kind === "string" || token.kind === "name") countDecoded(token.value ?? token.text, source.slice(token.start, token.end));
       if (token.kind === "template") {
         token.parts.forEach((part, k) => countDecoded(part, token.rawParts[k]));
@@ -1729,7 +1836,10 @@ function scriptRead(source) {
       if (toolText.test(text) && !keys.has(text) && !isDelegate(text)) read.computed.push("a string holding a command tool's name");
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
-      else if (token.kind === "regex") read.patterns.push(token.text);
+      else if (token.kind === "regex") {
+        read.patterns.push(token.text);
+        if (decodeEscapes(token.text) !== token.text) read.patterns.push(decodeEscapes(token.text));
+      }
       else if (token.kind === "template") { read.asides.push(token.parts.join(" ")); token.inner.forEach(aside); }
     }
   };
@@ -1794,8 +1904,10 @@ function callArgument(list, at, key) {
  * takes an operand, and after the `)` of an `if`, `for`, `while` or `with`; it divides
  * after a value, after any other `)`, after a `]`, after a postfix `++` or `--` and after
  * the `}` of an object literal. After the `}` of a block or a prefix `++` or `--` it could
- * be either, and the script does not read. Operand-like property names and contextual
- * keywords are also ambiguous; a newline prevents `++`/`--` from being postfix. It throws
+ * be either, and the script does not read. A word after `.` or `?.` is a property: never a
+ * control keyword or one that opens a regular expression, though one spelled like an
+ * operand keyword, and a contextual keyword, leave the slash after it unsure; a newline
+ * prevents `++`/`--` from being postfix. It throws
  * with the construct named on a script it
  * cannot read: those, an unterminated string, template, comment or regular expression, and
  * a legacy octal escape, whose meaning depends on a mode this reader cannot see.
@@ -1902,12 +2014,14 @@ function scriptTokens(source) {
     }
     return { kind: "name", text };
   }
-  // What a `/` after `previous` is: "regex", "division", or "unsure".
+  // What a `/` after `previous` is: "regex", "division", or "unsure". A name after `.` or
+  // `?.` is a property: never a keyword that opens a regular expression, though one spelled
+  // like an operand keyword stays unsure.
   function slashAfter(previous) {
     if (previous === null) return "regex";
     if (previous.kind === "name") {
       if (["of", "yield", "await"].includes(previous.text) || (previous.member && operandKeywords.has(previous.text))) return "unsure";
-      return operandKeywords.has(previous.text) ? "regex" : "division";
+      return operandKeywords.has(previous.text) && !previous.member ? "regex" : "division";
     }
     if (previous.kind !== "punct") return "division";
     if (previous.text === ")") return previous.control ? "regex" : "division";
@@ -1920,6 +2034,7 @@ function scriptTokens(source) {
   // `else`, `do`, `try`, `finally` or a class's name; an object literal after an operator.
   function blockAfter(previous, braces) {
     if (previous === null) return true;
+    if (previous.kind === "name" && previous.member) return false;
     if (previous.kind === "name") return ["else", "do", "try", "finally"].includes(previous.text) || !operandKeywords.has(previous.text);
     if (previous.kind !== "punct") return false;
     if ([";", "{", "}", ")", "=>"].includes(previous.text)) return true;
@@ -1967,9 +2082,9 @@ function scriptTokens(source) {
         if (text === "++" || text === "--") {
           token.postfix = previous !== null && !/[\n\r\u2028\u2029]/.test(source.slice(previous.end, start))
             && (previous.kind === "number" || previous.kind === "string" || previous.kind === "template"
-            || (previous.kind === "name" && !operandKeywords.has(previous.text)) || (previous.kind === "punct" && (previous.text === ")" || previous.text === "]")));
+            || (previous.kind === "name" && (previous.member || !operandKeywords.has(previous.text))) || (previous.kind === "punct" && (previous.text === ")" || previous.text === "]")));
         } else if (text === "(") {
-          parens.push(previous?.kind === "name" && ["if", "while", "for", "with"].includes(previous.text));
+          parens.push(previous?.kind === "name" && !previous.member && ["if", "while", "for", "with"].includes(previous.text));
         } else if (text === ")") {
           token.control = parens.pop() ?? false;
         } else if (text === "{") {
