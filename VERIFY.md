@@ -251,3 +251,202 @@ $0.014, the four `--rules` runs $0.088). Codex reports tokens only: I1 (i)
 22,461 in / 1,571 out, I1 (ii) 45,102 / 1,969, the `~/.cache` runs 43,369 / 388
 and 103,367 / 625. The coordinator's smoke was not rerun (Claude $0.196, Grok
 $0.015).
+
+## S11 — engine placement (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `ebc9960`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 25 commits over `886ae9f` (fifteen, fix round 1's nine, the wrap-up) |
+| `npm test` at the root | 703 tests: 702 pass, 0 fail, 1 skipped (the Codex I2 test, guarded behind `CROSS_AGENT_REAL_CODEX=1`), on `main` at `ebc9960` |
+| citation checker | 1011 citations in 2 files (37 by line, 974 by symbol or anchor), 0 misses; `--since 886ae9f`: 0 drifted, 0 not judged |
+| engines | Claude Code 2.1.286, codex-cli 0.159.3, grok 1.0.44 (5b807183dd79), 1.0.46 (2765805b9442) for E2b and E2c; `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium |
+| host (E3, E2) | the E1 command, `claude -p --plugin-dir <worktree> --model claude-sonnet-5 --effort medium --permission-mode bypassPermissions --output-format stream-json --verbose`, under `setsid --fork` from the sample |
+| operator driver (B2, injections) | `scripts/driver.mjs` in the archive: a stdio client of the server, one operator-row call per request file, any number in flight |
+| sample repository | `~/.cache/agent-team/cross-agent-e2e/slugkit`, `main` from `5578d3c` to `15e9f4e`; 87 tests green |
+| raw evidence | `~/.cache/agent-team/probe-logs/s11-2026-10-01/` (one directory per run, the scripts, every config version), and the records of every run but E3 and E2 under `~/.cache/agent-team/cross-agent-e2e/probe-tasks/s11/`, named in `docs/probes.md#s11` |
+| how a run is judged | `node tools/e2e-verify.mjs --project <sample> --since <lead id> --slug <slug>`, `CODEX_HOME` unset, and the ledger's depth-and-lineage reading (`scripts/depth-lineage.py`), which sees a record one level too shallow where the verifier's upper bound cannot |
+
+Landed: the server splits stdin on `\n` alone, so U+2028 and U+2029 inside a request
+no longer strand it (`atc-s96.59`). `ask`, `list_asks` and `answer` live over
+`.cross-agent/asks/`, under a per-ask lock, first answer wins, and they are offered
+only under engine placement. An operator's `delegate` of `dev-team-engine`'s lead
+launches it with a per-run mount of this server and its loop and role as the system
+prompt; a lead the depth cap would hold is refused, as is one on an engine that has
+no per-run mount. The Codex mount carries `tool_timeout_sec=3600` and whitelists the
+four task markers, and an MCP call is stall activity. A resumed lead receives its
+lineage's asks. `list_tasks` marks a lead's `self` and `own`. Cancelling a lead
+cancels its open asks. The operator CLI has one verb table, `--json`, one exit
+protocol, and `answer` and `report`. The engine lead's ten-step loop and role prompt
+are written, and the launcher routes on placement.
+
+### E3 — one `dev-team-engine` task, a Claude lead
+
+Task "S11-E3: add `is_slug(text) -> bool` beside `slugify`, with tests". Host
+session 387 s, 8 turns, $0.25: `describe_mode`, `list_roles`, one `delegate` of the
+lead and one `wait`. No shell.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `144d7771…` | lead | claude | claude-sonnet-5 | medium | 360 s | the loop; closing report through `result` |
+| `9c82d1cd…` | planner | codex | gpt-6-luna | medium | 32 s | plan |
+| `e564c7d9…` | plan-reviewer | grok | grok-4.7 | medium | 104 s | approve |
+| `fe75f142…` | implementer | claude | claude-sonnet-5 | medium | 30 s | 69 → 73 tests green |
+| `c3f54b10…` | code-reviewer | grok | grok-4.7 (read-only) | medium | 90 s | ready |
+
+`tools/e2e-verify.mjs --since 144d7771… --slug s11-e3` gave 7 pass, 0 fail, 1 without
+evidence:
+- only the root worktree; no `task/*` branch; a clean tree; 73 tests on `main` at
+  `81cec9d`;
+- five records with their logs, every one at depth 2 or less against a cap of 2;
+- the journal `worktree-created, git, committed, git, merged, tests-passed,
+  worktree-removed, branch-deleted`;
+- condition 8 `?` on six `tool_progress` events, read: each `heartbeat: true`, its
+  `parent_tool_use_id` one of the lead's three `wait` calls, no command, no input —
+  neither a launch nor a `delegate`.
+
+Depth and lineage: the lead at depth 1, `parentTaskId` null, its lineage itself; four
+specialists at depth 2, each the lead's child, the lead first in its spec's lineage —
+PASS. The lead's server carried all four markers (Claude passes its environment on).
+It listed the lead row's fourteen tools, ran no shell command, and showed no hook
+activity under `disableAllHooks`. `result` on the lead equals its result file;
+`cross-agent report` shows the five tasks `passed`.
+
+Deviation: the host relayed `wait`'s tail instead of calling `result`; the launcher
+now says the tail is not the report.
+
+### E2 — one `dev-team-engine` task, a Codex lead
+
+Task "S11-E2: `slug_words` accepts `max_words: int | None`, with tests". Host
+session 531 s, 13 turns, $0.28: `describe_mode`, `list_roles`, `list_tasks`, one
+`delegate` of the lead, one `wait` and `result`.
+
+| task | role | engine | model | effort | duration | outcome |
+|---|---|---|---|---|---|---|
+| `83750cc5…` | lead | codex | gpt-6-luna | medium | 490 s | the loop in 27 MCP calls; closing report through `result` |
+| `6bbadfd0…` | planner | codex | gpt-6-luna | medium | 24 s | plan |
+| `8b7d2f21…` | plan-reviewer | grok | grok-4.7 | medium | 150 s | approve |
+| `b4ef9d49…` | implementer | claude | claude-sonnet-5 | medium | 28 s | 73 → 77 tests green |
+| `d7185cc2…` | code-reviewer | grok | grok-4.7 (read-only) | medium | 82 s | ready, one low-priority note |
+
+`tools/e2e-verify.mjs --since 83750cc5… --slug s11-e2` gave 7 pass, 0 fail, 1 without
+evidence: the same seven, with 77 tests on `main` at `7a5c15f`.
+
+Condition 8 was `?`, "its rollout holds delegate: 1 occurrences but only 0 direct
+calls followed". The reading:
+- the occurrence is a tool-discovery regular expression naming `delegate`, which
+  calls nothing;
+- the rollout's six top-level `function_call`s are Codex's code-mode `wait` on
+  yielded cells;
+- there is no command execution anywhere.
+
+Depth and lineage: PASS, as E3. All 27 MCP calls completed with no approval text, and
+`git_mutate` and `git_root` ran without a Codex prompt. `result` equals the result
+file; `cross-agent report` shows the five `passed`.
+
+Deviation: the host summarized the report and ran two read-only `git` commands of its
+own; the launcher now forbids both under engine placement. No run has exercised that
+text yet.
+
+### A lead's server, from the ledger
+
+| lead | the server's environment | the lead row | its child |
+|---|---|---|---|
+| Claude (E3) | Claude's own, all four markers | depth 1 | depth 2, the lead first in its lineage |
+| Codex, three settings (B2 run 1) | `HOME`, `LANG`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER` only | depth **0** | depth **1**, a lineage of itself |
+| Codex, `env_vars` whitelisting the markers (B2 run 2, E2) | the seven and the four markers, the engine's values | depth 1 | depth 2, the lead first in its lineage |
+
+### B2 — a Codex lead's tool call past 60 s
+
+| run | child | the lead's `wait`, by its rollout item's own `duration` | verdict |
+|---|---|---|---|
+| 1 | Claude `consult`, `sleep 100`: refused by Claude Code ("Blocked: standalone sleep"), backgrounded, answered at 22 s | 19.04 s | inconclusive |
+| 2 | Codex `consult`, `sleep 150`, done at 161.4 s | `{secs: 158, nanos: 219517083}` = 158.22 s, `status: completed`, no error | pass, under `tool_timeout_sec=3600` |
+
+### Failure injections
+
+| injection | what was done | what happened |
+|---|---|---|
+| cancelling the lead (I1) | `cancel` of a Claude lead while its implementer ran | one outcome per task: the implementer and the lead `cancelled`, planner and plan reviewer `already done`; `asksCancelled: []`; every record terminal, no process left; the worktree and branch stand, as a cancel leaves them |
+| a killed lead's ask (I2) | SIGKILL to the lead's engine while its ask was open | the record `failed`, the ask still `open`; `cross-agent answer` exit 0, a second answer exit 3 naming the first's time; the resumed lead's brief ends `## Asks so far` with the question and answer while `briefHash` is the caller's text; the resumed lead created `task/s11-i2` |
+| the suite fails on `main` after the merge (I3) | a root-only marker in `testCommand` | the merge stood, root `run_command` exit 1, no `tests-passed`; the final message offers `git revert --no-edit <defaultShaBeforeMerge>..<branchHead>` with the journal's two SHAs and runs nothing after it |
+| interrupted after `worktree remove` (I4) | SIGKILL to the lead's engine at `worktree-removed`, its ask open | the operator's reconciliation pass deleted the branch through `git_root`, journaling `branch-deleted`; the verifier then 7 pass and `?`; cancelling the dead lead cancelled its ask |
+| a rebase conflict (I5) | the operator's own commit to `main` on the lines the task rewrote | `git_mutate rebase` `ok: false` with git's CONFLICT text, journaling nothing; `rebase --abort` journaled `git`, no rebase state left; the lead asked, naming the file, and stopped on the answer |
+
+Each injection's verifier ran for the conditions its stopping point allows, and each
+depth-and-lineage reading passed. The restores are recorded in each run's directory.
+
+### Codex 0.159.3
+
+- A stdio MCP server starts with `HOME`, `LANG`, `LOGNAME`, `PATH`, `SHELL`, `TERM` and
+  `USER` only. `mcp_servers.<id>.env_vars=[…]` adds named variables with the engine's
+  own values.
+- `tool_timeout_sec=3600` lets one MCP call run past the 60 s default (158.22 s,
+  measured).
+- The MCP item is 0.159.2's: the `--json` `mcp_tool_call` pair, and the rollout's
+  `McpToolCall` with `duration {secs, nanos}`.
+- Every call ran inside a code-mode `exec` script. A yielded cell is waited on with
+  Codex's top-level `wait` function (`{cell_id, yield_time_ms}`), which runs no command
+  and which the verifier does not yet classify.
+- `default_tools_approval_mode="approve"` under `codex exec`'s `never`: 27 calls, no
+  approval text.
+- Codex does not confine a mounted server to its sandbox: a read-only lead's server
+  wrote the ledger.
+
+### The sample at close
+
+`dev-team-engine`, `limits.maxDepth` 2, the lead on claude/claude-sonnet-5/medium (as
+the last run left it), the planner on codex/gpt-6-luna, both reviewers on
+grok/grok-4.7 (the code reviewer read-only), the implementer and `consult` on
+claude/claude-sonnet-5, all at medium; `project.*` unchanged. `main` at `a832c1b`,
+clean, the root worktree alone, no `task/*` branch, 82 tests green; 16 records (E1's
+six, E3's five, E2's five).
+
+### Cost of the recorded runs
+
+$4.77 in dollars on the subscriptions:
+
+| run | dollars |
+|---|---|
+| E3 | $1.29 |
+| B2 | $0.11 |
+| E2 | $0.56 |
+| I1 | $0.14 |
+| I2 | $0.14 |
+| I3 | $1.05 |
+| I4 | $0.34 |
+| I5 | $1.14 |
+
+Killed or cancelled Claude sessions report no cost (I1's lead and implementer, I2's
+two leads, I4's lead), so this undercounts. Codex reports tokens only: 2,494,197 in /
+18,162 out across S11, of which E2's lead was 1,384,308 / 4,318.
+```
+
+### Fix round 1 and the wrap-up
+
+Also landed: the launcher's host-loop paragraphs each name `host` placement, and the
+engine section says who reconciles — the live lead's step 1, the continuing lead
+after a resume, and the host only for a failed or killed lead's leftovers that will
+not be resumed, never at session start; an engine-placed host closes on the lead's
+report verbatim; a resume refuses while an unreadable ask may be its chain's, and a
+cancel names such asks beside its outcomes; `answer` refuses a project with no
+config; one ask-id predicate; `--json` prints one document on every exit, help
+included; the verifier reads Claude Code's in-flight heartbeat in E3's shape, so E3's
+lead scans clean (E3's `--since` range still includes E2's records and their `?`).
+
+The E3 and E2 deviations above stand as recorded; the launcher now says the tail of
+`wait` is not the report, and its host-loop paragraphs name `host` placement.
+
+#### E2b and E2c — E2's host clause, run again
+
+| run | host | lead | verdict | depth | host calls | closing message |
+|---|---|---|---|---|---|---|
+| E2b, `s11-e2b` | 386 s, 9 turns, $0.25 | `33fde77f…`, codex, 362 s; merge `efa2d27` | 7 pass, `?` read as a tool-discovery regular expression naming `cross-agent` | PASS | the launcher's only, no shell | a list of its own — the launcher's closing paragraph asked for one; now host placement's |
+| E2c, `s11-e2c` | 250 s, 8 turns, $0.21 | `84a1c550…`, codex, 232 s; merge `15e9f4e` | 7 pass, `?` read as a tool-discovery regular expression naming `delegate` | PASS | the launcher's only, no shell | the lead's report verbatim |
+
+In E2c `git_root` refused a lead's `worktree add` outside the mode's worktree
+directory, and the lead ran its refusal check before retrying at the right path.
+
+The sample at close: `main` at `15e9f4e`, 87 tests green, `dev-team-engine`, the lead
+on codex/gpt-6-luna/medium as E2c left it. Fix round 1's runs cost $1.03 (a Grok
+1.0.46 smoke $0.015, E2b $0.59, E2c $0.43) and Codex 2,473,954 tokens in / 8,913 out;
+S11's recorded runs, $5.81 in all.
