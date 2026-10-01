@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T15:24:13Z — claude
+[auto-checkpoint] T15 in flight from e436132 (changes the sample's project-scoped Grok attach; repoints at the root at its close); task 12 brief being drafted.
+
 ### 2026-10-01T15:22:23Z — claude
 [auto-checkpoint] T14 merged (main 827739c; VERIFY dbb5e18; 735/734/1); .14 .61 closed; beads .72–.74 filed; T15 next.
 

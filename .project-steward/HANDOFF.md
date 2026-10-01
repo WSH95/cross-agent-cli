@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T15:22:23Z
+updated_at: 2026-10-01T15:24:13Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -90,8 +90,11 @@ entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the restor
 commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
 brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimization pass
-runs after T15 merges). T15's brief v3 (`task-9-brief.md`) is ready for dispatch after
-T14 merges; it takes `.64`, `.66` and `.70`.
+runs after T15 merges). T15 (`atc-s96.15`, Grok packaging, E6 and E7; with `.64`, `.66`, `.70`, `.71`) is
+**in flight** from `e436132` (brief `task-9-brief.md` v3, report `task-9-report.md`); it
+changes the sample's project-scoped Grok attach (`<sample>/.grok/`) and repoints it at
+the root checkout as its last step. Task 12's brief (go/no-go, final review, close) is
+being drafted.
 
 
 ## Next steps
