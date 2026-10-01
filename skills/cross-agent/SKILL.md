@@ -274,10 +274,16 @@ its closing report is its own final message, which you read with `result {task_i
 of the run from the ledger, then each task's final message. Its exit codes are the
 README's table (`README.md`, "The operator CLI").
 
-Close the session with the same per-task list to the user, plus what was not
-verified: a suite nobody ran, a review nobody asked for, a branch left standing
-and why. Relay the specialists' own words where they carry the finding;
-a summary of a review is not a review.
+Under `host` placement, close the session with the same per-task list to the user,
+plus what was not verified: a suite nobody ran, a review nobody asked for, a branch
+left standing and why. Relay the specialists' own words where they carry the
+finding; a summary of a review is not a review.
+
+Under `engine` placement that list is already written, by the lead, and your
+closing message is the lead's report verbatim: `result`'s text, every line in its
+order, unchanged — not a summary of it and not a list of your own, because its task
+ids, SHAs and verdicts are what the user checks the run against. Anything of yours
+comes after it.
 
 ## Guardrails
 
@@ -328,8 +334,10 @@ one that continues it.
 
 When the lead settles, `result {task_id: <lead id>}` is its closing report, the
 whole of it — `wait`'s tail of it is not the report. Show it to the user whole, as
-the lead wrote it, and put anything of your own after it rather than in its place;
-`cross-agent report` renders every task of the run from the ledger.
+the lead wrote it: your closing message opens with it verbatim, every line in its
+order — not a summary of it, and not a per-task list of your own — and anything of
+yours comes after it rather than in its place. `cross-agent report` renders every
+task of the run from the ledger.
 
 Your own calls under this placement are the launcher's setup, monitoring and
 answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the

@@ -206,6 +206,17 @@ test("under engine placement the host runs no command on the project and shows t
   assert.match(section, /run no `git` and no test command of your own[^.]*not even to look/);
   assert.match(section, /`cross-agent report` and `cross-agent answer` are the only commands/);
   assert.match(section, /[Ss]how it to the user whole/);
+  // E2b's host called `result` under that text and still closed with a list of its own:
+  // the launcher's closing paragraph asked every host for one. The list is host
+  // placement's; under engine placement the closing message is the report, verbatim.
+  assert.match(section, /closing message (opens with|is) (it|the lead's report)[^.]*verbatim/);
+  assert.match(section, /not a summary of it/);
+  const closing = sectionOf(launcher(), "Reporting").split(/\n\s*\n/).filter((paragraph) => /[Cc]lose the session/.test(paragraph));
+  assert.ok(closing.length > 0, "the launcher says how a session closes");
+  for (const paragraph of closing) assert.match(flat(paragraph), /`host`/, "a per-task list of the host's own is host placement's");
+  assert.ok(sectionOf(launcher(), "Reporting").split(/\n\s*\n/).some((paragraph) =>
+    /`engine`/.test(paragraph) && /verbatim/.test(flat(paragraph)) && /not a summary/.test(flat(paragraph))),
+  "under engine placement the session closes on the lead's report itself");
 });
 
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
