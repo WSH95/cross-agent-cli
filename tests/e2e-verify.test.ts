@@ -961,7 +961,9 @@ test("a command word the grammar does not model, or one an expansion supplies, i
     ["npm test", "pass"],
     ["make test", "pass"],
     ["ssh -G example.com", "pass"],
-    ["git diff -U5 HEAD -- docs/design.md skills/cross-agent/SKILL.md", "pass"],
+    // A directory is a word too: `cross-agent` in a path names the CLI as much as anywhere.
+    ["git diff -U5 HEAD -- docs/design.md skills/cross-agent/SKILL.md", "?"],
+    ["sed 's/x/claude/e' notes.md", "?"],
   ]);
 });
 

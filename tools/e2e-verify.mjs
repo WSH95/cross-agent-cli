@@ -491,12 +491,12 @@ function launcherFor(settings) {
   const binPaths = new Set(bins);
   const isEngine = (value) => engineNames.has(basename(value)) || binPaths.has(value);
   const isEntryPoint = (value) => typeof value === "string" && /(?:^|\/)src\/(?:server|cli)\.(?:ts|js)$/.test(value);
-  // A name as a word of its own: a run of word characters, dots and hyphens that no `/`
-  // follows, its leading hyphens and trailing dots dropped — `claude`, `/usr/bin/claude`,
-  // `ProxyCommand=claude` and `${E:-claude}` name it; `.claude`, `claude.ts`,
-  // `claude-sonnet-5`, `not-claude` and the directory in `skills/cross-agent/SKILL.md` do not.
-  const names = (text) => [...String(text).matchAll(/[\w.-]+/g)]
-    .some((run) => String(text)[run.index + run[0].length] !== "/" && engineNames.has(run[0].replace(/^-+/, "").replace(/\.+$/, "")));
+  // A name as a word of its own: a run of word characters, dots and hyphens, its leading
+  // hyphens and trailing dots dropped — `claude`, `/usr/bin/claude`, `ProxyCommand=claude`,
+  // `${E:-claude}`, `s/x/claude/e` and the directory in `skills/cross-agent/SKILL.md` name
+  // it; `.claude`, `claude.ts`, `claude-sonnet-5` and `not-claude` do not.
+  const names = (text) => (String(text).match(/[\w.-]+/g) ?? [])
+    .some((run) => engineNames.has(run.replace(/^-+/, "").replace(/\.+$/, "")));
   const namesTarget = (text) => names(text)
     || /(?:^|[\s'"=/])(?:\.\/)?src\/(?:server|cli)\.(?:ts|js)(?![\w.-])/.test(String(text));
   const pass = { verdict: "pass", why: "", at: "" };
