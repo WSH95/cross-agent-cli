@@ -1994,7 +1994,15 @@ stdin), the resumed turn ran `exec resume` with the brief on stdin, and each of 
 resumed attempts is one `exec` call, its own output's exit 0 for the in-worktree write and 1
 with "Read-only file system" for the root file, `<root>/.git`, `$HOME` and the sibling path,
 as `--read-rollout` paired them; the filesystem agrees. Both turns ran `gpt-6-luna` at
-medium, `workspace-write`, the resume in the worktree (`b6/codexI2Real/`).
+medium, `workspace-write`, the resume in the worktree (`b6/codexI2Real/`). That proof took
+a cell's printed exit for its command's, though a cell's output is whatever its script
+printed, so a step only written down could have passed it. Fix round 1 made the proof
+positive — every call in the thread a `direct` exec running one step, nothing computed,
+nothing unreadable (`tests/engines/codex.test.ts#codexI2ProofShape`) — and run 2's rollout
+still reads as proof under it. A third run, its brief giving each step's whole two-line
+script, passed under the new proof: five `direct` calls, exit 0 inside the worktree and 1
+with "Read-only file system" for the four outside writes, the filesystem agreeing
+(`fix1/codexI2Real-run3/`, thread `01a0f7c2-6c76-7ac0-a0ee-00463fe32bc5`, 49.6 s).
 
 The probe worktrees and branches were then removed by hand (`b6/cleanup.txt`): Grok's
 pointer restored first, then `git worktree remove --force`, `git branch -D` and `git
