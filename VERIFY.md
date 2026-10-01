@@ -450,3 +450,147 @@ The sample at close: `main` at `15e9f4e`, 87 tests green, `dev-team-engine`, the
 on codex/gpt-6-luna/medium as E2c left it. Fix round 1's runs cost $1.03 (a Grok
 1.0.46 smoke $0.015, E2b $0.59, E2c $0.43) and Codex 2,473,954 tokens in / 8,913 out;
 S11's recorded runs, $5.81 in all.
+
+## T16 — the operator CLI (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `1f57683`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 16 commits over `567a1f5` (five, fix round 1's seven, the wrap-up's three, and the work plan's rows re-pointed to the merged commits) |
+| `npm test` at the root | 723 tests: 722 pass, 0 fail, 1 skipped (the Codex I2 test, guarded behind `CROSS_AGENT_REAL_CODEX=1`), on `main` at `1f57683` |
+| citation checker | 1083 citations in 2 files (37 by line, 1046 by symbol or anchor), 0 misses; `--since a8d1577`: 0 drifted, 0 not judged |
+| engines | none: every proof is a seeded ledger, a bare repository or a test |
+
+Landed: the operator CLI's nine remaining verbs on S11's dispatcher, each calling what
+its tool calls; `listTasks` without a pass for the operator's read; the reads proved
+side-effect free; the verbs that write refused inside a task's environment; `report`'s
+messages indented; `list-asks` naming damaged ask files (the CLI half of
+`atc-s96.65`). The review's fix round made `show` take a task's status, exit and final
+message from one read of its record, kept the record on screen beside a journal that
+does not read, failed the marker refusal closed for a verb that does not declare it
+only reads, put `git`'s usage flags before its `--`, and checked each journal step;
+the wrap-up printed a time no date can hold as its number and bounded a journal step's
+time.
+
+| verb | calls | exits beside 1 and 2 |
+|---|---|---|
+| `init` | `initConfig` | 0, 3 |
+| `modes` | `loadMode` per built-in mode, `loadConfig(root).mode` | 0, 3 |
+| `tasks [--status] [--reconcile]` | `listTasks(root, status, {reconcile})` | 0 |
+| `show <id> [--lines]` | `find`, `tailLines`, `readOutcome`, `readJournal`, `result`; no `observeStall` | 0, 3, 4, 6 |
+| `log <id> [--lines]` | `find`, `tailLines` | 0, 3 |
+| `cancel <id>` | `cancel(root, id)`, no lead | 0, 3, 4 |
+| `verify-worktree <path> <branch>` | `verifyWorktree` | 0, 3 |
+| `git <slug> -- <args…>` | `gitMutate` with `lockWaitSeconds` and the mode's `gitPolicy` | 0, 1, 3 |
+| `journal [<slug>]` | `readJournal` / `listJournals` | 0, 1, 3 |
+| `list-asks [--status]` | `listAsks(root, {status?})` | 0, 5 |
+| `answer <ask-id> <text>` | `answerAsk` | 0, 3 |
+| `report [--since]` | `scan` | 0, 3 |
+
+Every verb but `init` also exits 3 when no project resolves. The verbs that write —
+`init`, `answer`, `cancel`, `git`, `tasks --reconcile` — exit 3 under
+`CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`.
+
+### The uninitialized proof, by hand
+
+In a scratch repository (`<dir>`; `<worktree>` is the task worktree; no other
+substitution):
+
+    $ git init -q -b main <dir> && git -C <dir> commit -q --allow-empty -m init
+    $ sha256sum <dir>/.git/info/exclude
+    6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1  <dir>/.git/info/exclude
+    $ node <worktree>/src/cli.ts modes; echo "exit $?"
+      dev-team 0.1.0 — Dev team
+        A planner and a plan reviewer read at the project root; an implementer works in a linked
+        worktree on its own task branch and a code reviewer reads that branch. The loop runs in your
+        own host session, which owns every root git operation.
+        roles:
+          planner (root, read-only)
+          plan-reviewer (root, read-only)
+          implementer (worktree, workspace-write)
+          code-reviewer (worktree, read-only)
+          consult (root, read-only)
+      dev-team-engine 0.1.0 — Dev team, engine-placed lead
+        The dev-team roles with the loop moved into a spawned Claude or Codex lead, so your own
+        session stays free while the team works. The lead is read-only at the project root and
+        reaches git and the test command through the server's root tools.
+        roles:
+          lead (root, read-only)
+          planner (root, read-only)
+          plan-reviewer (root, read-only)
+          implementer (worktree, workspace-write)
+          code-reviewer (worktree, read-only)
+          consult (root, read-only)
+    * solo 0.1.0 — Solo
+        One role and one turn: the built-in consultant reads the project at its root under a
+        read-only sandbox and reports back, or takes one change in a task worktree of its own when
+        the call asks for one. No plan, no review round, no second engine — the zero-ceremony
+        delegation, the mode a project with no config runs as, and the proof that the worktree
+        provider is a seam rather than an assumption.
+        roles:
+          consult (root, read-only)
+    exit 0
+    $ node <worktree>/src/cli.ts tasks; echo "exit $?"
+    no tasks
+    not reconciled: pass --reconcile
+    exit 0
+    $ node <worktree>/src/cli.ts tasks --json; echo "exit $?"
+    {
+      "ok": true,
+      "tasks": [],
+      "invalid": [],
+      "errors": [],
+      "skipped": [],
+      "reconciled": false
+    }
+    exit 0
+    $ node <worktree>/src/cli.ts show 0123456789abcdef0123456789abcdef0123; echo "exit $?"
+    cross-agent: no task 0123456789abcdef0123456789abcdef0123
+    exit 3
+    $ node <worktree>/src/cli.ts log 0123456789abcdef0123456789abcdef0123; echo "exit $?"
+    cross-agent: no task 0123456789abcdef0123456789abcdef0123
+    exit 3
+    $ node <worktree>/src/cli.ts journal; echo "exit $?"
+    exit 0
+    $ node <worktree>/src/cli.ts journal some-slug; echo "exit $?"
+    cross-agent: no journal some-slug
+    exit 3
+    $ node <worktree>/src/cli.ts list-asks; echo "exit $?"
+    exit 0
+    $ node <worktree>/src/cli.ts report; echo "exit $?"
+    exit 0
+    $ test ! -e <dir>/.cross-agent && echo "no .cross-agent"
+    no .cross-agent
+    $ sha256sum <dir>/.git/info/exclude
+    6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1  <dir>/.git/info/exclude
+    $ git -C <dir> status --porcelain --untracked-files=all | wc -c
+    0
+
+Exits `0 0 0 3 3 0 3 0 0`, as expected.
+
+### The marker proof, by hand, in the same repository
+
+    $ CROSS_AGENT_TASK=x node <worktree>/src/cli.ts cancel 0123456789abcdef0123456789abcdef0123; echo $?
+    cross-agent: CROSS_AGENT_TASK is set in this environment: cancel is an operator's command, and an engine reaches the project through its server, never this CLI
+    3
+    $ CROSS_AGENT_TASK=x node <worktree>/src/cli.ts tasks; echo $?
+    no tasks
+    not reconciled: pass --reconcile
+    0
+    $ node <worktree>/src/cli.ts cancel 0123456789abcdef0123456789abcdef0123; echo $?   # the same cancel, no marker
+    cross-agent: no task 0123456789abcdef0123456789abcdef0123
+    3
+    $ test ! -e <dir>/.cross-agent && echo "no .cross-agent"
+    no .cross-agent
+
+### The seeded proof
+
+The tests, over a ledger `tests/helpers/seed.ts#seededProject` builds through the
+ledger's own functions and the CLI's own `init`:
+`tests/tasks.test.ts#listTasksWithoutPass`;
+`tests/cli.test.ts#cliReadsWriteNothingUninitialized`, `#cliReadsLeaveSeededLedger`,
+`#cliTasksReconcileFlag`, `#cliModes`, `#cliTasks`, `#cliShow`, `#cliShowOneRead` (a
+FIFO at the record's path that would serve a second read a settled record), `#cliLog`,
+`#cliCancel`, `#cliCancelStillActive`, `#cliIdOutsideAlphabet`, `#cliVerifyWorktree`,
+`#cliGit` (the held `git.lock` refused in under 4 s against a one-second wait),
+`#cliJournal`, `#cliListAsks`, `#cliRefusesInsideEngine`, `#cliWritesFailsClosed`,
+`#cliUsage`, `#cliDocsNameVerbs`, and `#reportVerb`'s table case.
