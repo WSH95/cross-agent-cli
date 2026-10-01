@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T02:04:53Z — claude
+[auto-checkpoint] [auto-checkpoint] 6b: two fix rounds then a class-level escalation of the verifier (uncommitted in the worktree pending the suite run); dispatch probe 316/316; verifier tests 34/34; sample 8 pass.
+
 ### 2026-10-01T00:59:48Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b fix round 2 landed (6d52315..48a8227; the verifier's fail-closed contract; 645/644/1); round-3 reviews running; server bug atc-s96.59 (readline splits on U+2028/2029) found by dogfooding, folded into S11.
 
