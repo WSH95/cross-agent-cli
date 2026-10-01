@@ -16,6 +16,7 @@ import type { Outcome } from "../src/tasks.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
+import { snapshot } from "./helpers/seed.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -271,6 +272,37 @@ test("list_tasks reconciles first: an orphan is settled, an unreadable record is
   }
   assert.deepEqual((await listTasks(p.root, "running")).tasks.map((task) => task.id), [live.id]);
   assert.deepEqual((await listTasks(p.root, "done")).tasks, []);
+});
+
+// @anchor listTasksWithoutPass
+test("listTasks without a pass reads the ledger as it is: nothing is settled, and nothing is written", async (t) => {
+  const p = await projectWithRoles(t);
+  // A record a pass would settle at once: `running`, and the runner it names is gone.
+  const quiet = await seed(p.root, { role: "planner", cwd: p.root, status: "running" });
+  assert.equal((await update(p.root, quiet.id, { runnerIdentity: await deadIdentity() })).applied, true);
+  const broken = path.join(p.root, ".cross-agent", "tasks", "broken.json");
+  fs.writeFileSync(broken, "{not a record");
+  const state = path.join(p.root, ".cross-agent");
+  const before = snapshot(state);
+  assert.ok(Object.hasOwn(before, path.join("tasks", "broken.json")));
+
+  // The operator's read: the record as the ledger holds it, and the damaged file named.
+  const read = await listTasks(p.root, undefined, { reconcile: false });
+  assert.equal(read.ok, true);
+  assert.deepEqual(read.tasks.map((task) => [task.id, task.status]), [[quiet.id, "running"]]);
+  assert.deepEqual(read.invalid.map((entry) => entry.file), [broken]);
+  assert.ok(read.invalid[0].reason.length > 0, "the damaged file is named with its reason");
+  assert.deepEqual(read.errors, []);
+  assert.deepEqual(read.skipped, []);
+  assert.deepEqual(snapshot(state), before, "a listing without a pass writes nothing under .cross-agent/");
+  assert.deepEqual((await listTasks(p.root, "done", { reconcile: false })).tasks, []);
+
+  // The same call without the option is the tool's, and the pass settles what it finds.
+  const reconciled = await listTasks(p.root);
+  assert.equal(reconciled.tasks.find((task) => task.id === quiet.id)?.status, "failed");
+  assert.equal(p.record(quiet.id).reason, "runner lost");
+  assert.deepEqual(reconciled.invalid.map((entry) => entry.file), [broken]);
+  assert.equal(fs.readFileSync(broken, "utf8"), "{not a record", "a pass names a damaged file and leaves it alone");
 });
 
 test("a cancel of a running task is settled by its own runner, with both identities and no live group", async (t) => {

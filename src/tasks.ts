@@ -162,17 +162,32 @@ export interface ListResult {
   skipped: Array<{ id: string; reason: string }>;
 }
 
+export interface ListOptions {
+  /**
+   * Whether the listing reconciles first; true unless a caller says otherwise. The one
+   * caller of `false` is the operator CLI's `tasks` (`src/cli.ts#tasksVerb`): an operator's
+   * read is side-effect free, and the reconciling read is the one it asks for by name.
+   */
+  reconcile?: boolean;
+}
+
 /**
- * The ledger, brought back in step with the kernel first: every listing reconciles, so an
- * operator never reads a `running` task whose runner died an hour ago (design section 2).
+ * The ledger, brought back in step with the kernel first: every listing the tool answers
+ * reconciles, so a lead or an operator never reads a `running` task whose runner died an
+ * hour ago (design section 2). Without the pass it is the ledger exactly as it stands, the
+ * damaged files still named, and nothing in the project is written.
  */
-export async function listTasks(projectRoot: string, status?: TaskStatus): Promise<ListResult> {
-  const pass = await reconcileAndCleanup(projectRoot);
-  const tasks = scan(projectRoot).records
+export async function listTasks(projectRoot: string, status?: TaskStatus, options: ListOptions = {}): Promise<ListResult> {
+  const select = (records: readonly TaskRecord[]) => records
     .filter((record) => status === undefined || record.status === status)
     .sort((left, right) => right.createdAt - left.createdAt)
     .map(view);
-  return { ok: true, tasks, invalid: pass.invalid, errors: pass.errors, skipped: pass.skipped };
+  if (options.reconcile === false) {
+    const { records, invalid } = scan(projectRoot);
+    return { ok: true, tasks: select(records), invalid, errors: [], skipped: [] };
+  }
+  const pass = await reconcileAndCleanup(projectRoot);
+  return { ok: true, tasks: select(scan(projectRoot).records), invalid: pass.invalid, errors: pass.errors, skipped: pass.skipped };
 }
 
 export interface Outcome {
