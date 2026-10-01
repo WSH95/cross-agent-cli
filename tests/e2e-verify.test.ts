@@ -482,6 +482,7 @@ test("a script passes only when every call it makes to a command tool is one thi
     'if (r) { text("a"); } /"/.test(s);\nawait tools.exec_command({cmd: "ls"});',
     "const re = /claude -p hi/;\nawait tools.exec_command({cmd: \"ls\"});",
     'if (true) /exec_command({cmd:"claude -p hi"})/.test("x");\nawait tools.exec_command({cmd:"ls"});',
+    'setTimeout("tools.exec_command({cmd: \'claude -p hi\'})", 0);\nawait tools.exec_command({cmd: "ls"});',
   ]) await expect(script, "?");
   // A postfix `++` divides, and a regular expression after a condition's `)` is one.
   await expect('let i = 0; i++ / 2; await tools.exec_command({cmd: "claude -p hi"}); let y = 1 / 2;', "FAIL");
@@ -887,6 +888,8 @@ test("a substitution nested in an expansion or a heredoc is judged, and a shell'
     ['echo "claude -p hi', "?"],
     ["echo $(claude -p hi", "?"],
     ["grep claude notes.txt | bash", "?"],
+    ["source <(echo claude -p hi)", "?"],
+    ["bash <(echo claude -p hi)", "?"],
   ]);
 });
 

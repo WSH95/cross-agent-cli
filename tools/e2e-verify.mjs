@@ -456,8 +456,8 @@ function git(...argv) {
  * - a shell (`sh`, `bash`, `dash`, `zsh`, `ksh`, `ash`, `mksh`, `hush`, `busybox sh`): its
  *   options walked letter by letter (`-o` and `-O` taking the next word wherever they sit
  *   in a cluster); its `-c` payload, or with no script its stdin, judged as a line; a script
- *   file it runs is not read;
- * - `eval`: its arguments judged as a line; `source` and `.`: a script file, not read;
+ *   file it runs is not read, and one an expansion names (`<(…)`, `$file`) is unmodeled;
+ * - `eval`: its arguments judged as a line; `source` and `.`: a script file, as a shell's;
  * - `find`: the command each `-exec`, `-execdir`, `-ok` and `-okdir` runs;
  * - `ssh`: its options walked, the value of `-o ProxyCommand`, `LocalCommand`,
  *   `RemoteCommand` and `KnownHostsCommand` judged as a line, and the remote command, or
@@ -1085,7 +1085,8 @@ function launcherFor(settings) {
     if (wrapperSpecs.has(name)) return wrapped(name, words, command, context);
     if (shells.has(name)) return shellRun(words, command, context);
     if (name === "eval") return judgeText(values(words.slice(1)).join(" "), { depth: context.depth + 1, named: context.named });
-    if (name === "source" || name === ".") return pass;
+    // A script file is not read; one an expansion names — `<(…)`, `$file` — could be anything.
+    if (name === "source" || name === ".") return words[1]?.expansions && context.named ? doubt(unmodeled, line) : pass;
     if (name === "find") return findRun(words, context);
     if (name === "ssh") return sshRun(words, command, context);
     if (name === "node" || name === "nodejs") return nodeRun(words, command, context);
@@ -1213,7 +1214,7 @@ function launcherFor(settings) {
     const unread = !known && context.named ? doubt(unmodeled, line) : pass;
     const deeper = { depth: context.depth + 1, named: context.named };
     if (commandMode) return k < words.length ? worse(judgeText(words[k].value, deeper), unread) : unread;
-    if (!fromStdin && k < words.length) return unread;
+    if (!fromStdin && k < words.length) return worse(words[k].expansions && context.named ? doubt(unmodeled, line) : pass, unread);
     return worse(scriptOnStdin(command, deeper, line), unread);
   }
 
@@ -1554,9 +1555,13 @@ function scriptRead(source) {
     });
   };
   visit(tokens);
+  // A string that holds a command tool's name could be code the script evaluates later.
+  const toolText = /\b(?:exec_command|write_stdin)\b|__delegate\b/;
   const aside = (list) => {
     for (const token of list) {
       if (taken.has(token)) continue;
+      const text = token.kind === "string" ? token.value : token.kind === "template" ? token.parts.join(" ") : "";
+      if (toolText.test(text) && !keys.has(text) && !isDelegate(text)) read.computed.push("a string holding a command tool's name");
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
       else if (token.kind === "regex") read.patterns.push(token.text);
