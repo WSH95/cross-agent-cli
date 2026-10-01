@@ -1042,7 +1042,7 @@ root (T6-R0-3): its implementers' specs carry no `protectedPaths` and their deny
 rules name `node <sample>/src/server.ts`. None of the eight pass conditions
 depends on either, so the run stands as recorded; the shipped configuration's
 evidence is I2's Claude row under the fix, above, and E4, T14's first end-to-end
-run, is the first to exercise both inside a whole loop (`docs/probes.md#e4`).
+run, is the first whole loop to exercise both under a Codex plugin host (`docs/probes.md#e4`).
 
 Two things the run did not do. **Step 8 never ran**: with `main` unmoved since
 the branch was cut, the host went from the second "ready" straight to the
@@ -1779,10 +1779,18 @@ run but E4 and E5 were moved to `~/.cache/agent-team/cross-agent-e2e/probe-tasks
 after their reading. Engines: Claude Code 2.1.286, codex-cli 0.159.3, grok 1.0.46
 (2765805b9442), node 24.11.0; `claude-sonnet-5`, `gpt-6-luna` and `grok-4.7`, each at
 medium, the hosts included. Every host was `codex exec --json -o <run>/host.last.txt -C
-<target> -s workspace-write -m gpt-6-luna -c model_reasoning_effort="medium" -`, started
-with `setsid --fork` from the target by `scripts/host-codex.sh`, which scrubs the outer
-session's markers and exports `CROSS_AGENT_PROJECT=<target>`; never with
-`--ignore-user-config` or `--ephemeral`.
+<target> -s workspace-write -m gpt-6-luna -c model_reasoning_effort="medium" -`, never with
+`--ignore-user-config` or `--ephemeral`. From B1's third step on, the operator's config held
+the plugin `enabled = false`, and each host that was to have the server added the
+per-session `-c plugins.cross-agent@agent-team-cli.enabled=true`; B5's host had the server
+from a window with the file enabled instead (`timeline.txt`). The hosts were started with
+`setsid --fork` from the target by `scripts/host-codex.sh`, which scrubs the outer session's
+markers and, from the launcher's form on, exports `CROSS_AGENT_PROJECT=<target>` — with two
+exceptions: B4(b)'s nested host was started from this task's own shell, without `setsid`,
+and E5's second turn was `codex exec resume <thread> -`, which takes neither `-C` nor `-s`
+(P10), with the operator's answer as its prompt (`scripts/host-codex-resume.sh`). Fix round
+1's marker probes used `fix1/scripts/host-codex-env.sh`, the same command with the host's
+`CROSS_AGENT_*` chosen per probe (`docs/probes.md#codexMarkers`).
 
 <!-- @anchor codexPluginInstall -->
 ## The Codex plugin's install (B1)
@@ -1842,17 +1850,20 @@ tool, call `list_roles` and paste it, give `describe_mode`'s first loop line, th
   `<plugin root>/${PLUGIN_ROOT}`, `"cwd": "."` became `<plugin root>/.`, and a `command`
   of `${PLUGIN_ROOT}/.codex-plugin/serve` stayed literal (`b1/step2e/variants-reading.txt`).
 - **Form 3, shipped**: `"command": "./.codex-plugin/serve", "cwd": ".", "env_vars":
-  ["CROSS_AGENT_PROJECT"]`. The server ran as `node
+  ["CROSS_AGENT_PROJECT"]`, the task's markers added to `env_vars` in fix round 1
+  (`docs/probes.md#codexMarkers`). The server ran as `node
   ~/.codex/plugins/cache/agent-team-cli/cross-agent/0.0.1/src/server.ts`, its working
   directory the copy, and the host listed the fourteen tools of the operator row under
   the sample's `dev-team-engine` as `mcp__cross_agent__<tool>` (server `cross_agent`:
   Codex folds the hyphen, as it does for the `-c` mount). `list_roles` returned the
   sample's six roles with their bindings, `describe_mode`'s loop opened "# The dev-team
-  loop, engine-placed", and the skill sat under the plugin cache root. From the copy no
-  project can be discovered — and a copy of a checkout carries that checkout's `.git`,
-  which discovery would follow back to it — so the launcher refuses to start the server
-  without `CROSS_AGENT_PROJECT` (`tests/packaging.test.ts#codexManifestMounts`,
-  `#codexLauncherRunsServer`).
+  loop, engine-placed", and the skill sat under the plugin cache root. From the copy
+  discovery finds no project the operator meant: from an export's copy, nothing; from a
+  checkout's, whose `.git` came along, a repository the operator did not name — the copy
+  itself for a main checkout, the checkout it was copied from for a linked worktree, as
+  `discoverProject` answered for `cp -a` copies of each (`fix1/discovery-copies.txt`). So
+  the launcher refuses to start the server without `CROSS_AGENT_PROJECT`
+  (`tests/packaging.test.ts#codexManifestMounts`, `#codexLauncherRunsServer`).
 
 A plugin server's `McpToolCall` rollout item carries a key the `-c` mount's did not:
 `pluginId` (`"cross-agent@agent-team-cli"`) beside `arguments, duration, id, result, server,
@@ -1877,16 +1888,58 @@ budget either.
 `HOME`, `LANG`, `LOGNAME`, `PATH`, `PWD`, `SHELL`, `TERM` and `USER`: the seven S11 read
 under the `-c` mount (`docs/probes.md#e2ServerEnv`), `CROSS_AGENT_PROJECT` passed by the
 whitelist from the operator's environment, and `PWD`, which the launcher's `sh` exports.
-No task marker. `HOME` is `/home/wsh` and there is no `CODEX_HOME`, so a Codex
-specialist's rollout lands under `~/.codex/sessions`, where the verifier finds it (B6's
-and the E-runs' were). Codex prepends its own `~/.codex/tmp/arg0/codex-arg0…` and the
+No task marker: the host's environment held none, and the whitelist named no other.
+`HOME` is `/home/wsh` and there is no `CODEX_HOME`, so a Codex specialist's rollout
+lands under `~/.codex/sessions`, where the verifier finds it (B6's and the E-runs' were). Codex prepends its own `~/.codex/tmp/arg0/codex-arg0…` and the
 release's `codex-path` to the operator's `PATH`. `NoNewPrivs` and `Seccomp` are 0: Codex
 does not confine the server, and from it Claude's and Grok's `bwrap` and Codex's own sandbox
-all started (B6). The seven sufficed, so `env_vars` names
-`CROSS_AGENT_PROJECT` alone. The server's stderr is a pipe whose other end the Codex
+all started (B6). The seven sufficed for a host started from a clean shell, but not for one
+started inside a task, whose server must carry the task's markers; fix round 1 added them to
+`env_vars` (`docs/probes.md#codexMarkers`). The server's stderr is a pipe whose other end the Codex
 process holds (its fd 40), and its row line surfaced nowhere this task looked: not in the
 `--json` stream, the host's stderr, the rollout or `~/.codex/logs_2.sqlite`, and there is
 no `~/.codex/log/`. The row is evidenced by the tools listed and the calls answered.
+
+<!-- @anchor codexMarkers -->
+## The task's markers through the plugin's whitelist (fix round 1, 2026-10-01)
+
+`run_command` gives a test command `CROSS_AGENT_DEPTH` and the project but no task id, so
+that a server started inside a suite serves the specialist row
+(`src/runcommand.ts#commandEnv`). Codex hands a stdio server only the variables `env_vars`
+names, so with `CROSS_AGENT_PROJECT` alone a `codex exec` started from such a suite handed
+its server no marker, and the server, with no engine of the ledger's among its ancestors,
+served the operator row. Read live on the install of `dac519b` (`fix1/probe-b-before/`): a
+host started with `CROSS_AGENT_PROJECT` and `CROSS_AGENT_DEPTH=1` and no task id ran a
+server whose environment held B2's nine names and no `CROSS_AGENT_DEPTH`, and the session's
+tools, as the host's own code-mode cell printed them (`text(JSON.stringify(ALL_TOOLS.map(t
+=> t.name)))`), held the operator row's fourteen.
+
+`.codex-plugin/plugin.json` and the fallback table now name `CROSS_AGENT_PROJECT`,
+`CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` and `CROSS_AGENT_LINEAGE`
+(`tests/packaging.test.ts#codexManifestMounts`, `#codexFallbackSnippet`), and `codex mcp list
+--json` reads the four for each: the plugin's from the operator's configuration with the
+per-session enable, the fallback's from a scratch `CODEX_HOME` (`fix1/reinstall/`,
+`fix1/snippet-check/`). The plugin was reinstalled from a clean export of `f3272a2`: `codex
+plugin add`, run between 14:17:03.142Z and 14:17:03.207Z, wrote `enabled = true`, and the
+file was set back to `false` at 14:17:03.224Z (`timeline.txt`); the copy is `diff
+-rq`-identical to the worktree on `src/`, `modes/`, `skills/` and `.codex-plugin/`. Then three
+hosts in the sample, each enabling the plugin for its session alone, each read through its
+server's `/proc/<pid>/environ` and its own `ALL_TOOLS` cell (`fix1/probe-{a,b,c}/`):
+
+| probe | the host's `CROSS_AGENT_*` | the server's environment | the session's `cross_agent` tools |
+|---|---|---|---|
+| (a) a clean operator shell | `PROJECT` | B2's nine names, no marker | the operator row's fourteen; `list_roles` answered |
+| (b) as `run_command` gives a suite | `PROJECT`, `DEPTH=1` | the nine and `CROSS_AGENT_DEPTH=1` | the specialist row's five, `check`, `describe_mode`, `list_roles`, `list_tasks` and `result`; `list_roles` answered |
+| (c) no project named | none | no server process under the host | none; the host had no `list_roles` to call |
+
+(a) is the change's acceptance: Codex leaves an unset whitelisted name out of the server's
+environment rather than passing it empty, so an operator's server holds no marker and keeps
+its row (`tests/authority.test.ts#operatorNamesProject`). An empty one would have made it a
+specialist, since `src/authority.ts#unmatched` counts a marker that is present at all. In
+(c) no server started — without the variable the launcher exits before `node`
+(`tests/packaging.test.ts#codexLauncherRunsServer`) — and `codex exec` showed nothing of it:
+no line on the host's stderr, no item in its `--json` stream, nothing in the session's
+rollout or in `~/.codex/logs_2.sqlite`. The session simply had none of the server's tools.
 
 <!-- @anchor codexHostTimeout -->
 ## B3: a ten-minute wait under a Codex host (2026-10-01)
@@ -1894,7 +1947,11 @@ no `~/.codex/log/`. The row is evidenced by the tools listed and the calls answe
 In `<inject>`, with `engines.claude.bin` bound to `fake-claude-stall`, a wrapper that sets
 the fixture's `stall` script and `claude` format itself (a Codex host's server carries
 none of the operator's `FAKE_ENGINE_*`), T13's `wait10.txt` prompt under the plugin.
-Codex started in `<inject>` with no trust entry. The host delegated the child
+Codex started in `<inject>` with no trust entry, raised no prompt, and wrote one into the
+operator's configuration, `[projects."<inject>"] trust_level = "trusted"`: it is absent from
+the copy taken at 11:32:40Z and present in the one taken before B3's control at 11:49:19Z,
+and B3's was the only session in `<inject>` between them (`b1/step3/config-before-disable.toml`,
+`b3/control-60/config-before.toml`). The host delegated the child
 `fdb4ef58…`, made one `wait {timeout_seconds: 600}` and nothing else until it returned,
 then `check` and `cancel`. Its rollout's `McpToolCall` for that `wait` has `duration
 {secs: 600, nanos: 4113870}`, 600.004 s, `status: "completed"`, `error: null`, and answers
@@ -2002,7 +2059,12 @@ nothing unreadable (`tests/engines/codex.test.ts#codexI2ProofShape`) — and run
 still reads as proof under it. A third run, its brief giving each step's whole two-line
 script, passed under the new proof: five `direct` calls, exit 0 inside the worktree and 1
 with "Read-only file system" for the four outside writes, the filesystem agreeing
-(`fix1/codexI2Real-run3/`, thread `01a0f7c2-6c76-7ac0-a0ee-00463fe32bc5`, 49.6 s).
+(`fix1/codexI2Real-run3/`, thread `01a0f7c2-6c76-7ac0-a0ee-00463fe32bc5`, 49.6 s). Each run's
+Codex children ran with `--ignore-user-config`, raised no trust prompt, and still wrote a
+trust entry for the run's repository into the operator's `~/.codex/config.toml`,
+`[projects."<root>"] trust_level = "trusted"`: run 3's appeared during its run
+(`fix1/codexI2Real-run3/config-written-by-run.diff`), and runs 1 and 2 left one each
+(`final-state/config-vs-backup.diff`). The repositories are gone; the entries stay.
 
 The probe worktrees and branches were then removed by hand (`b6/cleanup.txt`): Grok's
 pointer restored first, then `git worktree remove --force`, `git branch -D` and `git
@@ -2071,10 +2133,13 @@ cost $0.264 (Grok $0.127, Claude $0.137); the Codex specialists reported 260,949
 and 2,738 out.
 
 Nothing deviated from the loop: step 8's rebase ran where E1 skipped it, and the needs-work
-round was the plan reviewer's own verdict, answered through the planner's `resume`. Both
-specialists' specs carry `protectedPaths` and deny targets rooted at the plugin's copy
-(`node ~/.codex/plugins/cache/agent-team-cli/cross-agent/0.0.1/src/server.ts`), the first
-whole loop to run with both (E1's note, above).
+round was the plan reviewer's own verdict, answered through the planner's `resume`. The two
+worktree specs, the implementer's `920c667b` and the code reviewer's `de1e73ec`, carry
+`protectedPaths` — the worktree's `.git` and the project's — and all six carry deny targets
+rooted at the plugin's copy (`node ~/.codex/plugins/cache/agent-team-cli/cross-agent/0.0.1/src/server.ts`);
+the planner's and the plan reviewer's four, at the root, carry the deny targets alone, as
+`delegate` sets `protectedPaths` only for a verified worktree. The first whole loop with both
+under a Codex plugin host; S11's E3 specs carried both before it (E1's note, above).
 
 <!-- @anchor e5 -->
 ## E5: one `dev-team-engine` task under a Codex host, a Claude lead (2026-10-01)
@@ -2122,9 +2187,13 @@ branch-deleted`, `defaultShaBeforeMerge` 23980ed and `branchHead` 583bfda.
 **The host's conduct** (`e5/audit-host.txt`, both turns): `describe_mode`, `list_roles`, one
 `delegate`, of the lead, two `wait`s, `list_tasks`, three `list_asks`, one `answer` and one
 `result` — nothing outside the launcher's engine-placement list, no loop step, no specialist
-delegated, no `git` and no test command. Its one shell command, as its first turn opened, was
-`cat` of the plugin's own `skills/cross-agent/SKILL.md`, which is how a Codex host reads a
-skill, and it judges `pass`. **Its closing message** (`e5/presentation-reading.txt`): `result`
+delegated, no `git` and no test command. **One deviation**: its one shell command, as its
+first turn opened, was `cat` of the plugin copy's own `skills/cross-agent/SKILL.md` — Codex
+reading the launcher skill it had been offered — which the verifier's tokenizer judges `pass`
+but which the launcher does not allow: under engine placement `cross-agent report` and
+`cross-agent answer` are "the only commands of yours this placement needs"
+(`skills/cross-agent/SKILL.md`). How a Codex host reads its skill is T15's to settle in the
+launcher's text (`atc-s96.66`, `.70`). **Its closing message** (`e5/presentation-reading.txt`): `result`
 returned the lead's result file byte for byte, 2678 bytes, and the closing message opens with
 it verbatim, with nothing before it or after it. `cross-agent report --since 9ed6c4fc…` renders
 E4's six tasks and E5's seven, each `passed`.
