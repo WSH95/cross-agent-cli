@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T20:14:02Z
+updated_at: 2026-10-01T21:30:30Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -101,8 +101,11 @@ folded into task 11), `.76`–`.82`.
 Task 11 (`.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75`; docs nits and small
 follow-ups, no engine run) is **implemented on `task/cross-agent-m3`** (9 commits over
 `17de337`, head `6bb6122`; not merged): `npm test` 758 / 757 / 1 skipped; checker 1239
-citations, none by line; the suite's temp-directory leaks 42 → 0. Code review round 1 is
-running (brief `task-11-brief.md` v2, report `task-11-report.md`). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
+citations, none by line; the suite's temp-directory leaks 42 → 0. Review round 1 found three Important issues
+(a concurrency test that never raced; an ask time of `1e100` that throws in the
+mailbox's formatter; a reconcile test that can lose its helper's exit event); fix
+round 1 is in progress (head `0e19e65` plus the ask-time fix, ruled to keep T16's
+numbers-as-printed policy). Brief `task-11-brief.md` v2, report `task-11-report.md`. Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 

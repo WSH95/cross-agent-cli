@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T21:30:30Z — claude
+[auto-checkpoint] Task 11 review round 1: three Important (concurrency test without a race; ask time 1e100 throws; reconcile lost close event); fix round 1 in progress (0e19e65 + the ask-time fix under T16's policy).
+
 ### 2026-10-01T20:14:02Z — claude
 [auto-checkpoint] Task 11 implemented (6bb6122; 758/757/1; checker 1239, none by line; leaks 42 → 0); code review round 1 running.
 
