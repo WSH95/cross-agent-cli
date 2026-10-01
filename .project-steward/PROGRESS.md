@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T00:59:48Z — claude
+[auto-checkpoint] [auto-checkpoint] 6b fix round 2 landed (6d52315..48a8227; the verifier's fail-closed contract; 645/644/1); round-3 reviews running; server bug atc-s96.59 (readline splits on U+2028/2029) found by dogfooding, folded into S11.
+
 ### 2026-09-30T23:40:33Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b fix round 1 landed (b320ec0..50a7e37; 639/638/1; gates green); round-2 reviews running.
 

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-09-30T23:40:33Z
+updated_at: 2026-10-01T00:59:48Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -47,11 +47,14 @@ twelve commits `cb87b01..9066dfd` (634 tests, 633 pass, 1 skipped; citations
 clean; e2e-verify 8 pass). Code review round 1 (three seats) found no Critical
 and three Important — the verifier's launcher grammar (misses and false FAILs),
 `--lead-role` overriding a shipped mode, and the verifier not reading Codex
-rollouts — and fix round 1 landed six commits (`b320ec0..50a7e37`: a shell
-tokenizer in the verifier, `--lead-role` narrowed, Codex rollouts read; suite
-639 / 638 / 1 skipped; gates green); round 2 of the reviews is running
-(`task-6b-findings-round-1.md`, report `task-6b-report.md`, both in the SDD
-directory). Open from it: Codex 0.159.2's `--json`
+rollouts — fixed in two rounds: `b320ec0..50a7e37` (a shell tokenizer, `--lead-role`
+narrowed, Codex rollouts read) and `6d52315..48a8227` (the verifier's contract:
+`pass` only for what its grammar understands, `?` for anything unmodeled beside
+an engine name). Suite 645 / 644 / 1 skipped; gates green; round 3 of the
+reviews is running (`task-6b-findings-round-{1,2}.md`, report
+`task-6b-report.md`). Found by dogfooding: `src/server.ts` reads stdin with
+`readline`, which splits on U+2028/U+2029, so a request carrying either hangs
+the caller (bead `atc-s96.59`, folded into S11). Open from it: Codex 0.159.2's `--json`
 omits sandbox-denied commands, so the verifier must read Codex rollouts
 before any Codex-lead or Codex-host run. It runs before S11; S11's brief is being refreshed and reviewed meanwhile
 (`task-7-brief.md`). The branch `task/cross-agent-m3` is fast-forwarded to `main` at
