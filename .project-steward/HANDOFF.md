@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T18:06:36Z
+updated_at: 2026-10-01T18:47:45Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -90,12 +90,13 @@ entries; the backup is `~/.codex/config.toml.bak-t14-2026-10-01`, and the restor
 commands are in `task-8-report.md`. Task 11 (docs nits
 `.42`, residual citations `.45`, follow-ups `.58` `.63` `.65` `.67` `.68`) has a
 brief v1 (`task-11-brief.md`) whose plan review ended at round 1 (its optimization pass
-runs after T15 merges). T15 (`atc-s96.15`, Grok packaging, E6 and E7; with `.64`, `.66`, `.70`, `.71`) is
-**implemented on `task/cross-agent-m3`** (10 commits over `e436132`, head `d2abd01` after
-fix round 1; not merged): `npm test` 742 / 741 / 1 skipped; checker 1199, 0 misses; E6
-and E7 each 8 pass. The Grok attach is project-scoped (each project's own
-`.grok/config.toml` names the checkout under `[plugins]`, ignored by `.gitignore`); the
-sample's attach now points at the root checkout. Round-2 review is running. Task 12 (go/no-go, final review, close) has a brief
+runs after T15 merges). T15 (`atc-s96.15`, Grok packaging) is **merged** — `main` at `157b6b4` (14 commits over
+`e5abf4d`), `VERIFY.md` T15 section at `3492c81`; `npm test` 742 / 741 / 1 skipped;
+checker 1199, 0 misses; E6 and E7 each 8 pass. The Grok attach is project-scoped (a
+project's own `.grok/config.toml`, ignored by `.gitignore`, names the checkout); the
+sample's attach points at the root checkout. Closed with it: `.53`, `.64`, `.66`, `.70`,
+`.71`. Filed: `.75` (P2: host configuration staged in a worktree passes the merge guard;
+folded into task 11), `.76`–`.82`. Next: task 11, then task 12. Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 
