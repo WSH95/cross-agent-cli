@@ -2589,6 +2589,132 @@ direction, and the shipped behaviour. Only a user-scope mount or install would c
 the user declined one; such a specialist would still be held to the five read tools by the
 specialist row by ancestry (`docs/probes.md#i1`).
 
+<!-- @anchor e6 -->
+## E6: one `dev-team` task under a Grok host (2026-10-01)
+
+T15's Grok host, the shipped attach, prompted "T15-E6 — a Grok host running the team under
+host placement. Run this task through the `cross-agent` skill (`/cross-agent`): add
+`slug_snake(text) -> str` — the words `slug_words(text)` returns, joined with single
+underscores, so `slug_snake("Hello, Big World!")` is `"hello_big_world"` — beside `slugify`
+in `slugkit/`, with tests; use the slug `t15-e6`." The sample was switched to `dev-team` with
+`limits.maxDepth: 1` for it (`e6/config.diff`): the planner on Codex (`gpt-6-luna`), the plan
+reviewer and the code reviewer on Grok (`grok-4.7`, the code reviewer read-only in the task's
+worktree), the implementer on Claude (`claude-sonnet-5`), each at medium — two Grok
+specialists, one at the root and one in a linked worktree, under a Grok host, which is what
+makes this run B5's record (`docs/probes.md#grokWorktreeMount`). The host ran 330 s over 24
+turns, $0.236, and ran the loop itself through the plugin's server:
+
+```
+read_file <worktree>/skills/cross-agent/SKILL.md   (Grok's own file tool)
+describe_mode, list_roles — the roster printed before any dispatch — list_tasks
+git_root status / worktree list / branch --list task/*     → clean, main, none
+read_file .cross-agent/config.json
+delegate planner (codex)                  → wait 21 s → result   99215630  24 s
+delegate plan-reviewer (grok)             → wait 90 s → result   d366adf2  92 s, approve
+git_root worktree add -b task/t15-e6 .worktrees/t15-e6 main
+delegate implementer (claude, task/t15-e6) → wait 26 s → result  a4c77994  28 s, 95 → 98 tests
+git_mutate add -A … ; git_mutate commit    → 1a56f2a
+delegate code-reviewer (grok, read-only)  → wait 60 s → result   b04f904a  62 s, ready
+git_mutate rebase main                     → up to date
+git_root merge --ff-only task/t15-e6       → main 583bfda → 1a56f2a
+run_command test where=root                → 98 tests, OK
+git_root worktree remove …; git_root branch -d task/t15-e6
+read_file .cross-agent/log.md; search_replace → a heading and four lines appended
+```
+
+Every call went through `use_tool` as `cross-agent__<tool>` after a `search_tool`, and the
+`wait` durations are Grok's own `mcp_tool_call_completed` records, each `done`. The host ran
+no shell command at all: it read the skill, the config and the log with its own `read_file`
+and appended the log line with its own `search_replace`, and it spawned no subagent. Every
+delegation used the role's binding, naming no engine or model; each was narrated in the
+launcher's form, "Delegating planner to codex/gpt-6-luna at medium in <sample>". The roster
+— five lines, each role's engine, model, effort, workspace and sandbox — came before the
+first dispatch (`atc-s96.66`'s recheck, which `## Before anything` asks of a host-placed
+loop).
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 99215630… --slug
+t15-e6`, `CODEX_HOME` unset, right after the run under `dev-team` (`e6/e6-verify.txt`):
+**eight `pass`**, exit 0 — only the root worktree, no `task/*` branch, a clean tree, the
+suite on `main`, four records with their logs at depth 1 against a cap of 1, the journal
+`worktree-created, git, committed, git, merged, tests-passed, worktree-removed,
+branch-deleted` (`defaultShaBeforeMerge` 583bfda, `branchHead` 1a56f2a), and no `delegate`
+and no engine launch in any specialist transcript, the Codex planner's judged from its
+rollout. The two worktree specs carry `protectedPaths`, the worktree's `.git` and the
+project's, and all four carry deny targets rooted at the worktree's server; every spec's
+environment also carries the host's `GROK_SESSION_ID`, which `src/guard.ts#childEnv`
+passes on.
+
+Nothing deviated from the loop: step 8's rebase ran, a no-op, and the plan was approved in
+one round, so no `resume` was needed (none was injected). The host's server was 4 processes
+from pid 1 and served the operator row; the plan reviewer's inherited server served the
+specialist row with the unreadable-environment reason, and the code reviewer, in the
+worktree, mounted none (`docs/probes.md#grokHostHops`, `#grokWorktreeMount`). The
+specialists cost $0.291 (the two Grok reviews $0.124, the Claude implementer $0.167); the
+Codex planner reported 48,849 tokens in and 542 out.
+
+<!-- @anchor e7 -->
+## E7: one `dev-team-engine` task under a Grok host, a Claude lead (2026-10-01)
+
+The Grok host again, with nothing run between the two that wrote the ledger, the sample
+switched to `dev-team-engine` with `limits.maxDepth: 2` and the lead bound to Claude
+(`claude-sonnet-5`) (`e7/config.diff`), every other role as E6 bound them. The prompt: "T15-E7
+— a Grok host with the loop in a spawned lead. Run this task through the `cross-agent` skill
+(`/cross-agent`): add `slug_title(text) -> str` — the words `slug_words(text)` returns, each
+with its first character upper-cased, joined with single spaces, so `slug_title("hello big
+world")` is `"Hello Big World"` — beside `slugify` in `slugkit/`, with tests; use the slug
+`t15-e7`."
+
+The host read the launcher skill with its own `read_file`, called `describe_mode` — whose
+24,880 bytes arrived whole, the largest `tool_result` of the run at 25,836 bytes with Grok's
+envelope, under the 100,000 the project file sets — and `list_roles`, printed the roster, six
+lines with the lead's first, narrated "Delegating lead to claude/claude-sonnet-5 at medium in
+<sample>", delegated the lead `46e6d4aa…`, and made one `wait {timeout_seconds: 600}`, which
+answered `done` after 459.6 s by Grok's own record, then `result`. That is every call it made:
+no `list_tasks` or `list_asks` was due, because no `wait` timed out, and it ran no shell
+command, no loop step and no specialist delegation (`e7/host-transcript-reading.txt`). The
+roster before the lead is `atc-s96.66`'s recheck under the launcher's new sentence. The host
+ran 501 s over 8 turns, $0.068.
+
+The lead's own server, read from `/proc` while it ran, was `node <worktree>/src/server.ts
+--project <sample>`, the lead mount, carrying all four markers with the lead's values: depth
+1, its task id, a lineage of itself, the project. The lead ran the loop in 462 s, $0.697, with
+nothing but this server's tools and no shell command: the root check; the planner (Codex) 36 s;
+the plan reviewer (Grok) 96 s, revise — the proposed tests passed under a naive `.split()` too;
+the planner resumed, 26 s; the plan reviewer again, 132 s, approve; `git_root worktree add`,
+`run_command` setup; the implementer (Claude) 21 s, 98 → 101 tests; `git_mutate` commit
+`90281e2`; the code reviewer (Grok, read-only, in the worktree) 57 s, ready; the rebase a no-op;
+the merge `1a56f2a` → `90281e2`; the suite at the root; the worktree and the branch removed. It
+asked nothing, so the launcher's sentence for a host nobody attends had no ask to meet
+(`atc-s96.70` stays unexercised by a run). Both Grok plan reviewers' servers ran inside their
+bubblewrap with the lead first in their lineage, their row lines the unreadable-environment
+reason; the Grok code reviewer, in the worktree, mounted none.
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 46e6d4aa… --slug
+t15-e7`, `CODEX_HOME` unset (`e7/e7-verify.txt`): **eight `pass`**, exit 0 — seven records, the
+lead judged by the lead row, the Codex planner's thread (resumed once) from its rollout. Depth
+and lineage (`e7/depth-lineage.txt`): the lead at depth 1, `parentTaskId` null, spec
+`CROSS_AGENT_DEPTH` 1, its lineage itself; the six specialists at depth 2, each the lead's
+child, the lead first in its lineage: PASS. The journal for `t15-e7` reads `worktree-created,
+git, committed, git, merged, tests-passed, worktree-removed, branch-deleted`,
+`defaultShaBeforeMerge` 1a56f2a and `branchHead` 90281e2.
+
+**The report.** `result` returned the lead's result file byte for byte, 1,932 bytes, and the
+host's closing message opens with it verbatim, followed by one line of its own — the lead's
+id, engine, duration and "No open asks." (`e7/presentation-reading.txt`). Every specialist line
+is in the seven-field form `cross-agent report` prints, a duration on each — `planner | codex |
+gpt-6-luna | medium | 36s | plan drafted | 73f83ac5…` — which is `atc-s96.64`'s recheck under
+the lead's spelled line, and the durations are the ledger's: `cross-agent report --project
+<sample> --since 46e6d4aa…` renders the same seven tasks, each `passed`
+(`e7/cross-agent-report.txt`).
+
+The specialists cost $1.086: the Claude lead $0.697, the implementer $0.154, the three Grok
+reviews $0.236. The Codex planner reported 89,056 tokens in and 817 out, and 114,229 in and
+1,357 out resumed. Re-run under this configuration, E6's range takes in E7's records under
+the cap of 2 and still reads eight `pass`, eleven records: a combined record check, not E6's
+verdict, which is `e6/e6-verify.txt` under `dev-team` (`final-verify-e6-combined.txt`).
+The sample is left on `main` at `90281e2`, 101 tests green, clean, the root worktree alone, in
+E7's configuration.
+
 
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
