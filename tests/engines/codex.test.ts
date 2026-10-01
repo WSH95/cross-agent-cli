@@ -109,13 +109,15 @@ test("codex's exclusionArgs removes the operator's own configuration", () => {
   assert.deepEqual(codex.exclusionArgs(), ["--ignore-user-config"]);
 });
 
-// @anchor codexLeadmountThree
-test("codex's leadMount is the three -c settings P9 recorded, byte for byte", () => {
+// @anchor codexLeadmountSettings
+test("codex's leadMount is P9's three -c settings and the per-tool timeout, byte for byte", () => {
   const mount = codex.leadMount({ command: "node", args: ["/projects/team/src/server.ts"] }, "/projects/team/.cross-agent/tasks/task");
   assert.deepEqual(mount.argv, [
     "-c", 'mcp_servers.cross-agent.command="node"',
     "-c", 'mcp_servers.cross-agent.args=["/projects/team/src/server.ts"]',
     "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+    // Codex's own default is 60 s a call, and a lead's `wait` and `ask` are 600 s ones.
+    "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
   ]);
   // Nothing to write, and nothing inherited: the mount is entirely in the argv.
   assert.equal(mount.files, undefined);
@@ -313,17 +315,22 @@ test("the -o file is emptied before the run, so a stale result cannot be read as
 });
 
 // @anchor enginePlacedLead
-test("an engine-placed lead's argv carries P9's three -c settings before the prompt", (t) => {
+test("an engine-placed lead's argv carries P9's three -c settings and the tool timeout before the prompt", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const mount = [
+    "-c", `mcp_servers.cross-agent.command=${JSON.stringify(process.execPath)}`,
+    "-c", 'mcp_servers.cross-agent.args=["/projects/team/src/server.ts","--project","/projects/team"]',
+    "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+    "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
+  ];
+  assert.deepEqual(codex.leadMount(lead, dirs.task).argv, mount);
   const plan = codex.plan(requestFor(dirs, { role: "lead", brief: "Run the loop.", rolePrompt: "You are the lead.\n", lead }));
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
     "--ignore-user-config", "--skip-git-repo-check",
     "-c", instructions(dirs.role),
-    "-c", `mcp_servers.cross-agent.command=${JSON.stringify(process.execPath)}`,
-    "-c", 'mcp_servers.cross-agent.args=["/projects/team/src/server.ts","--project","/projects/team"]',
-    "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+    ...mount,
     "-",
   ]);
   assert.equal(plan.stdin, "Run the loop.");
@@ -332,10 +339,11 @@ test("an engine-placed lead's argv carries P9's three -c settings before the pro
   assert.equal(plan.argv.at(-1), "-");
   // The mount travels with the flag that makes it exclusive, and there is one of each.
   assert.equal(plan.argv.filter((argument) => argument === "--ignore-user-config").length, 1);
-  assert.equal(plan.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 3);
+  assert.equal(plan.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 4);
   // A lead is resumed too, and the mount has to survive the different flag set.
   const resumed = codex.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead, resumeSessionId: threadId }));
-  assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 3);
+  assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 4);
+  assert.deepEqual(resumed.argv.slice(resumed.argv.indexOf("-c", resumed.argv.indexOf(instructions(dirs.role)) + 1), -1), mount);
   // `plan` folds the whole mount, files included; Codex's own carries none, so the plan's
   // files stay the two it names itself.
   assert.equal(codex.leadMount(lead, dirs.task).files, undefined);
@@ -389,6 +397,81 @@ test("a completed agent message and a completed command are both activity, cappe
   for (const value of [{ id: "x", type: "reasoning" }, { id: "x", type: "file_change" }, { id: "x" }, null, "agent_message"]) {
     assert.equal(item(value), null, JSON.stringify(value));
   }
+});
+
+/**
+ * The MCP call Codex 0.159.2 recorded for a tracked child's `list_roles`
+ * (`docs/probes.md#i1CodexTracked`, the 6b archive's `a4/`), trimmed: announced as
+ * `item.started`, closed as `item.completed`, the server and the tool as two fields.
+ */
+const mcpStarted = '{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"cross-agent","tool":"list_roles","arguments":{},"result":null,"error":null,"status":"in_progress"}}';
+const mcpCompleted = '{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"cross-agent","tool":"list_roles","arguments":{},"result":{"content":[{"type":"text","text":"{\\n  \\"roles\\": {}\\n}"}],"structured_content":null},"error":null,"status":"completed"}}';
+
+// @anchor mcpCallIsActivity
+test("an MCP call is activity, announced and completed, and an item nothing recorded is still not an event", () => {
+  // A lead that only calls `wait` and `ask` for the stall threshold is working: these two
+  // lines are the whole of what its stream says meanwhile (design, "Time limits").
+  assert.deepEqual(codex.parseLine(mcpCompleted), { kind: "activity", text: "mcp_tool_call cross-agent.list_roles completed" });
+  assert.deepEqual(codex.parseLine(mcpStarted), { kind: "activity", text: "mcp_tool_call cross-agent.list_roles in_progress" });
+  // Capped as every other activity is.
+  const long = JSON.parse(mcpCompleted);
+  long.item.tool = "t".repeat(300);
+  assert.equal(Array.from((codex.parseLine(JSON.stringify(long)) as { text: string }).text).length, 200);
+  // The item type is what identifies the line, so one missing its strings is still a call.
+  assert.deepEqual(codex.parseLine('{"type":"item.completed","item":{"type":"mcp_tool_call"}}'), { kind: "activity", text: "mcp_tool_call" });
+  for (const line of [
+    '{"type":"item.started","item":{"id":"x","type":"web_search"}}',
+    '{"type":"item.completed","item":{"id":"x","type":"web_search"}}',
+    '{"type":"item.started","item":{"type":"agent_message"}}',
+    '{"type":"item.updated","item":{"type":"mcp_tool_call"}}',
+  ]) {
+    assert.equal(codex.parseLine(line), null, line);
+  }
+});
+
+// @anchor mcpCallAdvancesClock
+test("the stall clock advances on an MCP call's line and on nothing else between", async (t) => {
+  const dirs = layout(t);
+  // A codex that says its thread, is silent, makes one MCP call, is silent, and ends.
+  const bin = path.join(dirs.root, "codex-mcp-shim.mjs");
+  writeFileSync(bin,
+    `#!${process.execPath}\n`
+    + "for await (const _ of process.stdin) {}\n"
+    + "const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\n"
+    + `process.stdout.write(${JSON.stringify(JSON.stringify({ type: "thread.started", thread_id: threadId }) + "\n")});\n`
+    + "await sleep(300);\n"
+    + `process.stdout.write(${JSON.stringify(mcpCompleted + "\n")});\n`
+    + "await sleep(300);\n"
+    + `process.stdout.write(${JSON.stringify(JSON.stringify({ type: "turn.completed" }) + "\n")});\n`);
+  chmodSync(bin, 0o755);
+  const request = requestFor(dirs, { sandbox: sandboxFor("codex", "read-only"), env: { CROSS_AGENT_CODEX_BIN: bin } });
+  const handle = spawnEngine(codex, request, {});
+  t.after(() => { handle.kill("SIGKILL"); });
+  const logged = (text: string) => existsSync(request.logPath) && readFileSync(request.logPath, "utf8").includes(text);
+  const until = async (condition: () => boolean) => {
+    const deadline = Date.now() + 10_000;
+    while (!condition()) {
+      assert.ok(Date.now() < deadline, "the shim's line never reached the log");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  await until(() => logged('"thread.started"'));
+  const afterSession = handle.lastEventAt;
+  assert.notEqual(afterSession, null, "the session line is an event");
+  // The silence after it is silence: nothing moved the clock.
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(handle.lastEventAt, afterSession);
+  await until(() => logged('"mcp_tool_call"'));
+  assert.ok(handle.lastEventAt! > afterSession!, `${handle.lastEventAt} after ${afterSession}`);
+
+  const result = await handle.result;
+  assert.equal(result.ok, true, JSON.stringify(result.events));
+  assert.deepEqual(result.events, [
+    { kind: "session", sessionId: threadId },
+    { kind: "activity", text: "mcp_tool_call cross-agent.list_roles completed" },
+    { kind: "result", text: "" },
+  ]);
 });
 
 test("turn.completed is the run's result and turn.failed its error", () => {

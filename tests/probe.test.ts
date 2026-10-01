@@ -50,5 +50,7 @@ test("--track mounts this server with --project in its arguments, which the Code
     `mcp_servers.cross-agent.command=${JSON.stringify(process.execPath)}`,
     `mcp_servers.cross-agent.args=${JSON.stringify([server, "--project", p.root])}`,
     'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+    // The adapter's own per-tool timeout, which the harness's mount gets like any lead's.
+    "mcp_servers.cross-agent.tool_timeout_sec=3600",
   ]);
 });

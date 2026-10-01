@@ -3167,7 +3167,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   are recorded per adapter: the profile map, `denyArgs`, `exclusionArgs` and
   `leadMount` byte for byte against P9
   (`tests/engines/claude.test.ts#claudeDeclaresOwn`, `#claudeDenyargsAppendable`, `#claudeExclusionargsFlag`, `#claudeLeadmountReturns`,
-  `tests/engines/codex.test.ts#codexDeclaresOwn`, `#codexCarriesDeny`, `#codexExclusionargsRemoves`, `#codexLeadmountThree`,
+  `tests/engines/codex.test.ts#codexDeclaresOwn`, `#codexCarriesDeny`, `#codexExclusionargsRemoves`, `#codexLeadmountSettings`,
   `tests/engines/grok.test.ts#grokDeclaresFour`, `#grokDenyargsDeny`, `#grokPerInvocation`, `#grokLeadmountInherits`), and the
   pipeline's half of `finish` — called once with the whole raw stdout, nothing
   buffered for an adapter that declares none, a throwing one reported without

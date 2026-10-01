@@ -27,6 +27,20 @@ function failureText(error: unknown): string {
 }
 
 /**
+ * An MCP call as an operator reads it: `mcp_tool_call <server>.<tool> <status>`, from the
+ * item `codex exec --json` writes for one — two fields for the server and the tool, the tool
+ * unprefixed, `in_progress` when announced (`docs/probes.md#i1CodexTracked`).
+ */
+function mcpActivity(value: unknown): EngineEvent {
+  const item = value as { server?: unknown; tool?: unknown; status?: unknown };
+  const server = asText(item.server);
+  const tool = asText(item.tool);
+  const name = server === "" && tool === "" ? "" : ` ${server}.${tool}`;
+  const status = asText(item.status);
+  return { kind: "activity", text: truncate(`mcp_tool_call${name}${status === "" ? "" : ` ${status}`}`) };
+}
+
+/**
  * Codex, on the `codex exec` line P2 and P5 recorded, the `codex exec resume` line P10
  * recorded, and the `--json` output the probe logs sampled.
  */
@@ -64,9 +78,12 @@ const codex = {
   },
 
   /**
-   * The three settings P9 recorded. The third is not optional: `codex exec` runs with
-   * approval policy `never`, so without it the lead sees the tools and every call is
-   * refused. The values are TOML, so the quotes are part of the argument.
+   * Four settings: the three P9 recorded, and the per-tool timeout. The third is not
+   * optional: `codex exec` runs with approval policy `never`, so without it the lead sees
+   * the tools and every call is refused. The fourth is not either: Codex gives every MCP
+   * call 60 s by default, and a lead's `wait` and `ask` are 600 s calls, so 3600 is this
+   * mount's own budget (design, "Time limits"). The values are TOML, so the quotes are
+   * part of the argument.
    */
   leadMount(spec: LeadMountSpec, _scratchDir: string): LeadMount {
     // No probed setting carries a server environment, and emitting an unprobed one would
@@ -80,6 +97,7 @@ const codex = {
         "-c", `mcp_servers.cross-agent.command=${JSON.stringify(spec.command)}`,
         "-c", `mcp_servers.cross-agent.args=${JSON.stringify(spec.args)}`,
         "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+        "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
       ],
     };
   },
@@ -127,7 +145,7 @@ const codex = {
     if (request.lead !== undefined) {
       const mount = codex.leadMount(request.lead, request.scratchDir);
       // The whole mount, not its argv alone: an adapter may name a file its argv points
-      // at. Codex's own mount is three `-c` settings and no file, but `plan` reads the
+      // at. Codex's own mount is four `-c` settings and no file, but `plan` reads the
       // contract, not this file's implementation of it.
       argv.push(...mount.argv);
       files.push(...(mount.files ?? []));
@@ -158,14 +176,25 @@ const codex = {
     switch (event.type) {
       case "thread.started":
         return typeof event.thread_id === "string" ? { kind: "session", sessionId: event.thread_id } : null;
+      case "item.started": {
+        // An MCP call is announced when it begins, and a lead's `wait` or `ask` is silent for
+        // up to 600 s after that: the announcement is activity too, so the silence is
+        // measured from the call and not from the line before it.
+        const item = event.item as { type?: unknown } | null | undefined;
+        return item?.type === "mcp_tool_call" ? mcpActivity(event.item) : null;
+      }
       case "item.completed": {
         const item = event.item as { type?: unknown; text?: unknown; command?: unknown } | null | undefined;
-        // What the model said and what it ran: the two item types an operator reads as
-        // progress. The item type is what identifies the line, so an item missing its
-        // string is still an event — `lastEventAt` is what keeps the task off the stall
-        // path. Every other item type Codex reports stays in the log alone.
+        // What the model said, what it ran, and the MCP calls it made: the item types an
+        // operator reads as progress. The item type is what identifies the line, so an item
+        // missing its string is still an event — `lastEventAt` is what keeps the task off the
+        // stall path, and it is the clock `wait` and `check` measure silence from (design,
+        // "Time limits"): a Codex lead that only calls this server's tools reports nothing
+        // else for as long as its calls last, and without these it would read as stalled
+        // while it worked. Every other item type Codex reports stays in the log alone.
         if (item?.type === "agent_message") return { kind: "activity", text: truncate(asText(item.text)) };
         if (item?.type === "command_execution") return { kind: "activity", text: truncate(asText(item.command)) };
+        if (item?.type === "mcp_tool_call") return mcpActivity(event.item);
         return null;
       }
       case "turn.completed":
