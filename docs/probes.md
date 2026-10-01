@@ -1266,6 +1266,72 @@ from `/proc/<pid>/stat` field 4, is **nine hops**: the driver's `node`, the tool
 the way.
 
 
+<!-- @anchor s11CodexLeadTimeout -->
+## B2: a Codex lead's tool call past 60 s (2026-10-01)
+
+A Codex lead (`gpt-6-luna`, medium; codex-cli 0.159.3), delegated through a stdio
+operator driver (`scripts/driver.mjs` in the S11 archive,
+`~/.cache/agent-team/probe-logs/s11-2026-10-01/`, extended from the controller's
+session harness), with a brief that runs no loop: delegate a `consult` that sleeps,
+then one `wait` on it, `timeout_seconds: 600`, and nothing else in that step.
+
+The first run (`b2/run1/`, lead `17c89b8b…`) is **inconclusive**: its child, a
+Claude `consult` told to run `sleep 100`, was refused by Claude Code 2.1.286
+itself — "Blocked: standalone sleep 100. To wait for a condition, use Monitor with
+an until-loop …" — ran it in the background instead, and answered "OK" at 22 s, so
+the lead's `wait` lasted 19.04 s by its own item. The rerun (`b2/run2/`, lead
+`2cdf776e…`), after the mount gained the markers' whitelist (below), gave the child
+to Codex, whose shell runs `sleep 150` in the foreground; the child settled `done`
+at 161.4 s.
+
+The identified `wait` is the rollout's `event_msg` `item_completed` at line 34 of
+`rollout-2026-10-01T00-10-45-01a0f5a8-55dc-7b02-9f1d-a3ddc9a2de2b.jsonl`, the
+lead's thread id being its record's `sessionId`:
+
+```
+{"type":"McpToolCall","id":"exec-48d14e24-480b-4a15-8db5-bda9a6d0c805",
+ "server":"cross-agent","tool":"wait",
+ "arguments":{"task_id":"e30ac6f788b5be90c53aab9d99fe0dbf9985","timeout_seconds":600},
+ "status":"completed","result":{"content":[{"type":"text","text":"{ \"ok\": true, … \"status\": \"done\", … }"}]},
+ "duration":{"secs":158,"nanos":219517083}}
+```
+
+Its keys are `arguments, duration, id, result, server, status, tool, type` —
+0.159.2's, with no `started_at_ms` or `completed_at_ms` — and its own `duration`
+is **158.22 s**, `status: "completed"`, no error and no timeout text: a single
+MCP call alive well past Codex's 60-second default, under the mount's
+`tool_timeout_sec=3600`. The enclosing invocation (line 26) is a code-mode `exec`
+script holding that one call; when the script yielded, the lead waited on its cell
+with Codex's own top-level `wait` function (line 32, `{"cell_id":"3",
+"yield_time_ms":600000}`) — a tool, not a command, which the verifier's 0.159.2
+table does not yet classify. The lead's `--json` stream shows the `mcp_tool_call`
+pair for `wait` (lines 5–6) and `turn.completed` (line 10), in 0.159.2's shape, and
+the record's `lastEventAt` followed those lines (A3b). `/proc/<codex pid>/cmdline`,
+read while the lead ran, carries the mount's settings (`b2/run*/proc-lead.json`).
+
+<!-- @anchor e2ServerEnv -->
+## A Codex lead's server environment (2026-10-01)
+
+**Before.** B2's first lead's MCP server, pid 900307, the Codex process's own
+child, read from `/proc/900307/environ` while it ran: `HOME`, `LANG`, `LOGNAME`,
+`PATH`, `SHELL`, `TERM` and `USER`, and **none** of the four task markers, while
+the Codex process above it carried all four. The server therefore resolved the lead
+row — the walk found the lead's engine — at **depth 0**, and recorded the lead's
+child `ef1fe5b3…` at depth 1, its spec's lineage the child alone.
+
+**The path taken: forwarding, A2b (a).** The Codex mount gained a fifth setting,
+`-c mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK",
+"CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]` (`src/engines/codex.ts#codex`): names
+whose values Codex copies from its own environment, which the runner started from
+the spec's. **After**, on B2's rerun and again on E2: the server's environment
+held `CROSS_AGENT_DEPTH`, `CROSS_AGENT_LINEAGE`, `CROSS_AGENT_PROJECT` and
+`CROSS_AGENT_TASK` beside the seven, each equal to the engine's own; the lead's
+`delegate` succeeded, which only the operator and lead rows can call; and its
+child was recorded at depth 2, the lead's, the lead first in its lineage. The
+scrubbed case is pinned as the documented limit the setting closes
+(`tests/authority.test.ts#scrubbedLeadRow`).
+
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
@@ -1362,6 +1428,27 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   resolved, while `workspace` and no `--sandbox` started on the same machine
   (`docs/probes.md#grokSandboxSocket`). `--rules` is read beside `--prompt-file`
   (`docs/probes.md#grokRulesBesidePromptFile`).
+<!-- @anchor cliCodex1593 -->
+- **codex-cli 0.159.3** (2026-10-01, S11). The configuration reference, read for S11:
+  `mcp_servers.<id>.env` is a `map<string,string>` "forwarded to the MCP stdio
+  server", and `mcp_servers.<id>.env_vars` an `array<string | {name, source}>` of
+  "additional environment variables to whitelist for an MCP stdio server",
+  `source = "local"` by default; the bundled `codex-app-tools` plugin whitelists
+  `HOME`, `PATH` and its own names that way
+  (`~/.codex/plugins/cache/openai-bundled/codex-app-tools/0.1.5/.mcp.json`). A
+  documentation reading; what B2 then observed (`docs/probes.md#e2ServerEnv`): a
+  stdio server is started with `HOME`, `LANG`, `LOGNAME`, `PATH`, `SHELL`, `TERM`
+  and `USER` and nothing else of the engine's environment, and `-c
+  mcp_servers.<id>.env_vars=[…]` adds the named variables with the engine's own
+  values; with `tool_timeout_sec=3600` a lead's `wait` ran 158 s
+  (`docs/probes.md#s11CodexLeadTimeout`). The MCP item is 0.159.2's: the `--json`
+  `mcp_tool_call` pair, and the rollout's `McpToolCall` with exactly `arguments,
+  duration, id, result, server, status, tool, type`, `duration` as `{secs, nanos}`
+  and no `started_at_ms` or `completed_at_ms`. A code-mode `exec` cell that yields
+  is waited on with Codex's own top-level `wait` function, `{cell_id,
+  yield_time_ms}`, which runs no command and which the end-to-end verifier's 0.159.2
+  table does not classify. Codex does not confine a mounted server to its own
+  sandbox: a read-only lead's server wrote the project's ledger.
 
 ## Native output samples (2026-09-07)
 
