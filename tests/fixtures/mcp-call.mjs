@@ -3,8 +3,14 @@
 // a chain of processes and read what the server answered a caller whose authority its own
 // ancestry decides. Waits for `<answer>.go` first, so the test can write the record the
 // walk has to match before the server resolves anything.
-//   node mcp-call.mjs <answerFile> <projectRoot> <tool> <argumentsJson>
-// Writes {tools, reply} to <answerFile>, then stays alive so nothing it started is
+//   node mcp-call.mjs <answerFile> <projectRoot> <tool> <argumentsJson> [<environment>]
+// With <tool> `--calls`, <argumentsJson> is a list of [tool, arguments] pairs, called in
+// order, and the answers are `replies` rather than `reply`.
+// <environment> is what the server is started with, as an engine's MCP host would start it:
+//   everything (the default) — this process's whole environment, as a host that copies its own;
+//   markers — PATH, HOME and the four CROSS_AGENT_* markers alone, as a host that whitelists them;
+//   none — PATH and HOME and no marker at all, as a host that builds a fresh environment.
+// Writes {tools, reply | replies} to <answerFile>, then stays alive so nothing it started is
 // orphaned; the chain's own cleanup ends it.
 import { spawn } from "node:child_process";
 import { existsSync, renameSync, writeFileSync } from "node:fs";
@@ -12,11 +18,16 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const [answer, projectRoot, tool, argumentsJson] = process.argv.slice(2);
+const [answer, projectRoot, tool, argumentsJson, environment = "everything"] = process.argv.slice(2);
 const server = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "server.ts");
 while (!existsSync(`${answer}.go`)) await delay(10);
 
-const child = spawn(process.execPath, [server, "--project", projectRoot], { stdio: ["pipe", "pipe", "pipe"], env: process.env });
+const markers = ["CROSS_AGENT_DEPTH", "CROSS_AGENT_TASK", "CROSS_AGENT_LINEAGE", "CROSS_AGENT_PROJECT"];
+const kept = { everything: null, markers: ["PATH", "HOME", ...markers], none: ["PATH", "HOME"] }[environment];
+if (kept === undefined) throw new Error(`mcp-call: no environment ${JSON.stringify(environment)}`);
+const env = kept === null ? process.env : Object.fromEntries(Object.entries(process.env).filter(([name]) => kept.includes(name)));
+
+const child = spawn(process.execPath, [server, "--project", projectRoot], { stdio: ["pipe", "pipe", "pipe"], env });
 let stderr = "";
 child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -48,7 +59,7 @@ function call(method, params) {
   });
 }
 
-const result = {};
+const result = { environment, serverEnvironment: Object.keys(env).sort() };
 try {
   // `initialize` resolves no row — the dispatcher only resolves for `tools/list` and
   // `tools/call` — so its reply is proof the server is up without being a request that
@@ -60,7 +71,12 @@ try {
   result.stderrBeforeRequest = stderr;
   const listed = await call("tools/list", {});
   result.tools = (listed.result?.tools ?? []).map((entry) => entry.name);
-  result.reply = await call("tools/call", { name: tool, arguments: JSON.parse(argumentsJson) });
+  if (tool === "--calls") {
+    result.replies = [];
+    for (const [name, args] of JSON.parse(argumentsJson)) result.replies.push(await call("tools/call", { name, arguments: args }));
+  } else {
+    result.reply = await call("tools/call", { name: tool, arguments: JSON.parse(argumentsJson) });
+  }
 } catch (error) {
   result.error = error instanceof Error ? error.stack : String(error);
 }

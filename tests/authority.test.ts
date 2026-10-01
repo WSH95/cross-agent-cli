@@ -9,9 +9,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveAuthority } from "../src/authority.ts";
 import type { Authority } from "../src/authority.ts";
-import { create, readProcessStat, update } from "../src/ledger.ts";
+import { create, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
 import type { EngineIdentity, TaskRecord } from "../src/ledger.ts";
 import { identityOf } from "../src/process.ts";
+import { sandboxFor } from "../src/engines/registry.ts";
+import { project as testProject, waitForRecord } from "./helpers/project.ts";
+import type { TestProject } from "./helpers/project.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const preload = pathToFileURL(path.join(fixtures, "spawn-child.mjs")).href;
@@ -141,9 +144,16 @@ function resolver(project: string, exchange: string, env: NodeJS.ProcessEnv): Li
   return { argv: [process.execPath, path.join(fixtures, "resolve-authority.mjs"), exchange, project], env };
 }
 
-/** An engine's own MCP client: it starts the server as a child and makes one `tools/call`. */
-function client(project: string, answer: string, tool: string, args: unknown, env: NodeJS.ProcessEnv): Link {
-  return { argv: [process.execPath, path.join(fixtures, "mcp-call.mjs"), answer, project, tool, JSON.stringify(args)], env };
+/**
+ * An engine's own MCP client: it starts the server as a child and makes one `tools/call`
+ * — or, with `--calls`, each of a list in turn — handing the server the environment an
+ * MCP host would: all of its own, the markers alone, or none of them (`mcp-call.mjs`).
+ */
+function client(
+  project: string, answer: string, tool: string, args: unknown, env: NodeJS.ProcessEnv,
+  environment: "everything" | "markers" | "none" = "everything",
+): Link {
+  return { argv: [process.execPath, path.join(fixtures, "mcp-call.mjs"), answer, project, tool, JSON.stringify(args), environment], env };
 }
 
 function groupMembers(pgid: number): number[] {
@@ -331,6 +341,181 @@ test("a lead holds its row exactly while its record is running or stalled, re-re
   assert.deepEqual(await ask(options), byAncestry("specialist", "cancelling"));
   await update(project, lead.id, { status: "cancelled" });
   assert.deepEqual(await ask(options), byAncestry("specialist", "cancelled"));
+});
+
+// ---- A mounted lead's server, through a real engine --------------------------------------
+
+/** The twelve tools every mode registers for the operator and the lead. */
+const twelve = [
+  "describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks",
+  "verify_worktree", "git_mutate", "git_root", "run_command",
+];
+
+/**
+ * A `dev-team-engine` project whose planner a lead can delegate to the fake engine: a git
+ * repository with a config, swept of every process its tasks start (`tests/helpers/project.ts`).
+ */
+async function engineProject(t: TestContext): Promise<TestProject> {
+  const config = (bin: string) => ({
+    mode: "dev-team-engine", roles: { planner: { engine: "codex" } }, engines: { codex: { bin } },
+    limits: { maxDepth: 2, lockWaitSeconds: 30 }, billing: "subscription",
+  });
+  const p = await testProject(t, config("unused"), [{ key: "lead" }, { key: "planner" }], { lead: { placement: "engine", role: "lead" } });
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify(config(p.bin)));
+  return p;
+}
+
+/** What a mounted server answered: the tools it listed, each call's reply, and its stderr. */
+interface Served {
+  tools?: string[];
+  replies?: Array<{ result?: { content?: Array<{ text: string }>; isError?: boolean }; error?: { code: number; message: string } }>;
+  error?: string;
+  stderr?: string;
+  serverEnvironment?: string[];
+}
+
+/**
+ * A task's engine, running, with its own MCP server as a child: the record is matched by
+ * the walk once it is `running` with that engine's identity, and the server then makes
+ * `calls` in order. A live runner identity keeps the server's own reconciliation from
+ * adopting the record.
+ */
+async function mounted(
+  t: TestContext, p: TestProject, record: TaskRecord, env: NodeJS.ProcessEnv,
+  calls: Array<[string, unknown]>, environment: "everything" | "markers" | "none",
+): Promise<Served> {
+  const exchange = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-mounted-"));
+  t.after(() => fs.rmSync(exchange, { recursive: true, force: true }));
+  const answer = path.join(exchange, "answer.json");
+  const pid = chain(t, [engine(env), client(p.root, answer, "--calls", calls, env, environment)]);
+  fs.writeFileSync(`${answer}.go`, "");
+  const ready = Date.now() + 20_000;
+  while (!fs.existsSync(`${answer}.ready`)) {
+    assert.ok(Date.now() < ready, "the server never came up");
+    await delay(20);
+  }
+  await update(p.root, record.id, { status: "running", runnerIdentity: identityOf(process.pid)!, engineIdentity: engineIdentity(pid) });
+  fs.writeFileSync(`${answer}.call`, "");
+  const deadline = Date.now() + 30_000;
+  while (!fs.existsSync(answer)) {
+    assert.ok(Date.now() < deadline, "the server never answered");
+    await delay(20);
+  }
+  const served = JSON.parse(fs.readFileSync(answer, "utf8")) as Served;
+  assert.equal(served.error, undefined, served.stderr);
+  return served;
+}
+
+/** The JSON a tool answered with. */
+function body(reply: NonNullable<Served["replies"]>[number]): Record<string, unknown> {
+  assert.ok(reply.result?.content, JSON.stringify(reply));
+  return JSON.parse(reply.result!.content![0].text) as Record<string, unknown>;
+}
+
+/**
+ * A lead record at depth 1 with the spec `delegate` writes beside it — read-only at the
+ * root, so it reserves nothing a planner needs — and the environment its runner gives its
+ * engine (`src/guard.ts#childEnv`), which the spec's `env` keeps.
+ */
+function leadOf(p: TestProject): { record: TaskRecord; env: NodeJS.ProcessEnv } {
+  const record = create(p.root, { role: "lead", brief: "the lead's brief", cwd: p.root, engine: "claude", depth: 1 });
+  const markers = {
+    CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: record.id, CROSS_AGENT_PROJECT: p.root,
+    CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: record.id, role: "lead", cwd: p.root }]),
+  };
+  writeSpec(p.root, record.id, {
+    role: "lead", brief: "the lead's brief", rolePrompt: "the loop, then the lead's prompt", cwd: p.root, engine: "claude",
+    sandbox: sandboxFor("claude", "read-only"), sessionId: "lead-session", denyTargets: [], env: markers,
+    scratchDir: path.join(path.dirname(record.logPath), `${record.id}.scratch`),
+    adapterModule: path.join(path.dirname(fixtures), "..", "src", "engines", "claude.ts"),
+  });
+  return { record, env: { ...p.env, PATH: process.env.PATH, HOME: process.env.HOME, ...markers } };
+}
+
+/** The child a mounted lead's `delegate` recorded, once its runner has settled it. */
+async function delegated(p: TestProject, reply: NonNullable<Served["replies"]>[number]): Promise<TaskRecord> {
+  const answered = body(reply);
+  assert.equal(answered.ok, true, JSON.stringify(answered));
+  return waitForRecord(p, answered.task_id as string, (value) => ["done", "failed", "cancelled"].includes(value.status));
+}
+
+// @anchor mountedLeadRow
+test("a mounted lead's server holds the lead row by ancestry: fourteen tools, the mailbox's lead half, and depth 1", { timeout: 60_000 }, async (t) => {
+  const p = await engineProject(t);
+  const lead = leadOf(p);
+  const served = await mounted(t, p, lead.record, lead.env, [
+    ["list_asks", {}],
+    ["answer", { ask_id: "x", text: "yes" }],
+    ["delegate", { role: "planner", cwd: p.root, brief: "A6 (i): plan nothing, answer OK." }],
+  ], "everything");
+  // P9's clause: a mounted lead resolves to the lead row, which is authority, not mounting.
+  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  const [listed, answered, delegation] = served.replies!;
+  assert.deepEqual(body(listed), { ok: true, asks: [], invalid: [] });
+  assert.deepEqual(answered.error, {
+    code: -32602, message: `answer is not available to a lead server: lead by ancestry: task ${lead.record.id} (lead, running)`,
+  });
+  // The depth the server resolved is the one its child is recorded one below.
+  const child = await delegated(p, delegation);
+  assert.equal(child.depth, 2);
+  assert.equal(child.parentTaskId, lead.record.id);
+  assert.deepEqual(JSON.parse(readSpec(p.root, child.id).env.CROSS_AGENT_LINEAGE!), [
+    { taskId: lead.record.id, role: "lead", cwd: p.root }, { taskId: child.id, role: "planner", cwd: p.root },
+  ]);
+
+  // The same chain, a specialist's: five tools, and asking is the lead's alone.
+  const implementer = create(p.root, { role: "implementer", brief: "the implementer's brief", cwd: p.root, engine: "claude", depth: 2 });
+  const specialist = await mounted(t, p, implementer, {
+    ...lead.env, CROSS_AGENT_TASK: implementer.id, CROSS_AGENT_DEPTH: "2",
+    CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: lead.record.id, role: "lead", cwd: p.root }, { taskId: implementer.id, role: "implementer", cwd: p.root }]),
+  }, [["ask", { question: "May I?" }]], "everything");
+  assert.deepEqual(specialist.tools, ["describe_mode", "list_roles", "check", "result", "list_tasks"]);
+  assert.deepEqual(specialist.replies![0].error, {
+    code: -32602, message: `ask is not available to a specialist server: specialist by ancestry: task ${implementer.id} (implementer, running)`,
+  });
+});
+
+// @anchor whitelistedLeadRow
+test("a lead's server handed only the four markers, as a whitelisting host hands them, is the same lead at depth 1", { timeout: 60_000 }, async (t) => {
+  const p = await engineProject(t);
+  const lead = leadOf(p);
+  const served = await mounted(t, p, lead.record, lead.env, [
+    ["delegate", { role: "planner", cwd: p.root, brief: "A6 (ii): plan nothing, answer OK." }],
+  ], "markers");
+  assert.deepEqual(served.serverEnvironment, ["CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE", "CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "HOME", "PATH"]);
+  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  assert.match(served.stderr ?? "", new RegExp(`serving the lead row: lead by ancestry: task ${lead.record.id} \\(lead, running\\)`));
+  // What path (a) relies on: depth and lineage arrive with the markers, so the child is
+  // the lead's, one below it.
+  const child = await delegated(p, served.replies![0]);
+  assert.equal(child.depth, 2);
+  assert.equal(child.parentTaskId, lead.record.id);
+  assert.deepEqual(JSON.parse(readSpec(p.root, child.id).env.CROSS_AGENT_LINEAGE!).map((entry: { taskId: string }) => entry.taskId),
+    [lead.record.id, child.id]);
+});
+
+// @anchor scrubbedLeadRow
+test("a lead's server handed none of the markers holds the lead row by ancestry alone, at depth 0: the limit the whitelist closes", { timeout: 60_000 }, async (t) => {
+  const p = await engineProject(t);
+  const lead = leadOf(p);
+  // What a host that builds an MCP server's environment of its own hands it: Codex 0.159.3
+  // gave a lead's server `HOME`, `LANG`, `LOGNAME`, `PATH`, `SHELL`, `TERM` and `USER` and
+  // nothing of the task (B2, `docs/probes.md#e2ServerEnv`). The walk still finds the lead's
+  // engine, so the row is the lead's; the depth is not, because it is read from the server's
+  // own environment. A real Codex lead never reaches this: its mount names the four markers
+  // in `mcp_servers.<id>.env_vars`, and Codex copies their values from the lead's own
+  // environment (`src/engines/codex.ts#codex`, `tests/engines/codex.test.ts#enginePlacedLead`).
+  const served = await mounted(t, p, lead.record, lead.env, [
+    ["delegate", { role: "planner", cwd: p.root, brief: "A6 (iii): plan nothing, answer OK." }],
+  ], "none");
+  assert.deepEqual(served.serverEnvironment, ["HOME", "PATH"]);
+  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  // So the child is the lead's by `parentTaskId`, one below a depth of 0, and its lineage
+  // starts with itself: what the ledger's depth-and-lineage reading of a run would fail.
+  const child = await delegated(p, served.replies![0]);
+  assert.equal(child.parentTaskId, lead.record.id);
+  assert.equal(child.depth, 1);
+  assert.deepEqual(JSON.parse(readSpec(p.root, child.id).env.CROSS_AGENT_LINEAGE!).map((entry: { taskId: string }) => entry.taskId), [child.id]);
 });
 
 // @anchor nearestEngineDecides
