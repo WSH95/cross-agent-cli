@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T10:01:49Z
+updated_at: 2026-10-01T10:44:12Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -66,14 +66,14 @@ the launcher's placement routing are built. The sample
 `15e9f4e`, in `dev-team-engine` (T14 switches it for E4). Follow-up beads
 `.61`–`.66`.
 
-T16 (`atc-s96.16`, the operator CLI) is **implemented on `task/cross-agent-m3`**
-(5 commits over `a8d1577`, head `d28533d`; not merged): the nine remaining verbs
-on S11's dispatcher, reads that write nothing, and the writing verbs refused
-under the task markers. `npm test` there: 719 / 718 / 1 skipped; checker 1072
-citations, 0 misses, `--since a8d1577` 0/0. Review round 1 found one Important (`show` read the record twice) and thirteen Minors; fix round 1 landed at `223873e` (722 / 721 / 1 skipped; checker 1080, 0/0), and its re-review is running.
-Filed from its report: `.67` (a lock taken before the ledger exists leaves an
-unexcluded `.cross-agent/`) and `.68` (one source for the status list and the
-task-id alphabet). Then T14 and T15.
+T16 (`atc-s96.16`, the operator CLI) is **merged** — `main` at `1f57683` (16
+commits over `567a1f5`), `VERIFY.md` T16 section at `48084b6`; `npm test` 723 / 722 /
+1 skipped; checker 1083 citations, 0 misses. The nine remaining verbs run on S11's
+dispatcher, each calling what its tool calls; the reads write nothing; the writing
+verbs refuse under `CROSS_AGENT_TASK`, `_DEPTH` or `_LINEAGE`. Filed from it: `.67`
+(a lock taken before the ledger exists leaves an unexcluded `.cross-agent/`) and
+`.68` (one source for the status list and the task-id alphabet). Next: T14 (Codex
+packaging, E4 and E5), then T15.
 
 
 ## Next steps

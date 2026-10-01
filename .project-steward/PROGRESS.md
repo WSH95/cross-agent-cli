@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T10:44:12Z — claude
+[auto-checkpoint] T16 merged (main 1f57683; VERIFY 48084b6; 723/722/1); .16 closed; T14 next.
+
 ### 2026-10-01T10:01:49Z — claude
 [auto-checkpoint] T16 fix round 1 landed (223873e; 722/721/1; checker 1080, 0/0); round-2 re-review running.
 
