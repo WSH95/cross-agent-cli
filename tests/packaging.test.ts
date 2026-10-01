@@ -119,12 +119,17 @@ test("the Codex manifest starts this server through a launcher in the plugin's o
       // (probe B1). So the server starts in the plugin's own directory through a launcher there.
       command: "./.codex-plugin/serve",
       cwd: ".",
-      // Codex hands a stdio server only the variables named here, beyond seven of its own. From
-      // the plugin's directory no project can be discovered, so the operator names it in
-      // `CROSS_AGENT_PROJECT`. A task's markers are named too: a Codex session started inside
-      // a task — a suite `run_command` runs carries `CROSS_AGENT_DEPTH` — hands them to its
-      // server, which then serves the specialist row (src/runcommand.ts#commandEnv). A clean
-      // shell has none to hand on (docs/probes.md#codexMarkers).
+      // Codex hands a stdio server only the variables named here, beyond seven of its own. The
+      // plugin's directory is Codex's cache copy of this repository, where discovery finds no
+      // project the operator meant: a copy of an export holds no `.git` and no config, so
+      // discovery finds nothing, and a copy of a checkout carries the checkout's `.git`, so
+      // discovery finds a repository the operator did not name — the copy itself, for a main
+      // checkout, or the checkout it was copied from, for a linked worktree. So the operator
+      // names the project in `CROSS_AGENT_PROJECT`. A task's markers are named too: a Codex
+      // session started inside a task — a suite `run_command` runs carries `CROSS_AGENT_DEPTH` —
+      // hands them to its server, which then serves the specialist row
+      // (src/runcommand.ts#commandEnv). A clean shell has none to hand on
+      // (docs/probes.md#codexMarkers).
       env_vars: ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"],
       // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
       default_tools_approval_mode: "approve",

@@ -2339,7 +2339,8 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   path" and its "stdio `cwd` must be a contained `./`, `${PLUGIN_ROOT}`, or `${PLUGIN_DATA}`
   path"; a plugin version takes "only ASCII letters, digits, `.`, `+`, `_`, and `-`". Which of
   them bind a `.codex-plugin` manifest is the runs' to say, and they found no `${PLUGIN_ROOT}`
-  substituted anywhere (`docs/probes.md#codexPluginMount`).
+  substituted in the inline `command`, `args` or `cwd` the runs tried
+  (`docs/probes.md#codexPluginMount`).
 
 ## Native output samples (2026-09-07)
 
