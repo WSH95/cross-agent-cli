@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T20:14:02Z — claude
+[auto-checkpoint] Task 11 implemented (6bb6122; 758/757/1; checker 1239, none by line; leaks 42 → 0); code review round 1 running.
+
 ### 2026-10-01T19:16:51Z — claude
 [auto-checkpoint] Task 11 in flight from 17de337 (brief v2; eight beads incl. .75's merge guard; no engine run).
 

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T19:16:51Z
+updated_at: 2026-10-01T20:14:02Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -99,8 +99,10 @@ sample's attach points at the root checkout. Closed with it: `.53`, `.64`, `.66`
 folded into task 11), `.76`–`.82`.
 
 Task 11 (`.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75`; docs nits and small
-follow-ups, no engine run) is **in flight** from `17de337` (brief `task-11-brief.md` v2,
-report `task-11-report.md`). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
+follow-ups, no engine run) is **implemented on `task/cross-agent-m3`** (9 commits over
+`17de337`, head `6bb6122`; not merged): `npm test` 758 / 757 / 1 skipped; checker 1239
+citations, none by line; the suite's temp-directory leaks 42 → 0. Code review round 1 is
+running (brief `task-11-brief.md` v2, report `task-11-report.md`). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 
