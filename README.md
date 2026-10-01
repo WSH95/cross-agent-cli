@@ -29,9 +29,9 @@ the twelve tools it gates under every mode — `delegate`, `wait`, `check`,
 provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside them
 under `dev-team-engine`, fourteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
-operator CLI's `init`, `answer` and `report`; and the launcher skill with each
-mode's own loop. What is left is a target: Codex's and Grok's packaging, and the
-CLI's remaining verbs. `docs/design.md` is the design and the work plan;
+operator CLI; and the launcher skill with each mode's own loop. What is left is
+a target: Codex's and Grok's packaging. `docs/design.md` is the design and the
+work plan;
 `docs/probes.md` records what each engine CLI was observed to do, and
 `VERIFY.md` what each milestone's own runs showed.
 
@@ -125,30 +125,47 @@ No dependencies; Node 24 or later runs the TypeScript sources directly.
 where the package is not linked — is the operator's own entry point. Every verb
 takes `--project <root>`, `--json` for one JSON document on stdout whatever the
 exit, and `--help`. Without `--project`, `init` writes in the current directory,
-and `answer` and `report` read the project the server would find:
+and every other verb reads the project the server would find:
 `CROSS_AGENT_PROJECT`, then the nearest `.cross-agent/config.json`, then the git
-toplevel.
+toplevel. Each verb calls the function its tool calls, and a verb that reads
+writes nothing: not a record, not a lock, not a stall reading.
 
-| verb | what it does |
-| --- | --- |
-| `init [--mode <name>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone |
-| `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed |
-| `report [--since <task id>]` | every task, newest first — role, engine, model, effort, duration, outcome, id — then each task's final message; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) |
+| verb | what it does | exits |
+| --- | --- | --- |
+| `init [--mode <name>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone | 0, 3 |
+| `modes` | the installed modes, the active one starred, each with its roles; a config naming a mode this build does not have is a 3, with the listing still printed | 0, 3 |
+| `tasks [--status <status>] [--reconcile]` | every task, newest first — id, status, role, engine, depth, age, cwd — as the ledger holds it, a task whose runner is gone marked so, and every record file no reader could judge named; `--reconcile` runs `list_tasks`' reconciliation pass first, the one read that writes | 0 |
+| `show <id> [--lines <n>]` | one task: its record, the last lines of its engine's stream, its outcome, its journal and its final message; 4 while it runs and 6 when it is stalled, by the status the last `wait` or `check` wrote | 0, 3, 4, 6 |
+| `log <id> [--lines <n>]` | the last lines of a task's engine event stream, 50 by default | 0, 3 |
+| `cancel <id>` | cancels a task and every task it delegated, leaves first, and its lineage's open asks; 4 while a task of the cascade is still active, which a second cancel retries | 0, 3, 4 |
+| `verify-worktree <path> <branch>` | verifies a linked worktree on its exact branch, as `verify_worktree` does | 0, 3 |
+| `git <slug> [--path <dir>] [--branch <name>] -- <args…>` | runs one git subcommand in a verified worktree, under the project's locks and journaled, as `git_mutate` does; 1 when git itself ran and failed, with its own output | 0, 1, 3 |
+| `journal [<slug>]` | one task's git journal, step by step, or every journal's slug; 1 when the journal file does not read, naming it | 0, 1, 3 |
+| `list-asks [--status <status>]` | every question an engine-placed lead has put to you, in the order asked; 5 while one it printed is open, and a damaged ask file is named rather than hiding the rest | 0, 5 |
+| `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed | 0, 3 |
+| `report [--since <task id>]` | every task, newest first — role, engine, model, effort, duration, outcome, id — then each task's final message, indented under its heading; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) | 0, 3 |
 
 One exit protocol for every verb:
 
 | code | meaning |
 | --- | --- |
 | 0 | ok |
-| 1 | error: something the command did not anticipate failed — with `--json`, `{ok: false, error}` on stdout |
+| 1 | error: something the command did not anticipate failed, or, for `git`, git itself — with `--json`, `{ok: false, error}` on stdout, or `git`'s answer whole |
 | 2 | usage: the command line could not be read — with `--json`, `{ok: false, error, usage}` on stdout, and nothing there without it |
-| 3 | precondition: the project, the mode, the ask or the task is not in the state the verb needs — with `--json`, the reason is the document on stdout |
-| 4 | still running: a task the verb reads has not settled |
+| 3 | precondition: the project, the mode, the ask or the task is not in the state the verb needs — with `--json`, the verb's answer naming the reason is the document on stdout |
+| 4 | still running: a task the verb names has not settled |
 | 5 | needs the operator: a lead is waiting on an open ask |
 | 6 | stalled: a task's engine has been silent past `limits.stallMinutes` |
 
-`init`, `answer` and `report` exit 0, 1, 2 or 3; 4, 5 and 6 are reserved now for
-the verbs the work plan's step 13 adds (design section 10).
+Beside the codes in the verb table, any verb exits 1 for an error nothing
+anticipated and 2 for a command line it cannot read, and every verb but `init`
+exits 3 when no project resolves. 4, 5 and 6 are verdicts and print on stdout:
+`show` exits 4 for a task still running and 6 for a stalled one, `cancel` 4
+for a cascade that left a task active, and `list-asks` 5 for an open ask. A verb
+that writes — `init`, `answer`, `cancel`, `git` and `tasks --reconcile` — exits
+3 when its own environment carries `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or
+`CROSS_AGENT_LINEAGE`, the markers of a task's process tree: writing is the
+operator's, and an engine reaches the project through the server.
 
 ## The lead, in one paragraph
 

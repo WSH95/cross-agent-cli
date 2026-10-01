@@ -31,7 +31,8 @@ If `describe_mode` refuses, tell the user the reason and stop. A project with no
 `.cross-agent/config.json` is not that case — it runs the built-in `solo` mode
 on defaults, so a one-off delegation needs no setup at all. A refusal means the
 config names a mode this server could not read, and `cross-agent init --mode
-<name>` is what binds a team to this project.
+<name>` is what binds a team to this project; it exits 0 when it wrote the config
+or found one already there, and 3 when the mode or the directory is not there.
 
 Then call `list_roles` and show the roster before you dispatch anything: one
 line per role with its engine, model, effort, workspace and sandbox. A role
@@ -276,8 +277,9 @@ that tracks it, so the line costs no commit and reaches no task branch.
 Under `engine` placement the lead is read-only at the root and appends nothing:
 its closing report is its own final message, which you read with `result {task_id:
 <lead id>}`, and `cross-agent report` renders the same per-task line for every task
-of the run from the ledger, then each task's final message. Its exit codes are the
-README's table (`README.md`, "The operator CLI").
+of the run from the ledger, then each task's final message; it exits 0, or 3 for an
+unknown `--since`, by the protocol in the README's table (`README.md`, "The
+operator CLI").
 
 Under `host` placement, close the session with the same per-task list to the user,
 plus what was not verified: a suite nobody ran, a review nobody asked for, a branch
@@ -326,8 +328,9 @@ and again, exactly as for any task.
 The lead asks you questions. After every `wait` that timed out, call `list_asks
 {status: "open"}`: an open ask is the lead waiting on you. Put the question to the
 user where the answer is theirs, then answer it with `answer {ask_id, text}` — or,
-from any terminal, with `cross-agent answer`: `cross-agent answer <ask-id> <text>`.
-The first answer wins: a second is refused, naming when the first landed.
+from any terminal, with `cross-agent answer`: `cross-agent answer <ask-id> <text>`,
+which exits 0 when the answer is applied and 3 when it is refused. The first answer
+wins: a second is refused, naming when the first landed.
 
 `cancel {task_id: <lead id>}` stops the lead and cascades to every task it
 delegated, leaves first, and to its open asks, which are cancelled with it. A lead

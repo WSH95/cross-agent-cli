@@ -275,8 +275,10 @@ that spelling, so nothing in the matrix depends on it.
    it continues, back along `resumedFrom`, and a lead owns a task whose
    `parentTaskId` chain reaches any of them (`src/tasks.ts#lineageIds`,
    `#ownedBy`). So a lead that has been killed and reattached twice still owns
-   the children its first record delegated, and `wait` and the operator CLI ask
-   the same question of the same helper (`src/server.ts#projectTools`).
+   the children its first record delegated, and `wait`, `cancel` and a resume ask
+   the same question of the same helper (`src/server.ts#projectTools`,
+   `src/tasks.ts#cancel`, `src/delegate.ts#delegate`); the operator owns every
+   task, and its CLI asks none.
    `cancel` on a lead writes
    `cancelling` on the **lead first**, under `spawn.lock` and with the snapshot
    of its descendants taken in the same hold — from that moment `delegate`
@@ -742,8 +744,8 @@ rulings are stated here as decisions too. Step 7's first half (T10b,
 `cancel` (`src/delegate.ts`, `src/tasks.ts`), which are what take `spawn.lock`,
 read the reservation, refuse on an unreadable record and write `cancelling`;
 the reconciliation triggers; and the four delegation fields of the record.
-Everything below is built, and the one thing this section still names as a
-target is `cross-agent tasks`, the operator CLI's listing (row 13).
+Everything below is built, the operator CLI's listing among it
+(`src/cli.ts#tasksVerb`).
 
 - `src/ledger.ts`: `<project>/.cross-agent/tasks/<id>.json`, written by
   writing a temporary file and renaming it (`src/ledger.ts#writeAtomic`);
@@ -971,7 +973,10 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   request is served, and on every `list_tasks`** (`src/server.ts#main`,
   `src/tasks.ts#listTasks`), so no caller reads a `running` task whose runner
   died while no server was watching; what a pass could not decide is written to
-  stderr at start and returned in `errors` and `skipped` to the listing. It
+  stderr at start and returned in `errors` and `skipped` to the listing. The
+  operator CLI's `tasks` lists without a pass unless `--reconcile` asks for one,
+  because an operator's read is side-effect free (`src/tasks.ts#listTasks`,
+  `src/cli.ts#tasksVerb`). It
   judges an engine by the **group scan** (`src/process.ts#hasMember`,
   `#inspectGroup`), never by the leader's pid alone: a leader that has been
   reaped while a descendant lives becomes `orphaned` and is cleaned up, not
@@ -1192,8 +1197,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   on the same reading, naming each file and what it could not be read as
   (`src/delegate.ts#delegate`), and `list_tasks` returns `invalid` beside the
   records so an operator is told which file to repair
-  (`src/tasks.ts#listTasks`). **Target**: `cross-agent tasks` naming the file
-  (row 13).
+  (`src/tasks.ts#listTasks`); `cross-agent tasks` names each such file with its
+  reason too, read without a pass (`src/cli.ts#tasksVerb`,
+  `tests/cli.test.ts#cliTasks`).
 - **Locks** are OS-held and never reclaimed (`src/locks.ts#acquire`). A lock is
   `flock(2)` on a file under `.cross-agent/locks/`, taken by a helper that keeps
   a util-linux `flock` child alive on a pipe (`flock <file> sh -c 'echo held;
@@ -1341,8 +1347,9 @@ target is `cross-agent tasks`, the operator CLI's listing (row 13).
   command and step, and `spawn.lock` before it for the one verb that reads a
   reservation, `worktree remove` (`src/gitroot.ts#gitRoot`, section 4);
   `run_command` takes `git.lock` for its journal append alone and never for the
-  suite (`src/runcommand.ts#runCommand`); `cross-agent git` is row 13's target
-  and takes both as `git_mutate` does. What the locks give, stated exactly:
+  suite (`src/runcommand.ts#runCommand`); `cross-agent git` takes both as
+  `git_mutate` does, because it calls the same function (`src/cli.ts#gitVerb`).
+  What the locks give, stated exactly:
   `spawn.lock` serializes validate-and-spawn, so two hosts cannot both pass the
   reservation check and then both spawn; `git.lock` serializes lead git
   mutations against each other. What keeps a writable task and a git mutation
@@ -1915,13 +1922,14 @@ the mode's worktree provider, for the operator and lead rows, with `path` and
 `branch` defaulting from that mode's own git policy
 (`src/server.ts#worktreeTools`). The root half is built on that same provider:
 `git_root` and `run_command` (`src/gitroot.ts#gitRoot`,
-`src/runcommand.ts#runCommand`, `src/server.ts#worktreeTools`). What is left is
-the `cross-agent git` CLI (row 13).
+`src/runcommand.ts#runCommand`, `src/server.ts#worktreeTools`), and the
+`cross-agent git` CLI calls `gitMutate` with the options the tool passes
+(`src/cli.ts#gitVerb`).
 
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
-`git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI) is the
-only way a lead mutates git in a worktree. Its request is `{slug, path?,
+`git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI,
+`src/cli.ts#gitVerb`) is the only way a lead mutates git in a worktree. Its request is `{slug, path?,
 branch?, args}` (`src/gitmutate.ts#GitMutateRequest`): `path` defaults to
 `<root>/<git.worktreeDir>/<slug>` and `branch` to the mode's `git.branchPattern`
 with the slug in place of its one `*`, which the tool passes from the active
@@ -2852,40 +2860,126 @@ sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 `src/cli.ts` is a table of verbs over one parser and one exit protocol
 (`src/cli.ts#runCli`, `#EXIT`): 0 ok, 1 an error nothing anticipated, 2 a
 command line it cannot read, 3 a precondition the verb needs and does not have,
-and 4 still running, 5 needs the operator, 6 stalled — defined and documented
-now, and exited with by the verbs step 13 adds. Every verb takes `--project`,
-`--json` — one JSON document on stdout whatever the exit: a 2 is `{ok: false,
-error, usage}`, a 1 `{ok: false, error}`, and a 3 its reason
-(`tests/cli.test.ts#jsonOnEveryExit`) — and `--help`, which prints the verbs, the
-project rule and the protocol, as text or, under `--json`, as that one document. The `--flag <value>` pairs go through the parser the server's own
-argv does, so adding one does not break the other (`src/project.ts#parseFlags`,
-`#discoverProject`). Three verbs ship. `cross-agent init [--mode <name>]
-[--project <root>]` writes the bind-time config for a mode
-(`src/cli.ts#initVerb`); a project that already holds one is not rewritten, and
-that is a 0 with a line saying so; a `--project` that does not resolve to an
-existing directory, and a mode this build has not got or cannot validate, are a
-3, because `initConfig` creates `.cross-agent/` with its parents and a typo would
-otherwise leave a project tree nobody asked for. `cross-agent answer <ask-id>
-<text>` answers an engine-placed lead's open question through the function the
-`answer` tool calls (`src/cli.ts#answerVerb`, `src/mailbox.ts#answerAsk`): 0 and
-the record, or 3 for a second answer — naming when the first landed — a
-cancelled ask or one nobody asked, and an unknown ask writes nothing. A project
-with no config, found as a git toplevel when nothing else names one, is a 3 before
-anything is read or locked: no lead of it can have asked (`tests/cli.test.ts#answerWritesNothing`). `cross-agent
-report [--since <task id>]` renders every task of the ledger newest first — role,
-engine, model, effort, duration, outcome, id — then each task's final message,
-the outcome three-valued: `passed` for `done`, `failed` for `failed` and
-`cancelled`, `unknown` for a task not yet settled or one whose result file is
-missing (`src/cli.ts#reportVerb`). It is a read and only a read: no
-reconciliation pass, and nothing created where there is no ledger. Every verb but
-`init` finds its project as the server does. `package.json` names the entry
-point under `bin`, and the file carries a `#!/usr/bin/env node` shebang, which
-Node 24 strips from a `.ts` source as it does from any other. The rest of the
-verbs below are step 13 (`atc-s96.16`).
+4 a task still running, 5 a lead waiting on the operator, 6 a task stalled.
+Every verb takes `--project`, `--json` — one JSON document on stdout whatever
+the exit: a 2 is `{ok: false, error, usage}`, a 1 `{ok: false, error}`, and
+every other code the verb's own answer (`tests/cli.test.ts#jsonOnEveryExit`) —
+and `--help`, which prints the verbs, the project rule and the protocol, as text
+or, under `--json`, as that one document. Without `--json` an answer that
+carries a verdict — 0, 4, 5 or 6 — is stdout's and a failure — 1, 2 or 3 — is
+stderr's unless the verb says otherwise, as `modes` and `git` do below, and a
+warning beside either goes to stderr. The `--flag <value>` pairs
+go through the parser the server's own argv does, so adding one does not break
+the other (`src/project.ts#parseFlags`, `#discoverProject`); a verb may also
+take a flag with no value, an optional argument, or a tail after `--` that is
+never read as flags, and any misuse of one is a 2
+(`tests/cli.test.ts#cliUsage`). Every verb but `init` finds its project as the
+server does. `package.json` names the entry point under `bin`, and the file
+carries a `#!/usr/bin/env node` shebang, which Node 24 strips from a `.ts`
+source as it does from any other.
+
+Each verb calls the function its tool calls, with the options the tool's
+handler passes:
+
+- `cross-agent init [--mode <name>] [--project <root>]` writes the bind-time
+  config for a mode (`src/cli.ts#initVerb`); a project that already holds one is
+  not rewritten, and that is a 0 with a line saying so; a `--project` that does
+  not resolve to an existing directory, and a mode this build has not got or
+  cannot validate, are a 3, because `initConfig` creates `.cross-agent/` with
+  its parents and a typo would otherwise leave a project tree nobody asked for.
+  Its document is `{wrote, file, mode, ignored, warning?}`.
+- `cross-agent modes` lists every built-in mode as the loader reads it, with its
+  roles, and marks the one the config names — the read `describe_mode` makes
+  (`src/cli.ts#modesVerb`). A config naming a mode this build does not have is
+  a 3, because every verb that loads the mode would refuse, and the listing is
+  still on stdout with the reason beside it; the document is `{active,
+  installed, modes, reason?}` (`tests/cli.test.ts#cliModes`).
+- `cross-agent tasks [--status <s>] [--reconcile]` is `listTasks` without the
+  reconciliation pass (`src/cli.ts#tasksVerb`, `src/tasks.ts#listTasks`): every
+  task newest first, an active one whose runner is gone marked so, and every
+  record file no reader could judge named with its reason, as the `list_tasks`
+  answer with `reconciled`, and always a 0. `--reconcile` runs the pass first
+  and writes what `list_tasks` would: it is the one read that reconciles
+  (`tests/cli.test.ts#cliTasks`, `#cliTasksReconcileFlag`).
+- `cross-agent show <id> [--lines <n>]` reads what `check` and `result` read —
+  the record, the tail of its engine stream, the outcome sidecar, its journal,
+  its final message — as `{record, elapsedSeconds, lastActivity, result,
+  outcome, journal, runnerLog}`, and takes no stall reading: the status is the
+  one the last `wait` or `check` wrote ("Time limits"), and the exit is that
+  status's — 0 settled, 6 `stalled`, 4 anything else — or 3 for a task nobody
+  has (`src/cli.ts#showVerb`, `tests/cli.test.ts#cliShow`).
+- `cross-agent log <id> [--lines <n>]` is the tail of a task's engine stream,
+  fifty lines unless asked otherwise, as `{id, logPath, lines}`; a task whose
+  engine has said nothing is an empty answer and a 0, a task nobody has a 3
+  (`src/cli.ts#logVerb`, `tests/cli.test.ts#cliLog`).
+- `cross-agent cancel <id>` is `cancel` for the operator row, naming no lead
+  (`src/cli.ts#cancelVerb`, `src/tasks.ts#cancel`), its document the
+  `CancelResult`: a 0 when every task of the cascade is settled, a 4 when one is
+  still active — a second cancel retries it — and a 3 for a refusal. An ask
+  file it could not write is named for the operator beside a verdict it does not
+  change, and a task nobody has is refused before any lock is taken
+  (`tests/cli.test.ts#cliCancel`).
+- `cross-agent verify-worktree <path> <branch>` is `verifyWorktree` on a path
+  read against the working directory, without the tool's drift check, because
+  the CLI serves no mode: 0 verified, 3 refused, the verifier's answer as the
+  document (`src/cli.ts#verifyWorktreeVerb`,
+  `tests/cli.test.ts#cliVerifyWorktree`).
+- `cross-agent git <slug> [--path <dir>] [--branch <name>] -- <args…>` is
+  `gitMutate` with what `git_mutate`'s handler passes — the project's lock wait
+  and the mode's git policy — and everything after `--` is git's own argv
+  (`src/cli.ts#gitVerb`). A step journaled is a 0; git that ran and failed is a
+  1, its own output printed and the answer carrying its exit code, a journal
+  step that could not be written after a zero exit included; every refusal
+  before git ran is a 3, a held `git.lock` among them. The document is the
+  `GitMutateResult` whatever the code (`tests/cli.test.ts#cliGit`).
+- `cross-agent journal [<slug>]` is one journal whole, or with no slug every
+  journal's slug as `{slugs}` (`src/cli.ts#journalVerb`,
+  `src/journal.ts#readJournal`, `#listJournals`): a 0, a 3 for a journal nobody
+  wrote, a 2 for a slug no journal file could have, and a 1 for a journal that
+  does not read, which names its file (`tests/cli.test.ts#cliJournal`).
+- `cross-agent list-asks [--status <s>]` is `list_asks` for the operator row:
+  every ask, in the order asked, as `{asks, invalid}` (`src/cli.ts#listAsksVerb`,
+  `src/mailbox.ts#listAsks`). It is a 5 while an ask it printed is open — the
+  filter scopes the verdict as it scopes the listing — and a 0 otherwise; a
+  damaged ask file is named on stderr and in `invalid`, never thrown, and
+  changes no verdict (`tests/cli.test.ts#cliListAsks`).
+- `cross-agent answer <ask-id> <text>` answers an engine-placed lead's open
+  question through the function the `answer` tool calls
+  (`src/cli.ts#answerVerb`, `src/mailbox.ts#answerAsk`): 0 and the record, or 3
+  for a second answer — naming when the first landed — a cancelled ask or one
+  nobody asked, and an unknown ask writes nothing. A project with no config,
+  found as a git toplevel when nothing else names one, is a 3 before anything is
+  read or locked: no lead of it can have asked
+  (`tests/cli.test.ts#answerWritesNothing`).
+- `cross-agent report [--since <task id>]` renders every task of the ledger
+  newest first — role, engine, model, effort, duration, outcome, id — then each
+  task's final message, every line of it indented four spaces under its heading
+  so that a table inside a message is never read as a row; the outcome is
+  three-valued: `passed` for `done`, `failed` for `failed` and `cancelled`,
+  `unknown` for a task not yet settled or one whose result file is missing
+  (`src/cli.ts#reportVerb`, `tests/cli.test.ts#reportVerb`). Its document is
+  `{tasks, invalid?}`, each message verbatim, and an unknown `--since` is a 3.
+
+The reads write nothing. In a repository nobody has initialized every read is an
+answer — an empty listing is a 0 — and leaves no `.cross-agent/`, no change to
+`.git/info/exclude` and nothing for `git status` to show
+(`tests/cli.test.ts#cliReadsWriteNothingUninitialized`); over a ledger holding a
+task in every status, a damaged record and a damaged ask, each read leaves every
+file under `.cross-agent/` byte for byte, a `running` task far past its stall
+threshold included (`#cliReadsLeaveSeededLedger`). The verbs that write —
+`init`, `answer`, `cancel`, `git` and `tasks --reconcile` — refuse with 3,
+naming the variable, when the CLI's own environment carries `CROSS_AGENT_TASK`,
+`CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`, the markers `childEnv` gives a
+task's process tree (`src/guard.ts#childEnv`): writing is the operator's power,
+and the deny list keeps only the launch forms it names out of an engine's hands
+(section 3), so a write that reaches this CLI some other way is refused here
+(`src/cli.ts#taskMarker`, `tests/cli.test.ts#cliRefusesInsideEngine`).
+`CROSS_AGENT_PROJECT` is no marker, being also the operator's own way to name a
+project, and the reads answer the same with a marker as without one.
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
-log <id> | cancel <id> | answer <ask-id> <text> | list-asks | report |
-verify-worktree <path> <branch> | git <slug> -- <args> | journal <slug>`.
+log <id> | cancel <id> | verify-worktree <path> <branch> | git <slug> --
+<args> | journal [<slug>] | list-asks | answer <ask-id> <text> | report`.
 `modes` lists the installed modes and marks the active one; `answer` replies to
 a pending `ask` without a host session, and `list-asks` shows a terminal the
 questions it can answer; `report` renders the per-task summary from the ledger
@@ -2904,7 +2998,12 @@ emitted nothing yet is read from the moment its runner claimed it. The reading
 is taken for two statuses and no others, `running` and `stalled`
 (`src/wait.ts#observeStall`), so a `launching` record never stalls whatever
 clock it carries: an unacknowledged launch is the reconciler's deadline to
-judge, not a silence to measure. A stall that **begins while a call is
+judge, not a silence to measure. The operator CLI takes no reading of its own:
+`cross-agent show` reports the status the last `wait` or `check` wrote, so a
+task past its threshold that neither has read since is shown `running`, and a
+look from a terminal changes nothing a lead's next `wait` will answer
+(`src/cli.ts#showVerb`, `tests/cli.test.ts#cliReadsLeaveSeededLedger`).
+A stall that **begins while a call is
 polling** is that call's answer, whoever wrote it — its own reading or another
 reader's, because the crossing is the event and not the write; the stall a call
 arrived on is not, or a second `wait` on a stalled task would return the same
@@ -3140,7 +3239,7 @@ registered by the mode that declares the worktree provider.
 `tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` are T14's. I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `32580e6`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
-| 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, over a seeded ledger; `answer` and `report` shipped with row 11. |
+| 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: `1b49ede`, `4053437`, `2f144ea`, `fb30784`, and this row's docs). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
@@ -3437,6 +3536,22 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   serves that same text through `mcp__plugin_cross-agent_cross-agent__…`, the
   spelling a plugin mount gives this server (I1, `docs/probes.md#i1Spelling`);
   Codex's and Grok's own spellings are still owed.
+- **Operator CLI (recorded).** The listing reads without a pass when asked to,
+  writing nothing (`tests/tasks.test.ts#listTasksWithoutPass`), and on it each
+  read verb writes nothing: in a repository nobody initialized
+  (`tests/cli.test.ts#cliReadsWriteNothingUninitialized`) and over a ledger
+  holding a task in every status, byte for byte (`#cliReadsLeaveSeededLedger`);
+  `tasks --reconcile` is the one read that reconciles (`#cliTasksReconcileFlag`).
+  Over that ledger each verb answers by the protocol: `modes` (`#cliModes`),
+  `tasks` (`#cliTasks`), `show` (`#cliShow`), `log` (`#cliLog`), `cancel`
+  (`#cliCancel`), `verify-worktree` (`#cliVerifyWorktree`), `git`, the held
+  `git.lock` timed (`#cliGit`), `journal` (`#cliJournal`) and `list-asks`
+  (`#cliListAsks`). The verbs that write refuse inside a task's environment by
+  the variable that marks it (`#cliRefusesInsideEngine`), every misuse of a
+  command line is a 2 and help names every verb and code (`#cliUsage`),
+  `report` indents each final message (`#reportVerb`), and the README and the
+  launcher are held to the dispatcher's verbs and protocol
+  (`#cliDocsNameVerbs`).
 - **P9 (recorded):** Claude clean — `--strict-mcp-config --mcp-config <file>`
   shows exactly this server's tools and none of the operator's, and
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —

@@ -1136,3 +1136,54 @@ test("a verb that writes refuses inside a task's environment, naming the marker,
   assert.equal(initialized.code, 0, initialized.stderr);
   assert.ok(fs.existsSync(path.join(fresh, CONFIG_PATH)));
 });
+
+/** A document of this repository, by its path from the root. */
+function documentAt(file: string): string {
+  return fs.readFileSync(fileURLToPath(new URL(`../${file}`, import.meta.url)), "utf8");
+}
+
+/** The protocol numbers a paragraph states after the word `exit` or `exits`, clause by clause. */
+function statedCodes(paragraph: string): number[][] {
+  return [...paragraph.replace(/\s+/g, " ").matchAll(/\bexits?\b([^.;]*)/g)].map((clause) => [...clause[1].matchAll(/\b\d+\b/g)].map(Number));
+}
+
+// @anchor cliDocsNameVerbs
+test("the README and the launcher name only the dispatcher's verbs, and state their exits from its protocol", async () => {
+  const { EXIT, VERB_NAMES } = await import("../src/cli.ts");
+  const protocol = Object.values(EXIT) as number[];
+  const readme = documentAt("README.md");
+  const launcher = documentAt("skills/cross-agent/SKILL.md");
+  // Every `cross-agent <verb>` either document spells is a verb this build has.
+  const spelled = (text: string) => [...text.matchAll(/`cross-agent ([a-z][a-z-]*)/g)].map((match) => match[1]);
+  for (const [name, text] of [["README.md", readme], ["skills/cross-agent/SKILL.md", launcher]]) {
+    assert.ok(spelled(text).length > 0, `${name} names a verb`);
+    for (const verb of spelled(text)) assert.ok(VERB_NAMES.includes(verb), `${name} names cross-agent ${verb}, which is no verb`);
+  }
+
+  // The README's section has one row per verb, in the usage order, and the whole protocol.
+  const start = readme.indexOf("## The operator CLI");
+  assert.ok(start >= 0, "the README has its operator CLI section");
+  const section = readme.slice(start, readme.indexOf("\n## ", start + 1));
+  const verbRows = section.split("\n").filter((line) => /^\| `[a-z]/.test(line));
+  assert.deepEqual(verbRows.map((line) => /^\| `([a-z-]+)/.exec(line)![1]), [...VERB_NAMES]);
+  for (const row of verbRows) {
+    const codes = [...row.split("|").at(-2)!.matchAll(/\b\d+\b/g)].map(Number);
+    assert.ok(codes.length > 0, `${row}: its exits`);
+    for (const code of codes) assert.ok(protocol.includes(code), `${row}: exit ${code} is not the protocol's`);
+  }
+  const exitRows = section.split("\n").filter((line) => /^\| \d+ \|/.test(line));
+  assert.deepEqual(exitRows.map((line) => Number(/^\| (\d+) \|/.exec(line)![1])), protocol);
+
+  // The launcher states, beside each verb it names, the codes that verb exits with — at
+  // least once per verb — and no code outside the protocol in any paragraph naming one.
+  const paragraphs = launcher.split(/\n\s*\n/).filter((paragraph) => spelled(paragraph).length > 0);
+  for (const verb of new Set(spelled(launcher))) {
+    assert.ok(paragraphs.some((paragraph) => spelled(paragraph).includes(verb) && statedCodes(paragraph).some((codes) => codes.length > 0)),
+      `the launcher states cross-agent ${verb}'s exit codes beside it`);
+  }
+  for (const paragraph of paragraphs) {
+    for (const codes of statedCodes(paragraph)) {
+      for (const code of codes) assert.ok(protocol.includes(code), `exit ${code} is not the protocol's: ${paragraph.slice(0, 120)}`);
+    }
+  }
+});
