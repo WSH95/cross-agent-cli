@@ -2793,6 +2793,11 @@ launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
 `#codexScriptFailClosed`, `#scriptNameAccounting`). A word after `.` or `?.` is a
 property, never a control keyword or one that opens a regular expression, and a
 regular expression's escapes are decoded for the inventory (`#memberNames`).
+`--read-rollout <session id>` prints what that reader makes of one session's
+rollout — each code-mode `exec` with the commands it decoded and the exit code of
+its one output, paired by `call_id` — and judges nothing, so a test that has to
+prove what a Codex child attempted proves it through the reader every verdict uses
+(`tools/e2e-verify.mjs#readRollout`, `tests/e2e-verify.test.ts#readRollout`).
 
 Whether a command is a launch is a shell's question, and the scan's contract for
 it is that **`pass` on a named line requires positive understanding**: every

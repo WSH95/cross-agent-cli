@@ -8,6 +8,13 @@
 //   node tools/e2e-verify.mjs --project <sample root> [--default-branch main]
 //       [--slug <journal slug>] [--branch-pattern 'task/*']
 //       [--test-command <command>] [--since <ISO date or task id>] [--lead-role <role>]
+//   node tools/e2e-verify.mjs --read-rollout <Codex session id>
+//
+// `--read-rollout` judges nothing: it prints, as one JSON document, what the rollout reader
+// below makes of that session's rollouts — every tool call, each code-mode `exec` with the
+// commands it decoded and the exit code of its own output, paired by `call_id` — and exits 0
+// before any project is read (`readRollout`). A test that must prove what a Codex child
+// attempted reads it through this, so the reader that proves it is the one verdicts use.
 //
 // The depth cap is the one the server ran under (`src/config.ts#effectiveMaxDepth`): the
 // lower of the mode's own — 2 when its lead is engine-placed, 1 otherwise — and the
@@ -37,7 +44,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// What the Codex rollout reader (`rolloutCommands`, below) needs, set first because
+// `--read-rollout` runs that reader before any project is read. Rollouts are found under
+// `$CODEX_HOME/sessions/`, `CODEX_HOME` defaulting to `~/.codex`, where the engines wrote them.
+const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
+// codex-cli 0.159.2's tools (A3's `ALL_TOOLS`): those that run a command, and those that run
+// nothing — patches, goals, images, MCP resources, plugins, the web — which a rollout may
+// show called without a command in them. A tool in neither list is one this build has not
+// seen, and a call of it is `?`.
+const commandTools = new Set(["shell", "exec_command", "local_shell", "container.exec"]);
+const quietTools = new Set(["apply_patch", "clock__curr_time", "create_goal", "get_goal", "update_goal", "update_plan",
+  "image_gen__imagegen", "list_mcp_resource_templates", "list_mcp_resources", "read_mcp_resource",
+  "request_plugin_install", "view_image", "web__run"]);
+let rolloutFiles;
+const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const args = parse(process.argv.slice(2));
+if (Object.hasOwn(args, "read-rollout")) await readRollout(args);
 const project = path.resolve(args.project ?? ".");
 if (!existsSync(path.join(project, ".git"))) fail(`${project} is not a git repository`);
 
@@ -280,17 +302,6 @@ const launch = launcherFor(config);
 // naming launches also answer `?`; a word after `.` or `?.` is a property, never a control
 // keyword or one that opens a regular expression. This is a bounded reader, not
 // JavaScript execution; a positively read launch still takes precedence.
-const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
-// codex-cli 0.159.2's tools (A3's `ALL_TOOLS`): those that run a command, and those that run
-// nothing — patches, goals, images, MCP resources, plugins, the web — which a rollout may
-// show called without a command in them. A tool in neither list is one this build has not
-// seen, and a call of it is `?`.
-const commandTools = new Set(["shell", "exec_command", "local_shell", "container.exec"]);
-const quietTools = new Set(["apply_patch", "clock__curr_time", "create_goal", "get_goal", "update_goal", "update_plan",
-  "image_gen__imagegen", "list_mcp_resource_templates", "list_mcp_resources", "read_mcp_resource",
-  "request_plugin_install", "view_image", "web__run"]);
-let rolloutFiles;
-const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
 const unreadable = [];
 const exempted = [];
@@ -1664,6 +1675,85 @@ function rolloutsOf(sessionId) {
     }
   }
   return rolloutFiles.filter((file) => file.endsWith(`-${sessionId}.jsonl`));
+}
+
+/**
+ * `--read-rollout <session id>`: what this reader makes of one Codex session's rollout, as one
+ * JSON document on stdout, and exit 0 — before any project is read, and judging nothing.
+ * `files` is every rollout `rolloutsOf` finds for the id; `calls`, each tool call the rollout
+ * shows, in order (`rolloutCalls`); `unreadable`, what `rolloutCommands` could not read, as a
+ * verdict would name it, or that no rollout was found. A session id and nothing else.
+ */
+async function readRollout(options) {
+  const sessionId = options["read-rollout"];
+  if (typeof sessionId !== "string" || sessionId === "") fail("--read-rollout takes a Codex session id");
+  const others = Object.keys(options).filter((key) => key !== "read-rollout");
+  if (others.length > 0) fail(`--read-rollout reads no project and takes no other flag (${others.map((key) => `--${key}`).join(", ")})`);
+  const files = rolloutsOf(sessionId);
+  const report = { files, calls: [], unreadable: [] };
+  if (files.length === 0) report.unreadable.push(`no Codex session rollout for ${sessionId} under ${path.join(codexHome, "sessions")}`);
+  for (const file of files) {
+    report.calls.push(...rolloutCalls(file));
+    report.unreadable.push(...rolloutCommands(file).unreadable);
+  }
+  // A report longer than a pipe's buffer is still being written when `write` returns, and an
+  // exit then would cut it short; the module waits here, so nothing after this line runs.
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify(report, null, 2)}\n`, resolve));
+  process.exit(0);
+}
+
+/**
+ * Each tool call a rollout file shows, by its 1-based line: a code-mode `exec` with the
+ * commands `scriptRead` followed, decoded and in order, its `computed` reasons, and the one
+ * `custom_tool_call_output` of its `call_id` read for the `{exit_code, output}` JSON Codex
+ * writes there — `output: null` with a `reason` when there is no output, more than one, or no
+ * single exit code in it; another custom tool by its name; a `function_call` with its
+ * arguments decoded, or `null` when they are not a JSON string. Pairing is by `call_id`
+ * alone, because only the output that answers a call says how that call ended.
+ */
+function rolloutCalls(file) {
+  let text;
+  try { text = readFileSync(file, "utf8"); } catch { return []; }
+  const entries = [];
+  const outputs = new Map();
+  text.split("\n").forEach((line, index) => {
+    let entry;
+    try { entry = JSON.parse(line); } catch { return; }
+    if (entry?.type !== "response_item" || entry.payload === null || typeof entry.payload !== "object") return;
+    const payload = entry.payload;
+    if (payload.type === "custom_tool_call_output") outputs.set(payload.call_id, [...(outputs.get(payload.call_id) ?? []), payload.output]);
+    else if (payload.type === "custom_tool_call" || payload.type === "function_call") entries.push({ line: index + 1, payload });
+  });
+  const exitOf = (output) => {
+    const texts = Array.isArray(output) ? output.map((part) => part?.text).filter((part) => typeof part === "string")
+      : typeof output === "string" ? [output] : [];
+    const found = texts.flatMap((part) => {
+      try {
+        const value = JSON.parse(part);
+        return Number.isInteger(value?.exit_code) && typeof value.output === "string" ? [{ exit_code: value.exit_code, text: value.output }] : [];
+      } catch { return []; }
+    });
+    return found.length === 1 ? { output: found[0] } : { reason: found.length === 0 ? "its output holds no exit code" : `its output holds ${found.length} exit codes` };
+  };
+  return entries.map(({ line, payload }) => {
+    const call = { file, line, call_id: payload.call_id ?? null };
+    if (payload.type === "function_call") {
+      let decoded = null;
+      if (typeof payload.arguments === "string") {
+        try { decoded = JSON.parse(payload.arguments); } catch { decoded = null; }
+      }
+      return { ...call, kind: "function_call", name: payload.name ?? null, arguments: decoded };
+    }
+    if (payload.name !== "exec") return { ...call, kind: "custom_tool_call", name: payload.name ?? null };
+    const script = typeof payload.input === "string" ? scriptRead(payload.input) : { commands: [], computed: [], error: "exec input is not a script string" };
+    const read = { ...call, kind: "exec", commands: script.commands, computed: script.computed, ...(script.error === undefined ? {} : { error: script.error }) };
+    const answers = typeof payload.call_id === "string" ? outputs.get(payload.call_id) ?? [] : [];
+    const paired = typeof payload.call_id !== "string" ? { reason: "the call has no call_id" }
+      : answers.length === 0 ? { reason: `no output for ${payload.call_id}` }
+        : answers.length > 1 ? { reason: `${answers.length} outputs for ${payload.call_id}` }
+          : exitOf(answers[0]);
+    return paired.output === undefined ? { ...read, output: null, reason: paired.reason } : { ...read, output: paired.output };
+  });
 }
 
 /**

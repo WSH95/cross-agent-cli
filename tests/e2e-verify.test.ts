@@ -1374,6 +1374,124 @@ test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no com
   }
 });
 
+/**
+ * `--read-rollout <session id>` over a Codex home holding `rollout` (none for `null`): the JSON
+ * document it printed, its status and its stderr. It runs in a directory that is no
+ * repository, so a mode that read a project would exit 2 before printing anything.
+ */
+async function readRolloutOf(t: TestContext, sessionId: string, rollout: string | null, extra: string[] = []) {
+  const home = await mkdtemp(path.join(tmpdir(), "read-rollout-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const file = path.join(home, "sessions", "2026", "09", "30", `rollout-2026-09-30T17-49-05-${sessionId}.jsonl`);
+  if (rollout !== null) {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, rollout);
+  }
+  try {
+    const { stdout, stderr } = await exec(process.execPath, [verify, "--read-rollout", sessionId, ...extra], {
+      encoding: "utf8", cwd: home, env: { ...process.env, CODEX_HOME: home },
+    });
+    return { code: 0, report: JSON.parse(stdout), err: stderr, home, file };
+  } catch (error) {
+    const failure = error as { code?: number; stderr?: string };
+    return { code: failure.code ?? -1, report: null, err: failure.stderr ?? "", home, file };
+  }
+}
+
+// @anchor readRollout
+test("--read-rollout reports each call the reader decoded, an exec paired with its one output by call_id, and judges nothing", async (t) => {
+  // The decoded `cmd` of each direct `exec_command` call, escapes and all, and the exit code
+  // and text of that call's own `custom_tool_call_output`.
+  const escaped = 'echo "resumed"\necho done >> notes.md';
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000007001";
+  const paired = await readRolloutOf(t, sessionId, rolloutOf(sessionId, [
+    { cmd: escaped, exit: 0 },
+    { cmd: "echo root >> ../../ROOT-WRITE.txt", exit: 1, output: "/bin/bash: line 1: ../../ROOT-WRITE.txt: Read-only file system\n" },
+  ]));
+  assert.equal(paired.code, 0, paired.err);
+  assert.ok(rolloutOf(sessionId, [{ cmd: escaped, exit: 0 }]).includes(String.raw`\"resumed\"\n`), "the script's source holds the escapes");
+  assert.deepEqual(paired.report, {
+    files: [paired.file],
+    calls: [
+      { file: paired.file, line: 2, call_id: "call_0", kind: "exec", commands: [escaped], computed: [], output: { exit_code: 0, text: "" } },
+      { file: paired.file, line: 5, call_id: "call_1", kind: "exec", commands: ["echo root >> ../../ROOT-WRITE.txt"], computed: [],
+        output: { exit_code: 1, text: "/bin/bash: line 1: ../../ROOT-WRITE.txt: Read-only file system\n" } },
+    ],
+    unreadable: [],
+  });
+
+  // A command named only in a comment or a string is no command; the mention is a computed reason.
+  for (const [script, why] of [
+    ['// tools.exec_command({cmd: "claude -p hi"})\nconst r = await tools.exec_command({cmd: "ls"});\ntext(JSON.stringify(r));', /exec_command: 2 occurrences but only 1 direct calls followed/],
+    ["const note = 'tools.exec_command({cmd: \"rm -rf build\"})';\nconst r = await tools.exec_command({cmd: \"ls\"});\ntext(JSON.stringify(r));", /a string holding a command tool's name/],
+  ] as const) {
+    const id = "01a0f44a-eb7a-7603-ae3a-000000007002";
+    const { code, report, err } = await readRolloutOf(t, id, rolloutOf(id, [{ script }]));
+    assert.equal(code, 0, err);
+    assert.deepEqual(report.calls[0].commands, ["ls"], script);
+    assert.ok(report.calls[0].computed.some((reason: string) => why.test(reason)), `${script}\n${JSON.stringify(report.calls[0].computed)}`);
+  }
+
+  // An exec with two outputs, one with none and one whose output holds no exit code: no output
+  // is paired, and the reason says which.
+  const call = (callId: string) => ({ entry: { type: "custom_tool_call", call_id: callId, name: "exec",
+    input: 'const r = await tools.exec_command({cmd: "ls"});\ntext(JSON.stringify(r));' } });
+  const output = (callId: string, text: string) => ({ entry: { type: "custom_tool_call_output", call_id: callId,
+    output: [{ type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" }, { type: "input_text", text }] } });
+  const unpaired = "01a0f44a-eb7a-7603-ae3a-000000007003";
+  const doubled = await readRolloutOf(t, unpaired, rolloutOf(unpaired, [
+    call("call_d"), output("call_d", JSON.stringify({ exit_code: 0, output: "" })), output("call_d", JSON.stringify({ exit_code: 1, output: "denied" })),
+    call("call_n"),
+    call("call_t"), output("call_t", "exit 0"),
+  ]));
+  assert.equal(doubled.code, 0, doubled.err);
+  const byId = new Map(doubled.report.calls.map((entry: { call_id: string }) => [entry.call_id, entry]));
+  for (const [callId, why] of [["call_d", /2 outputs/], ["call_n", /no output/], ["call_t", /no exit code/]] as const) {
+    const entry = byId.get(callId) as { output: unknown; reason: string };
+    assert.equal(entry.output, null, callId);
+    assert.match(entry.reason, why, callId);
+  }
+
+  // A function call is listed with its arguments decoded, or null where they do not decode;
+  // a script that does not lex is named under `unreadable`, as the verdicts name it.
+  const listed = "01a0f44a-eb7a-7603-ae3a-000000007004";
+  const listing = await readRolloutOf(t, listed, rolloutOf(listed, [
+    { entry: { type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_w" } },
+    { entry: { type: "function_call", name: "brand_new_tool", arguments: "{not json", call_id: "call_b" } },
+    { script: 'await tools.exec_command({cmd: "ls});' },
+  ]));
+  assert.equal(listing.code, 0, listing.err);
+  assert.deepEqual(listing.report.calls.slice(0, 2), [
+    { file: listing.file, line: 2, call_id: "call_w", kind: "function_call", name: "wait", arguments: { cell_id: "11", yield_time_ms: 30000, max_tokens: 1000 } },
+    { file: listing.file, line: 3, call_id: "call_b", kind: "function_call", name: "brand_new_tool", arguments: null },
+  ]);
+  assert.deepEqual(listing.report.calls[2].commands, []);
+  assert.equal(listing.report.calls[2].error, "an unterminated string");
+  assert.ok(listing.report.unreadable.includes("an exec script that does not read as JavaScript (an unterminated string)"), JSON.stringify(listing.report.unreadable));
+  assert.ok(listing.report.unreadable.includes("a tool call this reader does not classify (function_call brand_new_tool)"), JSON.stringify(listing.report.unreadable));
+
+  // A report larger than a pipe's 64 KiB buffer arrives whole: the mode exits only once it is written.
+  const long = "01a0f44a-eb7a-7603-ae3a-000000007006";
+  const steps = Array.from({ length: 400 }, (_, n) => ({ cmd: `echo step-${n} >> notes.md`, exit: 0 }));
+  const whole = await readRolloutOf(t, long, rolloutOf(long, steps));
+  assert.equal(whole.code, 0, whole.err);
+  assert.equal(whole.report.calls.length, 400);
+  assert.ok(JSON.stringify(whole.report, null, 2).length > 65_536, "the report is larger than a pipe's buffer");
+
+  // No rollout is said, not shrugged at; the mode takes a session id and nothing else.
+  const absent = await readRolloutOf(t, "01a0f44a-eb7a-7603-ae3a-000000007005", null);
+  assert.equal(absent.code, 0, absent.err);
+  assert.deepEqual(absent.report.files, []);
+  assert.deepEqual(absent.report.calls, []);
+  assert.match(absent.report.unreadable[0], /^no Codex session rollout for 01a0f44a-eb7a-7603-ae3a-000000007005 under /);
+  const withProject = await readRolloutOf(t, sessionId, null, ["--project", "."]);
+  assert.equal(withProject.code, 2);
+  assert.match(withProject.err, /--read-rollout reads no project and takes no other flag \(--project\)/);
+  const bare = await readRolloutOf(t, "", null);
+  assert.equal(bare.code, 2);
+  assert.match(bare.err, /--read-rollout takes a Codex session id/);
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.
