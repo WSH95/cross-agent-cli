@@ -31,7 +31,7 @@ provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside th
 under `dev-team-engine`, fourteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
 operator CLI; the launcher skill with each mode's own loop; and the packaging
-for Claude Code and for Codex. What is left is Grok's packaging. `docs/design.md`
+for Claude Code, Codex and Grok. `docs/design.md`
 is the design and the work plan; `docs/probes.md` records what each engine CLI
 was observed to do, and `VERIFY.md` what each milestone's own runs showed.
 
@@ -238,6 +238,97 @@ as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
 ~/.codex/skills/cross-agent` undoes it. Install one attach or the other, not both: a
 `[mcp_servers.cross-agent]` table shadows the plugin's server of the same name, budget
 and all.
+
+## Install it in Grok
+
+Grok reads this repository as a plugin in place, per project: the project's own
+`.grok/config.toml` names the checkout under `[plugins]`, and grok 1.0.46 then takes the
+launcher skill from `skills/` and this server from `.claude-plugin/plugin.json`'s
+`mcpServers`, expanding `${CLAUDE_PLUGIN_ROOT}` to the checkout. Nothing is installed
+or copied. The headless `grok` has no `--plugin-dir` (only `grok agent`, which an ACP
+client drives, takes one), and `grok plugin install` would put this server in every Grok
+session on the machine, so the attach lives in the project:
+
+```
+cd ~/code/my-project
+cross-agent init --mode dev-team
+mkdir -p .grok
+cat >> .grok/config.toml <<EOF
+[plugins]
+paths = ["$HOME/Documents/agent-team-cli"]
+enabled = ["cross-agent"]
+
+[mcp]
+max_output_bytes = 100000
+EOF
+```
+
+`init` comes first because the server finds its project from where it runs: Grok starts
+the plugin's server in the session's own working directory, and the server serves the
+project whose `.cross-agent/config.json` it finds there or above it. `paths` takes an
+absolute path, which is why the lines are written through the shell: Grok expands no `~`
+there, and a `~/Documents/…` entry loaded no plugin at all. If the file already holds a
+`[plugins]` or an `[mcp]` table, add the lines to that table instead; TOML refuses a table
+declared twice.
+
+The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
+default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,608 under
+`dev-team-engine` and 3,463 under `solo`. Under the default, a Grok host in a
+`dev-team-engine` project read the first 19.5 KB of the mode and a note naming the file
+under its session directory where Grok had written the rest; with the line, it read the
+answer whole (`docs/probes.md`, "T15: the Grok attach").
+
+A project's `.grok/config.toml` counts only in a folder Grok trusts: a headless session in
+an untrusted folder loads no project plugin and starts no project server. Trust the
+project once, by accepting Grok's prompt the first time you open it there or by starting
+Grok there with `--trust`; Grok's own guide says the grant is recorded in
+`~/.grok/trusted_folders.toml` and covers the repository's subdirectories, though not a
+nested checkout.
+
+To check the attach, from the project:
+
+```
+grok inspect --json
+grok mcp doctor cross-agent
+```
+
+`grok inspect --json` should show `"projectTrusted": true`, a plugin `cross-agent` of
+scope `config` at the checkout, the skill `cross-agent` whose source is that plugin, and
+the server `cross-agent` from the same plugin. `grok mcp doctor cross-agent` lists `plugin:
+cross-agent` among its config sources and reports `cross-agent (stdio: node
+<checkout>/src/server.ts)` started, its handshake OK, and the operator row's tools
+discovered: twelve in a project bound to `dev-team` or `solo`, fourteen under
+`dev-team-engine`. `grok mcp list` and `grok plugin list` show neither, because they list
+configured servers and installed plugins only. In a session the tools are spelled
+`cross-agent__<tool>`, the server's name and the tool's, and Grok reaches them through its
+own `search_tool` and `use_tool`. The session's first `system/init` line names the server
+as `pending` and lists none of its tools; that line is a snapshot taken before the
+handshake, and the session's own `events.jsonl` records the connection and the tools.
+
+Grok gives an MCP call `tool_timeout_sec`, 6000 seconds by default, and the plugin's server
+gets that default: its calls' `mcp_tool_call_started` events read `timeout_sec: 6000`.
+
+To remove it, delete the `[plugins]` lines and the `[mcp]` table from the project's
+`.grok/config.toml`, or the file if they were all it held. That is the whole attach: it
+writes nothing under `~/.grok/`, installs no plugin and reads the checkout where it is.
+The folder's trust stays in `~/.grok/trusted_folders.toml`, which is yours to keep or edit.
+
+Three things hold for every Grok session attached this way:
+
+- **Grok is never a lead.** A `dev-team-engine` project binds its `lead` to Claude or
+  Codex; the config refuses a Grok lead, and `delegate` refuses to launch one. Every other
+  role may run on Grok.
+- **A Grok specialist working in a linked worktree reaches no server.** Grok reads a
+  project's `.grok/config.toml` from the session's directory up to its git root, and a
+  linked worktree is a root of its own, so the attach is not there: `grok mcp doctor` run
+  in one lists no project source. Only a mount at user scope would change that, and none
+  is installed. A Grok specialist at the project root inherits the attach and gets the
+  specialist row's five read tools.
+- **A server Grok starts gets the session's environment**: the host's whole environment
+  plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
+  `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a
+  Grok session started inside a task, from a test suite a lead runs, say, gets a
+  specialist's tools, never the operator's.
 
 ## Run the tests
 

@@ -235,7 +235,9 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
   const start = readme.indexOf("## Install it in Codex");
   const end = readme.indexOf("## Run the tests");
   assert.ok(claude >= 0 && start > claude && end > start, "the Codex section follows Claude Code's and precedes the tests");
-  const section = readme.slice(start, end);
+  // The section runs to the next heading of its own level, so a word another host's section
+  // carries does not stand in for one of Codex's.
+  const section = readme.slice(start, readme.indexOf("\n## ", start + 1));
   for (const words of [
     "codex plugin marketplace add", "codex plugin add cross-agent@agent-team-cli", "codex plugin list", "codex plugin remove",
     "codex plugin marketplace remove", "codex mcp add cross-agent", "assets/codex/mcp_servers.toml", "~/.codex/skills/cross-agent",
@@ -247,5 +249,39 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
     "git -C ~/Documents/agent-team-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
   ]) {
     assert.ok(section.includes(words), `the Codex section names ${words}`);
+  }
+});
+
+// Grok packaging (design section 9). grok 1.0.46 reads this repository as a plugin in place when
+// a project's own `.grok/config.toml` names the checkout under `[plugins]`: the skill from
+// `skills/` and the server from `.claude-plugin/plugin.json`'s `mcpServers`, with
+// `${CLAUDE_PLUGIN_ROOT}` expanded to the checkout (T15's attach probe, A1). So no Grok manifest
+// ships, and what this test pins is the README's recipe: the project-scoped lines, the trust
+// they need, the result cap `describe_mode` needs, the checks and the way back.
+
+// @anchor grokReadmeInstall
+test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const codex = readme.indexOf("## Install it in Codex");
+  const start = readme.indexOf("## Install it in Grok");
+  const end = readme.indexOf("## Run the tests");
+  assert.ok(codex >= 0 && start > codex && end > start, "the Grok section follows Codex's and precedes the tests");
+  const section = readme.slice(start, end);
+  for (const words of [
+    // The bind-time config first: Grok starts the plugin's server in the session's directory,
+    // which finds the project by the config it holds.
+    "cross-agent init",
+    // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
+    // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
+    ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/agent-team-cli"]', 'enabled = ["cross-agent"]',
+    "[mcp]", "max_output_bytes = 100000",
+    // A project file counts only in a trusted folder.
+    "--trust",
+    // The checks, the host spelling, and the operator row's count under the engine-placed mode.
+    "grok inspect --json", "grok mcp doctor cross-agent", "cross-agent__", "fourteen",
+    // The way back, and what the attach never touches.
+    "To remove it", "~/.grok/",
+  ]) {
+    assert.ok(section.includes(words), `the Grok section names ${words}`);
   }
 });
