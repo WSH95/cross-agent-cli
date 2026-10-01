@@ -76,6 +76,10 @@ function namesCalled(text: string): string[] {
 // tool timeout is one of the two numbers the launcher's budget table is made of.
 const hostManifestKeys = new Set(["tool_timeout_sec"]);
 
+// The calls a loop's own steps are made of, besides delegating its specialists: under
+// engine placement they are the lead's while a lead is live.
+const loopSteps = new Set(["git_root", "git_mutate", "run_command", "verify_worktree"]);
+
 /**
  * Every call-shaped name in `text` names a tool the mode registers for `row`, a key one of
  * those tools takes, or a host's own manifest key.
@@ -174,6 +178,22 @@ test("the launcher reads a settled task's final message through result, never fr
   assert.match(text, /`resultTail` is[^.]*last 2000 characters/);
   assert.match(text, /`lastActivity`[^.]*not the (final )?message/);
   assert.match(flat(engineSection().section), /`result \{task_id: <lead id>\}`[^.]*closing report/);
+});
+
+// @anchor engineWhoReconciles
+test("under engine placement the launcher says who reconciles: the live lead, a resumed one, or the host once none is", () => {
+  // I4 is the case the section has to allow: a lead killed between `worktree remove` and
+  // `branch -d` leaves a branch nobody live will delete, and the operator's pass deleted it
+  // through `git_root`, journaling `branch-deleted`.
+  const section = flat(engineSection().section);
+  assert.match(section, /[Ww]hile a lead is live[^.]*step 1/, "a live lead reconciles, as its step 1");
+  assert.match(section, /continues it reconciles first/, "a resumed lead reconciles before anything else");
+  assert.match(section, /no lead is live and none will be continued[^.]*`## Between tasks: reconcile`[^.]*yours/,
+    "and only then is the pass the host's");
+  assert.match(section, /never through a shell `git`/);
+  // The pass itself says the same from its side.
+  const pass = flat(sectionOf(launcher(), "Between tasks: reconcile"));
+  assert.match(pass, /[Uu]nder `engine` placement[^.]*lead's (own )?step 1 while a lead is live/);
 });
 
 // @anchor engineHostHandsOff
@@ -277,6 +297,17 @@ test("the launcher routes on placement and names the mailbox tools and the repor
   // paragraph says every mode runs its loop in the host session.
   assert.doesNotMatch(rest, /`list_asks|`answer \{|`ask \{/);
   assert.doesNotMatch(flat(rest), /every mode runs its loop in your own session/);
+  // Every paragraph outside the section that orders a loop step — a root or worktree git
+  // call, a test run, a specialist's delegation — says it is host placement's. E2's host
+  // read "Between tasks" and ran its reads through its own shell, because nothing there
+  // said the pass was not an engine-placed host's.
+  for (const paragraph of rest.split(/\n\s*\n/)) {
+    const steps = namesCalled(paragraph).filter((name) => loopSteps.has(name));
+    const delegates = /`delegate \{/.test(paragraph);
+    if (steps.length === 0 && !delegates) continue;
+    assert.match(paragraph, /`host`/,
+      `a paragraph orders ${[...steps, ...(delegates ? ["delegate {…}"] : [])].join(", ")} without naming host placement: ${flat(paragraph).slice(0, 160)}`);
+  }
   // The host starts the lead and watches it; the loop's own steps are the lead's.
   const flatSection = flat(section);
   assert.match(flatSection, /`delegate \{role: <lead\.role>, cwd: <project root>, brief\}`/);

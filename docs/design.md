@@ -386,8 +386,9 @@ that spelling, so nothing in the matrix depends on it.
 
 `skills/cross-agent/SKILL.md` is the **launcher**, and it is written: select
 the mode, start, watch, answer, cancel, reconcile, report, and the paragraphs
-every mode shares — the merge policy a `worktree: true` task settles under, the
-`review` and `critique` verbs, the reconciliation pass. It is host-independent,
+every host-placed mode shares — the merge policy a `worktree: true` task settles
+under, the `review` and `critique` verbs, the reconciliation pass — each of which
+says it is `host` placement's wherever it orders a loop step. It is host-independent,
 and `tests/skills.test.ts` holds every tool it names to the row that may call it
 (`src/server.ts#projectTools`). `modes/<name>/SKILL.md` is that mode's **loop**,
 written for each of the three. Hosts discover only `skills/`,
@@ -401,7 +402,12 @@ instructions; under `engine` the host starts the lead with one `delegate`,
 watches it with `wait` and `check`, answers it through `list_asks` and `answer`,
 cancels or resumes it, and reads its closing report through `result`, and never
 runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
-placement"; `tests/skills.test.ts#launcherRoutesPlacement`). Under `engine`
+placement"; `tests/skills.test.ts#launcherRoutesPlacement`, which fails on any
+paragraph outside that section ordering a loop step without naming `host`).
+Reconciliation follows who is live: the lead's step 1 while a lead is, the
+continuing lead's when the user resumes a failed one, and the host's own pass
+through `git_root` only once no lead is live and none will be continued, as the
+operator's was after I4 (`tests/skills.test.ts#engineWhoReconciles`). Under `engine`
 placement the loop reaches the lead through the engine's own instruction file —
 `--append-system-prompt-file` on Claude, `-c model_instructions_file=` on Codex
 (P9, item 4 above) — composed once by `delegate`: the mode's loop verbatim, a
@@ -2494,9 +2500,10 @@ stops where it is, leaves the branch and its worktree standing, and reports the
 reason together with the commands that finish the job by hand; a suite that
 fails at the root after the merge is the repair path below and never a merge to
 retry. Those paragraphs live in
-`skills/cross-agent/SKILL.md`, which carries them for every mode — `solo`
-hands a one-shot that wrote straight to them — and `tests/skills.test.ts` holds
-them to that order.
+`skills/cross-agent/SKILL.md`, which carries them for every host-placed mode —
+`solo` hands a one-shot that wrote straight to them; under `engine` placement the
+host starts no one-shot, and the lead's loop carries its own merge — and
+`tests/skills.test.ts` holds them to that order.
 
 **`review` and `critique` are verbs of that loop, not tools.** Each is one
 `delegate` of the `consult` role that names its own engine, because a second

@@ -43,8 +43,11 @@ ask for a restart instead of working around it.
 
 ## Starting a task
 
-`delegate {role, brief, cwd}` launches one specialist and answers with its task
-id. Add `branch` when the role works in a worktree — the mode's loop says where
+`delegate {role, brief, cwd}` launches one task and answers with its task id:
+under `host` placement each specialist your loop names, and under `engine`
+placement the lead and no one else (`## Engine placement`), whose brief, narration,
+refusals, waits, resume and cancel are the ones this skill describes for any task.
+Add `branch` when the role works in a worktree — the mode's loop says where
 that worktree comes from and on what branch — and `engine`, `model` or `effort`
 to override the binding for this call alone. Naming another `engine` drops the
 binding's `model` and `effort` rather than carrying them across: they belong to
@@ -159,14 +162,17 @@ specialist already wrote to its worktree.
 
 ## Between tasks: reconcile
 
-Run this pass before the first task of a session, after any interruption, and
-after **any** `git_mutate` or `git_root` call that came back `ok: false` —
-whether or not it carried an exit code. A refusal is not a claim that nothing
-happened: a `worktree add` that failed while checking out has already created
-the directory, a rebase stopped on a conflict has left the worktree mid-rebase,
-and a command killed at the output cap stopped wherever it was.
+Under `host` placement this pass is yours: run it before the first task of a
+session, after any interruption, and after **any** `git_mutate` or `git_root` call
+that came back `ok: false` — whether or not it carried an exit code. Under
+`engine` placement it is the lead's own step 1 while a lead is live, and yours only
+when no lead is live and none will be continued (`## Engine placement`). A refusal
+is not a claim that nothing happened: a `worktree add` that failed while checking
+out has already created the directory, a rebase stopped on a conflict has left the
+worktree mid-rebase, and a command killed at the output cap stopped wherever it was.
 
-Read, in this order: `list_tasks`, which reconciles the ledger and names any
+Whenever the pass is yours — under `host` placement, or under `engine` with no lead
+live — read, in this order: `list_tasks`, which reconciles the ledger and names any
 record file no reader could judge; the task's journal at
 `.cross-agent/journal/<slug>.json`, whose steps are the git steps that actually
 completed; `git_root {args: ["worktree", "list", "--porcelain"]}`; `git_root
@@ -177,7 +183,8 @@ worktree, which is a `rebase-merge` or `rebase-apply` directory under
 `.git/worktrees/<slug>`. `verify_worktree {path, branch}` settles whether a
 directory is still the linked worktree of that branch before you trust it.
 
-Then, leftover by leftover: an interrupted rebase is aborted where it started —
+Then, leftover by leftover — the same rules for a `host` loop's leftovers and for a
+dead engine lead's: an interrupted rebase is aborted where it started —
 `git_mutate {slug, args: ["rebase", "--abort"]}` in the worktree, which is the
 one argv the verifier accepts with HEAD detached. A merged branch whose worktree
 survives resumes at the cleanup steps of the merge policy below — `worktree
@@ -192,15 +199,19 @@ repaired or removed, every writable delegation in the project refuses.
 
 ## A one-shot that wrote
 
-After a `worktree: true` task settles, the work is still uncommitted: a
-specialist writes no git metadata at all. You commit it, then apply the
-project's merge policy.
+Under `host` placement, after a `worktree: true` task settles, the work is still
+uncommitted: a specialist writes no git metadata at all. You commit it, then apply
+the project's merge policy. Under `engine` placement you start no such task — your
+one delegation is the lead, which commits and merges its own work — so nothing
+below is yours there.
 
-1. Commit what it left: `git_mutate {slug, args: ["add", "-A", "--", ".",
+1. Commit what it left — the `host` session's commit, since no specialist makes
+   one: `git_mutate {slug, args: ["add", "-A", "--", ".",
    ":(exclude).cross-agent", ":(exclude)<git.worktreeDir>"]}` — the second
    exclusion is the mode's own worktree directory, `.worktrees` unless
    `describe_mode` says otherwise — then `git_mutate {slug, args: ["commit",
-   "-m", <message>]}`, with the specialist's own summary as the message. That is the only path that writes a worktree's git metadata, and it
+   "-m", <message>]}`, with the specialist's own summary as the message. That is
+   the only path that writes a worktree's git metadata, and it
    journals the `committed` step. The two exclusions are not optional: a
    `.gitignore` the specialist wrote in its worktree outranks the repository's
    own, and the project's state is never committed to a task branch — the merge
@@ -209,7 +220,7 @@ project's merge policy.
 2. Then apply the project's `project.mergePolicy`. You apply it; nobody merges
    by hand under `auto`.
 
-   **`auto`** — `run_command {which: "test", where: <worktree path>, slug}`;
+   **`auto`** — the `host` session runs `run_command {which: "test", where: <worktree path>, slug}`;
    `git_root {args: ["merge", "--ff-only", <branch>], slug}`; `run_command
    {which: "test", where: "root", slug}`; `git_root {args: ["worktree",
    "remove", <worktree path>], slug}`; `git_root {args: ["branch", "-d",
@@ -231,9 +242,10 @@ project's merge policy.
 
 ## Two briefs worth composing
 
-`review` and `critique` are verbs of the loop, not tools of the server —
-each is one `delegate` that names its own engine, because a second engine
-reading the work is the point of asking:
+Under `host` placement, `review` and `critique` are verbs of the loop, not tools
+of the server — each is one `delegate` that names its own engine, because a second
+engine reading the work is the point of asking. Under `engine` placement they are
+not yours: the lead's loop orders its own reviews, and you delegate no specialist.
 
 - **review** — `delegate {role: "consult", cwd: <project root>, engine: <the
   engine the user named>, brief: <the diff and what to look for>}`. Attach the
@@ -245,6 +257,8 @@ reading the work is the point of asking:
   design file and ask for the adversarial reading: what it assumes without saying
   so, what it leaves undefined, where it would fail first, and what a reviewer
   would send back.
+- Either one is a task of the `host` loop like any other: narrate it, `wait` on
+  it, and read what it found through `result`.
 
 ## Reporting
 
@@ -277,8 +291,10 @@ a summary of a review is not a review.
 - Never `git push`, and never a bare `git stash`: the stash is shared with every
   worktree of this repository and with every other session working in it.
 - Root git runs through `git_root` and `run_command`, and a worktree's git
-  metadata through `git_mutate`, under both placements — the journal is one
-  document, and a step nobody wrote is a gap in it.
+  metadata through `git_mutate` — yours under `host` placement, the lead's under
+  `engine` placement but for the pass `## Engine placement` hands you once no lead
+  is live — and never through a shell `git`: the journal is one document, and a
+  step nobody wrote is a gap in it.
 - A mid-session change to `.cross-agent/config.json`'s `mode` needs a server
   restart. `list_roles` names that drift; the tools this server registered are
   the ones its own mode declared.
@@ -318,10 +334,21 @@ the lead wrote it, and put anything of your own after it rather than in its plac
 Your own calls under this placement are the launcher's setup, monitoring and
 answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the
 lead, `wait`, `check`, `result`, `list_asks`, `answer` and `cancel` — and never a
-loop step: you never call `git_root`, `git_mutate`, `run_command` or
-`verify_worktree` yourself, and you never delegate a specialist. You run no `git`
-and no test command of your own on the project either, not even to look: the
-root check is the lead's step 1, and what it found is in its report.
+loop step: while a lead is live you never call `git_root`, `git_mutate`,
+`run_command` or `verify_worktree`, and you never delegate a specialist at all. You
+run no `git` and no test command of your own on the project either, not even to
+look: the root check is the lead's step 1, and what it found is in its report.
 `cross-agent report` and `cross-agent answer` are the only commands of yours this
 placement needs. The steps are the lead's, and a step the lead did not take is one
 its journal and its report do not have.
+
+Who reconciles follows from who is live. While a lead is live — any status short
+of `done`, `failed` or `cancelled` — the lead does, as its step 1, and you leave the
+root to it. A lead that failed or was killed is reported to the user, and continued by the
+resume above when the user wants the run finished: the lead that continues it
+reconciles first, its step 1 reading the journal its chain wrote. When no lead is
+live and none will be continued — the user stops the run there, or nothing of it
+is left but a leftover, as when a lead dies between `worktree remove` and `branch
+-d` — the pass of `## Between tasks: reconcile` is yours: run it as written there,
+through `list_tasks`, `git_root`, `git_mutate` and `verify_worktree`, on the
+leftovers it names and on nothing else, and never through a shell `git`.
