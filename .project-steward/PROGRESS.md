@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T19:16:51Z — claude
+[auto-checkpoint] Task 11 in flight from 17de337 (brief v2; eight beads incl. .75's merge guard; no engine run).
+
 ### 2026-10-01T18:47:45Z — claude
 [auto-checkpoint] T15 merged (main 157b6b4; VERIFY 3492c81; 742/741/1); .15 .53 .64 .66 .70 .71 closed; .75 (P2) folded into task 11; .76–.82 filed; task 11 next.
 
