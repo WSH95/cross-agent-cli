@@ -300,11 +300,12 @@ test("a test's teardowns all run in order whatever one of them throws, and its d
 // @anchor handSpawnedHelper
 test("a hand-spawned helper is heard when it ends before anything awaits it, and ended before its directory goes when a wait fails", async (t) => {
   project(t);
-  // It ends first: by the time this awaits its close, the listener `once` added at spawn has
-  // already fired and gone, and the promise it made still answers.
+  // It ends first: by the time this awaits its close, the child has exited, and with no stdio
+  // to drain its close came in the same turn. A listener added only now would wait for an
+  // event that never comes again; the promise taken at spawn answers at once.
   const quick = helper(t, ["-e", ""]);
-  await poll(() => quick.child.listenerCount("close"), (listeners) => listeners === 0);
-  assert.deepEqual(await quick.closed, [0, null]);
+  await poll(() => quick.child.exitCode, (code) => code !== null);
+  assert.deepEqual(await Promise.race([quick.closed, delay(1000, "no close heard within a second")]), [0, null]);
 
   // A wait that fails ends the test body where it stands. The cleanup was registered at
   // spawn, so the drain at the test's end still ends the helper, and before the removal.
