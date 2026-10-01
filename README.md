@@ -255,8 +255,9 @@ session on the machine, so the attach lives in the project:
 ```
 cd ~/code/my-project
 cross-agent init --mode dev-team
-echo '.grok/' >> .gitignore
+printf '\n.grok/\n' >> .gitignore
 git add .gitignore && git commit -m 'Ignore cross-agent and Grok state' -- .gitignore
+# If .grok/config.toml already has a [plugins] or [mcp] table, merge by hand: see below.
 mkdir -p .grok
 cat >> .grok/config.toml <<EOF
 [plugins]
@@ -277,17 +278,29 @@ project whose `.cross-agent/config.json` it finds there or above it. `cross-agen
 checkout's path, and because a committed `.grok/config.toml` would reach every task
 worktree: Grok takes a linked worktree as a project of its own, so it would load the
 plugin for every worktree specialist, and a specialist's edit to the file could reach your
-root through the merge. Commit that `.gitignore` change before the team's first task, as
-the Claude Code section says: a loop's first step stops on anything `git status
---porcelain --untracked-files=normal` prints. `paths` takes an absolute path, which is why
-the lines are written through the shell: Grok expands no `~` there, and a `~/Documents/…`
-entry loaded no plugin at all.
+root through the merge. `printf` puts it on a line of its own: `init` leaves a last line
+with no newline alone when it has nothing to add, and `echo` would join `.grok/` onto it.
+Commit that `.gitignore` change before the team's first task, as the Claude Code section
+says: a loop's first step stops on anything `git status --porcelain
+--untracked-files=normal` prints. `paths` takes an absolute path, which is why the lines
+are written through the shell: Grok expands no `~` there, and a `~/Documents/…` entry
+loaded no plugin at all.
+
+A project that already tracks `.grok/config.toml` needs one step more, since `.gitignore`
+does not cover a tracked file: in place of the commit line, with nothing else staged, run
+`git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore
+cross-agent and Grok state'`, before you edit the file. That commits the file's removal
+with the `.gitignore` change and keeps the file on your disk, though other clones lose it at
+their next pull. A commit limited to `-- .gitignore` would leave the removal staged, and one
+that also named `.grok/config.toml` would track the file again.
 
 The heredoc is for a project whose `.grok/config.toml` has no `[plugins]` or `[mcp]` table
 yet: TOML refuses a table, or a key, declared twice. Where the file has them, edit them
-instead: add the checkout's path to the existing `paths` array and `"cross-agent"` to the
-existing `enabled` array, and set `max_output_bytes` under `[mcp]` to 100000 unless it is
-already larger, keeping the larger value.
+instead: add the checkout's absolute path, your home directory written out, to the existing
+`paths` array — what the heredoc's `$HOME/Documents/agent-team-cli` becomes once the shell
+expands it — and `"cross-agent"` to the existing `enabled` array, and set
+`max_output_bytes` under `[mcp]` to 100000 unless it is already larger, keeping the larger
+value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,880 under
@@ -333,10 +346,11 @@ ten-minute wait under a Grok host").
 
 To remove it, take out of the project's `.grok/config.toml` only what the attach added:
 the checkout's path from `paths`, `"cross-agent"` from `enabled`, and `max_output_bytes`,
-restored to its earlier value, or deleted where the attach added it; where the recipe
-wrote the whole file, delete the file. That is the whole attach: it writes nothing under
-`~/.grok/`, installs no plugin and reads the checkout where it is. The folder's trust
-stays in `~/.grok/trusted_folders.toml`, which is yours to keep or edit.
+restored to the value you noted, or deleted where the attach added it; delete the file
+itself only if the attach's lines were all it held. The `.grok/` line can stay in
+`.gitignore`. That is the whole attach: it writes nothing under `~/.grok/`, installs no
+plugin and reads the checkout where it is. The folder's trust stays in
+`~/.grok/trusted_folders.toml`, which is yours to keep or edit.
 
 Four things hold for every Grok session attached this way:
 
@@ -348,9 +362,10 @@ Four things hold for every Grok session attached this way:
   linked worktree is a root of its own, holding no `.grok/` while `.grok/` stays ignored,
   so the attach is not there: `grok mcp doctor` run in one lists no project source, and a
   Grok code reviewer in E6's worktree mounted no server (`docs/probes.md`, "A Grok
-  specialist in a linked worktree, B5"). Only a mount at user scope would change that,
-  and none is installed. A Grok specialist at the project root inherits the attach and
-  gets the specialist row's five read tools.
+  specialist in a linked worktree, B5"). Only a committed `.grok/config.toml`, which the
+  recipe keeps out, or a mount at user scope would change that, and neither is there. A
+  Grok specialist at the project root inherits the attach and gets the specialist row's
+  five read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
   plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
   `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a
@@ -361,8 +376,9 @@ Four things hold for every Grok session attached this way:
 - **The launcher skill reaches a Grok specialist at the root.** The attach carries the
   `cross-agent` skill with the server, so a Grok specialist working at the project root is
   offered the launcher too — every one T15 ran there listed it — while its row still has
-  no `delegate`: a specialist that follows the skill is refused by the server, never
-  served.
+  no `delegate`: a specialist that follows the skill and calls it is refused by Grok's own
+  dispatcher, which holds no such tool, before the server is ever asked (`docs/probes.md`,
+  "I1: authority under a Claude Code host"), and is never served.
 
 ## Run the tests
 

@@ -268,33 +268,46 @@ test("the README attaches Grok per project through the project's own .grok/confi
   assert.ok(codex >= 0 && start > codex && end > start, "the Grok section follows Codex's and precedes the tests");
   // What the section says, rather than where its lines wrapped.
   const section = readme.slice(start, end).replace(/\s+/g, " ");
-  for (const words of [
+  const missing = [
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
     // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
     "cross-agent init", "node ~/Documents/agent-team-cli/src/cli.ts init",
-    // `.grok/` ignored beside `init`'s entries and the change committed: a loop's first step stops
-    // on a dirty tree, and a committed `.grok/config.toml` would reach every task worktree, which
-    // Grok takes as a project of its own.
-    "echo '.grok/' >> .gitignore", "git add .gitignore && git commit", "Commit that `.gitignore` change",
+    // `.grok/` ignored beside `init`'s entries, on a line of its own even after a last line with no
+    // newline, and the change committed: a loop's first step stops on a dirty tree, and a committed
+    // `.grok/config.toml` would reach every task worktree, which Grok takes as a project of its own.
+    "printf '\\n.grok/\\n' >> .gitignore", "git add .gitignore && git commit", "Commit that `.gitignore` change",
     "every task worktree",
+    // A project that already tracks the file untracks it in the same commit, by the index rather
+    // than a pathspec: `-- .gitignore` leaves the removal staged, and naming the file re-adds it.
+    "already tracks `.grok/config.toml`",
+    "git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore cross-agent and Grok state'",
     // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
     // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
     ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/agent-team-cli"]', 'enabled = ["cross-agent"]',
     "[mcp]", "max_output_bytes = 100000",
-    // Into a file that already has the tables, the attach is merged, never declared twice.
-    "add the checkout's path to the existing `paths` array", 'and `"cross-agent"` to the existing `enabled` array',
-    "unless it is already larger",
+    // Into a file that already has the tables, the attach is merged, never declared twice: the
+    // block itself points there, and a hand merge writes the path out and notes the cap it raises.
+    "# If .grok/config.toml already has a [plugins] or [mcp] table, merge by hand",
+    "add the checkout's absolute path, your home directory written out,", "to the existing `paths` array",
+    'and `"cross-agent"` to the existing `enabled` array', "unless it is already larger", "note the value you replace",
     // A project file counts only in a trusted folder.
     "--trust",
     // The checks, the host spelling, and the operator row's count under the engine-placed mode.
     "grok inspect --json", "grok mcp doctor cross-agent", "cross-agent__", "fourteen",
-    // The way back takes out only what the attach added, and the attach never touches ~/.grok/.
-    "To remove it", "only what the attach added", "restored to its earlier value", "~/.grok/",
-    // What a Grok specialist at the attached root is offered beside the server.
-    "The launcher skill reaches a Grok specialist at the root",
-  ]) {
-    assert.ok(section.includes(words), `the Grok section names ${words}`);
-  }
+    // The way back takes out only what the attach added, entry by entry, and the file only when
+    // nothing else was in it; the attach never touches ~/.grok/.
+    "To remove it", "only what the attach added", "the checkout's path from `paths`", '`"cross-agent"` from `enabled`',
+    "restored to the value you noted", "only if the attach's lines were all it held", "~/.grok/",
+    // A worktree specialist stays server-less only while the file stays out of the repository.
+    "Only a committed `.grok/config.toml`, which the recipe keeps out, or a mount at user scope",
+    // What a Grok specialist at the attached root is offered beside the server, and who refuses
+    // its `delegate`: Grok's dispatcher, which lists no such tool, before the server is asked.
+    "The launcher skill reaches a Grok specialist at the root", "refused by Grok's own dispatcher",
+  ].filter((words) => !section.includes(words));
+  assert.deepEqual(missing, [], "the Grok section names each of these");
+  // `echo` would join `.grok/` onto a last line that has no newline, which `init` leaves alone
+  // when it has nothing to add.
+  assert.ok(!section.includes("echo '.grok/' >> .gitignore"), "the Grok section appends the ignore line with printf");
 });
 
 // @anchor readmeInitThenCommit
