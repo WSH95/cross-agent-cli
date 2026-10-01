@@ -733,17 +733,22 @@ test("eight first callers of excludeLedger at once leave each exclusion once and
   for (let index = 0; index < 8; index++) {
     children.push(spawn(process.execPath, ["--input-type=module", "-e", script, "--", root, barrier, go], { stdio: ["ignore", "ignore", "pipe"] }));
   }
-  // Each child's close is listened for before anything is awaited, so none is lost.
-  const exits = children.map(async (child) => {
+  // Each child's close is listened for before anything is awaited, so none is lost; and a
+  // child that cannot start, or ends before the barrier opens, fails the wait for the markers
+  // with its own error rather than going unhandled while the parent counts them.
+  const exits = Promise.all(children.map(async (child) => {
     let stderr = "";
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
     const [code] = await once(child, "close");
     return { code, stderr };
-  });
-  await poll(() => fs.readdirSync(barrier).filter((name) => name.startsWith("ready-")).length, (ready) => ready === 8);
+  }));
+  await Promise.race([
+    poll(() => fs.readdirSync(barrier).filter((name) => name.startsWith("ready-")).length, (ready) => ready === 8),
+    exits.then(() => { throw new Error("a child ended before the barrier opened"); }),
+  ]);
   fs.writeFileSync(go, "");
-  for (const exit of await Promise.all(exits)) assert.equal(exit.code, 0, exit.stderr);
+  for (const exit of await exits) assert.equal(exit.code, 0, exit.stderr);
   assert.equal(fs.readFileSync(path.join(info, "exclude"), "utf8"), "# existing\n.cross-agent/\n.worktrees/\n");
   assert.deepEqual(fs.readdirSync(info), ["exclude"]);
 });
