@@ -31,9 +31,8 @@ under `dev-team-engine`, fourteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
 operator CLI; and the launcher skill with each mode's own loop. What is left is
 a target: Codex's and Grok's packaging. `docs/design.md` is the design and the
-work plan;
-`docs/probes.md` records what each engine CLI was observed to do, and
-`VERIFY.md` what each milestone's own runs showed.
+work plan; `docs/probes.md` records what each engine CLI was observed to do,
+and `VERIFY.md` what each milestone's own runs showed.
 
 ## Install it in Claude Code
 

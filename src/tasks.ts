@@ -12,9 +12,10 @@ import type { FoundProcess } from "./process.ts";
 import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid } from "./process.ts";
 import { observeStall } from "./wait.ts";
 
-// The read tools and the cascade cancel. Ownership lives here too, because `wait`
-// (`src/wait.ts`) and the operator CLI (S11) answer the same question: which tasks are
-// this lead's.
+// The read tools and the cascade cancel. Ownership lives here too, because `wait`, the
+// `cancel` tool and a resume (`src/server.ts#projectTools`, `src/delegate.ts#delegate`) ask
+// `ownedBy` the same question: which tasks are this lead's. The operator owns every task,
+// so the operator CLI asks none.
 
 /** A task's own id and the ids of the records it continues, nearest first. */
 export function lineageIds(records: readonly TaskRecord[], id: string): string[] {
@@ -172,10 +173,11 @@ export interface ListOptions {
 }
 
 /**
- * The ledger, brought back in step with the kernel first: every listing the tool answers
- * reconciles, so a lead or an operator never reads a `running` task whose runner died an
- * hour ago (design section 2). Without the pass it is the ledger exactly as it stands, the
- * damaged files still named, and nothing in the project is written.
+ * The ledger, brought back in step with the kernel first: every `list_tasks` reconciles, so
+ * no caller of the tool reads a `running` task whose runner died an hour ago (design section
+ * 2). The operator's `tasks` reconciles only under `--reconcile`: without the pass this is
+ * the ledger exactly as it stands, the damaged files still named, and nothing in the project
+ * is written.
  */
 export async function listTasks(projectRoot: string, status?: TaskStatus, options: ListOptions = {}): Promise<ListResult> {
   const select = (records: readonly TaskRecord[]) => records

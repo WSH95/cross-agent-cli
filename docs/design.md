@@ -2862,8 +2862,9 @@ sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 command line it cannot read, 3 a precondition the verb needs and does not have,
 4 a task still running, 5 a lead waiting on the operator, 6 a task stalled.
 Every verb takes `--project`, `--json` — one JSON document on stdout whatever
-the exit: a 2 is `{ok: false, error, usage}`, a 1 `{ok: false, error}`, and
-every other code the verb's own answer (`tests/cli.test.ts#jsonOnEveryExit`) —
+the exit: a 2 is `{ok: false, error, usage}`, a 1 `{ok: false, error}` but for
+`git`'s, which is git's own failure and its `GitMutateResult`, and every other
+code the verb's own answer (`tests/cli.test.ts#jsonOnEveryExit`) —
 and `--help`, which prints the verbs, the project rule and the protocol, as text
 or, under `--json`, as that one document. Without `--json` an answer that
 carries a verdict — 0, 4, 5 or 6 — is stdout's and a failure — 1, 2 or 3 — is
@@ -2903,22 +2904,27 @@ handler passes:
   (`tests/cli.test.ts#cliTasks`, `#cliTasksReconcileFlag`).
 - `cross-agent show <id> [--lines <n>]` reads what `check` and `result` read —
   the record, the tail of its engine stream, the outcome sidecar, its journal,
-  its final message — as `{record, elapsedSeconds, lastActivity, result,
-  outcome, journal, runnerLog}`, and takes no stall reading: the status is the
-  one the last `wait` or `check` wrote ("Time limits"), and the exit is that
-  status's — 0 settled, 6 `stalled`, 4 anything else — or 3 for a task nobody
-  has (`src/cli.ts#showVerb`, `tests/cli.test.ts#cliShow`).
+  and the final message of a record it shows settled — as `{record,
+  elapsedSeconds, lastActivity, result, outcome, journal, journalError?,
+  runnerLog}`, every field from one read of the record, and takes no stall
+  reading: the status is the one the last `wait` or `check` wrote ("Time
+  limits"), and the exit is that status's — 0 settled, 6 `stalled`, 4 anything
+  else — or 3 for a task nobody has, an id no task file could have among them
+  (`src/cli.ts#showVerb`, `tests/cli.test.ts#cliShow`, `#cliIdOutsideAlphabet`).
+  A journal that does not read is named beside the record, on stderr and as
+  `journalError`, rather than in its place (`#cliJournal`).
 - `cross-agent log <id> [--lines <n>]` is the tail of a task's engine stream,
   fifty lines unless asked otherwise, as `{id, logPath, lines}`; a task whose
   engine has said nothing is an empty answer and a 0, a task nobody has a 3
   (`src/cli.ts#logVerb`, `tests/cli.test.ts#cliLog`).
 - `cross-agent cancel <id>` is `cancel` for the operator row, naming no lead
   (`src/cli.ts#cancelVerb`, `src/tasks.ts#cancel`), its document the
-  `CancelResult`: a 0 when every task of the cascade is settled, a 4 when one is
-  still active — a second cancel retries it — and a 3 for a refusal. An ask
-  file it could not write is named for the operator beside a verdict it does not
-  change, and a task nobody has is refused before any lock is taken
-  (`tests/cli.test.ts#cliCancel`).
+  `CancelResult`: a 0 when every task of the cascade is settled
+  (`tests/cli.test.ts#cliCancel`), a 4 when one is still active, which a second
+  cancel retries (`#cliCancelStillActive`), and a 3 for a refusal. An ask file it
+  could not write is named for the operator beside a verdict it does not change,
+  in both of those tests, and a task nobody has is refused before any lock is
+  taken (`#cliIdOutsideAlphabet`).
 - `cross-agent verify-worktree <path> <branch>` is `verifyWorktree` on a path
   read against the working directory, without the tool's drift check, because
   the CLI serves no mode: 0 verified, 3 refused, the verifier's answer as the
@@ -2927,7 +2933,8 @@ handler passes:
 - `cross-agent git <slug> [--path <dir>] [--branch <name>] -- <args…>` is
   `gitMutate` with what `git_mutate`'s handler passes — the project's lock wait
   and the mode's git policy — and everything after `--` is git's own argv
-  (`src/cli.ts#gitVerb`). A step journaled is a 0; git that ran and failed is a
+  (`src/cli.ts#gitVerb`). `--path` is read against the working directory, as
+  `verify-worktree`'s path is, where the tool reads it against the project root. A step journaled is a 0; git that ran and failed is a
   1, its own output printed and the answer carrying its exit code, a journal
   step that could not be written after a zero exit included; every refusal
   before git ran is a 3, a held `git.lock` among them. The document is the
@@ -2936,7 +2943,8 @@ handler passes:
   journal's slug as `{slugs}` (`src/cli.ts#journalVerb`,
   `src/journal.ts#readJournal`, `#listJournals`): a 0, a 3 for a journal nobody
   wrote, a 2 for a slug no journal file could have, and a 1 for a journal that
-  does not read, which names its file (`tests/cli.test.ts#cliJournal`).
+  does not read, a step of it included, which names its file
+  (`tests/cli.test.ts#cliJournal`).
 - `cross-agent list-asks [--status <s>]` is `list_asks` for the operator row:
   every ask, in the order asked, as `{asks, invalid}` (`src/cli.ts#listAsksVerb`,
   `src/mailbox.ts#listAsks`). It is a 5 while an ask it printed is open — the
@@ -2973,7 +2981,9 @@ naming the variable, when the CLI's own environment carries `CROSS_AGENT_TASK`,
 task's process tree (`src/guard.ts#childEnv`): writing is the operator's power,
 and the deny list keeps only the launch forms it names out of an engine's hands
 (section 3), so a write that reaches this CLI some other way is refused here
-(`src/cli.ts#taskMarker`, `tests/cli.test.ts#cliRefusesInsideEngine`).
+(`src/cli.ts#taskMarker`, `tests/cli.test.ts#cliRefusesInsideEngine`). The rule
+fails closed: a verb that does not declare that it only reads is refused as a
+write (`#cliWritesFailsClosed`).
 `CROSS_AGENT_PROJECT` is no marker, being also the operator's own way to name a
 project, and the reads answer the same with a marker as without one.
 
@@ -3239,7 +3249,7 @@ registered by the mode that declares the worktree provider.
 `tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` are T14's. I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `32580e6`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
-| 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: `1b49ede`, `4053437`, `2f144ea`, `fb30784`, and this row's docs). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
+| 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: `1b49ede`, `4053437`, `2f144ea`, `fb30784` and the docs in `d28533d`; fix round 1: `c511637`, `5f256e7`, `a40a480`, `d9f4096`, `fcaa26a`, `72e0891` and its docs). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
@@ -3546,9 +3556,12 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `tasks` (`#cliTasks`), `show` (`#cliShow`), `log` (`#cliLog`), `cancel`
   (`#cliCancel`), `verify-worktree` (`#cliVerifyWorktree`), `git`, the held
   `git.lock` timed (`#cliGit`), `journal` (`#cliJournal`) and `list-asks`
-  (`#cliListAsks`). The verbs that write refuse inside a task's environment by
-  the variable that marks it (`#cliRefusesInsideEngine`), every misuse of a
-  command line is a 2 and help names every verb and code (`#cliUsage`),
+  (`#cliListAsks`); `cancel`'s 4 for a cascade that left a task active
+  (`#cliCancelStillActive`) and an id no task file could have
+  (`#cliIdOutsideAlphabet`). The verbs that write refuse inside a task's
+  environment by the variable that marks it (`#cliRefusesInsideEngine`), the
+  rule failing closed (`#cliWritesFailsClosed`), every misuse of a command line
+  is a 2 and help names every verb and code (`#cliUsage`),
   `report` indents each final message (`#reportVerb`), and the README and the
   launcher are held to the dispatcher's verbs and protocol
   (`#cliDocsNameVerbs`).
