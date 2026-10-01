@@ -78,19 +78,27 @@ function codexServers(manifest: Record<string, unknown>): Record<string, Record<
 }
 
 // @anchor codexManifestNames
-test("the Codex manifest names this plugin at package.json's version and ships the skills directory", () => {
+test("the Codex manifest names this plugin at package.json's version, ships the skills directory, and holds nothing else", () => {
   const manifest = json(".codex-plugin/plugin.json");
   const claude = json(".claude-plugin/plugin.json");
   const pkg = json("package.json");
-  assert.equal(manifest.name, "cross-agent");
-  assert.equal(manifest.name, pkg.name);
-  assert.equal(manifest.name, claude.name);
-  assert.equal(manifest.version, pkg.version);
-  assert.equal(manifest.version, claude.version);
+  // The manifest whole but for its server, which `codexManifestMounts` pins whole: no key is
+  // added, dropped or changed without this test saying so.
+  const { mcpServers, ...named } = manifest;
+  assert.notEqual(mcpServers, undefined, "the manifest declares its server");
+  assert.deepEqual(named, {
+    name: "cross-agent",
+    version: pkg.version,
+    description: claude.description,
+    author: { name: "agent-team-cli" },
+    license: "Apache-2.0",
+    // Codex finds a plugin's skills where `skills` points, relative to the plugin root.
+    skills: "./skills/",
+  });
+  assert.equal(pkg.name, "cross-agent");
+  assert.equal(pkg.license, "Apache-2.0");
   assert.equal(typeof manifest.description, "string");
   assert.notEqual(manifest.description, "");
-  // Codex finds a plugin's skills where `skills` points, relative to the plugin root.
-  assert.equal(manifest.skills, "./skills/");
   const skill = path.join(repoRoot, "skills", "cross-agent", "SKILL.md");
   assert.ok(fs.statSync(skill).isFile(), `${skill} is not a file`);
 });
@@ -98,35 +106,32 @@ test("the Codex manifest names this plugin at package.json's version and ships t
 // @anchor codexManifestMounts
 test("the Codex manifest starts this server through a launcher in the plugin's own directory, for the project the operator names, with a call budget and no approval prompt", () => {
   const servers = codexServers(json(".codex-plugin/plugin.json"));
-  assert.deepEqual(Object.keys(servers), ["cross-agent"]);
-  const server = servers["cross-agent"];
-  // codex-cli 0.159.3 substitutes `${PLUGIN_ROOT}` nowhere — `node ${PLUGIN_ROOT}/src/server.ts`
-  // was spawned as written and died at once — runs a relative `command` from the server's
-  // working directory, which is the session's when no `cwd` is given (`execve` ENOENT), and
-  // resolves a `cwd` against the plugin root (probe B1). So the server starts in the plugin's
-  // own directory, `cwd: "."`, through a launcher there.
-  assert.equal(server.command, "./.codex-plugin/serve");
-  assert.equal(Object.hasOwn(server, "args"), false);
-  assert.equal(server.cwd, ".");
+  // The mount whole, each key for the reason beside it; no other key, so neither `enabled`
+  // (whether the server runs is the operator's configuration's to say, never the product's)
+  // nor `env` (a value belongs to one machine; Codex gives a stdio server seven names of its
+  // own) nor `args`.
+  assert.deepEqual(servers, {
+    "cross-agent": {
+      // codex-cli 0.159.3 substituted no `${PLUGIN_ROOT}` in an inline `command`, `args` or
+      // `cwd` — `node ${PLUGIN_ROOT}/src/server.ts` was spawned as written and died at once —
+      // ran a relative `command` from the server's working directory, which is the session's
+      // when no `cwd` is given (`execve` ENOENT), and resolved a `cwd` against the plugin root
+      // (probe B1). So the server starts in the plugin's own directory through a launcher there.
+      command: "./.codex-plugin/serve",
+      cwd: ".",
+      // From the plugin's directory no project can be discovered, so the operator names it in
+      // `CROSS_AGENT_PROJECT`, which Codex passes on only by name.
+      env_vars: ["CROSS_AGENT_PROJECT"],
+      // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
+      default_tools_approval_mode: "approve",
+      startup_timeout_sec: 30,
+      // A `wait` is a 600 s call, and Codex gives an MCP call 60 s unless the server says otherwise.
+      tool_timeout_sec: 3600,
+    },
+  });
   const launcher = path.join(repoRoot, ".codex-plugin", "serve");
   assert.ok(fs.statSync(launcher).isFile(), `${launcher} is not a file`);
   assert.notEqual(fs.statSync(launcher).mode & 0o111, 0, `${launcher} is not executable`);
-  // From the plugin's directory no project can be discovered, so the operator names it in
-  // `CROSS_AGENT_PROJECT`, which Codex passes on only by name. A task's markers are never
-  // among the names: a host's server resolves the operator row from a clean environment.
-  assert.deepEqual(server.env_vars, ["CROSS_AGENT_PROJECT"]);
-  for (const marker of ["CROSS_AGENT_DEPTH", "CROSS_AGENT_TASK", "CROSS_AGENT_LINEAGE"]) {
-    assert.equal((server.env_vars as string[]).includes(marker), false, marker);
-  }
-  // A `wait` is a 600 s call, and Codex gives an MCP call 60 s unless the server says otherwise.
-  assert.equal(server.tool_timeout_sec, 3600);
-  // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
-  assert.equal(server.default_tools_approval_mode, "approve");
-  assert.equal(server.startup_timeout_sec, 30);
-  // Whether the server runs is the operator's configuration's to say, never the product's.
-  assert.equal(Object.hasOwn(server, "enabled"), false);
-  // A value belongs to one machine; Codex gives a stdio server seven names of its own.
-  assert.equal(Object.hasOwn(server, "env"), false);
 });
 
 // @anchor codexLauncherRunsServer
@@ -172,10 +177,10 @@ test("the repository is a marketplace offering this one plugin from its own root
   assert.equal((plugins[0].policy as Record<string, unknown>).installation, "AVAILABLE");
 });
 
-test("the Claude and Codex manifests agree on the plugin's name, version and description", () => {
+test("the Claude and Codex manifests agree on the plugin's name, version, description, author and license", () => {
   const codex = json(".codex-plugin/plugin.json");
   const claude = json(".claude-plugin/plugin.json");
-  for (const key of ["name", "version", "description"]) assert.equal(codex[key], claude[key], key);
+  for (const key of ["name", "version", "description", "author", "license"]) assert.deepEqual(codex[key], claude[key], key);
 });
 
 // @anchor codexFallbackSnippet
