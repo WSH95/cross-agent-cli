@@ -165,6 +165,17 @@ test("the launcher says what to do with every status a delegation answers with",
   assert.match(text, /[Nn]ever declare a task done from `check` alone/, "`check` reconciles nothing, so it settles nothing");
 });
 
+// @anchor resultIsReport
+test("the launcher reads a settled task's final message through result, never from wait's tail", () => {
+  // E3's host relayed a lead's closing report as "verbatim" from `wait`'s 2000-character
+  // `resultTail` and its `lastActivity` line, rewording four of its lines: the tail is the
+  // end of the message and the activity line one event of the engine's, neither the message.
+  const text = flat(launcher());
+  assert.match(text, /`resultTail` is[^.]*last 2000 characters/);
+  assert.match(text, /`lastActivity`[^.]*not the (final )?message/);
+  assert.match(flat(engineSection().section), /`result \{task_id: <lead id>\}`[^.]*closing report/);
+});
+
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
   const text = flat(launcher());
   assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");

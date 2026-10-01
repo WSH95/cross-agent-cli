@@ -96,7 +96,9 @@ settled task, and a `hint` naming the call to make next. Act on the status:
 - `orphaned` — the runner is gone. `list_tasks` reconciles it; `cancel`
   terminates whatever engine is left.
 - `done` — call `result` for the final message in full. That message is the
-  work product: quote what matters rather than paraphrasing it.
+  work product: quote what matters rather than paraphrasing it. `resultTail` is
+  only its last 2000 characters, and `lastActivity` is the engine's last event,
+  not the final message: neither stands in for `result`.
 - `failed` — read `result` for whatever the engine said and the log for how it
   ended, and report both. A failed task is never retried silently.
 - `cancelled` — somebody stopped it. Say who asked and what it had done.
@@ -308,9 +310,9 @@ appends to that brief every question the lead's chain asked so far with its stat
 and answer — which is how an answer you gave a lead that died waiting reaches the
 one that continues it.
 
-When the lead settles, `result {task_id: <lead id>}` is its closing report, which
-you relay rather than summarize, and `cross-agent report` renders every task of the
-run from the ledger.
+When the lead settles, `result {task_id: <lead id>}` is its closing report, the
+whole of it, which you relay rather than summarize — `wait`'s tail of it is not the
+report — and `cross-agent report` renders every task of the run from the ledger.
 
 Your own calls under this placement are the launcher's setup, monitoring and
 answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the
