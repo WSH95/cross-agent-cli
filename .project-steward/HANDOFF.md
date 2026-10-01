@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T22:29:29Z
+updated_at: 2026-10-01T23:10:31Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -103,9 +103,11 @@ commits over `0f8374c`), `VERIFY.md` T11 section at `01c2680`; `npm test` 769 / 
 skipped, the suite leaving no temporary directory; checker 1257 citations, none by
 line. Closed: `.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75` (a host's project
 configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` — is now refused at a
-worktree commit and at the root's merge). Filed: `.83`–`.91`. Next: task 12 (go/no-go,
-the final three-review pass over the whole branch, and the close), brief
-`task-12-brief.md` v1 awaiting its optimization pass. Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
+worktree commit and at the root's merge). Filed: `.83`–`.91`. Task 12 (`atc-s96.18`: go/no-go,
+the final whole-branch review, and the close) is **in flight**: brief `task-12-brief.md`
+v2; the final review of `4bcc986..416165c` (three independent reviews) is running. Then
+Decision 0011 and the devpack note (a writer), then the close (the Codex config
+restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 

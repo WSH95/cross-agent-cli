@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T23:10:31Z — claude
+[auto-checkpoint] Task 12 in flight: brief v2; the final whole-branch review (4bcc986..416165c) running; first seat: 0 Critical, 0 Important, 3 Minor.
+
 ### 2026-10-01T22:29:29Z — claude
 [auto-checkpoint] Task 11 merged (main 71696ff; VERIFY 01c2680; 769/768/1; 0 line citations); eight beads closed; .83–.91 filed; task 12 next.
 
