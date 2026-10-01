@@ -2360,13 +2360,17 @@ each with its own unit test:
    and P9 recorded exactly what a Grok child inherits: the operator's
    `~/.grok/config.toml`, the operator's Grok plugins, and the servers the
    operator declared to Claude in `~/.claude.json` (`docs/probes.md#p9GrokInherits`).
-   Grok also hands the server it starts its own whole environment, a task's markers
-   included, so a Grok session started inside a task resolves the specialist row — a
-   fact from the runs (`docs/probes.md#grokHostHops`, `#e2`), not a mechanism this
-   build relies on. A project's `[permission] deny` on `MCPTool(cross-agent__*)`
-   gates those calls without hiding the tools, and binds every Grok session in the
-   folder, the operator's own included (a driver run, `docs/probes.md#grokDenyMcp`).
-   They are held to the specialist row by ancestry, not by exclusion — that is
+   Grok also hands the server it starts the session's whole environment, a task's
+   markers included (`docs/probes.md#grokHostHops`), so a Grok session started inside
+   a task — from a suite `run_command` runs, which carries `CROSS_AGENT_DEPTH`
+   (`src/runcommand.ts#commandEnv`) — resolves the specialist row. Under a Grok host,
+   layer 2's marker check rests on that pass-through, which this build does not
+   reimplement; Codex hands a server only what `env_vars` names, so there the mount
+   names the markers (`docs/probes.md#e2ServerEnv`). A project's `[permission] deny`
+   on `MCPTool(cross-agent__*)` gated a Grok child's calls without hiding the tools (a
+   driver run, `docs/probes.md#grokDenyMcp`); by Grok's guide it binds every Grok
+   session in the folder, the operator's host too, which no run tried. Grok
+   specialists are held to the specialist row by ancestry, not by exclusion — that is
    why layer 1 had to become a capability model, and it is the same finding that
    rules Grok out as a lead ("The lead model", item 4). Under `placement:
    engine` this layer is relaxed for the lead's own server only, through the
@@ -3588,8 +3592,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   mount, in a folder its operator trusts — sees exactly the specialist row and
   has its own `delegate` refused (I1, `atc-s96.54`). A Grok specialist in a
   linked worktree still reaches no server, because a project-scoped mount is
-  per-directory. On grok 1.0.46 that specialist's server runs inside the engine's
-  bubblewrap and cannot read the identity-holding ancestor's environment, so it
+  per-directory. On grok 1.0.46 a Grok specialist's server at the project root runs
+  inside the engine's bubblewrap and cannot read the identity-holding ancestor's environment, so it
   resolves the specialist row by `src/authority.ts#decide`'s fail-closed branch: the row
   is right, and its reason — the environment cannot be read — is one no test pins yet
   (`docs/probes.md#i1GrokHost`). A Grok host's server is 4 processes from pid 1 under

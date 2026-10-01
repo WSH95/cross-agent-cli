@@ -7,8 +7,11 @@ Add the answer to the item when it is resolved.
       installed on this machine? **Yes** (2026-09-18: the docs' profile is
       loaded and Ubuntu's stock `bwrap-userns-restrict` is disabled). Probe
       P2 for Claude ran at T13 and `atc-s96.17` is closed.
-- [x] Does a `--deny "mcp__cross-agent__*"` rule hide this server's tools from
-      a Grok child, or is the depth guard the only protection there?
+- [x] Does a deny rule on this server's tools — asked as the `--deny
+      "mcp__cross-agent__*"` flag, probed at T15 as `[permission] deny =
+      ["MCPTool(cross-agent__*)"]` in the project's `.grok/config.toml`, the flag
+      not run — hide them from a Grok child, or is the depth guard the only
+      protection there?
       (integration probe I1, T15) Partly answered at T13: a Grok specialist
       at the project root lists exactly the specialist row and Grok's own
       dispatcher refuses `delegate` because the tool is not listed; whether

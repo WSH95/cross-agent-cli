@@ -2242,7 +2242,9 @@ started in the sample by the archive's `tools/grok-host.sh` as `setsid --fork sh
 exec env -C <sample> -u <marker> … grok …'`, so `host.pid` is the `grok` process itself, with
 this machine's session markers scrubbed (`CLAUDECODE`, `CLAUDE_*`, `CODEX_COMPANION_*`,
 `GROK_CC_*`, `CROSS_AGENT_*`, `MCP_*`, the three API keys) and no `--sandbox`: the operator's
-own session. Two exceptions: B4's nested row ran from this task's own shell without `setsid`,
+own session. Two names of this task's own shell were not scrubbed, so they reached every host
+and, through it, every child and spec: `AI_AGENT` (Claude Code's) and `GIT_EDITOR=true`. Two
+exceptions: B4's nested row ran from this task's own shell without `setsid`,
 and B4's probe (b) exported `CROSS_AGENT_DEPTH=1` after the scrub. A watcher copied
 `~/.grok/logs/mcp/cross-agent.stderr.log` once a second whenever it changed, because every
 launch of the server truncates it, and that file is where this server's row line
@@ -2356,7 +2358,7 @@ until T15 merges, so a review fix-round rerun of a Grok host session points `pat
 the worktree first and forward again after, each edit recorded.
 
 <!-- @anchor i1GrokHost -->
-## I1 under a Grok host (B0)
+## I1 under a Grok host, B0 (2026-10-01)
 
 One host session in the sample delegated three `consult`s at the project root with I1's
 brief, one per engine, each named in its first line ("T15-B0 I1 <engine> under a Grok
@@ -2375,7 +2377,9 @@ read from the child's own log:
   <worktree>/src/server.ts`, the sample's attach inherited, and `mcp_server_connected`
   exactly the five specialist tools; `search_tool` found those five as `cross-agent__<tool>`
   and, asked for `delegate`, only `cross-agent__list_roles`, and the child called nothing:
-  `delegate` was never attempted, for want of a schema, as at T14.
+  `delegate` was never attempted, for want of a schema, as at T14. Its `system/init` `skills`
+  also named `cross-agent`: the attach brings the launcher skill to a root specialist beside
+  the server, and the specialist row gives the skill no `delegate` to reach.
 
 The Grok child's inherited server, read from the operator's shell while it ran: `node
 <worktree>/src/server.ts` in the sample, its environment the runner's child environment
@@ -2404,7 +2408,7 @@ names `~/.claude/settings.json`). The finding is recorded and left to a bead; no
 change follows here.
 
 <!-- @anchor i2GrokHost -->
-## I2 under a Grok host (B0)
+## I2 under a Grok host, B0 (2026-10-01)
 
 One host session in the sample delegated three `consult`s with `worktree: true`, one per
 engine, each brief giving I2's nine steps (T14's, without the GO step) to be run character
@@ -2452,7 +2456,7 @@ each, and `git worktree prune`, leaving the sample on `main`, clean, the root wo
 alone. The ten-minute row is B3's (`docs/probes.md#grokToolTimeout`).
 
 <!-- @anchor i2GrokReadOnly -->
-## The Grok read-only row at the root (B2)
+## The Grok read-only row at the root, B2 (2026-10-01)
 
 A Grok `consult` at the sample root (`b726e2af…`, read-only, 36 s), told to run seven
 commands verbatim, one shell command each, and report each exit. Each step has two
@@ -2482,10 +2486,10 @@ Docker's, podman's): what held was not the mount table but the filesystem's own 
 judged here by the files and the transcript. `strict` was not run.
 
 <!-- @anchor grokDenyMcp -->
-## A deny rule on this server's tools, under Grok (B1)
+## A deny rule on this server's tools under Grok, B1 (2026-10-01)
 
-**A driver observation, not a host row**: a project `[permission] deny` binds every Grok
-session in the folder, a host included, so B1 delegated through 6b's stdio driver from the
+**A driver observation, not a host row**: by Grok's guide a project `[permission] deny` binds
+every Grok session in the folder, a host included, so B1 delegated through 6b's stdio driver from the
 sample, its server serving the operator row. Two Grok `consult`s at the root, each told to
 list its MCP tools and call `cross-agent__list_roles` and then `cross-agent__list_tasks`:
 
@@ -2528,18 +2532,19 @@ session reads it — and a 600 s `wait` returns intact under it; the launcher's 
 so (`tests/skills.test.ts#budgetTable`).
 
 <!-- @anchor grokHostHops -->
-## The hop count and the server's environment under a Grok host (B4)
+## The hop count and the server's environment under a Grok host, B4 (2026-10-01)
 
 `/proc` from the host's server to pid 1, the server found as `host.pid`'s child running the
 attach's resolved command:
 
 | host | processes from the server to pid 1 | row served |
 |---|---|---|
-| `grok` started with `setsid --fork` from the sample (A1, B0, B3, `b4-depth1`, E6, E7) | 4: `node`, `grok`, `systemd --user`, `init` | operator |
+| `grok` started with `setsid --fork` from the sample (A1, B0, B3, E6, E7) | 4: `node`, `grok`, `systemd --user`, `init` | operator |
+| the same, with `CROSS_AGENT_DEPTH=1` exported and no task (`b4-depth1`, probe (b) below) | 4: `node`, `grok`, `systemd --user`, `init` | **specialist**, five tools |
 | the same command from this task's own shell, no `setsid` | 11: `node`, `grok`, `timeout`, `bash`, `claude`, `bash --posix`, `sh -c`, `ghostty`, `nautilus`, `systemd --user`, `init` — 10 without the `timeout` wrapper this run carried | operator, fourteen tools |
 | Grok at a terminal; the Grok desktop app | not run: the user's hands | — |
 
-The walk's 32 hops (`src/authority.ts#maxHops`) hold both rows with room. **The
+The walk's 32 hops (`src/authority.ts#maxHops`) hold every row with room. **The
 environment**: in every host run the server's variable names are the host's own plus
 `GROK_SESSION_ID` and nothing else, none dropped — Grok hands a stdio server its whole
 environment and adds its session id, with no filter. From a clean host that means no
@@ -2560,34 +2565,40 @@ commands, and the operator stopped it by its pid.)
 A Grok specialist's inherited server (B0, B1, B2) carries the runner's child environment,
 the host server's names with the four markers, and Grok's own three: its session id, the
 runtime-socket deny list and `__GROK_INSIDE_BWRAP`. Every child under a Grok host also
-receives the host's `GROK_SESSION_ID`, which `src/guard.ts#childEnv` does not scrub; a Grok
-child replaces it with its own session's for its server, and no child behaved differently
-for it.
+receives the host's `GROK_SESSION_ID`, and in these runs this task's shell's `AI_AGENT` and
+`GIT_EDITOR`, none of which `src/guard.ts#childEnv` scrubs; a Grok child replaces the session
+id with its own for its server, and no child behaved differently for any of them.
 
 <!-- @anchor grokWorktreeMount -->
-## A Grok specialist in a linked worktree (B5)
+## A Grok specialist in a linked worktree, B5 (2026-10-01)
 
 Three readings, recorded on grok 1.0.46 under the shipped attach. **(i)** E6's Grok code
 reviewer worked in `<sample>/.worktrees/t15-e6` (`b04f904a…`): its `system/init` named no
-`cross-agent` server, its session's `mcp_config_resolved` — under
-`~/.grok/sessions/<encoded worktree path>/` — listed `claude-design` and `context7` alone,
-`mcp_init_completed` counted no tool, and no server of ours started under it. E6's Grok plan
-reviewer at the root (`d366adf2…`), against it: `mcp_config_resolved` lists `cross-agent`,
-`mcp_server_starting` names `node <worktree>/src/server.ts`, `mcp_server_connected` the five
-specialist tools; its server ran inside its bubblewrap carrying the four markers with the
-reviewer's values and its own `GROK_SESSION_ID`, and its row line is the unreadable-environment
-reason with the reviewer's task id, as at E5 — the specialist row. B0's I2 Grok child and
-E7's Grok code reviewer, in `t15-e7`, read the same way in their worktrees. **(ii)** After E6, a throwaway worktree by hand, `git -C <sample>
-worktree add --detach .worktrees/t15-doctor main`: `grok mcp doctor` there lists
-`~/.grok/config.toml`, `plugin: context7`, `~/.claude.json` and no `.mcp.json` — no project
-file and no `plugin: cross-agent` — and `grok inspect --json` names the worktree itself as the
-project root, trusted, with the user's layer its only config source. The worktree was removed
-and the sample left clean, the root worktree alone. So the `<repo-root>/.grok/config.toml`
-rule does not reach a linked worktree: Grok takes it as a project of its own. **(iii)** A Grok
-specialist in a linked worktree reaches no MCP server, the plugin's included: the safe
-direction, and the shipped behaviour. Only a user-scope mount or install would change it, and
-the user declined one; such a specialist would still be held to the five read tools by the
-specialist row by ancestry (`docs/probes.md#i1`).
+`cross-agent` server, its session's `mcp_config_resolved` — under `~/.grok/sessions/<encoded
+worktree path>/` — listed `claude-design` and `context7` alone, `mcp_init_completed` counted
+no tool, and no server of ours started under it. E6's Grok plan reviewer at the root
+(`d366adf2…`), against it: `mcp_config_resolved` lists `cross-agent`, `mcp_server_starting`
+names `node <worktree>/src/server.ts`, `mcp_server_connected` the five specialist tools; its
+server ran inside its bubblewrap carrying the four markers with the reviewer's values and its
+own `GROK_SESSION_ID`, and its row line is the unreadable-environment reason with the
+reviewer's task id, as at E5 — the specialist row. B0's I2 Grok child and E7's Grok code
+reviewer, in `t15-e7`, read the same way in their worktrees. **(ii)** After E6, a throwaway
+worktree by hand, `git -C <sample> worktree add --detach .worktrees/t15-doctor main`: `grok
+mcp doctor` there lists `~/.grok/config.toml`, `plugin: context7`, `~/.claude.json` and no
+`.mcp.json` — no project file and no `plugin: cross-agent` — and `grok inspect --json` names
+the worktree itself as the project root, trusted, with the user's layer its only config
+source: trusted, though Grok's guide says a nested checkout is a separate workspace the
+folder's grant does not cover. The worktree was removed and the sample left clean, the root
+worktree alone. So the `<repo-root>/.grok/config.toml` rule does not reach a linked worktree:
+Grok takes it as a project of its own. **(iii)** A Grok specialist in a linked worktree
+reaches no MCP server, the plugin's included: the safe direction, and the shipped behaviour
+while `.grok/` stays out of the repository. The sample ignores it; a committed
+`.grok/config.toml` would sit in every worktree and be read there as that project's own file,
+trusted. Only that, or a user-scope mount or install, would change it, and the user declined
+the latter; such a specialist would still be held to the five read tools by the specialist
+row by ancestry (`docs/probes.md#i1`). The launcher skill follows the same line: every Grok
+specialist T15 ran at the root — six — listed `cross-agent` in its `system/init` `skills`,
+and none of the three in worktrees did.
 
 <!-- @anchor e6 -->
 ## E6: one `dev-team` task under a Grok host (2026-10-01)
@@ -2630,7 +2641,9 @@ delegation used the role's binding, naming no engine or model; each was narrated
 launcher's form, "Delegating planner to codex/gpt-6-luna at medium in <sample>". The roster
 — five lines, each role's engine, model, effort, workspace and sandbox — came before the
 first dispatch (`atc-s96.66`'s recheck, which `## Before anything` asks of a host-placed
-loop).
+loop). Its largest MCP results were `describe_mode`, 20,692 bytes with Grok's envelope under
+`dev-team`, and `list_tasks`, 15,465 bytes, which grows with the ledger; its largest
+`tool_result` was its `read_file` of the skill, 77,728 bytes.
 
 **The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 99215630… --slug
 t15-e6`, `CODEX_HOME` unset, right after the run under `dev-team` (`e6/e6-verify.txt`):
@@ -2641,8 +2654,8 @@ branch-deleted` (`defaultShaBeforeMerge` 583bfda, `branchHead` 1a56f2a), and no 
 and no engine launch in any specialist transcript, the Codex planner's judged from its
 rollout. The two worktree specs carry `protectedPaths`, the worktree's `.git` and the
 project's, and all four carry deny targets rooted at the worktree's server; every spec's
-environment also carries the host's `GROK_SESSION_ID`, which `src/guard.ts#childEnv`
-passes on.
+environment also carries the host's `GROK_SESSION_ID` and this task's shell's `AI_AGENT` and
+`GIT_EDITOR`, which `src/guard.ts#childEnv` passes on.
 
 Nothing deviated from the loop: step 8's rebase ran, a no-op, and the plan was approved in
 one round, so no `resume` was needed (none was injected). The host's server was 4 processes
@@ -2665,8 +2678,9 @@ world")` is `"Hello Big World"` — beside `slugify` in `slugkit/`, with tests; 
 `t15-e7`."
 
 The host read the launcher skill with its own `read_file`, called `describe_mode` — whose
-24,880 bytes arrived whole, the largest `tool_result` of the run at 25,836 bytes with Grok's
-envelope, under the 100,000 the project file sets — and `list_roles`, printed the roster, six
+24,880 bytes arrived whole, the largest MCP result of the run at 25,836 bytes with Grok's
+envelope, under the 100,000 the project file sets (the largest `tool_result`, as in E6, was its
+`read_file` of the skill, 77,728 bytes) — and `list_roles`, printed the roster, six
 lines with the lead's first, narrated "Delegating lead to claude/claude-sonnet-5 at medium in
 <sample>", delegated the lead `46e6d4aa…`, and made one `wait {timeout_seconds: 600}`, which
 answered `done` after 459.6 s by Grok's own record, then `result`. That is every call it made:
@@ -2821,7 +2835,8 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   `--trust` is a hidden top-level flag; the guide's own words (`18-sandbox.md`,
   `10-hooks.md`) are that it saves the folder's trust in `~/.grok/trusted_folders.toml` for
   the repository's subdirectories, not a nested checkout — a reading, since T15 granted no
-  trust. A project file's `[plugins] paths` names a plugin directory read in place, honoured
+  trust; a linked worktree under the trusted sample was nonetheless reported trusted, a
+  project root of its own (`docs/probes.md#grokWorktreeMount`). A project file's `[plugins] paths` names a plugin directory read in place, honoured
   in a trusted folder, its `~` not expanded; such a plugin's `.claude-plugin/plugin.json`
   inline `mcpServers` is read and `${CLAUDE_PLUGIN_ROOT}` expanded to the directory
   (`docs/probes.md#t15Attach`). `grok inspect --json` sees that plugin, its skill and its

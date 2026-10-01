@@ -302,7 +302,7 @@ project once, by accepting Grok's prompt the first time you open it there or by 
 Grok there with `--trust`; Grok's own guide says the grant is recorded in
 `~/.grok/trusted_folders.toml` and covers the repository's subdirectories but not a nested
 checkout, yet a linked worktree under a trusted project was reported trusted, as a project
-root of its own (`docs/probes.md`, "A Grok specialist in a linked worktree (B5)").
+root of its own (`docs/probes.md`, "A Grok specialist in a linked worktree, B5").
 
 To check the attach, from the project:
 
@@ -348,7 +348,7 @@ Four things hold for every Grok session attached this way:
   linked worktree is a root of its own, holding no `.grok/` while `.grok/` stays ignored,
   so the attach is not there: `grok mcp doctor` run in one lists no project source, and a
   Grok code reviewer in E6's worktree mounted no server (`docs/probes.md`, "A Grok
-  specialist in a linked worktree (B5)"). Only a mount at user scope would change that,
+  specialist in a linked worktree, B5"). Only a mount at user scope would change that,
   and none is installed. A Grok specialist at the project root inherits the attach and
   gets the specialist row's five read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
@@ -357,7 +357,7 @@ Four things hold for every Grok session attached this way:
   Grok session started inside a task, from a test suite a lead runs, say, gets a
   specialist's tools, never the operator's: a host started with `CROSS_AGENT_DEPTH=1` and
   no task was served the specialist row's five (`docs/probes.md`, "The hop count and the
-  server's environment under a Grok host (B4)").
+  server's environment under a Grok host, B4").
 - **The launcher skill reaches a Grok specialist at the root.** The attach carries the
   `cross-agent` skill with the server, so a Grok specialist working at the project root is
   offered the launcher too — every one T15 ran there listed it — while its row still has
