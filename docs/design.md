@@ -1929,13 +1929,13 @@ the mode's worktree provider, for the operator and lead rows, with `path` and
 Specialists never write git metadata. A linked worktree's `.git` is a writable
 file inside the implementer's sandbox, so the lead never trusts it:
 `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI,
-`src/cli.ts#gitVerb`) is the only way a lead mutates git in a worktree. Its request is `{slug, path?,
-branch?, args}` (`src/gitmutate.ts#GitMutateRequest`): `path` defaults to
-`<root>/<git.worktreeDir>/<slug>` and `branch` to the mode's `git.branchPattern`
-with the slug in place of its one `*`, which the tool passes from the active
-mode and which fall back to `.worktrees` and `task/*` for a caller that has no
-mode to hand (`src/gitmutate.ts#gitMutate`, `#GitMutateOptions`,
-`src/server.ts#worktreeTools`). The
+`src/cli.ts#gitVerb`) is the only way a lead mutates git in a worktree. Its
+request is `{slug, path?, branch?, args}` (`src/gitmutate.ts#GitMutateRequest`):
+`path` defaults to `<root>/<git.worktreeDir>/<slug>` and `branch` to the mode's
+`git.branchPattern` with the slug in place of its one `*`, which the tool passes
+from the active mode and which fall back to `.worktrees` and `task/*` for a
+caller that has no mode to hand (`src/gitmutate.ts#gitMutate`,
+`#GitMutateOptions`, `src/server.ts#worktreeTools`). The
 slug is used for exactly four things — those two defaults, the lock's
 operation label, and the journal file name — and never for the git directory.
 Before the four steps, the **shape of the request** is judged, because it needs
@@ -2869,7 +2869,9 @@ and `--help`, which prints the verbs, the project rule and the protocol, as text
 or, under `--json`, as that one document. Without `--json` an answer that
 carries a verdict — 0, 4, 5 or 6 — is stdout's and a failure — 1, 2 or 3 — is
 stderr's unless the verb says otherwise, as `modes` and `git` do below, and a
-warning beside either goes to stderr. The `--flag <value>` pairs
+warning beside either goes to stderr. A time a person reads is ISO-8601, or the
+number itself where no date can hold it, so a time the readers accept never
+crashes a renderer (`src/cli.ts#iso`). The `--flag <value>` pairs
 go through the parser the server's own argv does, so adding one does not break
 the other (`src/project.ts#parseFlags`, `#discoverProject`); a verb may also
 take a flag with no value, an optional argument, or a tail after `--` that is
@@ -2906,13 +2908,17 @@ handler passes:
   the record, the tail of its engine stream, the outcome sidecar, its journal,
   and the final message of a record it shows settled — as `{record,
   elapsedSeconds, lastActivity, result, outcome, journal, journalError?,
-  runnerLog}`, every field from one read of the record, and takes no stall
-  reading: the status is the one the last `wait` or `check` wrote ("Time
-  limits"), and the exit is that status's — 0 settled, 6 `stalled`, 4 anything
-  else — or 3 for a task nobody has, an id no task file could have among them
-  (`src/cli.ts#showVerb`, `tests/cli.test.ts#cliShow`, `#cliIdOutsideAlphabet`).
-  A journal that does not read is named beside the record, on stderr and as
-  `journalError`, rather than in its place (`#cliJournal`).
+  runnerLog}` (`src/cli.ts#showVerb`), and takes no stall reading: the status is
+  the one the last `wait` or `check` wrote ("Time limits"), and the exit is that
+  status's — 0 settled, 6 `stalled`, 4 anything else — or 3 for a task nobody
+  has, an id no task file could have among them (`tests/cli.test.ts#cliShow`,
+  `#cliIdOutsideAlphabet`). The status and the exit come from one read of the
+  record; only when that read is settled does `result` read the record again for
+  its message, and a settled status has no transition left to contradict it, so
+  a runner that settles between two reads never puts a message beside an
+  unsettled record (`#cliShowOneRead`). A journal that does not read is named
+  beside the record, on stderr and as `journalError`, rather than in its place
+  (`#cliJournal`).
 - `cross-agent log <id> [--lines <n>]` is the tail of a task's engine stream,
   fifty lines unless asked otherwise, as `{id, logPath, lines}`; a task whose
   engine has said nothing is an empty answer and a 0, a task nobody has a 3
@@ -2934,11 +2940,12 @@ handler passes:
   `gitMutate` with what `git_mutate`'s handler passes — the project's lock wait
   and the mode's git policy — and everything after `--` is git's own argv
   (`src/cli.ts#gitVerb`). `--path` is read against the working directory, as
-  `verify-worktree`'s path is, where the tool reads it against the project root. A step journaled is a 0; git that ran and failed is a
-  1, its own output printed and the answer carrying its exit code, a journal
-  step that could not be written after a zero exit included; every refusal
-  before git ran is a 3, a held `git.lock` among them. The document is the
-  `GitMutateResult` whatever the code (`tests/cli.test.ts#cliGit`).
+  `verify-worktree`'s path is, where the tool reads it against the project root.
+  A step journaled is a 0; git that ran and failed is a 1, its own output
+  printed and the answer carrying its exit code, a journal step that could not
+  be written after a zero exit included; every refusal before git ran is a 3, a
+  held `git.lock` among them. The document is the `GitMutateResult` whatever the
+  code (`tests/cli.test.ts#cliGit`).
 - `cross-agent journal [<slug>]` is one journal whole, or with no slug every
   journal's slug as `{slugs}` (`src/cli.ts#journalVerb`,
   `src/journal.ts#readJournal`, `#listJournals`): a 0, a 3 for a journal nobody
@@ -3551,7 +3558,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   read verb writes nothing: in a repository nobody initialized
   (`tests/cli.test.ts#cliReadsWriteNothingUninitialized`) and over a ledger
   holding a task in every status, byte for byte (`#cliReadsLeaveSeededLedger`);
-  `tasks --reconcile` is the one read that reconciles (`#cliTasksReconcileFlag`).
+  `tasks --reconcile` is the one read that reconciles (`#cliTasksReconcileFlag`),
+  and `show` takes what it shows of a task from one read of its record, which a
+  FIFO serving a second read would contradict (`#cliShowOneRead`).
   Over that ledger each verb answers by the protocol: `modes` (`#cliModes`),
   `tasks` (`#cliTasks`), `show` (`#cliShow`), `log` (`#cliLog`), `cancel`
   (`#cliCancel`), `verify-worktree` (`#cliVerifyWorktree`), `git`, the held
