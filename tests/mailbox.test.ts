@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { answerAsk, ask, cancelAsks, createAsk, lineageAsks, listAsks, readAsk } from "../src/mailbox.ts";
+import { answerAsk, ask, cancelAsks, createAsk, isAskId, lineageAsks, listAsks, readAsk } from "../src/mailbox.ts";
 import type { AskRecord } from "../src/mailbox.ts";
 import { askLockName, lockPath } from "../src/locks.ts";
 import { poll, project } from "./helpers/project.ts";
@@ -216,6 +216,19 @@ test("a damaged ask counts as a lineage's when it names that lineage or no task 
   assert.equal(blind.failures.length, 1);
   const [failure] = blind.failures;
   assert.ok("file" in failure && failure.file === asksDir(p.root), JSON.stringify(failure));
+});
+
+// @anchor malformedAskId
+test("an id no ask file could carry is refused by value, by one predicate, and reads and writes nothing", async (t) => {
+  const p = await mailboxProject(t);
+  for (const id of ["a".repeat(36), "lead_1-x"]) assert.equal(isAskId(id), true, id);
+  for (const id of ["", "../tasks/x", "a/b", "a.json", " a"]) assert.equal(isAskId(id), false, JSON.stringify(id));
+  assert.deepEqual(await ask(p.root, { taskId: "lead-a", lineageIds: ["lead-a"], id: "../tasks/x", timeoutSeconds: 0 }),
+    { ok: false, reason: 'no ask "../tasks/x": an ask id is letters, digits, "-" and "_"' });
+  assert.deepEqual(await answerAsk(p.root, "../tasks/x", "yes"),
+    { applied: false, reason: 'no ask "../tasks/x": an ask id is letters, digits, "-" and "_"', ask: null });
+  assert.equal(fs.existsSync(asksDir(p.root)), false, "no mailbox was made for it");
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "locks")) && fs.readdirSync(path.join(p.root, ".cross-agent", "locks")).some((name) => name.startsWith("ask-")), false);
 });
 
 // @anchor askReadsWriteNothing

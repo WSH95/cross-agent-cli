@@ -53,9 +53,23 @@ class AskFault extends Error {
   }
 }
 
+/**
+ * Whether `id` could name an ask file: the ledger's alphabet, letters, digits, `-` and `_`,
+ * so no id leaves the mailbox. Every reader of an id a caller supplied asks this first and
+ * refuses by value; only a caller's own misuse reaches the throw in `askPath`.
+ */
+export function isAskId(id: unknown): id is string {
+  return typeof id === "string" && /^[A-Za-z0-9_-]+$/.test(id);
+}
+
+/** The refusal of an id `isAskId` rejects: it names no ask, as an unknown one does. */
+function notAnAskId(id: string): string {
+  return `no ask ${JSON.stringify(id)}: an ask id is letters, digits, "-" and "_"`;
+}
+
 /** Where an ask lives. Resolving it writes nothing; an id that could leave the directory is refused. */
 function askPath(projectRoot: string, id: string): string {
-  if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`invalid ask id ${JSON.stringify(id)}`);
+  if (!isAskId(id)) throw new Error(`invalid ask id ${JSON.stringify(id)}`);
   return path.join(asksDirectory(projectRoot), `${id}.json`);
 }
 
@@ -198,6 +212,7 @@ function when(at: number): string {
  * a project with no mailbox writes nothing at all.
  */
 export async function answerAsk(projectRoot: string, id: string, answer: string, options: WriteOptions = {}): Promise<AnswerResult> {
+  if (!isAskId(id)) return { applied: false, reason: notAnAskId(id), ask: null };
   if (readAsk(projectRoot, id) === null) return { applied: false, reason: `no ask ${id}`, ask: null };
   const lock = await acquire(lockPath(projectRoot, askLockName(id)), {
     operation: `answer ask ${id}`, waitSeconds: options.waitSeconds ?? lockWaitSeconds(projectRoot),
@@ -314,6 +329,7 @@ export async function ask(projectRoot: string, options: AskOptions): Promise<Ask
   }
   let record: AskRecord;
   if (options.id !== undefined) {
+    if (!isAskId(options.id)) return { ok: false, reason: notAnAskId(options.id) };
     const found = readAsk(projectRoot, options.id);
     if (found === null) return { ok: false, reason: `no ask ${options.id}` };
     // A lead waits on its own lineage's questions and nobody else's: a resumed lead's

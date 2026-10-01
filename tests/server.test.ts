@@ -773,6 +773,11 @@ test("ask records the caller's own task, waits on its lineage's asks by id, and 
   const refused = payload(await ask({ id: theirs.id, timeout_seconds: 0 }));
   assert.equal(refused.isError, true);
   assert.match(refused.body.reason as string, new RegExp(`refused ask ${theirs.id}`));
+  // An id no ask file could carry is refused the same way, by value: it names no ask.
+  const malformed = await ask({ id: "../tasks/x", timeout_seconds: 0 });
+  assert.equal(malformed.error, undefined, JSON.stringify(malformed));
+  assert.equal(payload(malformed).isError, true);
+  assert.match(payload(malformed).body.reason as string, /no ask "\.\.\/tasks\/x"/);
 
   // What this server cannot read is a protocol error, as `wait`'s is.
   for (const args of [{}, { question: "" }, { question: 5 }, { id: 5 }, { question: "Q?", timeout_seconds: -1 }, { question: "Q?", timeout_seconds: "soon" }]) {

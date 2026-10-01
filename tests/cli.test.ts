@@ -259,6 +259,10 @@ test("answer replies to an open ask from a terminal: the first answer is 0, a se
   const unknown = await run(["answer", "0".repeat(36), "yes", "--project", root], root);
   assert.equal(unknown.code, 3);
   assert.match(unknown.stderr, /no ask/);
+  // An id no ask file could carry is the mailbox's own refusal, by value.
+  const malformed = await run(["answer", "../tasks/x", "yes", "--project", root], root);
+  assert.equal(malformed.code, 3, malformed.stderr);
+  assert.match(malformed.stderr, /no ask "\.\.\/tasks\/x": an ask id is/);
 
   // With --json the record is the one document on stdout, and the working directory finds
   // the project as the server does when no --project names it.

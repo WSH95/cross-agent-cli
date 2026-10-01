@@ -301,7 +301,10 @@ that spelling, so nothing in the matrix depends on it.
    is a guarantee and not an accident. An ask record is `{id, taskId,
    question, createdAt, status: "open" | "answered" | "cancelled", answer?,
    answeredAt?, cancelledAt?}`, its id from the ledger's alphabet, written whole,
-   and a read of an ask nobody wrote creates nothing (`src/mailbox.ts#readAsk`).
+   and a read of an ask nobody wrote creates nothing (`src/mailbox.ts#readAsk`);
+   an id outside that alphabet names no ask either, and `ask`, `answer` and
+   `cross-agent answer` refuse it by value through one predicate
+   (`src/mailbox.ts#isAskId`, `tests/mailbox.test.ts#malformedAskId`).
    `ask` blocks up to `timeout_seconds` (default `waitDefaultSeconds`) and
    returns `{id, status, answer?}`: `open` with the hint to ask again by that
    `id` when the timeout passes first, which is what keeps a long wait inside

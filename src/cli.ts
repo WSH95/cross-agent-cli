@@ -139,8 +139,8 @@ const answer: Verb = {
     } catch (error) {
       return refused(message(error));
     }
-    // An id that could not name a file names no ask either.
-    if (!/^[A-Za-z0-9_-]+$/.test(id)) return refused(`no ask ${id}`, { applied: false, reason: `no ask ${id}`, ask: null });
+    // An id that could not name a file names no ask either, and `answerAsk` says so by
+    // value through the mailbox's own predicate (`src/mailbox.ts#isAskId`).
     const answered = await answerAsk(found.root, id, text);
     if (!answered.applied) return refused(answered.reason, answered);
     const { ask } = answered;
