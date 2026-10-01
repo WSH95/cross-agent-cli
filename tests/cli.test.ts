@@ -959,6 +959,13 @@ test("every verb refuses a flag it does not take and a wrong argument count as u
     assert.match(result.stderr, new RegExp(`usage: cross-agent ${args[0]} `), args.join(" "));
     assert.equal(result.stdout, "", args.join(" "));
   });
+  // The global flags go before a verb's `--`: after it every word is the tail's, so a usage
+  // line that put them last would hand `--json` to git.
+  const [gitText, gitJson, showText] = await runEach([["git", "s"], ["git", "s", "--json"], ["show"]], root);
+  const gitUsage = "cross-agent git <slug> [--path <dir>] [--branch <name>] [--project <root>] [--json] [--help] -- <git arguments…>";
+  assert.match(gitText.stderr, new RegExp(`^usage: ${literally(gitUsage)}$`, "m"));
+  assert.deepEqual((JSON.parse(gitJson.stdout) as { usage: string[] }).usage, [gitUsage]);
+  assert.match(showText.stderr, /^usage: cross-agent show <id> \[--lines <n>\] \[--project <root>\] \[--json\] \[--help\]$/m);
   const { EXIT, VERB_NAMES } = await import("../src/cli.ts");
   assert.deepEqual(VERB_NAMES, usageOrder);
   const helped = await run(["--help"], root);

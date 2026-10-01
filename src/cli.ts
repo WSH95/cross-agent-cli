@@ -800,7 +800,11 @@ export const VERB_NAMES: readonly string[] = Object.freeze(Object.keys(verbs));
 
 /** The usage lines for one verb, or for the whole table: what a 2 prints, as text or as JSON. */
 function usageLines(verb?: Verb): string[] {
-  if (verb !== undefined) return [`${verb.usage} [--json] [--help]`];
+  if (verb !== undefined) {
+    // The global flags go before a tail's `--`, because every word after it is the tail's.
+    const tail = verb.rest === undefined ? -1 : verb.usage.indexOf(" -- ");
+    return [tail === -1 ? `${verb.usage} [--json] [--help]` : `${verb.usage.slice(0, tail)} [--json] [--help]${verb.usage.slice(tail)}`];
+  }
   return ["cross-agent <verb> [arguments] [--project <root>] [--json] [--help]", ...Object.values(verbs).map((each) => each.usage)];
 }
 
