@@ -105,11 +105,12 @@ const codexHome = (project: string) => path.join(project, ".cross-agent", "codex
  * recorded. A6's denied writes have the call and the output and no item, as here. A step
  * given as `script` is an `exec` call with that script as its input, verbatim.
  */
-type RolloutStep = { cmd: string; exit: number; output?: string } | { script: string } | { entry: Record<string, unknown> };
+type RolloutStep = { cmd: string; exit: number; output?: string } | { script: string } | { entry: Record<string, unknown> } | { event: Record<string, unknown> };
 const rolloutOf = (sessionId: string, steps: RolloutStep[]) => [
   { timestamp: "2026-09-30T21:49:05.892Z", type: "session_meta", payload: {
     session_id: sessionId, id: sessionId, cwd: "/sample/.worktrees/6b-codex", originator: "codex_exec", cli_version: "0.159.2", source: "exec" } },
-  ...steps.flatMap((step, n) => "entry" in step ? [{ timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: step.entry }] : [
+  ...steps.flatMap((step, n) => "entry" in step ? [{ timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: step.entry }]
+    : "event" in step ? [{ timestamp: "2026-09-30T21:49:14.246Z", type: "event_msg", payload: step.event }] : [
     { timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: {
       type: "custom_tool_call", status: "completed", call_id: `call_${n}`, name: "exec",
       input: "script" in step ? step.script
@@ -981,6 +982,209 @@ test("a function definition is no launch: its body is judged, and one named like
     ["function run { claude -p hi; }", "FAIL"],
     ["run() { echo hi; }; run", "pass"],
   ]);
+});
+
+
+// @anchor wholeLineNames
+const wholeLineNames = [
+  ["make -f - <<'EOF'\nall:\n\tclaude -p hi\nEOF", "?"],
+  ["at now <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["parallel <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["su - wsh <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["docker exec -i box sh <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["bash < <(echo claude -p hi)", "?"],
+  ["sh < <(printf 'claude -p hi\\n')", "?"],
+  ["ssh host < <(echo claude -p hi)", "?"],
+  ["{ bash; } <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["(bash) <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["make test > /opt/wrapper", "?"],
+  ["make test < src/server.ts", "?"],
+  ["make test <<< './src/cli.ts'", "?"],
+  ["FILE=./src/server.ts make test", "?"],
+  ["make test > $'cl\\x61ude'", "?"],
+  ["make test # claude", "?"],
+  ["make <<< \"$(echo cl''aude)\"", "?"],
+  ["make <<< \"$(printf $'cl\\x61ude')\"", "?"],
+] as const;
+test("6b-E-1: names anywhere in the line gate unmodeled constructs", async (t) => {
+  await judgedAs(t, wholeLineNames);
+});
+
+// @anchor unreadStdin
+const unreadStdin = [
+  ["echo 'claude -p hi' | sudo -s", "?"],
+  ["echo 'claude -p hi' | sudo -i", "?"],
+  ["sudo -s <<< 'claude -p hi'", "?"],
+  ["sudo -i <<< 'claude -p hi'", "?"],
+  ["sudo -s <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["sudo -i <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["echo claude -p hi | xargs bash -c", "?"],
+  ["echo claude -p hi | xargs env", "?"],
+  ["echo claude -p hi | xargs sudo", "?"],
+  ["echo claude -p hi | xargs nohup", "?"],
+  ["echo claude -p hi | xargs timeout 60", "?"],
+  ["ssh host bash -s <<'EOF'\nclaude -p hi\nEOF", "?"],
+  ["ssh host 'bash -s' <<< 'claude -p hi'", "?"],
+  ["echo 'claude -p hi' | ssh host sh", "?"],
+  ["cat - <<'EOF'\nclaude -p hi\nEOF | bash", "?"],
+  ["cat -u <<'EOF'\nclaude -p hi\nEOF | bash", "?"],
+  ["command cat <<'EOF'\nclaude -p hi\nEOF | bash", "?"],
+  ["cat - <<'EOF' | bash\nclaude -p hi\nEOF", "?"],
+  ["cat -u <<'EOF' | bash\nclaude -p hi\nEOF", "?"],
+  ["command cat <<'EOF' | bash\nclaude -p hi\nEOF", "?"],
+  ["bash /dev/stdin <<< 'claude -p hi'", "?"],
+  ["source /dev/stdin <<< 'claude -p hi'", "?"],
+  ["sudo -s < claude", "?"],
+  ["xargs env < claude", "?"],
+  ["ssh host bash -s < claude", "?"],
+  ["bash /dev/stdin <<< 'echo claude'", "?"],
+  ["echo claude | xargs echo", "?"],
+  // A modeled data reader consumes its input; a shell's known script is decided.
+  ["cat <<'EOF'\nclaude -p hi\nEOF", "pass"],
+  ["echo 'claude -p hi' | wc -l", "pass"],
+  ["echo 'claude -p hi' | bash", "FAIL"],
+  ["env -S cat <<'EOF'\nclaude -p hi\nEOF", "pass"],
+] as const;
+test("6b-E-2: unread stdin cannot silently pass at a code reader or wrapper", async (t) => {
+  await judgedAs(t, unreadStdin);
+});
+
+// @anchor expandedOperands
+const expandedOperands = [
+  ['OPT=--import; node "$OPT" ./src/server.ts', "?"],
+  ['OPT=--import; node "$OPT" ./src/server.ts --title claude', "?"],
+  [`CODE='import os; os.system("claude -p hi")'; python3 -c "$CODE"`, "?"],
+  [`CODE='claude -p hi'; bash -c "$CODE"`, "?"],
+  ['MOD=./src/server.ts; node --import "$MOD" other.js', "?"],
+  ['OPT=-c; bash "$OPT" "claude -p hi"', "?"],
+  ['OPT=-e; perl "$OPT" "claude"', "?"],
+  ['DIR=claude; ruby -I "$DIR" -e "puts 1"', "?"],
+  ['CMD=claude; env "$CMD" -p hi', "?"],
+  ['OPT=-exec; find . "$OPT" claude \\;', "?"],
+  ['CODE=claude; eval "echo $CODE"', "?"],
+  ['echo "${unset:-\'$(claude -p hi)\'}"', "FAIL"],
+  ['echo "${unset:-\'`claude -p hi`\'}"', "FAIL"],
+  ["echo ${unset:-'$(claude -p hi)'}", "pass"],
+  ['echo "$OPT" claude', "pass"],
+] as const;
+test("6b-E-3: required literal operands reject expansions and parameter quotes retain substitutions", async (t) => {
+  await judgedAs(t, expandedOperands);
+});
+
+// @anchor codeAssignments
+const codeAssignments = [
+  ["NODE_OPTIONS+='--import src/server.ts' node other.js", "FAIL"],
+  ["env NODE_OPTIONS+='--import src/server.ts' node other.js", "FAIL"],
+  ["export NODE_OPTIONS='--import ./src/server.ts'; node other.js", "FAIL"],
+  ["declare -x NODE_OPTIONS='--import ./src/server.ts'; node other.js", "FAIL"],
+  [`env -S 'NODE_OPTIONS="--import ./src/server.ts" node' other.js`, "FAIL"],
+  [`env -S 'NODE_OPTIONS+="--import ./src/server.ts" node' other.js`, "FAIL"],
+  ["readonly NODE_OPTIONS='--require ./src/cli.ts'", "FAIL"],
+  ["typeset -x NODE_OPTIONS+='--loader ./src/server.ts'", "FAIL"],
+  ['MOD=./src/server.ts; NODE_OPTIONS="--import $MOD" node other.js', "?"],
+  ["NODE_OPTIONS='--import ./src/server.ts'", "FAIL"],
+  ["BASH_ENV=<(echo 'claude -p hi') bash -c :", "?"],
+  ["PROMPT_COMMAND='claude -p hi' bash -i", "FAIL"],
+  ["export PROMPT_COMMAND='claude -p hi'; bash -i", "FAIL"],
+  ["env PROMPT_COMMAND='claude -p hi' bash -i", "FAIL"],
+  [`env -S 'PROMPT_COMMAND="claude -p hi" bash' -i`, "FAIL"],
+  ["BASH_ENV='$(claude -p hi)' bash -c :", "FAIL"],
+  ["ENV='$(claude -p hi)' sh -i", "FAIL"],
+  ["BASH_ENV='claude -p hi' bash -c :", "?"],
+  ["ENV='claude -p hi' sh -i", "?"],
+  ["PS4='$(claude -p hi)' bash -x script.sh", "FAIL"],
+  ["PS4='claude -p hi' bash -x script.sh", "pass"],
+  ["env BASH_ENV=./claude claude -p hi", "FAIL"],
+  ['CODE=claude; PROMPT_COMMAND="$CODE" bash -i', "?"],
+  ["BASH_ENV=./claude bash -c :", "?"],
+  ["PROMPT_COMMAND='echo claude' bash -i", "pass"],
+  ["ENGINE=claude; echo $ENGINE", "pass"],
+] as const;
+test("6b-E-4: assignment entry points share loader and shell-code judgment", async (t) => {
+  await judgedAs(t, codeAssignments);
+});
+
+// @anchor deferredArithmetic
+const deferredArithmetic = [
+  ["let 'x[$(claude -p hi)]=1'", "?"],
+  ["test -v 'x[$(claude -p hi)]'", "?"],
+  ["[ -v 'x[$(claude -p hi)]' ]", "?"],
+  ["printf -v 'x[$(claude -p hi)]' '%s' value", "?"],
+  ["read 'x[$(claude -p hi)]'", "?"],
+  ["declare 'x[$(claude -p hi)]=1'", "?"],
+  ["x='a[$(claude -p hi)]'; echo $(( x ))", "?"],
+  ["x='a[$(claude -p hi)]'; (( x ))", "?"],
+  ["x='a[$(claude -p hi)]'; [[ $x -eq 0 ]]", "?"],
+  ["read 'x[`claude -p hi`]'", "?"],
+  ["x='a[$(claude -p hi)]'; test -v \"$x\"", "?"],
+  ["echo 'x[$(claude -p hi)]'", "pass"],
+  ["let 'x=1'", "pass"],
+  ["echo $(( $(claude -p hi) + 1 ))", "FAIL"],
+] as const;
+test("6b-E-5: arithmetic and subscript readers cannot call quoted substitutions data", async (t) => {
+  await judgedAs(t, deferredArithmetic);
+});
+
+// @anchor optionTerminators
+const optionTerminators = [
+  ["rg -- '--pre=claude' README.md", "pass"],
+  ["node -e 'console.log(process.argv)' -- src/server.ts", "pass"],
+  ["sort -- '--compress-program=claude'", "pass"],
+  ["node -- src/server.ts", "FAIL"],
+  ["rg --pre=claude README.md", "FAIL"],
+] as const;
+test("option terminators leave search patterns and inline-code arguments as data", async (t) => {
+  await judgedAs(t, optionTerminators);
+});
+
+// @anchor scriptNameAccounting
+const scriptNameAccounting = [
+  ['const o={of:4}; o.of / await tools.exec_command({cmd:"claude -p hi"}) / 2;', "?"],
+  [String.raw`const o={of:4}; o.of / await tools.exec_command({cmd:"\u0063laude -p hi"}) / 2;`, "?"],
+  ['const o={of:4}; o.of / await tools.mcp__cross_agent__delegate({role:"consult"}) / 2;', "?"],
+  ['const o={of:4}; o.of / await tools.write_stdin({chars:"ls"}) / 2;', "?"],
+  ['let i=0;\ni\n++ /tools.exec_command({cmd:"claude -p hi"})/.lastIndex;', "?"],
+  ['const re=/exec_command/; await tools.exec_command({cmd:"ls"});', "?"],
+  [String.raw`text("tools.\u0065xec_command"); await tools.exec_command({cmd:"ls"});`, "?"],
+  ['text("delegate");', "?"],
+  ['// write_stdin\nawait tools.exec_command({cmd:"ls"});', "?"],
+  ['await tools["exec_command"]({cmd:"ls"});', "pass"],
+  [String.raw`await tools.\u0065xec_command({cmd:"ls"});`, "pass"],
+  ['await tools.exec_command({cmd:"claude -p hi"});', "FAIL"],
+] as const;
+test("6b-E-6: every tool-name occurrence is accounted for despite lexical ambiguity", async (t) => {
+  for (const [script, expected] of scriptNameAccounting) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006601";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${script}\n${out}`);
+    assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+  }
+});
+
+// @anchor rolloutItemShapes
+const rolloutItemShapes = [
+  { event: { type: "item_completed", item: { type: "NewToolCall", name: "exec_command", arguments: { cmd: "claude -p hi" } } } },
+  { event: { type: "exec_command_begin", command: "claude -p hi" } },
+  { event: { type: "item_completed", item: { type: "CommandExecution", command: "claude -p hi" } } },
+  { event: { type: "item_completed", item: { type: "CommandExecution", command: ["echo", { cmd: "claude" }] } } },
+  { event: { type: "item_completed", item: { type: "NewItem", command: ["claude", "-p", "hi"] } } },
+  { event: { type: "item_completed", item: { type: "NewItem", arguments: {} } } },
+  { entry: { type: "new_item", name: "exec_command", arguments: { cmd: "claude -p hi" } } },
+  { entry: { type: "custom_tool_call", name: "exec", input: { cmd: "claude -p hi" } } },
+] as const;
+test("6b-E-6: unknown tool-bearing rollout items and changed field shapes are questions", async (t) => {
+  for (const step of rolloutItemShapes) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006602";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, step]),
+    } }));
+    assert.equal(verdict(out, scan), "?", `${JSON.stringify(step)}\n${out}`);
+    assert.equal(code, 2, out);
+  }
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {

@@ -202,23 +202,32 @@ const knownEvents = new Set([
 // configured under `engines.<e>.bin`, and `node` running or loading `src/server.ts` or
 // `src/cli.ts`. Which word is the command is a shell's question, so a tokenizer answers it
 // (`launcherFor`, below, where its grammar is listed), under this contract:
-// - `pass` requires positive understanding. A line passes only when every construct on it
-//   is one the grammar models and the grammar finds no launch.
-// - A construct the grammar models is decoded and judged, never skipped: a substitution
-//   wherever it stands, a heredoc, a here-string or a pipe feeding a shell, `$'…'`, an
-//   option cluster and the operand each letter takes, an interpreter's code options, node's
-//   loaders, ssh's command-carrying options, busybox's applets, a function definition.
-// - The data-only command words (`dataOnly`) never run an argument, so they pass whatever
-//   they print, list or search for.
-// - Anything outside the grammar — a command word it does not model, one an expansion or a
-//   glob supplies, an option a walk does not know, an unterminated quote or substitution, a
-//   script read from somewhere it cannot see, a `case` statement, a function named like an
-//   engine — is `?`, naming the construct, on a line where an engine's name or a configured
-//   binary appears as a word (`names`), and never `pass` there. On a line that names none
-//   it passes, because such a line has nothing of an engine to hide.
-// - Inline code that names an engine (`python3 -c`, `node -e`, `perl -e`, `ruby -e`, an awk
-//   program, a program on stdin) is `?`: no shell reading can tell it from a mention.
-// - A script file a shell or an interpreter runs is not read; the transcript is judged.
+// - On a named line, `pass` requires positive understanding of every construct and no
+//   launch. A name is an engine, configured bin or src/server.ts / src/cli.ts entry point
+//   anywhere in the raw text or decoded words, including nested quotes, assignments,
+//   heredocs, here-strings, redirection targets and comments (`namesTarget`, `namesInList`).
+// - Modeled constructs are decoded and judged: substitutions, `$'…'`, literal options and
+//   their operands, shell scripts on known stdin, interpreter code, node loaders, ssh's
+//   command options, busybox applets and function bodies. `--` ends option parsing;
+//   arguments after inline node code and `--` are data, not a script.
+// - The data commands (`dataOnly`) account for their stdin and arguments as data, except
+//   execution options, code-carrying assignments and arithmetic/subscript readers. Quoted
+//   substitutions given to such builtins, or carried into arithmetic on the same line,
+//   are `?`; `let` is unmodeled. Ordinary mentions printed or searched for still pass.
+// - Assignments are inspected in prefixes, declaration builtins, env and env -S, with `=`
+//   or `+=`: NODE_OPTIONS is read for loaders, PROMPT_COMMAND for commands, startup paths
+//   and prompt templates for substitutions. Expanded values and unread named files are `?`.
+// - Known stdin left unconsumed by a modeled reader is `?` if it names a target or judges
+//   as a launch. Unknown stdin at a shell, wrapper (including sudo -s/-i and xargs) or
+//   remote command is `?` on a named line; xargs builds argv rather than forwarding stdin.
+// - Unmodeled commands, expansions where a literal is needed, unknown options, malformed
+//   syntax and other unsupported constructs are `?` on named lines. Malformed syntax,
+//   case statements and engine-named functions cap the line at `?`; otherwise a modeled
+//   launch takes precedence over a doubt.
+// - Inline interpreter code naming a target is `?`: a shell reader cannot judge it.
+//   Script files are not read, and stdin handed to an interpreter's file is treated as
+//   data. Unnamed lines pass unless a modeled launch or the recursion limit decides them;
+//   names assembled beyond the supported decoding are outside this transcript audit.
 //
 // It is stricter than the deny list, on purpose. A deny rule is matched by the engine
 // against the command it is asked to run (`Bash(claude *)`), by that engine's own matcher;
@@ -232,13 +241,14 @@ const launch = launcherFor(config);
 // every command it shows attempted is judged like the transcript's own. The same contract
 // holds there: a Codex record with no rollout to read, one whose rollout lacks a command
 // the transcript shows, and one whose rollout holds a tool call this reader does not
-// classify are `?`, named. A code-mode script is read as JavaScript (`scriptRead`), not
-// searched, and passes only when every `exec_command`, `write_stdin` and `delegate` it
-// names is a direct call whose one argument is an object literal giving a literal `cmd` or
-// `chars`, with no spread or computed key. Anything else — an alias, `eval`, `Function`,
-// `import`, a legacy octal escape, a `/` the reader cannot tell for a division or a regular
-// expression, and a string, comment or regular expression that names a launch — is `?`,
-// because it cannot be told from a launch the script assembles and runs.
+// classify, including changed command-field shapes, are `?`, named. A code-mode script is
+// tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin direct call must
+// give one object argument with a literal cmd/chars and no spread or computed key. The
+// raw source and decoded token text are also inventoried: more occurrences of a command
+// tool or delegate name than direct calls followed is `?`, even in comments or regexes.
+// Aliases, eval/Function/import, legacy octal escapes, role-dependent slashes the reader
+// cannot classify, and asides naming launches also answer `?`. This is a bounded reader,
+// not JavaScript execution; a positively read launch still takes precedence.
 const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
 // codex-cli 0.159.2's tools (A3's `ALL_TOOLS`): those that run a command, and those that run
 // nothing — patches, goals, images, MCP resources, plugins, the web — which a rollout may
@@ -433,21 +443,23 @@ function git(...argv) {
  * `&`, newlines, a subshell's `(` and `)`, and a `{` or `}` standing as a command word;
  * single quotes, double quotes, `$'…'` (decoded as bash decodes it), `$"…"` and backslashes;
  * comments; redirections, whose target is never a command word; heredocs and here-strings;
- * function definitions; `[[ … ]]` and `(( … ))`, whose words are data. Every `$(…)`,
- * backtick and `<(…)`/`>(…)` is a command line of its own, wherever it stands: in a word,
+ * function definitions; `[[ … ]]` and `(( … ))`. Deferred arithmetic/subscript evaluation
+ * is not performed: quoted substitutions at those readers are doubts on named lines.
+ * Every `$(…)`, backtick and `<(…)`/`>(…)` is a command line of its own: in a word,
  * in double quotes, inside `${…}`, `$((…))` and `$[…]`, and in an unquoted heredoc's body.
  * What a command reads on stdin is known: a heredoc's body, a here-string, a file, or the
  * output of the command piped into it, which is known text for `echo`, `printf` and `cat`
  * of a heredoc, and unknown for anything else.
  *
- * In each simple command, leading assignments are data, except that `NODE_OPTIONS` carrying
- * a loader is read as node's options; reserved words are passed over; the word left is the
+ * In each simple command, code-carrying assignments are judged by `assignmentCode`;
+ * other leading assignments are data. Reserved words are passed over; the word left is the
  * command word. A command word an expansion supplies is known only by a literal basename
  * after its last slash; a brace expansion of a literal word is expanded; a glob is not
  * modeled. The command word's basename decides:
  * - an engine name, `cross-agent` or a configured binary: a launch;
- * - a data-only command (`dataOnly`, below): its arguments are data, `rg --pre` and
- *   `sort --compress-program` being commands;
+ * - a data command (`dataOnly`, below): stdin and arguments are data except for code
+ *   assignments, deferred subscripts, `rg --pre` and `sort --compress-program`;
+ * - literal `git show <revision>:<path>` and `git grep` without options: object/path reads;
  * - an exec wrapper (`sudo`, `doas`, `env`, `exec`, `nohup`, `setsid`, `time`, `timeout`,
  *   `nice`, `command`, `stdbuf`, `xargs`): its options walked letter by letter, each operand
  *   an option takes consumed, and the command after them judged; `command -v` and `-V` only
@@ -472,15 +484,17 @@ function git(...argv) {
  *   value, a program on stdin) that names an engine, `cross-agent`, a configured binary or
  *   an entry point is `?`; a script file is not read;
  * - `if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!` and `{` are passed over; `for`
- *   and `select` lists, `[[ … ]]` and `(( … ))` are data.
+ *   and `select` lists are data; arithmetic and subscript readers carrying deferred
+ *   substitutions are unmodeled.
  * A `case` statement and a function named like an engine change what later words mean, and
  * a line bash would refuse — an unterminated quote or substitution, a `(` where no command
  * starts, a `)` with no `(`, a redirection with no target — runs nothing as read here: on a
  * line that names an engine either is `?` whatever else the line holds. Anything else — an
  * unmodeled command word, a command word an expansion or a glob supplies, an option a walk
  * does not know, stdin of unknown content read as a script — is `?` on a line that names
- * an engine or a configured binary as a word (`names`), unless the line holds a launch; on
- * a line that names none it passes, because such a line has nothing of an engine to hide.
+ * a target anywhere in its raw text or decoded words (`namesInList`), unless the line
+ * holds a launch. An unnamed line is outside the names gate, not proof that an engine
+ * name could not have been assembled. Unconsumed named stdin is a doubt (`unreadInput`).
  * The recursion stops at eight levels, with `?`.
  */
 function launcherFor(settings) {
@@ -498,7 +512,8 @@ function launcherFor(settings) {
   const names = (text) => (String(text).match(/[\w.-]+/g) ?? [])
     .some((run) => engineNames.has(run.replace(/^-+/, "").replace(/\.+$/, "")));
   const namesTarget = (text) => names(text)
-    || /(?:^|[\s'"=/])(?:\.\/)?src\/(?:server|cli)\.(?:ts|js)(?![\w.-])/.test(String(text));
+    || bins.some((bin) => String(text).includes(bin))
+    || /(?:^|[^\w.-])(?:\.\/)?src\/(?:server|cli)\.(?:ts|js)(?![\w.-])/.test(String(text));
   const pass = { verdict: "pass", why: "", at: "" };
   const rank = { pass: 0, "?": 1, launch: 2 };
   const worse = (left, right) => (rank[right.verdict] > rank[left.verdict] ? right : left);
@@ -514,7 +529,8 @@ function launcherFor(settings) {
   // Whether `ch` is one of `chars`: never for the nothing past a text's end.
   const oneOf = (chars, ch) => ch !== undefined && ch !== "" && chars.includes(ch);
 
-  // The data-only command words: none runs an argument as a command or as code.
+  // These commands treat words/stdin as data except for the execution options,
+  // code-carrying assignments and deferred subscripts checked by dataCommand.
   const dataOnly = new Set([
     ":", "[", "test", "true", "false", "echo", "printf", "cat", "tac", "head", "tail", "wc", "sort", "uniq",
     "cut", "tr", "paste", "join", "comm", "diff", "cmp", "nl", "fold", "fmt", "column", "expand", "unexpand",
@@ -525,10 +541,13 @@ function launcherFor(settings) {
     "sleep", "export", "unset", "set", "shift", "local", "declare", "typeset", "readonly", "read", "return",
     "exit", "break", "continue", "wait", "jobs", "kill", "pkill", "pgrep", "ps", "which", "type", "whereis",
     "printenv", "uname", "hostname", "id", "whoami", "groups", "nproc", "free", "uptime", "getconf", "locale",
-    "iconv", "tput", "clear", "let", "getopts", "shopt", "ulimit", "umask", "curl", "wget", "lsof", "ss",
+    "iconv", "tput", "clear", "getopts", "shopt", "ulimit", "umask", "curl", "wget", "lsof", "ss",
     "netstat", "sync", "gzip", "gunzip", "zcat", "bzip2", "bunzip2", "xz", "unxz", "zstd", "unalias",
   ]);
   const shells = new Set(["sh", "bash", "dash", "zsh", "ksh", "ash", "mksh", "hush"]);
+  const declarations = new Set(["export", "declare", "typeset", "local", "readonly"]);
+  const shellCodeVariables = new Set(["BASH_ENV", "ENV", "PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4"]);
+  const substitutionsIn = (text) => /\$\(|`/.test(text);
   const shellFlags = "abefhiklmnprtuvxBCDEHPT";
   const shellLong = new Set(["--login", "--noprofile", "--norc", "--posix", "--restricted", "--verbose", "--version",
     "--help", "--debugger", "--dump-strings", "--dump-po-strings", "--noediting", "--pretty-print"]);
@@ -608,7 +627,8 @@ function launcherFor(settings) {
    * heredoc's body, whose expansions alone are read.
    */
   function lexList(text, start, closer) {
-    const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null, named: false };
+    const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null,
+      named: false, arithmetic: false, deferred: false };
     const newCommand = (pipeFrom) => ({ words: [], stdin: null, pipeFrom, funcDef: undefined, arith: false, cond: false });
     let command = newCommand(null);
     let word = null;
@@ -631,6 +651,7 @@ function launcherFor(settings) {
       word.expansions = true;
     };
     function applyRedirect(target) {
+      if (namesTarget(target.value)) list.named = true;
       const op = redirect;
       redirect = null;
       if (op === "<<" || op === "<<-") {
@@ -647,9 +668,10 @@ function launcherFor(settings) {
       if (word === null) return;
       const done = word;
       word = null;
+      if (namesTarget(done.value)) list.named = true;
+      if (done.quoted && !done.expansions && substitutionsIn(done.value)) list.deferred = true;
       if (redirect !== null) { applyRedirect(done); return; }
       const plain = !done.quoted && !done.expansions;
-      if (names(done.value)) list.named = true;
       if (command.cond) {
         if (plain && done.value === "]]") command.cond = false;
         command.words.push(done);
@@ -698,12 +720,12 @@ function launcherFor(settings) {
     }
     // `${…}`, `$((…))`, `$[…]` or an array's `(…)` from `k`, to the close it ends at, every
     // substitution inside it collected; -1 when it never closes.
-    function scanTo(k, close) {
+    function scanTo(k, close, doubleContext = false) {
       let depth = 0;
       while (k < text.length) {
         const ch = text[k];
         if (ch === "\\") { k += 2; continue; }
-        if (ch === "'" && close !== "))") {
+        if (ch === "'" && close !== "))" && !doubleContext) {
           const end = text.indexOf("'", k + 1);
           if (end === -1) return -1;
           k = end + 1;
@@ -715,7 +737,7 @@ function launcherFor(settings) {
           continue;
         }
         if (ch === "`" || (ch === "$" && oneOf("({[", text[k + 1]))) {
-          const end = expansionAt(k);
+          const end = expansionAt(k, doubleContext);
           if (end === -1) return -1;
           k = end;
           continue;
@@ -741,17 +763,19 @@ function launcherFor(settings) {
     }
     // An expansion at `k` (`$…` or a backtick): the index after it, `k` when the `$` is a
     // plain character, -1 when it never closes.
-    function expansionAt(k) {
+    function expansionAt(k, doubleContext = false) {
       if (text[k] === "`") return backtick(k);
       const next = text[k + 1] ?? "";
       if (next === "(" && text[k + 2] === "(") {
+        list.arithmetic = true;
         const end = scanTo(k + 3, "))");
         if (end === -1) list.problems.push("an unterminated arithmetic expansion");
         return end;
       }
       if (next === "(") return substitution(k + 2);
       if (next === "{" || next === "[") {
-        const end = scanTo(k + 2, next === "{" ? "}" : "]");
+        if (next === "[") list.arithmetic = true;
+        const end = scanTo(k + 2, next === "{" ? "}" : "]", doubleContext);
         if (end === -1) list.problems.push(`an unterminated \`$${next}\``);
         return end;
       }
@@ -775,7 +799,7 @@ function launcherFor(settings) {
           continue;
         }
         if (ch === "$" || ch === "`") {
-          const end = expansionAt(k);
+          const end = expansionAt(k, true);
           if (end === -1) return -1;
           if (end !== k) {
             if (building) expansion(text.slice(k, end));
@@ -825,14 +849,16 @@ function launcherFor(settings) {
     function readHeredocs(k) {
       for (const doc of heredocs.splice(0)) {
         const lines = [];
+        let closed = false;
         while (k < text.length) {
           const newline = text.indexOf("\n", k);
           const line = text.slice(k, newline === -1 ? text.length : newline);
           k = newline === -1 ? text.length : newline + 1;
           const stripped = doc.strip ? line.replace(/^\t+/, "") : line;
-          if (stripped === doc.delimiter) break;
+          if (stripped === doc.delimiter) { closed = true; break; }
           lines.push(stripped);
         }
+        if (!closed) list.problems.push("an unterminated heredoc");
         const body = lines.length > 0 ? `${lines.join("\n")}\n` : "";
         doc.stdin.text = body;
         if (!doc.quoted) {
@@ -992,16 +1018,20 @@ function launcherFor(settings) {
     return judgeList(list, context);
   }
 
+  const namesInList = (list) => list.named || namesTarget(list.text) || list.nested.some(namesInList);
   /** A command list: its substitutions and its commands, each judged; the worst answer. */
   function judgeList(list, context) {
     if (context.depth > depthLimit) return doubt("nesting past eight levels", list.text);
-    // Whether the line names an engine: in a word, not a comment, a heredoc's data or a file
-    // a redirection writes.
-    const named = context.named || list.named;
-    const inner = { depth: context.depth, named };
+    // Raw text and decoded words both count, including bodies, targets and comments.
+    const named = context.named || namesInList(list);
+    const deferred = context.deferred || list.deferred;
+    const inner = { depth: context.depth, named, deferred };
     let verdict = pass;
     let cap = null;
-    for (const nested of list.nested) verdict = worse(verdict, judgeList(nested, { depth: context.depth + 1, named }));
+    const arithmetic = list.arithmetic || list.commands.some((command) => command.arith
+      || (command.words[0]?.value === "[[" && command.words.some((word) => /^-(?:eq|ne|lt|le|gt|ge|v)$/.test(word.value))));
+    if (named && deferred && arithmetic) verdict = doubt("arithmetic may evaluate a quoted substitution or subscript", list.text);
+    for (const nested of list.nested) verdict = worse(verdict, judgeList(nested, { ...inner, depth: context.depth + 1 }));
     for (const command of list.commands) {
       const judged = judgeCommand(command, inner);
       if (judged.cap) cap ??= judged;
@@ -1025,22 +1055,53 @@ function launcherFor(settings) {
     let verdict = pass;
     let k = 0;
     while (k < command.words.length && isAssignment(command.words[k])) {
-      verdict = worse(verdict, nodeOptionsIn(command.words[k], context));
+      verdict = worse(verdict, assignmentCode(command.words[k], context));
       k++;
     }
-    if (k >= command.words.length) return verdict;
-    return worse(verdict, judgeWords(command.words.slice(k), command, context));
+    if (k < command.words.length) verdict = worse(verdict, judgeWords(command.words.slice(k), command, context));
+    // A reader must explicitly account for stdin. In particular, wrappers do not
+    // consume it merely because their command/option words have been understood.
+    if (!command.stdinRead) verdict = worse(verdict, unreadInput(command, context));
+    return verdict;
   }
 
   const isAssignment = (word) => /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=/.test(word.shape);
 
-  /** `NODE_OPTIONS=…`: node's options, read by every node the command starts. */
-  function nodeOptionsIn(word, context) {
-    if (!word.shape.startsWith("NODE_OPTIONS=")) return pass;
-    const options = lexList(word.value.slice("NODE_OPTIONS=".length), 0, null).commands.flatMap((command) => command.words);
-    const read = nodeWalk([{ value: "node", shape: "node" }, ...options], true);
-    if (read.launch) return { verdict: "launch", why: "", at: shown(word.value) };
-    if (!read.known && (context.named || namesTarget(word.value))) return doubt(unmodeled, word.value);
+  /** Assignment syntax is shared by prefixes, declaration builtins and env (including -S). */
+  function assignmentCode(word, context) {
+    const match = /^([A-Za-z_]\w*)(?:\[[^\]]*\])?\+?=([\s\S]*)$/.exec(word.value);
+    if (match === null) return pass;
+    const [, name, code] = match;
+    if (name !== "NODE_OPTIONS" && !shellCodeVariables.has(name)) return pass;
+    const named = context.named || namesTarget(code);
+    if (word.expansions) return named ? doubt("an expansion in a code-carrying assignment", word.value) : pass;
+    if (name === "NODE_OPTIONS") {
+      const list = lexList(code, 0, null);
+      const read = nodeWalk([asWord("node"), ...list.commands.flatMap((command) => command.words)], true);
+      if (read.launch) return { verdict: "launch", why: "", at: shown(word.value) };
+      return (!read.known || list.problems.length > 0) && named ? doubt(unmodeled, word.value) : pass;
+    }
+    // Startup paths and prompt templates expand substitutions, but their literal text
+    // is not a command. PROMPT_COMMAND, in contrast, is a shell command list.
+    if (name !== "PROMPT_COMMAND") {
+      const list = lexList(code, 0, "heredoc");
+      list.text = code;
+      const expanded = judgeList(list, { ...context, named, depth: context.depth + 1 });
+      return (name === "BASH_ENV" || name === "ENV") && named
+        ? worse(expanded, doubt("a shell startup file this grammar cannot read", word.value)) : expanded;
+    }
+    return judgeText(code, { ...context, named, depth: context.depth + 1 });
+  }
+
+  function unreadInput(command, context) {
+    const stdin = stdinOf(command);
+    if (stdin === null) return pass;
+    const at = values(command.words).join(" ") || stdin.text || stdin.what;
+    if (stdin.kind === "text") {
+      if (namesTarget(stdin.text) || judgeText(stdin.text, { ...context, depth: context.depth + 1 }).verdict === "launch") {
+        return doubt("stdin naming a launch or engine was not consumed by a modeled reader", at);
+      }
+    } else if (context.named) return doubt(`unread stdin from ${stdin.what}, beside an engine's name`, at);
     return pass;
   }
 
@@ -1077,6 +1138,13 @@ function launcherFor(settings) {
       }
     }
     if (engineNames.has(name) || binPaths.has(value)) return launchAt(words);
+    // Literal git object/path reads used by the audit's own historical rows.
+    if (name === "git" && words.every((word) => !word.expansions) && (
+      (words.length === 3 && words[1].value === "show" && /^[\w./~-]+:[^\s]+$/.test(words[2].value))
+      || (words[1]?.value === "grep" && words.length > 2 && words.slice(2).every((word) => !word.value.startsWith("-"))))) {
+      command.stdinRead = true;
+      return pass;
+    }
     if (dataOnly.has(name)) return dataCommand(name, words, command, context);
     if (name === "busybox") {
       if (words.length < 2 || words[1].value.startsWith("-")) return pass;
@@ -1084,7 +1152,9 @@ function launcherFor(settings) {
     }
     if (wrapperSpecs.has(name)) return wrapped(name, words, command, context);
     if (shells.has(name)) return shellRun(words, command, context);
-    if (name === "eval") return judgeText(values(words.slice(1)).join(" "), { depth: context.depth + 1, named: context.named });
+    if (name === "eval") return words.slice(1).some((word) => word.expansions)
+      ? (context.named ? doubt(unmodeled, line) : pass)
+      : judgeText(values(words.slice(1)).join(" "), { ...context, depth: context.depth + 1 });
     // A script file is not read; one an expansion names — `<(…)`, `$file` — could be anything.
     if (name === "source" || name === ".") return words[1]?.expansions && context.named ? doubt(unmodeled, line) : pass;
     if (name === "find") return findRun(words, context);
@@ -1094,14 +1164,24 @@ function launcherFor(settings) {
     return context.named ? doubt(unmodeled, line) : pass;
   }
 
-  /** A data-only command: its arguments are data, but for the two options that run one. */
+  /** A data reader, with its code assignments, subscripts and execution options checked. */
   function dataCommand(name, words, command, context) {
-    const run = { rg: "--pre", sort: "--compress-program" }[name];
-    if (run === undefined) return pass;
+    command.stdinRead = true;
     let verdict = pass;
+    if (declarations.has(name)) for (const word of words.slice(1)) verdict = worse(verdict, assignmentCode(word, context));
+    const subscriptReader = declarations.has(name) || ["read", "unset"].includes(name)
+      || (["test", "[", "printf"].includes(name) && words.some((word) => word.value === "-v"));
+    if (context.named && subscriptReader && (context.deferred || words.slice(1).some((word) => substitutionsIn(word.value)))) {
+      verdict = worse(verdict, doubt("a builtin may evaluate a quoted substitution or subscript", values(words).join(" ")));
+    }
+    const run = { rg: "--pre", sort: "--compress-program" }[name];
+    if (run === undefined) return verdict;
     for (let k = 1; k < words.length; k++) {
       const value = words[k].value;
+      if (value === "--") break;
+      if (words[k].expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
       const program = value === run ? words[++k]?.value : value.startsWith(`${run}=`) ? value.slice(run.length + 1) : undefined;
+      if (words[k]?.expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
       if (program !== undefined && program !== "") {
         verdict = worse(verdict, judgeWords([asWord(program)], command, context));
       }
@@ -1118,6 +1198,7 @@ function launcherFor(settings) {
     let known = true;
     const read = [];
     while (k < words.length) {
+      if (words[k].expansions) return { k, known: false, expanded: true, read };
       const word = words[k].value;
       if (word === "--") { k++; break; }
       if (word === "-" || !word.startsWith("-")) break;
@@ -1126,7 +1207,10 @@ function launcherFor(settings) {
         const option = equals === -1 ? word : word.slice(0, equals);
         const kind = spec.long?.[option];
         if (kind === undefined) known = false;
-        if (kind === "value" && equals === -1) { read.push({ option, value: words[k + 1]?.value }); k += 2; continue; }
+        if (kind === "value" && equals === -1) {
+          if (words[k + 1]?.expansions) return { k, known: false, expanded: true, read };
+          read.push({ option, value: words[k + 1]?.value }); k += 2; continue;
+        }
         read.push({ option, value: equals === -1 ? undefined : word.slice(equals + 1) });
         k++;
         continue;
@@ -1146,7 +1230,10 @@ function launcherFor(settings) {
         if (spec.attached?.includes(letter)) { read.push({ option: `-${letter}`, value: rest }); break; }
         if (spec.values.includes(letter) || spec.code?.includes(letter) || spec.stop?.includes(letter)) {
           if (rest !== "") read.push({ option: `-${letter}`, value: rest });
-          else { read.push({ option: `-${letter}`, value: words[k + 1]?.value }); next = k + 2; }
+          else {
+            if (words[k + 1]?.expansions) return { k, known: false, expanded: true, read };
+            read.push({ option: `-${letter}`, value: words[k + 1]?.value }); next = k + 2;
+          }
           break;
         }
         known = false;
@@ -1166,24 +1253,34 @@ function launcherFor(settings) {
     const walk = options(words, 1, spec);
     let k = walk.k;
     const unread = !walk.known && context.named ? doubt(unmodeled, line) : pass;
+    let assigned = pass;
+    if (walk.expanded) return unread;
     if (name === "command" && walk.read.some(({ option }) => option === "-v" || option === "-V")) return pass;
     if (name === "sudo" && walk.read.some(({ option }) => ["-e", "--edit", "-l", "--list", "-v", "--validate", "-K", "--remove-timestamp"].includes(option))) return unread;
     if (name === "env") {
       const split = walk.read.find(({ option }) => option === "-S" || option === "--split-string");
-      while (k < words.length && isAssignment(words[k])) {
-        const judged = nodeOptionsIn(words[k], context);
-        if (judged.verdict !== "pass") return worse(judged, unread);
+      while (k < words.length && /^[A-Za-z_]\w*\+?=/.test(words[k].value)) {
+        assigned = worse(assigned, assignmentCode(words[k], context));
         k++;
       }
       if (split !== undefined) {
         const parts = lexList(split.value ?? "", 0, null).commands.flatMap((part) => part.words);
         const rest = [...parts, ...words.slice(k)];
-        return rest.length > 0 ? worse(judgeWords(rest, command, { ...context, depth: context.depth + 1 }), unread) : unread;
+        const child = { ...command, words: rest };
+        const judged = judgeCommand(child, { ...context, depth: context.depth + 1 });
+        command.stdinRead = child.stdinRead;
+        return worse(worse(judged, assigned), unread);
       }
     }
-    if (name === "timeout") k++;
-    if (k >= words.length) return unread;
-    return worse(judgeWords(words.slice(k), command, context), unread);
+    if (name === "timeout") {
+      if (words[k]?.expansions) return context.named ? doubt(unmodeled, line) : pass;
+      k++;
+    }
+    if (k >= words.length) return worse(assigned, unread);
+    // xargs consumes stdin to build argv, rather than forwarding it to the child.
+    if (name === "xargs") return worse(worse(unread, unreadInput(command, context)),
+      judgeWords(words.slice(k), { stdin: null, pipeFrom: null }, context));
+    return worse(worse(judgeWords(words.slice(k), command, context), assigned), unread);
   }
 
   /** A shell: its `-c` payload, or with no script its stdin, read as a line. */
@@ -1194,11 +1291,15 @@ function launcherFor(settings) {
     let fromStdin = false;
     let known = true;
     while (k < words.length) {
+      if (words[k].expansions) return context.named ? doubt(unmodeled, line) : pass;
       const word = words[k].value;
       if (word === "--" || word === "-") { k++; break; }
       if (!/^[-+]./.test(word)) break;
       if (word.startsWith("--")) {
-        if (word === "--rcfile" || word === "--init-file") k += 2;
+        if (word === "--rcfile" || word === "--init-file") {
+          if (words[k + 1]?.expansions) return context.named ? doubt(unmodeled, line) : pass;
+          k += 2;
+        }
         else { if (!shellLong.has(word)) known = false; k++; }
         continue;
       }
@@ -1209,11 +1310,13 @@ function launcherFor(settings) {
         else if (letter === "o" || letter === "O") operands++;
         else if (!shellFlags.includes(letter)) known = false;
       }
+      if (words.slice(k + 1, k + 1 + operands).some((word) => word.expansions)) return context.named ? doubt(unmodeled, line) : pass;
       k += 1 + operands;
     }
     const unread = !known && context.named ? doubt(unmodeled, line) : pass;
     const deeper = { depth: context.depth + 1, named: context.named };
-    if (commandMode) return k < words.length ? worse(judgeText(words[k].value, deeper), unread) : unread;
+    if (commandMode) return k < words.length
+      ? worse(words[k].expansions ? (context.named ? doubt(unmodeled, line) : pass) : judgeText(words[k].value, deeper), unread) : unread;
     if (!fromStdin && k < words.length) return worse(words[k].expansions && context.named ? doubt(unmodeled, line) : pass, unread);
     return worse(scriptOnStdin(command, deeper, line), unread);
   }
@@ -1240,6 +1343,7 @@ function launcherFor(settings) {
 
   /** A script a shell or `ssh` reads on stdin. */
   function scriptOnStdin(command, deeper, line) {
+    command.stdinRead = true;
     const stdin = stdinOf(command);
     if (stdin === null) return pass;
     if (stdin.kind === "text") {
@@ -1252,6 +1356,7 @@ function launcherFor(settings) {
 
   /** A program an interpreter reads on stdin. */
   function programOnStdin(command, context, line) {
+    command.stdinRead = true;
     const stdin = stdinOf(command);
     if (stdin === null) return pass;
     if (stdin.kind === "text") return namesTarget(stdin.text) ? doubt(inline, line) : pass;
@@ -1260,6 +1365,7 @@ function launcherFor(settings) {
 
   /** `find`: the commands its `-exec`, `-execdir`, `-ok` and `-okdir` run. */
   function findRun(words, context) {
+    if (words.slice(1).some((word) => word.expansions)) return context.named ? doubt(unmodeled, values(words).join(" ")) : pass;
     let verdict = pass;
     for (let k = 1; k < words.length; k++) {
       if (!["-exec", "-execdir", "-ok", "-okdir"].includes(words[k].value)) continue;
@@ -1278,12 +1384,14 @@ function launcherFor(settings) {
     const walk = options(words, 1, sshSpec);
     const deeper = { depth: context.depth + 1, named: context.named };
     let verdict = !walk.known && context.named ? doubt(unmodeled, line) : pass;
+    if (walk.expanded) return verdict;
     for (const { option, value } of walk.read) {
       if (option !== "-o" || value === undefined) continue;
       const setting = /^\s*([A-Za-z]+)\s*(?:=\s*|\s+)([\s\S]*)$/.exec(value);
       if (setting !== null && sshCommands.has(setting[1].toLowerCase())) verdict = worse(verdict, judgeText(setting[2], deeper));
     }
     const remote = words.slice(walk.k + 1);
+    if (remote.some((word) => word.expansions)) return worse(verdict, context.named ? doubt(unmodeled, line) : pass);
     if (remote.length > 0) return worse(verdict, judgeText(values(remote).join(" "), deeper));
     if (walk.k >= words.length) return verdict;
     return worse(verdict, scriptOnStdin(command, deeper, line));
@@ -1297,8 +1405,15 @@ function launcherFor(settings) {
   function nodeWalk(words, optionsOnly = false) {
     const read = { launch: false, known: true, code: [], script: undefined, stdin: false };
     for (let k = 1; k < words.length; k++) {
+      if (words[k].expansions) { read.known = false; break; }
       const word = words[k].value;
-      if (word === "--") { read.script = words[k + 1]?.value; break; }
+      if (word === "--") {
+        if (read.code.length === 0 && !optionsOnly) {
+          if (words[k + 1]?.expansions) read.known = false;
+          else read.script = words[k + 1]?.value;
+        }
+        break;
+      }
       if (word === "-") { read.stdin = true; break; }
       if (!word.startsWith("-") || word.length < 2) {
         if (read.code.length === 0 && !optionsOnly) read.script = word;
@@ -1307,6 +1422,10 @@ function launcherFor(settings) {
       const equals = word.indexOf("=");
       const option = equals === -1 ? word : word.slice(0, equals);
       const attached = equals === -1 ? undefined : word.slice(equals + 1);
+      if (attached === undefined && (nodeCode.has(option) || nodeLoads.has(option) || nodeValues.has(option)) && words[k + 1]?.expansions) {
+        read.known = false;
+        break;
+      }
       const operand = () => attached ?? words[++k]?.value ?? "";
       if (nodeCode.has(option)) { read.code.push(operand()); continue; }
       if (nodeLoads.has(option)) { if (isEntryPoint(operand())) read.launch = true; continue; }
@@ -1320,6 +1439,7 @@ function launcherFor(settings) {
 
   /** `node`: the modules it loads, the script it runs, and its inline code. */
   function nodeRun(words, command, context) {
+    command.stdinRead = true;
     const line = values(words).join(" ");
     const read = nodeWalk(words);
     if (read.launch) return launchAt(words);
@@ -1332,18 +1452,23 @@ function launcherFor(settings) {
 
   /** Python, Perl, Ruby and awk: inline code that names an engine is a question. */
   function interpreterRun(name, words, command, context) {
+    command.stdinRead = true;
     const line = values(words).join(" ");
     const kind = name.startsWith("python") ? "python" : name.startsWith("perl") ? "perl" : name.startsWith("ruby") ? "ruby" : "awk";
     const spec = { python: { ...pythonSpec, codeEnds: true }, perl: perlSpec, ruby: rubySpec, awk: awkSpec }[kind];
     const walk = options(words, 1, spec);
     const unread = !walk.known && context.named ? doubt(unmodeled, line) : pass;
+    if (walk.expanded) return unread;
     const code = walk.read.filter(({ option }) => spec.code?.includes(option.slice(1)) || (kind === "awk" && option === "-e")).map(({ value }) => value ?? "");
     const module = walk.read.find(({ option }) => kind === "python" && option === "-m");
     if (module !== undefined) return worse(namesTarget(module.value ?? "") ? doubt(unmodeled, line) : pass, unread);
     if (kind === "awk") {
       // An awk program is the first operand unless `-f` or `-E` names a file; a `-v` value
       // is text the program can run as well.
-      if (code.length === 0 && !walk.read.some(({ option }) => option === "-f" || option === "-E") && walk.k < words.length) code.push(words[walk.k].value);
+      if (code.length === 0 && !walk.read.some(({ option }) => option === "-f" || option === "-E") && walk.k < words.length) {
+        if (words[walk.k].expansions) return context.named ? doubt(unmodeled, line) : pass;
+        code.push(words[walk.k].value);
+      }
       code.push(...walk.read.filter(({ option }) => option === "-v").map(({ value }) => value ?? ""));
     }
     if (code.length > 0) return worse(code.some(namesTarget) ? doubt(inline, line) : pass, unread);
@@ -1412,7 +1537,7 @@ function launcherFor(settings) {
     },
     judge: (text) => judgeText(text, { depth: 0, named: false }),
     judgeArgv: (argv) => (argv.length === 0 ? pass
-      : judgeWords(argv.map(asWord), { stdin: null, pipeFrom: null }, { depth: 0, named: argv.some(names) })),
+      : judgeWords(argv.map(asWord), { stdin: null, pipeFrom: null }, { depth: 0, named: argv.some(namesTarget) })),
     names,
     namesTarget,
   };
@@ -1462,6 +1587,9 @@ function rolloutCommands(file) {
   let text;
   try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
   const unclassified = (what) => read.unreadable.push(`a tool call this reader does not classify (${what})`);
+  const argv = (value) => Array.isArray(value) && value.length > 0 && value.every((word) => typeof word === "string");
+  const toolBearing = (value) => value !== null && typeof value === "object"
+    && ["name", "tool", "tool_name", "arguments", "command", "cmd", "input", "action"].some((key) => Object.hasOwn(value, key));
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let entry;
@@ -1471,7 +1599,8 @@ function rolloutCommands(file) {
     const name = String(payload.name ?? "");
     if (entry?.type === "response_item" && type === "custom_tool_call") {
       if (name !== "exec") { if (!quietTools.has(name)) unclassified(`custom_tool_call ${name}`); continue; }
-      const script = scriptRead(String(payload.input ?? ""));
+      if (typeof payload.input !== "string") { unclassified("exec input is not a script string"); continue; }
+      const script = scriptRead(payload.input);
       if (script.error !== undefined) read.unreadable.push(`an exec script that does not read as JavaScript (${script.error})`);
       read.lines.push(...script.commands);
       read.stdin.push(...script.stdin);
@@ -1484,26 +1613,33 @@ function rolloutCommands(file) {
       if (quietTools.has(name)) continue;
       if (!commandTools.has(name) && name !== "write_stdin") { unclassified(`function_call ${name}`); continue; }
       let args;
-      try { args = JSON.parse(payload.arguments ?? "{}"); } catch { read.unreadable.push(`a ${name} call whose arguments are not JSON`); continue; }
+      try {
+        if (typeof payload.arguments !== "string") throw new Error("not a string");
+        args = JSON.parse(payload.arguments);
+      } catch { read.unreadable.push(`a ${name} call whose arguments are not JSON`); continue; }
       if (name === "write_stdin") {
         if (typeof args?.chars === "string") read.stdin.push(args.chars);
         else read.unreadable.push("a write_stdin call with no keystrokes");
       } else if (typeof args?.cmd === "string") read.lines.push(args.cmd);
       else if (typeof args?.command === "string") read.lines.push(args.command);
-      else if (Array.isArray(args?.command)) read.argvs.push(args.command.map(String));
+      else if (argv(args?.command)) read.argvs.push(args.command);
       else read.unreadable.push(`a ${name} call with no command`);
     } else if (entry?.type === "response_item" && type === "local_shell_call") {
-      if (Array.isArray(payload.action?.command)) read.argvs.push(payload.action.command.map(String));
+      if (argv(payload.action?.command)) read.argvs.push(payload.action.command);
       else read.unreadable.push("a local_shell_call with no command");
     } else if (entry?.type === "response_item" && type.endsWith("_call") && type !== "web_search_call") {
       unclassified(type);
     } else if (entry?.type === "event_msg" && type === "item_completed" && payload.item?.type === "CommandExecution") {
-      if (Array.isArray(payload.item.command)) read.argvs.push(payload.item.command.map(String));
+      if (argv(payload.item.command)) read.argvs.push(payload.item.command);
+      else unclassified("CommandExecution command is not an argv of strings");
     } else if (entry?.type === "event_msg" && type === "item_completed" && payload.item?.type === "McpToolCall") {
       if (typeof payload.item.tool === "string") read.calls.push(payload.item.tool);
       else read.unreadable.push("an McpToolCall with no tool");
-    } else if (entry?.type === "event_msg" && type === "exec_command_begin" && Array.isArray(payload.command)) {
-      read.argvs.push(payload.command.map(String));
+    } else if (entry?.type === "event_msg" && type === "exec_command_begin") {
+      if (argv(payload.command)) read.argvs.push(payload.command);
+      else unclassified("exec_command_begin command is not an argv of strings");
+    } else if (!type.endsWith("_output") && (toolBearing(payload) || toolBearing(payload.item))) {
+      unclassified(payload.item?.type ?? type);
     }
   }
   return read;
@@ -1516,7 +1652,8 @@ function rolloutCommands(file) {
  * object-literal argument of an `exec_command` gives `cmd`, or of a `write_stdin` gives
  * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
  * `delegate` called is a call. Every other reference to those tools, `tools` used other than
- * by a name, `eval`, `Function`, `require` and `import` go in `computed`, which the scan
+ * by a name, `eval`, `Function`, `require` and `import` go in `computed`, as does any excess
+ * of raw/decoded tool-name occurrences over the direct calls followed. The scan
  * answers with `?`; every other string, template text and comment is an aside, and every
  * regular expression a pattern, which the scan judges as well, because a launch written
  * there cannot be told from one the script assembles and runs.
@@ -1527,6 +1664,33 @@ function scriptRead(source) {
   try { tokens = scriptTokens(source); } catch (error) { return { ...read, error: error.message }; }
   const keys = new Map([["exec_command", "cmd"], ["write_stdin", "chars"]]);
   const taken = new Set();
+  // Independent of token roles: a slash or another lexical mistake must not hide a
+  // command-tool reference. Decode token text as well, counting each source occurrence
+  // once (a quoted member name occurs in both the raw source and its decoded token).
+  const toolCounts = (text) => {
+    const counts = new Map();
+    for (const [name] of text.matchAll(/(?<![\w$])(?:exec_command|write_stdin|[\w$]+__delegate|delegate)(?![\w$])/g)) {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const named = toolCounts(source);
+  const followed = new Map();
+  const countDecoded = (text, raw) => {
+    const before = toolCounts(raw);
+    for (const [name, count] of toolCounts(text)) named.set(name, (named.get(name) ?? 0) + Math.max(0, count - (before.get(name) ?? 0)));
+  };
+  const inventory = (list) => {
+    for (const token of list) {
+      if (token.kind === "string" || token.kind === "name") countDecoded(token.value ?? token.text, source.slice(token.start, token.end));
+      if (token.kind === "template") {
+        token.parts.forEach((part, k) => countDecoded(part, token.rawParts[k]));
+        token.inner.forEach(inventory);
+      }
+    }
+  };
+  inventory(tokens);
+  const follow = (name) => followed.set(name, (followed.get(name) ?? 0) + 1);
   const visit = (list) => {
     list.forEach((token, k) => {
       if (token.kind === "template") { token.inner.forEach(visit); return; }
@@ -1544,13 +1708,14 @@ function scriptRead(source) {
       if (token.kind === "string" && !member) { read.computed.push(`a string naming ${name}`); return; }
       const open = member ? k + 2 : k + 1;
       if (list[open]?.text !== "(") { read.computed.push(`${name} used other than in a direct call`); return; }
-      if (isDelegate(name)) { read.calls.push(name); return; }
+      if (isDelegate(name)) { follow(name); read.calls.push(name); return; }
       const argument = callArgument(list, open + 1, keys.get(name));
       if (argument === null) {
         read.computed.push(`${name === "exec_command" ? "an" : "a"} ${name} call whose ${keys.get(name)} is not a literal in its one object argument`);
         return;
       }
       taken.add(argument);
+      follow(name);
       (name === "write_stdin" ? read.stdin : read.commands).push(argument.kind === "string" ? argument.value : argument.parts[0]);
     });
   };
@@ -1569,6 +1734,9 @@ function scriptRead(source) {
     }
   };
   aside(tokens);
+  for (const [name, count] of named) if (count > (followed.get(name) ?? 0)) {
+    read.computed.push(`${name}: ${count} occurrences but only ${followed.get(name) ?? 0} direct calls followed`);
+  }
   return read;
 }
 
@@ -1626,7 +1794,9 @@ function callArgument(list, at, key) {
  * takes an operand, and after the `)` of an `if`, `for`, `while` or `with`; it divides
  * after a value, after any other `)`, after a `]`, after a postfix `++` or `--` and after
  * the `}` of an object literal. After the `}` of a block or a prefix `++` or `--` it could
- * be either, and the script does not read. It throws, naming the construct, on a script it
+ * be either, and the script does not read. Operand-like property names and contextual
+ * keywords are also ambiguous; a newline prevents `++`/`--` from being postfix. It throws
+ * with the construct named on a script it
  * cannot read: those, an unterminated string, template, comment or regular expression, and
  * a legacy octal escape, whose meaning depends on a mode this reader cannot see.
  */
@@ -1687,14 +1857,18 @@ function scriptTokens(source) {
   }
   function template() {
     const parts = [""];
+    const rawParts = [];
     const inner = [];
+    let from = i + 1;
     for (i++; i < source.length; i++) {
       const ch = source[i];
-      if (ch === "`") { i++; return { kind: "template", parts, inner, computed: inner.length > 0 }; }
+      if (ch === "`") { rawParts.push(source.slice(from, i)); i++; return { kind: "template", parts, rawParts, inner, computed: inner.length > 0 }; }
       if (ch === "$" && source[i + 1] === "{") {
+        rawParts.push(source.slice(from, i));
         i += 2;
         inner.push(lex(true));
         parts.push("");
+        from = i;
         i--;
         continue;
       }
@@ -1731,7 +1905,10 @@ function scriptTokens(source) {
   // What a `/` after `previous` is: "regex", "division", or "unsure".
   function slashAfter(previous) {
     if (previous === null) return "regex";
-    if (previous.kind === "name") return operandKeywords.has(previous.text) ? "regex" : "division";
+    if (previous.kind === "name") {
+      if (["of", "yield", "await"].includes(previous.text) || (previous.member && operandKeywords.has(previous.text))) return "unsure";
+      return operandKeywords.has(previous.text) ? "regex" : "division";
+    }
     if (previous.kind !== "punct") return "division";
     if (previous.text === ")") return previous.control ? "regex" : "division";
     if (previous.text === "]") return "division";
@@ -1773,6 +1950,7 @@ function scriptTokens(source) {
         continue;
       }
       let token;
+      const start = i;
       if (ch === "'" || ch === '"') token = quoted();
       else if (ch === "`") token = template();
       else if (ch === "/" && slashAfter(previous) === "unsure") throw new Error("a `/` this reader cannot tell for a division or a regular expression");
@@ -1787,7 +1965,8 @@ function scriptTokens(source) {
         i += text.length;
         token = { kind: "punct", text };
         if (text === "++" || text === "--") {
-          token.postfix = previous !== null && (previous.kind === "number" || previous.kind === "string" || previous.kind === "template"
+          token.postfix = previous !== null && !/[\n\r\u2028\u2029]/.test(source.slice(previous.end, start))
+            && (previous.kind === "number" || previous.kind === "string" || previous.kind === "template"
             || (previous.kind === "name" && !operandKeywords.has(previous.text)) || (previous.kind === "punct" && (previous.text === ")" || previous.text === "]")));
         } else if (text === "(") {
           parens.push(previous?.kind === "name" && ["if", "while", "for", "with"].includes(previous.text));
@@ -1800,6 +1979,9 @@ function scriptTokens(source) {
           token.block = braces.pop()?.block ?? true;
         }
       }
+      token.start = start;
+      token.end = i;
+      if (token.kind === "name") token.member = previous?.text === "." || previous?.text === "?.";
       tokens.push(token);
       previous = token;
     }
