@@ -116,34 +116,59 @@ runtime-socket deny list").
 Codex installs plugins from marketplaces, and this repository is one:
 `.agents/plugins/marketplace.json` offers `cross-agent` from the repository's own
 root, and `.codex-plugin/plugin.json` gives it the launcher skill and this server.
-Register the checkout and install the plugin:
+Codex installs a plugin by copying the whole marketplace directory into its cache, so
+register a clean export of the checkout's `HEAD`, in a directory of its own, and
+install the plugin from it:
 
 ```
-codex plugin marketplace add ~/Documents/agent-team-cli
+sha=$(git -C ~/Documents/agent-team-cli rev-parse HEAD)
+mkdir -p ~/.cache/agent-team/codex-plugin-export/$sha
+git -C ~/Documents/agent-team-cli archive HEAD | tar -x -C ~/.cache/agent-team/codex-plugin-export/$sha
+codex plugin marketplace add ~/.cache/agent-team/codex-plugin-export/$sha
 codex plugin add cross-agent@agent-team-cli
 ```
 
-Codex runs the plugin from a copy of the marketplace directory taken at install
-time, under `~/.codex/plugins/cache/agent-team-cli/cross-agent/<version>/`, so after
-pulling, run `codex plugin remove cross-agent@agent-team-cli` and `codex plugin add
-cross-agent@agent-team-cli` again. The copy takes everything in the directory,
-untracked and ignored files and the `.git` entry included. To install the tracked
-files alone, register an export instead: `git -C ~/Documents/agent-team-cli archive
-HEAD | tar -x -C <dir>`, then `codex plugin marketplace add <dir>`.
+Codex runs the plugin from the copy it took at install time, under
+`~/.codex/plugins/cache/agent-team-cli/cross-agent/<version>/`, and the marketplace
+stays registered at the export, so keep the export while it is. To move to a newer
+checkout, export its `HEAD` into a new directory as above and register that one in
+place of the old, so that no file deleted since lingers in the copy:
 
-Codex starts the plugin's server in that copy, not where the session runs:
-codex-cli 0.159.3 resolves a plugin server's working directory against the plugin
-and substitutes no `${PLUGIN_ROOT}`. From the copy the server cannot find the
-project, so name it, as the absolute path of a directory holding
-`.cross-agent/config.json`, before Codex starts:
+```
+codex plugin remove cross-agent@agent-team-cli
+codex plugin marketplace remove agent-team-cli
+codex plugin marketplace add ~/.cache/agent-team/codex-plugin-export/<new sha>
+codex plugin add cross-agent@agent-team-cli
+```
+
+Registering the checkout itself, `codex plugin marketplace add
+~/Documents/agent-team-cli`, works too, at a cost: the copy then takes everything in
+the directory — the `.git` directory, `.worktrees/` with each worktree's
+`.cross-agent/` task records, untracked and ignored files — 89 MB of this checkout on
+2026-10-01 against 2.9 MB for an export, and every update is the remove and add above.
+
+Codex starts the plugin's server in its copy, not where the session runs: codex-cli
+0.159.3 resolves a plugin server's working directory against the plugin, and it
+substituted no `${PLUGIN_ROOT}` in the inline `command`, `args` and `cwd` it was given.
+From the copy the server cannot find your project. A copy of an export holds no
+project, and a copy of a checkout carries the checkout's `.git`, which leads discovery
+to a repository you did not name: the copy itself, or, for a linked worktree, the
+checkout it came from. So name the project, as the absolute path of a directory
+holding `.cross-agent/config.json`, before Codex starts:
 
 ```
 cd ~/code/my-project
 CROSS_AGENT_PROJECT="$PWD" codex
 ```
 
-Without `CROSS_AGENT_PROJECT` the server does not start, and the session offers
-none of its tools.
+Without `CROSS_AGENT_PROJECT` the plugin's launcher exits before any server starts,
+and Codex does not say so: under `codex exec` nothing reached its stderr, its `--json`
+events or the session's rollout, and the session simply had none of the server's
+tools (`docs/probes.md`, "The task's markers through the plugin's whitelist"). The
+plugin also hands its server a task's markers, `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH`
+and `CROSS_AGENT_LINEAGE`, whenever the session has them, so a Codex session started
+inside a task — from a test suite the lead runs, say — gets a specialist's tools, never
+the operator's; from a clean shell there are none to hand on.
 
 To check the install, `codex plugin list --json` lists `cross-agent@agent-team-cli`
 with `"installed": true` and `"enabled": true`, `codex mcp list` shows a server
@@ -155,9 +180,9 @@ a `wait` of 600 seconds returns with room: one did, at 600.004 s by Codex's own
 record, while a copy declaring 60 cut the same call at 60 s
 (`docs/probes.md`, "B3: a ten-minute wait under a Codex host").
 
-An installed plugin is enabled, and every Codex session on the machine then starts
-its server. To have it only when you ask for it, turn it off in
-`~/.codex/config.toml`:
+An installed plugin is enabled, and every Codex session on the machine then runs its
+launcher; each one started with `CROSS_AGENT_PROJECT` set gets the server. To have it
+only when you ask for it, turn it off in `~/.codex/config.toml`:
 
 ```
 [plugins."cross-agent@agent-team-cli"]
@@ -181,7 +206,7 @@ codex plugin marketplace remove agent-team-cli
 The first deletes the `[plugins."cross-agent@agent-team-cli"]` table, whatever it
 says, and the cached copy, leaving the empty directory
 `~/.codex/plugins/cache/agent-team-cli/`; the second deletes the
-`[marketplaces.agent-team-cli]` table.
+`[marketplaces.agent-team-cli]` table. The export is yours to delete after that.
 
 ### Without the plugin
 
@@ -191,17 +216,25 @@ the project as the Claude Code plugin does and needs no `CROSS_AGENT_PROJECT`:
 
 ```
 codex mcp add cross-agent -- node ~/Documents/agent-team-cli/src/server.ts
-mkdir -p ~/.codex/skills
-cp -R ~/Documents/agent-team-cli/skills/cross-agent ~/.codex/skills/cross-agent
+rm -rf ~/.codex/skills/cross-agent
+mkdir -p ~/.codex/skills/cross-agent
+cp -R ~/Documents/agent-team-cli/skills/cross-agent/. ~/.codex/skills/cross-agent/
 ```
 
-`codex mcp add` writes the command alone. Add `tool_timeout_sec = 3600` and
-`default_tools_approval_mode = "approve"` to the `[mcp_servers.cross-agent]` table it
-wrote, or paste `assets/codex/mcp_servers.toml` with `<repo>` replaced in place of
-the `add`: without the first a `wait` gets Codex's 60 seconds, and without the second
-`codex exec` refuses every call. The skill is a copy of `skills/` alone; each mode's
-own loop reaches the session through `describe_mode`. `codex mcp get cross-agent`
-shows the table as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
+The skill's copy replaces any earlier one rather than landing inside it. Its
+directory, `~/.codex/skills/`, is where Codex's own skill installer puts a skill, as
+the codex-cli 0.159.3 binary's text says; no run here has loaded a skill from it.
+`codex mcp add` writes the command alone. Add the three keys it does not write to the
+`[mcp_servers.cross-agent]` table it wrote, or paste `assets/codex/mcp_servers.toml`
+with `<repo>` replaced in place of the `add`: `env_vars = ["CROSS_AGENT_PROJECT",
+"CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]`, so that a session
+started inside a task hands its server the task's markers; `tool_timeout_sec = 3600`,
+without which a `wait` gets Codex's 60 seconds; and `default_tools_approval_mode =
+"approve"`, without which a call under `codex exec`, whose approval policy is `never`,
+failed with "MCP tool call requires approval, but approval policy is never"
+(`docs/probes.md`, "P9: per-engine lead mount and instruction delivery"). The skill is a copy of `skills/` alone; each mode's own loop
+reaches the session through `describe_mode`. `codex mcp get cross-agent` shows the table
+as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
 ~/.codex/skills/cross-agent` undoes it. Install one attach or the other, not both: a
 `[mcp_servers.cross-agent]` table shadows the plugin's server of the same name, budget
 and all.

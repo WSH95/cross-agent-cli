@@ -123,7 +123,7 @@ test("the Codex manifest starts this server through a launcher in the plugin's o
       // the plugin's directory no project can be discovered, so the operator names it in
       // `CROSS_AGENT_PROJECT`. A task's markers are named too: a Codex session started inside
       // a task — a suite `run_command` runs carries `CROSS_AGENT_DEPTH` — hands them to its
-      // server, which then serves the specialist row (design section 5, layer 2). A clean
+      // server, which then serves the specialist row (src/runcommand.ts#commandEnv). A clean
       // shell has none to hand on (docs/probes.md#codexMarkers).
       env_vars: ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"],
       // `codex exec` runs with approval policy `never`, which refuses every call that would ask (P9).
@@ -237,6 +237,9 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
     "codex mcp remove cross-agent",
     // The plugin's one extra step, and the switch that keeps its server off until a session asks.
     "CROSS_AGENT_PROJECT", "plugins.cross-agent@agent-team-cli.enabled=true",
+    // The install registers a clean export, since Codex copies the whole directory it is given,
+    // and the fallback's table names the variables the server needs handed on.
+    "git -C ~/Documents/agent-team-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
   ]) {
     assert.ok(section.includes(words), `the Codex section names ${words}`);
   }
