@@ -226,6 +226,31 @@ test("a merge carrying the project's own state or its worktree directory is refu
   assert.equal(await git(root, "ls-files", "--", ".cross-agent"), "", "and the root tracks none of it");
 });
 
+// @anchor mergeRefusesHostConfig
+test("a merge carrying a host's project configuration is refused before git runs, naming each path", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "hosted");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/hosted", directory, "main"], slug: "hosted" }, { waitSeconds: 5 }));
+
+  // Committed by the harness's own git, not through `git_mutate`, which refuses this commit:
+  // the branch stands for one that reached the root by any other path — a commit older than
+  // this build, a branch fetched from elsewhere.
+  fs.mkdirSync(path.join(directory, ".codex"));
+  fs.writeFileSync(path.join(directory, ".codex", "config.toml"), '[mcp_servers.elsewhere]\ncommand = "/tmp/not-a-server"\n');
+  fs.writeFileSync(path.join(directory, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-m", "a host's configuration");
+
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/hosted"], slug: "hosted" }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_root refuses to merge/);
+  assert.match(reason, /\.codex\/config\.toml/);
+  assert.match(reason, /\.mcp\.json/);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+  assert.equal(readJournal(root, "hosted")!.steps.some((step) => step.step === "merged"), false);
+  assert.equal(await git(root, "ls-files", "--", ".codex", ".mcp.json"), "", "and the root tracks none of it");
+});
+
 test("the merge fields are written once and a second merge on one slug is refused", async (t) => {
   const { root } = await repository(t);
   const directory = path.join(root, ".worktrees", "once");

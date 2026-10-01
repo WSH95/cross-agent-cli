@@ -103,7 +103,9 @@ settles. Commit it yourself, in two calls:
 
 which journals the `committed` step. The two exclusions are not optional: a
 `.gitignore` the specialist wrote in its own worktree outranks the repository's
-own, and step 9 refuses a branch that carries either directory at all.
+own, and step 9 refuses a branch that carries either directory at all, or a
+host's project configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` —
+which the commit above refuses first, naming the path.
 
 ## 7. Code review
 
@@ -144,9 +146,11 @@ you merge.
 
 `git_root {args: ["merge", "--ff-only", <branch>], slug}` journals `merged`
 together with the two SHAs the repair path needs. It refuses unless the root's
-HEAD is `<default>`, and unless the branch carries nothing from `.cross-agent`
-or the worktree directory. Then `run_command {which: "test", where: "root",
-slug}`, which journals `tests-passed` when it exits zero.
+HEAD is `<default>`, and unless the branch carries nothing from `.cross-agent`,
+the worktree directory or a host's project configuration — `.claude/`,
+`.codex/`, `.grok/`, `.mcp.json` — which step 6's commit refuses too, naming the
+path. Then `run_command {which: "test", where: "root", slug}`, which journals
+`tests-passed` when it exits zero.
 
 A failing suite here is an answer rather than a refusal, and it is the repair
 path: stop, report it, and offer `git revert --no-edit

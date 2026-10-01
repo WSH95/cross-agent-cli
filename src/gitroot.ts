@@ -1,7 +1,7 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
-import { GitRunError, globalOptions, revision, run } from "./gitmutate.ts";
+import { GitRunError, globalOptions, hostConfigPaths, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
@@ -501,19 +501,22 @@ interface Held {
  * `.cross-agent/` there and a fast-forward would carry the project's own config, journal
  * and ledger to the root, where `delegate` reads them on the next call. So the merge is
  * where the incoming tree is read, and the two directories the project keeps for itself
- * are refused by name (design section 4).
+ * are refused by name (design section 4) — and so is a host's project configuration
+ * (`src/gitmutate.ts#hostConfigPaths`), which the operator's own host session would load,
+ * however the branch came to carry it.
  */
 async function smuggled(
   gitDir: string, workTree: string, defaultBranch: string, ref: string, dir: string,
 ): Promise<string | null> {
-  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir]);
+  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir, ...hostConfigPaths]);
   if (ran.exitCode !== 0) {
     return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
   }
   const paths = ran.stdout.split("\n").filter(Boolean);
   if (paths.length === 0) return null;
   return `git_root refuses to merge ${ref}: it carries ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ", …" : ""}. `
-    + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there. `
+    + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there — `
+    + "and nor is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json), which the operator's own host session would load. "
     + `Remove them from the branch and merge again`;
 }
 

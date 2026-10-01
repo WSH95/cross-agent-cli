@@ -2256,6 +2256,39 @@ mode's own `git.worktreeDir` in place of the literal, and
 `modes/dev-team/SKILL.md` step 6; section 7); and `delegate`'s
 check above means a config that did reach the root is still never read as one.
 
+**Nor does a host's project configuration.** `.claude/` and `.mcp.json` are
+where Claude Code reads a project's settings, hooks and MCP servers, `.codex/`
+where Codex reads a project's configuration, `.grok/config.toml` where Grok
+reads a project's plugins and servers (section 9), and each host reads them in
+the operator's own session, outside any sandbox. A writable specialist can add
+one in its worktree, or un-ignore `.grok/` where the README's recipe ignores it,
+and the loop's step 6 stages it; until this build the diff a code reviewer read
+was the only thing that would catch it. So the four paths are one list
+(`src/gitmutate.ts#hostConfigPaths`), read by both git tools: `git_mutate`
+refuses a `commit`, in any form, while `git status --porcelain
+--untracked-files=all` over those paths names anything in the worktree —
+staged, changed or untracked — read under `git.lock` before the command runs
+(`src/gitmutate.ts#hostConfigFault`, `#mutate`), and `merge --ff-only` diffs
+them beside `.cross-agent` and the worktree directory
+(`src/gitroot.ts#smuggled`); each refusal names the paths
+(`tests/gitmutate.test.ts#commitRefusesHostConfig`,
+`tests/gitroot.test.ts#mergeRefusesHostConfig`). A removal of a tracked one is
+carried the same way, in a commit as in a merge: a server or a hook taken away
+changes the operator's session as much as one added. The commit's rule reads the
+worktree rather than the index because `commit -a`, `commit --include` and a
+pathspec commit record what the index does not hold; the price is that an
+untracked host file `.gitignore` does not cover blocks a commit even unstaged,
+and the refusal says what clears it: remove the file, or ignore it if it is the
+operator's own. Git sees no empty directory, so an empty `.claude/`
+subdirectory an engine leaves in a worktree — the T13 sample's root holds an
+empty `.claude/.cc-writes/` — is never refused. Both team loops name the four
+where they say what step 6 and step 9 refuse
+(`tests/skills.test.ts#loopsNameHostConfig`). A project that tracks one of the
+four changes it by hand at the root, never through a task. `AGENTS.md` and
+`CLAUDE.md` were considered and are not in the list: a host reads them as
+instruction text and starts nothing from them, and they are ordinary team edits
+the code reviewer reads in the diff.
+
 **`run_command`.** `{which: "test" | "setup", where: "root" | <a verified
 worktree path>, slug?, timeout_seconds?}` as the wire spells it,
 `runCommand(root, request, options)` in code (`src/runcommand.ts#runCommand`,

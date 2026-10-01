@@ -69,6 +69,18 @@ const maxBuffer = 16 * 1024 * 1024;
 // git tools refuse them; `git_root` reads this same set (`src/gitroot.ts#argumentFault`).
 export const globalOptions = new Set(["--git-dir", "--work-tree", "-C", "-c"]);
 
+/**
+ * Where each host reads a project's own configuration: Claude Code's `.claude/` (settings
+ * and hooks) and `.mcp.json` (MCP servers), Codex's `.codex/`, Grok's `.grok/config.toml`
+ * (plugins and servers). Each is loaded by the operator's own host session, outside any
+ * sandbox, so none of them reaches the root through a task: `git_mutate` refuses a commit
+ * that would carry one (`hostConfigFault`) and `git_root` a merge
+ * (`src/gitroot.ts#smuggled`). `AGENTS.md` and `CLAUDE.md` were considered and are not
+ * here: a host reads them as instruction text and starts nothing from them, and they are
+ * ordinary team edits the code reviewer reads in the diff.
+ */
+export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok", ".mcp.json"];
+
 function argumentFault(args: unknown): string | null {
   if (!Array.isArray(args) || args.length === 0) return "git_mutate needs a git subcommand: args is empty";
   if (args.some((argument) => typeof argument !== "string")) return "every git argument must be a string";
@@ -156,6 +168,28 @@ export async function revision(gitDir: string, workTree: string, branch: string)
   const ran = await run(gitDir, workTree, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
   const sha = ran.stdout.trim();
   return ran.exitCode === 0 && sha.length > 0 ? sha : undefined;
+}
+
+/**
+ * Why a commit in this worktree may not run, or null: it would carry a host's project
+ * configuration. The worktree is read, not the index alone, because `commit -a`, `commit
+ * --include` and `commit -- <path>` record what the index does not hold: one `status` over
+ * the four paths names what is staged, changed or untracked there, and nothing
+ * `.gitignore` covers. Git sees no empty directory, so an empty `.claude/` an engine
+ * leaves behind is never named.
+ */
+async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
+  const ran = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...hostConfigPaths]);
+  if (ran.exitCode !== 0) {
+    return `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git status exited ${ran.exitCode}`}`;
+  }
+  // Each line is `XY <path>`, a rename's `XY <old> -> <new>`, as git prints it.
+  const paths = ran.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
+  if (paths.length === 0) return null;
+  return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
+    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json — loads hooks, MCP servers or plugins "
+    + "in the operator's own host session and is never committed through a task; remove it from the worktree, "
+    + "or ignore it if it is the operator's own, and commit again";
 }
 
 /**
@@ -286,6 +320,13 @@ async function mutate(
     return { ok: false, reason: message(error) };
   }
   try {
+    // A commit is where a host's project configuration would leave the worktree for the
+    // root. The tree and index it reads are what the commit records, so it is read here,
+    // under the lock that orders this command against every other mutation.
+    if (request.args[0] === "commit") {
+      const carried = await hostConfigFault(gitDir, workTree);
+      if (carried !== null) return { ok: false, reason: carried };
+    }
     const before = await revision(gitDir, workTree, verified.branch);
     const defaultSha = await revision(gitDir, workTree, defaultBranch);
     const ran = await run(gitDir, workTree, request.args);

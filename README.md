@@ -286,8 +286,10 @@ project whose `.cross-agent/config.json` it finds there or above it. `cross-agen
 `.grok/` goes into `.gitignore` beside `init`'s own entries because its file names your
 checkout's path, and because a committed `.grok/config.toml` would reach every task
 worktree: Grok takes a linked worktree as a project of its own, so it would load the
-plugin for every worktree specialist, and a specialist's edit to the file could reach your
-root through the merge. `printf` puts it on a line of its own: `init` leaves a last line
+plugin for every worktree specialist, and a specialist's edit to it — or to `.claude/`,
+`.codex/` or `.mcp.json` — is refused at the worktree's commit and at the merge, naming
+the path, so the ignore is what keeps the file out of the worktrees in the first place.
+`printf` puts it on a line of its own: `init` leaves a last line
 with no newline alone when it has nothing to add, and `echo` would join `.grok/` onto it.
 Commit that `.gitignore` change before the team's first task, as the Claude Code section
 says: a loop's first step stops on anything `git status --porcelain

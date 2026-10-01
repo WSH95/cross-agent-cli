@@ -6,6 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostConfigPaths } from "../src/gitmutate.ts";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
 import { projectTools } from "../src/server.ts";
 
@@ -595,6 +596,22 @@ test("both dev-team loops name the journal step each of their git calls complete
       assert.match(text, new RegExp("`" + step + "`"), `the ${name} loop never says which call writes ${step}`);
     }
     assert.match(text, /`ok: false`/, `${name}: any refusal is a reconciliation trigger, whatever its exit code`);
+  }
+});
+
+// @anchor loopsNameHostConfig
+test("both dev-team loops name a host's project configuration wherever they say what step 6's commit and step 9's merge refuse", () => {
+  // The paths are the guard's own list (`src/gitmutate.ts#hostConfigPaths`), so the loop
+  // text a lead reads before the refusal and the refusal itself cannot drift apart.
+  for (const name of ["dev-team", "dev-team-engine"]) {
+    const paragraphs = loop(name).split(/\n\s*\n/).map(flat);
+    for (const phrase of ["step 9 refuses a branch that carries either directory", "carries nothing from `.cross-agent`"]) {
+      const found = paragraphs.filter((text) => text.includes(phrase));
+      assert.equal(found.length, 1, `${name}: one paragraph says "${phrase}"`);
+      for (const entry of hostConfigPaths) {
+        assert.ok(found[0].includes("`" + entry), `${name}: the paragraph saying "${phrase}" names ${entry}`);
+      }
+    }
   }
 });
 

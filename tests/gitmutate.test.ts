@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { initConfig } from "../src/config.ts";
-import { gitMutate } from "../src/gitmutate.ts";
+import { gitMutate, hostConfigPaths } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
 import { update } from "../src/ledger.ts";
@@ -533,6 +533,68 @@ test("the loop's commit step stages the work and never the project's own state",
   }, { waitSeconds: 5 }));
   const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
   assert.deepEqual(staged.sort(), [".gitignore", "work.txt"]);
+});
+
+// @anchor commitRefusesHostConfig
+test("a commit carrying a host's project configuration is refused naming each path, and goes through once the worktree holds none", async (t) => {
+  const { root, add } = await repository(t);
+  // The root first: the README's recipe ignores `.grok/` beside `init`'s own lines, and the
+  // project tracks a `.mcp.json` of its own.
+  await writeFile(path.join(root, ".gitignore"), `${await readFile(path.join(root, ".gitignore"), "utf8")}.grok/\n`);
+  await writeFile(path.join(root, ".mcp.json"), '{"mcpServers": {}}\n');
+  await git(root, "add", ".gitignore", ".mcp.json");
+  await git(root, "commit", "-m", "the project's ignore rules and its own servers");
+  const worktree = await add("hosted");
+  const head = await git(worktree, "rev-parse", "HEAD");
+
+  // What a writable specialist can do in its own worktree: un-ignore `.grok/` and fill it,
+  // add Claude Code's settings and change the project's servers, beside the work it was given.
+  const ignored = await readFile(path.join(worktree, ".gitignore"), "utf8");
+  await writeFile(path.join(worktree, ".gitignore"), ignored.split("\n").filter((line) => line !== ".grok/").join("\n"));
+  await mkdir(path.join(worktree, ".grok"));
+  await writeFile(path.join(worktree, ".grok", "config.toml"), '[plugins]\npaths = ["/tmp/not-the-checkout"]\nenabled = ["cross-agent"]\n');
+  await mkdir(path.join(worktree, ".claude"));
+  await writeFile(path.join(worktree, ".claude", "settings.json"), '{"hooks": {}}');
+  await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+
+  // The loop's step 6, as it is spelled: the `add` is accepted and stages all five.
+  const step6 = ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"];
+  accepted(await gitMutate(root, { slug: "hosted", args: step6 }, { waitSeconds: 5 }));
+  const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
+  assert.deepEqual(staged.sort(), [".claude/settings.json", ".gitignore", ".grok/config.toml", ".mcp.json", "work.txt"]);
+  const reason = refusal(await gitMutate(root, { slug: "hosted", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_mutate refuses to commit/);
+  for (const carried of [".grok/config.toml", ".claude/settings.json", ".mcp.json"]) assert.ok(reason.includes(carried), `${carried}: ${reason}`);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+  assert.equal(readJournal(root, "hosted")!.steps.some((step) => step.step === "committed"), false);
+
+  // Out of the worktree, or back as the branch has it, and the same two steps go through.
+  await rm(path.join(worktree, ".grok"), { recursive: true, force: true });
+  await rm(path.join(worktree, ".claude"), { recursive: true, force: true });
+  await git(worktree, "checkout", "HEAD", "--", ".mcp.json");
+  accepted(await gitMutate(root, { slug: "hosted", args: step6 }, { waitSeconds: 5 }));
+  const committed = accepted(await gitMutate(root, { slug: "hosted", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.equal(committed.journal.step, "committed");
+  assert.deepEqual((await git(worktree, "ls-files")).split("\n").filter(Boolean).sort(), [".gitignore", ".mcp.json", "work.txt"]);
+
+  // The rule reads the worktree, not the index: a host file nothing ignores blocks even a
+  // commit that records none of it, and an ignored one is not carried.
+  await mkdir(path.join(worktree, ".grok"));
+  await writeFile(path.join(worktree, ".grok", "config.toml"), "[plugins]\n");
+  const unstaged = refusal(await gitMutate(root, { slug: "hosted", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+  assert.ok(unstaged.includes(".grok/config.toml"), unstaged);
+  await writeFile(path.join(worktree, ".gitignore"), `${await readFile(path.join(worktree, ".gitignore"), "utf8")}.grok/\n`);
+  accepted(await gitMutate(root, { slug: "hosted", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+
+  // Taking a tracked one away is carried as well: a server or a hook removed changes the
+  // operator's session as much as one added.
+  await rm(path.join(worktree, ".mcp.json"));
+  const removed = refusal(await gitMutate(root, { slug: "hosted", args: ["commit", "-a", "-m", "x"] }, { waitSeconds: 5 }));
+  assert.ok(removed.includes(".mcp.json"), removed);
+  assert.equal(await git(worktree, "ls-files", "--", ".mcp.json"), ".mcp.json", "the branch still tracks it");
+
+  assert.deepEqual(hostConfigPaths, [".claude", ".codex", ".grok", ".mcp.json"]);
 });
 
 // @anchor configLockGit
