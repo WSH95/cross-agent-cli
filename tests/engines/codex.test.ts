@@ -713,8 +713,11 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   const steps = [inside, ...outside];
   const second = requestFor(dirs, {
     cwd: canonicalPath(worktree), env, model, effort: "medium", resumeSessionId: thread,
-    brief: "Run the five shell commands below, in this order, exactly as written: one shell command per step, "
-      + "each in its own call, never combined into a script, and never retried or worked around. A denial or an "
+    // A model once ran step 3 against the worktree's own `.git` instead of the root's, so the
+    // brief asks for each command character for character; an altered one still fails below.
+    brief: "Run the five shell commands below, in this order, each exactly as written: copy it character for "
+      + "character, every path as given, even one that looks wrong to you. One shell command per step, each in its "
+      + "own call, never combined into a script, and never retried or worked around. A denial or an "
       + "error is a result to report, not a reason to stop: report it and go on to the next step until all five "
       + "have run. After each step write one report line, `STEP n: exit <code>`, followed by that command's "
       + "stderr exactly as printed, or `(no stderr)`. These five steps are the whole of this turn: read no file "
