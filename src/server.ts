@@ -20,7 +20,7 @@ import type { Mode } from "./modes.ts";
 import { discoverProject } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
-import { scan } from "./ledger.ts";
+import { scan, taskStatuses } from "./ledger.ts";
 import type { TaskStatus } from "./ledger.ts";
 import { wait } from "./wait.ts";
 import { verifyWorktree } from "./worktree.ts";
@@ -248,7 +248,6 @@ function stringList(args: Json, key: string, name: string): string[] {
   return value as string[];
 }
 
-const statuses = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 /** `run_command` runs one of the project's two configured commands, and nothing else. */
 const selectors = ["test", "setup"];
 
@@ -634,12 +633,12 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     {
       name: "list_tasks",
       description: "Every task of this project after a reconciliation pass, newest first, with the records no reader could judge.",
-      inputSchema: { type: "object", properties: { status: { type: "string", enum: statuses } } },
+      inputSchema: { type: "object", properties: { status: { type: "string", enum: [...taskStatuses] } } },
       rows: ["operator", "lead", "specialist"],
       handler: async (args, context) => {
         const status = optional(fields(args, "list_tasks"), "status", "string", "list_tasks") as string | undefined;
-        if (status !== undefined && !statuses.includes(status)) {
-          throw new RpcError(-32602, `list_tasks status must be one of ${statuses.join(", ")}`);
+        if (status !== undefined && !taskStatuses.includes(status as TaskStatus)) {
+          throw new RpcError(-32602, `list_tasks status must be one of ${taskStatuses.join(", ")}`);
         }
         const listed = await listTasks(projectRoot, status as TaskStatus | undefined);
         const leadTaskId = context.authority.row === "lead" ? context.authority.taskId : undefined;

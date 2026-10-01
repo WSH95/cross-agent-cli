@@ -127,7 +127,14 @@ export type UpdateResult =
   | { applied: true; record: TaskRecord }
   | { applied: false; record: TaskRecord; reason: "terminal" | "expect" };
 
-const statuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"]);
+/**
+ * Every status a record may carry, in the order a task moves through them: the one list the
+ * reader checks a record against, `list_tasks` offers as its filter and `cross-agent tasks
+ * --status` accepts.
+ */
+export const taskStatuses: readonly TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
+
+const statuses = new Set<TaskStatus>(taskStatuses);
 const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
 
 /** Settled: the task owns nothing any more, and has let its workspace go. */
@@ -208,12 +215,21 @@ export async function projectLock(projectRoot: string, name: string, options: Ac
 }
 
 /**
+ * Whether `id` could name a task: letters, digits, `-` and `_`, so no id leaves the task
+ * directory. The one alphabet every reader resolves a task by, and the ask ids' too
+ * (`src/mailbox.ts#isAskId`).
+ */
+export function isTaskId(id: unknown): id is string {
+  return typeof id === "string" && /^[A-Za-z0-9_-]+$/.test(id);
+}
+
+/**
  * Where a record lives, and nothing more: resolving a path writes nothing, so a read of a
  * task nobody created leaves a project exactly as it was. `create` is what makes the
  * ledger, and every other caller runs after a `create` (design section 2).
  */
 function recordPath(projectRoot: string, id: string): string {
-  if (typeof id !== "string" || !/^[A-Za-z0-9_-]+$/.test(id)) throw new Error("invalid task id");
+  if (!isTaskId(id)) throw new Error("invalid task id");
   return path.join(path.resolve(projectRoot, ".cross-agent", "tasks"), `${id}.json`);
 }
 
@@ -246,7 +262,7 @@ function identityFault(value: unknown, group: boolean): string | null {
 function recordFault(value: unknown, file: string): string | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return "not a JSON object";
   const record = value as Record<string, unknown>;
-  if (typeof record.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(record.id)) return "id must be a [A-Za-z0-9_-] string";
+  if (!isTaskId(record.id)) return "id must be a [A-Za-z0-9_-] string";
   // Every writer addresses a record by id and reaches <id>.json. A record whose id names
   // another file would be read here and written there.
   if (record.id !== path.basename(file, ".json")) return `id ${record.id} does not name its own file`;
@@ -456,6 +472,11 @@ export function outcomePath(projectRoot: string, id: string): string {
   return recordPath(projectRoot, id).replace(/\.json$/, ".outcome.json");
 }
 
+/** The runner's own diagnostic trail for a task, beside its record: the runner writes it and `cross-agent show` reads it. */
+export function runnerLogPath(projectRoot: string, id: string): string {
+  return recordPath(projectRoot, id).replace(/\.json$/, ".runner.log");
+}
+
 export function writeOutcome(projectRoot: string, id: string, outcome: TaskOutcome): void {
   writeAtomic(outcomePath(projectRoot, id), outcome);
 }
@@ -549,7 +570,7 @@ export function scan(projectRoot: string): { records: TaskRecord[]; invalid: Inv
     throw error;
   }
   for (const entry of listing) {
-    if (!entry.isFile() || !/^[A-Za-z0-9_-]+\.json$/.test(entry.name)) continue;
+    if (!entry.isFile() || !entry.name.endsWith(".json") || !isTaskId(entry.name.slice(0, -5))) continue;
     try {
       records.push(readRecord(path.join(directory, entry.name)));
     } catch (error) {

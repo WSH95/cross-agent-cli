@@ -7,7 +7,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, excludeLedger, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTerminal, readProcessStat, currentBootId, writeAtomic } from "../src/ledger.ts";
+import { create, excludeLedger, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTaskId, isTerminal, readProcessStat, currentBootId, runnerLogPath, taskStatuses, writeAtomic } from "../src/ledger.ts";
 import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
@@ -92,6 +92,30 @@ test("isTerminal names the three settled statuses, and nothing else", () => {
   for (const status of statuses) {
     assert.equal(isTerminal(status), ["done", "failed", "cancelled"].includes(status), status);
   }
+});
+
+// @anchor taskStatusesOneSource
+test("the statuses, the id alphabet and the runner log path each have one exported source", (t) => {
+  // The eight statuses in the ledger's order, which this file's own list is.
+  assert.deepEqual([...taskStatuses], statuses);
+  assert.deepEqual(taskStatuses.filter(isTerminal), ["done", "failed", "cancelled"]);
+
+  // A record whose status is outside them is what `scan` names invalid: the set the reader
+  // checks is the one exported.
+  const root = project(t);
+  const record = create(root, input(root), now);
+  fs.writeFileSync(path.join(tasks(root), `${record.id}.json`), JSON.stringify({ ...record, status: "paused" }));
+  const { records, invalid } = scan(root);
+  assert.deepEqual(records, []);
+  assert.equal(invalid.length, 1);
+  assert.equal(invalid[0].reason, `status must be one of ${taskStatuses.join(", ")}`);
+
+  // The one alphabet every reader resolves a task by.
+  assert.equal(isTaskId(newTaskId()), true);
+  for (const id of ["", "../x", "a.json", " a", 7, null, undefined]) assert.equal(isTaskId(id), false, JSON.stringify(id));
+
+  assert.equal(runnerLogPath(root, record.id), path.join(path.resolve(root), ".cross-agent", "tasks", `${record.id}.runner.log`));
+  assert.throws(() => runnerLogPath(root, "../x"), /invalid task id/);
 });
 
 test("writeAtomic replaces a whole file by rename and leaves no temporary behind", (t) => {

@@ -10,7 +10,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Authority } from "../src/authority.ts";
-import { create } from "../src/ledger.ts";
+import { create, taskStatuses } from "../src/ledger.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
 import type { Mode } from "../src/modes.ts";
 import { createServer, projectTools } from "../src/server.ts";
@@ -149,6 +149,15 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
       });
     }
   }
+});
+
+test("list_tasks filters by the ledger's own statuses, the one list the ledger exports", async (t) => {
+  const root = await projectWithConfig(t, { roles: {} });
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+  const tools = ((await request("tools/list")).result as Json).tools as Json[];
+  const listTasks = tools.find((tool) => tool.name === "list_tasks");
+  assert.ok(listTasks, "list_tasks is offered");
+  assert.deepEqual(((listTasks.inputSchema as Json).properties as Json).status, { type: "string", enum: [...taskStatuses] });
 });
 
 // @anchor callToolOutside

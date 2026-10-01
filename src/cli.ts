@@ -8,7 +8,7 @@ import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
-import { find, isProcessAlive, isTerminal, readOutcome, scan, tailLines } from "./ledger.ts";
+import { find, isProcessAlive, isTaskId, isTerminal, readOutcome, runnerLogPath, scan, tailLines, taskStatuses } from "./ledger.ts";
 import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
 import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
@@ -49,9 +49,6 @@ const VERDICTS = new Set<number>([EXIT.ok, EXIT.running, EXIT.needsOperator, EXI
 /** Which project a verb reads when no `--project` names one. */
 const PROJECT_RULE = "Without --project, init writes in the current directory, and every other verb reads the project "
   + "the server would find: CROSS_AGENT_PROJECT, then the nearest .cross-agent/config.json, then the git toplevel.";
-
-/** The eight statuses `tasks --status` filters by, as `list_tasks` takes them (`src/ledger.ts#TaskStatus`). */
-const TASK_STATUSES: readonly TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
 
 /**
  * The variables `childEnv` sets to mark a task's process tree (`src/guard.ts#childEnv`). The
@@ -224,7 +221,7 @@ function lineCount(parsed: Parsed, fallback: number): number {
  * (`src/ledger.ts#find`, whose path refuses it).
  */
 function taskNamed(root: string, id: string): TaskRecord | null {
-  return /^[A-Za-z0-9_-]+$/.test(id) ? find(root, id) : null;
+  return isTaskId(id) ? find(root, id) : null;
 }
 
 /** A damaged ask file's reason, less the file name the mailbox already put at its head (`src/mailbox.ts#listAsks`). */
@@ -353,7 +350,7 @@ const tasksVerb: Verb = {
   positionals: [],
   flags: { "--status": "status" },
   booleans: ["--reconcile"],
-  check: statusCheck(TASK_STATUSES),
+  check: statusCheck(taskStatuses),
   // The reconciling read writes what `list_tasks` would; the plain one writes nothing.
   writes: (parsed) => parsed.booleans.has("--reconcile"),
   async run(parsed, context) {
@@ -412,7 +409,7 @@ const showVerb: Verb = {
     // its result file holds, and `result` reads the record again, so a runner that settled
     // between the two reads would put its message beside a `running` status.
     const settled = isTerminal(record.status) ? result(found.root, record.id) : null;
-    const runnerLog = path.join(found.root, ".cross-agent", "tasks", `${record.id}.runner.log`);
+    const runnerLog = runnerLogPath(found.root, record.id);
     // A journal that does not read is named beside the record rather than in its place: the
     // record is what the operator came to read, and the journal's file is theirs to repair.
     let journal: Journal | null = null;

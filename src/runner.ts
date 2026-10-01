@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lockWaitSeconds } from "./config.ts";
-import { isTerminal, projectLock, read, readSpec, update, writeOutcome } from "./ledger.ts";
+import { isTaskId, isTerminal, projectLock, read, readSpec, runnerLogPath, update, writeOutcome } from "./ledger.ts";
 import { runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { findByEnvironment, foreignEngineSettled, identityOf, terminateGroup, terminateGroupByPid } from "./process.ts";
@@ -14,7 +14,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
   const directory = path.join(projectRoot, ".cross-agent", "tasks");
   fs.mkdirSync(directory, { recursive: true });
   // @anchor runnerLog
-  const diagnosticPath = path.join(directory, `${id}.runner.log`);
+  const diagnosticPath = runnerLogPath(projectRoot, id);
   // @anchor lockWait
   // The launch spec does not carry it, so the runner reads the project's own waiting rule
   // once, here: every record write below waits that long for the record lock and no longer.
@@ -351,8 +351,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const args = process.argv.slice(2);
     const values: Record<string, string> = {};
     // @anchor taskArgument
-    // Task IDs use base64url and may begin with '-'. Each option consumes its
-    // next argument literally instead of interpreting that ID as another flag.
+    // A task id's alphabet admits '-', and an id an earlier build minted in base64url may
+    // begin with one. Each option consumes its next argument literally instead of
+    // interpreting that id as another flag.
     for (let i = 0; i < args.length; i += 2) {
       const option = args[i];
       if (!["--project", "--task"].includes(option) || values[option] !== undefined || args[i + 1] === undefined) {
@@ -360,7 +361,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       }
       values[option] = args[i + 1];
     }
-    if (!values["--project"] || !values["--task"] || !/^[A-Za-z0-9_-]+$/.test(values["--task"])) {
+    if (!values["--project"] || !values["--task"] || !isTaskId(values["--task"])) {
       throw new Error("expected --project <root> --task <id>");
     }
     void run(path.resolve(values["--project"]), values["--task"]).catch(() => { process.exitCode = 1; });

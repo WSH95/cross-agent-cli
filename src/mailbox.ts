@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig, lockWaitSeconds } from "./config.ts";
-import { newTaskId, projectLock, writeAtomic } from "./ledger.ts";
+import { isTaskId, newTaskId, projectLock, writeAtomic } from "./ledger.ts";
 import { askLockName } from "./locks.ts";
 
 // The mailbox an engine-placed lead asks its operator through (design, "The lead model",
@@ -59,7 +59,7 @@ class AskFault extends Error {
  * refuses by value; only a caller's own misuse reaches the throw in `askPath`.
  */
 export function isAskId(id: unknown): id is string {
-  return typeof id === "string" && /^[A-Za-z0-9_-]+$/.test(id);
+  return isTaskId(id);
 }
 
 /** The refusal of an id `isAskId` rejects: it names no ask, as an unknown one does. */

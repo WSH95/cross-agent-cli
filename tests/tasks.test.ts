@@ -1,14 +1,12 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Authority } from "../src/authority.ts";
 import { delegate } from "../src/delegate.ts";
-import { create, currentBootId, read, update, writeSpec } from "../src/ledger.ts";
+import { create, read, update, writeSpec } from "../src/ledger.ts";
 import type { TaskRecord } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { answerAsk, createAsk, readAsk } from "../src/mailbox.ts";
@@ -18,7 +16,7 @@ import { sandboxFor } from "../src/engines/registry.ts";
 import { git } from "./helpers/git.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
-import { snapshot } from "./helpers/seed.ts";
+import { deadIdentity, snapshot } from "./helpers/seed.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -99,16 +97,6 @@ async function seed(
   const moved = await update(root, record.id, { status: values.status, ...patch });
   assert.equal(moved.applied, true, `seed could not reach ${values.status}`);
   return moved.record;
-}
-
-/** The identity of a process that has exited and been reaped: dead, and not a reused pid. */
-async function deadIdentity(): Promise<{ pid: number; startTime: string; pgid: number; bootId: string }> {
-  const child = spawn(process.execPath, ["-e", ""], { detached: true, stdio: "ignore" });
-  const pid = child.pid!;
-  const startTime = await poll(() => proc(pid)?.startTime ?? null, (value) => value !== null) as string;
-  await once(child, "close");
-  await poll(() => proc(pid), (value) => value === null);
-  return { pid, startTime, pgid: pid, bootId: currentBootId };
 }
 
 function outcomeOf(outcomes: Outcome[], id: string): Outcome {

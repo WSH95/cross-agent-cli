@@ -766,8 +766,10 @@ Everything below is built, the operator CLI's listing among it
   `<id>.ndjson` is the engine's native event stream, with lines the engine wrote
   to stderr prefixed `stderr ` (`src/engines/spawn.ts#stderrPrefixed`), not a verbatim tee;
   `<id>.out` is the final message; `<id>.runner.log` is the runner's own
-  diagnostic trail (`src/runner.ts#runnerLog`). Ids are 18 random bytes in base64url
-  (`src/ledger.ts#create`), so an id can begin with `-`, which is why the
+  diagnostic trail (`src/runner.ts#runnerLog`, `src/ledger.ts#runnerLogPath`). Ids
+  are 18 random bytes in hex (`src/ledger.ts#newTaskId`), but the alphabet every
+  reader accepts is letters, digits, `-` and `_` (`#isTaskId`), the base64url an
+  earlier build minted in, so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
   (`src/runner.ts#taskArgument`). `.cross-agent/` and `.worktrees/` are added to
   `.git/info/exclude` by whichever comes first, the first `create` — the one
@@ -3759,6 +3761,33 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `report` indents each final message (`#reportVerb`), and the README and the
   launcher are held to the dispatcher's verbs and protocol
   (`#cliDocsNameVerbs`).
+- **Follow-ups (recorded).** A sandbox profile the engine does not declare is
+  refused naming the engine once (`tests/spawn.test.ts#spawnRefusesProfileOnce`).
+  The citation checker's two lexer limits are pinned as they are, so a lexer that
+  learns either shape changes its header with it
+  (`tests/citations.test.ts#lexerContinuedString`, `#lexerRegexAfterParen`), and
+  no doc cites a line any more. A damaged ask read by id is a refusal naming the
+  file, in the mailbox, in both tools and in `cross-agent answer`
+  (`tests/mailbox.test.ts#readAskDamaged`, `tests/cli.test.ts#answerDamagedAsk`),
+  and a lead's `list_asks` names only the damaged files that may be its own
+  (`tests/server.test.ts#listAsksLeadDamaged`). In a repository nobody
+  initialized, a cancel of a task nobody has writes nothing
+  (`tests/tasks.test.ts#cancelUnknownWritesNothing`) and a first lock leaves its
+  directory excluded (`tests/gitmutate.test.ts#gitMutateUninitializedExcluded`);
+  the exclusions are written once however often and however concurrently they
+  are asked for (`tests/ledger.test.ts#excludeLedgerIdempotent`,
+  `#excludeLedgerConcurrent`). A host's project configuration is refused at the
+  worktree's commit and at the merge
+  (`tests/gitmutate.test.ts#commitRefusesHostConfig`,
+  `tests/gitroot.test.ts#mergeRefusesHostConfig`), and both team loops name it
+  where they say what those refuse (`tests/skills.test.ts#loopsNameHostConfig`).
+  The statuses, the id alphabet and the runner log path each have one exported
+  source (`tests/ledger.test.ts#taskStatusesOneSource`). The suite leaves no
+  temporary directory: one `npm test` changes the listing of `/tmp` by nothing,
+  where it had left 42 directories. Reconcile's helpers die before their
+  directory goes: every teardown a test registers runs in order whatever an
+  earlier one did, and the directory's removal comes last
+  (`tests/reconcile.test.ts#teardownDrainsAll`).
 - **P9 (recorded):** Claude clean — `--strict-mcp-config --mcp-config <file>`
   shows exactly this server's tools and none of the operator's, and
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —
