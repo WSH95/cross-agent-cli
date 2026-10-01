@@ -3,6 +3,12 @@ import { commandPath, engineBin } from "./binaries.ts";
 import { truncate } from "./text.ts";
 import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, SpawnRequest } from "./types.ts";
 
+/**
+ * The task markers `src/guard.ts#childEnv` puts in an engine's environment, which a lead's
+ * server reads its depth and lineage from (`src/guard.ts#readDepth`, `#parseLineage`).
+ */
+const leadMarkers = ["CROSS_AGENT_DEPTH", "CROSS_AGENT_TASK", "CROSS_AGENT_LINEAGE", "CROSS_AGENT_PROJECT"];
+
 /** A field Codex declares as a string, as the string it is or as nothing at all. */
 function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -78,12 +84,16 @@ const codex = {
   },
 
   /**
-   * Four settings: the three P9 recorded, and the per-tool timeout. The third is not
-   * optional: `codex exec` runs with approval policy `never`, so without it the lead sees
-   * the tools and every call is refused. The fourth is not either: Codex gives every MCP
-   * call 60 s by default, and a lead's `wait` and `ask` are 600 s calls, so 3600 is this
-   * mount's own budget (design, "Time limits"). The values are TOML, so the quotes are
-   * part of the argument.
+   * Five settings: the three P9 recorded, the per-tool timeout, and the markers' whitelist.
+   * The third is not optional: `codex exec` runs with approval policy `never`, so without
+   * it the lead sees the tools and every call is refused. The fourth is not either: Codex
+   * gives every MCP call 60 s by default, and a lead's `wait` and `ask` are 600 s calls, so
+   * 3600 is this mount's own budget (design, "Time limits"). Nor is the fifth: Codex starts
+   * a stdio server with a short environment of its own — `HOME`, `LANG`, `LOGNAME`, `PATH`,
+   * `SHELL`, `TERM`, `USER` on 0.159.3 (B2, `docs/probes.md#e2ServerEnv`) — so without it
+   * the lead's server carries no `CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`, resolves the
+   * lead at depth 0, and records the lead's children at depth 1 with no lead in their
+   * lineage. The values are TOML, so the quotes are part of the argument.
    */
   leadMount(spec: LeadMountSpec, _scratchDir: string): LeadMount {
     // No probed setting carries a server environment, and emitting an unprobed one would
@@ -98,6 +108,10 @@ const codex = {
         "-c", `mcp_servers.cross-agent.args=${JSON.stringify(spec.args)}`,
         "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
         "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
+        // Names, never values: Codex copies each from its own environment, which the runner
+        // started from the spec's, so this is one constant list and no per-launch value —
+        // the literal-values `env` stays refused above.
+        "-c", `mcp_servers.cross-agent.env_vars=${JSON.stringify(leadMarkers)}`,
       ],
     };
   },
@@ -145,7 +159,7 @@ const codex = {
     if (request.lead !== undefined) {
       const mount = codex.leadMount(request.lead, request.scratchDir);
       // The whole mount, not its argv alone: an adapter may name a file its argv points
-      // at. Codex's own mount is four `-c` settings and no file, but `plan` reads the
+      // at. Codex's own mount is five `-c` settings and no file, but `plan` reads the
       // contract, not this file's implementation of it.
       argv.push(...mount.argv);
       files.push(...(mount.files ?? []));

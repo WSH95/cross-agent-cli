@@ -530,6 +530,7 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
     `mcp_servers.cross-agent.args=${JSON.stringify([repositoryServer, "--project", p.root])}`,
     'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
     "mcp_servers.cross-agent.tool_timeout_sec=3600",
+    'mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK","CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]',
   ]);
   assert.ok(codex.argv.includes("--ignore-user-config"));
 });

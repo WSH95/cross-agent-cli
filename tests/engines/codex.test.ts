@@ -110,7 +110,7 @@ test("codex's exclusionArgs removes the operator's own configuration", () => {
 });
 
 // @anchor codexLeadmountSettings
-test("codex's leadMount is P9's three -c settings and the per-tool timeout, byte for byte", () => {
+test("codex's leadMount is P9's three -c settings, the per-tool timeout and the markers' whitelist, byte for byte", () => {
   const mount = codex.leadMount({ command: "node", args: ["/projects/team/src/server.ts"] }, "/projects/team/.cross-agent/tasks/task");
   assert.deepEqual(mount.argv, [
     "-c", 'mcp_servers.cross-agent.command="node"',
@@ -118,6 +118,9 @@ test("codex's leadMount is P9's three -c settings and the per-tool timeout, byte
     "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
     // Codex's own default is 60 s a call, and a lead's `wait` and `ask` are 600 s ones.
     "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
+    // Codex starts a stdio server with a short environment of its own, so the task's four
+    // markers reach it only by name; their values are the engine's own (B2).
+    "-c", 'mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK","CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]',
   ]);
   // Nothing to write, and nothing inherited: the mount is entirely in the argv.
   assert.equal(mount.files, undefined);
@@ -315,7 +318,7 @@ test("the -o file is emptied before the run, so a stale result cannot be read as
 });
 
 // @anchor enginePlacedLead
-test("an engine-placed lead's argv carries P9's three -c settings and the tool timeout before the prompt", (t) => {
+test("an engine-placed lead's argv carries P9's three -c settings, the tool timeout and the whitelist before the prompt", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
   const mount = [
@@ -323,6 +326,7 @@ test("an engine-placed lead's argv carries P9's three -c settings and the tool t
     "-c", 'mcp_servers.cross-agent.args=["/projects/team/src/server.ts","--project","/projects/team"]',
     "-c", 'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
     "-c", "mcp_servers.cross-agent.tool_timeout_sec=3600",
+    "-c", 'mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK","CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]',
   ];
   assert.deepEqual(codex.leadMount(lead, dirs.task).argv, mount);
   const plan = codex.plan(requestFor(dirs, { role: "lead", brief: "Run the loop.", rolePrompt: "You are the lead.\n", lead }));
@@ -339,10 +343,10 @@ test("an engine-placed lead's argv carries P9's three -c settings and the tool t
   assert.equal(plan.argv.at(-1), "-");
   // The mount travels with the flag that makes it exclusive, and there is one of each.
   assert.equal(plan.argv.filter((argument) => argument === "--ignore-user-config").length, 1);
-  assert.equal(plan.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 4);
+  assert.equal(plan.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 5);
   // A lead is resumed too, and the mount has to survive the different flag set.
   const resumed = codex.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead, resumeSessionId: threadId }));
-  assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 4);
+  assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 5);
   assert.deepEqual(resumed.argv.slice(resumed.argv.indexOf("-c", resumed.argv.indexOf(instructions(dirs.role)) + 1), -1), mount);
   // `plan` folds the whole mount, files included; Codex's own carries none, so the plan's
   // files stay the two it names itself.

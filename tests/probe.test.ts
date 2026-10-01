@@ -52,5 +52,6 @@ test("--track mounts this server with --project in its arguments, which the Code
     'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
     // The adapter's own per-tool timeout, which the harness's mount gets like any lead's.
     "mcp_servers.cross-agent.tool_timeout_sec=3600",
+    'mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK","CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]',
   ]);
 });
