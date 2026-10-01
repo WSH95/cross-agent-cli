@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T02:54:38Z — claude
+[auto-checkpoint] [auto-checkpoint] 6b: escalation 0f9ff3a and wrap-up fbaf358 committed; final review approved; ready to merge after the suite run; beads .59 (U+2028) and .60 (verifier residuals) filed.
+
 ### 2026-10-01T02:04:53Z — claude
 [auto-checkpoint] [auto-checkpoint] 6b: two fix rounds then a class-level escalation of the verifier (uncommitted in the worktree pending the suite run); dispatch probe 316/316; verifier tests 34/34; sample 8 pass.
 

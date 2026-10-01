@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T02:04:53Z
+updated_at: 2026-10-01T02:54:38Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -53,9 +53,12 @@ narrowed, Codex rollouts read) and `6d52315..48a8227` (the verifier's contract:
 an engine name). Suite 645 / 644 / 1 skipped; gates green. Round 3 still
 found launch shapes in the same classes, so after two implementer iterations
 a class-level escalation (`task-6b-findings-round-3.md`, 6b-E-1 … 6) changed
-`tools/e2e-verify.mjs`, its tests and the design's verifier paragraph — left
-**uncommitted in the worktree** until the controller's suite run commits
-them; then one last three-seat review. Earlier: round 3 of the
+`tools/e2e-verify.mjs`, its tests and the design's verifier paragraph
+(`0f9ff3a`); the final three-seat review approved the classes and the task,
+and a wrap-up commit (`fbaf358`) closed six narrow in-class gaps (suite 659 /
+658 / 1 skipped; verifier tests 40/40; dispatch probe 347/347; sample 8 pass).
+6b is ready to merge. Beads filed: `atc-s96.59` (U+2028 server bug, for S11),
+`atc-s96.60` (verifier shapes outside its classes). Earlier: round 3 of the
 reviews ran (`task-6b-findings-round-{1,2}.md`, report
 `task-6b-report.md`). Found by dogfooding: `src/server.ts` reads stdin with
 `readline`, which splits on U+2028/U+2029, so a request carrying either hangs
