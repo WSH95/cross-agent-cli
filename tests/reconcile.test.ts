@@ -59,9 +59,67 @@ const routes: Record<TaskStatus, TaskStatus[]> = {
   cancelled: ["cancelling", "cancelled"],
 };
 
+/** Each test's teardowns, in the order its helpers registered them, until `project(t)`'s hook drains them. */
+const teardowns = new Map<TestContext, Array<() => unknown>>();
+
+/**
+ * Runs `fn` when the test ends, before its project directory is removed. A test with no
+ * project would get a hook of its own, and no test here is one: every test that tracks
+ * processes or holds a lock calls `project(t)` first.
+ */
+function teardown(t: TestContext, fn: () => unknown): void {
+  const callbacks = teardowns.get(t);
+  if (callbacks === undefined) t.after(fn);
+  else callbacks.push(fn);
+}
+
+/**
+ * Every callback in registration order, each attempted whatever an earlier one did, and then
+ * the removal, an ENOTEMPTY retried every 50 ms up to the poll deadline. The retry is bounded
+ * and comes after the sweep: a removal retried against helpers nobody has killed waits for
+ * nothing. One error names every failure, in order.
+ */
+async function drainTeardowns(callbacks: readonly (() => unknown)[], remove: () => void): Promise<void> {
+  const failures: string[] = [];
+  for (const callback of callbacks) {
+    try {
+      await callback();
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  const deadline = Date.now() + pollDeadlineMs;
+  while (true) {
+    try {
+      remove();
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY" && Date.now() < deadline) {
+        await delay(50);
+        continue;
+      }
+      failures.push(error instanceof Error ? error.message : String(error));
+      break;
+    }
+  }
+  if (failures.length > 0) throw new Error(`teardown: ${failures.join("; ")}`);
+}
+
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-reconcile-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // The one `t.after` a test here registers. Node runs a test's hooks in registration order
+  // and stops at the first that throws, so a removal registered here, before the sweep
+  // `processes(t)` registers, ran while that sweep's helpers were still writing into the
+  // directory, and its ENOTEMPTY then skipped the sweep and left them running. Every other
+  // teardown goes through `teardown`, and this hook runs them all before the removal.
+  assert.ok(!teardowns.has(t), "one project per test: a second would drop the first one's teardowns");
+  teardowns.set(t, []);
+  t.after(() => {
+    // Out of the map first, so a drain that fails leaves no entry behind.
+    const callbacks = teardowns.get(t) ?? [];
+    teardowns.delete(t);
+    return drainTeardowns(callbacks, () => fs.rmSync(root, { recursive: true, force: true }));
+  });
   return root;
 }
 
@@ -130,7 +188,7 @@ setInterval(() => {}, 1000);
 function processes(t: TestContext) {
   const tracked: { pid: number; leader: boolean; startTime: string }[] = [];
   const children: ChildProcess[] = [];
-  t.after(async () => {
+  teardown(t, async () => {
     // The unref runs whatever the sweep finds. An assertion that skipped it would leave
     // this process holding a handle on every child it spawned, and a cleanup that found
     // something alive would end the run in a hang rather than in a failure.
@@ -184,6 +242,32 @@ function processes(t: TestContext) {
     },
   };
 }
+
+// @anchor teardownDrainsAll
+test("a test's teardowns all run in order whatever one of them throws, and its directory goes last", async () => {
+  const order: string[] = [];
+  await assert.rejects(
+    drainTeardowns([() => Promise.reject(new Error("first failed")), async () => { order.push("second"); }], () => { order.push("removed"); }),
+    /first failed/,
+  );
+  assert.deepEqual(order, ["second", "removed"]);
+
+  // A directory a helper was still writing into is removed once it empties, within the deadline.
+  let calls = 0;
+  await drainTeardowns([], () => {
+    calls++;
+    if (calls <= 2) throw Object.assign(new Error("directory not empty"), { code: "ENOTEMPTY" });
+  });
+  assert.equal(calls, 3);
+
+  // Any other failure of the removal is not retried, and one error names every failure in order.
+  let removals = 0;
+  await assert.rejects(
+    drainTeardowns([() => { throw new Error("a"); }, () => Promise.reject(new Error("b"))], () => { removals++; throw new Error("c"); }),
+    { message: "teardown: a; b; c" },
+  );
+  assert.equal(removals, 1);
+});
 
 test("reconcile fails unacknowledged launches only after their deadline", async (t) => {
   const root = project(t);
@@ -566,7 +650,7 @@ sibling.kill("SIGKILL");
     stdio: "ignore", env: { ...process.env, CROSS_AGENT_TASK: record.id },
   });
   const sibling = Number(await poll(() => (fs.existsSync(siblingFile) ? fs.readFileSync(siblingFile, "utf8") : ""), (text) => text.length > 0));
-  t.after(async () => {
+  teardown(t, async () => {
     try { process.kill(sibling, "SIGKILL"); } catch { /* already gone */ }
     reconciler.kill("SIGKILL");
     await poll(() => running(sibling), (alive) => !alive);
@@ -1026,7 +1110,7 @@ test("a pass waits the configured lockWaitSeconds for a record it cannot write",
   // limits.lockWaitSeconds and then refuses, so a pass configured not to wait reports the
   // record it could not judge at once instead of blocking on each one in turn.
   const lock = await acquire(lockPath(root, recordLockName(record.id)), { operation: "a competing writer", waitSeconds: 5 });
-  t.after(() => lock.release());
+  teardown(t, () => lock.release());
   const at = Date.now();
   const { changed, errors } = await reconcile(root, now + 2);
   const elapsed = Date.now() - at;
@@ -1046,7 +1130,7 @@ test("orphan cleanup waits the configured lockWaitSeconds for each settlement", 
   await change(root, record.id, { engineIdentity: { pid: 2, pgid: 2, startTime: "1", bootId: "an earlier boot" } }, now + 1);
 
   const lock = await acquire(lockPath(root, recordLockName(record.id)), { operation: "a competing writer", waitSeconds: 5 });
-  t.after(() => lock.release());
+  teardown(t, () => lock.release());
   const at = Date.now();
   await assert.rejects(terminateOrphans(root), /waited 0s/);
   const elapsed = Date.now() - at;

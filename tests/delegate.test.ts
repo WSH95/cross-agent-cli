@@ -2,6 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Authority } from "../src/authority.ts";
@@ -64,7 +65,9 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
 }
 
 async function projectWithRoles(t: TestContext, limits: Record<string, number> = {}): Promise<TestProject> {
-  const bin = path.join(fs.mkdtempSync(path.join(fs.realpathSync("/tmp"), "cross-agent-bin-")), "unused");
+  // A placeholder that need not exist: it only seeds `project`'s config, which the next
+  // line rewrites with the project's own engine shim before anything reads a binary.
+  const bin = path.join(tmpdir(), "cross-agent-unused-bin");
   const created = await project(t, configFor(bin, limits), modeRoles, modePatch);
   fs.writeFileSync(path.join(created.root, ".cross-agent", "config.json"), JSON.stringify(configFor(created.bin, limits)));
   return created;

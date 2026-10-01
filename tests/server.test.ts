@@ -1,4 +1,5 @@
 import test from "node:test";
+import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -22,8 +23,10 @@ type Json = Record<string, unknown>;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serverEntry = path.join(here, "..", "src", "server.ts");
 
-async function projectWithConfig(config: Json): Promise<string> {
+/** A project holding this config, removed when the test ends: every caller gets the removal, not only those that remember it. */
+async function projectWithConfig(t: TestContext, config: Json): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "cross-agent-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(path.join(dir, ".cross-agent"), { recursive: true });
   await writeFile(path.join(dir, ".cross-agent", "config.json"), JSON.stringify(config));
   return dir;
@@ -107,8 +110,8 @@ async function waitFor(condition: () => boolean, ms = 2000): Promise<void> {
   }
 }
 
-test("initialize identifies the cross-agent server over stdio", async () => {
-  const client = stdioClient(await projectWithConfig({ roles: {} }));
+test("initialize identifies the cross-agent server over stdio", async (t) => {
+  const client = stdioClient(await projectWithConfig(t, { roles: {} }));
   try {
     const reply = await client.request("initialize", {
       protocolVersion: "2025-03-26",
@@ -126,8 +129,7 @@ test("initialize identifies the cross-agent server over stdio", async () => {
 
 // @anchor toolsListOffers
 test("tools/list offers each row of the permission matrix exactly its tools", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const delegation = ["delegate", "wait", "check", "result", "cancel", "list_tasks"];
   const provider = ["verify_worktree", "git_mutate", "git_root", "run_command"];
   for (const [row, expected] of [
@@ -151,8 +153,7 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
 
 // @anchor callToolOutside
 test("a call to a tool outside the resolved row is refused by name with the reason, and never runs", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const reason = "specialist by ancestry: task T (implementer, running)";
   const specialist = () => ({ row: "specialist" as const, reason, taskId: "T", depth: 1 });
   const refused = await inProcess({ tools: projectTools(root, { mode: devTeam }), authority: specialist })(
@@ -221,12 +222,12 @@ test("a handler receives the authority resolved for its call and a signal of its
   assert.notEqual(contexts[0].signal, contexts[1].signal);
 });
 
-test("list_roles returns the roles from .cross-agent/config.json", async () => {
+test("list_roles returns the roles from .cross-agent/config.json", async (t) => {
   const roles = {
     planner: { engine: "codex", model: "gpt-6-astra" },
     implementer: { engine: "claude", model: "claude-opus-5" },
   };
-  const client = stdioClient(await projectWithConfig({ roles }));
+  const client = stdioClient(await projectWithConfig(t, { roles }));
   try {
     await client.request("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } });
     const reply = await client.request("tools/call", { name: "list_roles", arguments: {} });
@@ -245,8 +246,7 @@ test("list_roles returns the roles from .cross-agent/config.json", async () => {
 });
 
 test("list_roles applies the mode's defaults and a role's own override over stdio", async (t) => {
-  const root = await projectWithConfig({ roles: { planner: { engine: "codex" }, "code-reviewer": { engine: "grok", sandbox: "strict" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "codex" }, "code-reviewer": { engine: "grok", sandbox: "strict" } } });
   const client = stdioClient(root);
   try {
     const reply = await client.request("tools/call", { name: "list_roles", arguments: {} });
@@ -264,8 +264,7 @@ test("list_roles applies the mode's defaults and a role's own override over stdi
 });
 
 test("verify_worktree returns success and refusal JSON as text", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const exec = promisify(execFile);
   await exec("git", ["-C", root, "init", "-b", "main"]);
   await exec("git", ["-C", root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial"]);
@@ -297,8 +296,7 @@ test("verify_worktree returns success and refusal JSON as text", async (t) => {
 });
 
 test("verify_worktree checks required string arguments at runtime", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
   for (const args of [{}, { path: 1, branch: "task/t" }, { path: root }, { path: root, branch: false }, [], "invalid"]) {
     const reply = await request("tools/call", { name: "verify_worktree", arguments: args });
@@ -309,9 +307,9 @@ test("verify_worktree checks required string arguments at runtime", async (t) =>
 
 test("--project and CROSS_AGENT_PROJECT choose the project over stdio", async (t) => {
   const roles = { planner: { engine: "codex" } };
-  const root = await projectWithConfig({ roles });
+  const root = await projectWithConfig(t, { roles });
   const elsewhere = await mkdtemp(path.join(tmpdir(), "cross-agent-elsewhere-"));
-  t.after(() => Promise.all([root, elsewhere].map((dir) => rm(dir, { recursive: true, force: true }))));
+  t.after(() => rm(elsewhere, { recursive: true, force: true }));
   for (const options of [{ args: ["--project", root] }, { env: { CROSS_AGENT_PROJECT: root } }]) {
     const client = stdioClient(elsewhere, options);
     try {
@@ -402,8 +400,7 @@ test("a server whose mode does not load, or whose config does not match it, exit
     [{ roles: { designer: { engine: "codex" } } }, /declares no role "designer"/],
   ];
   for (const [config, expected] of cases) {
-    const root = await projectWithConfig(config);
-    t.after(() => rm(root, { recursive: true, force: true }));
+    const root = await projectWithConfig(t, config);
     const child = spawn(process.execPath, [serverEntry, "--project", root], { stdio: ["pipe", "pipe", "pipe"], env: suiteEnv });
     t.after(() => { child.kill(); });
     let stderr = "";
@@ -425,8 +422,7 @@ test("a server whose mode does not load, or whose config does not match it, exit
 
 // @anchor entryPointResolves
 test("the entry point resolves its own row: a server carrying a task no record matches is a specialist", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const client = stdioClient(root, { env: { CROSS_AGENT_TASK: "no-such-task" } });
   try {
     const tools = ((await client.request("tools/list")).result as Json).tools as Json[];
@@ -442,8 +438,8 @@ test("the entry point resolves its own row: a server carrying a task no record m
 });
 
 // @anchor unknownMethodsGet
-test("unknown methods get a JSON-RPC method-not-found error", async () => {
-  const client = stdioClient(await projectWithConfig({ roles: {} }));
+test("unknown methods get a JSON-RPC method-not-found error", async (t) => {
+  const client = stdioClient(await projectWithConfig(t, { roles: {} }));
   try {
     const reply = await client.request("no/such/method");
     assert.equal((reply.error as Json).code, -32601);
@@ -538,8 +534,7 @@ test("stdin is split on newlines alone: U+2028 and U+2029 inside a string, and a
 
 // @anchor cancelledEndsWait
 test("notifications/cancelled ends the wait it names within 100ms, and the reply is still sent", async (t) => {
-  const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "grok" } } });
   // A record no runner ever picked up: `wait` polls it for its whole timeout, and nothing
   // this test starts has a process to clean up.
   const record = create(root, { role: "planner", brief: "b", cwd: root, engine: "grok" });
@@ -582,8 +577,7 @@ test("notifications/cancelled ends the wait it names within 100ms, and the reply
 
 // @anchor cancellationSharingChunk
 test("a cancellation sharing a chunk with the call it names is still honoured", async (t) => {
-  const root = await projectWithConfig({ roles: { planner: { engine: "grok" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "grok" } } });
   const record = create(root, { role: "planner", brief: "b", cwd: root, engine: "grok" });
   const server = createServer({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
   const input = new PassThrough();
@@ -610,8 +604,7 @@ test("a cancellation sharing a chunk with the call it names is still honoured", 
 
 // @anchor specialistRowCannot
 test("the specialist row cannot delegate, wait or cancel, and is refused by this server's own name", async (t) => {
-  const root = await projectWithConfig({ roles: { planner: { engine: "codex" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "codex" } } });
   const reason = "specialist by ancestry: task T (implementer, running)";
   const request = inProcess({
     tools: projectTools(root, { mode: devTeam }),
@@ -631,8 +624,7 @@ test("the specialist row cannot delegate, wait or cancel, and is refused by this
 });
 
 test("the delegation tools answer a refusal as an error result, and their arguments are checked", async (t) => {
-  const root = await projectWithConfig({ roles: { planner: { engine: "codex" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "codex" } } });
   const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
   const call = async (name: string, args: Json) => (await request("tools/call", { name, arguments: args }));
 
@@ -663,8 +655,7 @@ test("the delegation tools answer a refusal as an error result, and their argume
 
 // @anchor worktreeProviderTools
 test("the worktree provider's tools are registered for the operator and the lead under every mode", async (t) => {
-  const root = await projectWithConfig({ roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {} });
   const rows = {
     operator: ["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks"],
     // The specialist row is the four read tools plus describe_mode, whatever the mode is.
@@ -713,8 +704,7 @@ function payload(reply: Json): { body: Json; isError: boolean } {
 
 // @anchor mailboxRows
 test("under engine placement the mailbox is three more tools, each offered to its rows of the matrix", async (t) => {
-  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
   const names = async (mode: Mode, row: Authority["row"]) => {
     const request = inProcess({ tools: projectTools(root, { mode }), authority: () => ({ row, reason: "test", depth: 0 }) });
     return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
@@ -752,8 +742,7 @@ function ledgerOfOneLead(root: string) {
 
 // @anchor askCarriesCaller
 test("ask records the caller's own task, waits on its lineage's asks by id, and refuses anyone else's", async (t) => {
-  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
   const { first, resumed, stranger } = ledgerOfOneLead(root);
   const lead = { row: "lead" as const, reason: `lead by ancestry: task ${resumed.id} (lead, running)`, taskId: resumed.id, depth: 1 };
   const request = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => lead });
@@ -787,8 +776,7 @@ test("ask records the caller's own task, waits on its lineage's asks by id, and 
 
 // @anchor cancelledEndsAsk
 test("notifications/cancelled ends a pending ask within 100ms, and the reply is still sent", async (t) => {
-  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
   const { resumed } = ledgerOfOneLead(root);
   const server = createServer({
     tools: projectTools(root, { mode: devTeamEngine }),
@@ -822,8 +810,7 @@ test("notifications/cancelled ends a pending ask within 100ms, and the reply is 
 
 // @anchor listAsksRows
 test("list_asks shows the operator every ask and a lead its own lineage's, and answer is the first one's", async (t) => {
-  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
   const { first, resumed, stranger } = ledgerOfOneLead(root);
   const { createAsk } = await import("../src/mailbox.ts");
   const mine = createAsk(root, { taskId: first.id, question: "Mine, from before the resume?" }, 1_000);
@@ -860,8 +847,7 @@ test("list_asks shows the operator every ask and a lead its own lineage's, and a
 
 // @anchor listTasksMarks
 test("list_tasks marks a lead's own records self and the tasks it owns own, and marks nothing for the operator", async (t) => {
-  const root = await projectWithConfig({ mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 } });
   const { first, resumed, before, after, stranger } = ledgerOfOneLead(root);
   const tasksOf = async (authority: Authority) => {
     const request = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => authority });
@@ -896,8 +882,7 @@ test("describe_mode serves the active mode's loop and roles to every row, and re
     { key: "planner", prompt: "You are the planner of this test.\n" },
     { key: "implementer", workspace: "worktree" },
   ]);
-  const root = await projectWithConfig({ roles: { planner: { engine: "codex" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { planner: { engine: "codex" } } });
 
   for (const row of ["operator", "lead", "specialist"] as const) {
     const request = inProcess({ tools: projectTools(root, { mode }), authority: () => ({ row, reason: "test", depth: 0 }) });
@@ -925,10 +910,9 @@ test("describe_mode serves the active mode's loop and roles to every row, and re
 test("list_roles reports the mode's workspace and the profile each role will actually run under", async (t) => {
   const modes = modesRoot(t);
   const mode = buildMode(modes, "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
-  const root = await projectWithConfig({
+  const root = await projectWithConfig(t, {
     roles: { planner: { engine: "codex", model: "gpt-6-astra", effort: "high" }, implementer: { engine: "claude", sandbox: "off" } },
   });
-  t.after(() => rm(root, { recursive: true, force: true }));
   const request = inProcess({ tools: projectTools(root, { mode }), authority: () => operator });
   const reply = await request("tools/call", { name: "list_roles", arguments: {} });
   assert.deepEqual(JSON.parse((((reply.result as Json).content as Json[])[0].text as string)), {
@@ -975,8 +959,7 @@ test("git_mutate takes its worktree directory and branch from the mode's own git
       workspace: { kind: "worktree", branchPattern: "work/*", dir: "trees" }, sandboxDefault: "workspace-write",
     }],
   });
-  const root = await projectWithConfig({ roles: { implementer: { engine: "codex" } } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: { implementer: { engine: "codex" } } });
   const exec = promisify(execFile);
   const git = (...args: string[]) => exec("git", ["-C", root, "-c", "user.name=Cross Agent Test",
     "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", ...args]);
@@ -1016,8 +999,7 @@ test("git_root is the worktree provider's own, for the operator and the lead, un
   const placed = buildMode(modes, "dev-team-engine", [{ key: "lead" }, { key: "implementer", workspace: "worktree" }], {
     lead: { placement: "engine", role: "lead" },
   });
-  const root = await projectWithConfig({ mode: "dev-team", roles: {} });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team", roles: {} });
   const exec = promisify(execFile);
   const git = (...args: string[]) => exec("git", ["-C", root, "-c", "user.name=Cross Agent Test",
     "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", ...args]);
@@ -1072,8 +1054,7 @@ test("git_root is the worktree provider's own, for the operator and the lead, un
 
 test("run_command is registered beside git_root and runs the project's own command", async (t) => {
   const mode = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
-  const root = await projectWithConfig({ mode: "dev-team", roles: {}, project: { testCommand: "echo the suite ran; pwd" } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { mode: "dev-team", roles: {}, project: { testCommand: "echo the suite ran; pwd" } });
   // A real repository: this tool refuses a project whose `.cross-agent/` is tracked, so
   // it reads the repository at the root before it runs anything.
   const exec = promisify(execFile);
@@ -1124,8 +1105,7 @@ test("a resolver that throws answers -32603, lists nothing, and runs no handler"
 });
 
 test("the server reconciles once before it serves and names on stderr what it could not decide", async (t) => {
-  const root = await projectWithConfig({ roles: {}, limits: { lockWaitSeconds: 0 } });
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await projectWithConfig(t, { roles: {}, limits: { lockWaitSeconds: 0 } });
   const { create } = await import("../src/ledger.ts");
   const { acquire, lockPath, recordLockName } = await import("../src/locks.ts");
   // A launch nobody acknowledged, past its deadline: the pass has to judge it, and cannot,
