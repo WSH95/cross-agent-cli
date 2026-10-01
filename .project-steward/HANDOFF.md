@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T08:04:05Z
+updated_at: 2026-10-01T08:06:19Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -56,19 +56,16 @@ on a named line `pass` needs positive understanding — and reads Codex rollouts
 suite's temp-dir leak), `.59` (U+2028/U+2029 in a request hang the server —
 for S11), `.60` (verifier shapes outside its classes).
 
-S11 (`atc-s96.24`, with `.59`) is implemented on the task branch — fifteen
-commits `886ae9f..fd2da3d` (695 tests, 694 pass, 1 skipped; citations clean)
-— then fix round 1, nine commits to `457bb26` (702 tests, 701 pass, 1 skipped):
-the launcher's host-loop paragraphs are host placement's, unreadable asks are
-refused, `answer` needs a config, and two more Codex-lead host runs (E2b, E2c)
-closed E2's host clause; round 2 of the reviews approved it (all three seats:
-every finding addressed; the closing judgment: task Approved), and a wrap-up
-commit `a54be4c` (703 tests) closed five minors — S11 merges next (report
-`task-7-report.md`; follow-up beads `.61`–`.66`). Every E-run gave the verifier 7 pass and a `?` a person
-read as no launch. The sample (`~/.cache/agent-team/cross-agent-e2e/slugkit`)
-is clean on its `main` at `15e9f4e`, left in `dev-team-engine` (T14 switches it
-for E4). Grok updated itself to 1.0.46.
-T16, T14 and T15's briefs are plan-reviewed and wait for their predecessors.
+S11 (`atc-s96.24`, with `.59`) is **merged** — `main` at `ebc9960` (25 commits
+over `886ae9f`), `VERIFY.md` S11 section at `b858d11`; `npm test` 703 / 702 / 1
+skipped; checker 1011 citations, 0 misses. Engine placement works with a Claude
+lead (E3) and a Codex lead (E2, E2b, E2c), each run 7 pass and a `?` a person read
+as no launch; the mailbox, the CLI's `answer`/`report` and exit protocol, and
+the launcher's placement routing are built. The sample
+(`~/.cache/agent-team/cross-agent-e2e/slugkit`) is clean on its `main` at
+`15e9f4e`, in `dev-team-engine` (T14 switches it for E4). Follow-up beads
+`.61`–`.66`. Next: T16 (the operator CLI), then T14 and T15.
+
 
 ## Next steps
 
