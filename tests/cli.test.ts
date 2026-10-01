@@ -1227,3 +1227,23 @@ test("the README and the launcher name only the dispatcher's verbs, and state th
     }
   }
 });
+
+// @anchor cliWritesFailsClosed
+test("a verb that does not say it only reads is refused as a write inside a task's environment", async () => {
+  const { taskMarker } = await import("../src/cli.ts");
+  const parsed = { positionals: [], values: {}, booleans: new Set<string>(), rest: [], json: false };
+  const verb = (writes?: unknown) => ({
+    usage: "cross-agent example", summary: "example", positionals: [], flags: {},
+    ...(writes === undefined ? {} : { writes }), run: async () => ({ code: 0, document: {}, text: "" }),
+  });
+  const inside = { CROSS_AGENT_DEPTH: "2" };
+  // Only an explicit read is let through.
+  assert.equal(taskMarker(verb(false) as never, parsed, inside), null);
+  assert.equal(taskMarker(verb(() => false) as never, parsed, inside), null);
+  assert.equal(taskMarker(verb(true) as never, parsed, inside), "CROSS_AGENT_DEPTH");
+  // Everything else is a write: a verb that declares nothing, or a rule that answers nothing.
+  assert.equal(taskMarker(verb() as never, parsed, inside), "CROSS_AGENT_DEPTH", "a verb that declares nothing is a write");
+  assert.equal(taskMarker(verb(() => undefined) as never, parsed, inside), "CROSS_AGENT_DEPTH", "a rule that answers nothing is a write");
+  // Outside a task's environment nothing is refused.
+  assert.equal(taskMarker(verb() as never, parsed, {}), null);
+});

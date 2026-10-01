@@ -65,7 +65,7 @@ export interface CliOutput {
   err: (text: string) => void;
 }
 
-interface Parsed {
+export interface Parsed {
   positionals: string[];
   values: Record<string, string>;
   /** The flags given that take no value. */
@@ -94,7 +94,7 @@ interface Answer {
   notes?: string;
 }
 
-interface Verb {
+export interface Verb {
   /** The line usage prints for it, without the global flags. */
   usage: string;
   summary: string;
@@ -866,10 +866,12 @@ function shape(verb: Verb): string {
  * The marker a task's environment carries, when this command line writes and the
  * environment carries one, or null. A verb that writes is an operator's power, and the deny
  * list keeps only the launch forms it names out of an engine's hands (`src/guard.ts#denyTargets`).
+ * It fails closed: only an explicit `false` reads, so a verb that declares nothing — which
+ * nothing here type-checks — is refused as the write it may be.
  */
-function taskMarker(verb: Verb, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): string | null {
-  const writes = typeof verb.writes === "function" ? verb.writes(parsed) : verb.writes;
-  return writes ? TASK_MARKERS.find((variable) => env[variable] !== undefined) ?? null : null;
+export function taskMarker(verb: Verb, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): string | null {
+  const writes: unknown = typeof verb.writes === "function" ? verb.writes(parsed) : verb.writes;
+  return writes === false ? null : TASK_MARKERS.find((variable) => env[variable] !== undefined) ?? null;
 }
 
 /**
