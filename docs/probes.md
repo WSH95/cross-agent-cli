@@ -1404,7 +1404,7 @@ MCP call alive well past Codex's 60-second default, under the mount's
 script holding that one call; when the script yielded, the lead waited on its cell
 with Codex's own top-level `wait` function (line 32, `{"cell_id":"3",
 "yield_time_ms":600000}`) — a tool, not a command, which the verifier's 0.159.2
-table does not yet classify. The lead's `--json` stream shows the `mcp_tool_call`
+table did not yet classify (T14 taught it that shape, `tests/e2e-verify.test.ts#codexCodeModeWait`). The lead's `--json` stream shows the `mcp_tool_call`
 pair for `wait` (lines 5–6) and `turn.completed` (line 10), in 0.159.2's shape, and
 the record's `lastEventAt` followed those lines (A3b). `/proc/<codex pid>/cmdline`,
 read while the lead ran, carries the mount's settings (`b2/run*/proc-lead.json`).
@@ -1871,8 +1871,10 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   duration, id, result, server, status, tool, type`, `duration` as `{secs, nanos}`
   and no `started_at_ms` or `completed_at_ms`. A code-mode `exec` cell that yields
   is waited on with Codex's own top-level `wait` function, `{cell_id,
-  yield_time_ms}`, which runs no command and which the end-to-end verifier's 0.159.2
-  table does not classify. Codex does not confine a mounted server to its own
+  yield_time_ms}` with or without `max_tokens`, which runs no command. The end-to-end
+  verifier answered `?` on it in E2, E2b and E2c, each read by a person; since T14 it
+  classifies it as a call that runs no command, in exactly those two shapes
+  (`tests/e2e-verify.test.ts#codexCodeModeWait`). Codex does not confine a mounted server to its own
   sandbox: a read-only lead's server wrote the project's ledger.
 
 ## Native output samples (2026-09-07)

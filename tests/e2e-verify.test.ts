@@ -1343,6 +1343,37 @@ test("6b-W-6: an output carrying a command is judged like the call, and a tool-b
   }
 });
 
+// @anchor codexCodeModeWait
+const codexCodeModeWait = [
+  // E2c's lead rollout, line 86, trimmed to the fields the reader reads; then B2's shape,
+  // which carries no `max_tokens` (`docs/probes.md#s11CodexLeadTimeout`, line 32).
+  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_x" }, "pass"],
+  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"3\",\"yield_time_ms\":600000}", call_id: "call_y" }, "pass"],
+  // Any other shape is a call this reader has not seen, whatever its name.
+  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: 1000, cmd: "claude -p hi" }), call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: 11, yield_time_ms: 30000 }), call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: "30000" }), call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11", yield_time_ms: 30000, max_tokens: "1000" }), call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: JSON.stringify({ cell_id: "11" }), call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",", call_id: "call_x" }, "?"],
+  [{ type: "function_call", name: "wait", arguments: { cell_id: "11", yield_time_ms: 30000 }, call_id: "call_x" }, "?"],
+] as const;
+test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no command, in exactly its recorded shapes", async (t) => {
+  // codex-cli 0.159.3 waits on a code-mode cell that yielded with a `wait` function of its own,
+  // which names a cell and no command; E2, E2b and E2c each answered `?` on it until a person
+  // read it. Learned in the two shapes recorded, and in no other.
+  for (const [entry, expected] of codexCodeModeWait) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006607";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { entry }]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${JSON.stringify(entry)}\n${out}`);
+    assert.equal(code, { pass: 0, "?": 2 }[expected], out);
+    if (expected === "?") assert.match(row(out, scan), /a tool call this reader does not classify \(function_call wait\)/, out);
+  }
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.

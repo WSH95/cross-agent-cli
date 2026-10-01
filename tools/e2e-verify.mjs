@@ -265,7 +265,10 @@ const launch = launcherFor(config);
 // every command it shows attempted is judged like the transcript's own. The same contract
 // holds there: a Codex record with no rollout to read, one whose rollout lacks a command
 // the transcript shows, and one whose rollout holds a tool call this reader does not
-// classify, including changed command-field shapes, are `?`, named. An output carrying a
+// classify, including changed command-field shapes, are `?`, named. codex-cli 0.159.3's own
+// `wait` on a code-mode cell that yielded, a `function_call` whose arguments decode to exactly
+// `{cell_id, yield_time_ms}` or those and `max_tokens`, is a call that runs no command
+// (`codeModeWait`); a `wait` in any other shape is unclassified. An output carrying a
 // command is judged like the call; any other unclassified item with a field naming a tool,
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
 // code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
@@ -1682,7 +1685,8 @@ function rolloutShows(shown, command) {
  * keystrokes of a `write_stdin` call and the argv of a `local_shell_call`; the argv of every
  * `CommandExecution` item and `exec_command_begin` event; and the tool of every
  * `McpToolCall` item and `mcp__…` call. The tool calls of codex-cli 0.159.2's that run
- * nothing (`quietTools`) are classified as such. An output carrying a command is judged
+ * nothing (`quietTools`) are classified as such, and so is 0.159.3's `wait` on a yielded
+ * code-mode cell in the shapes recorded (`codeModeWait`). An output carrying a command is judged
  * like the call. Any other tool-call entry or item with a field naming a tool, its
  * arguments or a command, a line that is not JSON, a script that does not read and a
  * command a script computes are named, because each could be the one this scan looks for.
@@ -1735,6 +1739,7 @@ function rolloutCommands(file) {
     } else if (entry?.type === "response_item" && type === "function_call") {
       if (name.startsWith("mcp__")) { read.calls.push(name); continue; }
       if (quietTools.has(name)) continue;
+      if (name === "wait" && codeModeWait(payload.arguments)) continue;
       if (!commandTools.has(name) && name !== "write_stdin") { unclassified(`function_call ${name}`); continue; }
       let args;
       try {
@@ -1771,6 +1776,25 @@ function rolloutCommands(file) {
     }
   }
   return read;
+}
+
+/**
+ * Whether a `function_call`'s arguments are codex-cli 0.159.3's own `wait` on a code-mode cell
+ * that yielded: a JSON string decoding to exactly `{cell_id: string, yield_time_ms: number}`,
+ * with `max_tokens: number` beside them or not — E2c's lead rollout, line 86, and S11's B2,
+ * line 32 (`docs/probes.md#s11CodexLeadTimeout`). It names a cell and no command, and the cell
+ * is a script this reader reads in its own `exec` call. Any other shape is not this call.
+ */
+function codeModeWait(text) {
+  if (typeof text !== "string") return false;
+  let value;
+  try { value = JSON.parse(text); } catch { return false; }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value).sort();
+  const shape = Object.hasOwn(value, "max_tokens") ? ["cell_id", "max_tokens", "yield_time_ms"] : ["cell_id", "yield_time_ms"];
+  if (keys.length !== shape.length || keys.some((key, k) => key !== shape[k])) return false;
+  return typeof value.cell_id === "string" && Number.isFinite(value.yield_time_ms)
+    && (!Object.hasOwn(value, "max_tokens") || Number.isFinite(value.max_tokens));
 }
 
 /**
