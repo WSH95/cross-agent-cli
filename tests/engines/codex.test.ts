@@ -605,7 +605,7 @@ test("a failed turn settles as an error carrying codex's own message", async (t)
 });
 
 // I2 covers two things only the real binary can answer, and both need an account and
-// about a minute per turn, so neither is this task's.
+// about a minute per turn.
 //
 // The stdin form on **both heads**: `codex exec … -` and `codex exec resume <id> … -`
 // must each take the brief from stdin rather than send the literal `-` as the prompt.
@@ -614,13 +614,17 @@ test("a failed turn settles as an error carrying codex's own message", async (t)
 // resume [SESSION_ID] [PROMPT]` says "If `-` is used, read from stdin" — so the flag fact
 // is settled and what is left is that the run behaves as the help says, on both heads.
 //
-// And the P2 negative writes on a *resumed* session: a resume with `-c
-// sandbox_mode="workspace-write"`, spawned in the role's worktree, must still be refused
-// the repository root that P10 saw a resume one directory up write to.
+// And the P2 negative writes on a *resumed* session (design, Verification, "P10 / T8"): a
+// resume with `-c sandbox_mode="workspace-write"`, spawned in the role's worktree, must still
+// be refused a root file, `<root>/.git`, a sibling of the worktree and `$HOME`, the writes
+// P10 saw a resume one directory up make. Each attempt is proved from the thread's own
+// rollout, read by the end-to-end verifier's reader (`tools/e2e-verify.mjs --read-rollout`):
+// the decoded command of one code-mode `exec` call, and the exit of that call's own output.
+// A turn that made the in-worktree write and attempted nothing else would satisfy the
+// filesystem alone, so the filesystem is the second witness here, never the only one.
 //
 // Written and guarded rather than skipped empty: it runs only under
-// `CROSS_AGENT_REAL_CODEX=1` with a resolvable binary, so `npm test` is unchanged here and
-// the row can be closed by one command when the user's Codex pause lifts —
+// `CROSS_AGENT_REAL_CODEX=1` with a resolvable binary, so `npm test` is unchanged here —
 // `CROSS_AGENT_REAL_CODEX=1 node --test tests/engines/codex.test.ts`.
 const realCodex = process.env.CROSS_AGENT_REAL_CODEX === "1";
 const codexBinary = process.env.CROSS_AGENT_CODEX_BIN ?? "codex";
@@ -653,9 +657,9 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   // **not under `$TMPDIR`**: Codex's `workspace-write` treats the temporary directory as
   // writable (P2, design section 3), so a repository there would make every "outside"
   // write either a false denial or no evidence at all.
+  const { promisify } = await import("node:util");
+  const { execFile } = await import("node:child_process");
   const git = async (cwd: string, ...args: string[]): Promise<string> => {
-    const { promisify } = await import("node:util");
-    const { execFile } = await import("node:child_process");
     const { stdout } = await promisify(execFile)("git", ["-C", cwd, ...args], { encoding: "utf8" });
     return stdout.trim();
   };
@@ -669,10 +673,13 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   const worktree = path.join(root, ".worktrees", "i2");
   await git(root, "worktree", "add", "-b", "task/i2", worktree);
 
+  // The adapter runs `codex exec --ignore-user-config`, so with no `-m` this would run on
+  // Codex's own default model; the plan's runs use one low-cost model, and no other runs.
+  const model = process.env.CROSS_AGENT_REAL_CODEX_MODEL ?? "gpt-6-luna";
   const marker = "CROSS-AGENT-I2-STDIN";
   const env = { ...process.env, CROSS_AGENT_CODEX_BIN: codexBinary };
   const first = requestFor(dirs, {
-    cwd: canonicalPath(worktree), env,
+    cwd: canonicalPath(worktree), env, model, effort: "medium",
     brief: `Reply with exactly ${marker} and nothing else. Do not run any command.`,
     protectedPaths: [path.join(worktree, ".git"), path.join(root, ".git")],
   });
@@ -683,8 +690,9 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   t.after(() => { started.kill("SIGKILL"); });
   const opening = await settled(started, "the opening turn");
   assert.equal(opening.ok, true, opening.events.at(-1)?.text);
-  // If `-` had been sent as the prompt, no answer would carry the marker.
-  assert.match(opening.events.findLast((event) => event.kind === "result")?.text ?? "", new RegExp(marker));
+  // The answer is the pipeline's: the `-o` file's text. If `-` had been sent as the
+  // prompt, no answer would carry the marker.
+  assert.match(opening.finalMessage, new RegExp(marker));
   const thread = opening.events.find((event) => event.kind === "session")?.sessionId;
   assert.ok(thread, "the run reported no thread id to resume");
 
@@ -695,29 +703,71 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   // with it nor leave one behind.
   const homeProbe = path.join(homedir(), `cross-agent-codex-i2-${randomUUID()}.txt`);
   t.after(() => rmSync(homeProbe, { force: true }));
-  const steps = [
-    `echo resumed >> ${JSON.stringify(path.join(worktree, "notes.md"))}`,
+  const inside = `echo resumed >> ${JSON.stringify(path.join(worktree, "notes.md"))}`;
+  const outside = [
     `echo root >> ${JSON.stringify(path.join(root, "ROOT-WRITE.txt"))}`,
     `echo git >> ${JSON.stringify(path.join(root, ".git", "cross-agent-probe-write.txt"))}`,
     `echo home >> ${JSON.stringify(homeProbe)}`,
+    `echo sibling >> ${JSON.stringify(path.join(root, ".worktrees", "other-WRITE.txt"))}`,
   ];
+  const steps = [inside, ...outside];
   const second = requestFor(dirs, {
-    cwd: canonicalPath(worktree), env, resumeSessionId: thread,
-    brief: `Run each of these commands in order, reporting each outcome, and never work around a denial:\n${steps.join("\n")}`,
+    cwd: canonicalPath(worktree), env, model, effort: "medium", resumeSessionId: thread,
+    brief: "Run the five shell commands below, in this order, exactly as written: one shell command per step, "
+      + "each in its own call, never combined into a script, and never retried or worked around. A denial or an "
+      + "error is a result to report, not a reason to stop: report it and go on to the next step until all five "
+      + "have run. After each step write one report line, `STEP n: exit <code>`, followed by that command's "
+      + "stderr exactly as printed, or `(no stderr)`. These five steps are the whole of this turn: read no file "
+      + "and run no other command.\n\n"
+      + steps.map((command, n) => `Step ${n + 1}:\n    ${command}`).join("\n"),
     protectedPaths: first.protectedPaths,
   });
   const resumed = spawnEngine(codex, second, {});
   t.after(() => { resumed.kill("SIGKILL"); });
   const outcome = await settled(resumed, "the resumed turn");
   assert.equal(outcome.ok, true, outcome.events.at(-1)?.text);
+  t.diagnostic(`codexI2Real: the resumed turn's answer: ${outcome.finalMessage}`);
 
-  // What the filesystem says, which no wording can talk its way around: the in-worktree
-  // write landed and none of the three outside it did.
+  // What the engine's own event log says was attempted, read by the verifier's reader as
+  // a process (it runs on import), with `CODEX_HOME` unset as the engines ran: for each
+  // step, exactly one `exec` call ran that command alone, and its own output's exit is
+  // 0 inside the worktree and a denial outside it. A command only mentioned, a step folded
+  // into another's script, or an output that cannot be paired fails here.
+  const verifier = fileURLToPath(new URL("../../tools/e2e-verify.mjs", import.meta.url));
+  const readerEnv: NodeJS.ProcessEnv = { ...process.env };
+  delete readerEnv.CODEX_HOME;
+  const { stdout } = await promisify(execFile)(process.execPath, [verifier, "--read-rollout", thread],
+    { encoding: "utf8", env: readerEnv, maxBuffer: 64 * 1024 * 1024 });
+  const reading = JSON.parse(stdout) as {
+    files: string[];
+    calls: Array<{ kind: string; commands?: string[]; output?: { exit_code: number; text: string } | null; reason?: string; line: number }>;
+    unreadable: string[];
+  };
+  t.diagnostic(`codexI2Real: thread ${thread}; rollout read: ${JSON.stringify(reading.files)}`);
+  assert.equal(reading.files.length, 1, `the thread's rollout: ${JSON.stringify(reading.files)}`);
+  const execs = reading.calls.filter((call) => call.kind === "exec");
+  for (const command of steps) {
+    const ran = execs.filter((call) => call.commands?.includes(command));
+    assert.equal(ran.length, 1, `${command}: ${ran.length} exec calls ran it; the rollout's exec commands are ${JSON.stringify(execs.map((call) => call.commands))}`);
+    const [call] = ran;
+    assert.deepEqual(call.commands, [command], `${command} shares its exec call (line ${call.line}) with another`);
+    assert.ok(call.output, `${command} (line ${call.line}): no output paired with it — ${call.reason}`);
+    if (command === inside) {
+      assert.equal(call.output.exit_code, 0, `${command} was refused inside the worktree: ${call.output.text}`);
+    } else {
+      assert.notEqual(call.output.exit_code, 0, `${command} exited 0 on a resumed session`);
+      assert.match(call.output.text, /Read-only file system|Permission denied|Operation not permitted/, `${command}: ${call.output.text}`);
+    }
+  }
+
+  // What the filesystem says, the second witness: the in-worktree write landed and none of
+  // the four outside it did.
   assert.equal(existsSync(path.join(worktree, "notes.md")), true, "the in-worktree write was refused too");
   for (const denied of [
     path.join(root, "ROOT-WRITE.txt"),
     path.join(root, ".git", "cross-agent-probe-write.txt"),
     homeProbe,
+    path.join(root, ".worktrees", "other-WRITE.txt"),
   ]) {
     assert.equal(existsSync(denied), false, `${denied} was written on a resumed session`);
   }
