@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T21:30:30Z
+updated_at: 2026-10-01T22:29:29Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -98,14 +98,14 @@ sample's attach points at the root checkout. Closed with it: `.53`, `.64`, `.66`
 `.71`. Filed: `.75` (P2: host configuration staged in a worktree passes the merge guard;
 folded into task 11), `.76`–`.82`.
 
-Task 11 (`.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75`; docs nits and small
-follow-ups, no engine run) is **implemented on `task/cross-agent-m3`** (9 commits over
-`17de337`, head `6bb6122`; not merged): `npm test` 758 / 757 / 1 skipped; checker 1239
-citations, none by line; the suite's temp-directory leaks 42 → 0. Review round 1 found three Important issues
-(a concurrency test that never raced; an ask time of `1e100` that throws in the
-mailbox's formatter; a reconcile test that can lose its helper's exit event); fix
-round 1 is in progress (head `0e19e65` plus the ask-time fix, ruled to keep T16's
-numbers-as-printed policy). Brief `task-11-brief.md` v2, report `task-11-report.md`. Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
+Task 11 (docs nits and small follow-ups) is **merged** — `main` at `71696ff` (20
+commits over `0f8374c`), `VERIFY.md` T11 section at `01c2680`; `npm test` 769 / 768 / 1
+skipped, the suite leaving no temporary directory; checker 1257 citations, none by
+line. Closed: `.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75` (a host's project
+configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` — is now refused at a
+worktree commit and at the root's merge). Filed: `.83`–`.91`. Next: task 12 (go/no-go,
+the final three-review pass over the whole branch, and the close), brief
+`task-12-brief.md` v1 awaiting its optimization pass. Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
 

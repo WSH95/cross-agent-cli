@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-01T22:29:29Z — claude
+[auto-checkpoint] Task 11 merged (main 71696ff; VERIFY 01c2680; 769/768/1; 0 line citations); eight beads closed; .83–.91 filed; task 12 next.
+
 ### 2026-10-01T21:30:30Z — claude
 [auto-checkpoint] Task 11 review round 1: three Important (concurrency test without a race; ask time 1e100 throws; reconcile lost close event); fix round 1 in progress (0e19e65 + the ask-time fix under T16's policy).
 
