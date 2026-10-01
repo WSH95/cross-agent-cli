@@ -176,6 +176,18 @@ test("the launcher reads a settled task's final message through result, never fr
   assert.match(flat(engineSection().section), /`result \{task_id: <lead id>\}`[^.]*closing report/);
 });
 
+// @anchor engineHostHandsOff
+test("under engine placement the host runs no command on the project and shows the lead's report whole", () => {
+  // E2's host ran `git status`, `git worktree list`, `git branch --list` and `git log`
+  // through its own shell around the lead's run, and summarized the closing report it
+  // read through `result`: the root check is the lead's step 1, and the report is the
+  // lead's own words.
+  const section = flat(engineSection().section);
+  assert.match(section, /run no `git` and no test command of your own[^.]*not even to look/);
+  assert.match(section, /`cross-agent report` and `cross-agent answer` are the only commands/);
+  assert.match(section, /[Ss]how it to the user whole/);
+});
+
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
   const text = flat(launcher());
   assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");

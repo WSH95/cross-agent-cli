@@ -311,13 +311,17 @@ and answer — which is how an answer you gave a lead that died waiting reaches 
 one that continues it.
 
 When the lead settles, `result {task_id: <lead id>}` is its closing report, the
-whole of it, which you relay rather than summarize — `wait`'s tail of it is not the
-report — and `cross-agent report` renders every task of the run from the ledger.
+whole of it — `wait`'s tail of it is not the report. Show it to the user whole, as
+the lead wrote it, and put anything of your own after it rather than in its place;
+`cross-agent report` renders every task of the run from the ledger.
 
 Your own calls under this placement are the launcher's setup, monitoring and
 answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the
 lead, `wait`, `check`, `result`, `list_asks`, `answer` and `cancel` — and never a
 loop step: you never call `git_root`, `git_mutate`, `run_command` or
-`verify_worktree` yourself, and you never delegate a specialist. Those are the
-lead's, and a step the lead did not take is one its journal and its report do not
-have.
+`verify_worktree` yourself, and you never delegate a specialist. You run no `git`
+and no test command of your own on the project either, not even to look: the
+root check is the lead's step 1, and what it found is in its report.
+`cross-agent report` and `cross-agent answer` are the only commands of yours this
+placement needs. The steps are the lead's, and a step the lead did not take is one
+its journal and its report do not have.
