@@ -1041,8 +1041,8 @@ E1 ran at `744c767`, **before** the containment fix (T6-R0-1) and the deny-list
 root (T6-R0-3): its implementers' specs carry no `protectedPaths` and their deny
 rules name `node <sample>/src/server.ts`. None of the eight pass conditions
 depends on either, so the run stands as recorded; the shipped configuration's
-evidence is I2's Claude row under the fix, above, and the next end-to-end run on
-any host (T14's) is the first to exercise both inside a whole loop.
+evidence is I2's Claude row under the fix, above, and E4, T14's first end-to-end
+run, is the first to exercise both inside a whole loop (`docs/probes.md#e4`).
 
 Two things the run did not do. **Step 8 never ran**: with `main` unmoved since
 the branch was cut, the host went from the second "ready" straight to the
@@ -2000,6 +2000,133 @@ The probe worktrees and branches were then removed by hand (`b6/cleanup.txt`): G
 pointer restored first, then `git worktree remove --force`, `git branch -D` and `git
 worktree prune`, leaving the sample on `main`, clean, the root worktree alone. The
 ten-minute row is B3's (`docs/probes.md#codexHostTimeout`).
+
+
+<!-- @anchor e4 -->
+## E4: one `dev-team` task under a Codex host (2026-10-01)
+
+T14's Codex host, the plugin enabled for the session alone, prompted "T14-E4: run this
+task through the cross-agent skill in this repository. Task: add `unslugify(slug: str) ->
+str` beside `slugify`, turning a slug back into space-separated words, with tests; use the
+slug t14-e4." The sample was switched to `dev-team` with `limits.maxDepth: 1` for it
+(`e4/config.diff`): the planner and the implementer on Codex (`gpt-6-luna`), the plan
+reviewer on Grok (`grok-4.7`), the code reviewer on Claude (`claude-sonnet-5`, read-only),
+each at medium — a Codex specialist in a read-only root role and in a writable worktree
+role inside a whole loop, under a Codex host, for the first time. The plugin's copy was
+installed from `dac519b`, `diff -rq`-clean against the worktree. The host ran 468 s,
+1,744,918 tokens in and 5,067 out, and ran the loop itself through the plugin's server:
+
+```
+cat skills/cross-agent/SKILL.md from the plugin's copy
+describe_mode, list_roles, list_tasks
+git_root status / worktree list / branch --list task/*     → clean, main, none
+delegate planner (codex)                   → wait 27 s → result   9ed6c4fc  28 s
+delegate plan-reviewer (grok)              → wait 141 s           376e3fae  143 s, revise
+delegate planner resume 9ed6c4fc           → wait 17 s → result   35cb5547  19 s
+delegate plan-reviewer (grok, round 2)     → wait 77 s → result   70aa060c  79 s, approve
+git_root worktree add -b task/t14-e4 .worktrees/t14-e4 main
+run_command setup in .worktrees/t14-e4
+delegate implementer (codex, task/t14-e4)  → wait 37 s → result   920c667b  38 s, 87 → 90 tests
+git_mutate add -A … ; git_mutate commit     → 23980ed
+delegate code-reviewer (claude, read-only) → wait 22 s → result   de1e73ec  24 s, ready
+git_mutate rebase main                      → up to date
+git_root merge --ff-only task/t14-e4        → main 15e9f4e → 23980ed
+run_command test where=root                 → 90 tests, OK
+git_root worktree remove …; git_root branch -d task/t14-e4; git_root status
+cat >> .cross-agent/log.md                  → a heading and six lines, exit 0
+```
+
+The `wait` durations are each `McpToolCall`'s own, every one `done`; between them Codex
+waited on yielded cells seven times with its own `wait`, `{cell_id, yield_time_ms}`, B2's
+shape. Every command the host ran — the skill read, a read of the log and the append — judges
+`pass` by the verifier's own tokenizer, in its rollout and its stream alike, and the append
+exited 0 under `workspace-write` (`e4/host-commands-judged.txt`,
+`e4/log-append-reading.txt`).
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 9ed6c4fc… --slug
+t14-e4`, `CODEX_HOME` unset, right after the run (`e4/e4-verify.txt`): seven `pass`, and a
+`?` on condition 8, "920c667b: events this build cannot read (file_change)". The reading
+(`e4/verify-reading-rollout.txt`): the Codex implementer's `--json` writes each
+`apply_patch` edit as a `file_change` item — `changes: [{path, kind: "update"}]`, keys
+exactly `changes, id, status, type` — two of them, both files inside the task's worktree; its
+rollout shows the same two edits as code-mode scripts calling `tools.apply_patch` with a
+literal patch, and `FileChange` items naming the same paths; every command the record
+shows, rollout and stream alike, judges `pass`, and it made no MCP call. Neither a launch nor a
+`delegate`, and the run passes on that reading. The verifier leaves `file_change` a question:
+T14 taught it one shape, the code-mode `wait`, and no other. Every Codex record was judged
+from its rollout under `~/.codex/sessions`: the planner's two, one thread resumed, clean.
+
+The six records are at depth 1 against a cap of 1. The journal for `t14-e4` reads
+`worktree-created, git, committed, git, merged, tests-passed, worktree-removed,
+branch-deleted`, `defaultShaBeforeMerge` 15e9f4e and `branchHead` 23980ed. The specialists
+cost $0.264 (Grok $0.127, Claude $0.137); the Codex specialists reported 260,949 tokens in
+and 2,738 out.
+
+Nothing deviated from the loop: step 8's rebase ran where E1 skipped it, and the needs-work
+round was the plan reviewer's own verdict, answered through the planner's `resume`. Both
+specialists' specs carry `protectedPaths` and deny targets rooted at the plugin's copy
+(`node ~/.codex/plugins/cache/agent-team-cli/cross-agent/0.0.1/src/server.ts`), the first
+whole loop to run with both (E1's note, above).
+
+<!-- @anchor e5 -->
+## E5: one `dev-team-engine` task under a Codex host, a Claude lead (2026-10-01)
+
+The Codex host again, the sample switched back to `dev-team-engine` with
+`limits.maxDepth: 2` (`e5/config.diff`): the lead on Claude (`claude-sonnet-5`), the
+planner on Codex, the plan reviewer on Grok, the implementer on Claude, the code reviewer on
+Codex (read-only), each at medium. The prompt: "T14-E5: run this task through the
+cross-agent skill in this repository. Task: add `slug_hash(text: str, length: int = 8) ->
+str`, a stable short hash of the slug, with tests; use the slug t14-e5."
+
+The host read the launcher skill, called `describe_mode` and `list_roles`, delegated the lead
+`a74b6420…`, and waited. The lead's own server, read from `/proc` while it ran
+(`e5/proc-lead.json`), was the plugin copy's `src/server.ts --project <sample>` — the lead
+mount names the copy the host's server runs from — and carried all four markers with the
+lead's values: depth 1, its task id, a lineage of itself, the project. The lead ran the loop,
+984 s and $0.755: the planner (Codex) 32 s; the plan reviewer (Grok) 133 s, revise; the
+planner resumed, 22 s; the plan reviewer again, 144 s, revise; and then, under the loop's
+two-round rule, an `ask` to the operator: fold the two small findings into the implementer's
+brief, or plan a third time?
+
+The host's first turn met the question. Its first `wait` returned `running` after 600.008 s
+by its own item — a second full ten minutes through the plugin — and `list_tasks` and
+`list_asks` found the ask open. Codex then tried its own `request_user_input_async` (the first
+call refused for its argument shape, the second "accepted", with no one to answer under
+`codex exec`), slept four times 30 s with its own `sleep`, and closed the turn on the question:
+"The cross-agent run is paused at the lead's open question…". That is the launcher's
+conduct: a question that is the operator's goes to the operator. The operator's answer reached
+it by resuming the host's own thread, `codex exec resume <thread> -` with the answer as the
+prompt (`e5/resume/`): fold both findings into the implementer's brief, no third round. The
+host answered the ask with `answer`, waited 107 s for `done`, and called `result`. The lead
+had gone on: the implementer (Claude) 28 s, 90 → 95 tests; `git_mutate` commit `583bfda`; the
+code reviewer (Codex, read-only) 29 s, ready; the rebase a no-op; the merge `23980ed` →
+`583bfda`; the suite at the root; the worktree and the branch removed.
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since a74b6420… --slug
+t14-e5`, `CODEX_HOME` unset (`e5/e5-verify.txt`): **eight `pass`**, exit 0 — seven records, the
+lead judged by the lead row, every Codex record (the planner's thread, resumed, and the code
+reviewer) from its rollout. Depth and lineage (`e5/depth-lineage.txt`): the lead at depth 1,
+`parentTaskId` null, spec `CROSS_AGENT_DEPTH` 1, its lineage itself; the six specialists at
+depth 2, each the lead's child, the lead first in its lineage: PASS. The journal for `t14-e5`
+reads `worktree-created, git, committed, git, merged, tests-passed, worktree-removed,
+branch-deleted`, `defaultShaBeforeMerge` 23980ed and `branchHead` 583bfda.
+
+**The host's conduct** (`e5/audit-host.txt`, both turns): `describe_mode`, `list_roles`, one
+`delegate`, of the lead, two `wait`s, `list_tasks`, three `list_asks`, one `answer` and one
+`result` — nothing outside the launcher's engine-placement list, no loop step, no specialist
+delegated, no `git` and no test command. Its one shell command, as its first turn opened, was
+`cat` of the plugin's own `skills/cross-agent/SKILL.md`, which is how a Codex host reads a
+skill, and it judges `pass`. **Its closing message** (`e5/presentation-reading.txt`): `result`
+returned the lead's result file byte for byte, 2678 bytes, and the closing message opens with
+it verbatim, with nothing before it or after it. `cross-agent report --since 9ed6c4fc…` renders
+E4's six tasks and E5's seven, each `passed`.
+
+The specialists cost $1.134: the Claude lead $0.755, the implementer $0.204, the two Grok
+reviews $0.174. The Codex specialists reported 228,873 tokens in and 2,972 out, the host's two
+turns 2,030,354 in and 5,036 out. Re-run under this configuration, E4's range takes in E5's
+records under the cap of 2 and keeps its one `?`, the `file_change` doubt read above; E5's
+stands at eight `pass`. The sample is left on `main` at `583bfda`, 95 tests green, clean, the
+root worktree alone, in E5's configuration.
 
 
 <!-- @anchor cliFacts -->
