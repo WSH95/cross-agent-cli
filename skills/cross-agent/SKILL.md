@@ -126,7 +126,7 @@ task costs you many short waits, not one long one:
 | --- | --- | --- |
 | Claude Code | about 28 hours by default | 600 |
 | Codex | `tool_timeout_sec` per server, 3600 in `.codex-plugin/plugin.json` and in the lead mount (`docs/probes.md#codexHostTimeout`) | 600 |
-| Grok | not settled until probe I2 of T15 | 300 |
+| Grok | `tool_timeout_sec` per server, 6000 by default; a 600 s `wait` returned intact under a Grok host (`docs/probes.md#grokToolTimeout`) | 600 |
 
 Those are the budgets of the design's "Time limits": there is no cap on a task,
 only on one call about it. `timeout_seconds` defaults to the project's

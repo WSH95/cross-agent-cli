@@ -72,8 +72,8 @@ function namesCalled(text: string): string[] {
   return [...names];
 }
 
-// Keys of a host's own manifest, which this server never sees. Codex's per-server MCP
-// tool timeout is one of the two numbers the launcher's budget table is made of.
+// Keys of a host's own configuration, which this server never sees. Codex's and Grok's
+// per-server MCP tool timeout is one of the two numbers the launcher's budget table is made of.
 const hostManifestKeys = new Set(["tool_timeout_sec"]);
 
 // The calls a loop's own steps are made of, besides delegating its specialists: under
@@ -282,6 +282,7 @@ test("under engine placement the host runs no command on the project and shows t
   "under engine placement the session closes on the lead's report itself");
 });
 
+// @anchor budgetTable
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
   const text = flat(launcher());
   assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");
@@ -289,7 +290,9 @@ test("the launcher's budget table gives every host a wait that fits inside its t
   // Where Codex's 3600 lives, and the run that measured a 600 s `wait` inside it (T14's B3).
   assert.match(text, /Codex[^|]*\|[^|]*`\.codex-plugin\/plugin\.json`[^|]*lead mount[^|]*`docs\/probes\.md#codexHostTimeout`[^|]*\|/,
     "Codex's row names the plugin manifest and the lead mount, and cites the measured wait");
-  assert.match(text, /Grok[^|]*\|[^|]*\|[^|]*300/, "Grok's row, until T15 settles its timeout");
+  // Grok's per-server key, its default, and the run that held a 600 s `wait` inside it (T15's B3).
+  assert.match(text, /Grok[^|]*\|[^|]*`tool_timeout_sec`[^|]*6000[^|]*`docs\/probes\.md#grokToolTimeout`[^|]*\|[^|]*600/,
+    "Grok's row names the per-server key and its default, and cites the measured wait");
   assert.match(text, /Time limits/, "the table is the design's own budget, cited");
 });
 
