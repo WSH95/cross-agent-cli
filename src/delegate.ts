@@ -14,7 +14,7 @@ import { removeJournal } from "./journal.ts";
 import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
-import { asksSection, listAsks } from "./mailbox.ts";
+import { asksSection, lineageAsks } from "./mailbox.ts";
 import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
@@ -478,13 +478,20 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // engine session may have died waiting on a question, and the brief is the one way an
     // answer reaches the continuation (design, "The lead model", item 3). The record still
     // hashes the caller's own text below, because the duplicate window keys on it.
+    // An ask that cannot be read may be this chain's, and its answer with it: a brief that
+    // left it out would tell the continuation part of what it asked as the whole of it.
     let brief = request.brief;
     if (lead !== undefined && request.resume !== undefined) {
+      let found: ReturnType<typeof lineageAsks>;
       try {
-        brief += asksSection(listAsks(projectRoot, { taskIds: lineageIds(records, request.resume) }).asks);
+        found = lineageAsks(projectRoot, lineageIds(records, request.resume));
       } catch (error) {
         return refuse(`the asks of task ${request.resume} cannot be read: ${message(error)}`);
       }
+      if (found.unreadable.length > 0) {
+        return refuse(`the asks of task ${request.resume} cannot all be read, and the lead that continues it would not be told what its chain asked: ${found.unreadable.map((entry) => entry.reason).join("; ")} — repair or remove ${found.unreadable.length === 1 ? "that file" : "those files"}, then resume`);
+      }
+      brief += asksSection(found.asks);
     }
 
     // 5. Nothing exists yet, and the checks above were only true while this lock held them

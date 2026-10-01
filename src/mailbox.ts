@@ -32,10 +32,25 @@ export interface AskRecord {
 export interface InvalidAsk {
   file: string;
   reason: string;
+  /** The task a damaged file still names, when it parses that far; absent, it could be anyone's. */
+  taskId?: string;
 }
 
-function asksDirectory(projectRoot: string): string {
+/** An open ask a cancel could not settle: by its id when it was read, by its file when it could not be. */
+export type AskNotCancelled = { id: string; reason: string } | { file: string; reason: string };
+
+/** Where the asks live. */
+export function asksDirectory(projectRoot: string): string {
   return path.resolve(projectRoot, ".cross-agent", "asks");
+}
+
+/** A damaged ask, and the task it still names when it names one. */
+class AskFault extends Error {
+  taskId: string | undefined;
+  constructor(message: string, taskId: string | undefined) {
+    super(message);
+    this.taskId = taskId;
+  }
 }
 
 /** Where an ask lives. Resolving it writes nothing; an id that could leave the directory is refused. */
@@ -72,10 +87,13 @@ function parseAsk(file: string): AskRecord {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error;
-    throw new Error(`invalid ask ${file}: unparsable JSON: ${(error as Error).message}`);
+    throw new AskFault(`invalid ask ${file}: unparsable JSON: ${(error as Error).message}`, undefined);
   }
   const fault = askFault(parsed, file);
-  if (fault !== null) throw new Error(`invalid ask ${file}: ${fault}`);
+  if (fault !== null) {
+    const taskId = (parsed as { taskId?: unknown } | null)?.taskId;
+    throw new AskFault(`invalid ask ${file}: ${fault}`, typeof taskId === "string" ? taskId : undefined);
+  }
   return parsed as AskRecord;
 }
 
@@ -118,7 +136,9 @@ export function listAsks(projectRoot: string, filter: AskFilter = {}): { asks: A
       asks.push(parseAsk(file));
     } catch (error) {
       // A file that vanished between the listing and its read is gone, not invalid.
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") invalid.push({ file, reason: (error as Error).message });
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      const taskId = error instanceof AskFault ? error.taskId : undefined;
+      invalid.push({ file, reason: (error as Error).message, ...(taskId === undefined ? {} : { taskId }) });
     }
   }
   return {
@@ -128,6 +148,19 @@ export function listAsks(projectRoot: string, filter: AskFilter = {}): { asks: A
       .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id)),
     invalid,
   };
+}
+
+/**
+ * One lineage's asks, and the damaged files that may be its own: a file that names a task
+ * of the lineage is, and so is one that names no task a reader could find, because it
+ * could be anyone's. A resume told a lead's history without them would be told a part of
+ * it as the whole, and a cancel that skipped them would claim a lineage asks nothing more.
+ */
+export function lineageAsks(
+  projectRoot: string, taskIds: readonly string[], status?: AskStatus,
+): { asks: AskRecord[]; unreadable: InvalidAsk[] } {
+  const { asks, invalid } = listAsks(projectRoot, { taskIds, ...(status === undefined ? {} : { status }) });
+  return { asks, unreadable: invalid.filter((entry) => entry.taskId === undefined || taskIds.includes(entry.taskId)) };
 }
 
 /** A new open question, written whole. Its id is fresh, so no other writer can hold it yet. */
@@ -190,14 +223,24 @@ export async function answerAsk(projectRoot: string, id: string, answer: string,
 /**
  * The open asks of these tasks, cancelled: a cancelled lead asks nothing any more. Each is
  * read again under its own lock, so an answer that landed first is kept, and one ask that
- * cannot be written is that ask's failure, reported, and never the end of the rest.
+ * cannot be written is that ask's failure, reported, and never the end of the rest. A
+ * damaged file that may be one of these tasks' asks, and a mailbox that cannot be listed,
+ * are failures of the same kind: named, and never thrown, because a cancel reports its
+ * cascade's outcomes after this and a mailbox's trouble must not take them with it.
  */
 export async function cancelAsks(
   projectRoot: string, taskIds: readonly string[], options: WriteOptions = {},
-): Promise<{ cancelled: string[]; failures: Array<{ id: string; reason: string }> }> {
+): Promise<{ cancelled: string[]; failures: AskNotCancelled[] }> {
   const cancelled: string[] = [];
-  const failures: Array<{ id: string; reason: string }> = [];
-  const { asks } = listAsks(projectRoot, { taskIds, status: "open" });
+  const failures: AskNotCancelled[] = [];
+  let asks: AskRecord[];
+  try {
+    const found = lineageAsks(projectRoot, taskIds, "open");
+    asks = found.asks;
+    failures.push(...found.unreadable.map((entry) => ({ file: entry.file, reason: entry.reason })));
+  } catch (error) {
+    return { cancelled, failures: [{ file: asksDirectory(projectRoot), reason: `the mailbox cannot be listed: ${error instanceof Error ? error.message : String(error)}` }] };
+  }
   for (const open of asks) {
     try {
       const lock = await acquire(lockPath(projectRoot, askLockName(open.id)), {

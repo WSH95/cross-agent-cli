@@ -433,6 +433,37 @@ test("a cancelled lead cancels its open asks, leaves an answered one alone, and 
   if (quiet.ok) assert.deepEqual(quiet.asksCancelled, []);
 });
 
+// @anchor cancelSurvivesMailbox
+test("a cancel keeps every outcome over a damaged mailbox, and names what it could not cancel", async (t) => {
+  const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
+  const worktree = await p.worktree("task/damaged");
+  const lead = await launch(p, { role: "lead", cwd: p.root, brief: "the lead with a damaged mailbox" });
+  const child = await launch(p, { role: "implementer", cwd: worktree, branch: "task/damaged", authority: leadRow(lead.id) });
+  const open = createAsk(p.root, { taskId: lead.id, question: "Which slug?" });
+  const torn = path.join(p.root, ".cross-agent", "asks", "torn.json");
+  fs.writeFileSync(torn, "{");
+
+  const result = await cancel(p.root, lead.id);
+  assert.deepEqual(cancelled(result).map((outcome) => outcome.id).sort(), [lead.id, child.id].sort());
+  assert.equal(outcomeOf(cancelled(result), lead.id).outcome, "cancelled");
+  if (!result.ok) return;
+  assert.deepEqual(result.asksCancelled, [open.id]);
+  assert.deepEqual(result.asksNotCancelled?.map((failure) => ("file" in failure ? failure.file : failure.id)), [torn]);
+  assert.match(result.asksNotCancelled![0].reason, /invalid ask/);
+
+  // A mailbox the cancel cannot list loses it no outcome either: the cascade is done by
+  // then, and what it could not read is named beside it.
+  const second = await launch(p, { role: "lead", cwd: p.root, brief: "the lead whose mailbox is not a directory" });
+  const asks = path.join(p.root, ".cross-agent", "asks");
+  fs.rmSync(asks, { recursive: true, force: true });
+  fs.writeFileSync(asks, "not a directory");
+  const blind = await cancel(p.root, second.id);
+  assert.equal(outcomeOf(cancelled(blind), second.id).outcome, "cancelled");
+  if (!blind.ok) return;
+  assert.deepEqual(blind.asksCancelled, []);
+  assert.deepEqual(blind.asksNotCancelled?.map((failure) => ("file" in failure ? failure.file : failure.id)), [asks]);
+});
+
 test("an orphaned lead settles its children first, then its own group, from where it is", async (t) => {
   const p = await projectWithRoles(t, { cancelGraceSeconds: 1 });
   const worktree = await p.worktree("task/orphaned-lead");

@@ -5,7 +5,8 @@ import type { CrossAgentConfig } from "./config.ts";
 import { currentBootId, find, isProcessAlive, isTerminal, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
-import { cancelAsks } from "./mailbox.ts";
+import { asksDirectory, cancelAsks } from "./mailbox.ts";
+import type { AskNotCancelled } from "./mailbox.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import type { FoundProcess } from "./process.ts";
 import { killStrays, strandedEngine, terminateGroup, terminateGroupByPid } from "./process.ts";
@@ -192,8 +193,11 @@ export type CancelResult =
     outcomes: Outcome[];
     /** The open asks of the cancelled task's lineage, now `cancelled`: a cancelled lead asks nothing. */
     asksCancelled: string[];
-    /** Open asks this cancel could not write, each with its reason; a later cancel retries them. */
-    asksNotCancelled?: Array<{ id: string; reason: string }>;
+    /**
+     * Open asks this cancel could not write, each with its reason — by id, or by file where
+     * the file could not be read — for a later cancel to retry once they can be.
+     */
+    asksNotCancelled?: AskNotCancelled[];
   }
   | { ok: false; reason: string };
 
@@ -375,8 +379,14 @@ export async function cancel(projectRoot: string, taskId: string, options: Cance
   // Its questions go with it: an open ask of this task's lineage — its own, and those of the
   // records it continues — is cancelled, and an answer that landed first is kept (design,
   // "The lead model", item 3). Only a lead asks, and a lead delegates no lead, so the
-  // lineage is the whole of what this cancel could have left asking.
-  const asks = await cancelAsks(projectRoot, lineageIds(scan(projectRoot).records, taskId), { waitSeconds });
+  // lineage is the whole of what this cancel could have left asking. The cascade is done by
+  // now, so the mailbox's trouble is reported beside its outcomes and never instead of them.
+  let asks: { cancelled: string[]; failures: AskNotCancelled[] };
+  try {
+    asks = await cancelAsks(projectRoot, lineageIds(scan(projectRoot).records, taskId), { waitSeconds });
+  } catch (error) {
+    asks = { cancelled: [], failures: [{ file: asksDirectory(projectRoot), reason: error instanceof Error ? error.message : String(error) }] };
+  }
 
   // What is still active is what a later cancel retries, and saying so is the whole
   // difference between a partial failure and a cascade that reported success over one.

@@ -317,7 +317,14 @@ that spelling, so nothing in the matrix depends on it.
    status and answer, appended to the brief under `## Asks so far` while the
    record hashes the caller's own text (`src/mailbox.ts#asksSection`,
    `src/delegate.ts#delegate`), which is how an answer reaches a lead that was
-   killed while waiting (`docs/probes.md#injectKilledLeadAsk`). The mailbox
+   killed while waiting (`docs/probes.md#injectKilledLeadAsk`). A damaged ask
+   file counts as a lineage's when it names a task of that lineage or no task a
+   reader could find (`src/mailbox.ts#lineageAsks`): a resume refuses while one
+   exists, naming the file, because the continuation would be told part of its
+   history as the whole (`tests/delegate.test.ts#resumeRefusesUnreadableAsk`),
+   and a cancel names it, and a mailbox it cannot list, under
+   `asksNotCancelled` beside its cascade's outcomes, never instead of them
+   (`tests/tasks.test.ts#cancelSurvivesMailbox`). The mailbox
    sidesteps every relay limit the OpenMausBot reference carries: cards that die
    with the turn, a three-per-five-minute wake budget, a four-minute ask cap, a
    fifteen-minute auto-deny. It is registered under engine placement only, and

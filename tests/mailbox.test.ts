@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { answerAsk, ask, cancelAsks, createAsk, listAsks, readAsk } from "../src/mailbox.ts";
+import { answerAsk, ask, cancelAsks, createAsk, lineageAsks, listAsks, readAsk } from "../src/mailbox.ts";
 import type { AskRecord } from "../src/mailbox.ts";
 import { askLockName, lockPath } from "../src/locks.ts";
 import { poll, project } from "./helpers/project.ts";
@@ -183,6 +183,39 @@ test("cancelAsks cancels the open asks of a lineage under each ask's lock, and l
   // The lock each one was written under is the ask's own.
   assert.equal(fs.existsSync(lockPath(p.root, askLockName(open.id))), true);
   assert.equal(askLockName(open.id), `ask-${open.id}.lock`);
+});
+
+// @anchor unreadableAsksCount
+test("a damaged ask counts as a lineage's when it names that lineage or no task at all, and a cancel names it", async (t) => {
+  const p = await mailboxProject(t);
+  const open = createAsk(p.root, { taskId: "lead-a", question: "Open?" });
+  const torn = path.join(asksDir(p.root), "torn.json");
+  const ours = path.join(asksDir(p.root), "ours.json");
+  const theirs = path.join(asksDir(p.root), "theirs.json");
+  // Unparsable, so it could be anyone's; parsable as far as its task, and damaged after it.
+  fs.writeFileSync(torn, '{"id": "torn", "taskId": "lea');
+  fs.writeFileSync(ours, JSON.stringify({ id: "ours", taskId: "lead-a", question: "Q", createdAt: 1, status: "pending" }));
+  fs.writeFileSync(theirs, JSON.stringify({ id: "theirs", taskId: "lead-b", question: "Q", createdAt: 1, status: "pending" }));
+
+  const found = lineageAsks(p.root, ["lead-a"]);
+  assert.deepEqual(found.asks.map((record) => record.id), [open.id]);
+  assert.deepEqual(found.unreadable.map((entry) => entry.file).sort(), [ours, torn].sort());
+  for (const entry of found.unreadable) assert.ok(entry.reason.includes(entry.file), `the reason names ${entry.file}`);
+
+  // A cancel writes what it can read and names, by file, what it cannot.
+  const result = await cancelAsks(p.root, ["lead-a"]);
+  assert.deepEqual(result.cancelled, [open.id]);
+  assert.deepEqual(result.failures.map((failure) => ("file" in failure ? failure.file : failure.id)).sort(), [ours, torn].sort());
+  assert.equal(JSON.parse(fs.readFileSync(theirs, "utf8")).status, "pending", "another lineage's damage is not this cancel's");
+
+  // A mailbox that cannot even be listed is the cancel's failure to report, never its throw.
+  fs.rmSync(asksDir(p.root), { recursive: true, force: true });
+  fs.writeFileSync(asksDir(p.root), "not a directory");
+  const blind = await cancelAsks(p.root, ["lead-a"]);
+  assert.deepEqual(blind.cancelled, []);
+  assert.equal(blind.failures.length, 1);
+  const [failure] = blind.failures;
+  assert.ok("file" in failure && failure.file === asksDir(p.root), JSON.stringify(failure));
 });
 
 // @anchor askReadsWriteNothing

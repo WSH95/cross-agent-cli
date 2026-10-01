@@ -608,6 +608,31 @@ test("a resumed lead's brief carries its lineage's asks, and its record hashes t
   assert.equal(p.record(quiet).briefHash, hash("Carry on."));
 });
 
+// @anchor resumeRefusesUnreadableAsk
+test("a lead's resume is refused, naming the file, while an ask its chain may have put cannot be read", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "codex" }) };
+  const { createAsk } = await import("../src/mailbox.ts");
+  const first = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "S11: run the task." }), options));
+  await waitForRecord(p, first, (value) => value.status === "done");
+  createAsk(p.root, { taskId: first, question: "Which slug?" });
+  const asks = path.join(p.root, ".cross-agent", "asks");
+
+  // A file no reader can parse could be this chain's question, and its answer with it: the
+  // continuation would be launched without it, so nothing is launched.
+  const torn = path.join(asks, "torn.json");
+  fs.writeFileSync(torn, '{"id": "torn", "taskId": "');
+  const before = p.records().length;
+  const reason = refusal(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "Carry on.", resume: first }), options));
+  assert.ok(reason.includes(torn), reason);
+  assert.equal(p.records().length, before, "no record for a refused resume");
+
+  // Damage that still names another lineage's task is that lineage's to repair.
+  fs.writeFileSync(torn, JSON.stringify({ id: "torn", taskId: "some-other-lead", question: "Q", createdAt: 1, status: "pending" }));
+  const resumed = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "Carry on.", resume: first }), options));
+  assert.match(readSpec(p.root, resumed).brief, /## Asks so far/);
+});
+
 // @anchor configEditedAfter
 test("a config edited after the server read it is refused at the launch boundary, by field and rule", async (t) => {
   const p = await projectWithRoles(t);
