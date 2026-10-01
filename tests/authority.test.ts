@@ -85,6 +85,20 @@ test("the operator is a clean environment whose walk reaches the root without me
     "the depth cap lowers the operator as it lowers a lead");
 });
 
+// @anchor operatorNamesProject
+test("a clean environment that names the project in CROSS_AGENT_PROJECT is still the operator: the variable says which project, not whose server", (t) => {
+  // What a Codex host's server holds when the operator started the host from a clean shell
+  // (docs/probes.md#codexMarkers): Codex's seven names, the launcher's PWD, and the project
+  // the operator named, with no task marker.
+  const { project } = workspace(t);
+  fakeProc(t, new Map([[process.pid, ownStatWithParent(first)], [first, statLine(first, 0, "100")]]));
+  const env = {
+    HOME: "/home/operator", LANG: "C.UTF-8", LOGNAME: "operator", PATH: "/usr/bin:/bin", PWD: "/plugins/cache/cross-agent",
+    SHELL: "/bin/sh", TERM: "dumb", USER: "operator", CROSS_AGENT_PROJECT: project,
+  };
+  assert.deepEqual(resolveAuthority(project, env, { leadRole: "lead", maxDepth: 1 }), { row: "operator", reason: operator, depth: 0 });
+});
+
 // @anchor serverCarryingAny
 test("a server carrying any CROSS_AGENT_* variable but matching no record is a specialist, never the operator", (t) => {
   const { project } = workspace(t);
