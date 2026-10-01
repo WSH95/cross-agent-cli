@@ -34,6 +34,11 @@ export function runnerLockName(id: string): string {
   return `runner-${id}.lock`;
 }
 
+/** Serializes the writes to one ask, so the first answer, or a cancel, is the only one (design, "The lead model"). */
+export function askLockName(id: string): string {
+  return `ask-${id}.lock`;
+}
+
 /** Serializes the lead's git mutations against each other (design section 4, step 3). */
 export function gitLockName(): string {
   return "git.lock";
