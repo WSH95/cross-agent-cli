@@ -2734,18 +2734,36 @@ sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 
 ### 10. Operator CLI
 
-`src/cli.ts` ships `init` alone: `cross-agent init [--mode <name>] [--project
-<root>]` writes the bind-time config for a mode and answers with an exit code —
-0 it wrote one, 1 it could not, 2 it could not read the command line
-(`src/cli.ts#runCli`). A project that already holds a config is not rewritten,
-and that is a 0 with a line saying so; a `--project` that does not resolve to an
-existing directory is a 1, because `initConfig` creates `.cross-agent/` with its
-parents and a typo would otherwise leave a project tree nobody asked for. The
-flags go through the same parser the server's own argv does, so adding one does
-not break the other (`src/project.ts#parseFlags`, `#discoverProject`).
-`package.json` names the entry point under `bin`, and the file carries a
-`#!/usr/bin/env node` shebang, which Node 24 strips from a `.ts` source as it
-does from any other. The rest of the verbs below are step 13 (`atc-s96.16`).
+`src/cli.ts` is a table of verbs over one parser and one exit protocol
+(`src/cli.ts#runCli`, `#EXIT`): 0 ok, 1 an error nothing anticipated, 2 a
+command line it cannot read, 3 a precondition the verb needs and does not have,
+and 4 still running, 5 needs the operator, 6 stalled — defined and documented
+now, and exited with by the verbs step 13 adds. Every verb takes `--project`,
+`--json` — one JSON document on stdout; a 2 or a 1 prints nothing there, and a
+3 prints its reason as that document — and `--help`, which prints the verbs and
+the protocol. The `--flag <value>` pairs go through the parser the server's own
+argv does, so adding one does not break the other (`src/project.ts#parseFlags`,
+`#discoverProject`). Three verbs ship. `cross-agent init [--mode <name>]
+[--project <root>]` writes the bind-time config for a mode
+(`src/cli.ts#initVerb`); a project that already holds one is not rewritten, and
+that is a 0 with a line saying so; a `--project` that does not resolve to an
+existing directory, and a mode this build has not got or cannot validate, are a
+3, because `initConfig` creates `.cross-agent/` with its parents and a typo would
+otherwise leave a project tree nobody asked for. `cross-agent answer <ask-id>
+<text>` answers an engine-placed lead's open question through the function the
+`answer` tool calls (`src/cli.ts#answerVerb`, `src/mailbox.ts#answerAsk`): 0 and
+the record, or 3 for a second answer — naming when the first landed — a
+cancelled ask or one nobody asked, and an unknown ask writes nothing. `cross-agent
+report [--since <task id>]` renders every task of the ledger newest first — role,
+engine, model, effort, duration, outcome, id — then each task's final message,
+the outcome three-valued: `passed` for `done`, `failed` for `failed` and
+`cancelled`, `unknown` for a task not yet settled or one whose result file is
+missing (`src/cli.ts#reportVerb`). It is a read and only a read: no
+reconciliation pass, and nothing created where there is no ledger. Every verb but
+`init` finds its project as the server does. `package.json` names the entry
+point under `bin`, and the file carries a `#!/usr/bin/env node` shebang, which
+Node 24 strips from a `.ts` source as it does from any other. The rest of the
+verbs below are step 13 (`atc-s96.16`).
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
 log <id> | cancel <id> | answer <ask-id> <text> | report | verify-worktree

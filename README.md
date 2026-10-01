@@ -115,6 +115,34 @@ npm test
 
 No dependencies; Node 24 or later runs the TypeScript sources directly.
 
+## The operator CLI
+
+`cross-agent <verb>` — or `node ~/Documents/agent-team-cli/src/cli.ts <verb>`
+where the package is not linked — is the operator's own entry point. Every verb
+takes `--project <root>` (otherwise the project is the one the server would
+find), `--json` for one JSON document on stdout, and `--help`.
+
+| verb | what it does |
+| --- | --- |
+| `init [--mode <name>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone |
+| `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed |
+| `report [--since <task id>]` | every task, newest first — role, engine, model, effort, duration, outcome, id — then each task's final message; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) |
+
+One exit protocol for every verb:
+
+| code | meaning |
+| --- | --- |
+| 0 | ok |
+| 1 | error: something the command did not anticipate failed |
+| 2 | usage: the command line could not be read (nothing on stdout) |
+| 3 | precondition: the project, the mode, the ask or the task is not in the state the verb needs — with `--json`, the reason is the document on stdout |
+| 4 | still running: a task the verb reads has not settled |
+| 5 | needs the operator: a lead is waiting on an open ask |
+| 6 | stalled: a task's engine has been silent past `limits.stallMinutes` |
+
+`init`, `answer` and `report` exit 0, 1, 2 or 3; 4, 5 and 6 are reserved now for
+the verbs the work plan's step 13 adds (design section 10).
+
 ## The lead, in one paragraph
 
 In the design, the lead is whichever session holds the lead tools and runs
