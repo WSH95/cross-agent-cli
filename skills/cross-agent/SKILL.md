@@ -13,13 +13,19 @@ and none of its tasks can be waited on, cancelled or reported.
 
 ## Before anything
 
-Call `describe_mode`. It answers with the active mode's `loop`, its `roles` —
-each with its workspace, sandbox default and prompt — and its `git` policy:
-`worktreeDir`, `branchPattern`, and `implicit: true` where those two are this
-build's defaults rather than the mode's own. **The `loop` it returns is your
-instructions for this project.** It is served rather than copied into a skill
-directory, so it is current for the mode this server actually loaded; where it
-spells a step differently from this skill, follow it.
+Call `describe_mode`. It answers with the active mode — its `lead` among the
+rest — the mode's `loop`, its `roles` — each with its workspace, sandbox default
+and prompt — and its `git` policy: `worktreeDir`, `branchPattern`, and `implicit:
+true` where those two are this build's defaults rather than the mode's own.
+
+`mode.lead.placement` decides who runs that loop. Under `host` — `dev-team`,
+`solo` — **the `loop` it returns is your instructions for this project.** It is
+served rather than copied into a skill directory, so it is current for the mode
+this server actually loaded; where it spells a step differently from this skill,
+follow it. Under `engine` — `dev-team-engine` — the loop is the lead's and not
+yours: a spawned Claude or Codex session runs it, and your part is to start that
+lead, watch it and answer it, as the `## Engine placement` section below says.
+No step of an engine-placed loop is yours to run.
 
 If `describe_mode` refuses, tell the user the reason and stop. A project with no
 `.cross-agent/config.json` is not that case — it runs the built-in `solo` mode
@@ -240,11 +246,17 @@ reading the work is the point of asking:
 
 ## Reporting
 
-Append one line per task to `.cross-agent/log.md` as it settles: role, engine,
-model, effort, duration, outcome, the task id. That file is the project's own
-record of what the team did: `cross-agent init` puts `.cross-agent/` in
-`.gitignore`, and both root tools refuse to run in a project that tracks it, so
-the line costs no commit and reaches no task branch.
+Under `host` placement, append one line per task to `.cross-agent/log.md` as it
+settles: role, engine, model, effort, duration, outcome, the task id. That file is
+the project's own record of what the team did: `cross-agent init` puts
+`.cross-agent/` in `.gitignore`, and both root tools refuse to run in a project
+that tracks it, so the line costs no commit and reaches no task branch.
+
+Under `engine` placement the lead is read-only at the root and appends nothing:
+its closing report is its own final message, which you read with `result {task_id:
+<lead id>}`, and `cross-agent report` renders the same per-task line for every task
+of the run from the ledger, then each task's final message. Its exit codes are the
+README's table (`README.md`, "The operator CLI").
 
 Close the session with the same per-task list to the user, plus what was not
 verified: a suite nobody ran, a review nobody asked for, a branch left standing
@@ -271,11 +283,39 @@ a summary of a review is not a review.
 
 ## Engine placement
 
-S11 extends this section: under a mode with `lead.placement: "engine"` the loop
-runs in a spawned Claude or Codex session rather than yours, your own session
-stays free while it works, and three things arrive that do not exist yet — the
-lead asks you questions through a mailbox you read with `list_asks` and reply to
-with `answer`, or from a terminal with `cross-agent answer`; the lead's closing
-report is its task's final message rather than a line it appends; and
-`cross-agent report` renders the per-task log from the ledger in place of
-`.cross-agent/log.md`. Until then every mode runs its loop in your own session.
+Under a mode whose `lead.placement` is `engine` the loop runs in a spawned Claude
+or Codex session, not in yours, and your session stays free while it works. Your
+part is setup, monitoring and answering.
+
+Start the lead with one call: `delegate {role: <lead.role>, cwd: <project root>,
+brief}`, the role being `mode.lead.role` from `describe_mode` and the brief the task
+itself. The server mounts itself into the lead and launches it with the mode's loop
+and the lead's own role prompt, so the brief is the task text and nothing about the
+loop. Narrate it as any dispatch, then `wait {task_id, timeout_seconds: 600}`, again
+and again, exactly as for any task.
+
+The lead asks you questions. After every `wait` that timed out, call `list_asks
+{status: "open"}`: an open ask is the lead waiting on you. Put the question to the
+user where the answer is theirs, then answer it with `answer {ask_id, text}` — or,
+from any terminal, with `cross-agent answer`: `cross-agent answer <ask-id> <text>`.
+The first answer wins: a second is refused, naming when the first landed.
+
+`cancel {task_id: <lead id>}` stops the lead and cascades to every task it
+delegated, leaves first, and to its open asks, which are cancelled with it. A lead
+that failed or was killed is continued, not started again: `delegate {role:
+<lead.role>, cwd: <project root>, resume: <lead id>, brief}`, and the server
+appends to that brief every question the lead's chain asked so far with its status
+and answer — which is how an answer you gave a lead that died waiting reaches the
+one that continues it.
+
+When the lead settles, `result {task_id: <lead id>}` is its closing report, which
+you relay rather than summarize, and `cross-agent report` renders every task of the
+run from the ledger.
+
+Your own calls under this placement are the launcher's setup, monitoring and
+answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the
+lead, `wait`, `check`, `result`, `list_asks`, `answer` and `cancel` — and never a
+loop step: you never call `git_root`, `git_mutate`, `run_command` or
+`verify_worktree` yourself, and you never delegate a specialist. Those are the
+lead's, and a step the lead did not take is one its journal and its report do not
+have.

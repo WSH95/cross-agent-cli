@@ -75,29 +75,41 @@ function namesCalled(text: string): string[] {
 // Keys of a host's own manifest, which this server never sees. Codex's per-server MCP
 // tool timeout is one of the two numbers the launcher's budget table is made of.
 const hostManifestKeys = new Set(["tool_timeout_sec"]);
-// The mailbox an engine-placed lead needs, which step 11 of the work plan builds. Nothing
-// registers these yet, so the launcher may name them only where it says so.
-const notYetBuilt = new Set(["list_asks"]);
-const placeholder = /S11 extends/;
 
 /**
  * Every call-shaped name in `text` names a tool the mode registers for `row`, a key one of
- * those tools takes, or a host's own manifest key — unless the paragraph that names it is
- * the one marked as what step 11 extends.
+ * those tools takes, or a host's own manifest key.
  */
 function assertToolsExist(text: string, mode: string, row: "operator" | "lead", where: string): void {
   const tools = registry(mode);
   const keys = parameters(tools);
-  for (const paragraph of text.split(/\n\s*\n/)) {
-    const marked = placeholder.test(paragraph);
-    for (const name of namesCalled(paragraph)) {
-      if (keys.has(name) || hostManifestKeys.has(name)) continue;
-      if (marked && notYetBuilt.has(name)) continue;
-      const tool = tools.get(name);
-      assert.ok(tool !== undefined, `${where} calls ${name}, which ${mode} registers no tool for`);
-      assert.ok(tool.rows.includes(row), `${where} calls ${name}, which is not offered to the ${row} row`);
-    }
+  for (const name of namesCalled(text)) {
+    if (keys.has(name) || hostManifestKeys.has(name)) continue;
+    const tool = tools.get(name);
+    assert.ok(tool !== undefined, `${where} calls ${name}, which ${mode} registers no tool for`);
+    assert.ok(tool.rows.includes(row), `${where} calls ${name}, which is not offered to the ${row} row`);
   }
+}
+
+/**
+ * The launcher split at its engine-placement section: the section itself, which only an
+ * engine-placed mode reads, and everything else, which every mode does.
+ */
+function engineSection(): { rest: string; section: string } {
+  const text = launcher();
+  const start = text.indexOf("\n## Engine placement\n");
+  assert.ok(start >= 0, "the launcher has an engine-placement section");
+  const next = text.indexOf("\n## ", start + 1);
+  const end = next === -1 ? text.length : next;
+  return { rest: text.slice(0, start) + text.slice(end), section: text.slice(start, end) };
+}
+
+/** One `## ` section of a document, by its heading, to the next heading of that level. */
+function sectionOf(text: string, heading: string): string {
+  const start = text.indexOf(`\n## ${heading}`);
+  assert.ok(start >= 0, `no section ${heading}`);
+  const next = text.indexOf("\n## ", start + 1);
+  return text.slice(start, next === -1 ? text.length : next);
 }
 
 /** Each fragment appears after the one before it, so the document states them in order. */
@@ -127,10 +139,12 @@ test("the launcher's frontmatter names the skill its directory does, and its des
 });
 
 test("every tool the launcher calls is registered and offered to the operator row, under every mode", () => {
-  const text = launcher();
+  const { rest, section } = engineSection();
   for (const mode of ["solo", "dev-team", "dev-team-engine"]) {
-    assertToolsExist(text, mode, "operator", `the launcher under ${mode}`);
+    assertToolsExist(rest, mode, "operator", `the launcher under ${mode}`);
   }
+  // The mailbox exists under engine placement alone, and so does the section that calls it.
+  assertToolsExist(section, "dev-team-engine", "operator", "the launcher's engine-placement section");
 });
 
 test("the launcher calls the tools a host session needs to start, watch, merge and report", () => {
@@ -207,16 +221,49 @@ test("the launcher's reconciliation pass reads every source design section 7 nam
   }
 });
 
-test("the launcher names what step 11 extends, and nothing else claims a tool that is not built", () => {
-  const paragraphs = launcher().split(/\n\s*\n/);
-  const marked = paragraphs.filter((paragraph) => placeholder.test(paragraph));
-  assert.equal(marked.length, 1, "one marked paragraph, so a reader knows exactly what is deferred");
-  for (const name of ["`list_asks`", "`answer`", "`cross-agent answer`", "`cross-agent report`"]) {
-    assert.ok(marked[0].includes(name), `the placeholder names ${name}, which engine placement needs`);
+// @anchor launcherRoutesPlacement
+test("the launcher routes on placement and names the mailbox tools and the report verb", () => {
+  const text = launcher();
+  const paragraphs = text.split(/\n\s*\n/);
+  // Right after `describe_mode`, placement decides who runs the loop it returned.
+  const describe = paragraphs.findIndex((paragraph) => paragraph.includes("Call `describe_mode`"));
+  assert.ok(describe >= 0, "the launcher opens on describe_mode");
+  const routing = flat(paragraphs[describe + 1]);
+  for (const word of [/`mode\.lead\.placement`/, /`host`/, /`engine`/, /## Engine placement/]) {
+    assert.match(routing, word, `the paragraph after describe_mode routes on placement: ${word}`);
   }
-  for (const paragraph of paragraphs) {
-    if (placeholder.test(paragraph)) continue;
-    assert.doesNotMatch(paragraph, /`list_asks`/, "only the marked paragraph names the mailbox");
+  // The returned loop is the host's own instructions under `host` and only there.
+  const instructions = paragraphs.filter((paragraph) => /your instructions/.test(paragraph));
+  assert.ok(instructions.length > 0);
+  for (const paragraph of instructions) assert.match(flat(paragraph), /`host`/, "the loop is the host's instructions only under host");
+
+  // Reporting: `.cross-agent/log.md` is host placement's, and under engine placement the
+  // report is the lead's final message and the CLI's rendering of the ledger.
+  const reporting = sectionOf(text, "Reporting").split(/\n\s*\n/);
+  for (const paragraph of reporting.filter((each) => each.includes(".cross-agent/log.md"))) {
+    assert.match(flat(paragraph), /`host`/, "the log file is appended under host placement only");
+  }
+  assert.ok(reporting.some((paragraph) => /`engine`/.test(paragraph) && /`result/.test(paragraph) && /`cross-agent report`/.test(paragraph)),
+    "under engine placement: the closing report through result, every task through cross-agent report");
+
+  const { rest, section } = engineSection();
+  for (const name of ["`list_asks", "`answer", "`cross-agent answer`", "`cross-agent report`", "resume", "`cancel"]) {
+    assert.ok(section.includes(name), `the engine-placement section names ${name}`);
+  }
+  // Nothing outside the section contradicts it: the mailbox is named only there, and no
+  // paragraph says every mode runs its loop in the host session.
+  assert.doesNotMatch(rest, /`list_asks|`answer \{|`ask \{/);
+  assert.doesNotMatch(flat(rest), /every mode runs its loop in your own session/);
+  // The host starts the lead and watches it; the loop's own steps are the lead's.
+  const flatSection = flat(section);
+  assert.match(flatSection, /`delegate \{role: <lead\.role>, cwd: <project root>, brief\}`/);
+  assert.match(flatSection, /`wait \{task_id, timeout_seconds: 600\}`/);
+  assert.match(flatSection, /`list_asks \{status: "open"\}`/);
+  assert.match(flatSection, /`answer \{ask_id, text\}`/);
+  assert.match(flatSection, /`delegate \{role: <lead\.role>, cwd: <project root>, resume: <lead id>, brief\}`/);
+  assert.match(flatSection, /`result \{task_id: <lead id>\}`/);
+  for (const step of ["git_root", "git_mutate", "run_command", "verify_worktree"]) {
+    assert.match(flatSection, new RegExp(`never[^.]*\`${step}\``), `the section keeps ${step} out of the host's hands`);
   }
 });
 
@@ -257,18 +304,95 @@ test("the dev-team loop runs the ten steps in the order design section 4 gives t
   assert.match(text, /resume/, "a needs-work round continues the task that did the work");
 });
 
+// @anchor engineLoopSteps
+test("the engine loop runs the same ten steps in the same order, asking where the host loop stops for the user", () => {
+  const source = loop("dev-team-engine");
+  const text = flat(source);
+  assertInOrder(text, [
+    "list_tasks",
+    // Step 1's stops — a root that is not clean, not on `<default>` — are questions here.
+    "ask {question",
+    "delegate {role: \"planner\"",
+    // Step 2's premise failure.
+    "ask {question",
+    "delegate {role: \"plan-reviewer\"",
+    "resume",
+    // Step 3's human decision and its two-round stop: all before step 4 creates anything.
+    "ask {question",
+    'git_root {args: ["worktree", "add", "-b", <branch>, <worktree path>, <default>], slug}',
+    "delegate {role: \"implementer\"",
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    'git_mutate {slug, args: ["commit"',
+    "delegate {role: \"code-reviewer\"",
+    'git_mutate {slug, args: ["rebase", <default>]}',
+    'rebase", "--abort',
+    'git_root {args: ["merge", "--ff-only", <branch>], slug}',
+    'run_command {which: "test", where: "root", slug}',
+    "git revert --no-edit",
+    '"worktree", "remove"',
+    '"branch", "-d"',
+    // `.cross-agent/log.md` becomes the closing report, which is the lead's final message.
+    "closing report",
+  ], "the engine-placed loop");
+  assert.match(sectionOf(source, "10."), /closing report[\s\S]*final message|final message[\s\S]*closing report/);
+  assert.doesNotMatch(text, /\.cross-agent\/log\.md/, "a lead read-only at the root appends no file");
+  // The later stops for a decision are questions too, and a question is waited on by its id.
+  for (const step of ["5.", "7.", "8."]) assert.match(flat(sectionOf(source, step)), /ask \{question/, `step ${step}`);
+  assert.match(text, /ask \{id/);
+  // The repair path is not a question: the lead stops there and dispatches nothing more.
+  assert.match(flat(sectionOf(source, "9.")), /dispatch nothing/);
+  assert.match(text, /\bresume\b/, "a needs-work round continues the task that did the work");
+});
+
+// @anchor engineLoopOwnership
+test("the engine loop's root check says what the lead owns: never itself, only its own, and the operator for the rest", () => {
+  const step = flat(sectionOf(loop("dev-team-engine"), "1. Root check"));
+  // `list_tasks` marks the caller's records `self` and what it owns `own` (the server's half).
+  assert.match(step, /`self: true`/);
+  assert.match(step, /`own: true`/);
+  assert.match(step, /never wait on, cancel or reconcile your own `self`/);
+  assert.match(step, /wait on, resume and cancel only[^.]*`own`/);
+  assert.match(step, /records (it|you) continue/, "the resume-chain rule: a resumed lead owns its earlier records' children");
+  // What is not the lead's is the operator's, asked rather than decided.
+  for (const leftover of [/active task[^.]*not own/, /journal[^.]*not[^.]*(write|wrote|written)/, /invalid/]) {
+    assert.match(step, leftover);
+  }
+  assert.match(step, /ask \{question/);
+  assert.match(step, /only on (the|its) answer/);
+});
+
+// @anchor leadRolePrompt
+test("the lead's role prompt states who it is, its report, what it may not do, and its wait budget per engine", () => {
+  const lead = flat(fs.readFileSync(path.join(builtInModesDir(), "dev-team-engine", "roles", "lead.md"), "utf8"));
+  assert.match(lead, /^You are the lead/);
+  // The report, as its fields: the per-task line `cross-agent report` prints, then the rest.
+  assertInOrder(lead, ["closing report", "final message", "role", "engine", "model", "effort", "duration", "outcome", "task id",
+    "branch", "commit", "suite", "verdict", "cleaned up", "standing", "asked", "nobody verified"], "the lead's report");
+  // What it may not do.
+  for (const rule of [/never another lead/, /never do a specialist's work/i, /`git_root`/, /`git_mutate`/, /`run_command`/,
+    /never (start|run) an engine CLI/i, /only the tasks you own/, /never decide[^.]*operator/i, /no file/]) {
+    assert.match(lead, rule, `the lead's prompt says ${rule}`);
+  }
+  // The budget: every `wait` and `ask` is one call of 600 seconds, inside each engine's own timeout.
+  assert.match(lead, /600/);
+  assert.match(lead, /Claude[^.]*28 hours/);
+  assert.match(lead, /Codex[^.]*3600/);
+});
+
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {
   assertToolsExist(loop("dev-team"), "dev-team", "operator", "the dev-team loop");
   assertToolsExist(loop("dev-team-engine"), "dev-team-engine", "lead", "the engine-placed dev-team loop");
   assertToolsExist(loop("solo"), "solo", "operator", "the solo loop");
 });
 
-test("the dev-team loop names the journal step each of its git calls completes", () => {
-  const text = flat(loop("dev-team"));
-  for (const step of ["worktree-created", "committed", "rebased", "merged", "tests-passed", "worktree-removed", "branch-deleted"]) {
-    assert.match(text, new RegExp("`" + step + "`"), `the loop never says which call writes ${step}`);
+test("both dev-team loops name the journal step each of their git calls completes", () => {
+  for (const name of ["dev-team", "dev-team-engine"]) {
+    const text = flat(loop(name));
+    for (const step of ["worktree-created", "committed", "rebased", "merged", "tests-passed", "worktree-removed", "branch-deleted"]) {
+      assert.match(text, new RegExp("`" + step + "`"), `the ${name} loop never says which call writes ${step}`);
+    }
+    assert.match(text, /`ok: false`/, `${name}: any refusal is a reconciliation trigger, whatever its exit code`);
   }
-  assert.match(text, /`ok: false`/, "any refusal is a reconciliation trigger, whatever its exit code");
 });
 
 test("the solo loop is the short one and hands a one-shot that wrote to the launcher", () => {
