@@ -52,8 +52,8 @@ converter, and `delegate` launching a role with the mode's own prompt
 Probes rerun this milestone: none.
 
 Not run yet: probe P2 for Claude (`atc-s96.17`, at T13), I1, I2, E1–E7.
-Codex is paused by the user (2026-09-18): T13 records its Codex rows as
-not run, each with the command that runs it later.
+T13 recorded its Codex rows as not run; 6b ran I1's Codex rows, and T14 runs
+the rest.
 
 ## M3, second merge — T13: Claude Code packaging, the integration probes and the first end-to-end run (merged 2026-09-19)
 
@@ -66,7 +66,7 @@ not run, each with the command that runs it later.
 | host | `claude -p --plugin-dir <repo> --model claude-sonnet-5 --effort medium --permission-mode bypassPermissions --output-format stream-json --verbose`, claude 2.1.277 |
 | packaging | `.claude-plugin/plugin.json` alone: name, `package.json`'s version, and this server inline under `mcpServers`. No `.mcp.json` at the repository root — that file is Claude Code's project-scoped config, where `${CLAUDE_PLUGIN_ROOT}` has no value |
 | sample repository | `~/.cache/agent-team/cross-agent-e2e/slugkit` (clone of `~/Documents/atw-sample-slugkit`, Python; `python3 -m unittest discover -s tests -t .`) |
-| engines | claude 2.1.277, grok 1.0.34. codex-cli 0.155.0 present and **not run**: the user paused the Codex harness on 2026-09-18 |
+| engines | claude 2.1.277, grok 1.0.34. codex-cli 0.155.0 present and **not run** at T13 |
 | raw evidence | `~/.cache/agent-team/probe-logs/t13-2026-09-19/` (36 files: the P2 logs, the I1/I2/E1 host logs, the `grok mcp doctor` captures), named in `docs/probes.md` |
 | how an end-to-end run is judged | `node tools/e2e-verify.mjs --project <sample>` — the eight conditions below, each `pass`, `FAIL` or `?` |
 
@@ -110,7 +110,8 @@ first to exercise both inside a whole loop.
 | Claude Code, started with `setsid --fork` (E1, I1, I2) | 4 | operator |
 | Claude Code, started as a child of another Claude Code session | 9 | **specialist** — "the walk found neither an engine nor the root within 8 hops" |
 
-The design's 8-hop limit is **not raised**: it excluded a nested harness, not an
+At T13 the design's 8-hop limit was **not raised** (6b raised it to 32 on
+2026-09-30; see the 6b section): it excluded a nested harness, not an
 operator, and the harness has a one-word fix (`setsid`). A server says which row
 it resolved, and why, on stderr at the first resolution a request asks for.
 
@@ -151,16 +152,9 @@ below quote what those files say.
   containment fix through the product pipeline — spec `protectedPaths`, the
   engine's own `--settings`, nine steps including `<root>/.git/hooks/pre-commit`,
   every outside write denied. A 600-second `wait` returned at 602 s.
-- **Not run: every Codex row** — the user paused the Codex harness and its models
-  on 2026-09-18. When the pause lifts: `delegate {role: "consult", engine:
-  "codex", model: "gpt-5.6-luna", cwd: <sample>}` with I1's listing brief and
-  again with `worktree: true` and I2's negative writes (its network row is a
-  failure if it succeeds); `node tools/probe.mjs --engine codex --track --project
-  <sample> --cwd <sample> --sandbox read-only --model gpt-5.6-luna` for I1(ii);
-  and `CROSS_AGENT_REAL_CODEX=1 node --test tests/engines/codex.test.ts` for the
-  test that is written and guarded rather than empty. Confirm `gpt-5.6-luna`
-  first with `node tools/probe.mjs --engine codex --model gpt-5.6-luna --sandbox
-  read-only --cwd <sample> --prompt "reply OK"`, and fall back to `gpt-5.6-sol`.
+- **Not run at T13: every Codex row.** I1's Codex rows ran at 6b (below); I2's
+  Codex rows and the guarded test (`CROSS_AGENT_REAL_CODEX=1 node --test
+  tests/engines/codex.test.ts`) are T14's, with `gpt-6-luna` at medium.
 
 ### Cost of the recorded runs
 
@@ -169,3 +163,91 @@ row $0.21, the two host tool listings $0.14 and the inline-mount recheck $0.06,
 I1 $0.31 with the tracked probe $0.18, its rerun $0.10 and the Grok row $0.03,
 I2 $0.33 and the delegated rerun under the fix $0.26, the ten-minute wait $0.15,
 E1 $0.73.
+
+## 6b — pre-flight: probes on the current CLIs and hardening (merged 2026-10-01)
+
+| what | value |
+|---|---|
+| merge | `main` at `d428145`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 24 commits over `cb87b01` (twelve, two fix rounds of six and four, the verifier's class-level rewrite `0f9ff3a`, and the wrap-up) |
+| `npm test` at the root | 659 tests: 658 pass, 0 fail, 1 skipped (the Codex I2 test, guarded behind `CROSS_AGENT_REAL_CODEX=1`), on `main` at `d428145` |
+| citation checker | 909 citations in 2 files (37 by line, 872 by symbol or anchor), 0 misses; `--since cb87b01`: 0 drifted, 0 not judged |
+| verifier | `node --test tests/e2e-verify.test.ts` 40/40; the controller's launcher table 347/347; the 148 archived transcript commands judge 129 pass, 4 launch, 15 `?` (no false FAIL); this machine's Codex code-mode scripts, no FAIL |
+| engines | Claude Code 2.1.286, codex-cli 0.159.2, grok 1.0.44 (5b807183dd79); `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium |
+| sample repository | `~/.cache/agent-team/cross-agent-e2e/slugkit`, `main` at `5578d3c`; `tools/e2e-verify.mjs` on E1's six records: 8 pass, exit 0 |
+| raw evidence | `~/.cache/agent-team/probe-logs/6b-2026-09-30/` (one directory per probe), and the probe task records under `~/.cache/agent-team/cross-agent-e2e/probe-tasks/6b/`, named in `docs/probes.md` |
+
+Landed: `tools/probe.mjs --track` mounts the server with `--project` in its
+arguments, the form Codex's builder accepts; a read of an unknown task writes
+nothing (`atc-s96.51`); the runner re-scans an unreadable candidate — four scans,
+250 ms apart, 750 ms of waiting — and re-checks after the wait, so a settlement
+inside it launches no engine (`atc-s96.49`); `git_root` and `run_command` name the main worktree when
+pointed at a linked one (`atc-s96.50`); `killGroup` removed (`atc-s96.47`); the
+authority walk allows 32 hops; Grok's sandbox refusal fails the run by name;
+the end-to-end verifier judges a launch with a shell tokenizer under a written
+contract — on a line that names an engine anywhere (heredoc bodies, assignment values
+and redirection targets included), `pass` only where its grammar understands every
+construct, `?` for anything unmodeled, including unread stdin, expanded operands,
+code-carrying variables and deferred arithmetic — applies its
+effective depth cap and lead row (`--lead-role` renaming a shipped mode's lead
+only), reads Codex's `mcp_tool_call` item, and reads each Codex record's session
+rollout, passing a code-mode script only when every command-tool call in it is
+a direct one it can follow (`atc-s96.56`); a Claude specialist's settings
+disable the operator's hooks.
+
+### Probes
+
+- **Smoke**: all three CLIs answer a read-only `consult` through the product
+  (claude 7.8 s, codex 12.4 s, grok 6.8 s); the Claude specialist ran the
+  operator's `SessionStart` hooks and answered a `Stop` hook with its final
+  message.
+- **Grok's sandbox**: 1.0.44's `read-only` (and `strict`) refused to start —
+  `/run/podman` created `0700 root` by rootful podman left its runtime-socket
+  deny list unresolvable. Fixed by the user (`/etc/tmpfiles.d/podman.conf` at
+  `0711`, `chmod 0711 /run/podman`); a `consult` then answered in 8.0 s. The
+  refusal now fails a run as `grok sandbox failure: …`, not `engine exited 1`.
+- **I1, Codex**: both rows run. A delegated `consult` sees only Codex's own
+  `codex_apps`; a child given a lead's mount sees exactly the five specialist
+  tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project
+  `--project` names, and has no `delegate`. First recorded `mcp_tool_call` item.
+  Not run: the direct `tools/call delegate` refusal (unreachable from a client
+  that honours `tools/list`; pinned by a test) and the Codex host rows (T14).
+- **Grok `--rules` beside `--prompt-file`**: four marker runs — both inputs are
+  read (`atc-3ub` item 1).
+- **Codex `workspace-write`**: every write outside the worktree denied, `~/.cache`
+  included (`atc-3ub` item 2); the network denied (DNS fails). `--json` carried no
+  command item for the four denied writes; the session rollout recorded them, and
+  by the controller's ruling it is the second witness where `--json` has no item.
+  The end-to-end verifier reads each Codex record's rollout for that reason.
+- **Claude hooks**: before `disableAllHooks`, four `SessionStart` hooks and one
+  injected context; after, none, `mcp_servers: []`, "OK" alone; the read-only
+  write and the deny-list denial hold. Skills and slash commands still load.
+
+### Depth, from the MCP server's position
+
+| host | hops from the server to pid 1 | row served |
+|---|---|---|
+| Claude Code, started from a terminal | 7 | operator |
+| Claude Code, started with `setsid --fork` (E1, I1, I2) | 4 | operator |
+| Claude Code, started as a child of another Claude Code session (T13, 8-hop walk) | 9 | **specialist** — "the walk found neither an engine nor the root within 8 hops" |
+| a server started from a Claude Code session's own shell, no `setsid` (6b, 32-hop walk) | 9 (`node`, `bash`, `claude`, `bash --posix`, `sh -c`, `ghostty`, `nautilus`, `systemd --user`, `init`) | operator, twelve tools |
+
+T13 recorded "the design's 8-hop limit is not raised"; that is now history. The
+user raised the budget to 32 on 2026-09-30, the walk otherwise unchanged, and
+6b's nested row serves the operator. The Codex and Grok hosts' counts are T14's
+and T15's (`atc-s96.53`).
+
+### Decisions recorded by the runs
+
+- **Grok's sandbox fix** is the machine's, not the product's: the product names
+  the refusal and does not check Grok's deny list before a launch.
+- **Hooks**: `disableAllHooks: true` under every profile, adopted on A7's gate;
+  `--setting-sources` not needed.
+
+### Cost of the recorded runs
+
+$0.375 in dollars on the subscriptions: Claude $0.272 (hooks baseline $0.148,
+after $0.054, hard requirements $0.071); Grok $0.103 (sandbox after the fix
+$0.014, the four `--rules` runs $0.088). Codex reports tokens only: I1 (i)
+22,461 in / 1,571 out, I1 (ii) 45,102 / 1,969, the `~/.cache` runs 43,369 / 388
+and 103,367 / 625. The coordinator's smoke was not rerun (Claude $0.196, Grok
+$0.015).
