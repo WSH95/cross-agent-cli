@@ -2353,12 +2353,19 @@ each with its own unit test:
    (`src/server.ts#projectTools`); the matrix's rows replaced `toolsAtDepth`, the
    depth-only tool list that used to approximate it.
 2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
-   `--ignore-user-config` for Codex, no `--plugin-dir` for Grok. Grok
+   `--ignore-user-config` for Codex, and nothing for Grok, whose headless CLI has
+   no `--plugin-dir` at all — only `grok agent` does (`docs/probes.md#t15Attach`). Grok
    specialists **do** reach a server, because Grok has no per-invocation
    exclusion flag (`src/engines/grok.ts#exclusionArgs` returns an empty list),
    and P9 recorded exactly what a Grok child inherits: the operator's
    `~/.grok/config.toml`, the operator's Grok plugins, and the servers the
    operator declared to Claude in `~/.claude.json` (`docs/probes.md#p9GrokInherits`).
+   Grok also hands the server it starts its own whole environment, a task's markers
+   included, so a Grok session started inside a task resolves the specialist row — a
+   fact from the runs (`docs/probes.md#grokHostHops`, `#e2`), not a mechanism this
+   build relies on. A project's `[permission] deny` on `MCPTool(cross-agent__*)`
+   gates those calls without hiding the tools, and binds every Grok session in the
+   folder, the operator's own included (a driver run, `docs/probes.md#grokDenyMcp`).
    They are held to the specialist row by ancestry, not by exclusion — that is
    why layer 1 had to become a capability model, and it is the same finding that
    rules Grok out as a lead ("The lead model", item 4). Under `placement:
@@ -2742,17 +2749,18 @@ value outside a plugin, so it would offer every developer here a server that
 cannot start. The plugin manifest is the one declaration, and the server name in
 it is what a host spells its tools after. `claude plugin validate <repo>` passes on
 them, warning only that the repository's own `CLAUDE.md` is not plugin context,
-which it is not meant to be. The Codex manifest is built, below; Grok's is what
-remains of step 12.
+which it is not meant to be. The Codex manifest is built, below; Grok needs none
+of its own and reads this one as a plugin in place (below).
 
 A host mounts this server one way and a specialist another, and the tool names
 differ accordingly: under `--plugin-dir` the host's tools are
 `mcp__plugin_cross-agent_cross-agent__<tool>`, while a `--mcp-config` mount —
 every specialist's, and an engine-placed lead's — spells them
-`mcp__cross-agent__<tool>`. Neither spelling appears in the deny list, which
-names commands and not tools. A test of either compares the set of this server's
-tools, never a prefix (I1,
-`docs/probes.md#i1Spelling`). And the exclusion flag excludes **MCP servers**: a
+`mcp__cross-agent__<tool>`, and a Grok session, host or specialist, reaches them as
+`cross-agent__<tool>`, the server's name and the tool's, through its own `use_tool`
+(`docs/probes.md#t15Attach`). No spelling appears in the deny list, which names commands
+and not tools. A test of any of them compares the set of this server's tools, never a
+prefix (I1, `docs/probes.md#i1Spelling`). And the exclusion flag excludes **MCP servers**: a
 specialist's session still loads the host installation's slash commands and
 skills (`docs/probes.md#i1Inherited`); its hooks it loaded too, until 6b turned
 them off in the run's own settings (`docs/probes.md#claudeHooksIsolation`). That is why an end-to-end run's last condition is a
@@ -2898,8 +2906,22 @@ copy into `~/.codex/skills/cross-agent/`, a copy that takes
 as a second skill. That server starts where the session runs and needs no
 `CROSS_AGENT_PROJECT`, and it shadows the plugin's server of the same name
 (`docs/probes.md#codexPluginInstall`, `tests/packaging.test.ts#codexFallbackSnippet`). Grok
-through `--plugin-dir` or `grok plugin install <path>`, which reads the Claude manifest.
-Grok's MCP tool timeout is settled by integration probe I2.
+reads the Claude manifest as a plugin in place: a project's own `.grok/config.toml` names the
+checkout under `[plugins]` — `paths`, an absolute path, since Grok expands no `~` there, and
+`enabled = ["cross-agent"]` — and grok 1.0.46 takes `skills/` and the inline `mcpServers`,
+`${CLAUDE_PLUGIN_ROOT}` expanded to the checkout, with no copy and nothing written under
+`~/.grok/`, in a folder Grok trusts (`docs/probes.md#t15Attach`,
+`tests/packaging.test.ts#grokReadmeInstall`). `--plugin-dir` is not that route: the headless
+`grok` has no such flag, only `grok agent`, which an ACP client drives. Nor is `grok plugin
+install <path> --trust`, the documented one: it installs at user scope, which would put this
+server in every Grok session on the machine, Grok specialists in linked worktrees among them,
+where a project's file does not reach (`docs/probes.md#grokWorktreeMount`). The plugin's
+server carries no `--project`; Grok starts it in the session's working directory, where
+discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
+raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
+20,000 bytes by default, and `describe_mode` answers 24,880 under `dev-team-engine`. Grok's MCP
+tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
+600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
 
 Why an MCP core is the portable choice, and not a subagent as the vendor
 bridges use: **neither `codex-plugin-cc` 1.0.6 nor `grok-build-plugin-cc`
@@ -3100,7 +3122,10 @@ and `ask` calls fits with room (`src/engines/codex.ts#codex`), and B2 timed one 
 158 s by Codex's own record of it (`docs/probes.md#s11CodexLeadTimeout`). The Codex
 plugin's manifest sets the same 3600 s for a Codex host's own server, and Codex honours it
 from there: one 600 s `wait` completed at 600.004 s by Codex's own record, while a copy
-declaring 60 s cut the same call at 60 s (`docs/probes.md#codexHostTimeout`). `ask`
+declaring 60 s cut the same call at 60 s (`docs/probes.md#codexHostTimeout`). Grok gives an
+MCP call `tool_timeout_sec`, 6000 s by default, a project's plugin server included, and one
+600 s `wait` under a Grok host returned intact at 600.003 s by Grok's own record of the call
+(`docs/probes.md#grokToolTimeout`). `ask`
 is bounded the same way and asked again by id. The clock silence is measured
 from advances on a Codex lead's MCP calls too, announced and completed, because
 those are the whole of what a lead that only calls this server's tools says
@@ -3168,7 +3193,8 @@ is judged by), the two docs, and the root files. From row 9:
 `roles/*.md`, with `tools/from-openmaus.mjs` beside the other two harnesses.
 From row 10: `.claude-plugin/plugin.json`, which carries the server as well. From row 12, T14:
 `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`,
-`.agents/plugins/marketplace.json` and `assets/codex/mcp_servers.toml`.
+`.agents/plugins/marketplace.json` and `assets/codex/mcp_servers.toml`. From row 12, T15:
+no file, because Grok reads `.claude-plugin/plugin.json` as a plugin in place.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
 and `"bin": {"cross-agent": "src/cli.ts"}`.
@@ -3315,7 +3341,7 @@ registered by the mode that declares the worktree provider.
 | 10 | Claude Code packaging | `atc-s96.13` | **Done**; I2's Codex column ran with row 12. `.claude-plugin/plugin.json` carrying the server inline, and
 `tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` ran at T14 (row 12, `docs/probes.md#i2Codex`). I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `cc10a2a`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
-| 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). Grok's (T15) remains. |
+| 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). **Grok done** (T15): no manifest of its own — a project's `.grok/config.toml` names the checkout under `[plugins]` and raises `[mcp] max_output_bytes`, and Grok reads the Claude manifest, skill and inline server alike (section 9, `docs/probes.md#t15Attach`); I1 and I2 under a Grok host, its read-only row at the root, a deny rule on this server's tools, the ten-minute `wait`, the hop counts and the worktree mount (`docs/probes.md#i1GrokHost` and the sections after it); E6 under host placement and E7 under engine placement (`docs/probes.md#e6`, `#e7`). |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
@@ -3342,7 +3368,9 @@ Integration probes after each packaging task, run by the operator:
   refused by Grok's own dispatcher as a name it was given no schema for. A Grok
   specialist **in a linked worktree** is not covered and is not a trust
   question: `./.grok/config.toml` is per-directory, and a worktree is its own
-  directory, so only a user-scope mount would reach one. **Run for Codex** in the
+  directory, so only a user-scope mount would reach one — recorded at T15 under the
+  plugin attach, the user having declined a user-scope mount
+  (`docs/probes.md#grokWorktreeMount`). **Run for Codex** in the
   6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs
   --track` rather than a Codex host, whose own rows came at T14: a delegated
   `consult` lists Codex's built-in `codex_apps` and nothing of this server's, and
@@ -3354,7 +3382,11 @@ Integration probes after each packaging task, run by the operator:
   tools are `mcp__cross_agent__<tool>`, a delegated Claude `consult` saw no MCP tool, a
   Codex one saw `codex_apps` alone — `--ignore-user-config` dropped the plugin, enabled
   in the operator's configuration, with the rest of that configuration — and a Grok one
-  saw exactly the five specialist tools and no `delegate`. For Claude: a delegated
+  saw exactly the five specialist tools and no `delegate`. **Run for all three engines
+  under a Grok host** at T15 (`docs/probes.md#i1GrokHost`): from a host reaching this
+  server's fourteen as `cross-agent__<tool>`, a delegated Claude `consult` saw no MCP tool,
+  a Codex one nothing of this server's, and a Grok one exactly the five specialist tools,
+  through the project's attach it inherits, and never attempted `delegate`. For Claude: a delegated
   `consult` sees no MCP tool at all,
   and one given a lead's own mount by `tools/probe.mjs --track` sees exactly
   the five specialist tools as `mcp__cross-agent__<tool>` — while the host's
@@ -3389,7 +3421,14 @@ Integration probes after each packaging task, run by the operator:
   reaching the network and Codex not (`curl: (6) Could not resolve host`), Grok's
   pointer rewrite answered by both refusals with nothing mutated, and a 600-second `wait`
   completing at 600.004 s by Codex's own record with the task still running
-  (`docs/probes.md#codexHostTimeout`).
+  (`docs/probes.md#codexHostTimeout`). **Run for all three engines under a Grok host** at
+  T15 (`docs/probes.md#i2GrokHost`): every outside-worktree write denied, Claude and Grok
+  reaching the network and Codex not, Grok's pointer rewrite answered by `verify_worktree`
+  refusing with git's own words; the Grok read-only row at the root
+  (`docs/probes.md#i2GrokReadOnly`), its writes to the cwd, `<root>/.git`, `$HOME` and the
+  sibling directory denied, `/tmp` and `~/.grok` the profile's own exceptions, its network
+  cut; and the Grok host's 600-second `wait` returning intact under Grok's 6000 s default
+  (`docs/probes.md#grokToolTimeout`).
 
 ### Phase 2: evidence and decisions
 
@@ -3549,7 +3588,14 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   mount, in a folder its operator trusts — sees exactly the specialist row and
   has its own `delegate` refused (I1, `atc-s96.54`). A Grok specialist in a
   linked worktree still reaches no server, because a project-scoped mount is
-  per-directory.
+  per-directory. On grok 1.0.46 that specialist's server runs inside the engine's
+  bubblewrap and cannot read the identity-holding ancestor's environment, so it
+  resolves the specialist row by `src/authority.ts#decide`'s fail-closed branch: the row
+  is right, and its reason — the environment cannot be read — is one no test pins yet
+  (`docs/probes.md#i1GrokHost`). A Grok host's server is 4 processes from pid 1 under
+  `setsid --fork` and 11 nested in an agent session's own shell, one of them a
+  `timeout` the run wrapped it in, serving the operator row either way
+  (`docs/probes.md#grokHostHops`).
 - **T11 (recorded).** An engine that says nothing from its launch stalls on the
   acknowledgement clock while its group stays alive, comes back to `running`
   through `check` when it emits, stalls again on the next silence, and settles
@@ -3624,7 +3670,8 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   serves that same text through `mcp__plugin_cross-agent_cross-agent__…`, the
   spelling a plugin mount gives this server (I1, `docs/probes.md#i1Spelling`), and
   under a Codex host through `mcp__cross_agent__…`, the hyphen folded
-  (`docs/probes.md#codexPluginMount`); Grok's own spelling is still owed.
+  (`docs/probes.md#codexPluginMount`); and under a Grok host as `cross-agent__…`, through
+  Grok's own `use_tool`, the fourteen tools of `dev-team-engine` (`docs/probes.md#t15Attach`).
 - **Operator CLI (recorded).** The listing reads without a pass when asked to,
   writing nothing (`tests/tasks.test.ts#listTasksWithoutPass`), and on it each
   read verb writes nothing: in a repository nobody initialized
@@ -3755,7 +3802,14 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   lead, met all eight and the depth-and-lineage reading, its host kept to the launcher's
   calls, put the lead's question to the operator, and closed on the lead's report
   verbatim, with one deviation: one shell command outside the launcher's two, `cat` of the
-  skill it was reading (`docs/probes.md#e5`). Grok's host is what remains of step 12.
+  skill it was reading (`docs/probes.md#e5`). **E6 and E7 ran under a Grok host** at
+  T15, through the project's plugin attach, each judged with `--since` and `--slug`: E6,
+  `dev-team` with a Grok plan reviewer at the root and a Grok code reviewer in the task's
+  worktree, met all eight, its host running the loop through the server's tools and no
+  shell command (`docs/probes.md#e6`); E7, `dev-team-engine` with a Claude lead, met all
+  eight and the depth-and-lineage reading, its host showed the roster before the lead,
+  kept to the launcher's calls and closed on the lead's report verbatim, every specialist
+  line in `cross-agent report`'s form with its duration (`docs/probes.md#e7`).
 - **Docs:** every changed claim in this document matches a checked `file:line`
   or `file#symbol` in this repository or a recorded probe. `npm test` runs the
   checker, which proves a citation still lands **inside** its file; it cannot

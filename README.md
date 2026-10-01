@@ -272,7 +272,7 @@ there, and a `~/Documents/…` entry loaded no plugin at all. If the file alread
 declared twice.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
-default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,608 under
+default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,880 under
 `dev-team-engine` and 3,463 under `solo`. Under the default, a Grok host in a
 `dev-team-engine` project read the first 19.5 KB of the mode and a note naming the file
 under its session directory where Grok had written the rest; with the line, it read the
@@ -302,11 +302,15 @@ discovered: twelve in a project bound to `dev-team` or `solo`, fourteen under
 configured servers and installed plugins only. In a session the tools are spelled
 `cross-agent__<tool>`, the server's name and the tool's, and Grok reaches them through its
 own `search_tool` and `use_tool`. The session's first `system/init` line names the server
-as `pending` and lists none of its tools; that line is a snapshot taken before the
-handshake, and the session's own `events.jsonl` records the connection and the tools.
+as `pending` and lists its tools in some sessions and not in others: that line is a
+snapshot taken before the handshake, and the session's own `events.jsonl` records the
+connection and the tools.
 
-Grok gives an MCP call `tool_timeout_sec`, 6000 seconds by default, and the plugin's server
-gets that default: its calls' `mcp_tool_call_started` events read `timeout_sec: 6000`.
+Grok gives an MCP call `tool_timeout_sec`, 6000 seconds by default, and the plugin's
+server gets that default: its calls' `mcp_tool_call_started` events read `timeout_sec:
+6000`. So the launcher's 600-second `wait` fits with room: one returned intact under a
+Grok host, at 600.003 s by Grok's own record of the call (`docs/probes.md`, "B3: a
+ten-minute wait under a Grok host").
 
 To remove it, delete the `[plugins]` lines and the `[mcp]` table from the project's
 `.grok/config.toml`, or the file if they were all it held. That is the whole attach: it
@@ -321,14 +325,17 @@ Three things hold for every Grok session attached this way:
 - **A Grok specialist working in a linked worktree reaches no server.** Grok reads a
   project's `.grok/config.toml` from the session's directory up to its git root, and a
   linked worktree is a root of its own, so the attach is not there: `grok mcp doctor` run
-  in one lists no project source. Only a mount at user scope would change that, and none
-  is installed. A Grok specialist at the project root inherits the attach and gets the
-  specialist row's five read tools.
+  in one lists no project source, and a Grok code reviewer in E6's worktree mounted no
+  server (`docs/probes.md`, "A Grok specialist in a linked worktree (B5)"). Only a mount
+  at user scope would change that, and none is installed. A Grok specialist at the project
+  root inherits the attach and gets the specialist row's five read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
   plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
   `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a
   Grok session started inside a task, from a test suite a lead runs, say, gets a
-  specialist's tools, never the operator's.
+  specialist's tools, never the operator's: a host started with `CROSS_AGENT_DEPTH=1` and
+  no task was served the specialist row's five (`docs/probes.md`, "The hop count and the
+  server's environment under a Grok host (B4)").
 
 ## Run the tests
 

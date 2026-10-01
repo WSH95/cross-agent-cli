@@ -7,12 +7,18 @@ Add the answer to the item when it is resolved.
       installed on this machine? **Yes** (2026-09-18: the docs' profile is
       loaded and Ubuntu's stock `bwrap-userns-restrict` is disabled). Probe
       P2 for Claude ran at T13 and `atc-s96.17` is closed.
-- [ ] Does a `--deny "mcp__cross-agent__*"` rule hide this server's tools from
+- [x] Does a `--deny "mcp__cross-agent__*"` rule hide this server's tools from
       a Grok child, or is the depth guard the only protection there?
       (integration probe I1, T15) Partly answered at T13: a Grok specialist
       at the project root lists exactly the specialist row and Grok's own
       dispatcher refuses `delegate` because the tool is not listed; whether
-      the `--deny` rule itself hides tools is still unprobed.
+      the `--deny` rule itself hides tools is still unprobed. **It gates
+      them, it does not hide them** (T15, a driver run): with
+      `MCPTool(cross-agent__*)` denied in the project's `.grok/config.toml`, a
+      Grok child under `bypassPermissions` still lists the five and has every
+      call refused at Grok's permission layer before the server sees it
+      (`docs/probes.md#grokDenyMcp`); the specialist row by ancestry stays the
+      guard.
 - [ ] Does Codex honour `tool_timeout_sec` from a plugin's `.mcp.json`, or
       only from `config.toml`? (T14)
 - [ ] Under a Claude Code host, should Claude-engine specialists use the
@@ -33,4 +39,6 @@ Add the answer to the item when it is resolved.
       That is the safe direction; reaching one needs a user-scope `grok mcp
       add`, a change to your Grok configuration. Leave it, or mount it
       user-wide? (T15) **Leave it** (user, 2026-09-30): no user-scope mount;
-      T15 records the behaviour.
+      T15 records the behaviour. Recorded at T15 (`docs/probes.md#grokWorktreeMount`):
+      under the shipped plugin attach too, a Grok specialist in a linked
+      worktree mounts no server of ours.
