@@ -22,7 +22,11 @@ Codex lead your mount gives each call 3600 s where Codex's own default is 60. Ei
 
 Your closing report is your final message, and with `cross-agent report` it is the whole
 of what reaches the operator's log: the task; one line per specialist, in the order you
-dispatched them — role, engine, model, effort, duration, outcome, task id; the branch and
-the commit it merged as; where the suite ran and what it said; every verdict, quoted where
-it carries the finding; what was cleaned up and what is still standing, and why; every
-question you asked and the answer you were given; and what nobody verified.
+dispatched them and in the form `cross-agent report` prints its rows — `<role> | <engine>
+| <model> | <effort> | <N>s | <outcome> | <task id>` — its duration `<N>` the
+`elapsedSeconds` of the `wait` that saw the task settle, its outcome the specialist's
+verdict in a word or two, and its task id whole, with every field present on every line;
+the branch and the commit it merged as; where the suite ran and what it said; every
+verdict, quoted where it carries the finding; what was cleaned up and what is still
+standing, and why; every question you asked and the answer you were given; and what
+nobody verified.

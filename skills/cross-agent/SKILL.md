@@ -34,6 +34,14 @@ config names a mode this server could not read, and `cross-agent init --mode
 <name>` is what binds a team to this project; it exits 0 when it wrote the config
 or found one already there, and 3 when the mode or the directory is not there.
 
+If no `describe_mode` is offered to you, under any prefix, this server did not start
+for your session, and nothing below can run without it: tell the user the server did
+not start, and stop rather than do the team's work yourself. Under Codex the plugin
+starts it only when `CROSS_AGENT_PROJECT` names the project before `codex` starts,
+and says nothing when it does not; under Grok, only in a trusted project whose
+`.grok/config.toml` names this checkout. The README's install section for your host
+gives the steps.
+
 Then call `list_roles` and show the roster before you dispatch anything: one
 line per role with its engine, model, effort, workspace and sandbox. A role
 whose `binding` is `null` is bound to no engine; it is still a role you can
@@ -318,12 +326,15 @@ Under a mode whose `lead.placement` is `engine` the loop runs in a spawned Claud
 or Codex session, not in yours, and your session stays free while it works. Your
 part is setup, monitoring and answering.
 
-Start the lead with one call: `delegate {role: <lead.role>, cwd: <project root>,
-brief}`, the role being `mode.lead.role` from `describe_mode` and the brief the task
-itself. The server mounts itself into the lead and launches it with the mode's loop
-and the lead's own role prompt, so the brief is the task text and nothing about the
-loop. Narrate it as any dispatch, then `wait {task_id, timeout_seconds: 600}`, again
-and again, exactly as for any task.
+Show the roster first, as `## Before anything` asks: `list_roles`, one line per
+role, the lead's among them, with its engine, model, effort, workspace and sandbox,
+so the user sees what this run will start before it starts. Then start the lead with
+one call: `delegate {role: <lead.role>, cwd: <project root>, brief}`, the role being
+`mode.lead.role` from `describe_mode` and the brief the task itself. The server
+mounts itself into the lead and launches it with the mode's loop and the lead's own
+role prompt, so the brief is the task text and nothing about the loop. Narrate it as
+any dispatch, then `wait {task_id, timeout_seconds: 600}`, again and again, exactly
+as for any task.
 
 The lead asks you questions. After every `wait` that timed out, call `list_asks
 {status: "open"}`: an open ask is the lead waiting on you. Put the question to the
@@ -331,6 +342,17 @@ user where the answer is theirs, then answer it with `answer {ask_id, text}` —
 from any terminal, with `cross-agent answer`: `cross-agent answer <ask-id> <text>`,
 which exits 0 when the answer is applied and 3 when it is refused. The first answer
 wins: a second is refused, naming when the first landed.
+
+A host nobody attends — `claude -p`, `codex exec`, `grok -p` — has no user to put the
+question to. There, when `list_asks` shows an open ask, print the ask's id and its
+question verbatim, say how it is answered — `cross-agent answer <ask-id> <text>` from
+any terminal, then this session continued — and end your turn. Do not answer it
+yourself, do not cancel the lead, and do not keep waiting on it: the lead asks again by
+that id every `timeout_seconds`, one call per interval, until an answer or a cancel
+reaches it, so nothing is lost while your turn is over. The operator answers, then
+continues this session — `claude -p --resume <session id>`, `codex exec resume <thread
+id>`, `grok -p <prompt> -r <session id>` — or starts a new host session, gives it the
+lead's task id, and has it wait on that lead rather than start another.
 
 `cancel {task_id: <lead id>}` stops the lead and cascades to every task it
 delegated, leaves first, and to its open asks, which are cancelled with it. A lead
@@ -357,8 +379,10 @@ loop step: while a lead is live you never call `git_root`, `git_mutate`,
 run no `git` and no test command of your own on the project either, not even to
 look: the root check is the lead's step 1, and what it found is in its report.
 `cross-agent report` and `cross-agent answer` are the only commands of yours this
-placement needs. The steps are the lead's, and a step the lead did not take is one
-its journal and its report do not have.
+placement needs, with one exception: where your host offers this skill as a file to
+read rather than loading it, as a Codex host has, reading this skill's own
+`SKILL.md` is yours too, and it is the one file you read. The steps are the lead's,
+and a step the lead did not take is one its journal and its report do not have.
 
 Who reconciles follows from who is live. At the start of a session you delegate the
 lead and touch nothing at the root, and while a lead is live — any status short of

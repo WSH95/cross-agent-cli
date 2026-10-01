@@ -282,6 +282,56 @@ test("under engine placement the host runs no command on the project and shows t
   "under engine placement the session closes on the lead's report itself");
 });
 
+// @anchor hostWithoutTools
+test("a host offered none of this server's tools tells the user the server did not start, and why under Codex", () => {
+  // T14's probe (c): a Codex session started without `CROSS_AGENT_PROJECT` was offered the
+  // plugin's skill while the plugin's server never started, and nothing said so (atc-s96.71).
+  const before = flat(sectionOf(launcher(), "Before anything"));
+  assert.match(before, /no `describe_mode` is offered to you/);
+  assert.match(before, /server did not start/);
+  assert.match(before, /tell the user[^.]*stop/);
+  assert.match(before, /Codex[^.]*`CROSS_AGENT_PROJECT`[^.]*before `codex` starts/);
+});
+
+// @anchor engineHostShowsRoster
+test("under engine placement the host shows the roster before it starts the lead", () => {
+  // S11's E2c host delegated the lead without first showing the roster `## Before anything`
+  // asks for (atc-s96.66): the section that starts the lead asks for it in its own words.
+  const section = flat(engineSection().section);
+  const roster = section.search(/`list_roles`[^.]*roster|roster[^.]*`list_roles`/);
+  assert.ok(roster >= 0, "the engine-placement section names list_roles and the roster");
+  assert.ok(section.indexOf("`delegate {role: <lead.role>") > roster, "and shows the roster before its first delegate of the lead");
+});
+
+// @anchor headlessHostOpenAsk
+test("a host nobody attends relays the lead's open ask verbatim and ends its turn", () => {
+  // T14's E5: a `codex exec` host met the lead's ask with nobody to put it to, and the run
+  // went on only because the operator answered by resuming the host's thread (atc-s96.70).
+  const headless = engineSection().section.split(/\n\s*\n/).map(flat).filter((paragraph) => /nobody attends/.test(paragraph));
+  assert.equal(headless.length, 1, "one paragraph says what a headless host does with an open ask");
+  const [paragraph] = headless;
+  for (const words of [
+    /ask's id and its question verbatim/, /end your turn/,
+    /[Dd]o not answer it yourself, do not cancel the lead, and do not keep waiting on it/,
+    /`cross-agent answer <ask-id> <text>`/,
+    // The three hosts' own ways back into the same session, and a new one as the other way.
+    /`claude -p --resume <session id>`/, /`codex exec resume <thread id>`/, /`grok -p <prompt> -r <session id>`/,
+    /new host session/,
+  ]) {
+    assert.match(paragraph, words, `the headless paragraph says ${words}`);
+  }
+});
+
+// @anchor engineHostReadsSkill
+test("under engine placement the host's one read outside its two commands is this skill's own SKILL.md", () => {
+  // E5's Codex host opened its turn with `cat` of the plugin copy's SKILL.md, which the
+  // "only commands" sentence did not allow: a host offered the skill as a file has to read it.
+  const section = flat(engineSection().section);
+  assert.match(section, /`cross-agent report` and `cross-agent answer` are the only commands of yours this placement needs/);
+  assert.match(section, /one exception[^.]*this skill's own `SKILL\.md`/);
+});
+
+
 // @anchor budgetTable
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
   const text = flat(launcher());
@@ -505,6 +555,17 @@ test("the lead's role prompt states who it is, its report, what it may not do, a
   assert.match(lead, /600/);
   assert.match(lead, /Claude[^.]*28 hours/);
   assert.match(lead, /Codex[^.]*3600/);
+});
+
+// @anchor leadReportLine
+test("the lead's report spells each specialist's line in cross-agent report's seven fields, a duration on every line", () => {
+  // S11's E2, E2b and E2c Codex leads closed with each specialist's id and verdict and no
+  // duration (atc-s96.64): the line is spelled as `cross-agent report` prints its rows
+  // (src/cli.ts#reportVerb), and its duration is the count the `wait` that settled it gave.
+  const lead = flat(fs.readFileSync(path.join(builtInModesDir(), "dev-team-engine", "roles", "lead.md"), "utf8"));
+  assert.match(lead, /`<role> \| <engine> \| <model> \| <effort> \| <N>s \| <outcome> \| <task id>`/);
+  assert.match(lead, /`elapsedSeconds` of the `wait` that saw the task settle/);
+  assert.match(lead, /every field present on every line/);
 });
 
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {
