@@ -105,11 +105,11 @@ const codexHome = (project: string) => path.join(project, ".cross-agent", "codex
  * recorded. A6's denied writes have the call and the output and no item, as here. A step
  * given as `script` is an `exec` call with that script as its input, verbatim.
  */
-type RolloutStep = { cmd: string; exit: number; output?: string } | { script: string };
+type RolloutStep = { cmd: string; exit: number; output?: string } | { script: string } | { entry: Record<string, unknown> };
 const rolloutOf = (sessionId: string, steps: RolloutStep[]) => [
   { timestamp: "2026-09-30T21:49:05.892Z", type: "session_meta", payload: {
     session_id: sessionId, id: sessionId, cwd: "/sample/.worktrees/6b-codex", originator: "codex_exec", cli_version: "0.159.2", source: "exec" } },
-  ...steps.flatMap((step, n) => [
+  ...steps.flatMap((step, n) => "entry" in step ? [{ timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: step.entry }] : [
     { timestamp: "2026-09-30T21:49:14.246Z", type: "response_item", payload: {
       type: "custom_tool_call", status: "completed", call_id: `call_${n}`, name: "exec",
       input: "script" in step ? step.script
@@ -207,10 +207,12 @@ async function project(
       logPath, resultPath: path.join(root, ".cross-agent", "tasks", `${id}.out`),
     }));
     if (engine === "codex" && sessionId !== undefined && spec.rollout !== null) {
+      // Codex's `--json` shows `/bin/bash -lc '<command>'`; its rollout, the command.
       const ran = spec.body.split("\n").flatMap((line) => {
         try {
           const item = JSON.parse(line)?.item;
-          return item?.type === "command_execution" && typeof item.command === "string" ? [{ cmd: item.command, exit: 0 }] : [];
+          if (item?.type !== "command_execution" || typeof item.command !== "string") return [];
+          return [{ cmd: /^\/bin\/bash -lc '([^']*)'$/.exec(item.command)?.[1] ?? item.command, exit: 0 }];
         } catch { return []; }
       });
       const directory = path.join(codexHome(root), "sessions", "2026", "09", "30");
@@ -383,7 +385,7 @@ test("a code-mode script is read as JavaScript: an escaped launch fails, and one
   let n = 0;
   const judged = async (script: string) => {
     const sessionId = `01a0f44a-eb7a-7603-ae3a-${String(256 + n++).padStart(12, "0")}`;
-    return run(await project(t, { codex: { body: log, sessionId, rollout: rolloutOf(sessionId, [{ script }]) } }));
+    return run(await project(t, { codex: { body: log, sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]) } }));
   };
   for (const script of [
     // Quotes and escapes as JavaScript writes them, in each of its three quotes.
@@ -442,6 +444,88 @@ test("a code-mode script is read as JavaScript: an escaped launch fails, and one
     assert.equal(verdict(out, scan), "pass", `${script}\n${out}`);
     assert.equal(code, 0, out);
   }
+});
+
+// @anchor codexScriptFailClosed
+test("a script passes only when every call it makes to a command tool is one this reader can follow", async (t) => {
+  // `pass` needs every `exec_command`, `write_stdin` and `delegate` the script names to be a
+  // direct call whose one argument is an object literal with a literal `cmd` or `chars` and
+  // no spread or computed key. Anything else — an alias, `.call`, `?.(`, `eval`, `Function`,
+  // `import(`, a legacy octal escape, a `/` this reader cannot tell for a division or a
+  // regular expression, a regular expression that names an engine — is `?` (6b-R2-5).
+  const log = codexLog("/bin/bash -lc 'ls'");
+  let n = 0;
+  const judged = async (script: string) => {
+    const sessionId = `01a0f44a-eb7a-7603-ae3a-${String(512 + n++).padStart(12, "0")}`;
+    return run(await project(t, { codex: { body: log, sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]) } }));
+  };
+  const expect = async (script: string, expected: string) => {
+    const { code, out } = await judged(script);
+    assert.equal(verdict(out, scan), expected, `${script}\n${out}`);
+    assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+  };
+  for (const script of [
+    'await tools.exec_command({cmd: "ls", ...hidden});',
+    'await tools.exec_command({...hidden, cmd: "ls"});',
+    'await tools.exec_command({cmd: "ls", [key]: "x"});',
+    'await tools.exec_command({cmd: "ls"}, extra);',
+    "const run = tools.exec_command;\nawait run({cmd: \"ls\"});",
+    'await tools.exec_command.call(null, {cmd: "ls"});',
+    'await tools.exec_command?.({cmd: "ls"});',
+    "const d = tools.mcp__cross_agent__delegate;\nawait d({role: \"implementer\", brief: \"x\"});",
+    "const name = \"exec\" + \"_command\";\nawait tools[name]({cmd: \"ls\"});",
+    "eval(\"tools.exec_command({cmd: 'ls'})\");",
+    'new Function("return 1")();',
+    'await import("node:child_process");',
+    String.raw`await tools.exec_command({cmd: "\143laude -p hi"});`,
+    String.raw`await tools.exec_command({cmd: "ls\08"});`,
+    'if (r) { text("a"); } /"/.test(s);\nawait tools.exec_command({cmd: "ls"});',
+    "const re = /claude -p hi/;\nawait tools.exec_command({cmd: \"ls\"});",
+    'if (true) /exec_command({cmd:"claude -p hi"})/.test("x");\nawait tools.exec_command({cmd:"ls"});',
+  ]) await expect(script, "?");
+  // A postfix `++` divides, and a regular expression after a condition's `)` is one.
+  await expect('let i = 0; i++ / 2; await tools.exec_command({cmd: "claude -p hi"}); let y = 1 / 2;', "FAIL");
+  await expect('if (true) /x/.test("y");\nawait tools.exec_command({cmd: "claude -p hi"});', "FAIL");
+  for (const script of [
+    'let i = 0; i++;\nconst half = i / 2;\nawait tools.exec_command({cmd: "ls"});',
+    'const r = await tools.exec_command({cmd: "ls"});\nconst n = (r.output.length) / 2;\ntext(String(n));',
+    'const r = await tools.exec_command({cmd: "ls"});\nif (r) { text("a"); }\ntext("x".replace(/a/g, "b"));',
+  ]) await expect(script, "pass");
+});
+
+// @anchor codexRolloutUnclassified
+test("a rollout's tool call this reader does not classify is a question, and so is a command only the transcript shows", async (t) => {
+  // A Codex build that changes its tool surface must not drop the witness 6b-R1-3 added: an
+  // unclassified tool-call entry answers `?`, as does a command the `--json` transcript
+  // shows that the rollout does not (6b-R2-6).
+  const log = codexLog("/bin/bash -lc 'ls'");
+  let n = 0;
+  const judged = async (steps: RolloutStep[], body = log) => {
+    const sessionId = `01a0f44a-eb7a-7603-ae3a-${String(768 + n++).padStart(12, "0")}`;
+    return run(await project(t, { codex: { body, sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, ...steps]) } }));
+  };
+  const writeStdin = await judged([{ entry: { type: "function_call", name: "write_stdin", call_id: "c1", arguments: JSON.stringify({ session_id: 1, chars: "claude -p hi\n" }) } }]);
+  assert.equal(verdict(writeStdin.out, scan), "FAIL", writeStdin.out);
+  for (const entry of [
+    { type: "custom_tool_call", name: "shell", call_id: "c2", input: "claude -p hi" },
+    { type: "function_call", name: "brand_new_tool", call_id: "c3", arguments: "{}" },
+    { type: "brand_new_call", call_id: "c4" },
+  ]) {
+    const { out } = await judged([{ entry }]);
+    assert.equal(verdict(out, scan), "?", `${JSON.stringify(entry)}\n${out}`);
+    assert.match(row(out, scan), /a tool call this reader does not classify/, out);
+  }
+  for (const entry of [
+    { type: "custom_tool_call", name: "apply_patch", call_id: "c5", input: "*** Begin Patch\n*** End Patch\n" },
+    { type: "function_call", name: "update_plan", call_id: "c6", arguments: JSON.stringify({ plan: [] }) },
+  ]) {
+    const { out } = await judged([{ entry }]);
+    assert.equal(verdict(out, scan), "pass", `${JSON.stringify(entry)}\n${out}`);
+  }
+  // The transcript ran `wc -l README.md`; the rollout shows `ls` alone.
+  const missing = await judged([], codexLog("/bin/bash -lc 'wc -l README.md'"));
+  assert.equal(verdict(missing.out, scan), "?", missing.out);
+  assert.match(row(missing.out, scan), /the transcript ran a command its rollout does not show/, missing.out);
 });
 
 // The lead's own record under engine placement. An engine-placed lead is a specialist

@@ -2649,12 +2649,16 @@ call (`docs/probes.md#codexCacheWritable`). So the scan also reads each Codex
 record's rollout — `$CODEX_HOME/sessions/**/rollout-*-<sessionId>.jsonl`,
 `CODEX_HOME` defaulting to `~/.codex` — and judges every command it shows
 attempted, denied ones included; a Codex record with no rollout to read answers
-`?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`). A code-mode script in the
-rollout is read as JavaScript rather than searched: the literal it hands
-`exec_command` as `cmd`, or `write_stdin` as `chars`, is the command, escapes
-decoded; a command the script computes, a script that does not lex, and any other
-string or comment in it that reads as a launch answer `?`
-(`tests/e2e-verify.test.ts#codexScriptRead`).
+`?`, named (`tests/e2e-verify.test.ts#codexRolloutRead`), and so does one whose
+rollout lacks a command the transcript shows or holds a tool call the reader does
+not classify (`#codexRolloutUnclassified`). A code-mode script in the rollout is
+read as JavaScript rather than searched, and passes only when every
+`exec_command`, `write_stdin` and `delegate` it names is a direct call whose one
+argument is an object literal giving a literal `cmd` or `chars`, with no spread or
+computed key; an alias, `eval`, `Function`, `import`, a legacy octal escape, a `/`
+the reader cannot tell for a division or a regular expression, and a string,
+comment or regular expression that names a launch answer `?`
+(`tests/e2e-verify.test.ts#codexScriptRead`, `#codexScriptFailClosed`).
 
 Whether a command is a launch is a shell's question, and the scan's contract for
 it is that **`pass` requires positive understanding**: a command line passes only

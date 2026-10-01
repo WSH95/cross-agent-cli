@@ -229,12 +229,25 @@ const launch = launcherFor(config);
 // wrote no item for the commands its sandbox denied, while its session rollout under
 // `$CODEX_HOME/sessions/` recorded every call (A6, `docs/probes.md#codexCacheWritable`).
 // So each Codex record's rollout, found by the record's `sessionId`, is read as well, and
-// every command it shows attempted is judged like the transcript's own; a Codex record
-// with no rollout to read is `?`, named. A code-mode script there is read as JavaScript
-// (`scriptRead`), not searched: the literal it hands `exec_command` is the command, and any
-// other string or comment in it that reads as a launch is `?`, because it cannot be told
-// from one the script assembles and runs.
+// every command it shows attempted is judged like the transcript's own. The same contract
+// holds there: a Codex record with no rollout to read, one whose rollout lacks a command
+// the transcript shows, and one whose rollout holds a tool call this reader does not
+// classify are `?`, named. A code-mode script is read as JavaScript (`scriptRead`), not
+// searched, and passes only when every `exec_command`, `write_stdin` and `delegate` it
+// names is a direct call whose one argument is an object literal giving a literal `cmd` or
+// `chars`, with no spread or computed key. Anything else — an alias, `eval`, `Function`,
+// `import`, a legacy octal escape, a `/` the reader cannot tell for a division or a regular
+// expression, and a string, comment or regular expression that names a launch — is `?`,
+// because it cannot be told from a launch the script assembles and runs.
 const codexHome = process.env.CODEX_HOME ?? path.join(homedir(), ".codex");
+// codex-cli 0.159.2's tools (A3's `ALL_TOOLS`): those that run a command, and those that run
+// nothing — patches, goals, images, MCP resources, plugins, the web — which a rollout may
+// show called without a command in them. A tool in neither list is one this build has not
+// seen, and a call of it is `?`.
+const commandTools = new Set(["shell", "exec_command", "local_shell", "container.exec"]);
+const quietTools = new Set(["apply_patch", "clock__curr_time", "create_goal", "get_goal", "update_goal", "update_plan",
+  "image_gen__imagegen", "list_mcp_resource_templates", "list_mcp_resources", "read_mcp_resource",
+  "request_plugin_install", "view_image", "web__run"]);
 let rolloutFiles;
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const offences = [];
@@ -305,24 +318,33 @@ for (const record of run) {
     else unknownItems.push(String(event.type));
   }
   // A Codex record's rollout: the commands and calls it shows attempted join the
-  // transcript's own; keystrokes a script wrote are judged as a command line too.
+  // transcript's own; keystrokes a script wrote are judged as a command line too. Every
+  // command the transcript shows has to be in it, or it is not this record's whole rollout.
   let rolloutGap;
   const asides = [];
+  const patterns = [];
   const stdin = [];
   if (record.engine === "codex") {
     const files = typeof record.sessionId === "string" && record.sessionId !== "" ? rolloutsOf(record.sessionId) : [];
     if (files.length === 0) {
       rolloutGap = `no Codex session rollout for ${record.sessionId || "a record with no session id"} under ${path.join(codexHome, "sessions")}`;
     }
+    const transcript = [...commands];
+    const shown = { lines: [], argvs: [] };
     for (const file of files) {
       const read = rolloutCommands(file);
       commands.push(...read.lines, ...read.stdin);
       argvs.push(...read.argvs);
       calls.push(...read.calls);
       asides.push(...read.asides);
+      patterns.push(...read.patterns);
       stdin.push(...read.stdin);
+      shown.lines.push(...read.lines);
+      shown.argvs.push(...read.argvs);
       if (read.unreadable.length > 0 && rolloutGap === undefined) rolloutGap = `its rollout holds ${read.unreadable[0]}`;
     }
+    const missing = files.length === 0 ? undefined : transcript.find((command) => !rolloutShows(shown, command));
+    if (missing !== undefined && rolloutGap === undefined) rolloutGap = `the transcript ran a command its rollout does not show (${missing.slice(0, 80)})`;
   }
   // What was read is judged first. An offence found has been read far enough to be an
   // offence, and an unread line beside it makes it no less true; `?` is for a transcript
@@ -351,6 +373,8 @@ for (const record of run) {
     ...uncertain,
     ...asides.map((text) => launch.judge(text)).filter((judged) => judged.verdict === "launch")
       .map((judged) => `its rollout's script names a launch it does not run, which cannot be told from one it does (${judged.at})`),
+    ...patterns.filter((text) => launch.names(text) || launch.judge(text).verdict === "launch")
+      .map((text) => `its rollout's script holds a regular expression naming an engine, which cannot be told from a command (${text.slice(0, 80)})`),
     ...(lead ? [] : asides.filter((text) => isDelegate(text)).map((text) =>
       `its rollout's script names ${text} in a string, which could be a call this reader cannot see`)),
     ...(rolloutGap === undefined ? [] : [rolloutGap]),
@@ -1380,6 +1404,11 @@ function launcherFor(settings) {
   }
 
   return {
+    // A command line that is one simple command and nothing else, as its words; or null.
+    argvOf: (text) => {
+      const list = lexList(String(text), 0, null);
+      return list.problems.length > 0 || list.nested.length > 0 || list.commands.length !== 1 ? null : values(list.commands[0].words);
+    },
     judge: (text) => judgeText(text, { depth: 0, named: false }),
     judgeArgv: (argv) => (argv.length === 0 ? pass
       : judgeWords(argv.map(asWord), { stdin: null, pipeFrom: null }, { depth: 0, named: argv.some(names) })),
@@ -1403,48 +1432,76 @@ function rolloutsOf(sessionId) {
 }
 
 /**
+ * Whether a rollout shows a command the `--json` transcript ran: the same argv, or as the
+ * command a script or a function call gave, whole or as the `-c` payload of its shell.
+ */
+function rolloutShows(shown, command) {
+  if (shown.lines.includes(command)) return true;
+  const argv = launch.argvOf(command);
+  if (argv === null) return false;
+  if (shown.argvs.some((other) => other.length === argv.length && other.every((word, k) => word === argv[k]))) return true;
+  return argv.length === 3 && /(?:^|\/)(?:ba|da|z|k)?sh$/.test(argv[0]) && /^-[a-z]*c[a-z]*$/.test(argv[1]) && shown.lines.includes(argv[2]);
+}
+
+/**
  * The commands a Codex rollout shows attempted, whether or not they ran, and the tools it
- * shows called: each code-mode `exec` script read as JavaScript (`scriptRead`), an older
- * `shell`/`exec_command` function call's command or a `local_shell_call`'s, the argv of
- * every `CommandExecution` item and `exec_command_begin` event, and the tool of every
- * `McpToolCall` item. What it cannot read — a line that is not JSON, a script that does not
- * lex, a command a script computes — is named, because it could be the one this scan looks
- * for. No verdict reads a call's output: an attempt counts whether it ran, failed or was
- * refused, and the refused ones are the ones `--json` leaves out (A6).
+ * shows called: each code-mode `exec` script read as JavaScript (`scriptRead`); the command
+ * of a `shell`, `exec_command`, `local_shell` or `container.exec` function call, the
+ * keystrokes of a `write_stdin` call and the argv of a `local_shell_call`; the argv of every
+ * `CommandExecution` item and `exec_command_begin` event; and the tool of every
+ * `McpToolCall` item and `mcp__…` call. The tool calls of codex-cli 0.159.2's that run
+ * nothing (`quietTools`) are classified as such. Any other tool-call entry, a line that is
+ * not JSON, a script that does not read and a command a script computes are named, because
+ * each could be the one this scan looks for. No verdict reads a call's output: an attempt
+ * counts whether it ran, failed or was refused, and the refused ones are the ones `--json`
+ * leaves out (A6).
  */
 function rolloutCommands(file) {
-  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], unreadable: [] };
+  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [] };
   let text;
   try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
+  const unclassified = (what) => read.unreadable.push(`a tool call this reader does not classify (${what})`);
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
     let entry;
     try { entry = JSON.parse(line); } catch { read.unreadable.push("a line that is not JSON"); continue; }
     const payload = entry?.payload ?? {};
-    if (entry?.type === "response_item" && payload.type === "custom_tool_call" && payload.name === "exec") {
+    const type = String(payload.type ?? "");
+    const name = String(payload.name ?? "");
+    if (entry?.type === "response_item" && type === "custom_tool_call") {
+      if (name !== "exec") { if (!quietTools.has(name)) unclassified(`custom_tool_call ${name}`); continue; }
       const script = scriptRead(String(payload.input ?? ""));
       if (script.error !== undefined) read.unreadable.push(`an exec script that does not read as JavaScript (${script.error})`);
       read.lines.push(...script.commands);
       read.stdin.push(...script.stdin);
       read.calls.push(...script.calls);
       read.asides.push(...script.asides);
-      read.unreadable.push(...script.computed.map((call) => `a ${call} call whose ${call === "write_stdin" ? "chars" : "cmd"} is not a literal`));
-    } else if (entry?.type === "response_item" && payload.type === "function_call" && ["shell", "exec_command", "local_shell", "container.exec"].includes(payload.name)) {
+      read.patterns.push(...script.patterns);
+      read.unreadable.push(...script.computed);
+    } else if (entry?.type === "response_item" && type === "function_call") {
+      if (name.startsWith("mcp__")) { read.calls.push(name); continue; }
+      if (quietTools.has(name)) continue;
+      if (!commandTools.has(name) && name !== "write_stdin") { unclassified(`function_call ${name}`); continue; }
       let args;
-      try { args = JSON.parse(payload.arguments ?? "{}"); } catch { read.unreadable.push(`a ${payload.name} call whose arguments are not JSON`); continue; }
-      if (typeof args?.cmd === "string") read.lines.push(args.cmd);
+      try { args = JSON.parse(payload.arguments ?? "{}"); } catch { read.unreadable.push(`a ${name} call whose arguments are not JSON`); continue; }
+      if (name === "write_stdin") {
+        if (typeof args?.chars === "string") read.stdin.push(args.chars);
+        else read.unreadable.push("a write_stdin call with no keystrokes");
+      } else if (typeof args?.cmd === "string") read.lines.push(args.cmd);
       else if (typeof args?.command === "string") read.lines.push(args.command);
       else if (Array.isArray(args?.command)) read.argvs.push(args.command.map(String));
-      else read.unreadable.push(`a ${payload.name} call with no command`);
-    } else if (entry?.type === "response_item" && payload.type === "local_shell_call") {
+      else read.unreadable.push(`a ${name} call with no command`);
+    } else if (entry?.type === "response_item" && type === "local_shell_call") {
       if (Array.isArray(payload.action?.command)) read.argvs.push(payload.action.command.map(String));
       else read.unreadable.push("a local_shell_call with no command");
-    } else if (entry?.type === "event_msg" && payload.type === "item_completed" && payload.item?.type === "CommandExecution") {
+    } else if (entry?.type === "response_item" && type.endsWith("_call") && type !== "web_search_call") {
+      unclassified(type);
+    } else if (entry?.type === "event_msg" && type === "item_completed" && payload.item?.type === "CommandExecution") {
       if (Array.isArray(payload.item.command)) read.argvs.push(payload.item.command.map(String));
-    } else if (entry?.type === "event_msg" && payload.type === "item_completed" && payload.item?.type === "McpToolCall") {
+    } else if (entry?.type === "event_msg" && type === "item_completed" && payload.item?.type === "McpToolCall") {
       if (typeof payload.item.tool === "string") read.calls.push(payload.item.tool);
       else read.unreadable.push("an McpToolCall with no tool");
-    } else if (entry?.type === "event_msg" && payload.type === "exec_command_begin" && Array.isArray(payload.command)) {
+    } else if (entry?.type === "event_msg" && type === "exec_command_begin" && Array.isArray(payload.command)) {
       read.argvs.push(payload.command.map(String));
     }
   }
@@ -1453,34 +1510,48 @@ function rolloutCommands(file) {
 
 /**
  * What a code-mode `exec` script runs and calls, read from its tokens (`scriptTokens`)
- * rather than searched for: the literal each `exec_command` call passes as `cmd` and each
- * `write_stdin` call as `chars`, escapes decoded; a `delegate` it calls by any spelling;
- * the calls whose value is anything but one literal (`computed`); and every other string,
- * template text and comment (`asides`), which the scan still judges, because a launch
- * written there cannot be told from one the script assembles and runs. A call is found by
- * its name — `tools.exec_command(`, a destructured `exec_command(`, a quoted member
- * `tools["exec_command"](` — and its own object's top-level key, not a key nested inside.
+ * rather than searched for. A call this reader follows is a direct one — `NAME(` or
+ * `tools["NAME"](` — to `exec_command`, `write_stdin` or a `delegate`: the literal the one
+ * object-literal argument of an `exec_command` gives `cmd`, or of a `write_stdin` gives
+ * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
+ * `delegate` called is a call. Every other reference to those tools, `tools` used other than
+ * by a name, `eval`, `Function`, `require` and `import` go in `computed`, which the scan
+ * answers with `?`; every other string, template text and comment is an aside, and every
+ * regular expression a pattern, which the scan judges as well, because a launch written
+ * there cannot be told from one the script assembles and runs.
  */
 function scriptRead(source) {
-  const read = { commands: [], stdin: [], calls: [], computed: [], asides: [] };
+  const read = { commands: [], stdin: [], calls: [], computed: [], asides: [], patterns: [] };
   let tokens;
   try { tokens = scriptTokens(source); } catch (error) { return { ...read, error: error.message }; }
   const keys = new Map([["exec_command", "cmd"], ["write_stdin", "chars"]]);
   const taken = new Set();
   const visit = (list) => {
     list.forEach((token, k) => {
-      const [callee, open] = token.kind === "name" ? [token.text, k + 1]
-        : token.kind === "string" && list[k + 1]?.text === "]" ? [token.value, k + 2] : [undefined, -1];
-      if (callee === undefined || list[open]?.text !== "(") return;
-      if (isDelegate(callee)) read.calls.push(callee);
-      if (!keys.has(callee)) return;
-      for (const value of propertyValues(list, open + 1, keys.get(callee))) {
-        if (value === null) { read.computed.push(callee); continue; }
-        taken.add(value);
-        (callee === "write_stdin" ? read.stdin : read.commands).push(value.kind === "string" ? value.value : value.parts[0]);
+      if (token.kind === "template") { token.inner.forEach(visit); return; }
+      if (token.kind === "name" && ["eval", "Function", "require"].includes(token.text)) { read.computed.push(`a script that uses ${token.text}`); return; }
+      if (token.kind === "name" && token.text === "import" && list[k + 1]?.text !== ".") { read.computed.push("a script that imports a module"); return; }
+      if (token.kind === "name" && token.text === "tools") {
+        const byName = list[k + 1]?.text === "." && list[k + 2]?.kind === "name";
+        const byQuotedName = list[k + 1]?.text === "[" && list[k + 2]?.kind === "string" && list[k + 3]?.text === "]";
+        if (!byName && !byQuotedName) read.computed.push("the tools object used other than by a tool's name");
+        return;
       }
+      const name = token.kind === "name" ? token.text : token.kind === "string" ? token.value : undefined;
+      if (name === undefined || (!keys.has(name) && !isDelegate(name))) return;
+      const member = token.kind === "string" && list[k - 1]?.text === "[" && list[k + 1]?.text === "]";
+      if (token.kind === "string" && !member) { read.computed.push(`a string naming ${name}`); return; }
+      const open = member ? k + 2 : k + 1;
+      if (list[open]?.text !== "(") { read.computed.push(`${name} used other than in a direct call`); return; }
+      if (isDelegate(name)) { read.calls.push(name); return; }
+      const argument = callArgument(list, open + 1, keys.get(name));
+      if (argument === null) {
+        read.computed.push(`${name === "exec_command" ? "an" : "a"} ${name} call whose ${keys.get(name)} is not a literal in its one object argument`);
+        return;
+      }
+      taken.add(argument);
+      (name === "write_stdin" ? read.stdin : read.commands).push(argument.kind === "string" ? argument.value : argument.parts[0]);
     });
-    for (const token of list) if (token.kind === "template") token.inner.forEach(visit);
   };
   visit(tokens);
   const aside = (list) => {
@@ -1488,6 +1559,7 @@ function scriptRead(source) {
       if (taken.has(token)) continue;
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
+      else if (token.kind === "regex") read.patterns.push(token.text);
       else if (token.kind === "template") { read.asides.push(token.parts.join(" ")); token.inner.forEach(aside); }
     }
   };
@@ -1496,23 +1568,27 @@ function scriptRead(source) {
 }
 
 /**
- * The values the object literal starting at `list[at]` gives `key` at its own top level:
- * each the literal's token, or `null` for anything else — a variable, an expression, a
- * template with a substitution, a shorthand; `[null]` when there is no object literal there
- * or no such key in it, since a spread or a computed key could still be supplying it.
+ * The literal that a call's one argument, the object literal at `list[at]`, gives `key` at
+ * its own top level — the last such property, as in JavaScript; null when that argument is
+ * not an object literal or not the call's only one, holds a spread, a computed key, a
+ * shorthand or a method, or gives `key` anything but one literal.
  */
-function propertyValues(list, at, key) {
-  while (list[at]?.kind === "comment") at++;
-  if (list[at]?.kind !== "punct" || list[at].text !== "{") return [null];
-  const values = [];
+function callArgument(list, at, key) {
+  const next = (k) => { while (list[k]?.kind === "comment") k++; return k; };
+  at = next(at);
+  if (list[at]?.kind !== "punct" || list[at].text !== "{") return null;
+  let value = null;
   let span = [];
   const settle = () => {
-    const [first, colon, ...value] = span.filter((token) => token.kind !== "comment");
-    const name = first?.kind === "name" ? first.text : first?.kind === "string" ? first.value : undefined;
-    if (name !== key) return;
-    const literal = colon?.kind === "punct" && colon.text === ":" && value.length === 1
-      && (value[0].kind === "string" || (value[0].kind === "template" && !value[0].computed));
-    values.push(literal ? value[0] : null);
+    const [first, colon, ...rest] = span.filter((token) => token.kind !== "comment");
+    span = [];
+    if (first === undefined) return true;
+    const name = first.kind === "name" ? first.text : first.kind === "string" ? first.value : undefined;
+    if (name === undefined || colon?.kind !== "punct" || colon.text !== ":") return false;
+    if (name !== key) return true;
+    if (rest.length !== 1 || !(rest[0].kind === "string" || (rest[0].kind === "template" && !rest[0].computed))) return false;
+    value = rest[0];
+    return true;
   };
   let depth = 0;
   for (let k = at + 1; k < list.length; k++) {
@@ -1520,35 +1596,40 @@ function propertyValues(list, at, key) {
     if (token.kind === "punct" && "([{".includes(token.text)) depth++;
     else if (token.kind === "punct" && ")]}".includes(token.text)) {
       if (depth === 0) {
-        if (token.text !== "}") return [null];
-        settle();
-        return values.length > 0 ? values : [null];
+        if (token.text !== "}" || !settle()) return null;
+        let after = next(k + 1);
+        if (list[after]?.text === ",") after = next(after + 1);
+        return list[after]?.text === ")" ? value : null;
       }
       depth--;
     } else if (depth === 0 && token.kind === "punct" && token.text === ",") {
-      settle();
-      span = [];
+      if (!settle()) return null;
       continue;
     }
     span.push(token);
   }
-  return [null];
+  return null;
 }
 
 /**
  * A script's tokens, read as JavaScript far enough to tell a call's argument from the
  * strings, comments and regular expressions beside it: names (escapes decoded), strings
  * (decoded), templates (their text decoded, each substitution lexed as a token list of its
- * own), comments, regular expressions, numbers and single punctuation characters. A `/`
- * opens a regular expression where an expression may start — at the beginning, after
- * punctuation other than `)`, `]` or `}`, and after a keyword that takes an operand — and
- * divides anywhere else. It throws, naming the construct, on a script it cannot lex.
+ * own), comments, regular expressions (their text kept), numbers, and punctuation, `=>`,
+ * `++`, `--`, `?.` and `...` as one token each. A `/` opens a regular expression at the
+ * start, after punctuation other than `)`, `]`, `}`, `++` and `--`, after a keyword that
+ * takes an operand, and after the `)` of an `if`, `for`, `while` or `with`; it divides
+ * after a value, after any other `)`, after a `]`, after a postfix `++` or `--` and after
+ * the `}` of an object literal. After the `}` of a block or a prefix `++` or `--` it could
+ * be either, and the script does not read. It throws, naming the construct, on a script it
+ * cannot read: those, an unterminated string, template, comment or regular expression, and
+ * a legacy octal escape, whose meaning depends on a mode this reader cannot see.
  */
 function scriptTokens(source) {
   let i = 0;
   const numeral = /(?:0[xXoObB][\da-fA-F_]+|(?:\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(?:[eE][+-]?\d[\d_]*)?)n?/y;
   const nameStart = /[\p{ID_Start}$_]/u;
-  const namePart = /[\p{ID_Continue}$\u200c\u200d]/u;
+  const namePart = /[\p{ID_Continue}$‌‍]/u;
   const operandKeywords = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw",
     "case", "do", "else", "yield", "await"]);
 
@@ -1568,7 +1649,11 @@ function scriptTokens(source) {
       case "b": return "\b";
       case "f": return "\f";
       case "v": return "\v";
-      case "0": return "\0";
+      case "0":
+        if (/\d/.test(source[i + 1] ?? "")) throw new Error("a legacy octal escape");
+        return "\0";
+      case "1": case "2": case "3": case "4": case "5": case "6": case "7": case "8": case "9":
+        throw new Error("a legacy octal escape");
       case "x": return String.fromCharCode(hex(2));
       case "u": {
         if (source[i + 1] !== "{") return String.fromCharCode(hex(4));
@@ -1579,7 +1664,7 @@ function scriptTokens(source) {
         return String.fromCodePoint(parseInt(digits, 16));
       }
       case "\r": if (source[i + 1] === "\n") i++; return "";
-      case "\n": case "\u2028": case "\u2029": return "";
+      case "\n": case " ": case " ": return "";
       case undefined: throw new Error("an unterminated string");
       default: return next;
     }
@@ -1613,6 +1698,7 @@ function scriptTokens(source) {
     throw new Error("an unterminated template");
   }
   function regex() {
+    const start = i;
     let inClass = false;
     for (i++; i < source.length; i++) {
       const ch = source[i];
@@ -1621,8 +1707,9 @@ function scriptTokens(source) {
       if (ch === "[") inClass = true;
       else if (ch === "]") inClass = false;
       else if (ch === "/" && !inClass) {
+        const text = source.slice(start + 1, i);
         for (i++; i < source.length && namePart.test(source[i]); i++);
-        return { kind: "regex" };
+        return { kind: "regex", text };
       }
     }
     throw new Error("an unterminated regular expression");
@@ -1636,17 +1723,39 @@ function scriptTokens(source) {
     }
     return { kind: "name", text };
   }
+  // What a `/` after `previous` is: "regex", "division", or "unsure".
+  function slashAfter(previous) {
+    if (previous === null) return "regex";
+    if (previous.kind === "name") return operandKeywords.has(previous.text) ? "regex" : "division";
+    if (previous.kind !== "punct") return "division";
+    if (previous.text === ")") return previous.control ? "regex" : "division";
+    if (previous.text === "]") return "division";
+    if (previous.text === "}") return previous.block ? "unsure" : "division";
+    if (previous.text === "++" || previous.text === "--") return previous.postfix ? "division" : "unsure";
+    return "regex";
+  }
+  // Whether a `{` after `previous` opens a block: at a statement's start, after `)`, `=>`,
+  // `else`, `do`, `try`, `finally` or a class's name; an object literal after an operator.
+  function blockAfter(previous, braces) {
+    if (previous === null) return true;
+    if (previous.kind === "name") return ["else", "do", "try", "finally"].includes(previous.text) || !operandKeywords.has(previous.text);
+    if (previous.kind !== "punct") return false;
+    if ([";", "{", "}", ")", "=>"].includes(previous.text)) return true;
+    if (previous.text === ":") return braces.length === 0 || braces[braces.length - 1].block;
+    return false;
+  }
   // A token list up to the end, or up to the `}` closing a template's substitution.
   function lex(substitution) {
     const tokens = [];
-    let depth = 0;
+    const parens = [];
+    const braces = [];
     let previous = null;
     while (i < source.length) {
       const ch = source[i];
       if (/\s/.test(ch)) { i++; continue; }
       if (ch === "/" && source[i + 1] === "/") {
         let end = i + 2;
-        while (end < source.length && !"\n\r\u2028\u2029".includes(source[end])) end++;
+        while (end < source.length && !"\n\r  ".includes(source[end])) end++;
         tokens.push({ kind: "comment", text: source.slice(i + 2, end) });
         i = end;
         continue;
@@ -1661,21 +1770,30 @@ function scriptTokens(source) {
       let token;
       if (ch === "'" || ch === '"') token = quoted();
       else if (ch === "`") token = template();
-      else if (ch === "/" && (previous === null || (previous.kind === "punct" && !")]}".includes(previous.text))
-        || (previous.kind === "name" && operandKeywords.has(previous.text)))) token = regex();
+      else if (ch === "/" && slashAfter(previous) === "unsure") throw new Error("a `/` this reader cannot tell for a division or a regular expression");
+      else if (ch === "/" && slashAfter(previous) === "regex") token = regex();
       else if (nameStart.test(ch) || (ch === "\\" && source[i + 1] === "u")) token = name();
       else if (/\d/.test(ch) || (ch === "." && /\d/.test(source[i + 1] ?? ""))) {
         numeral.lastIndex = i;
         i += numeral.exec(source)?.[0].length || 1;
         token = { kind: "number" };
       } else {
-        i++;
-        if (ch === "{") depth++;
-        else if (ch === "}") {
-          if (depth === 0 && substitution) return tokens;
-          depth--;
+        const text = /^(?:=>|\+\+|--|\.\.\.|\?\.(?!\d))/.exec(source.slice(i, i + 3))?.[0] ?? ch;
+        i += text.length;
+        token = { kind: "punct", text };
+        if (text === "++" || text === "--") {
+          token.postfix = previous !== null && (previous.kind === "number" || previous.kind === "string" || previous.kind === "template"
+            || (previous.kind === "name" && !operandKeywords.has(previous.text)) || (previous.kind === "punct" && (previous.text === ")" || previous.text === "]")));
+        } else if (text === "(") {
+          parens.push(previous?.kind === "name" && ["if", "while", "for", "with"].includes(previous.text));
+        } else if (text === ")") {
+          token.control = parens.pop() ?? false;
+        } else if (text === "{") {
+          braces.push({ block: blockAfter(previous, braces) });
+        } else if (text === "}") {
+          if (braces.length === 0 && substitution) return tokens;
+          token.block = braces.pop()?.block ?? true;
         }
-        token = { kind: "punct", text: ch };
       }
       tokens.push(token);
       previous = token;
