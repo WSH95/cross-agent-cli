@@ -18,11 +18,12 @@
 // comment or a template, and skips quotes, line comments and regular
 // expressions within a line. It is a lexical scan over lines, not a parse, so
 // a backtick inside a string inside `${…}` still reads as the template's end.
-// Two more limits come from reading one line at a time, and the tests pin both
-// as they are. A string literal continued onto the next line by a trailing
-// backslash is read as ending with its line, so the continued text is scanned
-// as code and a declaration-shaped line inside it counts as a symbol: a false
-// pass. A slash right after `)` is read as a division, so a regular expression
+// Two more limits, which the tests pin as they are. Quotes end with their line,
+// so a string literal continued onto the next line by a trailing backslash is
+// read as ending there, the continued text is scanned as code, and a
+// declaration-shaped line inside it counts as a symbol: a false pass. A slash
+// opens a regular expression only where an operand is expected, which a `)` is
+// not, so a slash right after `)` is read as a division: a regular expression
 // there (`if (ok) /…/.test(s)`) is scanned as code, and a backtick inside it
 // opens a template and hides every declaration until the next backtick: a
 // false miss. And an anchor comment counts only on a line of its own; one that
