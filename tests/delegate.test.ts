@@ -436,6 +436,177 @@ test("no delegation starts a grok engine as the mode's engine-placed lead, whoev
   })));
 });
 
+/** This repository's own server: what a lead's mount starts, wherever the project is. */
+const repositoryServer = path.join(fs.realpathSync(path.join(import.meta.dirname, "..")), "src", "server.ts");
+
+/** The mode's loop, a blank line, then the role half: what an engine-placed lead is launched with. */
+function leadPrompt(p: TestProject, roleHalf: string): string {
+  return `${fs.readFileSync(p.mode.loopFile, "utf8")}\n${roleHalf}`;
+}
+
+// @anchor engineLeadSpec
+test("the operator's delegation of the engine-placed lead mounts this server and composes the loop with its role prompt", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const id = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "S11: the lead's first brief." }), options));
+
+  const spec = readSpec(p.root, id);
+  // The mount both lead engines accept: `--project` in the arguments and no environment,
+  // which Codex's mount refuses outright (P9; `tools/probe.mjs --track`).
+  assert.deepEqual(spec.lead, { command: process.execPath, args: [repositoryServer, "--project", p.root] });
+  assert.equal(Object.hasOwn(spec.lead!, "env"), false);
+  // The loop verbatim, a blank line, then the role's own prompt, composed once here.
+  const roleHalf = fs.readFileSync(path.join(p.mode.dir, "roles", "lead.md"), "utf8");
+  assert.equal(spec.rolePrompt, leadPrompt(p, roleHalf));
+  assert.equal(spec.brief, "S11: the lead's first brief.");
+
+  // The operator is at depth 0, so the lead runs at 1 and its own children at 2.
+  const record = p.record(id);
+  assert.equal(record.depth, 1);
+  assert.equal(record.parentTaskId, undefined, "nobody delegated the lead but the operator");
+  assert.equal(spec.env.CROSS_AGENT_DEPTH, "1");
+  assert.deepEqual(JSON.parse(spec.env.CROSS_AGENT_LINEAGE!), [{ taskId: id, role: "lead", cwd: p.root }]);
+
+  // A prompt config binds replaces the role half and leaves the loop where it is.
+  const configured = configFor(p.bin);
+  (configured.roles as Record<string, Record<string, unknown>>).lead.prompt = "The project's own lead text.";
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify(configured));
+  const again = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "S11: the lead's second brief." }), options));
+  assert.equal(readSpec(p.root, again).rolePrompt, leadPrompt(p, "The project's own lead text."));
+
+  // A specialist mounts nothing, and its prompt is its role's alone.
+  const planner = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  assert.equal(readSpec(p.root, planner).lead, undefined);
+  assert.equal(readSpec(p.root, planner).rolePrompt, "You are the planner. Report a plan.");
+});
+
+/** A directory holding the two programs Claude's Linux sandbox check looks for, for an engine that is the fake. */
+function sandboxPath(p: TestProject): string {
+  const directory = path.join(p.root, ".sandbox-bin");
+  fs.mkdirSync(directory, { recursive: true });
+  for (const name of ["bwrap", "socat"]) {
+    fs.writeFileSync(path.join(directory, name), "#!/bin/sh\nexit 0\n");
+    fs.chmodSync(path.join(directory, name), 0o755);
+  }
+  return `${directory}${path.delimiter}${process.env.PATH ?? ""}`;
+}
+
+// @anchor engineLeadArgv
+test("the lead's mount reaches the engine's own argv through the real runner, on Claude and on Codex", async (t) => {
+  const p = await projectWithRoles(t);
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+  const argvOf = async (engine: "claude" | "codex", brief: string): Promise<{ id: string; argv: string[] }> => {
+    const config = configFor(p.bin);
+    (config.roles as Record<string, unknown>).lead = { engine };
+    config.engines = { grok: { bin: p.bin }, codex: { bin: p.bin }, claude: { bin: p.bin } };
+    fs.writeFileSync(configFile, JSON.stringify(config));
+    const record = path.join(p.root, `${engine}-invocation.json`);
+    const id = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief }), {
+      authority: operator, mode: p.mode,
+      env: engineEnv(p, { FAKE_ENGINE_FORMAT: engine, FAKE_ENGINE_RECORD: record, PATH: sandboxPath(p) }),
+    }));
+    const done = await waitForRecord(p, id, (value) => value.status === "done" || value.status === "failed");
+    assert.equal(done.status, "done", `${engine}: ${done.reason}`);
+    return { id, argv: (JSON.parse(fs.readFileSync(record, "utf8")) as { argv: string[] }).argv };
+  };
+
+  // Claude: the mount travels with the flag that makes it exclusive, and its file says
+  // exactly this server with exactly this project.
+  const claude = await argvOf("claude", "S11: a Claude lead's brief.");
+  const strict = claude.argv.indexOf("--strict-mcp-config");
+  assert.ok(strict >= 0, claude.argv.join(" "));
+  assert.equal(claude.argv[strict + 1], "--mcp-config");
+  const mountFile = claude.argv[strict + 2];
+  assert.equal(mountFile, path.join(p.root, ".cross-agent", "tasks", `${claude.id}.scratch`, "mcp-config.json"));
+  assert.deepEqual(JSON.parse(fs.readFileSync(mountFile, "utf8")), {
+    mcpServers: { "cross-agent": { command: process.execPath, args: [repositoryServer, "--project", p.root] } },
+  });
+
+  // Codex: the four `-c` settings, under the flag that removes the operator's own servers.
+  const codex = await argvOf("codex", "S11: a Codex lead's brief.");
+  const settings = codex.argv.flatMap((value, index) => (codex.argv[index - 1] === "-c" && value.startsWith("mcp_servers.") ? [value] : []));
+  assert.deepEqual(settings, [
+    `mcp_servers.cross-agent.command=${JSON.stringify(process.execPath)}`,
+    `mcp_servers.cross-agent.args=${JSON.stringify([repositoryServer, "--project", p.root])}`,
+    'mcp_servers.cross-agent.default_tools_approval_mode="approve"',
+    "mcp_servers.cross-agent.tool_timeout_sec=3600",
+  ]);
+  assert.ok(codex.argv.includes("--ignore-user-config"));
+});
+
+// @anchor inheritedMountRefused
+test("an engine whose lead mount is the operator's inherited configuration is refused before any record exists", async (t) => {
+  const p = await projectWithRoles(t);
+  // No built-in engine but Grok answers so, and Grok is refused earlier by name; what this
+  // reads is the adapter's own answer, through the table `delegate` launches from.
+  const { adapters } = await import("../src/engines/registry.ts");
+  t.mock.method(adapters.codex, "leadMount", () => ({ argv: [], inherited: true as const }));
+  const reason = refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), {
+    authority: operator, mode: p.mode, env: engineEnv(p),
+  }));
+  assert.match(reason, /P9/);
+  assert.match(reason, /codex/);
+  assert.deepEqual(p.records(), [], "nothing was written and nothing was spawned");
+  assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "tasks")), false);
+});
+
+// @anchor engineLeadCap
+test("a lead the project's depth cap would hold to the specialist row is refused before it launches", async (t) => {
+  const p = await projectWithRoles(t, { maxDepth: 1 });
+  // At depth 1 under a cap of 1 its own server resolves the specialist row, and the loop
+  // could call none of the tools it runs on.
+  const reason = refusal(await delegate(p.root, request({ role: "lead", cwd: p.root }), {
+    authority: operator, mode: p.mode, env: engineEnv(p),
+  }));
+  assert.match(reason, /depth 1/);
+  assert.match(reason, /limits\.maxDepth/);
+  assert.deepEqual(p.records(), []);
+  // A specialist is not the lead, and runs under the same cap as before.
+  assert.ok(launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), {
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+  })));
+});
+
+// @anchor resumedLeadAsks
+test("a resumed lead's brief carries its lineage's asks, and its record hashes the caller's brief alone", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "codex" }) };
+  const { createHash } = await import("node:crypto");
+  const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+  const { answerAsk, createAsk } = await import("../src/mailbox.ts");
+
+  // A lead that ran and settled, with a session to continue.
+  const first = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "S11: run the task." }), options));
+  await waitForRecord(p, first, (value) => value.status === "done");
+  // Nothing asked yet: the resume brief is the caller's text alone.
+  const quiet = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "Carry on.", resume: first }), options));
+  assert.equal(readSpec(p.root, quiet).brief, "Carry on.");
+  await waitForRecord(p, quiet, (value) => value.status === "done");
+
+  // Its chain asked twice — once before the resume and once after — and one was answered.
+  const asked = createAsk(p.root, { taskId: first, question: "Which slug?" }, 1_000);
+  const open = createAsk(p.root, { taskId: quiet, question: "Delete the branch?\nIt is merged." }, 2_000);
+  createAsk(p.root, { taskId: "some-other-lead", question: "Not this lineage's?" }, 3_000);
+  assert.equal((await answerAsk(p.root, asked.id, "use s11-i2")).applied, true);
+
+  const resumed = launched(await delegate(p.root, request({ role: "lead", cwd: p.root, brief: "Carry on again.", resume: quiet }), options));
+  assert.equal(readSpec(p.root, resumed).brief, [
+    "Carry on again.",
+    "",
+    "## Asks so far",
+    `- ask ${asked.id}: answered`,
+    "  question: Which slug?",
+    "  answer: use s11-i2",
+    `- ask ${open.id}: open`,
+    "  question: Delete the branch?",
+    "    It is merged.",
+    "",
+  ].join("\n"));
+  // The duplicate window keys on what the caller wrote, never on what the server added.
+  assert.equal(p.record(resumed).briefHash, hash("Carry on again."));
+  assert.equal(p.record(quiet).briefHash, hash("Carry on."));
+});
+
 // @anchor configEditedAfter
 test("a config edited after the server read it is refused at the launch boundary, by field and rule", async (t) => {
   const p = await projectWithRoles(t);

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "./authority.ts";
-import { bindingFault, CONFIG_PATH, engineLeadRole, loadConfig, modeDrift } from "./config.ts";
+import { bindingFault, CONFIG_PATH, effectiveMaxDepth, engineLeadRole, loadConfig, modeDrift } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
@@ -14,14 +14,15 @@ import { removeJournal } from "./journal.ts";
 import { create, newTaskId, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, lockPath, spawnLockName } from "./locks.ts";
+import { asksSection, listAsks } from "./mailbox.ts";
 import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
-import { ownedBy } from "./tasks.ts";
-import { sandboxFor } from "./engines/registry.ts";
+import { lineageIds, ownedBy } from "./tasks.ts";
+import { adapterFor, sandboxFor } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
-import type { EngineName } from "./engines/types.ts";
+import type { EngineName, LeadMountSpec } from "./engines/types.ts";
 import { verifyWorktree } from "./worktree.ts";
 import type { VerifiedWorktree } from "./worktree.ts";
 
@@ -110,6 +111,68 @@ async function workspaceFault(
   // what it resolved rather than running git a second time to learn the same thing.
   const verified = await verifyWorktree(projectRoot, cwd, branch);
   return "reason" in verified ? { fault: verified.reason } : { verified };
+}
+
+/** What an engine-placed lead launches with that no specialist does (design, "The lead model"). */
+interface EngineLead {
+  /** The record's id, minted first so the mount is built against the directory the task will own. */
+  id: string;
+  mount: LeadMountSpec;
+  /** The mode's loop, read once: the first half of the lead's role prompt. */
+  loop: string;
+}
+
+/**
+ * The engine-placed lead's own preparation, or the reason it cannot run, all before a
+ * record exists. Three things are settled here.
+ *
+ * The **cap**: the lead's server resolves the lead row only below the project's effective
+ * depth cap (`src/authority.ts#resolveAuthority`), and at or above it every tool the loop
+ * runs on is refused, so a lead the cap would hold to the specialist row is not launched.
+ *
+ * The **mount**: this server, for this project, with `--project` in its arguments and no
+ * environment — the form both lead engines' mounts accept (P9; `tools/probe.mjs --track`).
+ * The adapter is asked for it here, and one whose mount is the operator's own inherited
+ * configuration has no per-run isolation to give a lead: refused with P9's reason, whatever
+ * the engine (Grok, the one that answers so, is refused by name before this).
+ *
+ * The **loop**: the mode's own text, which reaches the lead as the first half of its role
+ * prompt — the engine's instruction file — and never as a copy anywhere else (design,
+ * "Two skills, and how the loop is delivered").
+ */
+function engineLead(
+  projectRoot: string, mode: Mode, config: CrossAgentConfig, engine: EngineName, depth: number, role: string,
+): EngineLead | { fault: string } {
+  const named = `role ${JSON.stringify(role)} is mode ${mode.id}'s engine-placed lead`;
+  const cap = effectiveMaxDepth(mode, config);
+  if (depth >= cap) {
+    return { fault: `${named}, which would run at depth ${depth}, and this project's depth cap of ${cap} holds a server at that depth to the specialist row; set limits.maxDepth to ${depth + 1} or more in ${CONFIG_PATH}` };
+  }
+  const id = newTaskId();
+  const mount: LeadMountSpec = { command: process.execPath, args: [path.join(repositoryRoot, "src", "server.ts"), "--project", projectRoot] };
+  let inherited: boolean;
+  try {
+    // A pure call: the mount is the adapter's argv and files, which `plan` folds in at the
+    // spawn, so asking for it here writes nothing. The directory is the one step 7 makes.
+    inherited = adapterFor(engine).leadMount(mount, path.join(path.resolve(projectRoot, ".cross-agent", "tasks"), `${id}.scratch`)).inherited === true;
+  } catch (error) {
+    return { fault: message(error) };
+  }
+  if (inherited) {
+    return { fault: `${named}, and ${engine} has no per-run mount to carry one: its server would come from the operator's own inherited configuration (P9: no per-run isolation)` };
+  }
+  let loop: string;
+  try {
+    loop = fs.readFileSync(mode.loopFile, "utf8");
+  } catch (error) {
+    return { fault: `mode ${mode.id}: cannot read the loop its lead runs: ${message(error)}` };
+  }
+  return { id, mount, loop };
+}
+
+/** The lead's system prompt: the mode's loop verbatim, a blank line, then its role's own text. */
+function leadPrompt(loop: string, roleHalf: string): string {
+  return `${loop}${loop.endsWith("\n") ? "\n" : "\n\n"}${roleHalf}`;
 }
 
 /** Every record of one resume chain: what `id` continues, and what continues it. */
@@ -262,6 +325,13 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (engineLeadRole(options.mode) === request.role && engine === "grok") {
       return refuse(`role ${JSON.stringify(request.role)} is mode ${options.mode.id}'s engine-placed lead, and grok cannot carry one (P9: no per-run isolation)`);
     }
+    // The engine-placed lead: everything it needs is settled here, before a record exists.
+    let lead: EngineLead | undefined;
+    if (engineLeadRole(options.mode) === request.role) {
+      const prepared = engineLead(projectRoot, options.mode, config, engine, depth, request.role);
+      if ("fault" in prepared) return refuse(prepared.fault);
+      lead = prepared;
+    }
     // A binding's model and effort belong to the engine it binds: `grok --model
     // claude-sonnet-5` is an unknown model id, not a cross-engine default (I1,
     // 2026-09-19). A call that names another engine therefore carries its own or none.
@@ -404,6 +474,19 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       parentTaskId = original!.parentTaskId ?? undefined;
     }
 
+    // 4b. A resumed lead is told what its chain asked and what the operator answered: its
+    // engine session may have died waiting on a question, and the brief is the one way an
+    // answer reaches the continuation (design, "The lead model", item 3). The record still
+    // hashes the caller's own text below, because the duplicate window keys on it.
+    let brief = request.brief;
+    if (lead !== undefined && request.resume !== undefined) {
+      try {
+        brief += asksSection(listAsks(projectRoot, { taskIds: lineageIds(records, request.resume) }).asks);
+      } catch (error) {
+        return refuse(`the asks of task ${request.resume} cannot be read: ${message(error)}`);
+      }
+    }
+
     // 5. Nothing exists yet, and the checks above were only true while this lock held them
     // true, so a lock already lost is a launch that must not happen (design section 2).
     if (claim.lost) return refuse("spawn.lock was lost before the record was written; nothing was launched");
@@ -441,6 +524,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       record = create(projectRoot, {
         role: request.role, brief: request.brief, cwd: workspace, engine, model, effort, depth,
         ...(oneShot === undefined ? {} : { id: oneShot.slug, worktree: oneShot }),
+        ...(lead === undefined ? {} : { id: lead.id }),
         ...(continued === undefined ? {} : { worktree: continued }),
         ...(parentTaskId === undefined ? {} : { parentTaskId }),
         ...(request.resume === undefined ? {} : { resumedFrom: request.resume }),
@@ -449,12 +533,15 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       // and a lead's mount config here, never into a workspace the role may edit.
       const scratchDir = path.join(path.dirname(record.logPath), `${record.id}.scratch`);
       fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
+      // The prompt config binds, else the mode's own text for the role — its
+      // `roles/<key>.md`, or the text a built-in role carries — which is the same string
+      // `describe_mode` serves (design section 8, `src/modes.ts#rolePrompt`). An
+      // engine-placed lead's runs behind the loop it runs, composed once, here.
+      const roleHalf = bound?.prompt ?? rolePrompt(options.mode, declared);
       spec = {
-        // The prompt config binds, else the mode's own text for the role — its
-        // `roles/<key>.md`, or the text a built-in role carries — which is the same
-        // string `describe_mode` serves (design section 8, `src/modes.ts#rolePrompt`).
-        role: request.role, brief: request.brief,
-        rolePrompt: bound?.prompt ?? rolePrompt(options.mode, declared),
+        role: request.role, brief,
+        rolePrompt: lead === undefined ? roleHalf : leadPrompt(lead.loop, roleHalf),
+        ...(lead === undefined ? {} : { lead: lead.mount }),
         cwd: workspace, engine, sandbox,
         ...(model === null ? {} : { model }),
         ...(effort === null ? {} : { effort }),

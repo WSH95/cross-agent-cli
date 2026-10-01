@@ -305,3 +305,19 @@ export async function ask(projectRoot: string, options: AskOptions): Promise<Ask
     }
   }
 }
+
+/**
+ * The asks a resumed lead's brief carries (design, "The lead model", item 3): every
+ * question its lineage put, with its status and the answer where there is one, which is how
+ * an answer reaches a lead that was killed while it waited. An empty list adds nothing.
+ */
+export function asksSection(asks: readonly AskRecord[]): string {
+  if (asks.length === 0) return "";
+  const indent = (text: string) => text.replace(/\n/g, "\n    ");
+  const entries = asks.map((record) => [
+    `- ask ${record.id}: ${record.status}`,
+    `  question: ${indent(record.question)}`,
+    ...(record.status === "answered" ? [`  answer: ${indent(record.answer ?? "")}`] : []),
+  ].join("\n"));
+  return `\n\n## Asks so far\n${entries.join("\n")}\n`;
+}
