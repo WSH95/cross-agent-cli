@@ -179,29 +179,49 @@ export async function revision(gitDir: string, workTree: string, branch: string)
 }
 
 /**
+ * Whether a tracked file's working-tree bytes differ from its index entry: what a commit
+ * naming the path would record, read where git's own view is not to be trusted, under an
+ * assume-unchanged mark that `status` takes at its word. A file that cannot be hashed, one
+ * gone from the worktree included, and one with no single index entry are taken to differ.
+ */
+async function differsFromIndex(gitDir: string, workTree: string, file: string): Promise<boolean> {
+  const staged = await run(gitDir, workTree, ["ls-files", "-s", "-z", "--", `:(literal)${file}`]);
+  // `<mode> <object> <stage>\t<path>`, stage 0 for a path with no conflict.
+  const object = /^[0-7]+ ([0-9a-f]+) 0\t/.exec(staged.stdout)?.[1];
+  const hashed = await run(gitDir, workTree, ["hash-object", "--", file]);
+  return staged.exitCode !== 0 || hashed.exitCode !== 0 || object === undefined || hashed.stdout.trim() !== object;
+}
+
+/**
  * Why a commit in this worktree may not run, or null: it would carry a host's project
  * configuration. The worktree is read, not the index alone, because `commit -a`, `commit
  * --include` and `commit -- <path>` record what the index does not hold: one `status` over
  * the four paths names what is staged, changed or untracked there, and nothing
- * `.gitignore` covers. A tracked file marked assume-unchanged is one `status` says nothing
- * about while a commit naming it records it anyway, so `ls-files -v`, which tags such a file
- * in lowercase, is read beside it. Git sees no empty directory, so an empty `.claude/` an
- * engine leaves behind is never named. This is the early warning; the merge is the gate,
- * and it refuses what this does not see (`src/gitroot.ts#smuggled`).
+ * `.gitignore` covers. A tracked file marked assume-unchanged is one `status` takes at its
+ * word while a commit naming it records its bytes anyway, so `ls-files -v`, which tags such
+ * a file in lowercase, is read beside it, and a marked file is carried when its bytes differ
+ * from its index entry: the mark alone carries nothing, since git marks every tracked file so
+ * under `core.ignoreStat`. Git sees no empty directory, so an empty `.claude/` an engine
+ * leaves behind is never named. This is the early warning; the merge is the gate, and it
+ * refuses what this does not see (`src/gitroot.ts#smuggled`).
  */
 async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
   const unread = (ran: Ran, verb: string) =>
     `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git ${verb} exited ${ran.exitCode}`}`;
   const status = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...hostConfigPathspecs]);
   if (status.exitCode !== 0) return unread(status, "status");
-  const listed = await run(gitDir, workTree, ["ls-files", "-v", "--", ...hostConfigPathspecs]);
+  const listed = await run(gitDir, workTree, ["ls-files", "-v", "-z", "--", ...hostConfigPathspecs]);
   if (listed.exitCode !== 0) return unread(listed, "ls-files");
   // Each status line is `XY <path>`, a rename's `XY <old> -> <new>`, as git prints it; each
-  // `ls-files -v` line is `<tag> <path>`.
+  // `ls-files -v -z` entry is `<tag> <path>`, the path unquoted.
   const carried = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
-  const marked = listed.stdout.split("\n").filter((line) => /^[a-z] /.test(line)).map((line) => line.slice(2))
-    .filter((entry) => !carried.includes(entry))
-    .map((entry) => `${entry} (marked assume-unchanged, which hides its changes from git status)`);
+  const marked: string[] = [];
+  for (const entry of listed.stdout.split("\0")) {
+    if (!/^[a-z] /.test(entry)) continue;
+    const file = entry.slice(2);
+    if (carried.includes(file) || !await differsFromIndex(gitDir, workTree, file)) continue;
+    marked.push(`${file} (marked assume-unchanged, which hides its changes from git status)`);
+  }
   const paths = [...carried, ...marked];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `

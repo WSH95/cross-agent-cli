@@ -2288,11 +2288,13 @@ carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
 warning, where the lead can still have the file taken out: `git status
 --porcelain --untracked-files=all` over the four names anything in the worktree
 — staged, changed or untracked — and `git ls-files -v` any tracked one marked
-assume-unchanged, which hides a change from that status while a commit naming
-the path records it; both are read under `git.lock` before the command runs
-(`src/gitmutate.ts#hostConfigFault`, `#mutate`;
+assume-unchanged whose working-tree bytes differ from its index entry, a change
+the mark hides from that status while a commit naming the path records it. The
+mark alone carries nothing, since git marks every tracked file so under
+`core.ignoreStat`, and both reads are taken under `git.lock` before the command
+runs (`src/gitmutate.ts#hostConfigFault`, `#differsFromIndex`, `#mutate`;
 `tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
-`#commitRefusesAssumeUnchanged`). The commit check does not see a git alias for
+`#commitRefusesAssumeUnchanged`, `#commitUnderIgnoreStat`). The commit check does not see a git alias for
 `commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
 `commit --amend` over an older commit that already carries one; the merge
 refuses each of those. A removal of a tracked one is
@@ -3798,10 +3800,11 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   the exclusions are written once however often and however concurrently they
   are asked for (`tests/ledger.test.ts#excludeLedgerIdempotent`,
   `#excludeLedgerConcurrent`). A host's project configuration is refused at the
-  worktree's commit — in any case, and marked assume-unchanged — and at the
-  merge, which names every path it carries
-  (`tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
-  `#commitRefusesAssumeUnchanged`, `tests/gitroot.test.ts#mergeRefusesHostConfig`,
+  worktree's commit — in any case, and changed under an assume-unchanged mark,
+  though not for the mark alone — and at the merge, which names every path it
+  carries (`tests/gitmutate.test.ts#commitRefusesHostConfig`, `#hostConfigAnyCase`,
+  `#commitRefusesAssumeUnchanged`, `#commitUnderIgnoreStat`,
+  `tests/gitroot.test.ts#mergeRefusesHostConfig`,
   `#mergeHostConfigAnyCase`, `#mergeNamesEveryPath`), and both team loops name it
   where they say what those refuse (`tests/skills.test.ts#loopsNameHostConfig`).
   The statuses, the id alphabet and the runner log path each have one exported

@@ -637,6 +637,31 @@ test("a tracked host file marked assume-unchanged is refused at the commit, thou
   assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
 });
 
+// @anchor commitUnderIgnoreStat
+test("under core.ignoreStat a host file git marked assume-unchanged blocks a commit only when its bytes differ from the index", async (t) => {
+  const { root, add } = await repository(t);
+  await writeFile(path.join(root, ".mcp.json"), '{"mcpServers": {}}\n');
+  await git(root, "add", ".mcp.json");
+  await git(root, "commit", "-m", "the project's own servers");
+  // Under this setting git marks every tracked file it checks out assume-unchanged.
+  await git(root, "config", "core.ignoreStat", "true");
+  const worktree = await add("ignorestat");
+  assert.equal(await git(worktree, "ls-files", "-v", "--", ".mcp.json"), "h .mcp.json");
+
+  // The loop's step 6 with the host file untouched: the mark alone carries nothing.
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+  accepted(await gitMutate(root, { slug: "ignorestat", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"] }, { waitSeconds: 5 }));
+  assert.equal(accepted(await gitMutate(root, { slug: "ignorestat", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
+
+  // The same file changed, which `git status` does not show under this setting: refused, named.
+  await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all", "--", ".mcp.json"), "");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  const reason = refusal(await gitMutate(root, { slug: "ignorestat", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
+  assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+});
+
 // @anchor configLockGit
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);
