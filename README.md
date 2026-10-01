@@ -24,11 +24,14 @@ the detached runner with its orphan handling. `npm test` covers each of
 those, runs the citation checker over the docs, and is green at every commit
 on `main`; one test stays skipped until a real `codex` binary runs it. On top
 of it: the mode loader and the three built-in modes, the authority model and
-the twelve tools it gates — `delegate`, `wait`, `check`, `result`, `cancel`,
-`list_tasks`, `describe_mode`, `list_roles` and the worktree provider's four —
-and `cross-agent init`, and the launcher skill with each mode's own loop. What
-is left is a target: the mailbox an engine-placed lead needs, and Codex's and
-Grok's packaging. `docs/design.md` is the design and the work plan;
+the twelve tools it gates under every mode — `delegate`, `wait`, `check`,
+`result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles` and the worktree
+provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside them
+under `dev-team-engine`, fourteen for the operator and for the lead; engine
+placement, which launches the loop in a Claude or Codex lead of its own; the
+operator CLI's `init`, `answer` and `report`; and the launcher skill with each
+mode's own loop. What is left is a target: Codex's and Grok's packaging, and the
+CLI's remaining verbs. `docs/design.md` is the design and the work plan;
 `docs/probes.md` records what each engine CLI was observed to do, and
 `VERIFY.md` what each milestone's own runs showed.
 
@@ -46,7 +49,8 @@ The session should report the server as `plugin:cross-agent:cross-agent`,
 connected, and offer twelve tools spelled
 `mcp__plugin_cross-agent_cross-agent__<tool>` — `delegate`, `wait`, `check`,
 `result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles`,
-`verify_worktree`, `git_mutate`, `git_root`, `run_command`. Fewer than twelve
+`verify_worktree`, `git_mutate`, `git_root`, `run_command` — and, in a project
+whose mode places its lead in an engine, `list_asks` and `answer` too. Fewer
 means the server resolved a row below the operator's, and it says which on its
 own stderr the first time a request asks it to resolve one. To undo the install,
 drop the flag: nothing was copied anywhere, no global configuration was touched,
@@ -151,7 +155,9 @@ session is. Under `placement: host` it is your own session: it loads the loop
 and is busy between `wait` calls. Under `placement: engine` a spawned engine
 runs the loop, your session stays free to check status, watch it, answer its
 questions through a mailbox, and cancel it, and the run survives closing your
-session. `host` is built first; `engine` follows the first end-to-end run.
+session. Both are built: `dev-team` and `solo` place the loop in your host
+session, and `dev-team-engine` in a Claude or Codex lead it launches, which asks
+you questions through `list_asks`/`answer` or `cross-agent answer`.
 Either way the design derives a server's authority from process ancestry
 rather than from depth or a token: the server walks its own parent chain for
 the engine that spawned it, matches that against the ledger, and serves the

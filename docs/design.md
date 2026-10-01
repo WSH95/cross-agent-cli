@@ -84,8 +84,11 @@ before it polls (`src/wait.ts#wait`, `src/server.ts#projectTools`). S8 adds the
 mode the entry point loads once at start, so the resolver is now given that
 mode's `lead.role` and the cap it derives (`src/server.ts#main`,
 `src/config.ts#effectiveMaxDepth`); under a host-placed mode there is no lead
-role to match, and no loop runs until step 9 writes one. What is not built below
-is the target the remaining tasks are measured against.
+role to match. S11 builds engine placement: `delegate` launches the mode's lead
+role with this server mounted and the loop as its instructions
+(`src/delegate.ts#delegate`), the mailbox carries its questions
+(`src/mailbox.ts#ask`), and its rows join the matrix (`src/server.ts#projectTools`).
+All of this section is built.
 
 **A lead is a session holding the lead tools and running the mode's loop.
 `placement` decides which process that session is.**
@@ -94,7 +97,7 @@ is the target the remaining tasks are measured against.
 |---|---|---|
 | Who runs the loop | your host session | a spawned engine: Claude or Codex (P9; not Grok, item 4) |
 | Host loads | launcher skill + the mode's loop | launcher skill only |
-| Your session while it runs | busy between `wait` calls | free — `status`, `watch`, `answer`, `cancel` |
+| Your session while it runs | busy between `wait` calls | free — `wait`/`check`, `list_asks`/`answer`, `cancel`, `cross-agent report` |
 | Survives closing the session | tasks yes, loop no | yes; exclusive reattach by task id |
 | Lead asks you a question | natively | `ask`/`answer` mailbox |
 | Root git operations | `git_root` and `run_command` | the same two tools, the lead's only reach at the root |
@@ -178,6 +181,19 @@ That also settles the spawn-versus-acknowledgement race: a lead's server that
 starts before its record reaches `running` is a specialist until revalidation
 sees `running`, which is the safe direction.
 
+**A fresh server environment keeps the row and loses the depth.** Codex is such an
+engine: 0.159.3 starts a stdio server with `HOME`, `LANG`, `LOGNAME`, `PATH`,
+`SHELL`, `TERM` and `USER` and nothing of the task (`docs/probes.md#e2ServerEnv`).
+The walk still finds the lead's engine, so the row is the lead's; but depth and
+lineage are read from the server's own environment (`src/guard.ts#readDepth`,
+`src/delegate.ts#delegate`), so such a server resolved the lead at depth 0 and
+recorded its children at depth 1 with no lead in their lineage. The Codex mount
+therefore names the four markers in `mcp_servers.<id>.env_vars`, a constant list of
+names whose values Codex copies from the lead's own environment, which the runner
+started from the spec's (`src/engines/codex.ts#codex`); the literal-values `env` stays
+refused. Claude starts its servers with a copy of its own environment, markers
+included (`docs/probes.md#e3`).
+
 **Resolution is revalidated on every `tools/list` and `tools/call`**, never
 cached for the connection's lifetime: the server calls the resolver for each
 request (`src/server.ts#createServer`), and every resolution walks in full —
@@ -191,8 +207,9 @@ save a few reads, but a full walk cannot go stale when the chain above the
 server changes.
 
 **Which project.** The server takes `--project <root>`, and the lead mount spec
-will pass it — a **target** of step 11, since no mount is built
-(`src/engines/types.ts#LeadMountSpec`). `childEnv` also sets
+passes it: `delegate` mounts `<this repository>/src/server.ts --project <root>`
+with no environment, the one form both lead engines' mounts accept
+(`src/engines/types.ts#LeadMountSpec`, `src/delegate.ts#engineLead`). `childEnv` also sets
 `CROSS_AGENT_PROJECT=<canonical root>` (`src/guard.ts#childEnv`), so a server a
 Grok child starts from inherited configuration finds the right ledger. For a
 host session with neither, the fallback is the nearest ancestor directory of the
@@ -275,28 +292,39 @@ that spelling, so nothing in the matrix depends on it.
    levels: one runner per task, by the `runner-<id>.lock` of section 2, and one
    live record per resume chain, by the two chain rules `delegate` applies
    before it writes (section 5, layer 4).
-3. **The mailbox.** `ask`, `list_asks`, `answer`, backed by
-   `.cross-agent/asks/<id>.json` and written by **the server or the operator
-   CLI only**. No engine child can write there: it has no tool that does, and
-   `.cross-agent/` sits at the project root, which no writable sandbox
+3. **The mailbox**, built (`src/mailbox.ts`). `ask`, `list_asks`, `answer`,
+   backed by `.cross-agent/asks/<id>.json` and written by **the server or the
+   operator CLI only**. No engine child can write there: it has no tool that
+   does, and `.cross-agent/` sits at the project root, which no writable sandbox
    reaches — that second half holds because of the mode rule that no role may
    combine `{kind: "root"}` with a writable sandbox (the Modes section), so it
    is a guarantee and not an accident. An ask record is `{id, taskId,
    question, createdAt, status: "open" | "answered" | "cancelled", answer?,
-   answeredAt?}`. `ask` blocks up to `timeout_seconds` (default
-   `waitDefaultSeconds`) and returns `{id, status, answer?}`; a lead that is
-   still waiting re-calls `ask` with the same `id`, which is what keeps a
-   long wait inside the host's tool timeout. The first `answer` wins and later
-   ones are refused, so two operators cannot both reply; cancelling a lead
-   cancels its open asks; and on `resume` the launcher lists the open and
-   answered asks in the resume brief, which is how an answer reaches a lead
-   that was killed while waiting. The mailbox sidesteps every relay limit the
-   OpenMausBot reference carries: cards that die with the turn, a
-   three-per-five-minute wake budget, a four-minute ask cap, a fifteen-minute
-   auto-deny. It is not built earlier because specialists are
-   **unauthorized** to ask, not because they cannot reach the server: a Grok
-   specialist can reach an inherited server, since the Grok exclusion list is
-   empty by necessity (`src/engines/grok.ts#exclusionArgs`).
+   answeredAt?, cancelledAt?}`, its id from the ledger's alphabet, written whole,
+   and a read of an ask nobody wrote creates nothing (`src/mailbox.ts#readAsk`).
+   `ask` blocks up to `timeout_seconds` (default `waitDefaultSeconds`) and
+   returns `{id, status, answer?}`: `open` with the hint to ask again by that
+   `id` when the timeout passes first, which is what keeps a long wait inside
+   the host's tool timeout, and `cancelled: true` with the record untouched when
+   the call itself is aborted (`src/mailbox.ts#ask`). A lead asks under its own
+   task and may wait again by id on any ask of its lineage — its own record and
+   those it continues — and on no other. The first `answer` wins: under the
+   ask's own lock the record is read again, and a second is refused naming when
+   the first landed (`src/mailbox.ts#answerAsk`, `src/locks.ts#askLockName`).
+   Cancelling a lead cancels the open asks of its lineage and reports their ids
+   as `asksCancelled` (`src/tasks.ts#cancel`, `src/mailbox.ts#cancelAsks`); and a
+   `resume` of a lead carries every ask of the original's lineage, with its
+   status and answer, appended to the brief under `## Asks so far` while the
+   record hashes the caller's own text (`src/mailbox.ts#asksSection`,
+   `src/delegate.ts#delegate`), which is how an answer reaches a lead that was
+   killed while waiting (`docs/probes.md#injectKilledLeadAsk`). The mailbox
+   sidesteps every relay limit the OpenMausBot reference carries: cards that die
+   with the turn, a three-per-five-minute wake budget, a four-minute ask cap, a
+   fifteen-minute auto-deny. It is registered under engine placement only, and
+   only to the rows the matrix gives it (`src/server.ts#projectTools`):
+   specialists are **unauthorized** to ask, not unable to reach the server — a
+   Grok specialist can reach an inherited server, since the Grok exclusion list
+   is empty by necessity (`src/engines/grok.ts#exclusionArgs`).
 4. **Injection, now probed per engine (P9, `docs/probes.md#p9`).** Two
    engines can carry a lead and one cannot.
 
@@ -315,9 +343,15 @@ that spelling, so nothing in the matrix depends on it.
    `codex_apps` and nothing of the operator's. The third setting is not
    optional: `codex exec` runs with approval policy `never`, so without it the
    lead sees the tools and every call is refused
-   (`docs/probes.md#p9Mounts`, `#p9CodexMount`). Instructions go through `-c
-   model_instructions_file="<file>"`, accepted and obeyed with no role text in
-   the prompt, so the loop costs a Codex lead no prompt space.
+   (`docs/probes.md#p9Mounts`, `#p9CodexMount`). S11 adds two more, so a lead's
+   mount is five settings (`src/engines/codex.ts#codex`): `…tool_timeout_sec=3600`,
+   because Codex gives an MCP call 60 s by default and a lead's `wait` and `ask`
+   are 600 s calls — B2 timed a lead's `wait` at 158 s by Codex's own record of
+   it (`docs/probes.md#s11CodexLeadTimeout`) — and `…env_vars=` the four task
+   markers, because Codex starts the server in an environment of its own
+   ("Operator provenance" above, `docs/probes.md#e2ServerEnv`). Instructions go
+   through `-c model_instructions_file="<file>"`, accepted and obeyed with no role
+   text in the prompt, so the loop costs a Codex lead no prompt space.
 
    **Grok is not supported as an engine-placed lead.** P9 found no per-run
    isolation of any kind (`docs/probes.md#p9Mounts`, `#p9GrokInherits`). A Grok child
@@ -361,11 +395,19 @@ and Codex's documented fallback copies that one directory (section 9), so a
 mode's loop cannot be found by convention on any host. The server serves it
 instead: `describe_mode` returns the active mode's loop text, its roles, and its
 workspace and git policy, and the launcher's first step is to call it
-(`src/modes.ts#describeMode`). Under `engine` placement the same text also
-reaches the lead through the engine's own instruction file —
+(`src/modes.ts#describeMode`). The launcher routes on `mode.lead.placement`
+right after that call: under `host` the loop is the host session's own
+instructions; under `engine` the host starts the lead with one `delegate`,
+watches it with `wait` and `check`, answers it through `list_asks` and `answer`,
+cancels or resumes it, and reads its closing report through `result`, and never
+runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
+placement"; `tests/skills.test.ts#launcherRoutesPlacement`). Under `engine`
+placement the loop reaches the lead through the engine's own instruction file —
 `--append-system-prompt-file` on Claude, `-c model_instructions_file=` on Codex
-(P9, item 4 above). No asset copying, no per-host loader, and no second copy of
-the loop to keep in step.
+(P9, item 4 above) — composed once by `delegate`: the mode's loop verbatim, a
+blank line, then the lead's role prompt, or the prompt config binds for the role,
+which replaces the role half only (`src/delegate.ts#engineLead`). No asset
+copying, no per-host loader, and no second copy of the loop to keep in step.
 
 ### Modes
 
@@ -374,10 +416,13 @@ serves its text, and `describe_mode` answers from the mode the config names
 (`src/modes.ts#loadMode`, `#describeMode`, `src/server.ts#projectTools`). All
 three are written through: each mode's loop in its own `SKILL.md` and each
 role's prompt under `roles/`, the dev-team text carried over from the devpack by
-`tools/from-openmaus.mjs` and edited for this runtime (section 8). What is still
-a target inside them is named where it is: `modes/dev-team-engine/` states the
-placement delta and waits on row 11 for the mount and the mailbox a lead needs
-to run it.
+`tools/from-openmaus.mjs` and edited for this runtime (section 8).
+`modes/dev-team-engine/SKILL.md` is the engine lead's own loop, the dev-team's
+ten steps in the same order with every root step through `git_root` and
+`run_command`, every question through `ask`, and its ownership rules in step 1,
+and `roles/lead.md` is the lead's identity, its limits, its wait budget per engine
+and its closing report (`tests/skills.test.ts#engineLoopSteps`,
+`#engineLoopOwnership`, `#leadRolePrompt`).
 
 A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
@@ -437,7 +482,10 @@ Three modes ship built in (`modes/dev-team/mode.json`, `modes/solo/mode.json`,
 - **`dev-team-engine`**: those four roles plus a `lead` at `{kind: "root"}`
   read-only, under `placement: engine`. It is the same team with the loop moved
   into a spawned Claude or Codex session, so it needs the four things "The lead
-  model" lists and the cap of 2 that `init` writes for it.
+  model" lists and the cap of 2 that `init` writes for it — and `delegate`
+  refuses to launch its lead in a project whose cap would hold the lead's server
+  to the specialist row (`src/delegate.ts#engineLead`). E3 and E2 ran it end to
+  end under a Claude and a Codex lead (`docs/probes.md#e3`, `#e2`).
 
 **Every mode carries the `consult` role.** `loadMode` gives any mode that does
 not declare one `{key: "consult", title: "Consultant", workspace: {kind:
@@ -570,25 +618,28 @@ engine`.
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
 | `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
 | `result` | `task_id` | the final message in full, the engine session id | core |
-| `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups | core |
-| `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported | core |
+| `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups, the task's descendants first, and the open asks of its lineage cancelled, as `asksCancelled` | core |
+| `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported; to a lead, its own records marked `self` and the tasks it owns marked `own` | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
 | `git_mutate` | `slug`, `args[]`, optional `path`, `branch` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
 | `git_root` | `args[]`, optional `slug` | one whitelisted git verb at the project root, journaled under the slug it names, under `git.lock` (section 4) | worktree |
 | `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `slug`, `timeout_seconds` | the configured command, by selector rather than by string; a passing root test run after the merge journals `tests-passed` (section 4) | worktree |
-| `ask` | `question`, optional `id` (to keep waiting on an earlier ask), `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered or the timeout | engine lead |
-| `list_asks` | optional `status` | this lead's open and answered asks; every ask for the operator | engine lead |
-| `answer` | `ask_id`, `text` | the operator's reply; persisted, so it survives a killed lead | engine lead |
+| `ask` | `question`, or `id` to keep waiting on an earlier ask of the lead's lineage; `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered, cancelled or the timeout, which answers `open` with the id to ask again by | engine lead |
+| `list_asks` | optional `status` | the asks of the lead's own lineage; every ask for the operator | engine lead |
+| `answer` | `ask_id`, `text` | the operator's reply; the first one wins, and it is persisted, so it survives a killed lead | engine lead |
 
 Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-Today `projectTools` registers twelve of these (`src/server.ts#projectTools`):
-`describe_mode`, `list_roles`, `check`, `result` and `list_tasks` for every row,
-`delegate`, `wait` and `cancel` for the operator and lead rows, and
-`verify_worktree`, `git_mutate`, `git_root` and `run_command` for those two rows
-under every mode (`src/server.ts#worktreeTools`). The
+`projectTools` registers twelve of these under every mode
+(`src/server.ts#projectTools`): `describe_mode`, `list_roles`, `check`, `result`
+and `list_tasks` for every row, `delegate`, `wait` and `cancel` for the operator
+and lead rows, and `verify_worktree`, `git_mutate`, `git_root` and `run_command`
+for those two rows (`src/server.ts#worktreeTools`) — and under `placement:
+engine` the mailbox's three more: `ask` for the lead, `list_asks` for both rows
+and `answer` for the operator, fourteen tools for each of those rows and still
+five for a specialist (`src/server.ts#mailboxTools`). The
 four worktree tools refuse on **mode drift** as `delegate` does at the launch
 boundary: which tools exist was decided when this server loaded its mode, so a
 config since pointed at another one is answered with a restart rather than
@@ -603,7 +654,8 @@ it (`src/delegate.ts#delegate`, `src/server.ts#projectTools`,
 provider's rather than engine placement's, because the journal is the same
 document under both placements and a host-placed lead writes its root steps
 through them too (plan decision 4); both are built and registered there
-(`src/server.ts#worktreeTools`), and the three mailbox rows arrive with row 11.
+(`src/server.ts#worktreeTools`). The three mailbox rows are engine placement's
+own, built with row 11.
 
 **`delegate {worktree: true}`** gives a role that works at the project root a
 writable workspace of its own instead of the root. Under `spawn.lock`, and only
@@ -1375,15 +1427,21 @@ points at the contract instead (`src/guard.ts:120-121`) — and on
   `--strict-mcp-config` its `exclusionArgs` already emits; the strict flag, not
   the config file, is what makes the mount exclusive, since dropping it from an
   otherwise identical run pulled in five of the operator's own servers
-  (`docs/probes.md#p9Mounts`). Codex returns **three** settings — `-c
-  mcp_servers.cross-agent.command=…`, `…args=…`, and `-c
-  mcp_servers.cross-agent.default_tools_approval_mode="approve"` — because
-  `codex exec` runs with approval policy `never`, so without the third the lead
-  sees the tools and is refused every call (`docs/probes.md#p9CodexMount`); it
-  refuses a non-empty `spec.env` (`src/engines/codex.ts#codex`), because no
-  probed setting carries a server environment and a lead's project reaches it
-  through `args` — which I1's tracked Codex row ran on codex-cli 0.159.2, the
-  server answering from the project `--project` named
+  (`docs/probes.md#p9Mounts`). Codex returns **five** settings — `-c
+  mcp_servers.cross-agent.command=…`, `…args=…`, `-c
+  mcp_servers.cross-agent.default_tools_approval_mode="approve"`,
+  `…tool_timeout_sec=3600` and `…env_vars=[…]`. The third because `codex exec`
+  runs with approval policy `never`, so without it the lead sees the tools and is
+  refused every call (`docs/probes.md#p9CodexMount`); the fourth because Codex
+  gives an MCP call 60 s by default and a lead's `wait` and `ask` are 600 s calls
+  (`docs/probes.md#s11CodexLeadTimeout`); the fifth because Codex starts the
+  server in an environment of its own, and names, not values, are what a
+  constant list can carry: `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`,
+  `CROSS_AGENT_LINEAGE` and `CROSS_AGENT_PROJECT`, whose values Codex copies from
+  the lead's own environment (`docs/probes.md#e2ServerEnv`). It still refuses a
+  non-empty `spec.env` (`src/engines/codex.ts#codex`), the literal-values map, and
+  a lead's project reaches it through `args` — which I1's tracked Codex row ran on
+  codex-cli 0.159.2, the server answering from the project `--project` named
   (`docs/probes.md#i1CodexTracked`). Grok returns an empty argv with `inherited: true`, because it
   has no per-invocation mount at all; that value describes the specialist path
   and the operator CLI's own registration, not a lead, because Grok is not a
@@ -1604,7 +1662,7 @@ which is a property of the line, not of the pipeline.
   <cwd> --sandbox <read-only|workspace-write|danger-full-access>
   --ignore-user-config --skip-git-repo-check -m <m>
   -c model_reasoning_effort="<e>" -c model_instructions_file="<role.md>"` —
-  then, for an engine-placed lead only, the three `-c mcp_servers…` settings
+  then, for an engine-placed lead only, the five `-c mcp_servers…` settings
   — and last the positional `-`. **The brief goes on stdin and `-` holds its
   place** (`src/engines/codex.ts#codex`, `#codex`): a bare positional is
   misread as a flag the moment a brief begins with `-`, and a brief is prose a
@@ -1615,7 +1673,7 @@ which is a property of the line, not of the pipeline.
   `tests/engines/codex.test.ts#fileEmptiedRun`). The lines are pinned byte for
   byte: the launch line (`tests/engines/codex.test.ts#readOnlyRole`), a writable role's
   (`#writeRoleArgv`), `off`'s (`#offProfileLaunches`), the resume (`#resumedRunExec`), an
-  `off` resume (`#offRoleResumes`), and a lead's three settings (`#enginePlacedLead`). Resume is a **different flag set**: `codex
+  `off` resume (`#offRoleResumes`), and a lead's five settings (`#enginePlacedLead`). Resume is a **different flag set**: `codex
   exec resume <thread id>` accepts `-c/--config`, `--last`, `--all`,
   `--enable`, `--disable`, `-i/--image`, `--strict-config`, `-m/--model`,
   `--dangerously-bypass-approvals-and-sandbox`,
@@ -1654,13 +1712,20 @@ which is a property of the line, not of the pipeline.
   transport `codex-plugin-cc` uses — because `exec` needs no dependency and no
   second JSON-RPC client inside this server; the cost is execpolicy and a
   native `review/start`, neither of which this design uses. A Codex lead's
-  mount is the three `-c mcp_servers…` settings above under
+  mount is the five `-c mcp_servers…` settings above under
   `--ignore-user-config`, and its instructions reach it through `-c
   model_instructions_file="<file>"` — accepted and obeyed with no role text in
   the prompt at all, so a Codex lead spends no prompt space on the loop (P9,
   `docs/probes.md#p9Mounts`, `#p9CodexMount`). Every role's instructions travel that way,
   lead or specialist, in a `role.md` under `scratchDir`
   (`src/engines/codex.ts#codex`, `tests/engines/codex.test.ts#rolePromptTravels`).
+  Its reader answers `activity` for an `agent_message` item, a
+  `command_execution` item and an `mcp_tool_call` item, announced and completed,
+  as `mcp_tool_call <server>.<tool> <status>`: only a parsed event advances
+  `lastEventAt`, the clock `wait` and `check` measure silence from ("Time
+  limits"), and a lead that only calls this server's tools says nothing else for
+  as long as its calls last (`tests/engines/codex.test.ts#mcpCallIsActivity`,
+  `#mcpCallAdvancesClock`).
 - **Grok** (`src/engines/grok.ts#grok`): `grok -p <prompt> --cwd <cwd>
   --sandbox <workspace|read-only|strict|off> --permission-mode
   bypassPermissions --output-format streaming-messages-json --session-id
@@ -2227,10 +2292,23 @@ each with its own unit test:
    Because the two are combined by taking the lower, a config written for a
    host-placed mode would hold an engine-placed lead's specialists at depth 1,
    so `cross-agent init` writes the cap its mode needs
-   (`src/config.ts#initConfig`). Every record carries its own `depth`, written by
-   `delegate` as the caller's plus one (`src/ledger.ts#TaskRecord`,
+   (`src/config.ts#initConfig`), and `delegate` refuses to launch an
+   engine-placed lead the cap would hold to the specialist row
+   (`src/delegate.ts#engineLead`). Every record carries its own `depth`, written
+   by `delegate` as the caller's plus one, and its lineage is the caller's server's
+   own `CROSS_AGENT_LINEAGE` with the new entry appended (`src/ledger.ts#TaskRecord`,
    `src/delegate.ts#delegate`), so a finished run can be checked against the
-   mode's cap as well as each call. The specialist row is the four read tools
+   mode's cap as well as each call. Both come from **the server's own
+   environment**, never from the walk, which decides the row alone
+   (`src/authority.ts#resolveAuthority`, `src/guard.ts#readDepth`): a server an
+   engine starts in an environment of its own resolves its lead at depth 0 and
+   records the lead's children one too shallow with no lead in their lineage. So
+   every lead engine's mount has to carry the markers: Claude's server inherits
+   them, and Codex's mount names them in `env_vars`, its values the engine's own
+   (`docs/probes.md#e2ServerEnv`, `src/engines/codex.ts#codex`). The ledger's
+   depth-and-lineage reading of an end-to-end run is the proof, because the
+   verifier's depth check is an upper bound and cannot see a child recorded one
+   level too shallow (`docs/probes.md#e3`, `#e2`). The specialist row is the four read tools
    plus `describe_mode`, and all five are registered
    (`src/server.ts#projectTools`); the matrix's rows replaced `toolsAtDepth`, the
    depth-only tool list that used to approximate it.
@@ -2386,14 +2464,18 @@ engine without editing a portable mode.
 Both skills are written. `skills/cross-agent/SKILL.md` is the launcher, with
 the paragraphs every mode shares; `modes/dev-team/SKILL.md` is the ten-step loop
 below, `modes/solo/SKILL.md` the zero-ceremony one, and
-`modes/dev-team-engine/SKILL.md` the placement delta row 11 completes. Which
-tools a loop may call is a test rather than a promise: every call-shaped name in
-the launcher and in each loop — the seven of the twelve that carry an underscore
-— is checked against the tools that mode registers for the row its placement
-runs it in, the five bare ones (`delegate`, `wait`, `check`, `result`, `cancel`)
-by a second test that names them, and every spelled `delegate {…}` by a third
-that holds it to the keys the schema requires (`tests/skills.test.ts`,
-`src/server.ts#projectTools`).
+`modes/dev-team-engine/SKILL.md` the same ten steps for a lead in an engine: every
+root step through `git_root` and `run_command`, every question through `ask`, no
+shell command, ownership by `self` and `own` in step 1, and the closing report as
+its final message (`tests/skills.test.ts#engineLoopSteps`, `#engineLoopOwnership`).
+Which tools a loop may call is a test rather than a promise: every call-shaped
+name in the launcher and in each loop — the names that carry an underscore — is
+checked against the tools that mode registers for the row its placement runs it
+in (the launcher's engine-placement section against `dev-team-engine`'s operator
+row, everything else against every mode's), the bare ones (`delegate`, `wait`,
+`check`, `result`, `cancel`) by a second test that names them, and every spelled
+`delegate {…}` by a third that holds it to the keys the schema requires
+(`tests/skills.test.ts`, `src/server.ts#projectTools`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
 loads: read the config, call `describe_mode` **first** to get the active
@@ -2438,10 +2520,13 @@ section 4 — ten steps, from the root check to the record
 Where that closing report goes depends on placement. Under `host` the host
 session appends one line to `.cross-agent/log.md` itself, as it appends
 anything else. Under `engine` the lead is read-only at the root and cannot
-append it: its closing report **is** the task's final message, and `cross-agent
-report` renders the log from the ledger. An engine lead writes no project file
-itself; the ledger, the journal and the mailbox are all written by the server
-on its behalf.
+append it: its closing report **is** the task's final message, which the host
+reads through `result`, and `cross-agent report` renders the log from the ledger
+(`src/cli.ts#reportVerb`). An engine lead writes no project file itself; the
+ledger, the journal and the mailbox are all written by the server on its behalf.
+E3 is the case (`docs/probes.md#e3`): `result` on the lead returned the report
+byte for byte as its result file holds it, and `cross-agent report` rendered the
+run's five tasks, each `passed`.
 
 - Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
   document is `{slug, branch, worktree?, defaultBranch, defaultShaBeforeMerge?,
@@ -2481,9 +2566,8 @@ on its behalf.
   head of the branch it is about to merge, read through the same explicit form
   (`src/gitroot.ts#execute`, `src/gitmutate.ts#revision`). Taken anywhere else
   they would be a different repository's state. Every row of this table is
-  built, and the loop that calls it names the step each of its own calls
-  completes (`modes/dev-team/SKILL.md`); what is left is the engine-placed lead
-  (row 11).
+  built, and both loops that call it name the step each of their own calls
+  completes (`modes/dev-team/SKILL.md`, `modes/dev-team-engine/SKILL.md`).
 
   Three functions: `appendStep(root, slug, step, data)` reads, appends, and
   writes through the ledger's own atomic write — a temporary file and a
@@ -2804,7 +2888,14 @@ and a hint naming `list_tasks` — polling on would be waiting for a mover that 
 longer exists (`src/wait.ts#passReason`, `#hintFor`). `timeout_seconds` bounds one call so
 the lead's turn never hangs and defaults to `limits.waitDefaultSeconds`; the
 upper bound is the caller's. Claude Code's MCP tool timeout defaults to about
-28 hours, Codex takes `tool_timeout_sec` per server.
+28 hours, Codex takes `tool_timeout_sec` per server, 60 s unless set: an
+engine-placed Codex lead's mount sets it to 3600 s, so each of its 600 s `wait`
+and `ask` calls fits with room (`src/engines/codex.ts#codex`), and B2 timed one at
+158 s by Codex's own record of it (`docs/probes.md#s11CodexLeadTimeout`). `ask`
+is bounded the same way and asked again by id. The clock silence is measured
+from advances on a Codex lead's MCP calls too, announced and completed, because
+those are the whole of what a lead that only calls this server's tools says
+while its calls last (`src/engines/codex.ts#codex`).
 
 ### Not built
 
@@ -2841,6 +2932,7 @@ src/server.ts     src/config.ts     src/ledger.ts     src/process.ts
 src/reconcile.ts  src/runner.ts     src/guard.ts      src/worktree.ts
 src/locks.ts      src/reservation.ts                  src/gitmutate.ts
 src/journal.ts    src/delegate.ts   src/tasks.ts      src/cli.ts
+src/mailbox.ts
 src/engines/{types,spawn,registry,binaries}.ts
 src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
@@ -2856,7 +2948,7 @@ Present today:
 `src/{server,config,ledger,process,reconcile,runner,locks,guard,worktree}.ts`,
 `src/{reservation,journal,gitmutate}.ts`, `src/{delegate,tasks}.ts` from row 7,
 `src/{modes,cli}.ts` and `modes/{dev-team,dev-team-engine,solo}/` from row 8,
-and all seven of
+`src/mailbox.ts` and the CLI's `answer` and `report` from row 11, and all seven of
 `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
@@ -3011,9 +3103,9 @@ registered by the mode that declares the worktree provider.
 | 9 | Launcher skill and mode loops | `atc-s96.12` | **Done.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `dev-team` and `dev-team-engine` `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests, `modes/solo/roles/consult.md` being 4c's own text; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row; and, in the fix round, `delegate` launching a role with the mode's own prompt file rather than a one-line default, the config's `prompt` becoming the override it was meant to be (`src/delegate.ts#delegate`, `src/modes.ts#rolePrompt`, section 8). |
 | 10 | Claude Code packaging | `atc-s96.13` | **Done, less I2's Codex column.** `.claude-plugin/plugin.json` carrying the server inline, and
 `tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` are T14's. I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
-| 11 | Engine placement | `atc-s96.24` | **Split.** `git_root`, `run_command` and the journal's named steps moved forward as Task 4b, on the worktree provider rather than behind engine placement (plan decision 4), so a host-placement run's journal is complete before row 13's first end-to-end run. What is left here: the mailbox, `parentTaskId` and cascade cancel, exclusive reattach; end-to-end with the lead on **each supported lead engine — claude and codex** — from one host, because one lead engine under three hosts would not validate both injection paths. Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4). Config load refuses `placement: engine` with a Grok lead. |
+| 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `32580e6`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
-| 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `answer`, `report`, and the rest of section 10, over a seeded ledger. |
+| 13 | Operator CLI remainder | `atc-s96.16` | `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, over a seeded ledger; `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
@@ -3315,12 +3407,18 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `--append-system-prompt-file` is obeyed; Codex clean with three settings —
   the two `mcp_servers…` keys plus
   `default_tools_approval_mode="approve"`, without which every call is refused,
-  and `-c model_instructions_file="<file>"` obeyed; Grok not isolable — a
+  and `-c model_instructions_file="<file>"` obeyed — to which S11 added the
+  per-tool timeout and the markers' whitelist; Grok not isolable — a
   child inherits the operator's servers and a project-scoped mount will not
   start in an untrusted folder (that second observation transcribed, not
-  archived — see the probe row), so there is no Grok lead. What T10 and S11
-  must still show is that a mounted lead resolves to the **lead row** of the
-  permission matrix, which is authority, not mounting.
+  archived — see the probe row), so there is no Grok lead. **Shown at S11**: a
+  mounted lead resolves to the **lead row** of the permission matrix, which is
+  authority, not mounting — a real engine whose record is a running lead lists
+  the lead's fourteen tools through its own server and is refused `answer` by
+  name, and the same chain under a specialist's record lists five and is refused
+  `ask` (`tests/authority.test.ts#mountedLeadRow`); and both real leads, Claude
+  and Codex, listed the fourteen and ran the loop through them
+  (`docs/probes.md#e3`, `#e2`).
 - **P10 (recorded) / T8:** `codex exec resume` takes neither `-C` nor
   `--sandbox`, and keeps neither the cwd nor the sandbox of the original run.
   T8's acceptance follows from that: a resume is spawned with the process cwd
@@ -3332,7 +3430,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   for every head: the launch line (`tests/engines/codex.test.ts#readOnlyRole`), a writable
   role (`#writeRoleArgv`), `off` as `danger-full-access` (`#offProfileLaunches`), the resume
   with neither `-C` nor `--sandbox` and `-c sandbox_mode=` restored
-  (`#resumedRunExec`), an `off` resume (`#offRoleResumes`), and a lead's three settings
+  (`#resumedRunExec`), an `off` resume (`#offRoleResumes`), and a lead's five settings
   before the prompt (`#enginePlacedLead`); and through `spawnEngine`, where the fake engine records the stdin
   and argv it was actually given (`#fakeCodexRun`, `#failedTurnSettles`). Two halves need the real
   binary and wait for **I2**, a skipped placeholder that names them
@@ -3342,23 +3440,38 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   `-` as the prompt — `--help` settles the flag on both heads
   (`docs/probes.md#cliCodex`), so what is left is that a run behaves as the help
   says — and the resumed-session negative writes above.
-- **Engine placement:** end-to-end with the lead on each supported lead engine,
-  Claude and Codex (P9 rules Grok out); cancelling
-  the lead settles every descendant and reports one outcome per task; a killed
-  lead's `ask` survives and its answer reaches the resumed lead; `git_root`
+- **Engine placement (recorded at S11):** end-to-end with the lead on each
+  supported lead engine — **E3** under a Claude lead and **E2** under a Codex
+  lead, each from a Claude Code host, each judged seven `pass` and a `?` on
+  condition 8 resolved by its recorded reading, and each passing the ledger's
+  depth-and-lineage reading: the lead at depth 1 alone in its lineage, every
+  specialist at depth 2, the lead's child, the lead first in its lineage
+  (`docs/probes.md#e3`, `#e2`). P9 rules Grok out. Cancelling the lead settles
+  every descendant and reports one outcome per task
+  (`docs/probes.md#injectCancelLead`); a killed lead's `ask` survives and its answer
+  reaches the resumed lead (`docs/probes.md#injectKilledLeadAsk`); `git_root`
   refuses any verb outside the whitelist, any global git option, and any path
   outside the project; `run_command` refuses anything but its two selectors.
-- Failure injection, each recorded once: a suite that fails on `<default>`
-  after a merge (repair path offered, dispatch halted); an interruption after
-  `worktree remove` and before `branch -d` (reconciliation deletes the
-  branch); an interrupted rebase (aborted and reported); a server killed
-  during a task (the runner records the outcome; a restarted server adopts
-  it); a runner killed with the engine alive (engine terminated); a needs-work
-  round through `resume`. The last three are recorded in `VERIFY.md` (M2): the
-  two kills against the fake engine bound as `engines.claude.bin`, over the
-  real stdio server and the real detached runner, and the `resume` round inside
-  E1 with the real implementer. The first three belong to the tasks that can
-  produce them.
+- **Failure injection, all six recorded**: a suite that fails on `<default>`
+  after a merge — the journal's `merged` with both SHAs and no `tests-passed`,
+  the repair path offered as `git revert --no-edit` over those two SHAs, and
+  nothing dispatched after it (`docs/probes.md#injectRootSuiteFails`); an
+  interruption after `worktree remove` and before `branch -d` — the operator's
+  reconciliation pass deletes the branch through `git_root` and the journal
+  gains `branch-deleted` (`#injectAfterWorktreeRemove`); an interrupted rebase —
+  `git_mutate rebase` refused with git's conflict, `rebase --abort` journaled as a
+  `git` step, no rebase state left, and the conflict put to the operator
+  (`#injectRebaseConflict`); a server killed during a task (the runner records the
+  outcome; a restarted server adopts it); a runner killed with the engine alive
+  (engine terminated); a needs-work round through `resume`. The second three are
+  recorded in `VERIFY.md` (M2): the two kills against the fake engine bound as
+  `engines.claude.bin`, over the real stdio server and the real detached runner,
+  and the `resume` round inside E1 with the real implementer; S11's leads ran more
+  `resume` rounds on their plans. The first three ran at S11 under a Claude lead,
+  beside engine placement's own two: a cancelled lead settles every descendant
+  with one outcome each (`#injectCancelLead`), and a killed lead's question
+  survives, is answered from a terminal, and reaches the resumed lead in its brief
+  (`#injectKilledLeadAsk`).
 - End-to-end under each host: plan and plan review at the root, worktree,
   implement, lead commit, code review, merge, tests, cleanup; `git worktree
   list` shows only the root, no `task/*` branch remains, `git status
@@ -3372,7 +3485,14 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   than by whatever a report greps that day. **E1 met all eight under Claude
   Code** — six records at depth 1, a journal of nine steps, 69 tests green on
   `main` — and is recorded in `VERIFY.md` (M2) with its transcript in
-  `docs/probes.md#e1`. Codex's and Grok's hosts are step 12.
+  `docs/probes.md#e1`. **E3 and E2**, the engine-placed runs under Claude Code,
+  are judged with `--since <lead id> --slug <slug>` — `s11-e3` and `s11-e2` —
+  because the sample's ledger holds every earlier run's records and journals;
+  each met seven, and each `?` on condition 8 was read and recorded as neither a
+  launch nor a `delegate` of a specialist: E3's lead transcript holds Claude Code's
+  `tool_progress` heartbeats, an event the verifier does not model, and E2's lead
+  rollout a tool-discovery script naming `delegate` in a regular expression
+  (`docs/probes.md#e3`, `#e2`). Codex's and Grok's hosts are step 12.
 - **Docs:** every changed claim in this document matches a checked `file:line`
   or `file#symbol` in this repository or a recorded probe. `npm test` runs the
   checker, which proves a citation still lands **inside** its file; it cannot
