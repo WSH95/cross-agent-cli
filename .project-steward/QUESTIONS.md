@@ -15,7 +15,7 @@ Add the answer to the item when it is resolved.
       (integration probe I1, T15) Partly answered at T13: a Grok specialist
       at the project root lists exactly the specialist row and Grok's own
       dispatcher refuses `delegate` because the tool is not listed; whether
-      the `--deny` rule itself hides tools is still unprobed. **It gates
+      a deny rule itself hides tools was left to T15. **It gates
       them, it does not hide them** (T15, a driver run): with
       `MCPTool(cross-agent__*)` denied in the project's `.grok/config.toml`, a
       Grok child under `bypassPermissions` still lists the five and has every
@@ -39,8 +39,9 @@ Add the answer to the item when it is resolved.
 - [x] A Grok specialist inside a linked worktree reaches no MCP server at
       all, because Grok reads `./.grok/config.toml` per directory and a
       worktree is its own directory (T13, `grok mcp doctor` in the worktree).
-      That is the safe direction; reaching one needs a user-scope `grok mcp
-      add`, a change to your Grok configuration. Leave it, or mount it
+      That is the safe direction; while git ignores `.grok/` (design section
+      9), reaching one needs a user-scope `grok mcp add`, a change to your
+      Grok configuration. Leave it, or mount it
       user-wide? (T15) **Leave it** (user, 2026-09-30): no user-scope mount;
       T15 records the behaviour. Recorded at T15 (`docs/probes.md#grokWorktreeMount`):
       under the shipped plugin attach too, a Grok specialist in a linked

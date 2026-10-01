@@ -764,7 +764,8 @@ trusted or not. A worktree specialist therefore reaches this server only if the
 operator mounts it at **user scope** (`grok mcp add --scope user`). Trusting
 more folders, or mounting at user scope, is the operator's decision and not a
 probe's, so this run stopped here. The user declined a user-scope mount, and T15 recorded the
-same behaviour under its plugin attach (`docs/probes.md#grokWorktreeMount`).
+same behaviour under its plugin attach while git ignores `.grok/`, which a committed
+`.grok/config.toml` would change (`docs/probes.md#grokWorktreeMount`).
 
 <!-- @anchor i1Ancestry -->
 ### (ii) Authority by ancestry
@@ -2242,10 +2243,10 @@ started in the sample by the archive's `tools/grok-host.sh` as `setsid --fork sh
 exec env -C <sample> -u <marker> … grok …'`, so `host.pid` is the `grok` process itself, with
 this machine's session markers scrubbed (`CLAUDECODE`, `CLAUDE_*`, `CODEX_COMPANION_*`,
 `GROK_CC_*`, `CROSS_AGENT_*`, `MCP_*`, the three API keys) and no `--sandbox`: the operator's
-own session. Two names of this task's own shell were not scrubbed, so they reached every host
-and, through it, every child and spec: `AI_AGENT` (Claude Code's) and `GIT_EDITOR=true`. Two
-exceptions: B4's nested row ran from this task's own shell without `setsid`,
-and B4's probe (b) exported `CROSS_AGENT_DEPTH=1` after the scrub. A watcher copied
+own session. Two hosts were started otherwise: B4's nested row ran from this task's own shell
+without `setsid`, and B4's probe (b) exported `CROSS_AGENT_DEPTH=1` after the scrub. Two names
+of this task's own shell were not scrubbed, so they reached every host and, through it, every
+child and spec: `AI_AGENT` (Claude Code's) and `GIT_EDITOR=true`. A watcher copied
 `~/.grok/logs/mcp/cross-agent.stderr.log` once a second whenever it changed, because every
 launch of the server truncates it, and that file is where this server's row line
 (`src/server.ts#main`) lands under Grok.
@@ -2597,8 +2598,9 @@ while `.grok/` stays out of the repository. The sample ignores it; a committed
 trusted. Only that, or a user-scope mount or install, would change it, and the user declined
 the latter; such a specialist would still be held to the five read tools by the specialist
 row by ancestry (`docs/probes.md#i1`). The launcher skill follows the same line: every Grok
-specialist T15 ran at the root — six — listed `cross-agent` in its `system/init` `skills`,
-and none of the three in worktrees did.
+specialist T15 ran at the root — seven: I1's `consult`, B1's two, B2's `consult`, E6's plan
+reviewer and E7's two — listed `cross-agent` in its `system/init` `skills`, and none of the
+three in worktrees did.
 
 <!-- @anchor e6 -->
 ## E6: one `dev-team` task under a Grok host (2026-10-01)
