@@ -778,7 +778,10 @@ Everything below is built, the operator CLI's listing among it
   (`src/ledger.ts#excludeLedger`, `#projectLock`,
   `tests/gitmutate.test.ts#gitMutateUninitializedExcluded`). The file is written
   whole, through a temporary and a rename, so two first callers leave each entry
-  once (`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`).
+  once (`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`,
+  whose eight callers start together at a barrier); the rename keeps the file's
+  mode, and where `info/exclude` is a link it is the file the link names that is
+  written, the link left a link (`#excludeLedgerKeepsFile`).
   Every other reader resolves a record's path and writes nothing,
   so `find` and `read` of a task nobody created leave no directory and no
   exclusion line behind (`src/ledger.ts#initialize`, `#create`,

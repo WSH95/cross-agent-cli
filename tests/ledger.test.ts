@@ -675,6 +675,34 @@ test("excludeLedger writes each exclusion once and nothing else, and nothing at 
   assert.equal(fs.readFileSync(path.join(linked, ".git"), "utf8"), pointer);
 });
 
+// @anchor excludeLedgerKeepsFile
+test("excludeLedger keeps the exclude file's mode, and writes the file a link to it names", (t) => {
+  // A file its owner alone may read stays that way.
+  const root = project(t);
+  const info = path.join(root, ".git", "info");
+  fs.mkdirSync(info, { recursive: true });
+  const exclude = path.join(info, "exclude");
+  fs.writeFileSync(exclude, "# private\n");
+  fs.chmodSync(exclude, 0o600);
+  excludeLedger(root);
+  assert.equal(fs.readFileSync(exclude, "utf8"), "# private\n.cross-agent/\n.worktrees/\n");
+  assert.equal((fs.statSync(exclude).mode & 0o7777).toString(8), "600");
+
+  // A link to a file shared elsewhere stays a link, and that file gets the lines, with no
+  // temporary left beside either.
+  const linked = project(t);
+  const shared = path.join(linked, "shared-exclude");
+  fs.writeFileSync(shared, "# shared\n");
+  const linkedInfo = path.join(linked, ".git", "info");
+  fs.mkdirSync(linkedInfo, { recursive: true });
+  fs.symlinkSync(shared, path.join(linkedInfo, "exclude"));
+  excludeLedger(linked);
+  assert.equal(fs.lstatSync(path.join(linkedInfo, "exclude")).isSymbolicLink(), true);
+  assert.equal(fs.readFileSync(shared, "utf8"), "# shared\n.cross-agent/\n.worktrees/\n");
+  assert.deepEqual(fs.readdirSync(linkedInfo), ["exclude"]);
+  assert.deepEqual(fs.readdirSync(linked).sort(), [".git", "shared-exclude"]);
+});
+
 // @anchor excludeLedgerConcurrent
 test("eight first callers of excludeLedger at once leave each exclusion once and no temporary behind", async (t) => {
   const children: ChildProcess[] = [];

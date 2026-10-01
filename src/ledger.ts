@@ -171,25 +171,33 @@ const patchFields = new Set<string>([
  * `.git` is not a directory (a linked worktree's pointer file, or no repository). The
  * file is written whole, through a temporary beside it and a rename, rather than appended
  * to: two first callers that both read it before either wrote compute the same text, so
- * whichever rename lands last leaves each entry once. A temporary a crash leaves is
- * `.exclude.<random>.tmp`, which git does not read.
+ * whichever rename lands last leaves each entry once. The rename replaces the file, so it is
+ * the file itself that is written, at the mode it had: where `info/exclude` is a link, the
+ * file the link names gets the lines and the link stays a link (one that names nothing is
+ * replaced by the file). A temporary a crash leaves is `.<name>.<random>.tmp` beside that
+ * file, which git does not read.
  */
 export function excludeLedger(projectRoot: string): void {
   const gitDirectory = path.resolve(projectRoot, ".git");
   if (!fs.statSync(gitDirectory, { throwIfNoEntry: false })?.isDirectory()) return;
   const exclude = path.join(gitDirectory, "info", "exclude");
+  let target = exclude;
   let existing = "";
+  let mode: number | undefined;
   try {
-    existing = fs.readFileSync(exclude, "utf8");
+    target = fs.realpathSync(exclude);
+    existing = fs.readFileSync(target, "utf8");
+    mode = fs.statSync(target).mode & 0o7777;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    target = exclude;
   }
   const lines = new Set(existing.split(/\r?\n/));
   const missing = [".cross-agent/", ".worktrees/"].filter((line) => !lines.has(line));
   if (missing.length === 0) return;
-  fs.mkdirSync(path.dirname(exclude), { recursive: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  writeTextAtomic(exclude, existing + separator + missing.map((line) => `${line}\n`).join(""));
+  writeTextAtomic(target, existing + separator + missing.map((line) => `${line}\n`).join(""), mode);
 }
 
 /** The ledger's directory, made by the first record, with the ledger's exclusions written first. */
@@ -326,12 +334,18 @@ export function writeAtomic(file: string, value: unknown): void {
   writeTextAtomic(file, JSON.stringify(value, null, 2) + "\n");
 }
 
-/** `writeAtomic`'s text form: a `.<name>.<random>.tmp` beside the file, renamed over it, removed on failure. */
-function writeTextAtomic(file: string, contents: string): void {
+/**
+ * `writeAtomic`'s text form: a `.<name>.<random>.tmp` beside the file, renamed over it,
+ * removed on failure. Given a mode, the temporary takes it before the rename, so the file
+ * keeps the permissions it had rather than taking the umask's.
+ */
+function writeTextAtomic(file: string, contents: string, mode?: number): void {
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(12).toString("base64url")}.tmp`);
   const fd = fs.openSync(temporary, "wx");
   try {
     try {
+      // fchmod, unlike open's own mode argument, is not narrowed by the umask.
+      if (mode !== undefined) fs.fchmodSync(fd, mode);
       fs.writeFileSync(fd, contents);
     } finally {
       fs.closeSync(fd);
