@@ -2919,7 +2919,9 @@ checkout under `[plugins]` — `paths`, an absolute path, since Grok expands no 
 `grok` has no such flag, only `grok agent`, which an ACP client drives. Nor is `grok plugin
 install <path> --trust`, the documented one: it installs at user scope, which would put this
 server in every Grok session on the machine, Grok specialists in linked worktrees among them,
-where a project's file does not reach (`docs/probes.md#grokWorktreeMount`). The plugin's
+where a project's file does not reach while git ignores `.grok/`: Grok takes a linked worktree
+as a project of its own, so a committed file would be read in every one, which is why the
+README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
 discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
