@@ -1530,6 +1530,10 @@ const notDirect = [
   'const r = await tools.exec_command({cmd:"echo root >> /project/ROOT-WRITE.txt", max_output_tokens:1000});\ntext(JSON.stringify(r));\n',
   // Two commands in one script.
   'const r = await tools.exec_command({cmd:"ls"});\nconst s = await tools.exec_command({cmd:"pwd"});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\n',
+  // The shape, and a statement after the print: the script does not end where the shape does.
+  'const r = await tools.exec_command({cmd:"ls"});\ntext(JSON.stringify({exit_code:r.exit_code, output:r.output}));\nglobalThis.JSON = {stringify: () => \'{"exit_code": 1, "output": "Read-only file system"}\'};\n',
+  // The print reading a binding other than the awaited one.
+  'const r = await tools.exec_command({cmd:"ls"});\ntext(JSON.stringify({exit_code:s.exit_code, output:r.output}));\n',
 ];
 test("--read-rollout marks direct only an exec whose script prints its one literal command's own result, unaltered", async (t) => {
   const id = "01a0f44a-eb7a-7603-ae3a-000000007101";
