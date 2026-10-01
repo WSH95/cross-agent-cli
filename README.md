@@ -22,17 +22,18 @@ git-dir with a per-task journal, the loop-guard helpers, the engine contract
 with its three adapters (Claude, Codex, Grok) and the spawn pipeline, and
 the detached runner with its orphan handling. `npm test` covers each of
 those, runs the citation checker over the docs, and is green at every commit
-on `main`; one test stays skipped until a real `codex` binary runs it. On top
+on `main`; one test needs a real `codex` binary and an account, so it runs only
+under `CROSS_AGENT_REAL_CODEX=1` and is skipped otherwise. On top
 of it: the mode loader and the three built-in modes, the authority model and
 the twelve tools it gates under every mode — `delegate`, `wait`, `check`,
 `result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles` and the worktree
 provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside them
 under `dev-team-engine`, fourteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
-operator CLI; and the launcher skill with each mode's own loop. What is left is
-a target: Codex's and Grok's packaging. `docs/design.md` is the design and the
-work plan; `docs/probes.md` records what each engine CLI was observed to do,
-and `VERIFY.md` what each milestone's own runs showed.
+operator CLI; the launcher skill with each mode's own loop; and the packaging
+for Claude Code and for Codex. What is left is Grok's packaging. `docs/design.md`
+is the design and the work plan; `docs/probes.md` records what each engine CLI
+was observed to do, and `VERIFY.md` what each milestone's own runs showed.
 
 ## Install it in Claude Code
 
@@ -151,7 +152,8 @@ above answers `list_roles` with the project's roles. Its tools are the ones Clau
 Code offers, spelled `mcp__cross_agent__<tool>`: Codex folds the hyphen. The manifest
 gives the server `tool_timeout_sec: 3600` where Codex's own default is 60 seconds, so
 a `wait` of 600 seconds returns with room: one did, at 600.004 s by Codex's own
-record, while a copy declaring 60 cut the same call at 60 s.
+record, while a copy declaring 60 cut the same call at 60 s
+(`docs/probes.md`, "B3: a ten-minute wait under a Codex host").
 
 An installed plugin is enabled, and every Codex session on the machine then starts
 its server. To have it only when you ask for it, turn it off in

@@ -221,7 +221,11 @@ reason there is none, and the server exits naming that reason rather than guess
 holds a config, the project is the working directory's own git toplevel, running
 `solo` on the defaults `loadConfig` answers with when there is no file, so a
 one-off delegation needs no `init` first ("Modes"); a directory in no git
-repository is still the reason there is none. A root a caller **names** —
+repository is still the reason there is none. A Codex host's plugin server is the
+exception: Codex starts it in its cache copy of the plugin, where there is nothing
+to discover, so the operator names the project in `CROSS_AGENT_PROJECT` and the
+plugin's launcher will not start the server without it (section 9,
+`docs/probes.md#codexPluginMount`). A root a caller **names** —
 `--project` or `CROSS_AGENT_PROJECT` — must hold a config even so: naming one is
 a claim about a project, and a typo in that claim is not a new project.
 
@@ -1733,8 +1737,10 @@ which is a property of the line, not of the pipeline.
   `SpawnRequest.sandbox` is re-applied by the adapter on every resume, from
   `sandbox.profile`, and never assumed from the thread. `--ignore-user-config`
   keeps auth, raises no trust prompt, and removes the user's MCP servers,
-  leaving only Codex's built-in `codex_apps` (P5; P5 does not speak to plugins
-  or marketplaces). Codex carries **no deny list**: probe P3 showed that
+  leaving only Codex's built-in `codex_apps` (P5) — and the user's plugins with
+  them: a delegated Codex `consult`, with this repository's plugin enabled in the
+  operator's configuration, listed no plugin skill root and no tool of this server
+  (`docs/probes.md#i1CodexHost`). Codex carries **no deny list**: probe P3 showed that
   execpolicy rules files are not honoured by `codex exec`, so its sandbox's
   network denial is the layer that holds instead, and a launched engine cannot
   reach its API (P3b). `codex exec` is chosen over `codex app-server` — the
@@ -2732,7 +2738,8 @@ value outside a plugin, so it would offer every developer here a server that
 cannot start. The plugin manifest is the one declaration, and the server name in
 it is what a host spells its tools after. `claude plugin validate <repo>` passes on
 them, warning only that the repository's own `CLAUDE.md` is not plugin context,
-which it is not meant to be. The Codex and Grok manifests are step 12.
+which it is not meant to be. The Codex manifest is built, below; Grok's is what
+remains of step 12.
 
 A host mounts this server one way and a specialist another, and the tool names
 differ accordingly: under `--plugin-dir` the host's tools are
@@ -2792,7 +2799,10 @@ roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
 `#codexScriptFailClosed`, `#scriptNameAccounting`). A word after `.` or `?.` is a
 property, never a control keyword or one that opens a regular expression, and a
-regular expression's escapes are decoded for the inventory (`#memberNames`).
+regular expression's escapes are decoded for the inventory (`#memberNames`). Under a
+Codex host E4's Codex implementer showed a shape the table still answers `?`: codex-cli
+0.159.3's `--json` writes an `apply_patch` edit as a `file_change` item, which a person read
+as patches to files inside the task's worktree (`docs/probes.md#e4`).
 `--read-rollout <session id>` prints what that reader makes of one session's
 rollout — each code-mode `exec` with the commands it decoded and the exit code of
 its one output, paired by `call_id` — and judges nothing, so a test that has to
@@ -2847,13 +2857,31 @@ manifests below are examples of satisfying that contract, not the contract
 itself. Repo root is the plugin root for all three hosts:
 `.claude-plugin/plugin.json` (manifest and `mcpServers` in one) + `skills/` for Claude Code
 (`claude --plugin-dir ~/Documents/agent-team-cli` in development);
-`.codex-plugin/plugin.json` with `skills` and `mcpServers`
-(`tool_timeout_sec: 3600`) for Codex, plus `codex mcp add cross-agent -- node
-<repo>/src/server.ts` and a copy into `~/.codex/skills/cross-agent/` as the
-documented fallback — a copy that takes `skills/` alone, which is why a mode's
-loop is served by `describe_mode` rather than shipped as a second skill; Grok
-through `--plugin-dir` or `grok plugin install <path>`, which reads the Claude
-manifest. Grok's MCP tool timeout is settled by integration probe I2.
+`.codex-plugin/plugin.json` with `skills: "./skills/"` and the server inline under
+`mcpServers` for Codex, and `.agents/plugins/marketplace.json` making the repository a
+marketplace whose one plugin's `source.path` is `"./"`, the repository's own root.
+Codex runs the plugin from a copy of the marketplace directory taken at install time,
+substitutes no `${PLUGIN_ROOT}`, and runs a relative command from the server's working
+directory, so the server is `./.codex-plugin/serve` with `cwd: "."`: a launcher in the
+plugin's own directory that runs the `src/server.ts` beside it
+(`docs/probes.md#codexPluginMount`). From there no project can be discovered, and a copy
+of a checkout would lead discovery back to that checkout through its `.git`, so the
+operator names the project in `CROSS_AGENT_PROJECT` — the one name `env_vars` passes on,
+because Codex gives a stdio server seven variables of its own and they sufficed for all
+three engines (`docs/probes.md#codexHostEnvironment`) — and the launcher refuses to start
+without it (`tests/packaging.test.ts#codexManifestMounts`, `#codexLauncherRunsServer`). The
+mount also carries `tool_timeout_sec: 3600`, `default_tools_approval_mode: "approve"` and
+`startup_timeout_sec: 30`, and no `enabled`: whether the server runs is the operator's
+configuration's to say, through the plugin-level key (`docs/probes.md#codexPluginMount`).
+The documented fallback is a configured server — `codex mcp add cross-agent -- node
+<repo>/src/server.ts` plus the two keys it does not write, `assets/codex/mcp_servers.toml`
+giving the whole table, and a copy into `~/.codex/skills/cross-agent/`, a copy that takes
+`skills/` alone, which is why a mode's loop is served by `describe_mode` rather than shipped
+as a second skill. That server starts where the session runs and needs no
+`CROSS_AGENT_PROJECT`, and it shadows the plugin's server of the same name
+(`docs/probes.md#codexPluginInstall`, `tests/packaging.test.ts#codexFallbackSnippet`). Grok
+through `--plugin-dir` or `grok plugin install <path>`, which reads the Claude manifest.
+Grok's MCP tool timeout is settled by integration probe I2.
 
 Why an MCP core is the portable choice, and not a subagent as the vendor
 bridges use: **neither `codex-plugin-cc` 1.0.6 nor `grok-build-plugin-cc`
@@ -3051,7 +3079,10 @@ upper bound is the caller's. Claude Code's MCP tool timeout defaults to about
 28 hours, Codex takes `tool_timeout_sec` per server, 60 s unless set: an
 engine-placed Codex lead's mount sets it to 3600 s, so each of its 600 s `wait`
 and `ask` calls fits with room (`src/engines/codex.ts#codex`), and B2 timed one at
-158 s by Codex's own record of it (`docs/probes.md#s11CodexLeadTimeout`). `ask`
+158 s by Codex's own record of it (`docs/probes.md#s11CodexLeadTimeout`). The Codex
+plugin's manifest sets the same 3600 s for a Codex host's own server, and Codex honours it
+from there: one 600 s `wait` completed at 600.004 s by Codex's own record, while a copy
+declaring 60 s cut the same call at 60 s (`docs/probes.md#codexHostTimeout`). `ask`
 is bounded the same way and asked again by id. The clock silence is measured
 from advances on a Codex lead's MCP calls too, announced and completed, because
 those are the whole of what a lead that only calls this server's tools says
@@ -3085,7 +3116,8 @@ with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
 ## Repository layout (`~/Documents/agent-team-cli`)
 
 ```
-.claude-plugin/plugin.json   .codex-plugin/plugin.json
+.claude-plugin/plugin.json   .codex-plugin/plugin.json   .codex-plugin/serve
+.agents/plugins/marketplace.json                         assets/codex/mcp_servers.toml
 skills/cross-agent/SKILL.md  modes/<name>/mode.json
 modes/<name>/SKILL.md        modes/<name>/roles/*.md
 src/server.ts     src/config.ts     src/ledger.ts     src/process.ts
@@ -3116,8 +3148,9 @@ tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
 is judged by), the two docs, and the root files. From row 9:
 `skills/cross-agent/SKILL.md`, every mode's own `SKILL.md` and every
 `roles/*.md`, with `tools/from-openmaus.mjs` beside the other two harnesses.
-From row 10: `.claude-plugin/plugin.json`, which carries the server as well. Still to be written:
-`.codex-plugin/plugin.json`.
+From row 10: `.claude-plugin/plugin.json`, which carries the server as well. From row 12, T14:
+`.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`,
+`.agents/plugins/marketplace.json` and `assets/codex/mcp_servers.toml`.
 
 `package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
 and `"bin": {"cross-agent": "src/cli.ts"}`.
@@ -3261,10 +3294,10 @@ registered by the mode that declares the worktree provider.
 | 7 | delegate, check, result, cancel; wait with stall | `atc-s96.10`, `.11` | **T10a and T10b done.** T10a: ancestry-bound authority, project discovery, tools by row, `tools/call` refusal by name (`src/authority.ts`, `src/project.ts`). T10b: `delegate`, `check`, `result`, `cancel` and `list_tasks` (`src/delegate.ts`, `src/tasks.ts`), the guard wiring, reconciliation on server start and on every `list_tasks`, the four delegation record fields, `limits.cancelGraceSeconds`, the prefix reservation (`atc-vuu`), the per-task scratch directory (`atc-s96.37`), one source for the engine binary (`atc-s96.10.1`), and the two runner SIGTERM edges (`atc-s96.39`, `.29`). T11 (`atc-s96.11`): `wait` with stall detection, `observeStall` shared with `check` as the only writers of `running ↔ stalled`, the one reconciliation pass a waiter runs when a record's own evidence says the ledger is out of step, and `notifications/cancelled` aborting the pending `wait` it names (`src/wait.ts`, `src/server.ts#createServer`). `describe_mode` registered with step 8, which built the mode loader it reads. |
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | **Done.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `dev-team` and `dev-team-engine` `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests, `modes/solo/roles/consult.md` being 4c's own text; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row; and, in the fix round, `delegate` launching a role with the mode's own prompt file rather than a one-line default, the config's `prompt` becoming the override it was meant to be (`src/delegate.ts#delegate`, `src/modes.ts#rolePrompt`, section 8). |
-| 10 | Claude Code packaging | `atc-s96.13` | **Done, less I2's Codex column.** `.claude-plugin/plugin.json` carrying the server inline, and
-`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` are T14's. I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
+| 10 | Claude Code packaging | `atc-s96.13` | **Done**; I2's Codex column ran with row 12. `.claude-plugin/plugin.json` carrying the server inline, and
+`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` ran at T14 (row 12, `docs/probes.md#i2Codex`). I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `cc10a2a`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
-| 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. |
+| 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `06cef0b`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). Grok's (T15) remains. |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
@@ -3293,12 +3326,17 @@ Integration probes after each packaging task, run by the operator:
   question: `./.grok/config.toml` is per-directory, and a worktree is its own
   directory, so only a user-scope mount would reach one. **Run for Codex** in the
   6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs
-  --track` rather than a Codex host, whose own rows are T14's: a delegated
+  --track` rather than a Codex host, whose own rows came at T14: a delegated
   `consult` lists Codex's built-in `codex_apps` and nothing of this server's, and
   a child given a lead's own mount lists exactly the five specialist tools as
   `mcp__cross_agent__<tool>`, answers `list_roles` from the project its mount
   names with `--project`, and has no `delegate` (`docs/probes.md#i1Codex`,
-  `#i1CodexTracked`); a direct call was not reached from it either. For Claude: a delegated
+  `#i1CodexTracked`); a direct call was not reached from it either. **Run for Codex
+  under a Codex host** at T14 (`docs/probes.md#i1CodexHost`): from a host whose own
+  tools are `mcp__cross_agent__<tool>`, a delegated Claude `consult` saw no MCP tool, a
+  Codex one saw `codex_apps` alone — `--ignore-user-config` dropped the plugin, enabled
+  in the operator's configuration, with the rest of that configuration — and a Grok one
+  saw exactly the five specialist tools and no `delegate`. For Claude: a delegated
   `consult` sees no MCP tool at all,
   and one given a lead's own mount by `tools/probe.mjs --track` sees exactly
   the five specialist tools as `mcp__cross-agent__<tool>` — while the host's
@@ -3328,6 +3366,12 @@ Integration probes after each packaging task, run by the operator:
   **delegated** writable Claude task through the server, the runner and the
   adapter, whose nine steps include `<root>/.git/hooks/pre-commit` and whose
   engine argv was read from `/proc` while it ran (`docs/probes.md#i2UnderFix`).
+  **Run for all three engines under a Codex host** at T14, through the plugin's server
+  (`docs/probes.md#i2Codex`): every outside-worktree write denied, Claude and Grok
+  reaching the network and Codex not (`curl: (6) Could not resolve host`), Grok's
+  pointer rewrite answered by both refusals with nothing mutated, and a 600-second `wait`
+  completing at 600.004 s by Codex's own record with the task still running
+  (`docs/probes.md#codexHostTimeout`).
 
 ### Phase 2: evidence and decisions
 
@@ -3560,8 +3604,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   role the mode declares but config does not bind is refused by file
   (`tests/delegate.test.ts#profileSpecialistRuns`). Under a Claude Code host `describe_mode`
   serves that same text through `mcp__plugin_cross-agent_cross-agent__…`, the
-  spelling a plugin mount gives this server (I1, `docs/probes.md#i1Spelling`);
-  Codex's and Grok's own spellings are still owed.
+  spelling a plugin mount gives this server (I1, `docs/probes.md#i1Spelling`), and
+  under a Codex host through `mcp__cross_agent__…`, the hyphen folded
+  (`docs/probes.md#codexPluginMount`); Grok's own spelling is still owed.
 - **Operator CLI (recorded).** The listing reads without a pass when asked to,
   writing nothing (`tests/tasks.test.ts#listTasksWithoutPass`), and on it each
   read verb writes nothing: in a repository nobody initialized
@@ -3614,13 +3659,15 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`#resumedRunExec`), an `off` resume (`#offRoleResumes`), and a lead's five settings
   before the prompt (`#enginePlacedLead`); and through `spawnEngine`, where the fake engine records the stdin
   and argv it was actually given (`#fakeCodexRun`, `#failedTurnSettles`). Two halves need the real
-  binary and wait for **I2**, a skipped placeholder that names them
-  (`tests/engines/codex.test.ts#codexI2Real`, written and guarded behind
-  `CROSS_AGENT_REAL_CODEX=1` rather than empty): that `codex exec … -` and `codex exec
-  resume <id> … -` each take the brief from stdin rather than send the literal
-  `-` as the prompt — `--help` settles the flag on both heads
-  (`docs/probes.md#cliCodex`), so what is left is that a run behaves as the help
-  says — and the resumed-session negative writes above.
+  binary, and both **ran at T14** (`tests/engines/codex.test.ts#codexI2Real`, guarded
+  behind `CROSS_AGENT_REAL_CODEX=1`, so `npm test` skips it): `codex exec … -` and `codex
+  exec resume <id> … -` each took the brief from stdin rather than send the literal `-`
+  as the prompt, as `--help` said they would (`docs/probes.md#cliCodex`), and each of the
+  resumed session's five attempts — a write inside the worktree and the four above — was
+  proved from the thread's own rollout through the end-to-end verifier's reader: one
+  `exec` call each, its own output's exit 0 inside the worktree and a denial for the root
+  file, `<root>/.git`, the sibling path and `$HOME`, with the filesystem as the second
+  witness (`docs/probes.md#i2Codex`).
 - **Engine placement (recorded at S11):** end-to-end with the lead on each
   supported lead engine — **E3** under a Claude lead and **E2** under a Codex
   lead, each from a Claude Code host, each judged seven `pass` and a `?` on
@@ -3678,8 +3725,14 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   read-only `git` commands of its own; once the launcher's host-loop paragraphs
   named `host` placement, E2b's host kept to the launcher's calls but closed on a
   list of its own, and E2c's, under the launcher's closing paragraph conditioned
-  too, closed on the lead's report verbatim (`docs/probes.md#e2Host`). Codex's and
-  Grok's hosts are step 12.
+  too, closed on the lead's report verbatim (`docs/probes.md#e2Host`). **E4 and E5
+  ran under a Codex host** at T14, through the plugin, each judged with `--since` and
+  `--slug`: E4, `dev-team` with Codex planning and implementing, met seven and its `?`
+  on condition 8 was read as two `file_change` patches inside the task's worktree, neither
+  a launch nor a `delegate` (`docs/probes.md#e4`); E5, `dev-team-engine` with a Claude
+  lead, met all eight and the depth-and-lineage reading, its host kept to the launcher's
+  calls, put the lead's question to the operator, and closed on the lead's report
+  verbatim (`docs/probes.md#e5`). Grok's host is what remains of step 12.
 - **Docs:** every changed claim in this document matches a checked `file:line`
   or `file#symbol` in this repository or a recorded probe. `npm test` runs the
   checker, which proves a citation still lands **inside** its file; it cannot
