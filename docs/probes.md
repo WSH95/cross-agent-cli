@@ -3018,6 +3018,171 @@ records with their lock files (`check/records-moved.txt`). The sample ends as it
 `main` at `15f7b28`, clean, the root worktree alone, `.claude/` holding `.cc-writes` alone, its
 config untouched. The round's engine runs cost $0.554 on the subscription.
 
+<!-- @anchor t12Fix3 -->
+## T12, the close: E9 — one dev-team-engine task under a Claude Code host, a Claude lead on the shipped line (2026-10-02)
+
+E8 ran the Claude line that fix round 1 shipped (`docs/probes.md#t12Fix1`, "What ships") under
+host placement alone, every specialist on Claude. E9 is the smallest run that also puts the line
+on an engine-placed Claude lead, where `dontAsk` has to admit `delegate`, `git_root` and
+`git_mutate` through the lead's `mcp__cross-agent` allow rule alone, and that runs a Codex
+specialist under the Codex CLI installed now. The sample ran in E7's configuration as it stood, unedited:
+`dev-team-engine`, `limits.maxDepth` 2, the lead on Claude (`claude-sonnet-5`), the planner on
+Codex (`gpt-6-luna`), both reviewers on Grok (`grok-4.7`, the code reviewer read-only), the
+implementer and `consult` on Claude, each at medium. The engines were Claude Code 2.1.286,
+codex-cli 0.160.0 and grok 1.0.46 (2765805b9442), on node 24.11.0. The raw evidence is in
+`~/.cache/agent-team/probe-logs/close-2026-10-02/e9/`, with every change to the sample and every
+cleanup in `timeline.txt` and the scripts in `tools/`. The host was E8's `tools/claude-host.sh`
+with one change, `plugin_dir` naming the root checkout (`e9/tools/claude-host.sh.diff`): `main` at
+`60fa393`, whose code has not changed since the fixes merged at `7bf9731`. It was started with
+`setsid --fork` from the sample and this session's markers scrubbed:
+
+```
+claude -p --plugin-dir /home/wsh/Documents/agent-team-cli --model claude-sonnet-5 --effort medium \
+  --permission-mode bypassPermissions --output-format stream-json --verbose < e9/prompt.md
+```
+
+It was prompted "T12-E9 — a Claude Code host with the loop in a spawned Claude lead. Run this task
+through the `cross-agent` skill (`/cross-agent`): add `slug_dotted(text) -> str` — the words
+`slug_words(text)` returns, joined with single dots, so `slug_dotted("Hello, Big World!")` is
+`"hello.big.world"` — beside `slugify` in `slugkit/`, with tests; use the slug `t12-e9`." Its init
+line named the plugin's server connected with the operator row's fourteen tools. It ran 9 turns,
+494.9 s by its result line, $0.262, and these are all its calls (`e9/host-calls.txt`):
+
+```
+Skill(cross-agent:cross-agent) → ToolSearch → describe_mode → list_roles → ToolSearch
+delegate lead (claude claude-sonnet-5, the project root)   → 9979292e…
+wait {timeout_seconds: 600}                                → done after 453.6 s, elapsedSeconds 456
+```
+
+Every `wait` in this section is timed from its `tool_use` event to its `tool_result` event, each
+carrying a timestamp in the transcript (`e9/waits.txt`); `elapsedSeconds` is the waited task's age
+when the call answered. The host ran no shell command, no loop step and no specialist delegation,
+and it made no `result`, `list_tasks` or `list_asks` call: no `wait` timed out, and the one that
+settled was followed by the closing message.
+
+**The lead on the shipped line.** Its live argv, read from `/proc/<pid>/cmdline` while it ran
+(`e9/proc-argv.ndjson`, `e9/argv-reading.txt`):
+
+```
+claude -p --output-format stream-json --verbose --permission-mode dontAsk --tools Bash,Read,ToolSearch \
+  --setting-sources project --strict-mcp-config --mcp-config <sample>/.cross-agent/tasks/9979292e….scratch/mcp-config.json \
+  --model claude-sonnet-5 --effort medium --session-id 1c17f3b1-… --append-system-prompt-file <scratch>/role.md \
+  --settings {…, "permissions": {"allow": ["Read", "mcp__cross-agent"]}} --disallowedTools … Edit Write MultiEdit NotebookEdit
+```
+
+The settings' sandbox denied the sample to writes, and `--disallowedTools` named the deny targets,
+rooted at the root checkout's `src/server.ts` and `src/cli.ts`. The mount file (`e9/lead/`) ran
+`/home/wsh/Documents/agent-team-cli/src/server.ts --project <sample>` under node's absolute path,
+the copy the host's plugin runs from, and that server, read from `/proc` (`e9/census-reading.txt`),
+carried all four markers with the lead's values: depth 1, its task id, a lineage of itself, the
+project. The lead's init line read `permissionMode: dontAsk`, the mount `connected`, the lead row's
+fourteen tools and three built-in ones, `Bash`, `Read` and `ToolSearch`. Its 31 calls —
+`ToolSearch` 3, `list_tasks`, `describe_mode`, `git_root` 7, `delegate` 6, `wait` 6, `result` 2,
+`run_command` 2, `git_mutate` 3 — each answered `ok: true`, and its result line lists no permission
+denial: under `dontAsk` the allow rule admitted every call to the mount, the writing ones included.
+It ran no shell command and read no file.
+
+**The loop.** The lead ran 456 s by the ledger (32 turns, 453.6 s by its result line), $0.676, and
+asked nothing (`e9/lead-calls.txt`, `e9/lead-transcript-reading.txt`):
+
+```
+list_tasks, describe_mode; git_root status / worktree list / branch --list task/*   → clean, main, none
+delegate planner (codex gpt-6-luna)                → wait 23.1 s → result   f44668e1  25 s, plan
+delegate plan-reviewer (grok grok-4.7)             → wait 79.2 s            261663bb  82 s, revise
+delegate planner (codex gpt-6-luna, resume f44668e1) → wait 9.0 s → result  e6565fb1  20 s, revised plan
+delegate plan-reviewer (grok grok-4.7), round 2    → wait 64.1 s            0a617481  67 s, approve
+git_root worktree add -b task/t12-e9 <sample>/.worktrees/t12-e9 main; run_command setup
+delegate implementer (claude claude-sonnet-5)      → wait 27.1 s            5a0749f2  29 s, 105 → 109 tests
+git_mutate add -A … ; git_mutate commit            → 5f391d4
+delegate code-reviewer (grok grok-4.7, read-only)  → wait 45.1 s            5f4453c6  48 s, ready
+git_mutate rebase main                             → up to date
+git_root merge --ff-only task/t12-e9               → main 15f7b28 → 5f391d4
+run_command test where=root                        → 109 tests, OK
+git_root worktree remove …; git_root branch -d task/t12-e9
+```
+
+Those six are the lead's own MCP `wait` calls, whose count and durations no earlier section
+recorded: each at `timeout_seconds: 600`, each answered `done`, 247.5 s in all. The first review
+found the planned tests too weak — "a stub that only handles the three named inputs would pass
+them" — and asked for a docstring; the lead resumed the planner with the findings verbatim, `codex
+exec resume 01a0fc6a-…` on the planner's own thread, and the second review approved with no
+findings. The planner is the first Codex specialist in a whole loop under codex-cli 0.160.0: its
+rollout's `session_meta` names that version, and both of its turns ran `gpt-6-luna`, read-only,
+with approval `never`. Its first run read the repository in two code-mode `exec` calls (`pwd`,
+`ls`, `find`; `cat` of the module, the tests, `pyproject.toml` and `README.md`), and the resumed
+one ran none (`e9/planner-rollout-reading.json`).
+
+**The Claude specialist.** The implementer was the run's one Claude specialist. Its live argv
+carried `--permission-mode dontAsk`, `--tools Bash,Read,Edit,Write,NotebookEdit,ToolSearch`,
+`--setting-sources project` and `--strict-mcp-config` with no mount; the sandbox's `allowWrite`
+named its worktree and `denyWrite` the worktree's `.git` and the sample's; the permissions allowed
+`Read` and `Edit(//<worktree>/**)` and denied `Edit` on both `.git` paths and their contents. Its
+init line listed exactly those six tools and no MCP server. It edited with `Edit` three times
+inside its worktree, read with `Read` twice and ran three `Bash` commands, the suite among them;
+nothing it called was refused. The three Grok reviewers ran `--sandbox read-only`: the two plan
+reviewers' servers ran inside their bubblewrap with the lead first in their lineage, and the code
+reviewer, in the worktree, mounted none (`docs/probes.md#grokWorktreeMount`).
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 9979292e… --slug t12-e9`,
+`CODEX_HOME` unset, at the root checkout (`e9/e9-verify.txt`):
+
+```
+pass  only the root worktree: /home/wsh/.cache/agent-team/cross-agent-e2e/slugkit
+pass  no task/* branch remains
+pass  the working tree is clean
+pass  the suite on main: python3 -m unittest discover -s tests -t .
+pass  one record per delegation, each with its native log: 7 records
+pass  every record at depth <= 2: 7 records; cap 2 = min(dev-team-engine's engine placement 2, limits.maxDepth 2)
+pass  the journal shows every git step: t12-e9: worktree-created, git, committed, git, merged, tests-passed, worktree-removed, branch-deleted | not judged: t12-e8, t15-e7, t15-e6, t14-e5, t14-e4, s11-e2, s11-e3, t10-slug-words
+pass  no delegate call and no engine launch in any specialist transcript: 7 transcripts; judged by the lead row: 9979292e (lead, depth 1)
+
+8 pass, 0 fail, 0 without evidence
+exit 0
+```
+
+No row answered `?`, so there was nothing to read; the planner's thread, both runs, was judged
+from its rollout under `~/.codex/sessions`. Depth and lineage, from the ledger
+(`e9/depth-lineage.txt`): the lead at depth 1, `parentTaskId` null, spec `CROSS_AGENT_DEPTH` 1, its
+lineage itself; the six specialists at depth 2, each the lead's child, the lead first in its
+lineage: PASS. The journal for `t12-e9` reads `worktree-created, git, committed, git, merged,
+tests-passed, worktree-removed, branch-deleted`, `defaultShaBeforeMerge` 15f7b28 and `branchHead`
+5f391d4: the sample's `main` went from `15f7b28` to `5f391d4`, one commit.
+
+**Deviations.** The host printed no roster before the lead's dispatch, which the launcher asks of
+it (`tests/skills.test.ts#engineHostShowsRoster`) and which E8's host did not print either
+(`atc-s96.66`); its one narration line named the lead's engine, model and effort, and "project
+root" for the cwd. It called no `result`: it wrote "The task settled; `result` matches the
+`resultTail` above, so pulling it again would be redundant" and relayed `wait`'s tail, which the
+launcher says is not the report (`tests/skills.test.ts#resultIsReport`) — E3's deviation again
+(`docs/probes.md#e3`). The report was 1,534 characters, inside the tail's 2,000, so the relayed
+text equals the lead's result file; but the closing message opens with those words and "Here is
+the lead's closing report, verbatim:", and ends with a line of its own, where the launcher asks it
+to open with the report (`e9/presentation-reading.txt`). The lead never called `list_roles`, which
+the loop names as the source of each role's engine, model and effort for the report, and its report
+names both planner runs `claude | claude-sonnet-5`, where the ledger, `cross-agent report` and the
+live process name `codex` and `gpt-6-luna` (`e9/cross-agent-report.txt`). It called `result` after
+the planner's two `wait`s only; for both plan reviews, the implementer and the code reviewer it
+acted on `wait`'s answer, where the loop says "`wait`, then `result`". The first review's message
+was 2,281 characters, past the tail; the lead quoted its opening verbatim in the resume brief from
+`lastActivity`, Grok's final `result` event, which held the whole message. The rebase was a no-op.
+
+**Not exercised.** The lead asked nothing, so its `ask` under `dontAsk`, the launcher's sentence
+for a headless host that meets an open ask (`tests/skills.test.ts#headlessHostOpenAsk`,
+`atc-s96.70`), the operator's `cross-agent answer` and the host's resume did not run. The code was
+ready at its first review, so no implementer was resumed, and no resumed Claude specialist has run
+in a whole loop under the line; fix round 1 ran one through the product. Nor did a read-only Claude
+specialist under engine placement run (E8 ran that profile under host placement), nor a rebase that
+moved the branch, a Codex specialist that writes, a Codex lead under codex-cli 0.160.0, a failed or
+resumed lead, or the failure injections.
+
+The run cost $1.277 on the subscriptions: the host $0.262, the Claude lead $0.676, the implementer
+$0.161 and the three Grok reviews $0.178; the Codex planner reported 63,635 tokens in and 540 out,
+and 96,524 in and 1,029 out resumed. `~/.codex/config.toml` hashed the same before and after the
+run. Nothing was restored or cleaned up: the sample is left as the run left it, on `main` at
+`5f391d4`, 109 tests green, `git status` clean, the root worktree alone, no `task/*` branch, its
+config, `.cross-agent/log.md` and `.grok/config.toml` unchanged, with 51 records — E9's seven kept
+as E6's, E7's and E8's were (`e9/close.txt`).
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
