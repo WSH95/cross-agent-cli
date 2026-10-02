@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { appendStep, listJournals, readJournal } from "../src/journal.ts";
-import type { Journal } from "../src/journal.ts";
+import { appendStep, listJournals, readJournal, recordedTip } from "../src/journal.ts";
+import type { Journal, JournalEntry } from "../src/journal.ts";
 
 function project(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-journal-"));
@@ -172,6 +172,26 @@ test("a slug that is not a file name of its own is refused", (t) => {
     assert.throws(() => readJournal(root, slug), /slug/, slug);
   }
   assert.equal(fs.existsSync(directory(root)) && fs.readdirSync(directory(root)).length > 0, false);
+});
+
+// @anchor recordedTip
+test("a journal's recorded tip is the head it merged, else its git_mutate steps' last after, else the base its worktree branched from", () => {
+  const journal = (steps: JournalEntry[], branchHead?: string): Journal => ({
+    slug: "x", branch: "task/x", defaultBranch: "main", ...(branchHead === undefined ? {} : { branchHead }), steps,
+  });
+  const created: JournalEntry = { step: "worktree-created", at: 1, before: "base", after: "base", defaultSha: "base" };
+  const committed: JournalEntry = { step: "committed", at: 2, before: "base", after: "c1" };
+  const reset: JournalEntry = { step: "git", at: 3, before: "c1", after: "c2", args: ["reset", "--hard", "c2"] };
+  // A root verb's SHAs are the default branch's, never the task branch's.
+  const removed: JournalEntry = { step: "worktree-removed", at: 4, before: "d1", after: "d1", defaultSha: "d1" };
+  const merged: JournalEntry = { step: "merged", at: 5, before: "d0", after: "c2", defaultSha: "d0" };
+  assert.equal(recordedTip(journal([created])), "base");
+  assert.equal(recordedTip(journal([created, removed])), "base");
+  assert.equal(recordedTip(journal([created, committed, reset, removed])), "c2");
+  assert.equal(recordedTip(journal([created, committed, merged, removed], "c1")), "c1");
+  // A journal git_mutate began records its tips from its first step.
+  assert.equal(recordedTip(journal([committed])), "c1");
+  assert.equal(recordedTip(journal([removed])), undefined);
 });
 
 // @anchor damagedJournalNamed

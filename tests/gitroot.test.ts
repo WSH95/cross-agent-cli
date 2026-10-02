@@ -987,6 +987,64 @@ test("a closed journal acts on nothing more: a sibling project's reused branch n
   assert.deepEqual(readJournal(main, "x")!.steps.map((step) => step.step), ["worktree-created", "worktree-removed", "branch-deleted"]);
 });
 
+// @anchor openJournalReusedNameRefused
+test("a branch -d retried on a journal whose closing step was never written is refused once the name points elsewhere", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const made = await layoutRoot(t, "linked");
+  const main = made.main!;
+  for (const [project, branch] of [[main, "main"], [made.root, "feature"]]) {
+    fs.mkdirSync(path.join(project, ".cross-agent"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, project: { defaultBranch: branch } }));
+  }
+  // The main project's task x: git deletes its branch, but the `branch-deleted` step is
+  // never written, so the journal stays open.
+  const ours = path.join(main, ".worktrees", "x");
+  accepted(await gitRoot(main, { args: ["worktree", "add", "-b", "task/x", ours, "main"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(main, { args: ["worktree", "remove", ours], slug: "x" }, { waitSeconds: 5 }));
+  const recorded = readJournal(main, "x")!.steps[0].before!;
+  const journals = path.join(main, ".cross-agent", "journal");
+  t.after(() => { try { fs.chmodSync(journals, 0o755); } catch { /* gone */ } });
+  fs.chmodSync(journals, 0o555);
+  assert.match(refusal(await gitRoot(main, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 })), /journal step could not be written/);
+  fs.chmodSync(journals, 0o755);
+  assert.equal(await git(main, "branch", "--list", "task/x"), "", "git deleted the branch");
+  // The worktree project reuses the name for a task of its own, on a commit the main
+  // checkout's branch holds too, so git alone would delete it for anyone.
+  await git(main, "commit", "--allow-empty", "-m", "the default branch moves on");
+  await git(made.root, "merge", "--ff-only", "main");
+  const theirs = path.join(made.root, ".worktrees", "x");
+  accepted(await gitRoot(made.root, { args: ["worktree", "add", "-b", "task/x", theirs, "feature"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(made.root, { args: ["worktree", "remove", theirs], slug: "x" }, { waitSeconds: 5 }));
+  const head = await git(main, "rev-parse", "refs/heads/task/x");
+  assert.notEqual(head, recorded);
+
+  // The main project's retry, from its still-open journal.
+  const reason = refusal(await gitRoot(main, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+  assert.ok(reason.includes(head) && reason.includes(recorded), reason);
+  assert.match(reason, /reused/);
+  assert.equal(await git(main, "rev-parse", "refs/heads/task/x"), head, "the sibling's branch survives");
+});
+
+// @anchor branchDeleteAbandonedWithCommits
+test("branch -d holds an abandoned task's branch to the tip its git_mutate steps recorded, and git decides the rest", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "x");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
+  // Never merged by the loop: the branch is where its last commit left it, so the journal
+  // lets it through, and git refuses a branch the root's HEAD does not hold, in its own words.
+  const unmerged = await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 });
+  assert.equal((unmerged as Extract<GitRootResult, { ok: false }>).exitCode, 1, JSON.stringify(unmerged));
+  // Once the default branch holds that work, the delete goes through.
+  await git(root, "merge", "--ff-only", "task/x");
+  accepted(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+  assert.equal(await git(root, "branch", "--list", "task/x"), "");
+});
+
 // @anchor closedJournalRepeatedDelete
 test("a repeated branch -d on a closed journal is refused, even once a branch of that name exists again", async (t) => {
   const { root } = await repository(t);

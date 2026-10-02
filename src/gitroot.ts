@@ -2,7 +2,7 @@ import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, repositoryLockWait } from "./config.ts";
 import { GitRunError, globalOptions, hostConfigPathspecs, hostTreeLinks, revision, run } from "./gitmutate.ts";
-import { appendStep, readJournal } from "./journal.ts";
+import { appendStep, readJournal, recordedTip } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
@@ -535,6 +535,20 @@ async function execute(
     }
     const bound = journalFault(slug, journal, verb, parts);
     if (bound !== null) return { ok: false, reason: bound };
+  }
+
+  if (verb.step === "branch-deleted") {
+    // A journal stays open when its `branch-deleted` step could not be written after git
+    // deleted the branch, and the name is free for any task of any project of the
+    // repository: the branch is this task's only while it is where the journal last saw it.
+    const recorded = recordedTip(journal!);
+    const current = await revision(gitDir, workTree, parts.ref!);
+    if (recorded !== undefined && current !== undefined && current !== recorded) {
+      return {
+        ok: false,
+        reason: `${parts.ref} is at ${current}, and journal ${slug} last recorded it at ${recorded}: the name may have been reused by another task since, so git_root branch -d is refused`,
+      };
+    }
   }
 
   const before = await revision(gitDir, workTree, defaultBranch);

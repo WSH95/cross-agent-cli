@@ -129,6 +129,24 @@ export function readJournal(projectRoot: string, slug: string): Journal | null {
   return parsed as Journal;
 }
 
+/**
+ * Where the task's branch was when its journal last recorded it, or undefined where no step
+ * did. Read in order: the base a `worktree-created` step branched from — the default
+ * branch's SHA, which is where `git_root worktree add` starts the branch — then the `after`
+ * of each `git_mutate` step (`committed`, `rebased`, `git`), which reads the branch it ran
+ * on, then the head a `merged` step merged. The other root steps record the default
+ * branch's SHAs, never the task branch's.
+ */
+export function recordedTip(journal: Journal): string | undefined {
+  let tip: string | undefined;
+  for (const entry of journal.steps) {
+    if (entry.step === "worktree-created") tip = entry.before ?? tip;
+    else if (entry.step === "committed" || entry.step === "rebased" || entry.step === "git") tip = entry.after ?? tip;
+    else if (entry.step === "merged") tip = journal.branchHead ?? tip;
+  }
+  return tip;
+}
+
 /** The slug of every journal in the project, sorted; partial writes are not journals. */
 export function listJournals(projectRoot: string): string[] {
   const directory = path.resolve(projectRoot, ".cross-agent", "journal");

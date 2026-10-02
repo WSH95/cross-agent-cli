@@ -2509,7 +2509,17 @@ journal still names its branch, and a branch of that name now — a later task's
 this project, or a sibling project's that reused the name — is no task of it, so a
 project retrying a finished cleanup would otherwise delete or merge another's
 (`tests/gitroot.test.ts#closedJournalReusedNameTwoProjects`, `#closedJournalRepeatedDelete`,
-`#worktreeRemoveTwiceRefused`). A verb that journals nothing —
+`#worktreeRemoveTwiceRefused`). A journal stays open when git deleted its branch and the
+`branch-deleted` step could not be written, so `branch -d` also holds the branch to
+the tip the journal last recorded for it (`src/journal.ts#recordedTip`): the head the
+`merged` step merged; else the `after` of its last `git_mutate` step, which reads the
+branch it ran on; else the base its `worktree-created` step branched from. A branch
+elsewhere is refused, naming both SHAs and that the name may have been reused
+(`tests/gitroot.test.ts#openJournalReusedNameRefused`), and git still decides whether a
+branch at that tip is merged (`#branchDeleteAbandonedWithCommits`). A reused name at
+the very tip the journal recorded cannot be told apart, and is harmless: that commit
+is one the journal's own task left, and git deletes the name only where the root's
+HEAD holds it. A verb that journals nothing —
 the read-only set and `rebase --abort` — takes **no** slug, because silence
 would let a lead believe its read was recorded (`src/gitroot.ts#gitRoot`).
 
