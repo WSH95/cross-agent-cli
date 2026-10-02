@@ -116,7 +116,10 @@ which journals the `committed` step. The two exclusions are not optional: a
 `.gitignore` the specialist wrote in its own worktree outranks the repository's
 own, and step 9 refuses a branch that carries either directory at all, or a
 host's project configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` —
-which the commit above refuses first, naming the path.
+which the commit above refuses first, naming the path. Those paths must be
+regular files: a symbolic link at any of them, anywhere in the project's tree,
+blocks every commit and every merge until the operator replaces it with a
+regular file at the root by hand.
 
 ## 7. Code review
 
@@ -161,7 +164,9 @@ default branch before the merge and its `after` the branch head it moved to, whi
 the journal keeps as `defaultShaBeforeMerge` and `branchHead`. It refuses unless the
 root's HEAD is `<default>`, and unless the branch carries nothing from `.cross-agent`,
 the worktree directory or a host's project configuration — `.claude/`, `.codex/`,
-`.grok/`, `.mcp.json` — which step 6's commit refuses too, naming the path. Then
+`.grok/`, `.mcp.json` — which step 6's commit refuses too, naming the path. A
+symbolic link at any of those paths is refused the same way, at every commit and
+every merge, until it is replaced with a regular file at the root. Then
 `run_command {which: "test", where: "root", slug}`, which journals `tests-passed`
 when it exits zero.
 

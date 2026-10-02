@@ -111,9 +111,9 @@ role's workspace — a bare `Edit` or `Write`, `Edit(//…)`, `Edit(~/…)`,
 the specialist is otherwise refused, in a workspace you have trusted. Do not
 commit such a rule in a project where specialists run; keep it in
 `.claude/settings.local.json`, which a specialist does not load. For
-information, that file also brings a specialist its `env` (probed). Its
-`apiKeyHelper` reaching a specialist remains unprobed; its
-`sandbox.network.allowedDomains` does not reach a sandboxed one.
+information, the tracked `.claude/settings.json` also brings a specialist its
+`env` (probed), while its `apiKeyHelper` reaching a specialist remains unprobed,
+and its `sandbox.network.allowedDomains` does not reach a sandboxed one.
 
 **Inside its sandbox a Claude specialist reaches no network host**, and inside its
 own workspace its file tools are refused Claude Code's sensitive paths —
@@ -328,8 +328,11 @@ Host configuration must be regular files: a symbolic link at any of the four roo
 paths, or anywhere below them, is refused by name, case-insensitively. A commit checks
 its current tree, index and working tree (even ignored links); a merge checks the
 incoming branch's tree. Replace links with regular files before retrying, by hand at
-the root for tracked configuration.
-`printf` puts it on a line of its own: `init` leaves a last line
+the root for tracked configuration. This refuses every link a task's branch or worktree
+carries; it does not police a link you keep at the root yourself, outside git, that
+points into the tree — so keep the root's own host configuration as regular files too,
+the same way you keep the servers and hooks they name as tracked files.
+The `printf` that appends `.grok/` puts it on a line of its own: `init` leaves a last line
 with no newline alone when it has nothing to add, and `echo` would join `.grok/` onto it.
 Commit that `.gitignore` change before the team's first task, as the Claude Code section
 says: a loop's first step stops on anything `git status --porcelain
@@ -354,7 +357,7 @@ expands it — and `"cross-agent"` to the existing `enabled` array, and set
 value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
-default, past what `describe_mode` answers: 20,291 bytes under `dev-team`, 25,270 under
+default, past what `describe_mode` answers: 20,653 bytes under `dev-team`, 25,632 under
 `dev-team-engine` and 3,463 under `solo`, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with

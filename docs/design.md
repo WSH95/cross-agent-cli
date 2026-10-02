@@ -2374,16 +2374,28 @@ tracked configuration, before retrying
 `#commitGuardsLinkReferent`, `#commitHostLinksEveryView`,
 `#commitHostLinkTraversalClass`, `#commitRefusesOutsideLink`;
 `tests/gitroot.test.ts#mergeGuardsLinkReferent`, `#mergeHostLinkTraversalClass`,
-`#mergeRefusesOutsideLink`). This closes the whole link-traversal class,
-including directory aliases and targets whose `..` cancels a link component.
+`#mergeRefusesOutsideLink`). This closes the link-traversal class for every link
+the branch or the worktree carries — directory aliases and targets whose `..`
+cancels a link component included — because the link itself is refused and no
+target is read. It is a boundary, not a walk of everything the operator's own
+configuration refers to: a host link the operator keeps at the root, excluded and
+untracked, that aliases a tracked path is outside it — a change to that tracked
+path commits and merges like any other, and the root's host then loads it, the
+same way this repository's own plugin runs the tracked `src/server.ts`. The guard
+keeps a task from *placing* host configuration at the root; it does not police what
+the operator's existing root configuration points into the tree. So the operator
+keeps the root's own host configuration as regular files too. A disk link's name is
+read as bytes, so one whose name is not valid UTF-8 is still refused
+(`tests/gitmutate.test.ts#commitHostLinkNonUtf8`).
 The tree read lists only the four host pathspecs, never the whole tree; because
 `ls-tree` does not support case-insensitive pathspecs, it uses `diff-tree`
 against the empty tree to read modes under those four instead
 (`src/gitmutate.ts#hostTreeLinks`,
 `tests/gitroot.test.ts#mergeListsOnlyHostPaths`). The existing byte and
 symlink-mode checks for assume-unchanged entries remain; a link replaced while
-that check reads it differs rather than throwing
-(`tests/gitmutate.test.ts#linkReplacedMidCheck`).
+that check reads it differs rather than throwing, and a path that is both a change
+and a link is named once, as the link
+(`tests/gitmutate.test.ts#linkReplacedMidCheck`, `#commitMarkedSymlink`).
 The commit check does not see a git alias for
 `commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
 `commit --amend` over an older commit that already carries one; the merge
@@ -3033,7 +3045,22 @@ an option, operand or code must be literal are `?` (`#expandedOperands`).
 `NODE_OPTIONS` assignments, including `+=`, are read for loaders in prefixes,
 declarations, `env` and `env -S`. `PROMPT_COMMAND` is read as commands; startup
 paths and prompt templates are read for substitutions. Unreadable values and
-named startup files answer `?` (`#codeAssignments`).
+named startup files answer `?` (`#codeAssignments`). node's table is audited
+whole: an option that reads a file as code or as options that load code —
+`--env-file` and `--env-file-if-exists`, the config files, `--run`,
+`--snapshot-blob`, the snapshot and SEA builders, `--openssl-config` — is unread
+code like a module loader, and its own code-loading environment variables
+(`OPENSSL_CONF`, `OPENSSL_MODULES`, `NODE_REPL_EXTERNAL_MODULE`, `NODE_PATH`)
+join the unread set; under `--entry-url` the script is read as a URL — query and
+fragment dropped, path percent-decoded, a `file:` URL reduced to its path —
+before the entry test (`#nodeConfigFilesUnread`, `#nodeEntryUrlScript`). Beyond
+`NODE_OPTIONS` and the modeled builtins, every way bash writes a variable is an
+assignment of unknown value, `?` on a named line when the name is unread
+environment or code, when an expansion hides which name it is, or when a nameref
+may alias it: an expanded destination anywhere, `getopts` past its own options
+and `--`, `wait -p`, a `{NAME}` redirection on any command, arithmetic
+assignment in `(( ))` and `$(( ))`, `${NAME=…}`/`${NAME:=}`, and any `-n`
+declaration whatever its operands (`#builtinAssignmentForms`).
 The data readers account for stdin and arguments as data except for execution
 options, code assignments and deferred arithmetic/subscript evaluation; quoted
 substitutions at those readers, including values carried into arithmetic on the
@@ -3108,7 +3135,7 @@ README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
 discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and `describe_mode` answers 20,291 bytes under `dev-team` and 25,270
+20,000 bytes by default, and `describe_mode` answers 20,653 bytes under `dev-team` and 25,632
 under `dev-team-engine` (`tests/packaging.test.ts#describeModeSizes`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
 600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
