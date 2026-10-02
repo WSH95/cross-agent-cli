@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T17:30:00Z — claude
+Planned and approved atc-s96.97 (a branch worktree, or a bare repository's worktree, as its own project; opt-in by init; bare supported; init copies the main project's setup and Grok attach; a new git-root CLI verb). Implementation started in .worktrees/worktree-projects from 66e8815.
+
 ### 2026-10-02T13:50:00Z — claude
 Housekeeping on the user's word: 2,772 old /tmp/cross-agent-* test fixtures removed; the Codex config backup and pre-restore copy deleted. Filed atc-s96.97: a linked worktree as its own project (several branches of one repository at once).
 

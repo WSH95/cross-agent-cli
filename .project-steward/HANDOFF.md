@@ -45,7 +45,21 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Nothing. The task worktree and its branch are removed. Their ignored state is archived and verified under `~/.cache/agent-team/probe-logs/close-2026-10-02/worktree-state/`.
+**`atc-s96.97`: a linked worktree, or a bare repository's worktree, as a cross-agent project of
+its own,** so the user can develop several branches of one repository at once.
+
+The user's decisions:
+- a worktree opts in by running `cross-agent init` in it;
+- bare repositories are supported;
+- `init` copies the main project's setup, and the main checkout's Grok attach file;
+- a new `cross-agent git-root` verb.
+
+The plan was reviewed in five rounds and approved; every issue's resolvability is stated in it. It is
+`.superpowers/sdd/the-development-of-this-calm-planet/task-13-brief.md`.
+
+The implementation is under way in `.worktrees/worktree-projects` on `task/worktree-projects`, from
+`main` at `66e8815`. Code review and an end-to-end run with two concurrent projects in one repository
+(E10) follow.
 
 ## Next steps
 
