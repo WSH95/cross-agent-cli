@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T23:18:41Z — claude
+[auto-checkpoint] atc-s96.97: E10 passed — the sample's main checkout and a `feature/dotted` worktree ran one task each at once, both verdicts 8 pass, containment probe refused by the sandbox (record 47d170a, 9bc1f2d on the task branch); round-3 re-review running.
+
 ### 2026-10-02T22:41:28Z — claude
 [auto-checkpoint] atc-s96.97: code review round 2 (no Critical; 4 Important, 5 Minor) fixed in 2276ff4..7907167 (932/931/1 by the implementer; citations 1450); E10 next, then the round-3 re-review.
 

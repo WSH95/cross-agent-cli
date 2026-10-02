@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T22:41:28Z
+updated_at: 2026-10-02T23:18:41Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -70,9 +70,13 @@ round 1 landed (`3760c38..2276ff4`, 923 / 922 / 1 skipped; 1440 citations). It r
 behaviour where the first pass had changed it. Round 2 found no Critical: four Important (lock loss
 on cleanup paths, `spawn.lock` re-read before the record, the verifier beside a separated main, a
 reused branch name after a failed closing-journal append) and five Minor. Fix round 2 landed
-(`2276ff4..7907167`, 932 / 931 / 1 skipped; 1450 citations). Next: the end-to-end run with two
-concurrent projects in one repository (E10, every engine `claude-sonnet-5`), then the round-3
-re-review, then the merge.
+(`2276ff4..7907167`, 932 / 931 / 1 skipped; 1450 citations). E10 passed: the sample's main
+checkout and a `feature/dotted` worktree initialized as its own project each ran one
+`dev-team-engine` task at the same time, every engine `claude-sonnet-5`. Both verdicts read 8 pass,
+each merge landed on its own branch, and a read-only role at the branch root could write neither
+the shared git directory nor its `.git` (`docs/probes.md#worktreeProjects` on the task branch;
+evidence `~/.cache/agent-team/probe-logs/t13-e10/`). The sample ends on `main` at `ba496c7`, with
+`feature/dotted` kept at `0ed8097`. Next: the round-3 re-review (running), then the merge.
 
 ## Next steps
 
