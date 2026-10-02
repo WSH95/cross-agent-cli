@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T05:52:29Z
+updated_at: 2026-10-02T07:10:28Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -112,8 +112,11 @@ the user chose (2026-10-02) to probe first and fix now. The probe confirmed the 
 fix round 1 landed on the task branch (head `84d1010`, not merged: the Claude adapter
 runs `dontAsk` with a `--tools` allowlist, `--setting-sources project` and permission
 rules confining file edits to the workspace; the verifier holes closed; E8 8 pass;
-`npm test` 785 / 784 / 1 skipped). Its re-review is running (`task-12-findings-round-1.md`,
-`task-12-fix1-report.md`). Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
+`npm test` 785 / 784 / 1 skipped). Its re-review left two gaps of the build's own (a
+host-config symlink's referent; a TMPDIR-dependent test) and verifier minors; fix round 2
+is in progress (`task-12-findings-round-2.md`). The residue that comes from Claude Code's
+own settings merge (a project's `.claude/settings.json` pre-approving file writes) the user
+accepted on 2026-10-02 as a documented limitation. Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
 restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.

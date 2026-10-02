@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T07:10:28Z — claude
+[auto-checkpoint] Task 12 fix round 2 in progress (symlink referents, a TMPDIR test, verifier minors); the user accepted Claude Code's own settings-merge residue as a documented limitation.
+
 ### 2026-10-02T05:52:29Z — claude
 [auto-checkpoint] Task 12 fix round 1 landed (84d1010; 785/784/1): the sandbox gap confirmed then closed (dontAsk, --tools allowlist, --setting-sources project, workspace-only edits), verifier holes closed, E8 8 pass; re-review running.
 
