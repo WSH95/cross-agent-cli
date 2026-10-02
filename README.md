@@ -562,8 +562,8 @@ call stuck behind it cannot be cancelled from inside. Recover by hand:
 1. Find the hung git by its command line, with `ps -eo pid,ppid,args`: it carries
    `--work-tree=<the task's worktree>` for a `git_mutate` step, the `git <slug>` verb's
    included, and `--work-tree=<the project root>` for a `git_root` step, the `git-root`
-   verb's included, since that tool's `worktree add` and `merge` run the repository's
-   hooks at the root.
+   verb's included: a `merge`'s hooks run at the root, and a `worktree add`'s
+   post-checkout hook in the new worktree, each under that git.
 2. End that process tree, the hook's children included, and check that it has exited.
 3. Run `cross-agent tasks --reconcile`, then `cross-agent journal <slug>`, which says
    whether the step landed.

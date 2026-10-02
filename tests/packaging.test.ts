@@ -294,6 +294,25 @@ test("the README has a worktree project's .gitignore change committed first, and
   assert.match(design, /hung git by its command line — `--work-tree=<the task's worktree>` for a `git_mutate` step, `--work-tree=<the project root>` for a `git_root` step/);
 });
 
+// @anchor hooksAndUnsupportedWording
+test("the docs put each hook where git runs it, keep spawn.lock out of git_root's steps, and give the unsupported class's reason at a symlinked .git", () => {
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replace(/\s+/g, " ");
+  const design = fs.readFileSync(path.join(repoRoot, "docs", "design.md"), "utf8").replace(/\s+/g, " ");
+  // A merge's hooks run at the root and a worktree add's post-checkout hook in the new
+  // worktree, both under a git whose command line names the project root.
+  for (const [name, text] of [["README", readme], ["design", design]]) {
+    assert.match(text, /a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree/, name);
+    assert.doesNotMatch(text, /`worktree add` and `merge` run the repository's hooks at the root/, name);
+  }
+  // git_root's steps hold git.lock and the repository lock, and cancel does not end their git.
+  assert.match(design, /holds `git\.lock` and the repository lock, not `spawn\.lock`/);
+  assert.match(design, /`cancel` can run beside it, and still does not end that git child/);
+  assert.doesNotMatch(design, /A `git_root` step holds both locks the same way/);
+  // Worktree roles at a symlinked .git are refused because the class takes no writes.
+  assert.match(design, /an `unsupported` root takes none, and no root git tool ever ran there/);
+  assert.doesNotMatch(design, /though the git directory they share lay outside the denied cwd/);
+});
+
 // @anchor grokReadmeInstall
 test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");

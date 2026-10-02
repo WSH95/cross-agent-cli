@@ -310,8 +310,9 @@ async function asLinkedGitDirectory(workTree: string, pointer: string): Promise<
 }
 
 async function asLinkedWorktree(workTree: string, pointer: string): Promise<Located> {
-  // Read as a candidate only, the way git reads a pointer: one `gitdir:` line, relative to
-  // the root. What it claims is confirmed below before anything acts on it.
+  // Read as a candidate only, the way git reads a pointer (`gitdirOf`): the path after
+  // `gitdir: `, relative to the root. What it claims is confirmed below before anything
+  // acts on it.
   const named = gitdirOf(await readFile(pointer, "utf8"));
   if (named === null) return refused(`${pointer} is not a worktree pointer: it holds no gitdir: line`);
   let admin: string;

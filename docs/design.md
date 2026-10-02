@@ -2133,9 +2133,10 @@ lies outside the root; or `refused` for everything else. The checks run in this
 order. The root's nesting first, and from outside it: `enclosingWorktree` must find
 nothing (`src/worktree.ts#rootNotNested`), whatever the root's own `.git` holds now,
 so a task's worktree whose pointer was deleted, replaced by a repository of its own or
-rewritten is still refused, naming the worktree and the work tree that registers it. A `.git` directory is a main checkout unless the root's
-own git, asked without a work tree named, calls it bare — `--work-tree=<root>` would
-make a work tree of a bare repository at `<root>/.git` — and then it is `unsupported`.
+rewritten is still refused, naming the worktree and the work tree that registers it.
+A `.git` directory is a main checkout unless the root's own git, asked without a work
+tree named, calls it bare — `--work-tree=<root>` would make a work tree of a bare
+repository at `<root>/.git` — and then it is `unsupported`.
 A `.git` file is read as a candidate only, through its `gitdir:` line and that
 administrative directory's `commondir`, each as git reads it (`src/ledger.ts#gitdirOf`),
 and every path git prints is asked for on its own, since one may hold a newline
@@ -2148,10 +2149,11 @@ and its own common directory, the root as its top level, and nothing as bare: a 
 checkout whose git directory lies outside it, as a separated main's does. Any other
 link is refused (`tests/worktree.test.ts#locateRepositorySymlinkedGitUnsupported`).
 That is a deliberate change: before worktree projects, task worktrees made by hand
-under such a root verified and took `git_mutate`, though the git directory they share
-lay outside the denied cwd; now the root's own roles launch with the link and its
-target protected, and its worktree roles, one-shots and git writes are refused, as at
-a separated main. Otherwise git confirms a `.git` file's candidate on explicit
+under such a root verified and took `git_mutate`; now its worktree roles, one-shots
+and git writes are refused, as at a separated main, because an `unsupported` root takes
+none, and no root git tool ever ran there — `git_root` and `run_command` refused it
+before, as they do now. The root's own roles launch with the link and its target
+protected. Otherwise git confirms a `.git` file's candidate on explicit
 directories (`src/gitmutate.ts#run`), its administrative directory sits directly in
 `<commonDir>/worktrees` (`src/worktree.ts#rootAdministrativeParent`), its `gitdir`
 points back at the root's pointer (`#rootGitdirBacklink`), the root lies outside the
@@ -2400,9 +2402,11 @@ waits `lockWaitSeconds` and refuses, and every git write of the repository's oth
 projects waits the repository lock's sixty seconds or more and refuses, naming the
 lock; such a refusal is retryable after the loop's reconciliation. The call cannot be
 cancelled from inside: `gitMutate` holds `spawn.lock` for the whole call, and
-`cancel` needs that same lock. A `git_root` step holds both locks the same way, and
-its `worktree add` and `merge` run the repository's hooks at the root. The README
-gives the operator's recovery: find the hung git by its command line —
+`cancel` needs that same lock. A `git_root` step's `worktree add` or `merge` holds
+`git.lock` and the repository lock, not `spawn.lock`, so `cancel` can run beside it,
+and still does not end that git child, which nothing but the call owns; a `merge`'s
+hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree.
+The README gives the operator's recovery: find the hung git by its command line —
 `--work-tree=<the task's worktree>` for a `git_mutate` step,
 `--work-tree=<the project root>` for a `git_root` step — since no `CROSS_AGENT_*`
 variable reaches git; end that process tree, hooks included; then
