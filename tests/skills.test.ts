@@ -890,7 +890,10 @@ test("both loops read the root's own branch, and reconcile only their own projec
     assert.match(step, /open journal/, mode);
     assert.match(step, /`branch-deleted`/, mode);
   }
-  // The rebase state is read where the verifier says the worktree's git directory is.
-  assert.match(flat(launcher()), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/);
-  assert.match(flat(loop("dev-team")), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/);
+  // The rebase state is read where the verifier says the worktree's git directory is, by
+  // the launcher and by both loops' reconciliation after a refusal.
+  for (const [where, text] of [["launcher", launcher()], ["dev-team", loop("dev-team")], ["dev-team-engine", loop("dev-team-engine")]]) {
+    assert.match(flat(text), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/, where);
+    assert.match(flat(text), /`branch` being `"HEAD"` while a\s+stopped rebase has detached it/, where);
+  }
 });

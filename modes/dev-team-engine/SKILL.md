@@ -239,10 +239,12 @@ Any `ok: false` from `git_mutate` or `git_root`, with an exit code or without on
 a reconciliation trigger — a refusal is not a claim that nothing happened. Stop the
 loop and reconcile this slug before anything else: `list_tasks`, `git_root {args:
 ["worktree", "list", "--porcelain"]}`, `git_root {args: ["status", "--porcelain",
-"--untracked-files=normal"]}`, and `git_root {args: ["log", "--oneline",
-"--max-count=5", <branch>]}` — what the journal records is what completed, and the difference between
-that and what git shows is what you repair, by step 1's rules, before you decide
-whether the step can be repeated; what you cannot repair through these tools is the
-operator's, asked. An `ok: true` carrying `lockLost: true` says the command ran but
+"--untracked-files=normal"]}`, `git_root {args: ["log", "--oneline",
+"--max-count=5", <branch>]}`, and the `rebase-merge` or `rebase-apply` directory
+under the `gitDir` `verify_worktree {path: <worktree path>, branch}` answers,
+`branch` being `"HEAD"` while a stopped rebase has detached it — what the journal
+records is what completed, and the difference between that and what git shows is
+what you repair, by step 1's rules, before you decide whether the step can be
+repeated; what you cannot repair through these tools is the operator's, asked. An `ok: true` carrying `lockLost: true` says the command ran but
 was not exclusive for all of its life: reconcile that slug too before you trust the
 next step.
