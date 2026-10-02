@@ -88,15 +88,17 @@ test("verifyWorktree handles porcelain paths containing whitespace, quotes, back
   });
 });
 
-test("verifyWorktree resolves relative Git paths against the command cwd", async (t) => {
+test("verifyWorktree accepts a worktree whose pointer names its gitdir: relative to the worktree", async (t) => {
   const { root, add } = await repository(t);
   const candidate = await add("relative");
   const gitDir = await realpath(await git(candidate, "rev-parse", "--git-dir"));
   const pointer = path.join(candidate, ".git");
   const original = await readFile(pointer, "utf8");
   try {
+    // Both paths absolute, so the pointer is the only relative path in play: what it names
+    // is the worktree's, wherever the server itself runs.
     await writeFile(pointer, `gitdir: ${path.relative(candidate, gitDir)}\n`);
-    assert.deepEqual(await verifyWorktree(path.relative(process.cwd(), root), path.relative(process.cwd(), candidate), "task/relative"), {
+    assert.deepEqual(await verifyWorktree(root, candidate, "task/relative"), {
       gitDir, workTree: await realpath(candidate), branch: "task/relative",
       commonDir: await realpath(path.join(root, ".git")),
     });
@@ -129,7 +131,6 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
   });
 }
 
-// @anchor gitenvironmentPassesGit
 // @anchor relativeToProjectRoot
 test("verifyWorktree reads a relative worktree path against the project root, not the server's own directory", async (t) => {
   const { root } = await repository(t);
@@ -142,6 +143,7 @@ test("verifyWorktree reads a relative worktree path against the project root, no
   assert.equal(verified.workTree, await realpath(path.join(root, ".worktrees", "relative")));
 });
 
+// @anchor gitenvironmentPassesGit
 test("gitEnvironment passes what git needs to run as this user, and nothing else", () => {
   assert.deepEqual(gitEnvironment({
     PATH: "/usr/bin", HOME: "/home/someone", USER: "someone", LANG: "en_GB.UTF-8", LC_ALL: "C",
