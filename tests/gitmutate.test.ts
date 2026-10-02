@@ -696,6 +696,25 @@ test("a marked host-configuration symlink is judged by its target, not by what i
   assert.match(typed, /\.mcp\.json \(marked assume-unchanged/);
 });
 
+// @anchor linkReplacedMidCheck
+test("a marked host link replaced while the commit check reads it differs, rather than throwing", async (t) => {
+  const { root, add } = await repository(t);
+  await writeFile(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
+  await symlink("servers.json", path.join(root, ".mcp.json"));
+  await git(root, "add", "servers.json", ".mcp.json");
+  await git(root, "commit", "-m", "the project's own servers, through a link");
+  await git(root, "config", "core.ignoreStat", "true");
+  const worktree = await add("swapped");
+  // The check reads the link's kind, then the repository's hash format, then the link: git is
+  // held on the second for two seconds, and the link becomes a regular file in between.
+  const recorder = await gitShim(t, { sleepOn: "--show-object-format" });
+  const pending = gitMutate(root, { slug: "swapped", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 });
+  await poll(async () => (await recorder.argv()).includes("--show-object-format"), Boolean);
+  await rm(path.join(worktree, ".mcp.json"));
+  await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  assert.match(refusal(await pending), /\.mcp\.json \(marked assume-unchanged/);
+});
+
 // @anchor configLockGit
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);

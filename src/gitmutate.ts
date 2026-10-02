@@ -195,13 +195,25 @@ async function differsFromIndex(gitDir: string, workTree: string, file: string):
   const entry = /^([0-7]+) ([0-9a-f]+) 0\t/.exec(staged.stdout);
   if (staged.exitCode !== 0 || entry === null) return true;
   const [, mode, object] = entry;
-  const onDisk = fs.lstatSync(path.join(workTree, file), { throwIfNoEntry: false });
+  let onDisk: fs.Stats | undefined;
+  try {
+    onDisk = fs.lstatSync(path.join(workTree, file), { throwIfNoEntry: false });
+  } catch {
+    return true;
+  }
   if (onDisk === undefined || onDisk.isSymbolicLink() !== (mode === "120000")) return true;
   if (onDisk.isSymbolicLink()) {
     const format = await run(gitDir, workTree, ["rev-parse", "--show-object-format"]);
     if (format.exitCode !== 0) return true;
     const algorithm = format.stdout.trim() === "sha256" ? "sha256" : "sha1";
-    const target = fs.readlinkSync(path.join(workTree, file), { encoding: "buffer" });
+    // Read after the git call above, so the link may be gone or a file by now: that is a
+    // change too, and never an error the caller has to catch.
+    let target: Buffer;
+    try {
+      target = fs.readlinkSync(path.join(workTree, file), { encoding: "buffer" });
+    } catch {
+      return true;
+    }
     const blob = createHash(algorithm).update(Buffer.concat([Buffer.from(`blob ${target.length}\0`), target])).digest("hex");
     return blob !== object;
   }
