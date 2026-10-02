@@ -325,6 +325,18 @@ export function lockWaitSeconds(projectRoot: string): number {
   }
 }
 
+/**
+ * How long the repository lock waits (`src/locks.ts#repositoryLockPath`): never less than
+ * sixty seconds, whatever `limits.lockWaitSeconds` says. It is the one lock that departs
+ * from the waiting rule, because its holder may be another project's git step — a commit
+ * whose hooks run as long as they run — and a project whose own wait is a few seconds
+ * would refuse a step it only had to wait for. An operator whose hooks run longer raises
+ * `limits.lockWaitSeconds`; no key of its own is needed.
+ */
+export function repositoryLockWait(lockWaitSeconds: number): number {
+  return Math.max(lockWaitSeconds, 60);
+}
+
 function temporaryLocationWarning(projectRoot: string): string | undefined {
   const root = realpathSync(projectRoot);
   for (const temporary of ["/tmp", process.env.TMPDIR]) {

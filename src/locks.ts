@@ -53,6 +53,18 @@ export function spawnLockName(): string {
   return "spawn.lock";
 }
 
+/**
+ * The repository lock: `<commonDir>/cross-agent.lock`, in the git directory every worktree
+ * of one repository shares, so the projects of that repository — its main checkout and the
+ * worktrees initialized as projects of their own — order their git writes against each
+ * other (design section 2). It is no project's, so it is taken with `acquire` directly, and
+ * it is the innermost lock: the order is `spawn.lock` → `git.lock` → this one, and no
+ * project lock is taken while it is held.
+ */
+export function repositoryLockPath(commonDir: string): string {
+  return path.join(commonDir, "cross-agent.lock");
+}
+
 // The lock is flock(2), held by a util-linux `flock` child that stays alive on a pipe.
 // Two facts follow, and they are the whole reason for this shape. The child prints
 // `held` only once the kernel has granted the lock, so the caller never guesses. And

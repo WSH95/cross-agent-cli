@@ -1,11 +1,11 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { loadConfig } from "./config.ts";
+import { loadConfig, repositoryLockWait } from "./config.ts";
 import { GitRunError, globalOptions, hostConfigPathspecs, hostTreeLinks, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
-import { gitLockName, spawnLockName } from "./locks.ts";
+import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import { locateRepository, rootWriteFault } from "./worktree.ts";
@@ -427,7 +427,22 @@ export async function gitRoot(
       return { ok: false, reason: message(error) };
     }
     try {
-      return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim });
+      // A verb that changes the repository — every journaled one, and `rebase --abort` —
+      // takes the repository lock inside `git.lock`, so no other project of the repository
+      // runs git between this one's checks and its command (design section 2).
+      let shared: Lock | undefined;
+      if (verb.step !== undefined || verb.form === "rebase --abort") {
+        try {
+          shared = await acquire(repositoryLockPath(located.commonDir), { waitSeconds: repositoryLockWait(options.waitSeconds), operation });
+        } catch (error) {
+          return { ok: false, reason: message(error) };
+        }
+      }
+      try {
+        return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim, shared });
+      } finally {
+        await shared?.release();
+      }
     } catch (error) {
       if (error instanceof GitRunError) return { ok: false, reason: error.message };
       throw error;
@@ -449,6 +464,8 @@ interface Held {
   lock: Lock;
   /** `spawn.lock`, held for the verb that removes a workspace. */
   claim?: Lock;
+  /** The repository lock, held for a verb that changes the repository. */
+  shared?: Lock;
 }
 
 /**
@@ -489,7 +506,7 @@ async function smuggled(
 /** The journal's checks, the command and its step, with `git.lock` held for all of them. */
 async function execute(
   projectRoot: string, request: GitRootRequest, options: GitRootOptions,
-  { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim }: Held,
+  { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim, shared }: Held,
 ): Promise<GitRootResult> {
   const { verb } = parsed;
   // Read under the lock, because two first calls on one slug would otherwise both find no
@@ -567,10 +584,10 @@ async function execute(
     ok: true, exitCode: 0, stdout: ran.stdout, stderr: ran.stderr,
     ...(before === undefined ? {} : { before }),
     ...(after === undefined ? {} : { after }),
-    // The command ran and is journaled, but if the kernel dropped either lock while it
-    // did, another mutation or a delegate may already have started: the caller is told
-    // rather than left to believe the whole call was exclusive.
-    ...(lock.lost || claim?.lost === true ? { lockLost: true as const } : {}),
+    // The command ran and is journaled, but if the kernel dropped any lock while it did,
+    // another mutation or a delegate may already have started: the caller is told rather
+    // than left to believe the whole call was exclusive.
+    ...(lock.lost || claim?.lost === true || shared?.lost === true ? { lockLost: true as const } : {}),
     ...(written === undefined ? {} : { journal: written }),
   };
 }

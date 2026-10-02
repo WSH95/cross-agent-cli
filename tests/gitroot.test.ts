@@ -10,7 +10,7 @@ import { runCommand } from "../src/runcommand.ts";
 import type { GitRootResult } from "../src/gitroot.ts";
 import { readJournal } from "../src/journal.ts";
 import { update } from "../src/ledger.ts";
-import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { git, gitShim, holderOf } from "./helpers/git.ts";
 import { layoutRoot, layouts, poll, project, reserve } from "./helpers/project.ts";
 import type { LayoutName, LayoutRoot, TestProject } from "./helpers/project.ts";
@@ -923,4 +923,33 @@ test("rev-parse --abbrev-ref HEAD is a read verb, and rev-parse HEAD is still re
   for (const args of [["rev-parse", "HEAD"], ["rev-parse", "--abbrev-ref", "main"], ["rev-parse", "--abbrev-ref", "HEAD", "main"]]) {
     refusal(await gitRoot(root, { args }, { waitSeconds: 5 }));
   }
+});
+
+// @anchor rebaseAbortTakesRepositoryLock
+test("rebase --abort and every journaled verb take the repository lock, past the project's own lock wait; a read takes none", async (t) => {
+  const { root } = await repository(t);
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, limits: { lockWaitSeconds: 1 } }));
+  const hold = async () => {
+    const shared = await acquire(repositoryLockPath(path.join(root, ".git")), { operation: "another project's git step", waitSeconds: 5 });
+    t.after(() => shared.release());
+    return shared;
+  };
+  let shared = await hold();
+  // A read is no write: it waits for nothing the repository's other projects hold.
+  accepted(await gitRoot(root, { args: ["status", "--porcelain"] }, { waitSeconds: 1 }));
+  let settled = false;
+  const aborted = gitRoot(root, { args: ["rebase", "--abort"] }, { waitSeconds: 1 }).then((result) => { settled = true; return result; });
+  await delay(1500);
+  assert.equal(settled, false, "rebase --abort waited past the one second every project lock waits");
+  await shared.release();
+  // No rebase is in progress, which git itself answers once the lock is free.
+  assert.equal(((await aborted) as Extract<GitRootResult, { ok: false }>).exitCode, 128);
+
+  shared = await hold();
+  const directory = path.join(root, ".worktrees", "x");
+  const created = gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 1 });
+  await delay(1500);
+  assert.equal(fs.existsSync(directory), false, "a journaled verb waits for it too");
+  await shared.release();
+  accepted(await created);
 });

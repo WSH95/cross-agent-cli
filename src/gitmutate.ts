@@ -4,11 +4,11 @@ import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { loadConfig } from "./config.ts";
+import { loadConfig, repositoryLockWait } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
-import { gitLockName, spawnLockName } from "./locks.ts";
+import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import type { Reservations } from "./reservation.ts";
@@ -471,13 +471,20 @@ async function mutate(
     return { ok: false, reason: `slug ${slug} is journaled on worktree ${journalled.worktree}; refusing ${workTree}` };
   }
 
-  // 3. One mutation at a time across the project.
+  // 3. One mutation at a time across the project, and across every project of the
+  // repository: the repository lock is innermost, taken inside `git.lock` (design section 2).
+  const operation = `git_mutate ${slug} ${request.args[0]}`;
   let lock: Lock;
   try {
-    lock = await projectLock(projectRoot, gitLockName(), {
-      waitSeconds: options.waitSeconds, operation: `git_mutate ${slug} ${request.args[0]}`,
-    });
+    lock = await projectLock(projectRoot, gitLockName(), { waitSeconds: options.waitSeconds, operation });
   } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
+  let shared: Lock | undefined;
+  try {
+    shared = await acquire(repositoryLockPath(repo.commonDir), { waitSeconds: repositoryLockWait(options.waitSeconds), operation });
+  } catch (error) {
+    await lock.release();
     return { ok: false, reason: message(error) };
   }
   try {
@@ -529,13 +536,14 @@ async function mutate(
       // The command ran and is journaled, but if the kernel dropped either lock while it
       // did, another mutation or a delegate may already have started: the caller is told
       // rather than left to believe the whole call was exclusive.
-      ...(lock.lost || claim.lost ? { lockLost: true as const } : {}),
+      ...(lock.lost || claim.lost || shared.lost ? { lockLost: true as const } : {}),
       journal: journal.steps[journal.steps.length - 1],
     };
   } catch (error) {
     if (error instanceof GitRunError) return { ok: false, reason: error.message };
     throw error;
   } finally {
+    await shared.release();
     await lock.release();
   }
 }

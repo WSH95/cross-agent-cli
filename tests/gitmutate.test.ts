@@ -12,12 +12,13 @@ import { promisify } from "node:util";
 import { initConfig } from "../src/config.ts";
 import { gitMutate, hostConfigPaths } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
+import { gitRoot } from "../src/gitroot.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
 import { update } from "../src/ledger.ts";
-import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { gitShim, holderOf } from "./helpers/git.ts";
-import { reserve } from "./helpers/project.ts";
+import { layoutRoot, reserve } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../", import.meta.url));
@@ -512,6 +513,15 @@ test("a lock lost while the command ran is reported, and the step is still journ
   process.kill(claim!, "SIGKILL");
   assert.equal(accepted(await second).lockLost, true);
   assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42, 43]);
+
+  // And the repository lock, which orders this project's git against every other project
+  // of the repository: its loss is reported exactly as a project lock's is.
+  const third = gitMutate(root, { slug: "lost", args: ["commit", "--allow-empty", "-m", "slow-marker a third time"] }, { waitSeconds: 5, now: 44 });
+  const shared = await poll(() => holderOf(repositoryLockPath(path.join(root, ".git"))), (pid) => pid !== null);
+  await poll(async () => (await recorder.argv()).filter((argument) => argument.includes("slow-marker")).length > 2, Boolean);
+  process.kill(shared!, "SIGKILL");
+  assert.equal(accepted(await third).lockLost, true);
+  assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42, 43, 44]);
 });
 
 test("the loop's commit step stages the work and never the project's own state", async (t) => {
@@ -998,4 +1008,68 @@ test("git_mutate in a repository nobody initialized leaves its lock directory ex
   assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
   const lines = fs.readFileSync(path.join(root, ".git", "info", "exclude"), "utf8").split(/\r?\n/);
   assert.ok(lines.includes(".cross-agent/") && lines.includes(".worktrees/"), lines.join("\n"));
+});
+
+// The repository lock (design section 2): `<commonDir>/cross-agent.lock`, which every
+// project of one repository takes for its git writes, innermost of the three.
+
+// @anchor repositoryLockOrder
+test("git_mutate takes the repository lock inside git.lock, which it holds inside spawn.lock", async (t) => {
+  const { root, add } = await repository(t);
+  await add("ordered");
+  const initial = await git(root, "rev-parse", "refs/heads/task/ordered");
+  const shared = await acquire(repositoryLockPath(path.join(root, ".git")), { operation: "another project's git step", waitSeconds: 5 });
+  t.after(() => shared.release());
+  const waiting = gitMutate(root, { slug: "ordered", args: ["commit", "--allow-empty", "-m", "waits"] }, { waitSeconds: 20 });
+  // Waiting on the repository lock, it already holds both of the project's own.
+  await poll(() => holderOf(repositoryLockPath(path.join(root, ".git"))) !== null && holderOf(lockPath(root, gitLockName())) !== null, Boolean);
+  for (const name of [spawnLockName(), gitLockName()]) {
+    await assert.rejects(acquire(lockPath(root, name), { operation: "a probe", waitSeconds: 0 }), /held by another process/, name);
+  }
+  await delay(300);
+  assert.equal(await git(root, "rev-parse", "refs/heads/task/ordered"), initial, "nothing ran while the repository lock was held");
+  await shared.release();
+  accepted(await waiting);
+});
+
+// @anchor repositoryLockContention
+test("the projects of one repository share the repository lock, and wait for it past their own lock wait", async (t) => {
+  const made = await layoutRoot(t, "linked");
+  const main = made.main!;
+  for (const [project, branch] of [[main, "main"], [made.root, "feature"]]) {
+    await mkdir(path.join(project, ".cross-agent"), { recursive: true });
+    // One second for every project lock: the repository lock waits at least sixty.
+    await writeFile(path.join(project, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, project: { defaultBranch: branch }, limits: { lockWaitSeconds: 1 } }));
+  }
+  const task = path.join(main, ".worktrees", "m");
+  await git(main, "worktree", "add", "-b", "task/m", task);
+  const initial = await git(main, "rev-parse", "refs/heads/task/m");
+  const directory = path.join(made.root, ".worktrees", "l");
+
+  // A git step of a third project, held for longer than either project's own lock wait:
+  // both share its lock, in the common directory, and neither refuses after one second.
+  const shared = await acquire(repositoryLockPath(path.join(main, ".git")), { operation: "another project's git step", waitSeconds: 5 });
+  t.after(() => shared.release());
+  const commit = gitMutate(main, { slug: "m", args: ["commit", "--allow-empty", "-m", "waits"] }, { waitSeconds: 1 });
+  const created = gitRoot(made.root, { args: ["worktree", "add", "-b", "task/l", directory, "feature"], slug: "l" }, { waitSeconds: 1 });
+  await delay(1500);
+  assert.equal(await git(main, "rev-parse", "refs/heads/task/m"), initial, "the main project's commit waited");
+  assert.equal(fs.existsSync(directory), false, "and so did the worktree project's root verb");
+  await shared.release();
+  accepted(await commit);
+  const added = await created;
+  assert.equal(added.ok, true, JSON.stringify(added));
+});
+
+// @anchor repositoryLockReleasedOnError
+test("a mutation that fails, or whose git cannot run, releases the repository lock", async (t) => {
+  const { root, add } = await repository(t);
+  await add("failing");
+  const shared = repositoryLockPath(path.join(root, ".git"));
+  const free = async () => (await acquire(shared, { operation: "a probe", waitSeconds: 0 })).release();
+  assert.equal((await gitMutate(root, { slug: "failing", args: ["commit", "-m", "nothing to commit"] }, { waitSeconds: 5 })).ok, false);
+  await free();
+  await gitShim(t, { signalOn: "signal-marker" });
+  assert.match(refusal(await gitMutate(root, { slug: "failing", args: ["commit", "--allow-empty", "-m", "signal-marker"] }, { waitSeconds: 5 })), /could not run/);
+  await free();
 });
