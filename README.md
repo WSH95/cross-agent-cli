@@ -35,6 +35,9 @@ operator CLI; the launcher skill with each mode's own loop; and the packaging
 for Claude Code, Codex and Grok. `docs/design.md`
 is the design and the work plan; `docs/probes.md` records what each engine CLI
 was observed to do, and `VERIFY.md` what each milestone's own runs showed.
+Nothing of the design's work plan is left but its backlog row: the plan closed on
+2026-10-02 with the go or no-go for the plugin as the dev team's second binding,
+recorded in `.project-steward/DECISIONS.md` (0011).
 
 ## Install it in Claude Code
 
