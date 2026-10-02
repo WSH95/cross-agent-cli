@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T04:18:31Z — claude
+[auto-checkpoint] Task 12 final review: a Critical sandbox gap (Claude file tools under bypassPermissions; EnterWorktree, SendMessage, RemoteTrigger) and two verifier Criticals; user chose probe-then-fix; fix round 1 in progress.
+
 ### 2026-10-01T23:10:31Z — claude
 [auto-checkpoint] Task 12 in flight: brief v2; the final whole-branch review (4bcc986..416165c) running; first seat: 0 Critical, 0 Important, 3 Minor.
 

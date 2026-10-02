@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-01T23:10:31Z
+updated_at: 2026-10-02T04:18:31Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -105,8 +105,11 @@ line. Closed: `.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75` (a host's p
 configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` — is now refused at a
 worktree commit and at the root's merge). Filed: `.83`–`.91`. Task 12 (`atc-s96.18`: go/no-go,
 the final whole-branch review, and the close) is **in flight**: brief `task-12-brief.md`
-v2; the final review of `4bcc986..416165c` (three independent reviews) is running. Then
-Decision 0011 and the devpack note (a writer), then the close (the Codex config
+v2. The final review of `4bcc986..416165c` found a Critical sandbox gap (Claude
+specialists' `Edit`/`Write` under `bypassPermissions`, and tools such as `EnterWorktree`,
+`SendMessage`, `RemoteTrigger`, escape the Bash-only sandbox) and two verifier Criticals;
+the user chose (2026-10-02) to probe first and fix now. Fix round 1 is in progress
+(`task-12-findings-round-1.md`). Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
 restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.
