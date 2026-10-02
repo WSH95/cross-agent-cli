@@ -1684,7 +1684,36 @@ which is a property of the line, not of the pipeline.
   `--setting-sources project` keeps the operator's user and local settings
   out — their allow rules would pre-approve what `dontAsk` denies — and keeps
   the project's own settings and instruction files, which an empty list and
-  `--restricted` both drop (`docs/probes.md#t12Fix1`).
+  `--restricted` both drop (`docs/probes.md#t12Fix1`). A specialist therefore
+  reads nothing of `~/.claude/settings.json` — not its `env`, not its
+  `apiKeyHelper`, not the operator's own `deny` rules — and signs in with the
+  credentials `claude login` stored, or under `billing: "api"` with the key in
+  the server's environment (`src/guard.ts#childEnv`). **What the project's own
+  settings can open is accepted rather than fenced.** Claude Code merges the
+  project's `.claude/settings.json` into the run, and no setting source keeps the
+  instruction files without it, so that file's `permissions.allow` rules join
+  the adapter's and `dontAsk` honours them: a file-tool rule that reaches beyond
+  the workspace — a bare `Edit` or `Write`, `Edit(//…)` outside the worktree,
+  `Edit(~/…)`, `Edit(../…)` — or a `permissions.additionalDirectories` entry
+  would pre-approve writes the line otherwise refuses. This build does not
+  override them: the residual was accepted on 2026-10-02 as a limitation of
+  Claude Code's own settings merge, and section 4's merge guard keeps
+  specialists from changing `.claude/`, so only the operator or the project's
+  history puts such a rule there. Claude Code applies the two keys only in a
+  workspace its operator has trusted; in the untrusted sample it dropped them
+  with a warning and every write outside the worktree was refused
+  (`docs/probes.md#t12Fix2`), and the trusted case was not probed. **Two things
+  `dontAsk` refuses that `bypassPermissions` allowed.** Inside its own
+  workspace a role's file tools are refused Claude Code's sensitive paths:
+  `.vscode/`, `.idea/`, `.husky/`, `.npmrc` and `.gitmodules` were refused
+  where a file beside them was written, and the CLI's own list names more, so
+  a task that has to change one is finished by hand. And a sandboxed role
+  reaches no network host: the sandbox's request for a domain is refused where
+  `bypassPermissions` approved it, a project's `sandbox.network.allowedDomains`
+  does not change that because Claude Code ignores a project's sandbox grants
+  once the run's settings set `allowUnsandboxedCommands: false`, and a
+  dependency install belongs to the configured setup command, which
+  `run_command` runs outside any sandbox (`docs/probes.md#t12Fix2`).
   Sandbox through the settings JSON (`sandbox.enabled`,
   `filesystem.allowWrite`, `filesystem.denyWrite`, `autoAllowBashIfSandboxed`,
   `allowUnsandboxedCommands`, `failIfUnavailable`;
@@ -2351,7 +2380,12 @@ where they say what step 6 and step 9 refuse
 four changes it by hand at the root, never through a task. `AGENTS.md` and
 `CLAUDE.md` were considered and are not in the list: a host reads them as
 instruction text and starts nothing from them, and they are ordinary team edits
-the code reviewer reads in the diff.
+the code reviewer reads in the diff. The same guard bounds a Claude specialist's
+own settings: Claude Code merges the project's tracked `.claude/settings.json`
+into every Claude role, section 3 accepts the file-tool allow rules and
+additional directories it may hold as a limitation of that merge, and with
+`.claude/` out of every task's reach only the operator or the project's history
+puts them there.
 
 **`run_command`.** `{which: "test" | "setup", where: "root" | <a verified
 worktree path>, slug?, timeout_seconds?}` as the wire spells it,

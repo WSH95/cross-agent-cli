@@ -2949,6 +2949,75 @@ was a no-op. The specialists cost $0.420. The sample's config was restored after
 E6's and E7's were (`e8/close.txt`). Every engine run of the round, the probes and E8
 included, cost $3.63 on the subscriptions, with 38,641 Codex tokens in and 294 out.
 
+<!-- @anchor t12Fix2 -->
+## T12 fix round 2: a project's own Claude settings, the network and the sensitive paths (2026-10-02)
+
+The re-review of task 12's fix found that `--setting-sources project` still merges the
+project's own `.claude/settings.json` into every Claude role, and asked what `dontAsk` refuses
+that `bypassPermissions` allowed and whether a sandboxed role's network changed. Everything ran
+in the sample on Claude Code 2.1.286 with `claude-sonnet-5` at medium. The raw evidence is in
+`~/.cache/agent-team/probe-logs/close-2026-10-02/fix2/`, one directory per run, with every
+change to the sample and every cleanup in `timeline.txt` and the scripts in `tools/`. The
+direct runs (`gap/`, `network/`, `direct/`) ran the adapter's own line, built by this
+worktree's `src/engines/claude.ts` through fix1's `tools/cand.mjs` (fix2's `tools/cand2.mjs`
+adds the two candidates named below), each in a fresh linked worktree of the sample removed
+afterwards, so they watch Claude Code itself; the two delegated runs (`check/`) went through
+the product as those of `docs/probes.md#t12Fix1` did, and their records were moved to
+`~/.cache/agent-team/cross-agent-e2e/probe-tasks/close-fix2/` after their reading.
+
+**A project's allow rule and additional directory, in a workspace nobody trusted**
+(`gap/allow`, `gap/dirs`). A writable consult's worktree held a `.claude/settings.json` with
+`permissions.allow: ["Edit(//<sample>/**)"]`, then one with
+`permissions.additionalDirectories: ["<sample>"]`, and the brief asked the Write tool for a file
+inside the worktree, one at the sample's root and one in its `.cross-agent/`. Both runs wrote
+the inside file alone; the other two were refused, "Permission to use Write has been denied
+because Claude Code is running in don't ask mode.", and Claude Code said why on stderr:
+"Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been
+trusted. …", and the same for `permissions.additionalDirectories`. The sample was never
+trusted, and this round did not trust it: in a workspace its operator has trusted — this
+repository is one — Claude Code applies both keys, and design section 3 accepts that residual
+as a limitation of Claude Code's own settings merge without this case having run.
+
+**What a project's settings still bring** (`check/`). Two consults went through the product at
+the sample's root while the round's first answer, a refusal at spawn, was in the worktree. With
+`{"env": {"T12_FIX2_MARKER": "loaded"}, "permissions": {"allow": ["Edit(//<sample>/**)"]}}` in
+the root's `.claude/settings.json`, the task failed before any engine started, naming the file
+and the rule; with `{"env": {"T12_FIX2_MARKER": "loaded"}}` alone it launched, and the
+specialist's `printenv T12_FIX2_MARKER` printed `loaded`: the project's `env` reaches a
+specialist. The refusal is not in this build. The user accepted the residual instead, since a
+refusal would also turn away a project whose tracked settings allow `Edit` within the project;
+`check/withdrawn-r2-1.diff` is the diff that ran.
+
+**The network** (`network/`, `direct/netproject`, `direct/netflag`, `direct/nohatch`). The
+brief asked a read-only consult to run `curl -sS -m 20 -o /dev/null -w '%{http_code}'
+https://example.com` once. Under 416165c's line, `bypassPermissions`, it printed `200`; under
+84d1010's, `dontAsk`, the sandbox's proxy refused it, "deny network-outbound example.com:443
+(user denied)", curl exiting 56, although the model had asked the Bash tool for the domain
+(`allowed_domains: ["example.com"]`): a sandboxed specialist now reaches no host. With
+`example.com` in a project `.claude/settings.json`'s `sandbox.network.allowedDomains` the
+request was refused the same way (`netproject`). With the domain in the run's own `--settings`
+it printed `200` (`netflag`), and with the project's allowlist and the adapter's
+`allowUnsandboxedCommands: false` taken out of the line it printed `200` too (`nohatch`):
+Claude Code ignores a project's sandbox grants once a `--settings` file closes that hatch, as
+its own settings schema says, and every sandboxed role's settings close it.
+
+**The sensitive paths** (`direct/sensitive`). A writable consult's line in a fresh worktree,
+the brief asking the Write tool for six files there: `PROBE-fix2-plain.txt` was written, and
+`.vscode/settings.json`, `.npmrc`, `.husky/pre-commit`, `.gitmodules` and `.idea/probe.xml`
+were each refused, "Permission to use Write has been denied because Claude Code is running in
+don't ask mode.", although the line's `Edit(//<worktree>/**)` covers them; none exists
+afterwards. The binary keeps the list: the directories `.git`, `.vscode`, `.idea`, `.claude`,
+`.husky`, `.cargo`, `.devcontainer`, `.yarn`, `.mvn` and `.config/git`, and files from
+`.gitconfig`, `.gitmodules`, `.envrc` and the shell profiles to `.npmrc`, `.yarnrc`,
+`bunfig.toml`, `.mcp.json` and `.pre-commit-config.yaml`. A write to one wants an approval,
+and `dontAsk` answers every such request with a refusal.
+
+**Cleanup.** Every worktree and branch the direct runs made was removed (`*/cleanup.txt`), the
+root's `.claude/settings.json` after each delegated run (`check/*/cleanup.txt`), and the two
+records with their lock files (`check/records-moved.txt`). The sample ends as it began: on
+`main` at `15f7b28`, clean, the root worktree alone, `.claude/` holding `.cc-writes` alone, its
+config untouched. The round's engine runs cost $0.554 on the subscription.
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 

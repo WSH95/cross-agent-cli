@@ -97,6 +97,30 @@ bwrap and socat not found on PATH; …`); a sandbox that engages and then cannot
 start a command fails the task with `claude sandbox failure: <the line Claude
 printed>` rather than letting it run unsandboxed.
 
+**A Claude specialist signs in with the credentials `claude login` stored**, or
+under `"billing": "api"` with `ANTHROPIC_API_KEY` from the server's environment. It
+reads nothing of your `~/.claude/settings.json` — not its `env`, not its
+`apiKeyHelper`, not your `deny` rules — because its line loads the project's
+settings alone (design section 3).
+
+**It does load the project's tracked `.claude/settings.json`**, which Claude Code
+merges into every Claude role, and cross-agent does not override what that file
+allows. A `permissions.allow` rule there for a file tool that reaches beyond the
+role's workspace — a bare `Edit` or `Write`, `Edit(//…)`, `Edit(~/…)`,
+`Edit(../…)` — or a `permissions.additionalDirectories` entry pre-approves writes
+the specialist is otherwise refused, in a workspace you have trusted. Do not
+commit such a rule in a project where specialists run; keep it in
+`.claude/settings.local.json`, which a specialist does not load. For
+information, that file also brings a specialist its `env` and its `apiKeyHelper`;
+its `sandbox.network.allowedDomains` does not reach a sandboxed one.
+
+**Inside its sandbox a Claude specialist reaches no network host**, and inside its
+own workspace its file tools are refused Claude Code's sensitive paths —
+`.vscode/`, `.idea/`, `.husky/`, `.npmrc`, `.gitmodules` and more. Put a
+dependency install in the project's `setupCommand`, which the lead runs outside
+any sandbox with `run_command`, and change a sensitive file by hand
+(`docs/probes.md`, "T12 fix round 2").
+
 **Grok's sandbox** resolves its own list of runtime sockets it must deny —
 Docker's, containerd's, D-Bus's, systemd's and podman's among them — path by
 path, and refuses to start when it cannot resolve one. With rootful podman's
