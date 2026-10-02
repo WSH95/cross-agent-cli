@@ -682,20 +682,24 @@ test("an unchanged marked host-configuration symlink is refused because the whol
   assert.match(unchanged, /\.mcp\.json.*symbolic link/);
   assert.match(unchanged, /replace.*regular files/i);
 
-  // Pointed somewhere else, which `git status` does not show under the mark: refused, named.
+  // Pointed somewhere else, which `git status` does not show under the mark: refused as the
+  // link it still is, and named once as the link rather than also as a marked change (W-7).
   await rm(path.join(worktree, ".mcp.json"));
   await symlink("/tmp/not-the-project-servers.json", path.join(worktree, ".mcp.json"));
   assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all", "--", ".mcp.json"), "");
   const head = await git(worktree, "rev-parse", "HEAD");
   const reason = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
-  assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
+  assert.match(reason, /\.mcp\.json \(symbolic link/);
+  assert.doesNotMatch(reason, /\.mcp\.json \(marked assume-unchanged/);
   assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
 
-  // A link replaced by a regular file holding the same bytes is a change of type: refused too.
+  // A link in HEAD and the index replaced on disk by a regular file is still refused, as the
+  // link the commit's tree and index carry, and named once (W-7).
   await rm(path.join(worktree, ".mcp.json"));
   await writeFile(path.join(worktree, ".mcp.json"), "servers.json");
   const typed = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
-  assert.match(typed, /\.mcp\.json \(marked assume-unchanged/);
+  assert.match(typed, /\.mcp\.json \(symbolic link/);
+  assert.doesNotMatch(typed, /\.mcp\.json \(marked assume-unchanged/);
 });
 
 // @anchor linkReplacedMidCheck
@@ -714,7 +718,11 @@ test("a marked host link replaced while the commit check reads it differs, rathe
   await poll(async () => (await recorder.argv()).includes("--show-object-format"), Boolean);
   await rm(path.join(worktree, ".mcp.json"));
   await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
-  assert.match(refusal(await pending), /\.mcp\.json \(marked assume-unchanged/);
+  // `differsFromIndex` returns true rather than throwing; the refusal names the link the
+  // commit's tree and index still carry, once (W-7).
+  const reason = refusal(await pending);
+  assert.match(reason, /\.mcp\.json \(symbolic link/);
+  assert.doesNotMatch(reason, /\.mcp\.json \(marked assume-unchanged/);
 });
 
 // @anchor commitGuardsLinkReferent
@@ -802,6 +810,26 @@ test("host links in the commit tree, index or ignored working tree are refused i
     assert.match(reason, /replace.*regular files/i);
     assert.equal(await git(worktree, "rev-parse", "HEAD"), head);
   });
+});
+
+// @anchor commitHostLinkNonUtf8
+test("a host-configuration link whose name is not UTF-8 is still seen and refused at the commit", async (t) => {
+  // Task 12 wrap-up (W-6): `hostDiskLinks` reads names as bytes, so a disk link whose name
+  // is not valid UTF-8 — which a string `readdirSync` turns into a replacement character
+  // that no longer `lstat`s — is still found. An ignored link under `.claude/` is refused.
+  const { root, add } = await repository(t);
+  const worktree = await add("nonutf8");
+  await mkdir(path.join(worktree, ".claude"));
+  // `.claude/\xffx`, a name with a byte that is not valid UTF-8, as a symbolic link.
+  const name = Buffer.concat([Buffer.from(path.join(worktree, ".claude") + "/"), Buffer.from([0xff]), Buffer.from("x")]);
+  await symlink("missing", name);
+  await writeFile(path.join(worktree, ".gitignore"), ".claude/\n");
+  assert.equal(await git(worktree, "status", "--porcelain", "--", ".claude"), "", "the link is ignored");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  const reason = refusal(await gitMutate(root, { slug: "nonutf8", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.match(reason, /symbolic link/);
+  assert.match(reason, /replace.*regular files/i);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
 });
 
 // @anchor commitHostLinkTraversalClass

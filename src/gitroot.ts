@@ -515,7 +515,10 @@ async function smuggled(
   const links = await hostTreeLinks(gitDir, workTree, ref);
   const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir, ...hostConfigPathspecs]);
   if (ran.exitCode !== 0) return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
-  const paths = [...ran.stdout.split("\n").filter(Boolean), ...links.map((file) => `${file} (symbolic link)`)];
+  // A path that is both a change and a link is named once, as the link.
+  const linkNames = new Set(links);
+  const paths = [...ran.stdout.split("\n").filter(Boolean).filter((file) => !linkNames.has(file)),
+    ...links.map((file) => `${file} (symbolic link)`)];
   if (paths.length === 0) return null;
   return `git_root refuses to merge ${ref}: it carries ${paths.join(", ")}. `
     + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there — `

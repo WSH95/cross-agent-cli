@@ -279,16 +279,29 @@ async function carriedUnder(
   return { carried, marked };
 }
 
-/** Host links on disk, including ignored ones: directories are walked, links never are. */
+/**
+ * Host links on disk, including ignored ones: directories are walked, links never are.
+ * Names are read as bytes (`readdirSync(…, { encoding: "buffer" })`, with `lstat` on the byte
+ * path), so a name that is not valid UTF-8 — which a string `readdirSync` turns into a
+ * replacement character that no longer resolves — is still seen and refused (task 12
+ * wrap-up, W-6). The top four host names are ASCII, so matching them as UTF-8 is exact.
+ */
 function hostDiskLinks(workTree: string): string[] {
   const links: string[] = [];
-  const visit = (file: string) => {
-    const full = path.join(workTree, file);
+  const sep = Buffer.from("/");
+  const visit = (relative: Buffer, full: Buffer) => {
     const stat = fs.lstatSync(full, { throwIfNoEntry: false });
-    if (stat?.isSymbolicLink()) links.push(file);
-    else if (stat?.isDirectory()) for (const child of fs.readdirSync(full)) visit(`${file}/${child}`);
+    if (stat?.isSymbolicLink()) links.push(relative.toString("utf8"));
+    else if (stat?.isDirectory()) {
+      for (const child of fs.readdirSync(full, { encoding: "buffer" })) {
+        visit(Buffer.concat([relative, sep, child]), Buffer.concat([full, sep, child]));
+      }
+    }
   };
-  for (const entry of fs.readdirSync(workTree)) if (isHostConfigPath(entry)) visit(entry);
+  const root = Buffer.from(workTree);
+  for (const entry of fs.readdirSync(workTree, { encoding: "buffer" })) {
+    if (isHostConfigPath(entry.toString("utf8"))) visit(entry, Buffer.concat([root, sep, entry]));
+  }
   return links;
 }
 
@@ -317,7 +330,9 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
   } catch (error) {
     return `git_mutate could not read host configuration in ${workTree}: ${message(error)}`;
   }
-  const paths = [...host.carried, ...host.marked.map((file) => `${file} (${hiddenByMark})`),
+  // A path that is both a change and a link is named once, as the link.
+  const paths = [...host.carried.filter((file) => !links.has(file)),
+    ...host.marked.filter((file) => !links.has(file)).map((file) => `${file} (${hiddenByMark})`),
     ...[...links].map((file) => `${file} (symbolic link)`)];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
