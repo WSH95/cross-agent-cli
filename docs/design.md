@@ -757,7 +757,11 @@ worktree that does not verify; and a throw while the record, its scratch directo
 or its spec is written. Only what exists is removed, and each command's exit code is
 read: the journal goes only once both the worktree and the branch have, and
 otherwise it is kept and the refusal — or the error a failed record write throws —
-names what survived (`tests/delegate.test.ts#discardKeepsJournalOnFailure`).
+names what survived (`tests/delegate.test.ts#discardKeepsJournalOnFailure`). A
+lock the discard held and lost while its commands ran leaves them uncertified, since
+another project's verb may have run beside them: the journal is kept then too, and
+the answer says so, a refusal with `lockLost: true`
+(`tests/delegate.test.ts#discardLockLostKeepsJournal`).
 Reconciliation does not clean up worktrees — it reports an unmerged branch with a
 dead task to the operator (section 7) — so the kept journal is what finds such a
 leftover. A one-shot needs a repository the project can write: at a root with no
@@ -1463,12 +1467,16 @@ Everything below is built, the operator CLI's listing among it
   written, the launch is refused and nothing is spawned — the reservation
   check it passed was only true while the lock held it true, and a spawn on a
   workspace another delegate may have taken meanwhile is exactly what the lock
-  exists to prevent. Once the `launching` record exists the reservation is a
-  fact in the ledger rather than a claim on a lock, `runner-<id>.lock` governs
-  from there, and `delegate` returns normally however `spawn.lock` ends
-  (`src/delegate.ts#delegate`). A read-only spawn during a git mutation is
-  allowed and is not a defect: it reads a tree mid-change, which is what a
-  reviewer reading a moving branch would see anyway.
+  exists to prevent. A one-shot's `git_root worktree add` that answers
+  `lockLost: true` is refused the same way, before the record, with its worktree
+  discarded and `lockLost: true` on the refusal: the worktree exists, but whether
+  another project's verb ran beside its creation is unknown
+  (`tests/delegate.test.ts#oneShotCreationLockLost`). Once the `launching` record
+  exists the reservation is a fact in the ledger rather than a claim on a lock,
+  `runner-<id>.lock` governs from there, and `delegate` returns normally however
+  `spawn.lock` ends (`src/delegate.ts#delegate`). A read-only spawn during a git
+  mutation is allowed and is not a defect: it reads a tree mid-change, which is
+  what a reviewer reading a moving branch would see anyway.
 
 The process model is Linux-only in these mechanisms: `/proc/<pid>/stat` for
 identities and the group scan, `/proc/*/environ` for the stranded-engine scan,

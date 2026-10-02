@@ -9,7 +9,7 @@ import type { Authority } from "../src/authority.ts";
 import { CONFIG_PATH } from "../src/config.ts";
 import { delegate, writableProfiles } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
-import { readJournal } from "../src/journal.ts";
+import { listJournals, readJournal } from "../src/journal.ts";
 import { create, readSpec, scan, update, writeSpec } from "../src/ledger.ts";
 import { reservedBy } from "../src/reservation.ts";
 import { verifyWorktree } from "../src/worktree.ts";
@@ -1365,6 +1365,59 @@ test("a discard that leaves the worktree or its branch standing keeps the journa
   assert.ok(slug !== undefined, "the worktree survived");
   assert.match(await git(p.root, "branch", "--list", "task/*"), new RegExp(`task/${slug}`), "and so did its branch");
   assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`, "and the journal that finds them both");
+});
+
+// @anchor oneShotCreationLockLost
+test("a one-shot whose repository lock is lost while git creates its worktree launches nothing and says so", async (t) => {
+  const p = await projectWithRoles(t);
+  // `worktree add` is held for two seconds, and the repository lock's holder dies inside
+  // them, the way a killed holder dies: the kernel lets the next waiter in.
+  const recorder = await gitShim(t, { sleepOn: "worktree*add" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
+  await poll(async () => (await recorder.argv()).includes("add"), Boolean);
+  assert.equal(killLockHolder(repositoryLockPath(path.join(p.root, ".git"))), true, "the repository lock is held while git creates the worktree");
+  const result = await pending;
+  assert.match(refusal(result), /lock was lost while git created the worktree/);
+  assert.match(refusal(result), /nothing was launched/);
+  assert.equal(!result.ok && result.lockLost, true, "the refusal carries the lost lock");
+  assert.deepEqual(scan(p.root).records, []);
+  // What the creation made is discarded under locks the discard itself kept, so its
+  // journal goes with it.
+  assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), []);
+  assert.equal(await git(p.root, "branch", "--list", "task/*"), "");
+  assert.deepEqual(listJournals(p.root), []);
+});
+
+// @anchor discardLockLostKeepsJournal
+test("a discard whose repository lock is lost while it runs keeps the journal and says the discard is not certified", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const p = await projectWithRoles(t);
+  const tasks = path.join(p.root, ".cross-agent", "tasks");
+  fs.mkdirSync(tasks, { recursive: true });
+  t.after(() => { try { fs.chmodSync(tasks, 0o755); } catch { /* gone */ } });
+  // The record cannot be written: a throw once the worktree and its journal exist.
+  fs.chmodSync(tasks, 0o555);
+  // The discard's removal is held for two seconds, and the repository lock's holder dies
+  // inside them.
+  const recorder = await gitShim(t, { sleepOn: "--force" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) })
+    .then((result) => assert.fail(`expected a throw, got ${JSON.stringify(result)}`), (error: Error) => error);
+  await poll(async () => (await recorder.argv()).includes("--force"), Boolean);
+  assert.equal(killLockHolder(repositoryLockPath(path.join(p.root, ".git"))), true, "the repository lock is held while the discard runs");
+  const error = await pending;
+  assert.match(error.message, /EACCES|permission denied/);
+  assert.match(error.message, /lock .*was lost.* not certified/);
+  assert.match(error.message, /journal \S+ is kept/);
+  fs.chmodSync(tasks, 0o755);
+  // git removed what it was asked to; whether anything ran beside it is what nobody knows,
+  // so the journal stays for reconciliation.
+  assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), []);
+  const [slug] = listJournals(p.root);
+  assert.ok(slug !== undefined, "the journal is kept");
+  assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`);
 });
 
 // A root that is not its repository's main checkout (design section 4): what a launch there

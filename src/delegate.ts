@@ -70,14 +70,20 @@ export interface DelegateOptions {
   now?: number;
 }
 
-export type DelegateResult = { ok: true; taskId: string } | { ok: false; reason: string };
+export type DelegateResult =
+  | { ok: true; taskId: string }
+  | {
+    ok: false; reason: string;
+    /** A lock held while git made or discarded this task's worktree was lost: what git did is done, its exclusivity is not. */
+    lockLost?: true;
+  };
 
 const active = new Set(["launching", "running", "stalled", "orphaned", "cancelling"]);
 /** The statuses that carry authority, and so the only ones a lead may delegate under. */
 const authoritative = new Set(["running", "stalled"]);
 
-function refuse(reason: string): DelegateResult {
-  return { ok: false, reason: `refused delegation: ${reason}` };
+function refuse(reason: string, lockLost?: true): DelegateResult {
+  return { ok: false, reason: `refused delegation: ${reason}`, ...(lockLost === undefined ? {} : { lockLost }) };
 }
 
 function message(error: unknown): string {
@@ -521,13 +527,22 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       // for a `worktree add` whose journal step could not be written, and that command
       // has run. So every failure from here to the runner discards what exists.
       if (!created.ok) {
-        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, repo!, oneShot)}`);
+        const discarded = await discardWorktree(projectRoot, repo!, oneShot);
+        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${discarded.text}`, discarded.lockLost);
+      }
+      // A lock lost while git made the worktree leaves the creation done and its
+      // exclusivity unknown — another project's verb may have run beside it — so this is a
+      // launch that must not happen, as a lost `spawn.lock` is at step 5.
+      if (created.lockLost) {
+        const discarded = await discardWorktree(projectRoot, repo!, oneShot);
+        return refuse(`a lock was lost while git created the worktree for this task, so another git verb may have run beside it; nothing was launched${discarded.text}`, true);
       }
       // What a worktree role's own delegation is held to, applied to the one just made:
       // the record is about to say a writable engine runs there.
       const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch, repo);
       if ("reason" in verified) {
-        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, repo!, oneShot)}`);
+        const discarded = await discardWorktree(projectRoot, repo!, oneShot);
+        return refuse(`the worktree for this task does not verify: ${verified.reason}${discarded.text}`, discarded.lockLost);
       }
       verifiedWorktree = verified;
     }
@@ -582,9 +597,10 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       writeSpec(projectRoot, record.id, spec);
     } catch (error) {
       if (oneShot !== undefined) {
-        // What the discard could not remove travels with the error: it is all the caller sees.
-        const left = await discardWorktree(projectRoot, repo!, oneShot);
-        if (left !== "") throw new Error(`${message(error)}${left}`, { cause: error });
+        // What the discard could not remove, or could not certify, travels with the error:
+        // it is all the caller sees.
+        const discarded = await discardWorktree(projectRoot, repo!, oneShot);
+        if (discarded.text !== "") throw new Error(`${message(error)}${discarded.text}`, { cause: error });
       }
       throw error;
     }
@@ -625,10 +641,12 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
  * exists is removed — the failure this follows may have come before git created anything —
  * and every command's exit code is read: the journal goes only once the worktree and the
  * branch both have, because a kept journal is how reconciliation finds what is left, and
- * what is left is named in the refusal.
+ * what is left is named in the refusal. A lock lost while the commands ran leaves their
+ * outcome uncertified, since another project's verb may have run beside them, so the
+ * journal is kept then too, and the loss travels with the answer.
  */
-async function discardWorktree(projectRoot: string, repo: Repository, worktree: TaskWorktree): Promise<string> {
-  const kept = (why: string) => `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}`;
+async function discardWorktree(projectRoot: string, repo: Repository, worktree: TaskWorktree): Promise<Discarded> {
+  const kept = (why: string): Discarded => ({ text: `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}` });
   const waitSeconds = lockWaitSeconds(projectRoot);
   const operation = `delegate discarding ${worktree.slug}`;
   let lock: Lock;
@@ -658,21 +676,35 @@ async function discardWorktree(projectRoot: string, repo: Repository, worktree: 
         const failed = await gitFailure(repo, ["branch", "-D", worktree.branch]);
         if (failed !== null) survived.push(`branch ${worktree.branch} (${failed})`);
       }
-      if (survived.length > 0) {
-        return `. Discarding the task's worktree left ${survived.join(" and ")} standing; journal ${worktree.slug} is kept for reconciliation to find`;
+      const lost = lock.lost || shared.lost;
+      if (survived.length > 0 || lost) {
+        const left = survived.length > 0 ? `. Discarding the task's worktree left ${survived.join(" and ")} standing` : "";
+        const uncertified = lost ? `. A lock held while the task's worktree was discarded was lost, so the discard is not certified` : "";
+        return {
+          text: `${left}${uncertified}; journal ${worktree.slug} is kept for reconciliation to find`,
+          ...(lost ? { lockLost: true as const } : {}),
+        };
       }
       try {
         removeJournal(projectRoot, worktree.slug);
       } catch (error) {
-        return `. ${worktree.path} and ${worktree.branch} were discarded, but journal ${worktree.slug} could not be removed: ${message(error)}`;
+        return { text: `. ${worktree.path} and ${worktree.branch} were discarded, but journal ${worktree.slug} could not be removed: ${message(error)}` };
       }
-      return "";
+      return { text: "" };
     } finally {
       await shared.release();
     }
   } finally {
     await lock.release();
   }
+}
+
+/** What a discard leaves behind it. */
+interface Discarded {
+  /** What is left standing, or uncertified, as the end of the answer it follows; "" when nothing is. */
+  text: string;
+  /** A lock the discard held was lost while its commands ran. */
+  lockLost?: true;
 }
 
 /** Why one git command of a discard did not succeed, in git's own words, or null when it did. */
