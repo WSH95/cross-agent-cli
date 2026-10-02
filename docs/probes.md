@@ -3434,16 +3434,21 @@ permission rule had to judge, were turned away by the role's own tool list, `--t
 5. *The exclude file.* `<slugkit>/.git/info/exclude` holds `.cross-agent/` and `.worktrees/` once
    each before `init`, after it and at the end, and is byte for byte what it was at the start.
 6. *Host configuration.* `~/.codex/config.toml` hashed `1866e872…` before and after, its mtime
-   unchanged (2026-10-02T15:54:25Z). Under `~/.grok`, 5,267 files hashed and 86 were unreadable,
-   before and after; none was added or removed, and two changed: `logs/unified.jsonl` (mtime
-   22:37:13Z before the run, 22:49:29Z, then 23:00:13Z, after both hosts had exited) and
-   `memtrace/1790834134-1171929.jsonl`, named for the pid of the one `grok` process on the machine,
-   which began 2026-10-01 05:55:33Z and still runs, and written every 30 s while it was watched. Every
-   line `logs/unified.jsonl` gained from 22:37Z to 23:10Z names that same process (`"pid":1171929`,
-   grok 1.0.44, `slash.advertise` on a `skills_reload`, about every ten minutes), read after the run.
-   The run started no Grok engine. Every other readable file kept its checksum, and every other file,
-   the 86 unreadable ones (all `sandbox-blocked.<pid>`) included, kept its mtime; configuration,
-   auth and trust files are among them (`after-run/host-config-final.txt`).
+   unchanged (2026-10-02T15:54:25Z). Under `~/.grok`, hashed at 22:45:00Z before the run and again
+   after it, 5,267 files hashed and 86 were unreadable both times; none was added or removed, and
+   two changed: `logs/unified.jsonl` and `memtrace/1790834134-1171929.jsonl`, the log and the
+   memtrace of the one `grok` process on the machine, pid 1171929, which began 2026-10-01 05:55:33Z
+   and still runs; its memtrace was written every 30 s while it was watched. From 22:30Z to 23:15Z
+   the log's lines came in bursts at 22:37:13Z, 22:47:13Z, 22:49:29Z, 23:00:12Z and 23:10:13Z, every
+   line carrying that pid (`"pid":1171929`, grok 1.0.44, `slash.advertise` on a `skills_reload`;
+   `after-run/grok-unified-window.txt`, read after the run). The first burst came before the run's
+   first hashing and the second before either host started; the 22:49:29Z burst came 4 s after both
+   hosts had started, and what prompted that reload is not established. The run started no Grok
+   engine. The brief's condition, `~/.grok/` unchanged by sha256, therefore holds for every
+   readable file but that process's own log and memtrace. The 86 unreadable files, all
+   `sandbox-blocked.<pid>`, kept their mtimes, but their bytes could not be read. The result is
+   narrower than the condition and meets its purpose: no configuration, auth or trust file changed
+   (`after-run/host-config-final.txt`).
 7. *Each merge at its own root.* Each lead's `git_root merge --ff-only task/<slug>` answered `ok`
    with the fast-forward and `before`/`after` (`5f391d4` → `ba496c7`, `5f391d4` → `0ed8097`); each
    journal's `merged` step carries the same pair and its `defaultBranch`. The merge is in the HEAD
@@ -3487,8 +3492,10 @@ of its own. The main lead called no `result`, the branch lead one, after the pla
 acted on `wait`'s answer for the rest, where the loop says "`wait`, then `result`". The run departed
 from the brief's order and count twice: the verifier also ran before the probe, and the probe ran
 twice, because this build's spec holds no argv and the first attempt's process had not been watched.
-The first comparison of `<slugkit-feature>/.git` after attempt 1 carried a faulty line, was rerun,
-and the file says so (`probe/after.txt`); two files of the first run of `tools/facts.sh`,
+The sample's config was restored by a script run at the end (`tools/restore.sh`), not by a shell
+trap set before the change, as the brief asks; the script ran, and the config compared `cmp`-equal
+twice. The first comparison of `<slugkit-feature>/.git` after attempt 1 carried a faulty line, was
+rerun, and the file says so (`probe/after.txt`); two files of the first run of `tools/facts.sh`,
 `before-grok-sha256.txt` and `after-grok-sha256.txt`, compared unlike listings and are superseded by
 `*-grok.sums` and Fact 6 (`NOTES.txt`).
 
