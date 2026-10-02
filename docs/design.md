@@ -223,7 +223,9 @@ any config is looked at, the working directory is taken out of every worktree th
 enclosing work tree registers inside itself, and read at the same place in that work
 tree, lexically, since the path need not exist on its branch: a directory inside a
 task's worktree is its root's, whatever became of the worktree's pointer
-(`src/worktree.ts#enclosingWorktree`). Then local opt-in: the nearest directory
+(`src/worktree.ts#enclosingWorktree`). A part of the mapped path that runs through a
+file or round a symlink loop on the root's branch names no entry, as a missing one
+does (`tests/project.test.ts#remapCrossesFile`). Then local opt-in: the nearest directory
 holding a `.git` entry is a project of its own when it holds `.cross-agent/config.json`
 too — a linked worktree `cross-agent init` was run in — and otherwise it is read at
 its main checkout, the registry's first stanza when that is a work tree by its own

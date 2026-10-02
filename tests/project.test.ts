@@ -207,6 +207,25 @@ test("the mapping out of a task worktree is lexical: a path that exists only on 
   assert.deepEqual(await discoverProject([], {}, onBranch), { root: main });
 });
 
+// @anchor remapCrossesFile
+test("a mapped path that crosses a file or a symlink loop on the root's branch is no entry, and still maps", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  // `docs` is a file at the root and a directory on the task's branch; `loop` is a link to
+  // itself at the root and a directory on the branch.
+  fs.writeFileSync(path.join(main, "docs"), "a file here\n");
+  fs.symlinkSync("loop", path.join(main, "loop"));
+  for (const name of ["docs", "loop"]) fs.mkdirSync(path.join(task, name, "inner"), { recursive: true });
+  for (const name of ["docs", "loop"]) {
+    assert.deepEqual(await discoverProject([], {}, path.join(task, name, "inner")), { root: main }, name);
+  }
+  // With no config anywhere, the answer is the repository's toplevel, read from the nearest
+  // directory of the mapped path, as before.
+  fs.rmSync(path.join(main, ".cross-agent"), { recursive: true });
+  for (const name of ["docs", "loop"]) {
+    assert.deepEqual(await discoverProject([], {}, path.join(task, name, "inner")), { root: main }, `${name}, no config`);
+  }
+});
+
 // @anchor namedTaskWorktreeRefused
 test("a task worktree named as the project is refused before its config is read", async (t) => {
   const { main, task } = await mainWithTask(t);

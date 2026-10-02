@@ -13,9 +13,24 @@ export type Flags = { values: Record<string, string> } | { reason: string };
 
 const exec = promisify(execFile);
 
+/**
+ * What is at `target`, or undefined where nothing can be: a path that runs through a file or
+ * round a symlink loop names no entry, as a missing one does. A path mapped out of a task
+ * worktree is lexical, so on the root's branch it can cross either.
+ */
+function entry(target: string, follow: boolean): fs.Stats | undefined {
+  try {
+    return (follow ? fs.statSync : fs.lstatSync)(target, { throwIfNoEntry: false });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOTDIR" || code === "ELOOP") return undefined;
+    throw error;
+  }
+}
+
 /** Whether `dir` holds `.cross-agent/config.json`, a file: what makes a directory a project of its own. */
 export function holdsConfig(dir: string): boolean {
-  return fs.statSync(path.join(dir, CONFIG_PATH), { throwIfNoEntry: false })?.isFile() ?? false;
+  return entry(path.join(dir, CONFIG_PATH), true)?.isFile() ?? false;
 }
 
 function message(error: unknown): string {
@@ -55,15 +70,15 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 /** The nearest ancestor-or-self of `dir` holding a `.git` entry, by filesystem reads alone, or null. */
 function nearestGit(dir: string): string | null {
   for (let at = dir; ; at = path.dirname(at)) {
-    if (fs.lstatSync(path.join(at, ".git"), { throwIfNoEntry: false }) !== undefined) return at;
+    if (entry(path.join(at, ".git"), false) !== undefined) return at;
     if (path.dirname(at) === at) return null;
   }
 }
 
-/** The nearest ancestor-or-self of `dir` that exists. */
-function nearestExisting(dir: string): string {
+/** The nearest ancestor-or-self of `dir` that is a directory: where git can be asked about it. */
+function nearestDirectory(dir: string): string {
   let at = dir;
-  while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
+  while (!(entry(at, true)?.isDirectory() ?? false) && path.dirname(at) !== at) at = path.dirname(at);
   return at;
 }
 
@@ -174,7 +189,7 @@ export async function discoverProject(argv: readonly string[], env: Readonly<Nod
   if (begun.main !== undefined) return checked(begun.main);
   let top: string;
   try {
-    top = await realpath(await git(nearestExisting(start), "rev-parse", "--show-toplevel"));
+    top = await realpath(await git(nearestDirectory(start), "rev-parse", "--show-toplevel"));
   } catch {
     return {
       reason: `no ${CONFIG_PATH} in ${start} or any directory above it, and ${start} is in no git repository: `

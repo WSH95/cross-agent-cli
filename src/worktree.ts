@@ -161,7 +161,9 @@ export async function enclosingWorktree(candidate: string): Promise<Enclosure | 
     try {
       await lstat(path.join(ancestor, ".git"));
     } catch (error) {
-      if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) continue;
+      // A path mapped out of a task worktree is lexical, so an ancestor of it may run through
+      // a file or round a symlink loop on the root's branch: no directory, so no work tree.
+      if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) continue;
       return { reason: `cannot read ${path.join(ancestor, ".git")}: ${message(error)}` };
     }
     let stanzas: Stanza[];
