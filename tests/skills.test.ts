@@ -873,11 +873,17 @@ test("the roster's first line is projectRoot, judged against the project the use
   // An initialized sibling — a worktree or checkout with its own config — served by M stops.
   assert.match(before, /\*\*[Ss]top\*\*[^.]*initialized project other than `projectRoot`[^.]*\.cross-agent\/config\.json/);
   assert.match(before, /named a project and `projectRoot` is another/);
-  // An uninitialized sibling proceeds, served by its main project, and the line says so.
+  // An uninitialized sibling proceeds, served by its main project, and the line says so,
+  // but only where the project served is not the worktree the host is in: a bare
+  // repository's worktree with no config discovers itself.
   assert.match(before, /\*\*[Pp]roceed\*\*[^.]*uninitialized worktree/);
-  assert.match(before, /served by the main project at <projectRoot>; run `cross-agent init` here for a project of its own/);
-  // A root the operator named outright proceeds as asked, wherever the host sits.
-  assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
+  assert.match(before, /`projectRoot` is not the nearest directory at or above the working directory that holds a `\.git`, say so on the roster's first line: served by the main project at <projectRoot>; run `cross-agent init` here for a project of its own/);
+  // A root the user named or confirmed in this session proceeds as asked, wherever the host
+  // sits; a binding the environment alone holds confirms nothing, since a Codex host always
+  // has one, and beside another initialized project it is the stale case that stops.
+  assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*named or confirmed `projectRoot` in this session[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
+  assert.match(before, /config\.json` — and the user has not named or confirmed `projectRoot` in this session, or when the user named a project and `projectRoot` is another/);
+  assert.match(before, /`CROSS_AGENT_PROJECT` found only in the environment[^.]*confirms nothing/);
 });
 
 // @anchor rootCheckOwnBranch

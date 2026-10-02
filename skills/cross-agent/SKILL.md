@@ -61,15 +61,19 @@ run in it makes it a project of its own.
 
 - **Stop**, telling the user, when the working directory lies in an initialized
   project other than `projectRoot` — a worktree or checkout holding its own
-  `.cross-agent/config.json` — or when the user named a project and `projectRoot` is
-  another. A Grok attach copied with a binding in it, or a stale
-  `CROSS_AGENT_PROJECT`, serves the wrong project this way.
+  `.cross-agent/config.json` — and the user has not named or confirmed `projectRoot`
+  in this session, or when the user named a project and `projectRoot` is another. A
+  Grok attach copied with a binding in it, or a `CROSS_AGENT_PROJECT` left from
+  another session, serves the wrong project this way. A `CROSS_AGENT_PROJECT` found
+  only in the environment confirms nothing, since a Codex host always has one set.
 - **Proceed** when the working directory is in an uninitialized worktree of
-  `projectRoot`'s repository, or anywhere in it that no config claims, and say so
-  on the roster's first line: served by the main project at <projectRoot>; run
-  `cross-agent init` here for a project of its own.
-- **Proceed as asked** when the operator named `projectRoot` outright, with
-  `--project` or `CROSS_AGENT_PROJECT`, wherever your host sits.
+  `projectRoot`'s repository, or anywhere in it that no config claims. Where
+  `projectRoot` is not the nearest directory at or above the working directory that
+  holds a `.git`, say so on the roster's first line: served by the main project at
+  <projectRoot>; run `cross-agent init` here for a project of its own.
+- **Proceed as asked** when the user named or confirmed `projectRoot` in this
+  session — with `--project`, `CROSS_AGENT_PROJECT` or in words — wherever your host
+  sits.
 
 ## Starting a task
 
