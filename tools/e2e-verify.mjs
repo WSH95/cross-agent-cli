@@ -197,7 +197,10 @@ if (journals.length === 0) {
 // prefix a host gives them, and neither is anything an engine-placed lead's own record
 // calls below the cap (its row holds `delegate`, `wait`, `cancel` and the rest) — though
 // an engine launch is an offence there too. A log no parser here understands is evidence
-// of nothing, and evidence of nothing is never a pass.
+// of nothing, and evidence of nothing is never a pass. So a Claude or Grok record's tool
+// calls are read against its own engine's vocabulary (`engineTools`, below): a tool its
+// engine's archived transcripts never called, a call with no name and `use_tool` in a shape
+// no run recorded are `?`, whatever their input holds.
 //
 // Codex writes an MCP call as an item of type `mcp_tool_call` — `item.started`, then
 // `item.completed` — whose `server` and `tool` are separate fields, `tool` being this
@@ -228,6 +231,23 @@ const knownEvents = new Set([
 // reports on is judged as itself. Any other `tool_progress` is a shape this build has not
 // seen, and answers `?` as any unknown event does.
 const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "type", "uuid"];
+// The tools each engine's archived transcripts call — every Claude and Grok record E1 to E7,
+// the integration probes and t12Fix1's rerun left (`docs/probes.md#t12Fix1`) — and the one
+// shape Grok's dispatcher was recorded in: `use_tool` as exactly `{tool_name, tool_input}`,
+// naming one of this server's tools, with or without the `cross-agent__` prefix Grok gives
+// them. A tool call outside its own engine's list, one with no name, a shell call with no
+// command, a content block of a type no archived turn holds and `use_tool` in any other
+// shape are evidence this build cannot read, whatever their input says (task 12, fix round 1).
+const contentBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
+const serverTools = new Set(["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel",
+  "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "list_asks", "answer", "ask"]);
+const engineTools = new Map([
+  ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup"])],
+  ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool"])],
+]);
+const shellTools = new Map([["claude", "Bash"], ["grok", "run_terminal_command"]]);
+const claudeServerPrefix = "mcp__cross-agent__";
+const grokServerPrefix = "cross-agent__";
 function recordedHeartbeat(event, calls) {
   const keys = Object.keys(event).sort();
   if (keys.length !== heartbeatKeys.length || keys.some((key, index) => key !== heartbeatKeys[index])) return false;
@@ -341,14 +361,32 @@ for (const record of run) {
     if (Array.isArray(content)) {
       understood++;
       for (const block of content) {
-        if (block?.type !== "tool_use") continue;
-        if (typeof block.id === "string" && typeof block.name === "string") callsById.set(block.id, block.name);
-        if (block.name === "use_tool") {
-          // Grok's dispatcher: the tool it is dispatching to is the call.
-          calls.push(block.input?.tool_name ?? block.input?.tool ?? block.input?.name);
+        if (block?.type !== "tool_use") {
+          if (!contentBlocks.has(block?.type)) unknownItems.push(`a content block of type ${String(block?.type)}`);
           continue;
         }
-        calls.push(block.name);
+        const name = block.name;
+        if (typeof name !== "string") { unknownItems.push("a tool call with no name"); continue; }
+        if (typeof block.id === "string") callsById.set(block.id, name);
+        const ownTool = engineTools.get(record.engine)?.has(name) === true;
+        const serverTool = record.engine === "claude" && name.startsWith(claudeServerPrefix)
+          && serverTools.has(name.slice(claudeServerPrefix.length));
+        if (!ownTool && !serverTool) { unknownItems.push(`${record.engine} tool ${name}`); continue; }
+        if (name === "use_tool") {
+          // Grok's dispatcher: the tool it dispatches to is the call, in the one recorded shape.
+          const input = block.input;
+          const keys = input !== null && typeof input === "object" && !Array.isArray(input) ? Object.keys(input).sort().join(" ") : "";
+          const target = keys === "tool_input tool_name" && typeof input.tool_name === "string" ? input.tool_name : undefined;
+          const bare = target?.startsWith(grokServerPrefix) ? target.slice(grokServerPrefix.length) : target;
+          if (bare === undefined || !serverTools.has(bare)) { unknownItems.push("use_tool in a shape no archived run recorded"); continue; }
+          calls.push(target);
+          continue;
+        }
+        if (name === shellTools.get(record.engine) && typeof block.input?.command !== "string") {
+          unknownItems.push(`${name} with no command`);
+          continue;
+        }
+        calls.push(name);
         for (const key of ["command", "cmd"]) {
           if (typeof block.input?.[key] === "string") commands.push(block.input[key]);
         }

@@ -303,6 +303,79 @@ test("a Codex item type no archived run has shown makes the scan answer, not gue
   assert.equal(code, 2, out);
 });
 
+/** One Claude or Grok assistant turn holding these content blocks, between its init and result lines. */
+const turnOf = (blocks: unknown[]) => [
+  JSON.stringify({ type: "system", subtype: "init", session_id: "s" }),
+  JSON.stringify({ type: "assistant", message: { content: blocks } }),
+  JSON.stringify({ type: "result", subtype: "success", is_error: false }),
+].join("\n") + "\n";
+const toolCall = (name: string | undefined, input: unknown) => ({ type: "tool_use", id: "toolu_01", ...(name === undefined ? {} : { name }), input });
+
+// @anchor closedToolVocabulary
+test("a Claude or Grok tool call is read only when the archived runs show that engine's tool in that shape", async (t) => {
+  // Task 12's review: condition 8 counted any `tool_use` not spelled `delegate` as read,
+  // reduced `use_tool` to its name and passed a block with none. Each engine's vocabulary
+  // is the tools its archived transcripts call (Claude: the shell, the file tools,
+  // `ToolSearch`, `ScheduleWakeup`, this server's tools; Grok: its shell, its readers,
+  // `search_tool` and `use_tool` as `{tool_name, tool_input}` naming this server's tools),
+  // and anything else is a question. Write and NotebookEdit are t12Fix1's rerun.
+  const rows: Array<[string, unknown[], "pass" | "?" | "FAIL"]> = [
+    ["claude", [toolCall("Read", { file_path: "/w/a.py", limit: 10, offset: 1 })], "pass"],
+    ["claude", [toolCall("Edit", { file_path: "/w/a.py", old_string: "a", new_string: "b", replace_all: false })], "pass"],
+    ["claude", [toolCall("Write", { file_path: "/w/a.py", content: "x" })], "pass"],
+    ["claude", [toolCall("NotebookEdit", { notebook_path: "/w/n.ipynb", new_source: "x", cell_type: "code", edit_mode: "insert" })], "pass"],
+    ["claude", [toolCall("ToolSearch", { query: "select:NotebookEdit", max_results: 1 })], "pass"],
+    ["claude", [toolCall("ScheduleWakeup", { delaySeconds: 105, reason: "fallback", noop: true })], "pass"],
+    ["claude", [toolCall("mcp__cross-agent__list_roles", {})], "pass"],
+    ["claude", [toolCall("Bash", { command: "python3 -m unittest discover -s tests -t .", description: "suite" })], "pass"],
+    ["grok", [toolCall("read_file", { target_file: "a.py", limit: 10 })], "pass"],
+    ["grok", [toolCall("grep", { pattern: "slug", glob: "*.py" })], "pass"],
+    ["grok", [toolCall("list_dir", { target_directory: "." })], "pass"],
+    ["grok", [toolCall("search_tool", { query: "cross-agent", limit: 5 })], "pass"],
+    ["grok", [toolCall("run_terminal_command", { command: "python3 -m unittest", description: "suite" })], "pass"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: {} })], "pass"],
+    // The review's fixtures, each of which passed: tools no archived run called, a block
+    // with no name, another server's tool, one engine's tool in the other's transcript,
+    // and `use_tool` in another shape or naming another server's tool.
+    ["claude", [toolCall("NewShell", { commands: ["claude -p hi"] })], "?"],
+    ["claude", [toolCall("Agent", { prompt: "Run claude -p hi" })], "?"],
+    ["claude", [toolCall("EnterWorktree", { name: "x" })], "?"],
+    ["claude", [toolCall(undefined, { command: "claude -p hi" })], "?"],
+    ["claude", [toolCall("mcp__context7__query-docs", { libraryId: "x" })], "?"],
+    ["claude", [toolCall("run_terminal_command", { command: "true" })], "?"],
+    ["claude", [toolCall("Bash", { commands: ["true"] })], "?"],
+    ["claude", [{ type: "server_tool_use", id: "srvtoolu_01", name: "web_search", input: { query: "x" } }], "?"],
+    ["grok", [toolCall("spawn_subagent", { prompt: "Run claude -p hi" })], "?"],
+    ["grok", [toolCall("scheduler_create", { shell_command: "claude -p hi" })], "?"],
+    ["grok", [toolCall("use_tool", { tool_name: "shell__run", tool_input: { command: "claude -p hi" } })], "?"],
+    ["grok", [toolCall("use_tool", { server: "cross-agent", function: "delegate" })], "?"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: {}, extra: 1 })], "?"],
+    ["grok", [toolCall("Bash", { command: "true" })], "?"],
+    // What was read is still judged first.
+    ["claude", [toolCall("Bash", { command: "claude -p hi" }), toolCall("Agent", { prompt: "x" })], "FAIL"],
+    ["claude", [toolCall("mcp__cross-agent__delegate", { role: "consult" })], "FAIL"],
+    ["grok", [toolCall("run_terminal_command", { command: "claude -p hi" })], "FAIL"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__delegate", tool_input: { role: "consult" } })], "FAIL"],
+    ["grok", [toolCall("use_tool", { tool_name: "delegate", tool_input: { role: "consult" } })], "FAIL"],
+  ];
+  const answers: Array<{ verdict: string; line: string; code: number }> = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const k = next++;
+      const [engine, blocks] = rows[k];
+      const { code, out } = await run(await project(t, { task: { body: turnOf(blocks), engine } }));
+      answers[k] = { verdict: verdict(out, scan), line: row(out, scan), code };
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  rows.forEach(([engine, blocks, expected], k) => {
+    const label = `${engine} ${JSON.stringify(blocks)}\n${answers[k].line}`;
+    assert.equal(answers[k].verdict, expected, label);
+    assert.equal(answers[k].code, { FAIL: 1, pass: 0, "?": 2 }[expected], label);
+  });
+});
+
 // @anchor codexMcpItem
 test("Codex's MCP call item is read: a specialist's own tools pass and its delegate is an offence", async (t) => {
   const reading = await project(t, { codex: codexMcpCall("list_roles") });

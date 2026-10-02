@@ -2881,15 +2881,20 @@ every specialist's, and an engine-placed lead's — spells them
 (`docs/probes.md#t15Attach`). No spelling appears in the deny list, which names commands
 and not tools. A test of any of them compares the set of this server's tools, never a
 prefix (I1, `docs/probes.md#i1Spelling`). And the exclusion flag excludes **MCP servers**: a
-specialist's session still loads the host installation's slash commands and
-skills (`docs/probes.md#i1Inherited`); its hooks it loaded too, until 6b turned
+specialist's session still loaded the host installation's slash commands and
+skills (`docs/probes.md#i1Inherited`) — a Grok specialist's still does, and a Claude
+one's stopped loading the operator's plugins when `--setting-sources project` left
+the operator's settings out (`docs/probes.md#t12Fix1`); its hooks it loaded too, until 6b turned
 them off in the run's own settings (`docs/probes.md#claudeHooksIsolation`). That is why an end-to-end run's last condition is a
 scan of the tool calls and shell commands a transcript holds rather than a grep
 of its text — a Grok session's inherited slash commands include one called
 `delegate`, and the word proves nothing (`tools/e2e-verify.mjs`). That scan
-reads Claude's and Grok's `tool_use` blocks, Grok's `use_tool` dispatcher and
-Codex's `agent_message`, `command_execution` and `mcp_tool_call` items, and
-**nothing else** — but for one event it reads by its whole shape and passes as no
+reads Claude's and Grok's `tool_use` blocks against each engine's own tool
+vocabulary, the names its archived transcripts call, Grok's `use_tool` dispatcher
+in the one shape a run recorded, and Codex's `agent_message`,
+`command_execution` and `mcp_tool_call` items, and **nothing else**: a tool outside
+its engine's list or a call with no name answers `?`
+(`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for one event it reads by its whole shape and passes as no
 call: Claude Code 2.1.286's heartbeat for a call still in flight, a `tool_progress`
 with `heartbeat: true`, exactly the keys E3's lead recorded, an id that is its
 parent's `-heartbeat-<n>`, and a parent that is a call of the same transcript under
