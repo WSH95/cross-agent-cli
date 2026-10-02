@@ -12,7 +12,7 @@ import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import type { Reservations } from "./reservation.ts";
-import { gitEnvironment, locateRepository, verifyWorktree } from "./worktree.ts";
+import { gitEnvironment, locateRepository, rootWriteFault, verifyWorktree } from "./worktree.ts";
 import type { Repository } from "./worktree.ts";
 
 export interface GitMutateRequest {
@@ -370,9 +370,18 @@ export async function gitMutate(
   const slug = request.slug;
   const branch = request.branch ?? (options.branchPattern ?? "task/*").replace("*", slug);
   const target = path.resolve(projectRoot, request.path ?? path.join(options.dir ?? ".worktrees", slug));
+  // Every mutation writes the project, so a root that is not its repository's main checkout
+  // takes one only as a project of its own, on its own branch (design section 4).
   const repo = await locateRepository(projectRoot);
   if ("reason" in repo) return { ok: false, reason: repo.reason };
-  if (repo.kind !== "main") return { ok: false, reason: `git_mutate works in the task worktrees of a repository's main checkout, and ${repo.workTree} is a linked worktree` };
+  let defaultBranch: string;
+  try {
+    defaultBranch = loadConfig(projectRoot).project.defaultBranch;
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
+  const unwritable = rootWriteFault(repo, projectRoot, defaultBranch, "write");
+  if (unwritable !== null) return { ok: false, reason: unwritable };
 
   // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
   // around validate-and-spawn (T10), so holding it across this whole call is what keeps
@@ -388,7 +397,7 @@ export async function gitMutate(
     return { ok: false, reason: message(error) };
   }
   try {
-    return await mutate(projectRoot, request, options, { slug, branch, target, claim, repo });
+    return await mutate(projectRoot, request, options, { slug, branch, target, claim, repo, defaultBranch });
   } finally {
     await claim.release();
   }
@@ -397,7 +406,9 @@ export async function gitMutate(
 /** The four steps, with `spawn.lock` held for all of them. */
 async function mutate(
   projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,
-  { slug, branch, target, claim, repo }: { slug: string; branch: string; target: string; claim: Lock; repo: Repository },
+  { slug, branch, target, claim, repo, defaultBranch }: {
+    slug: string; branch: string; target: string; claim: Lock; repo: Repository; defaultBranch: string;
+  },
 ): Promise<GitMutateResult> {
   // A journal belongs to one branch: every step's SHAs were recorded against it, so a call
   // on another branch under the same slug is refused before anything runs. The journal is
@@ -458,12 +469,6 @@ async function mutate(
   // this one is in hand, and before anything runs.
   if (journalled?.worktree !== undefined && journalled.worktree !== workTree) {
     return { ok: false, reason: `slug ${slug} is journaled on worktree ${journalled.worktree}; refusing ${workTree}` };
-  }
-  let defaultBranch: string;
-  try {
-    defaultBranch = loadConfig(projectRoot).project.defaultBranch;
-  } catch (error) {
-    return { ok: false, reason: message(error) };
   }
 
   // 3. One mutation at a time across the project.

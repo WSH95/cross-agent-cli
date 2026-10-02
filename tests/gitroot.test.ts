@@ -12,8 +12,8 @@ import { readJournal } from "../src/journal.ts";
 import { update } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, spawnLockName } from "../src/locks.ts";
 import { git, gitShim, holderOf } from "./helpers/git.ts";
-import { poll, project, reserve } from "./helpers/project.ts";
-import type { TestProject } from "./helpers/project.ts";
+import { layoutRoot, layouts, poll, project, reserve } from "./helpers/project.ts";
+import type { LayoutName, LayoutRoot, TestProject } from "./helpers/project.ts";
 
 // `git_root` is the root half of design section 4: one whitelisted verb at the project
 // root, under `git.lock`, with the step it completes written to the task's journal. Every
@@ -841,4 +841,86 @@ test("a lock lost while the root command ran is reported, and the step is still 
   assert.equal(result.lockLost, true);
   assert.equal(fs.existsSync(directory), true, "the command had already run, so its step is journaled");
   assert.deepEqual(readJournal(root, "slow")!.steps.map((step) => step.at), [7]);
+});
+
+// A worktree project: a root that is not its repository's main checkout, initialized by a
+// config of its own, takes the loop's root verbs on its own branch (design section 4).
+
+/** A worktree project of `layout`, its config's `project` patched over `feature` and a suite that passes. */
+async function worktreeProject(t: TestContext, layout: LayoutName, settings: Record<string, string> = {}): Promise<LayoutRoot> {
+  const made = await layoutRoot(t, layout);
+  fs.mkdirSync(path.join(made.root, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(made.root, ".cross-agent", "config.json"),
+    JSON.stringify({ roles: {}, project: { defaultBranch: "feature", testCommand: "true", ...settings } }));
+  return made;
+}
+
+for (const layout of layouts) {
+  // @anchor linkedRootRuns
+  test(`a ${layout} root initialized as a project runs the loop's root verbs on its own branch`, async (t) => {
+    const { root, commonDir } = await worktreeProject(t, layout);
+    const directory = path.join(root, ".worktrees", "x");
+    const main = await git(commonDir, "rev-parse", "main");
+    assert.equal(accepted(await gitRoot(root, { args: ["rev-parse", "--abbrev-ref", "HEAD"] }, { waitSeconds: 5 })).stdout.trim(), "feature");
+    accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 }));
+    accepted(await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+    const merge = accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+    assert.equal(merge.after, await git(commonDir, "rev-parse", "task/x"));
+    assert.equal(await git(commonDir, "rev-parse", "feature"), merge.after, "the merge landed on the root's own branch");
+    assert.equal(await git(commonDir, "rev-parse", "main"), main, "and nowhere else");
+    const tested = await runCommand(root, { which: "test", where: "root", slug: "x" });
+    assert.equal(tested.ok, true, JSON.stringify(tested));
+    accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
+    accepted(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+    assert.deepEqual(readJournal(root, "x")!.steps.map((step) => step.step),
+      ["worktree-created", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"]);
+    assert.equal(readJournal(root, "x")!.defaultBranch, "feature");
+    assert.equal(await git(commonDir, "branch", "--list", "task/*"), "");
+  });
+}
+
+// @anchor bareConfiglessRefused
+test("a root that is no main checkout and holds no config takes no write, and still answers reads", async (t) => {
+  const { root } = await layoutRoot(t, "bare-linked");
+  const directory = path.join(root, ".worktrees", "x");
+  const init = /not an initialized project; run "cross-agent init" in /;
+  assert.match(refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 })), init);
+  assert.equal(fs.existsSync(directory), false);
+  assert.match(refusal(await gitMutate(root, { slug: "x", args: ["status"] }, { waitSeconds: 5 })), init);
+  assert.equal(readJournal(root, "x"), null);
+  // Reads are no writes: the registry and the root's own branch.
+  assert.match(accepted(await gitRoot(root, { args: ["worktree", "list", "--porcelain"] }, { waitSeconds: 5 })).stdout, /worktree /);
+  assert.equal(accepted(await gitRoot(root, { args: ["rev-parse", "--abbrev-ref", "HEAD"] }, { waitSeconds: 5 })).stdout.trim(), "feature");
+});
+
+// @anchor defaultBranchMismatch
+test("an initialized root takes writes only on the branch its config names, and never detached", async (t) => {
+  const { root } = await worktreeProject(t, "linked", { defaultBranch: "main" });
+  const directory = path.join(root, ".worktrees", "x");
+  const mismatch = (reason: string) => {
+    assert.ok(reason.includes("project.defaultBranch") && reason.includes("main") && reason.includes("feature"), reason);
+    assert.ok(reason.includes(root), reason);
+  };
+  mismatch(refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 })));
+  mismatch(refusal(await gitMutate(root, { slug: "x", args: ["status"] }, { waitSeconds: 5 })));
+  // `rebase --abort` is exempt: it is how a stopped rebase at the root is undone, and here
+  // git itself answers that none is in progress.
+  const aborted = await gitRoot(root, { args: ["rebase", "--abort"] }, { waitSeconds: 5 });
+  assert.equal((aborted as Extract<GitRootResult, { ok: false }>).exitCode, 128, JSON.stringify(aborted));
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, project: { defaultBranch: "feature" } }));
+  await git(root, "checkout", "--detach");
+  assert.match(refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })), /detached HEAD/);
+  assert.equal(fs.existsSync(directory), false);
+});
+
+// @anchor revParseHead
+test("rev-parse --abbrev-ref HEAD is a read verb, and rev-parse HEAD is still refused", async (t) => {
+  const { root } = await repository(t);
+  const read = accepted(await gitRoot(root, { args: ["rev-parse", "--abbrev-ref", "HEAD"] }, { waitSeconds: 5 }));
+  assert.equal(read.stdout.trim(), "main");
+  assert.equal(read.journal, undefined);
+  assert.match(refusal(await gitRoot(root, { args: ["rev-parse", "--abbrev-ref", "HEAD"], slug: "x" }, { waitSeconds: 5 })), /journals nothing/);
+  for (const args of [["rev-parse", "HEAD"], ["rev-parse", "--abbrev-ref", "main"], ["rev-parse", "--abbrev-ref", "HEAD", "main"]]) {
+    refusal(await gitRoot(root, { args }, { waitSeconds: 5 }));
+  }
 });

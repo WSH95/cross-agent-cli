@@ -8,7 +8,7 @@ import { projectLock } from "./ledger.ts";
 import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
-import { locateRepository } from "./worktree.ts";
+import { locateRepository, rootWriteFault } from "./worktree.ts";
 
 export interface GitRootRequest {
   args: string[];
@@ -105,6 +105,9 @@ const whitelist: Verb[] = [
     form: "log [--oneline] [--max-count=<n>] [<branch>]", head: ["log"], tail: ["read-ref"], optional: 1,
     options: /^(--oneline|--max-count=[0-9]{1,5})$/,
   },
+  // Before the generic `rev-parse`, which would take `--abbrev-ref` for an option it refuses:
+  // the root's own branch, what the loop's first step reads (design section 7).
+  { form: "rev-parse --abbrev-ref HEAD", head: ["rev-parse", "--abbrev-ref", "HEAD"], tail: [] },
   { form: "rev-parse [--verify] <branch>", head: ["rev-parse"], tail: ["read-ref"], options: /^--verify$/ },
   { form: "merge-base <branch> <branch>", head: ["merge-base"], tail: ["read-ref", "read-ref"] },
 ];
@@ -382,7 +385,12 @@ export async function gitRoot(
   }
   const located = await locateRepository(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
-  if (located.kind !== "main") return { ok: false, reason: `git_root runs at a repository's main checkout, and ${located.workTree} is a linked worktree` };
+  // A verb that journals a step writes the root; a read and `rebase --abort`, which undoes
+  // a stopped rebase, do not need the root to be a project of its own.
+  if (verb.step !== undefined) {
+    const unwritable = rootWriteFault(located, projectRoot, defaultBranch, "write");
+    if (unwritable !== null) return { ok: false, reason: unwritable };
+  }
   const { gitDir, workTree } = located;
   let tracked: string | null;
   try {

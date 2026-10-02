@@ -11,7 +11,7 @@ import type { Journal, JournalEntry } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
 import { gitLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
-import { locateRepository, verifyWorktree } from "./worktree.ts";
+import { locateRepository, rootWriteFault, verifyWorktree } from "./worktree.ts";
 
 export interface RunCommandRequest {
   /** Which configured command to run: a selector, never a command string. */
@@ -195,7 +195,11 @@ export async function runCommand(
   // exactly while a specialist cannot commit a change to it (design section 4).
   const located = await locateRepository(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
-  if (located.kind !== "main") return { ok: false, reason: `run_command runs at a repository's main checkout, and ${located.workTree} is a linked worktree` };
+  // Every run at a root that is not its repository's main checkout needs the project to be
+  // that root's own; the run that journals writes it, on its branch.
+  const journals = atRoot && which === "test" && slug !== undefined;
+  const unwritable = rootWriteFault(located, projectRoot, config.project.defaultBranch, journals ? "write" : "initialized");
+  if (unwritable !== null) return { ok: false, reason: unwritable };
   let tracked: string | null;
   try {
     tracked = await trackedStateFault(located.gitDir, located.workTree);
@@ -221,7 +225,6 @@ export async function runCommand(
   // The one step this tool can complete, judged before the suite runs rather than after:
   // a run that could not be journaled is worth knowing about before it takes ten minutes.
   // The same judgement is made again under the lock, where it decides.
-  const journals = atRoot && which === "test" && slug !== undefined;
   let defaultSha: string | undefined;
   if (journals) {
     const fault = passedFault(slug!, journal, config.project.defaultBranch);

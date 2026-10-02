@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { CONFIG_PATH } from "./config.ts";
 import { run } from "./gitmutate.ts";
 
 /**
@@ -331,6 +333,30 @@ async function asLinkedWorktree(workTree: string, pointer: string): Promise<Loca
     kind: by.bare ? "bare-linked" : "linked", workTree, gitDir: admin, commonDir, branch: own.branch, stanzas,
     main: !by.bare && by.workTree ? first.path : null,
   };
+}
+
+/**
+ * Why this root takes no write, or null (design section 4). A main checkout takes writes as
+ * it always has. Any other root is a project of its own only once `cross-agent init` ran in
+ * it — until then discovery serves it as its main checkout's, or with no main as one nobody
+ * configured — and its writes land on its own branch, which is the config's default branch
+ * only while the root has it checked out. `"initialized"` asks the first of the three, which
+ * every `run_command` at such a root needs; `"write"` asks all three.
+ */
+export function rootWriteFault(
+  repo: Repository, projectRoot: string, defaultBranch: string, scope: "initialized" | "write",
+): string | null {
+  if (repo.kind === "main") return null;
+  const config = path.join(projectRoot, CONFIG_PATH);
+  if (!(statSync(config, { throwIfNoEntry: false })?.isFile() ?? false)) {
+    return `${repo.workTree} is not an initialized project; run "cross-agent init" in ${repo.workTree}`;
+  }
+  if (scope === "initialized") return null;
+  if (repo.branch === null) return `${repo.workTree} has a detached HEAD; check out ${defaultBranch} there first`;
+  if (repo.branch !== defaultBranch) {
+    return `project.defaultBranch in ${config} is ${defaultBranch}, and ${repo.workTree} has ${repo.branch} checked out: set project.defaultBranch to ${repo.branch}, or check out ${defaultBranch} there`;
+  }
+  return null;
 }
 
 /** What `verifyWorktree` takes from a located repository: its identity, never its listing. */

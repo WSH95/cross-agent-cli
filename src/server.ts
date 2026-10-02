@@ -353,7 +353,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
     },
     {
       name: "git_root",
-      description: "Run one whitelisted git verb at the project root, under the project's git lock, and journal the step it completes. The verbs are worktree add -b, worktree remove, branch -d, merge --ff-only, rebase --abort, and the read-only status, log, rev-parse, merge-base, branch --list and worktree list; a verb that journals a step names the slug whose journal it belongs to.",
+      description: "Run one whitelisted git verb at the project root, under the project's git lock, and journal the step it completes. The verbs are worktree add -b, worktree remove, branch -d, merge --ff-only, rebase --abort, and the read-only status, log, rev-parse, rev-parse --abbrev-ref HEAD, merge-base, branch --list and worktree list; a verb that journals a step names the slug whose journal it belongs to.",
       inputSchema: {
         type: "object",
         properties: { args: { type: "array", items: { type: "string" } }, slug: { type: "string" } },

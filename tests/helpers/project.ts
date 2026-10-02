@@ -393,3 +393,28 @@ export async function rootInsideCommonDir(t: TestContext): Promise<{ commonDir: 
   await git(commonDir, "worktree", "add", "-b", "feature", root, "main");
   return { commonDir, root };
 }
+
+/** The layouts a worktree project's lifecycle is exercised over. */
+export const layouts = ["linked", "bare-linked", "bare-dot-git", "umbrella"] as const;
+export type LayoutName = typeof layouts[number];
+export type LayoutRoot = Layout & { main?: string };
+
+/**
+ * A root that is not its repository's main checkout, on `feature`, in one of the four
+ * layouts, with the identity a commit through `git_mutate` needs in the repository's shared
+ * config: the tool refuses `-c`.
+ */
+export async function layoutRoot(t: TestContext, layout: LayoutName): Promise<LayoutRoot> {
+  let made: LayoutRoot;
+  if (layout === "linked") {
+    const dir = fixtureDirectory(t, "cross-agent-main-");
+    const main = await mainCheckout(dir, "M");
+    made = { dir, root: await linkedProject(t, main, "feature"), commonDir: path.join(main, ".git"), main };
+  } else {
+    made = await (layout === "bare-linked" ? bareProject(t) : layout === "bare-dot-git" ? bareDotGitProject(t) : umbrellaProject(t));
+  }
+  for (const [key, value] of [["user.name", "Cross Agent Test"], ["user.email", "test@example.invalid"], ["commit.gpgSign", "false"]]) {
+    await git(made.commonDir, "config", key, value);
+  }
+  return made;
+}

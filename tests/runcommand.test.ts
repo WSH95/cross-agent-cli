@@ -11,8 +11,8 @@ import { acquire, gitLockName, lockPath } from "../src/locks.ts";
 import { runCommand } from "../src/runcommand.ts";
 import type { RunCommandResult } from "../src/runcommand.ts";
 import { git } from "./helpers/git.ts";
-import { poll, proc, project } from "./helpers/project.ts";
-import type { TestProject } from "./helpers/project.ts";
+import { layoutRoot, poll, proc, project } from "./helpers/project.ts";
+import type { LayoutName, LayoutRoot, TestProject } from "./helpers/project.ts";
 
 // `run_command` takes a selector, never a command string: the project's configured
 // `testCommand` or `setupCommand`, at the root or in a verified worktree (design section
@@ -297,4 +297,69 @@ test("the command runs in the child environment a specialist gets, carrying no t
   // a `cross-agent` server started inside the suite resolves as a specialist, never as
   // the operator, and the markers a host puts in its children's environment are gone.
   assert.deepEqual(lines, ["2", root, "done"]);
+});
+
+// At a root that is not its repository's main checkout every run needs the project to be
+// initialized there, and the run that journals needs its branch too (design section 4).
+
+/** A root of `layout` that is not its repository's main checkout, with a config when `settings` is given. */
+async function nonMainRoot(t: TestContext, layout: LayoutName, settings?: Record<string, string>): Promise<LayoutRoot> {
+  const made = await layoutRoot(t, layout);
+  if (settings !== undefined) {
+    fs.mkdirSync(path.join(made.root, ".cross-agent"), { recursive: true });
+    fs.writeFileSync(path.join(made.root, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, project: settings }));
+  }
+  return made;
+}
+
+const notInitialized = /not an initialized project; run "cross-agent init" in /;
+
+// @anchor linkedRootTests
+test("an initialized linked root runs its suite in itself, and journals the run after its own merge", async (t) => {
+  const { root } = await nonMainRoot(t, "linked", { defaultBranch: "feature", testCommand: "pwd" });
+  assert.equal(accepted(await runCommand(root, { which: "test", where: "root" })).tail.trim(), root);
+  const directory = path.join(root, ".worktrees", "x");
+  assert.equal((await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })).ok, true);
+  assert.equal((await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 })).ok, true);
+  assert.equal((await gitRoot(root, { args: ["merge", "--ff-only", "task/x"], slug: "x" }, { waitSeconds: 5 })).ok, true);
+  const journaled = accepted(await runCommand(root, { which: "test", where: "root", slug: "x" }));
+  assert.equal(journaled.tail.trim(), root);
+  assert.equal(journaled.journal?.step, "tests-passed");
+  assert.equal(journaled.journal?.defaultSha, await git(root, "rev-parse", "feature"));
+});
+
+// @anchor noSlugTestConfiglessRefused
+test("a test run at a root that is no main checkout and holds no config is refused, slug or none", async (t) => {
+  const { root } = await nonMainRoot(t, "bare-linked");
+  assert.match(refusal(await runCommand(root, { which: "test", where: "root" })), notInitialized);
+});
+
+// @anchor setupConfiglessRefused
+test("a setup run at a root that is no main checkout and holds no config is refused", async (t) => {
+  const { root } = await nonMainRoot(t, "umbrella");
+  assert.match(refusal(await runCommand(root, { which: "setup", where: "root" })), notInitialized);
+});
+
+// @anchor initializedNonMainRunsSetup
+test("an initialized root runs setup and an unjournaled suite whatever branch it has checked out", async (t) => {
+  const { root } = await nonMainRoot(t, "linked", { defaultBranch: "main", setupCommand: "echo set up", testCommand: "echo tested" });
+  assert.match(accepted(await runCommand(root, { which: "setup", where: "root" })).tail, /set up/);
+  assert.match(accepted(await runCommand(root, { which: "test", where: "root" })).tail, /tested/);
+});
+
+// @anchor mainOnOtherBranchRunsSetup
+test("an initialized main checkout on another branch runs setup, as it always has", async (t) => {
+  const { root } = await repository(t, { setupCommand: "echo set up" });
+  await git(root, "checkout", "-b", "elsewhere");
+  assert.match(accepted(await runCommand(root, { which: "setup", where: "root" })).tail, /set up/);
+});
+
+// @anchor linkedRootWorktreeRun
+test("a worktree run at a linked root runs in the worktree it verifies, and needs the root initialized", async (t) => {
+  const { root } = await nonMainRoot(t, "linked", { defaultBranch: "feature", testCommand: "pwd" });
+  const directory = path.join(root, ".worktrees", "x");
+  assert.equal((await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })).ok, true);
+  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).tail.trim(), fs.realpathSync(directory));
+  fs.rmSync(path.join(root, ".cross-agent", "config.json"));
+  assert.match(refusal(await runCommand(root, { which: "test", where: directory, slug: "x" })), notInitialized);
 });
