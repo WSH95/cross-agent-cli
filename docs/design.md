@@ -1479,11 +1479,14 @@ Everything below is built, the operator CLI's listing among it
   written, the launch is refused and nothing is spawned — the reservation
   check it passed was only true while the lock held it true, and a spawn on a
   workspace another delegate may have taken meanwhile is exactly what the lock
-  exists to prevent. A one-shot's `git_root worktree add` that answers
-  `lockLost: true` is refused the same way, before the record, with its worktree
-  discarded and `lockLost: true` on the refusal: the worktree exists, but whether
-  another project's verb ran beside its creation is unknown
-  (`tests/delegate.test.ts#oneShotCreationLockLost`). Once the `launching` record
+  exists to prevent. `claim.lost` is read again just before the record, since a
+  one-shot's creation awaited git, and a loss there discards that worktree and refuses
+  the same way (`tests/delegate.test.ts#oneShotSpawnLockLost`). A one-shot's
+  `git_root worktree add` that answers `lockLost: true` is refused the same way, before
+  the record, with its worktree discarded: the worktree exists, but whether another
+  project's verb ran beside its creation is unknown
+  (`tests/delegate.test.ts#oneShotCreationLockLost`). Each of these refusals carries
+  `lockLost: true`. Once the `launching` record
   exists the reservation is a fact in the ledger rather than a claim on a lock,
   `runner-<id>.lock` governs from there, and `delegate` returns normally however
   `spawn.lock` ends (`src/delegate.ts#delegate`). A read-only spawn during a git

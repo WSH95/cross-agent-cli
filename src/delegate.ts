@@ -513,7 +513,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
 
     // 5. Nothing exists yet, and the checks above were only true while this lock held them
     // true, so a lock already lost is a launch that must not happen (design section 2).
-    if (claim.lost) return refuse("spawn.lock was lost before the record was written; nothing was launched");
+    if (claim.lost) return refuse("spawn.lock was lost before the record was written; nothing was launched", true);
 
     // 6. The worktree a one-shot was promised, created the way every other root git verb
     // is — through `git_root`, which holds it to this mode's policy and journals the
@@ -546,6 +546,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         return refuse(`the worktree for this task does not verify: ${verified.reason}${discarded.text}`, discarded.lockLost);
       }
       verifiedWorktree = verified;
+    }
+    // The same rule as step 5 once git has run: a one-shot's creation awaited git, and
+    // `spawn.lock` lost meanwhile is a launch that must not happen either.
+    if (claim.lost) {
+      const discarded = oneShot === undefined ? { text: "" } : await discardWorktree(projectRoot, repo!, oneShot);
+      return refuse(`spawn.lock was lost before the record was written; nothing was launched${discarded.text}`, true);
     }
 
     // 7. The record, its spec, and the runner that owns the engine from here on. A throw

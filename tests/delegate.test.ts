@@ -1383,6 +1383,26 @@ test("a one-shot whose repository lock is lost while git creates its worktree la
   assert.deepEqual(listJournals(p.root), []);
 });
 
+// @anchor oneShotSpawnLockLost
+test("a one-shot whose spawn.lock is lost while git creates its worktree launches nothing and says so", async (t) => {
+  const p = await projectWithRoles(t);
+  // `worktree add` is held for two seconds, and the delegation's own `spawn.lock` holder
+  // dies inside them: the next delegation may pass its reservation check before this
+  // record exists.
+  const recorder = await gitShim(t, { sleepOn: "worktree*add" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
+  await poll(async () => (await recorder.argv()).includes("add"), Boolean);
+  assert.equal(killLockHolder(lockPath(p.root, spawnLockName())), true, "the delegation holds spawn.lock while git creates the worktree");
+  const result = await pending;
+  assert.match(refusal(result), /spawn\.lock was lost/);
+  assert.match(refusal(result), /nothing was launched/);
+  assert.equal(!result.ok && result.lockLost, true, "the refusal carries the lost lock");
+  assert.deepEqual(scan(p.root).records, []);
+  assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), []);
+  assert.equal(await git(p.root, "branch", "--list", "task/*"), "");
+  assert.deepEqual(listJournals(p.root), []);
+});
+
 // @anchor discardLockLostKeepsJournal
 test("a discard whose repository lock is lost while it runs keeps the journal and says the discard is not certified", async (t) => {
   if (process.getuid!() === 0) {
