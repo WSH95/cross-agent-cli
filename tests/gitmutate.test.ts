@@ -715,6 +715,58 @@ test("a marked host link replaced while the commit check reads it differs, rathe
   assert.match(refusal(await pending), /\.mcp\.json \(marked assume-unchanged/);
 });
 
+// @anchor commitGuardsLinkReferent
+test("a host-configuration link's referent in the repository is guarded at the commit, naming referent and link", async (t) => {
+  const { root, add } = await repository(t);
+  // The project keeps its servers and its Claude settings in files of its own, and the paths
+  // the hosts read link to them: one beside the link, one in a directory reached through `..`.
+  await writeFile(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
+  await symlink("servers.json", path.join(root, ".mcp.json"));
+  await mkdir(path.join(root, "config"));
+  await writeFile(path.join(root, "config", "claude.json"), '{"permissions": {}}\n');
+  await mkdir(path.join(root, ".claude"));
+  await symlink("../config/claude.json", path.join(root, ".claude", "settings.json"));
+  await git(root, "add", "servers.json", ".mcp.json", "config/claude.json", ".claude/settings.json");
+  await git(root, "commit", "-m", "the project's servers and settings, through links");
+  const worktree = await add("referent");
+  const step6 = ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"];
+
+  // The referents untouched, the work commits.
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+  accepted(await gitMutate(root, { slug: "referent", args: step6 }, { waitSeconds: 5 }));
+  assert.equal(accepted(await gitMutate(root, { slug: "referent", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
+
+  // Each referent changed is the configuration its host loads, changed: refused, both named.
+  const head = await git(worktree, "rev-parse", "HEAD");
+  await writeFile(path.join(worktree, "servers.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  await writeFile(path.join(worktree, "config", "claude.json"), '{"permissions": {"allow": ["Edit"]}}\n');
+  const reason = refusal(await gitMutate(root, { slug: "referent", args: ["commit", "-a", "-m", "x"] }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_mutate refuses to commit/);
+  assert.ok(reason.includes("servers.json (what the link .mcp.json loads)"), reason);
+  assert.ok(reason.includes("config/claude.json (what the link .claude/settings.json loads)"), reason);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+
+  // Put back, the next commit goes through.
+  await git(worktree, "checkout", "HEAD", "--", "servers.json", "config/claude.json");
+  accepted(await gitMutate(root, { slug: "referent", args: ["commit", "--allow-empty", "-m", "y"] }, { waitSeconds: 5 }));
+});
+
+// @anchor commitRefusesOutsideLink
+test("a host-configuration link whose target leaves the repository is refused at the commit outright", async (t) => {
+  for (const [slug, target] of [["absolute", "/tmp/not-the-project-servers.json"], ["climbing", "../outside/servers.json"], ["metadata", ".git/servers.json"]] as const) {
+    const { root, add } = await repository(t);
+    await symlink(target, path.join(root, ".mcp.json"));
+    await git(root, "add", ".mcp.json");
+    await git(root, "commit", "-m", "the project's servers, outside it");
+    const worktree = await add(slug);
+    await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+    accepted(await gitMutate(root, { slug, args: ["add", "--", "work.txt"] }, { waitSeconds: 5 }));
+    // Nothing a review reads shows what the host loads through it, so no commit goes through.
+    const reason = refusal(await gitMutate(root, { slug, args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+    assert.ok(reason.includes(`.mcp.json (a link to ${target}, outside the repository)`), `${slug}: ${reason}`);
+  }
+});
+
 // @anchor configLockGit
 test("a config, a lock, or a git that could not run is refused rather than thrown", async (t) => {
   const { temporary, root, add } = await repository(t);

@@ -91,6 +91,82 @@ export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok",
  */
 export const hostConfigPathspecs: readonly string[] = hostConfigPaths.map((entry) => `:(icase)${entry}`);
 
+/** Whether a path is one `hostConfigPathspecs` match: one of the four in any case, or a path below one. */
+export function isHostConfigPath(file: string): boolean {
+  const lower = file.toLowerCase();
+  return hostConfigPaths.some((entry) => lower === entry || lower.startsWith(`${entry}/`));
+}
+
+const maxLinkHops = 40;
+
+/**
+ * Where a host-configuration link leads in one tree, read through `linkAt` — a path's target
+ * when that path is a symbolic link in the tree, null when it is not. Each link on the way,
+ * one standing for a directory of the path included, is resolved against its own directory
+ * until the path is no link. The answer is the links passed and the path reached, both inside
+ * the repository, or the link whose target leaves it: an absolute target, one that climbs out,
+ * one into `.git`, and a chain longer than any git would check out.
+ */
+export async function followHostLink(
+  link: string, linkAt: (file: string) => Promise<string | null>,
+): Promise<{ through: string[]; referent: string } | { outside: string; target: string }> {
+  const through: string[] = [];
+  let current = link;
+  for (let hop = 0; hop <= maxLinkHops; hop++) {
+    const parts = current.split("/");
+    let next: string | undefined;
+    for (let index = 1; index <= parts.length && next === undefined; index++) {
+      const prefix = parts.slice(0, index).join("/");
+      const target = await linkAt(prefix);
+      if (target === null) continue;
+      through.push(prefix);
+      const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(prefix), target, ...parts.slice(index))).replace(/\/+$/, "");
+      // A target that does not read as text is one no review can follow either.
+      if (path.posix.isAbsolute(target) || target.includes("\uFFFD") || resolved === ".." || resolved.startsWith("../")
+        || /^\.git(\/|$)/i.test(resolved)) {
+        return { outside: prefix, target };
+      }
+      next = resolved === "" ? "." : resolved;
+    }
+    if (next === undefined) return { through, referent: current };
+    current = next;
+  }
+  return { outside: link, target: `more than ${maxLinkHops} links in a row` };
+}
+
+/**
+ * What the links among the four load in one tree: each path inside the repository a link
+ * passes through or ends at, with the link it serves, which both gates guard as they guard
+ * the four — leaving out a path among the four, which they guard already — and each link
+ * that leaves the repository, named as a refusal names it.
+ */
+export async function hostLinks(
+  links: readonly string[], linkAt: (file: string) => Promise<string | null>,
+): Promise<{ guarded: Map<string, string>; outside: string[] }> {
+  const guarded = new Map<string, string>();
+  const outside: string[] = [];
+  for (const link of links) {
+    const followed = await followHostLink(link, linkAt);
+    if ("outside" in followed) {
+      const via = followed.outside === link ? "" : `, on the way from ${link}`;
+      outside.push(`${followed.outside} (a link to ${followed.target}, outside the repository${via})`);
+      continue;
+    }
+    for (const file of [...followed.through.slice(1), followed.referent]) {
+      if (!isHostConfigPath(file) && !guarded.has(file)) guarded.set(file, link);
+    }
+  }
+  return { guarded, outside };
+}
+
+/** The link a changed path is loaded through, when `hostLinks` guards it: a refusal names both. */
+export function loadedThrough(file: string, guarded: ReadonlyMap<string, string>): string | undefined {
+  for (const [referent, link] of guarded) {
+    if (referent === "." || file === referent || file.startsWith(`${referent}/`)) return link;
+  }
+  return undefined;
+}
+
 function argumentFault(args: unknown): string | null {
   if (!Array.isArray(args) || args.length === 0) return "git_mutate needs a git subcommand: args is empty";
   if (args.some((argument) => typeof argument !== "string")) return "every git argument must be a string";
@@ -222,24 +298,24 @@ async function differsFromIndex(gitDir: string, workTree: string, file: string):
 }
 
 /**
- * Why a commit in this worktree may not run, or null: it would carry a host's project
- * configuration. The worktree is read, not the index alone, because `commit -a`, `commit
- * --include` and `commit -- <path>` record what the index does not hold: one `status` over
- * the four paths names what is staged, changed or untracked there, and nothing
- * `.gitignore` covers. A tracked file marked assume-unchanged is one `status` takes at its
- * word while a commit naming it records its bytes anyway, so `ls-files -v`, which tags such
- * a file in lowercase, is read beside it, and a marked file is carried when its bytes differ
- * from its index entry: the mark alone carries nothing, since git marks every tracked file so
- * under `core.ignoreStat`. Git sees no empty directory, so an empty `.claude/` an engine
- * leaves behind is never named. This is the early warning; the merge is the gate, and it
- * refuses what this does not see (`src/gitroot.ts#smuggled`).
+ * What a commit in this worktree would record under `specs`, or why that could not be read.
+ * The worktree is read, not the index alone, because `commit -a`, `commit --include` and
+ * `commit -- <path>` record what the index does not hold: one `status` names what is staged,
+ * changed or untracked there, and nothing `.gitignore` covers. A tracked file marked
+ * assume-unchanged is one `status` takes at its word while a commit naming it records its
+ * bytes anyway, so `ls-files -v`, which tags such a file in lowercase, is read beside it, and
+ * a marked file is carried when its bytes differ from its index entry: the mark alone carries
+ * nothing, since git marks every tracked file so under `core.ignoreStat`.
  */
-async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
-  const unread = (ran: Ran, verb: string) =>
-    `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git ${verb} exited ${ran.exitCode}`}`;
-  const status = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...hostConfigPathspecs]);
+async function carriedUnder(
+  gitDir: string, workTree: string, specs: readonly string[],
+): Promise<{ carried: string[]; marked: string[] } | { unread: string }> {
+  const unread = (ran: Ran, verb: string) => ({
+    unread: `git_mutate could not read what a commit in ${workTree} would carry: ${ran.stderr.trim() || `git ${verb} exited ${ran.exitCode}`}`,
+  });
+  const status = await run(gitDir, workTree, ["status", "--porcelain", "--untracked-files=all", "--", ...specs]);
   if (status.exitCode !== 0) return unread(status, "status");
-  const listed = await run(gitDir, workTree, ["ls-files", "-v", "-z", "--", ...hostConfigPathspecs]);
+  const listed = await run(gitDir, workTree, ["ls-files", "-v", "-z", "--", ...specs]);
   if (listed.exitCode !== 0) return unread(listed, "ls-files");
   // Each status line is `XY <path>`, a rename's `XY <old> -> <new>`, as git prints it; each
   // `ls-files -v -z` entry is `<tag> <path>`, the path unquoted.
@@ -248,25 +324,70 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
   for (const entry of listed.stdout.split("\0")) {
     if (!/^[a-z] /.test(entry)) continue;
     const file = entry.slice(2);
-    if (carried.includes(file) || !await differsFromIndex(gitDir, workTree, file)) continue;
-    marked.push(`${file} (marked assume-unchanged, which hides its changes from git status)`);
+    if (!carried.includes(file) && await differsFromIndex(gitDir, workTree, file)) marked.push(file);
   }
-  const paths = [...carried, ...marked];
+  return { carried, marked };
+}
+
+/** A symbolic link's target in this worktree, or null for a path that is no link or cannot be read. */
+function linkOnDisk(workTree: string, file: string): string | null {
+  try {
+    const full = path.join(workTree, file);
+    return fs.lstatSync(full).isSymbolicLink() ? fs.readlinkSync(full, "utf8") : null;
+  } catch {
+    return null;
+  }
+}
+
+const hiddenByMark = "marked assume-unchanged, which hides its changes from git status";
+
+/**
+ * Why a commit in this worktree may not run, or null: it would carry a host's project
+ * configuration (`carriedUnder` the four), or what a link among them loads. Each such link
+ * the index tracks is followed on disk (`hostLinks`): a change to what it loads inside the
+ * repository is refused naming that path and the link, and a link that leaves the
+ * repository is refused whatever the commit holds, because no review sees what the host
+ * loads through it. Git sees no empty directory, so an empty `.claude/` an engine leaves
+ * behind is never named. This is the early warning; the merge is the gate, and it refuses
+ * what this does not see (`src/gitroot.ts#smuggled`).
+ */
+async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
+  const host = await carriedUnder(gitDir, workTree, hostConfigPathspecs);
+  if ("unread" in host) return host.unread;
+  const indexed = await run(gitDir, workTree, ["ls-files", "-s", "-z", "--", ...hostConfigPathspecs]);
+  if (indexed.exitCode !== 0) {
+    return `git_mutate could not read what a commit in ${workTree} would carry: ${indexed.stderr.trim() || `git ls-files exited ${indexed.exitCode}`}`;
+  }
+  const links = indexed.stdout.split("\0").filter((entry) => entry.startsWith("120000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1));
+  const { guarded, outside } = await hostLinks(links, async (file) => linkOnDisk(workTree, file));
+  let loaded: string[] = [];
+  if (guarded.size > 0) {
+    const referents = await carriedUnder(gitDir, workTree, [...guarded.keys()].map((file) => `:(literal)${file}`));
+    if ("unread" in referents) return referents.unread;
+    const named = (entry: string, mark: boolean) => {
+      const link = loadedThrough(entry.split(" -> ").pop()!, guarded) ?? loadedThrough(entry.split(" -> ")[0], guarded);
+      return `${entry} (what the link ${link} loads${mark ? `, ${hiddenByMark}` : ""})`;
+    };
+    loaded = [...referents.carried.map((entry) => named(entry, false)), ...referents.marked.map((entry) => named(entry, true))];
+  }
+  const paths = [...host.carried, ...host.marked.map((file) => `${file} (${hiddenByMark})`), ...loaded, ...outside];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
-    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case — loads hooks, MCP servers "
-    + "or plugins in the operator's own host session and is never committed through a task; remove it from the worktree, "
-    + "or ignore it if it is the operator's own, clear any assume-unchanged mark on it (update-index --no-assume-unchanged), "
-    + "and commit again";
+    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case, and what a link among them loads — "
+    + "loads hooks, MCP servers or plugins in the operator's own host session and is never committed through a task; remove it from the worktree, "
+    + "or ignore it if it is the operator's own, put back what a link loads as the branch has it, clear any assume-unchanged mark "
+    + "(update-index --no-assume-unchanged), and commit again"
+    + (outside.length === 0 ? "" : "; a link out of the repository is the operator's to replace, at the root and by hand, with the file it points at or a link inside the repository");
 }
 
 /**
- * The lead's only way to mutate git inside a worktree (design section 4). A linked
- * worktree's `.git` is a writable file inside the implementer's sandbox, so nothing here
- * trusts it: the four steps are refuse while the workspace is reserved, verify the
- * worktree from the root, run the command under `git.lock` against the directories the
- * verifier returned, and journal the step with the SHAs around it. This function judges
- * the request, which needs no lock at all, and then takes `spawn.lock` for the four.
+ * The lead's only way to mutate git inside a worktree (design section 4). Nothing here
+ * trusts a linked worktree's `.git` pointer, which Grok's sandbox cannot keep an
+ * implementer from writing: the four steps are refuse while the workspace is reserved,
+ * verify the worktree from the root, run the command under `git.lock` against the
+ * directories the verifier returned, and journal the step with the SHAs around it. This
+ * function judges the request, which needs no lock at all, and then takes `spawn.lock`
+ * for the four.
  */
 export async function gitMutate(
   projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,

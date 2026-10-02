@@ -282,6 +282,56 @@ test("a merge carrying a host's project configuration in another case is refused
   assert.deepEqual(await state(root), before, "the default branch did not move");
 });
 
+// @anchor mergeGuardsLinkReferent
+test("a merge changing a host-configuration link's referent is refused naming referent and link, and one leaving it merges", async (t) => {
+  const { root } = await repository(t);
+  // The project keeps its servers in a file of its own, and `.mcp.json` links to it.
+  fs.writeFileSync(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
+  fs.symlinkSync("servers.json", path.join(root, ".mcp.json"));
+  await git(root, "add", "servers.json", ".mcp.json");
+  await git(root, "commit", "-m", "the project's servers, through a link");
+
+  // Committed by the harness's own git, as a branch that reached the root by another path.
+  const changed = path.join(root, ".worktrees", "changed");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/changed", changed, "main"], slug: "changed" }, { waitSeconds: 5 }));
+  fs.writeFileSync(path.join(changed, "servers.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  await git(changed, "commit", "-a", "-m", "the servers, changed");
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/changed"], slug: "changed" }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_root refuses to merge/);
+  assert.ok(reason.includes("servers.json (what the link .mcp.json loads)"), reason);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+
+  // A branch that leaves the referent alone merges.
+  const quiet = path.join(root, ".worktrees", "quiet");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/quiet", quiet, "main"], slug: "quiet" }, { waitSeconds: 5 }));
+  fs.writeFileSync(path.join(quiet, "work.txt"), "the change the brief asked for\n");
+  await git(quiet, "add", "work.txt");
+  await git(quiet, "commit", "-m", "work");
+  accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/quiet"], slug: "quiet" }, { waitSeconds: 5 }));
+});
+
+// @anchor mergeRefusesOutsideLink
+test("a merge in a project whose host-configuration link leaves the repository is refused outright", async (t) => {
+  const { root } = await repository(t);
+  // A link through a directory of links: `.grok/config.toml` → `shared/grok.toml`, and
+  // `shared` → a directory beside the repository.
+  fs.mkdirSync(path.join(root, ".grok"));
+  fs.symlinkSync("../shared/grok.toml", path.join(root, ".grok", "config.toml"));
+  fs.symlinkSync("../outside", path.join(root, "shared"));
+  await git(root, "add", "-f", ".grok/config.toml", "shared");
+  await git(root, "commit", "-m", "Grok's plugins, outside the project");
+  const directory = path.join(root, ".worktrees", "outside");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/outside", directory, "main"], slug: "outside" }, { waitSeconds: 5 }));
+  fs.writeFileSync(path.join(directory, "work.txt"), "the change the brief asked for\n");
+  await git(directory, "add", "work.txt");
+  await git(directory, "commit", "-m", "work");
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/outside"], slug: "outside" }, { waitSeconds: 5 }));
+  assert.ok(reason.includes("shared (a link to ../outside, outside the repository, on the way from .grok/config.toml)"), reason);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+});
+
 // @anchor mergeNamesEveryPath
 test("a merge refusal names every path the branch would carry, however many", async (t) => {
   const { root } = await repository(t);

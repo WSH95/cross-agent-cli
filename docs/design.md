@@ -2359,10 +2359,25 @@ one marked assume-unchanged whose working-tree bytes differ from its index
 entry, a change the mark hides from that status while a commit naming the path
 records it. The mark alone carries nothing, since git marks every tracked file
 so under `core.ignoreStat`, and both reads are taken under `git.lock` before the
-command runs (`src/gitmutate.ts#hostConfigFault`, `#differsFromIndex`,
-`#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
+command runs (`src/gitmutate.ts#hostConfigFault`, `#carriedUnder`,
+`#differsFromIndex`, `#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
 `#hostConfigAnyCase`, `#commitRefusesAssumeUnchanged`,
-`#commitUnderIgnoreStat`). The commit check does not see a git alias for
+`#commitUnderIgnoreStat`). **A link among the four is followed to what it loads.** A
+project may keep `.mcp.json` as a link to `servers.json`, and a task that changed
+`servers.json` changed the operator's servers while both gates read the four names alone.
+So each link among the four — in the worktree's index at the commit, in the default
+branch's tree and the branch's at the merge — is resolved against its own directory,
+through any link on the way, and the path it reaches is guarded with the four: a change
+there is refused, named with the link (`src/gitmutate.ts#followHostLink`, `#hostLinks`,
+`src/gitroot.ts#smuggled`; `tests/gitmutate.test.ts#commitGuardsLinkReferent`,
+`tests/gitroot.test.ts#mergeGuardsLinkReferent`). A link whose target leaves the
+repository — absolute, climbing out, into `.git`, or a chain without end — is refused at
+both gates whatever the task changed, because no review sees what the host loads through
+it; the operator replaces it at the root by hand
+(`tests/gitmutate.test.ts#commitRefusesOutsideLink`,
+`tests/gitroot.test.ts#mergeRefusesOutsideLink`). A link that changes while the commit
+check reads it is a change, not an error (`tests/gitmutate.test.ts#linkReplacedMidCheck`).
+The commit check does not see a git alias for
 `commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
 `commit --amend` over an older commit that already carries one; the merge
 refuses each of those. A removal of a tracked one is carried the same way, in a

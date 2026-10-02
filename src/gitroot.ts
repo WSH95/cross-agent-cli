@@ -1,7 +1,7 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
-import { GitRunError, globalOptions, hostConfigPathspecs, revision, run } from "./gitmutate.ts";
+import { GitRunError, globalOptions, hostConfigPathspecs, hostLinks, isHostConfigPath, loadedThrough, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
@@ -504,20 +504,53 @@ interface Held {
  * are refused by name (design section 4) — and so is a host's project configuration
  * (`src/gitmutate.ts#hostConfigPaths`, in any case), which the operator's own host session
  * would load, however the branch came to carry it: this is the gate, and `git_mutate`'s
- * refusal of a commit only the early warning. Every path is named, so the repair is whole.
+ * refusal of a commit only the early warning. A link among the four is followed through
+ * the default branch's tree and the branch's (`src/gitmutate.ts#hostLinks`): what it loads
+ * inside the repository is refused as the four are, named with the link, and a link that
+ * leaves the repository is refused whatever the branch changed, because no review sees
+ * what the host loads through it. Every path is named, so the repair is whole.
  */
 async function smuggled(
   gitDir: string, workTree: string, defaultBranch: string, ref: string, dir: string,
 ): Promise<string | null> {
-  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir, ...hostConfigPathspecs]);
-  if (ran.exitCode !== 0) {
-    return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
+  const unread = (ran: { exitCode: number; stderr: string }, verb: string) =>
+    `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git ${verb} exited ${ran.exitCode}`}`;
+  const guarded = new Map<string, string>();
+  const outside = new Set<string>();
+  for (const tree of [defaultBranch, ref]) {
+    const listed = await run(gitDir, workTree, ["ls-tree", "-r", "-z", "--full-tree", tree]);
+    if (listed.exitCode !== 0) return unread(listed, "ls-tree");
+    // `<mode> <type> <object>\t<path>`, the path unquoted; a link's blob is its target.
+    const links = new Map<string, string>();
+    for (const entry of listed.stdout.split("\0")) {
+      const link = /^120000 blob ([0-9a-f]+)\t(.+)$/s.exec(entry);
+      if (link !== null) links.set(link[2], link[1]);
+    }
+    const linkAt = async (file: string): Promise<string | null> => {
+      const object = links.get(file);
+      if (object === undefined) return null;
+      const blob = await run(gitDir, workTree, ["cat-file", "blob", object]);
+      // A target this cannot read is one no review can follow: `followHostLink` refuses it.
+      return blob.exitCode === 0 ? blob.stdout : "\uFFFD";
+    };
+    const followed = await hostLinks([...links.keys()].filter(isHostConfigPath), linkAt);
+    for (const [file, link] of followed.guarded) if (!guarded.has(file)) guarded.set(file, link);
+    for (const named of followed.outside) outside.add(named);
   }
-  const paths = ran.stdout.split("\n").filter(Boolean);
+  const referents = [...guarded.keys()].map((file) => `:(literal)${file}`);
+  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir, ...hostConfigPathspecs, ...referents]);
+  if (ran.exitCode !== 0) return unread(ran, "diff");
+  const paths = ran.stdout.split("\n").filter(Boolean).map((file) => {
+    const link = isHostConfigPath(file) ? undefined : loadedThrough(file, guarded);
+    return link === undefined ? file : `${file} (what the link ${link} loads)`;
+  });
+  paths.push(...outside);
   if (paths.length === 0) return null;
   return `git_root refuses to merge ${ref}: it carries ${paths.join(", ")}. `
     + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there — `
-    + "and nor is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, in any case), which the operator's own host session would load. "
+    + "and nor is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, in any case, and what a link among them loads), "
+    + "which the operator's own host session would load. "
+    + (outside.size === 0 ? "" : "A link out of the repository is the operator's to replace, at the root and by hand, with the file it points at or a link inside the repository. ")
     + `Remove them from the branch and merge again`;
 }
 
