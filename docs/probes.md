@@ -3438,8 +3438,10 @@ permission rule had to judge, were turned away by the role's own tool list, `--t
    before and after; none was added or removed, and two changed: `logs/unified.jsonl` (mtime
    22:37:13Z before the run, 22:49:29Z, then 23:00:13Z, after both hosts had exited) and
    `memtrace/1790834134-1171929.jsonl`, named for the pid of the one `grok` process on the machine,
-   which began 2026-10-01 05:55:33Z and still runs, and written every 30 s while it was watched. The
-   run started no Grok engine. Every other readable file kept its checksum, and every other file,
+   which began 2026-10-01 05:55:33Z and still runs, and written every 30 s while it was watched. Every
+   line `logs/unified.jsonl` gained from 22:37Z to 23:10Z names that same process (`"pid":1171929`,
+   grok 1.0.44, `slash.advertise` on a `skills_reload`, about every ten minutes), read after the run.
+   The run started no Grok engine. Every other readable file kept its checksum, and every other file,
    the 86 unreadable ones (all `sandbox-blocked.<pid>`) included, kept its mtime; configuration,
    auth and trust files are among them (`after-run/host-config-final.txt`).
 7. *Each merge at its own root.* Each lead's `git_root merge --ff-only task/<slug>` answered `ok`
