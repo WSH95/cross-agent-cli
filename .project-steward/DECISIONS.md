@@ -321,11 +321,12 @@ loop in a Codex lead and in a Claude lead; E4 and E5 under a Codex host, and E6
 and E7 under a Grok host, each pair host-placed and then with the lead the
 table names "Claude if available, else Codex" — Claude was available. S11's
 review added E2b and E2c, E2's host clause run twice more under a Codex lead,
-and task 12's fix round 1 added E8, the rerun rule's whole loop after a change
-to every Claude spawn line. Every run took one task in the sample repository
-`~/.cache/agent-team/cross-agent-e2e/slugkit`, a clone of
-`~/Documents/atw-sample-slugkit` (at the close `main` at `15f7b28`, 105 tests,
-44 records; `VERIFY.md` T12), and `tools/e2e-verify.mjs` judged each by the
+task 12's fix round 1 added E8, the rerun rule's whole loop after a change to
+every Claude spawn line, and the close added E9, that line under an
+engine-placed Claude lead (`docs/probes.md#t12Fix3`). Every run took one task
+in the sample repository `~/.cache/agent-team/cross-agent-e2e/slugkit`, a clone
+of `~/Documents/atw-sample-slugkit` (at the close `main` at `5f391d4`, 109
+tests, 51 records; `#t12Fix3`), and `tools/e2e-verify.mjs` judged each by the
 design's eight conditions ("Verification", "End-to-end under each host"),
 each `pass`, `FAIL` or `?`, where `?` is evidence missing and never counts as
 a pass. What "second binding" means is the devpack's Decision 0008: the
@@ -380,20 +381,24 @@ column and never stands in for a `wait`.
 | E6 | `grok` | host | `t15-e6` | 330 s, 24 turns | planner `codex` 24 s, plan; plan reviewer `grok` 92 s, approve; implementer `claude` 28 s, 95 → 98 tests; code reviewer `grok`, read-only in the worktree, 62 s, ready | four, each `done`: 21.0, 90.1, 26.0, 60.1 s | — | `8 pass, 0 fail, 0 without evidence` | none from the loop: step 8's rebase a no-op; one plan-review round, so no `resume`; no `run_command setup` call, setup being `none` |
 | E7 | `grok` | engine, lead `claude` | `t15-e7` | 501 s, 8 turns | lead `claude` 462 s, no ask; planner `codex` 36 s, plan; plan reviewer `grok` 96 s, revise; planner `codex`, a `resume`, 26 s, revised plan; plan reviewer `grok` 132 s, approve; implementer `claude` 21 s, 98 → 101 tests; code reviewer `grok`, read-only in the worktree, 57 s, ready | one, `done` after 459.6 s | not recorded | `8 pass, 0 fail, 0 without evidence` | none |
 | E8 | `claude` | host | `t12-e8` | 193.8 s, 28 turns | planner `claude` 31.4 s; plan reviewer `claude` 19.3 s, approve; implementer `claude` 24.1 s, 101 → 105 tests; code reviewer `claude`, read-only in the worktree, 22.5 s, ready | four, each `done`, answering `elapsedSeconds` 31, 19, 24 and 23; durations not recorded | — | `8 pass, 0 fail, 0 without evidence` | no roster before the first dispatch; the narration and `log.md` named `codex` and `grok` for three Claude roles (`atc-s96.66`, reopened); no `resume` ran |
+| E9 | `claude` | engine, lead `claude` | `t12-e9` | 494.9 s, 9 turns | lead `claude` 456 s, no ask; planner `codex` 25 s, plan; plan reviewer `grok` 82 s, revise; planner `codex`, a `resume`, 20 s, revised plan; plan reviewer `grok` 67 s, approve; implementer `claude` 29 s, 105 → 109 tests; code reviewer `grok`, read-only in the worktree, 48 s, ready | one, `done` after 453.6 s | six, each `done`: 23.1, 79.2, 9.0, 64.1, 27.1, 45.1 s, 247.5 s in all | `8 pass, 0 fail, 0 without evidence` | the host printed no roster before the lead's dispatch (`atc-s96.66`), called no `result` and closed on `wait`'s tail, a sentence of its own before the report; the lead never called `list_roles`, and its report named both planner runs `claude` where the ledger names `codex` (`atc-s96.95`); the lead called `result` after the planner's `wait`s only |
 
 Where the cells come from: E1's row from `VERIFY.md` T13 "E1" and
 `docs/probes.md#e1`; E3's and E2's from S11 "E3" and "E2" with `#e3` and
 `#e2`; E2b's and E2c's from S11 "E2b and E2c" with `#e2Host`, their
 specialists' engines being the sample's S11 bindings (`#s11`); E4's and E5's
 from T14 "E4" and "E5" with `#e4` and `#e5`; E6's and E7's from T15 "E6" and
-"E7" with `#e6` and `#e7`; E8's from T12 "E8" with `#t12Fix1`. The cells
-marked `not recorded`, and what was checked for each: E1's `wait` durations
-— `#e1` writes each call as `wait 600 → done` with the specialist's own time
-beside it; the host `wait` durations of E2, E2b and E2c — their sections,
-`#e2` and `#e2Host` give the count alone; the lead's MCP `wait` count for E2b
-and E2c — `#e2Host` counts only Codex's own code-mode waits — and for E5 and
-E7 — "E5", `#e5`, "E7" and `#e7` give the lead's loop step by step with no
-count; the host turns of E4 and E5 — "E4", `#e4`, "E5" and `#e5` give a Codex
+"E7" with `#e6` and `#e7`; E8's from T12 "E8" with `#t12Fix1`; E9's from
+`docs/probes.md#t12Fix3` alone, which times every `wait` from its `tool_use`
+event to its `tool_result` event and records the lead's own six — a count and
+durations no earlier run's sources give, so no cell above is filled from it.
+The cells marked `not recorded`, and what was checked for each: E1's `wait`
+durations — `#e1` writes each call as `wait 600 → done` with the specialist's
+own time beside it; the host `wait` durations of E2, E2b and E2c — their
+sections, `#e2` and `#e2Host` give the count alone; the lead's MCP `wait` count
+for E2b and E2c — `#e2Host` counts only Codex's own code-mode waits — and for
+E5 and E7 — "E5", `#e5`, "E7" and `#e7` give the lead's loop step by step with
+no count; the host turns of E4 and E5 — "E4", `#e4`, "E5" and `#e5` give a Codex
 host's time and tokens; E8's `wait` durations — `#t12Fix1` gives what each
 call answered, `elapsedSeconds`, which is the task's elapsed time and not the
 call's own. Codex's code-mode waits, seven in E4's host, six in E2's lead and
@@ -424,11 +429,12 @@ stopping point allows, and each depth-and-lineage reading passed.
 Depth, lineage and the `?` readings. Every engine-placed run reads PASS on the
 ledger, the lead at depth 1 with no parent and every specialist at depth 2
 with the lead first in its lineage (`VERIFY.md` S11 "A lead's server, from the
-ledger", "E3", "E2" and "E2b and E2c"; T14 "E5"; T15 "E7"), and every
-host-placed run's records sit at depth 1 against a cap of 1 (`VERIFY.md` "E1"
-and "E4"; `docs/probes.md#e6`, `#t12Fix1`). Five of the ten runs needed a
-person to read a `?` — E3, E2, E2b, E2c and E4 — and each reading stands
-beside its verdict; E1, E5, E6, E7 and E8 read eight `pass`.
+ledger", "E3", "E2" and "E2b and E2c"; T14 "E5"; T15 "E7";
+`docs/probes.md#t12Fix3` for E9), and every host-placed run's records sit at
+depth 1 against a cap of 1 (`VERIFY.md` "E1" and "E4"; `docs/probes.md#e6`,
+`#t12Fix1`). Five of the eleven runs needed a person to read a `?` — E3, E2,
+E2b, E2c and E4 — and each reading stands beside its verdict; E1, E5, E6, E7,
+E8 and E9 read eight `pass`.
 
 **2. The rows not run**, each with its reason and where it is recorded as not
 run:
@@ -468,23 +474,28 @@ run:
   that ships now.
 - The end-to-end runs under the Claude line that ships: fix round 1 gave every
   Claude role `dontAsk`, a tool allowlist, workspace-only edit rules and
-  `--setting-sources project` after E1 to E7 had run. E8 is the one whole loop
-  under that line, and it exercised no resumed specialist, no Codex or Grok
-  specialist and no engine placement (`VERIFY.md` T12 "E8", its "not
-  exercised" row). Fix round 1 ran a resumed Claude role through the product
-  under the line, and a candidate line with the lead mount on which `dontAsk`
-  ran the MCP call its allow rule names (`#t12Fix1`); an engine-placed Claude
-  lead under the shipped line has not run end to end.
+  `--setting-sources project` after E1 to E7 had run. E8 and E9 are the whole
+  loops under that line, E8 host-placed with every specialist on Claude and E9
+  with an engine-placed Claude lead (`docs/probes.md#t12Fix3`); neither ran a
+  resumed Claude specialist, a read-only Claude specialist under engine
+  placement or a lead's `ask` under `dontAsk` (`VERIFY.md` T12 "E8", its "not
+  exercised" row; `#t12Fix3`, "Not exercised"). Fix round 1 ran a resumed
+  Claude role through the product under the line, and a candidate line with
+  the lead mount on which `dontAsk` ran the MCP call its allow rule names
+  (`#t12Fix1`).
 - E4 and E5 under the Codex mount that ships: both ran on an earlier install
   whose `env_vars` named the project alone, and probe (a) shows the shipped
   four-name mount behaves the same from a clean shell (`VERIFY.md` T14, the
   paragraph after "Landed"; `docs/probes.md#codexMarkers`).
-- The runs under the Codex CLI that is installed now: `VERIFY.md`'s T12 table
-  names a newer Codex CLI than its S11, T14 and T15 tables, so the CLI was
-  upgraded after E2, E2b, E2c, E4 and E5, where Codex was a lead or the host,
-  and after E3, E6 and E7, whose planners ran on it. Under the newer CLI only
-  fix round 1's probe (c) ran, a Codex consult whose patch tool refused a write
-  outside its worktree (`#t12Fix1`).
+- A Codex lead or host under the Codex CLI that is installed now: `VERIFY.md`'s
+  T12 table names a newer Codex CLI than its S11, T14 and T15 tables, so the CLI
+  was upgraded after E2, E2b, E2c, E4 and E5, where Codex was a lead or the
+  host, and after E3, E6 and E7, whose planners ran on it. Under the newer CLI
+  ran fix round 1's probe (c), a Codex consult whose patch tool refused a write
+  outside its worktree (`#t12Fix1`), and E9's planner, fresh and resumed, the
+  first Codex specialist of a whole loop under it (`docs/probes.md#t12Fix3`);
+  no section records a Codex lead, a Codex host or a writing Codex specialist
+  under it (`#t12Fix3`, "Not exercised").
 - The Grok rows T15 did not run (`docs/probes.md#t15Attach`;
   `.superpowers/sdd/the-development-of-this-calm-planet/task-9-report.md`,
   "Rulings taken" 1 and "Deviations"): the user-scope `grok plugin install
@@ -500,8 +511,9 @@ run:
 - `.70`'s and `.71`'s launcher sentences, for a headless host that meets an
   open ask and for a host whose cross-agent tools are missing: each written and
   pinned by a test at T15 (`VERIFY.md` T15, "Landed"), neither met by a run,
-  since E7's lead asked nothing (`docs/probes.md#e7`) and every host had the
-  tools. T15 closed both beads on this entry's word.
+  since the leads of E7 and E9, the engine-placed runs after T15, asked nothing
+  (`docs/probes.md#e7`, `#t12Fix3`) and every host had the tools. T15 closed
+  both beads on this entry's word.
 - The trusted-workspace case of the project-settings limitation below, and a
   project `apiKeyHelper` reaching a specialist: both unprobed
   (`docs/probes.md#t12Fix2`; README, the Claude prerequisites); `atc-s96.93` is
@@ -525,12 +537,14 @@ a writable Claude role's Write tool wrote the project root, its `.git`,
 the CLI's own `dontAsk`, a tool allowlist and workspace-only edit rules, after
 which every outside write was refused, fresh and resumed (`#t12Fix1`); no
 recorded run had used that path, every Claude containment probe having written
-through the shell (`task-12-findings-round-1.md`, R1-1), and E8 is the whole
-loop under the fix. R1-3 and R1-4, the verifier passing a program that a data
-command's option runs and tool calls it never read, were fixed, and every
-archived run and record reads as it did (`VERIFY.md` T12, its "archived
+through the shell (`task-12-findings-round-1.md`, R1-1), and E8 and E9 are the
+whole loops under the fix, E9's Claude lead under `dontAsk` with its allow rule
+admitting every call to its mount, the writing ones included
+(`docs/probes.md#t12Fix3`). R1-3 and R1-4, the verifier passing a program that
+a data command's option runs and tool calls it never read, were fixed, and
+every archived run and record reads as it did (`VERIFY.md` T12, its "archived
 verdicts" row). Each hard requirement holds on every host. No specialist
-transcript of the ten runs shows a `delegate` or an engine launch, and every
+transcript of the eleven runs shows a `delegate` or an engine launch, and every
 engine-placed ledger reads PASS (part 1). The deny targets were refused live
 on Claude and Grok, fresh and resumed (`#t12Fix1`, R1-6), and the builder tests
 pin each adapter's flags (design section 3). Claude's sandbox and file tools
@@ -540,7 +554,7 @@ rewritten pointer in the I2 runs under all three hosts (design section 4;
 `docs/probes.md#i2`, `#i2Codex`, `#i2GrokHost`). The verifier answers `?` for
 every shape the rounds named, the escalation and the wrap-up closing them as
 classes (`VERIFY.md` T12, "Landed"). And each host's attach ran whole loops:
-Claude Code E1, E3, E2, E2b, E2c and E8; Codex E4 and E5; Grok E6 and E7.
+Claude Code E1, E3, E2, E2b, E2c, E8 and E9; Codex E4 and E5; Grok E6 and E7.
 
 Row 2 does not hold: every `?`, in E3, E2, E2b, E2c and E4, was read by a
 person and the reading stands beside its verdict.
@@ -567,7 +581,7 @@ instruction, each of which the user may overturn:
 Row 4 holds, on its second test. Every E-row ran, none was cut short by a cap,
 and each ended in the design's clean state: the root worktree alone, no
 `task/*` branch, a clean tree and the suite green on `main` read `pass` in all
-ten verdicts. But on some hosts a hard requirement rests on an operator
+eleven verdicts. But on some hosts a hard requirement rests on an operator
 prerequisite the README names, and each such prerequisite is a condition:
 
 - (a) Codex host — the project named in `CROSS_AGENT_PROJECT` before `codex`
@@ -663,14 +677,14 @@ operator's host is bounded by the matrix, the markers and the sandbox, which
 the design promises, not by a clean-room specialist, which it does not.
 
 Against Decision 0008's terms: the same team, its roles and lifecycle — the
-four roles and the engine-placed lead took tasks from plan to cleanup in ten
-runs; runnable from each of the three hosts on the user's subscriptions — host-
-and engine-placed loops ran under Claude Code, Codex and Grok, with conditions
-(a) and (b); each CLI's own sandbox the boundary — with conditions (c) and (d),
-and limitations 1 to 4 accepted; no delegation loop — the matrix by ancestry,
-the depth cap, lineage and the deny list, with no specialist `delegate` or
-engine launch in ten runs; specialists never writing git metadata — refused on
-Claude and Codex, checked on Grok.
+four roles and the engine-placed lead took tasks from plan to cleanup in
+eleven runs; runnable from each of the three hosts on the user's subscriptions
+— host- and engine-placed loops ran under Claude Code, Codex and Grok, with
+conditions (a) and (b); each CLI's own sandbox the boundary — with conditions
+(c) and (d), and limitations 1 to 4 accepted; no delegation loop — the matrix
+by ancestry, the depth cap, lineage and the deny list, with no specialist
+`delegate` or engine launch in eleven runs; specialists never writing git
+metadata — refused on Claude and Codex, checked on Grok.
 
 **4. The deferred beads** (each `atc-s96.<n>`), one line each with its class
 and reason; `.57` was closed at the merge, since `--setting-sources project`
@@ -682,8 +696,9 @@ drops the operator's plugins, skills and commands from Claude specialists
   `?` for each, read by a person, and the sandboxes and the deny list enforce.
 - `.62` follow-up — a lead-row `delegate` in a script, and every doubt
   reported: the same reason as `.60`.
-- `.66` follow-up, reopened — E8's host fidelity: no roster before the first
-  dispatch, and other engines named for three Claude roles.
+- `.66` follow-up, reopened — host fidelity: E8's host printed no roster before
+  the first dispatch and named other engines for three Claude roles, and E9's
+  printed no roster before the lead's dispatch (`docs/probes.md#t12Fix3`).
 - `.69` follow-up — Codex's `file_change` item, its notes now holding a second
   archived log from fix round 1's probe (c): the same reason as `.60`.
 - `.72` follow-up — Codex's own `sleep` and `request_user_input_async`: the
@@ -736,6 +751,11 @@ drops the operator's plugins, skills and commands from Claude specialists
   limitation 1, with a project `apiKeyHelper`.
 - `.94` follow-up — a test tying the verifier's Claude tool vocabulary to the
   adapter's tool lists.
+- `.95` follow-up — E9's lead never called `list_roles` and its report named
+  both planner runs `claude`, where the ledger, `cross-agent report` and the
+  live process name `codex` (`docs/probes.md#t12Fix3`): report fidelity, not a
+  hard requirement, since the ledger and `cross-agent report` carry the engine
+  that ran.
 
 Consequences: The plan closes with this entry. `main` carries every milestone,
 and the open beads are the epic `atc-s96` as the parent of the backlog (`.25`,
@@ -746,6 +766,6 @@ limitations stand until a bead or a later Claude Code, Codex or Grok release
 changes them. The `AGENTS.md` change is proposed as the consolidated
 `task-12-agents-md.diff` in `.superpowers/sdd/the-development-of-this-calm-planet/`,
 against the `AGENTS.md` blob `43d92acbb62da520252ef77906037a632d1183e0`,
-unchanged on `main` since `2de546f` and still `main`'s at `0b38096`, and awaits
+unchanged on `main` since `2de546f` and still `main`'s at `60fa393`, and awaits
 the user's approval.
 
