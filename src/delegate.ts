@@ -752,7 +752,11 @@ export function protectedPathsFor(located: Located, worktree?: VerifiedWorktree)
     const own = [path.join(worktree.workTree, ".git"), worktree.commonDir];
     return linked === undefined ? own : [...own, path.join(linked.workTree, ".git")];
   }
-  if (located.kind === "unsupported") return [path.join(located.workTree, ".git"), located.gitDir];
+  if (located.kind === "unsupported") {
+    // A bare repository at the root's `.git` is both at once, and is named once.
+    const pointer = path.join(located.workTree, ".git");
+    return located.gitDir === pointer ? [pointer] : [pointer, located.gitDir];
+  }
   return linked === undefined ? undefined : [path.join(linked.workTree, ".git"), linked.commonDir];
 }
 

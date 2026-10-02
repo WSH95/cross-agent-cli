@@ -7,12 +7,12 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Authority } from "../src/authority.ts";
 import { CONFIG_PATH } from "../src/config.ts";
-import { delegate, writableProfiles } from "../src/delegate.ts";
+import { delegate, protectedPathsFor, writableProfiles } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
 import { listJournals, readJournal } from "../src/journal.ts";
 import { create, readSpec, scan, update, writeSpec } from "../src/ledger.ts";
 import { reservedBy } from "../src/reservation.ts";
-import { verifyWorktree } from "../src/worktree.ts";
+import { locateRepository, verifyWorktree } from "../src/worktree.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
@@ -20,7 +20,7 @@ import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } fro
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { git, gitShim } from "./helpers/git.ts";
-import { alive, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -1577,6 +1577,12 @@ test("a consult at a main checkout with a separated git directory launches, prot
   await git(separated.main, "worktree", "add", "-b", "task/w", worktree);
   refusal(await delegate(separated.main, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
   assert.equal(await git(separated.main, "branch", "--list", "--format=%(refname:short)", "task/*"), "task/w", "and nothing of a one-shot was made");
+});
+
+// @anchor protectedPathsBareDotGitOnce
+test("the directory holding a bare repository at .git protects that directory once, its pointer and its git directory being one path", async (t) => {
+  const fixture = await bareDotGitProject(t);
+  assert.deepEqual(protectedPathsFor(await locateRepository(fixture.bare)), [path.join(fixture.bare, ".git")]);
 });
 
 // @anchor consultAtSymlinkedGitLaunches

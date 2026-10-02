@@ -283,13 +283,13 @@ const initVerb: Verb = {
         if (!workTree) return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
       }
     }
-    if (parsed.values["--from"] !== undefined) {
-      return refused(`--from copies a project's config into a worktree of its repository, and ${root} is ${dotGit === undefined ? "no repository's checkout" : "a main checkout"}, where init writes the mode's own`);
-    }
     if (dotGit?.isDirectory()) {
       // A bare repository at `.git` makes the directory holding it no work tree of it.
       const located = await locateRepository(root);
       if (located.kind === "unsupported") return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
+    }
+    if (parsed.values["--from"] !== undefined) {
+      return refused(`--from copies a project's config into a linked worktree of its repository, and ${root} is none: init writes the mode's defaults there, so run it without --from`);
     }
     const mode = parsed.values["--mode"] ?? DEFAULT_MODE;
     try {

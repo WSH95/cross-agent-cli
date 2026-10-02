@@ -1708,6 +1708,8 @@ test("init in a worktree of a bare repository at U/.git takes the defaults, thou
   assert.equal(written(fixture.root).mode, "dev-team");
   assert.equal(defaultBranchOf(fixture.root), "feature");
   assert.match(await refusedInit([], fixture.bare, fixture.bare), /unsupported/);
+  // No work tree, whatever the flags: `--from` is not what is wrong there.
+  assert.match(await refusedInit(["--from", fixture.root], fixture.bare, fixture.bare), /no work tree/);
 });
 
 // @anchor initFrom
@@ -1792,6 +1794,10 @@ test("init at a checkout whose git directory lies outside it writes the mode's d
     assert.equal(written(root).mode, "dev-team", root);
     assert.equal(defaultBranchOf(root), "main", root);
   }
+  // `--from` copies into a linked worktree, and none of these is one, nor a main checkout.
+  const refusal = await refusedInit(["--from", separated.main], linkedGit.main, linkedGit.main);
+  assert.match(refusal, /--from/);
+  assert.doesNotMatch(refusal, /a main checkout/);
   // A link git does not read as the root's own git directory makes no project.
   const other = await mainCheckout(scratch(t), "N");
   fs.rmSync(path.join(other, ".git"), { recursive: true });

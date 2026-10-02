@@ -2113,20 +2113,22 @@ the mode's worktree provider, for the operator and lead rows, with `path` and
 **The project's repository.** A project root is its repository's main checkout, or a
 linked worktree initialized as a project of its own: a user developing several
 branches at once runs one loop per branch worktree, each merging into its own branch
-("Which project"). Every git tool, `run_command`, `delegate`, `cross-agent init` and
-discovery's named roots locate the repository once per call, and pass what they found
-on — to `trackedStateFault`, `rootWriteFault`, the discard of a one-shot and
-`verifyWorktree`, which takes its identity alone (`src/worktree.ts#locateRepository`).
+("Which project"). Every git tool, `run_command`, `delegate` and `cross-agent init`
+locate the repository once per call, and pass what they found on — to
+`trackedStateFault`, `rootWriteFault`, the discard of a one-shot and `verifyWorktree`,
+which takes its identity alone (`src/worktree.ts#locateRepository`); a root named to
+discovery, by `--project` or `CROSS_AGENT_PROJECT`, runs only its first check,
+`enclosingWorktree` (`src/project.ts#named`).
 The answer is `main`, `linked` or `bare-linked`, with the work tree, the root's own git
 directory, the common directory, the branch checked out (null when detached), the
 registry, and `main`, the main checkout's path where one is known; or `none` for a root
 with no `.git`, a config-only project; or `unsupported`, carrying the root's git
 directory, for a root whose git directory is bare, or is its own common directory and
-lies outside the root; or `refused` for everything else. The checks run in this order. The root's nesting first, and from
-outside it: `enclosingWorktree` must find nothing (`#rootNotNested`), whatever the
-root's own `.git` holds now, so a task's worktree whose pointer was deleted, replaced
-by a repository of its own or rewritten is still refused, naming the worktree and the
-work tree that registers it. A `.git` directory is a main checkout unless the root's
+lies outside the root; or `refused` for everything else. The checks run in this
+order. The root's nesting first, and from outside it: `enclosingWorktree` must find
+nothing (`src/worktree.ts#rootNotNested`), whatever the root's own `.git` holds now,
+so a task's worktree whose pointer was deleted, replaced by a repository of its own or
+rewritten is still refused, naming the worktree and the work tree that registers it. A `.git` directory is a main checkout unless the root's
 own git, asked without a work tree named, calls it bare — `--work-tree=<root>` would
 make a work tree of a bare repository at `<root>/.git` — and then it is `unsupported`.
 A `.git` file is read as a candidate only, through its `gitdir:` line and that
@@ -2226,7 +2228,7 @@ resumes included (`src/delegate.ts#protectedPathsFor`):
 |---|---|---|
 | main | none: the role's own read-only rule denies the root's `.git` with its cwd | `<wt>/.git` and the common directory |
 | linked or bare-linked | the root's `.git` and the common directory, which lies outside the denied cwd | `<wt>/.git`, the common directory and the root's `.git` |
-| unsupported | the root's `.git` and its own git directory | refused |
+| unsupported | the root's `.git` and its own git directory, one path where a bare repository is the `.git` | refused |
 
 A Claude role reads them as `denyWrite` rules and `Edit` deny rules
 (`tests/engines/claude.test.ts#readOnlyLinkedRootDenies`); Codex's read-only and
@@ -2235,7 +2237,8 @@ per-path rule (section 3). Two projects of one repository delegate side by side,
 in its own worktree directory, ledger and journals, sharing one `info/exclude` and the
 repository lock (`tests/delegate.test.ts#protectedPathsLinkedRoot`,
 `#oneShotInLinkedRoot`, `#oneShotBareConfiglessRefused`, `#twoProjectsOneRepository`,
-`#consultAtSeparatedMainLaunches`, `#consultAtSymlinkedGitLaunches`).
+`#consultAtSeparatedMainLaunches`, `#consultAtSymlinkedGitLaunches`,
+`#protectedPathsBareDotGitOnce`).
 
 Specialists never write git metadata. A linked worktree's `.git` is a file
 inside the implementer's workspace — Claude's sandbox and file tools and Codex's
@@ -2346,7 +2349,7 @@ exit code and both streams and journals nothing (`src/gitmutate.ts#mutate`), and
 so does a `GitRunError` — but **that is not a claim that nothing happened**. A
 `worktree add` — a root operation, so through `git_root` — that failed while
 checking out has already created the directory and its administrative entry
-under `.git/worktrees`; a `rebase` that stops on a conflict leaves the worktree
+under `<commonDir>/worktrees`; a `rebase` that stops on a conflict leaves the worktree
 mid-rebase and `REBASE_HEAD` on disk; a `merge` stopped on conflicts leaves an
 index full of them; a command killed by the 16 MB cap was killed at whatever
 point it had reached. The step is not journaled because `git_mutate` cannot say
