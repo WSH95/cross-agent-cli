@@ -281,10 +281,18 @@ function recordedHeartbeat(event, calls) {
 // - Assignments are inspected in prefixes, declaration builtins, env and env -S, with `=`
 //   or `+=`: NODE_OPTIONS is read for loaders, PROMPT_COMMAND for commands, startup paths
 //   and prompt templates for substitutions. Expanded values and unread named files are `?`.
-//   read, printf -v, getopts, for/select, mapfile/readarray and declaration namerefs that
-//   assign code-carrying or unread environment variables also give `?` on named lines.
+//   Every other way bash writes a variable is an assignment of unknown value, `?` on a named
+//   line when the name is unread environment or code, when an expansion hides which name it
+//   is, or when a nameref may alias it: read (after `--`, and `-a`), printf -v, getopts past
+//   its own options and `--`, wait -p, for/select, mapfile/readarray, a `{NAME}` redirection
+//   on any command, arithmetic assignment in `(( ))` and `$(( ))`, `${NAME=…}`/`${NAME:=}`,
+//   and any `-n` declaration whatever its operands.
 // - Node module-loading options and data-URL scripts are unread code: `?` on named lines,
-//   except this repository's own server/CLI entries, which are launches. Unknown Node
+//   except this repository's own server/CLI entries, which are launches. An option that
+//   reads a file as code or as options that load code is unread too — --env-file(-if-exists),
+//   the config files, --run, --snapshot-blob, the snapshot and SEA builders, --openssl-config
+//   — and under --entry-url the script is read as a URL (query and fragment dropped, path
+//   percent-decoded, a file: URL reduced to its path) before the entry test. Unknown Node
 //   options and missing or option-shaped values are `?`; flag prefixes are not wildcards.
 // - Known stdin left unconsumed by a modeled reader is `?` if it names a target or judges
 //   as a launch. Unknown stdin at a shell, wrapper (including sudo -s/-i and xargs) or
@@ -664,9 +672,12 @@ function launcherFor(settings) {
   // startup files (`WGETRC`, `SYSTEM_WGETRC`, and `HOME`'s `.wgetrc`), whose `use_askpass` names
   // a program, and the askpass programs themselves; rg's config file, read as flags, `--pre`
   // among them; iconv's module path, whose modules are shared objects it loads; and the
-  // dynamic loader's own, which reach every command here. None of them is read.
+  // dynamic loader's own, which reach every command here. Node's own that load code join them
+  // (task 12 wrap-up, W-1): OpenSSL's config and modules (shared objects), the module the REPL
+  // loads in its place, and the module search path (the loader's own analog). None is read.
   const unreadEnvironment = new Set(["WGETRC", "SYSTEM_WGETRC", "HOME", "WGET_ASKPASS", "SSH_ASKPASS",
-    "RIPGREP_CONFIG_PATH", "GCONV_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"]);
+    "RIPGREP_CONFIG_PATH", "GCONV_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH",
+    "OPENSSL_CONF", "OPENSSL_MODULES", "NODE_REPL_EXTERNAL_MODULE", "NODE_PATH"]);
   const substitutionsIn = (text) => /\$\(|`/.test(text);
   const shellFlags = "abefhiklmnprtuvxBCDEHPT";
   const shellLong = new Set(["--login", "--noprofile", "--norc", "--posix", "--restricted", "--verbose", "--version",
@@ -705,13 +716,25 @@ function launcherFor(settings) {
   // the options taking a value, and those taking none.
   const nodeLoads = new Set(["--import", "-r", "--require", "--loader", "--experimental-loader", "--test-reporter", "--test-global-setup"]);
   const nodeCode = new Set(["-e", "--eval", "-p", "--print", "-pe", "-ep"]);
-  const nodeValues = new Set(("-C --conditions --allow-fs-read --allow-fs-write --build-snapshot-config --cpu-prof-dir --cpu-prof-interval "
-    + "--cpu-prof-name --diagnostic-dir --disable-proto --disable-warning --dns-result-order --env-file --env-file-if-exists "
-    + "--experimental-config-file --experimental-sea-config --heap-prof-dir --heap-prof-interval --heap-prof-name "
+  // Value options whose operand names, or which imply, a file node reads as code or as
+  // options that load code (task 12 wrap-up, W-1, audited against Node 24's whole table):
+  // `--env-file`/`--env-file-if-exists` honour the file's `NODE_OPTIONS=--import`;
+  // `--experimental-config-file` a config's `nodeOptions.import`; `--run` a `package.json`
+  // script; `--snapshot-blob` a restored snapshot's main (even with `-e`);
+  // `--build-snapshot-config` and `--experimental-sea-config` a builder's main;
+  // `--openssl-config` OpenSSL providers and engines, which are shared objects. Each was
+  // watched running code on Node 24.11. They are an unread load, never this repository's
+  // entry point, so `?` on a named line; `--experimental-default-config-file` is the same
+  // read of a file (node.config.json from the cwd) with no operand.
+  const nodeConfigLoads = new Set(["--env-file", "--env-file-if-exists", "--experimental-config-file",
+    "--experimental-sea-config", "--build-snapshot-config", "--openssl-config", "--run", "--snapshot-blob"]);
+  const nodeValues = new Set(("-C --conditions --allow-fs-read --allow-fs-write --cpu-prof-dir --cpu-prof-interval "
+    + "--cpu-prof-name --diagnostic-dir --disable-proto --disable-warning --dns-result-order "
+    + "--heap-prof-dir --heap-prof-interval --heap-prof-name "
     + "--heapsnapshot-near-heap-limit --heapsnapshot-signal --icu-data-dir --input-type --inspect-port --debug-port "
     + "--inspect-publish-uid --localstorage-file --max-http-header-size --max-old-space-size-percentage "
-    + "--network-family-autoselection-attempt-timeout --openssl-config --redirect-warnings --report-dir --report-directory "
-    + "--report-filename --report-signal --run --secure-heap --secure-heap-min --snapshot-blob --test-concurrency "
+    + "--network-family-autoselection-attempt-timeout --redirect-warnings --report-dir --report-directory "
+    + "--report-filename --report-signal --secure-heap --secure-heap-min --test-concurrency "
     + "--test-coverage-branches --test-coverage-exclude --test-coverage-functions --test-coverage-include --test-coverage-lines "
     + "--test-isolation --experimental-test-isolation --test-name-pattern --test-reporter-destination --test-rerun-failures "
     + "--test-shard --test-skip-pattern --test-timeout --title --tls-cipher-list --tls-keylog --trace-event-categories "
@@ -720,7 +743,7 @@ function launcherFor(settings) {
   const nodeFlags = new Set(("-c --check -h --help -i --interactive -v --version --abort-on-uncaught-exception --allow-addons "
     + "--allow-child-process --allow-wasi --allow-worker --build-snapshot --completion-bash --cpu-prof --disable-sigusr1 "
     + "--disallow-code-generation-from-strings --enable-etw-stack-walking --enable-fips --enable-network-family-autoselection "
-    + "--enable-source-maps --entry-url --expose-gc --force-context-aware --force-fips --force-node-api-uncaught-exceptions-policy "
+    + "--enable-source-maps --expose-gc --force-context-aware --force-fips --force-node-api-uncaught-exceptions-policy "
     + "--frozen-intrinsics --heap-prof --insecure-http-parser --inspect --inspect-brk --inspect-wait "
     + "--interpreted-frames-native-stack --jitless --node-memory-debug --openssl-legacy-provider --openssl-shared-config "
     + "--pending-deprecation --permission --preserve-symlinks --preserve-symlinks-main --prof --prof-process --report-compact "
@@ -731,7 +754,7 @@ function launcherFor(settings) {
     + "--trace-warnings --track-heap-objects --use-bundled-ca --use-env-proxy --use-openssl-ca --use-system-ca --v8-options "
     + "--watch --watch-preserve-output --zero-fill-buffers --expose-internals").split(" "));
   // Spell these out too: recognizing a prefix would silently accept future code loaders.
-  for (const flag of ("--experimental-addon-modules --experimental-default-config-file --experimental-eventsource "
+  for (const flag of ("--experimental-addon-modules --experimental-eventsource "
     + "--experimental-import-meta-resolve --experimental-inspector-network-resource --experimental-network-inspection "
     + "--experimental-print-required-tla --experimental-test-coverage --experimental-test-module-mocks "
     + "--experimental-transform-types --experimental-vm-modules --experimental-webstorage --experimental-worker-inspection "
@@ -827,7 +850,7 @@ function launcherFor(settings) {
    */
   function lexList(text, start, closer) {
     const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null,
-      named: false, arithmetic: false, deferred: false };
+      named: false, arithmetic: false, deferred: false, arithTexts: [] };
     // A `{ … }` or `( … )` group a pipe feeds: every command in it reads that pipe, the
     // first one exactly, the rest after whatever came before them may have read.
     const groups = [];
@@ -836,7 +859,7 @@ function launcherFor(settings) {
       const shared = group !== undefined && group.used;
       if (group !== undefined) group.used = true;
       return { words: [], stdin: null, pipeFrom: pipeFrom ?? group?.pipeFrom ?? null, sharedStdin: shared,
-        funcDef: undefined, arith: false, cond: false };
+        funcDef: undefined, arith: false, cond: false, fdVars: [] };
     };
     const openGroup = (kind, pipeFrom, used) => groups.push({ kind, pipeFrom, used });
     const closeGroup = (kind) => {
@@ -1001,6 +1024,7 @@ function launcherFor(settings) {
         list.arithmetic = true;
         const end = scanTo(k + 3, "))");
         if (end === -1) list.problems.push("an unterminated arithmetic expansion");
+        else list.arithTexts.push(text.slice(k + 3, end - 2));
         return end;
       }
       if (next === "(") return substitution(k + 2);
@@ -1008,6 +1032,7 @@ function launcherFor(settings) {
         if (next === "[") list.arithmetic = true;
         const end = scanTo(k + 2, next === "{" ? "}" : "]", doubleContext);
         if (end === -1) list.problems.push(`an unterminated \`$${next}\``);
+        else if (next === "[") list.arithTexts.push(text.slice(k + 2, end - 1));
         return end;
       }
       if (/[A-Za-z_]/.test(next)) {
@@ -1160,8 +1185,13 @@ function launcherFor(settings) {
         continue;
       }
       if (c === "<" || c === ">") {
-        // A descriptor number or `{name}` before the operator belongs to it.
-        if (word !== null && !word.quoted && !word.expansions && /^(?:\d+|\{[A-Za-z_]\w*\})$/.test(word.value)) word = null;
+        // A descriptor number or `{name}` before the operator belongs to it; a `{name}`
+        // assigns the chosen descriptor to that variable, so its name is captured (W-2).
+        if (word !== null && !word.quoted && !word.expansions && /^(?:\d+|\{[A-Za-z_]\w*\})$/.test(word.value)) {
+          const fd = /^\{([A-Za-z_]\w*)\}$/.exec(word.value);
+          if (fd !== null) command.fdVars.push(fd[1]);
+          word = null;
+        }
         finishWord();
         const op = /^(?:<<<|<<-|<<|<>|<&|>>|>&|>\||<|>)/.exec(text.slice(i, i + 3))[0];
         redirect = op;
@@ -1215,7 +1245,7 @@ function launcherFor(settings) {
         if (reservedOnly(named) && redirect === null) {
           if (text[i + 1] === "(") {
             const end = scanTo(i + 2, "))");
-            if (end !== -1) { command.arith = true; i = end; continue; }
+            if (end !== -1) { command.arith = true; list.arithTexts.push(text.slice(i + 2, end - 2)); i = end; continue; }
           }
           depth++;
           openGroup("(", command.pipeFrom, true);
@@ -1274,6 +1304,10 @@ function launcherFor(settings) {
     };
     const arithmetic = list.arithmetic || list.commands.some((command) => command.arith || conditional(command.words));
     if (named && deferred && arithmetic) verdict = doubt("arithmetic may evaluate a quoted substitution or subscript", list.text);
+    // Arithmetic that assigns an unread environment or code variable (W-2).
+    if (named) for (const expr of list.arithTexts) {
+      for (const nm of arithTargets(expr)) verdict = worse(verdict, unknownAssignment(nm, inner, expr.trim()));
+    }
     for (const nested of list.nested) verdict = worse(verdict, judgeList(nested, { ...inner, depth: context.depth + 1 }));
     for (const command of list.commands) {
       const judged = judgeCommand(command, inner);
@@ -1296,6 +1330,13 @@ function launcherFor(settings) {
     }
     if (command.arith) return pass;
     let verdict = pass;
+    // A `{NAME}` redirection assigns a descriptor, and a `${NAME=…}`/`${NAME:=…}` expansion
+    // assigns when unset: either naming an unread environment or code variable is a doubt (W-2).
+    for (const name of command.fdVars ?? []) verdict = worse(verdict, unknownAssignment(name, context, `{${name}}`));
+    for (const word of command.words) {
+      if (!word.expansions) continue;
+      for (const nm of paramAssignTargets(word.value)) verdict = worse(verdict, unknownAssignment(nm, context, word.value));
+    }
     let k = 0;
     while (k < command.words.length && isAssignment(command.words[k])) {
       verdict = worse(verdict, assignmentCode(command.words[k], context));
@@ -1325,7 +1366,8 @@ function launcherFor(settings) {
       const list = lexList(code, 0, null);
       const read = nodeWalk([asWord("node"), ...list.commands.flatMap((command) => command.words)], true);
       if (read.launch) return { verdict: "launch", why: "", at: shown(word.value) };
-      return (read.unreadLoad || !read.known || list.problems.length > 0) && named ? doubt(unmodeled, word.value) : pass;
+      // `--entry-url` there changes how a later `node` reads its script (task 12 wrap-up, W-3).
+      return (read.unreadLoad || read.entryUrl || !read.known || list.problems.length > 0) && named ? doubt(unmodeled, word.value) : pass;
     }
     // Startup paths and prompt templates expand substitutions, but their literal text
     // is not a command. PROMPT_COMMAND, in contrast, is a shell command list.
@@ -1434,29 +1476,64 @@ function launcherFor(settings) {
       ? doubt("a builtin assigns an unread environment or code variable", line) : pass;
   }
 
+  // Names an arithmetic expression assigns (task 12 wrap-up, W-2): `NAME =`, a compound
+  // `NAME op=`, `NAME[sub]=`, and `++NAME` / `NAME++` / `--NAME` / `NAME--`. The `(?!=)`
+  // keeps `==` out, and `<=`, `>=`, `!=` leave an operator this does not read before the `=`.
+  const arithTargets = (text) => {
+    const names = [];
+    for (const m of String(text).matchAll(/([A-Za-z_]\w*)(?:\[[^\]]*\])?\s*(?:\*\*|<<|>>|[-+*/%&|^])?=(?!=)/g)) names.push(m[1]);
+    for (const m of String(text).matchAll(/([A-Za-z_]\w*)\s*(?:\+\+|--)/g)) names.push(m[1]);
+    for (const m of String(text).matchAll(/(?:\+\+|--)\s*([A-Za-z_]\w*)/g)) names.push(m[1]);
+    return names;
+  };
+  // Names a `${NAME=…}` or `${NAME:=…}` parameter expansion assigns when the name is unset.
+  const paramAssignTargets = (text) => [...String(text).matchAll(/\$\{([A-Za-z_]\w*)(?:\[[^\]]*\])?:?=/g)].map((m) => m[1]);
+
+  /**
+   * A builtin that writes a variable whose value this grammar cannot read (task 12 wrap-up,
+   * W-2). `destinationWords` are the destination words it has in hand — questioned when one
+   * holds an expansion that hides which variable is written, or when it names an unread
+   * environment or code variable; `destinationNames` are plain names from option values,
+   * whose expansions the option walk already answered. A `-n` declaration taints the line
+   * whatever its operands, because a later assignment through the nameref reaches a name
+   * this grammar does not track.
+   */
   function builtinAssignments(name, words, context) {
     const line = values(words).join(" ");
-    let targets = [];
+    let destinationWords = [];
+    let destinationNames = [];
     let walk;
     if (name === "read") {
       walk = options(words, 1, { flags: "ersE", values: "adinNptu", long: {} });
-      targets = [...walk.read.filter(({ option }) => option === "-a").map(({ value }) => value), ...values(words.slice(walk.k))];
+      destinationWords = words.slice(walk.k);
+      destinationNames = walk.read.filter(({ option }) => option === "-a").map(({ value }) => value);
     } else if (name === "printf") {
       walk = options(words, 1, { flags: "", values: "v", long: {} });
-      targets = walk.read.filter(({ option }) => option === "-v").map(({ value }) => value);
+      destinationNames = walk.read.filter(({ option }) => option === "-v").map(({ value }) => value);
     } else if (name === "getopts") {
-      targets = [words[2]?.value];
+      // getopts optstring name [arg …]: its options and `--` end first, the optstring is
+      // the first operand and the name the second, wherever a `--` put them.
+      walk = options(words, 1, { flags: "", values: "", long: {} });
+      const operands = words.slice(walk.k);
+      if (operands.length >= 2) destinationWords = [operands[1]];
+    } else if (name === "wait") {
+      walk = options(words, 1, { flags: "nf", values: "p", long: {} });
+      destinationNames = walk.read.filter(({ option }) => option === "-p").map(({ value }) => value);
     } else if (declarations.has(name)) {
       walk = options(words, 1, { flags: "aAfFgiIlnrtuxp", values: "", long: {} });
-      if (walk.read.some(({ option }) => option === "-n")) {
-        for (const word of words.slice(walk.k)) {
-          const [variable, referent] = word.value.split("=");
-          targets.push(variable, referent);
-        }
-      } else return pass;
+      if (walk.read.some(({ option }) => option === "-n")) return context.named ? doubt(unmodeled, line) : pass;
+      // A literal `NAME=…` operand is judged by `assignmentCode`; an expanded one could name
+      // a code variable, so it is a destination here.
+      destinationWords = words.slice(walk.k).filter((word) => word.expansions);
     } else return pass;
     if (context.named && walk && (!walk.known || walk.expanded || walk.read.some(optionAsValue))) return doubt(unmodeled, line);
-    return targets.reduce((verdict, variable) => worse(verdict, unknownAssignment(variable, context, line)), pass);
+    let verdict = pass;
+    for (const word of destinationWords) {
+      if (word.expansions) { if (context.named) verdict = worse(verdict, doubt(unmodeled, line)); }
+      else verdict = worse(verdict, unknownAssignment(word.value, context, line));
+    }
+    for (const nm of destinationNames) verdict = worse(verdict, unknownAssignment(nm, context, line));
+    return verdict;
   }
 
   /**
@@ -1754,7 +1831,7 @@ function launcherFor(settings) {
    * code it was given, and where its operands start.
    */
   function nodeWalk(words, optionsOnly = false) {
-    const read = { launch: false, known: true, unreadLoad: false, code: [], script: undefined, stdin: false };
+    const read = { launch: false, known: true, unreadLoad: false, entryUrl: false, code: [], script: undefined, stdin: false };
     for (let k = 1; k < words.length; k++) {
       if (words[k].expansions) { read.known = false; break; }
       const word = words[k].value;
@@ -1774,11 +1851,12 @@ function launcherFor(settings) {
       const shortRequire = word.startsWith("-r") && word.length > 2;
       const option = shortRequire ? "-r" : equals === -1 ? word : word.slice(0, equals);
       const attached = shortRequire ? word.slice(2) : equals === -1 ? undefined : word.slice(equals + 1);
-      if (attached === undefined && (nodeCode.has(option) || nodeLoads.has(option) || nodeValues.has(option)) && words[k + 1]?.expansions) {
+      const takesOperand = nodeCode.has(option) || nodeLoads.has(option) || nodeConfigLoads.has(option) || nodeValues.has(option);
+      if (attached === undefined && takesOperand && words[k + 1]?.expansions) {
         read.known = false;
         break;
       }
-      if (nodeCode.has(option) || nodeLoads.has(option) || nodeValues.has(option)) {
+      if (takesOperand) {
         const operand = attached ?? words[++k]?.value;
         if (operand === undefined || (!nodeCode.has(option) && optionAsValue({ value: operand, separate: attached === undefined }))) {
           read.known = false;
@@ -1788,14 +1866,33 @@ function launcherFor(settings) {
         else if (nodeLoads.has(option)) {
           if (isEntryPoint(operand)) read.launch = true;
           else read.unreadLoad = true;
-        }
+        } else if (nodeConfigLoads.has(option)) read.unreadLoad = true;
         continue;
       }
+      // Reads node.config.json from the cwd, whose `nodeOptions.import` loads code.
+      if (option === "--experimental-default-config-file") { read.unreadLoad = true; continue; }
+      // Treats the script operand as a URL; its reading is decided once the operand is known.
+      if (option === "--entry-url") { read.entryUrl = true; continue; }
       if (nodeFlags.has(option) && (attached === undefined || nodeOptionalValues.has(option))) continue;
       // An option this table does not know: whether it takes the next word is unknown.
       read.known = false;
     }
     return read;
+  }
+
+  // What `--entry-url <operand>` resolves to on disk: a `?query` and `#fragment` dropped, a
+  // `file:` URL reduced to its path, the path percent-decoded. `undefined` for a data URL,
+  // another scheme, or one that does not decode — none of them this repository's entry.
+  function entryUrlScript(operand) {
+    if (/^data:/i.test(operand)) return undefined;
+    const withoutFragment = operand.split("#")[0];
+    const beforeQuery = withoutFragment.split("?")[0];
+    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(beforeQuery);
+    let pathPart;
+    if (scheme === null) pathPart = beforeQuery;
+    else if (scheme[1].toLowerCase() === "file") pathPart = beforeQuery.replace(/^file:\/\/[^/]*/i, "").replace(/^file:/i, "");
+    else return undefined;
+    try { return decodeURIComponent(pathPart); } catch { return undefined; }
   }
 
   // A script operand that is stdin itself: the program is what stdin holds.
@@ -1810,6 +1907,15 @@ function launcherFor(settings) {
     const line = values(words).join(" ");
     const read = nodeWalk(words);
     if (read.launch) return launchAt(words);
+    // Under `--entry-url` the script operand is read as a URL (task 12 wrap-up, W-3).
+    if (read.entryUrl && read.script !== undefined) {
+      const resolved = entryUrlScript(read.script);
+      if (resolved !== undefined && isEntryPoint(resolved)) return read.known ? launchAt(words) : doubt(unmodeled, line);
+      // A data URL, another scheme, or one that does not decode is unread code; a local
+      // file that is not an entry point is an ordinary script.
+      const unreadable = resolved === undefined || !read.known;
+      return unreadable && (context.named || namesTarget(line)) ? doubt(unmodeled, line) : pass;
+    }
     if (read.script !== undefined && isEntryPoint(read.script)) return read.known ? launchAt(words) : doubt(unmodeled, line);
     const unread = (read.unreadLoad || /^data:/i.test(read.script ?? "") || !read.known) && (context.named || namesTarget(line)) ? doubt(unmodeled, line) : pass;
     if (read.code.length > 0) return worse(read.code.some(namesTarget) ? doubt(inline, line) : pass, unread);

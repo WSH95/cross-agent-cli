@@ -916,9 +916,10 @@ test("reading a file that happens to be named like one of them is not a launch",
     // A parenthesis inside a quoted pattern is part of the pattern.
     'grep -rnE "(claude|codex|grok)" src/',
     "rg '(claude)' docs",
-    // Options of `node`'s own that take an operand hold that operand, not a script.
+    // Options of `node`'s own that take an operand hold that operand, not a script. (An
+    // option that reads its operand as code, such as `--env-file`, is `?` instead: W-1.)
     "node --title src/server.ts other.js",
-    "node --env-file src/server.ts",
+    "node --icu-data-dir src/server.ts other.js",
     "node -C src/server.ts other.js",
     // A heredoc handed to anything but a shell is data, and so is a comment.
     "cat > notes.md << 'EOF'\nclaude -p hi\nEOF",
@@ -1058,6 +1059,8 @@ test("Node options outside its table and options consumed as values are question
     ["node --import --title=claude -e 0", "?"],
     ["node --require # claude", "?"],
     ["node --title # claude", "?"],
+    // W-4: a known flag given `=value` is unknown; without that the value would be ignored.
+    ["node --check=claude -e 0", "?"],
     // Explicitly modeled flags and ordinary values remain data.
     ["node --experimental-strip-types --no-warnings --title claude -e 0", "pass"],
     ["node --title=claude -e 0", "pass"],
@@ -1093,6 +1096,117 @@ test("shell builtins and loops assigning unread environment variables are questi
     ["getopts 'a:' ordinary HOME; echo claude", "pass"],
     ["for ordinary in HOME; do echo claude; done", "pass"],
     ["read HOME <<< /tmp/home; echo ordinary", "pass"],
+  ]);
+});
+
+// @anchor nodeConfigFilesUnread
+test("Node options that read a file as code, or as options that load code, are unread on named lines", async (t) => {
+  // Task 12 wrap-up (W-1): the audit of Node 24's whole option table. Each was watched
+  // running code on Node 24.11 — an env file's NODE_OPTIONS=--import, a config file's
+  // nodeOptions.import, a package script, a snapshot's main, a builder's main, OpenSSL
+  // providers — so a named line that names one answers `?` rather than passing.
+  await judgedAs(t, [
+    ["node --env-file=/tmp/p.env -e 0 # claude", "?"],
+    ["node --env-file /tmp/p.env -e 0 # claude", "?"],
+    ["node --env-file-if-exists=/tmp/p.env -e 0 # claude", "?"],
+    ["node --experimental-config-file=./node.config.json -e 0 # claude", "?"],
+    ["node --experimental-default-config-file -e 0 # claude", "?"],
+    ["node --build-snapshot-config=./snap.json # claude", "?"],
+    ["node --experimental-sea-config=./sea.json # claude", "?"],
+    ["node --openssl-config=/tmp/openssl.cnf -e 0 # claude", "?"],
+    ["node --run claude", "?"],
+    ["node --run=build -e 0 # claude", "?"],
+    ["node --snapshot-blob /tmp/snap.blob -e 0 # claude", "?"],
+    ["NODE_OPTIONS='--env-file /tmp/p.env' node -e 0 # claude", "?"],
+    ["NODE_OPTIONS='--openssl-config /tmp/x.cnf' node other.js # claude", "?"],
+    // Node's own environment variables that load code join the unread set: OpenSSL's
+    // config and modules (shared objects), the REPL's replacement module, and the module
+    // search path (the dynamic loader's own are already there).
+    ["OPENSSL_CONF=/tmp/x.cnf node -e 0 # claude", "?"],
+    ["export OPENSSL_MODULES=/tmp/prov; node -e 0 # claude", "?"],
+    ["NODE_REPL_EXTERNAL_MODULE=/tmp/x.js node -e 0 # claude", "?"],
+    ["env NODE_PATH=/tmp/evil node other.js # claude", "?"],
+    // Output-only options, options away from a name, and the unread env vars away from one
+    // stay data: the stricter rule is only for files read as code, only beside a name.
+    ["node --env-file=/tmp/x.env other.js", "pass"],
+    ["node --openssl-config=/tmp/x.cnf other.js", "pass"],
+    ["node --cpu-prof-dir=/tmp/prof -e 0 # claude", "pass"],
+    ["node --report-filename=/tmp/r.json -e 0 # claude", "pass"],
+    ["OPENSSL_CONF=/tmp/x.cnf node -e 0", "pass"],
+  ]);
+});
+
+// @anchor nodeEntryUrlScript
+test("under --entry-url the script is read as a URL, and any other URL is unread code", async (t) => {
+  // Task 12 wrap-up (W-3): --entry-url treats the entry point as a URL. The verifier
+  // strips a `?query` and `#fragment`, percent-decodes the path and resolves a `file:`
+  // URL to its path before isEntryPoint; a data URL, another scheme, or one that does not
+  // decode is unread code; in NODE_OPTIONS it changes how a later node reads its script.
+  await judgedAs(t, [
+    ["node --entry-url 'src/server.ts?x=1'", "FAIL"],
+    ["node --entry-url 'src/server.ts#x'", "FAIL"],
+    ["node --entry-url 'file:///home/u/app/src/server.ts?q'", "FAIL"],
+    ["node --entry-url 'src/%73erver.ts'", "FAIL"],
+    ["node --entry-url 'https://example.com/x.mjs' # claude", "?"],
+    ["node --entry-url 'ssh://host/src/server.ts'", "?"],
+    ["NODE_OPTIONS='--entry-url' node other.mjs # claude", "?"],
+    ["node --entry-url other.mjs", "pass"],
+    ["node --entry-url 'app/main.mjs?v=1' -e 0", "pass"],
+  ]);
+});
+
+// @anchor builtinAssignmentForms
+test("every way bash assigns a variable is an assignment of unknown value, questioned on a named line", async (t) => {
+  // Task 12 wrap-up (W-2): the reviewers' reproductions, each watched in bash 5.2. An
+  // expanded destination, a nameref the grammar cannot follow, getopts past its own
+  // options, `wait -p`, a `{NAME}` redirection, arithmetic assignment, and `${NAME:=}`
+  // each write a variable this reader cannot vouch for.
+  await judgedAs(t, [
+    // An expanded destination, wherever it stands and independently of the option walk.
+    ['t=BASH_ENV; getopts a "$t" -a; export BASH_ENV; bash -c "echo claude"', "?"],
+    ['read -r -- "$t" <<< a; wget https://example.com/claude', "?"],
+    ['declare "$N=/tmp/h"; wget https://example.com/claude', "?"],
+    ['export "$N=/tmp/h"; wget https://example.com/claude', "?"],
+    // Any `-n` declaration taints the line: a later nameref assignment reaches a name
+    // this grammar does not track.
+    ["declare -n ref; ref=LD_PRELOAD; export ref; ref=/tmp/x.so; echo claude", "?"],
+    ["declare -n ref; ref=NODE_OPTIONS; export ref; ref='--import /tmp/hook.mjs'; node -e 0 # claude", "?"],
+    ["declare -n ref; ref=HOME; ref=/tmp/evil-home; wget https://example.com/claude", "?"],
+    ["local -n ref; echo claude", "?"],
+    ["typeset -n ref; echo claude", "?"],
+    // getopts reads its name past its own options and `--`, at the second operand.
+    ["getopts -- 'a:' HOME -a /tmp/x; echo claude", "?"],
+    ["getopts -- a: SSH_ASKPASS -a /tmp/ask; echo claude", "?"],
+    // wait -p stores the finished job id into its variable.
+    ["wait -n -p HOME; wget https://example.com/claude", "?"],
+    ["wait -p WGETRC -f %1; wget https://example.com/claude", "?"],
+    // A `{NAME}` redirection assigns a descriptor to the variable, on any command.
+    ["exec {HOME}>/dev/null; wget https://example.com/claude", "?"],
+    [": {WGETRC}>/dev/null; wget https://example.com/claude", "?"],
+    // Arithmetic assignment, in `(( ))` and `$(( ))`: a name before `=`, a compound `op=`,
+    // or `++`/`--`.
+    ["(( HOME = 5 )); wget https://example.com/claude", "?"],
+    ["echo $(( WGETRC = 5 )); wget https://example.com/claude", "?"],
+    ["(( NODE_OPTIONS += 1 )); node -e 0 # claude", "?"],
+    ["echo $(( HOME++ )); wget https://example.com/claude", "?"],
+    // `${NAME=…}` and `${NAME:=…}` assign when the variable is unset.
+    [": ${WGETRC:=/tmp/rc}; export WGETRC; wget https://example.com/claude", "?"],
+    ["echo ${HOME=/tmp/h}; wget https://example.com/claude", "?"],
+    // Pins for W-4's load-bearing doubts: the expanded-name doubt, and a known flag given
+    // `=value` being unknown.
+    ["N=WGETRC; printf -v \"$N\" '%s' /tmp/rc; wget https://example.com/claude", "?"],
+    ["N=HOME; read \"$N\"; wget https://example.com/claude", "?"],
+    // An ordinary name keeps ordinary shell unquestioned, on a named line and off one.
+    ["getopts a opt; echo claude", "pass"],
+    ["(( i = 0 )); echo claude", "pass"],
+    ["exec {fd}>/dev/null; echo claude", "pass"],
+    ["read -r line; echo claude", "pass"],
+    ["wait -n -p ordinary; echo claude", "pass"],
+    [": ${ORDINARY:=/tmp/x}; echo claude", "pass"],
+    ["echo $(( i = 0 )); echo claude", "pass"],
+    ["declare -n ref; ref=HOME; echo done", "pass"],
+    ["(( HOME = 5 )); echo done", "pass"],
+    [": ${WGETRC:=/tmp/rc}; echo done", "pass"],
   ]);
 });
 
