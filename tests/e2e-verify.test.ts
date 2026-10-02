@@ -2170,14 +2170,17 @@ test("row 2 answers ? for a branch nobody proves while a sibling project exists,
 
 // @anchor row2ClosedJournalClaimsNothing
 test("row 2 takes a closed journal for no evidence: its branch-deleted step ended the task, here or at a sibling", async (t) => {
-  const root = await project(t, { claude: claudeLog("true") });
-  const theirs = await siblingOf(t, root, "other");
-  await branchAt(root, "task/ours");
-  await journalIn(root, "ours", "task/ours", true);
-  await branchAt(root, "task/theirs");
-  await journalIn(theirs, "theirs", "task/theirs", true);
-  const { out } = await runWith(root, ["--slug", "slug"]);
-  assert.equal(verdict(out, branchRow), "?", out);
+  // Each case alone, so a closed journal counted as a claim changes the answer: this
+  // project's would fail the row, and a sibling's would pass it as that sibling's.
+  for (const [where, branch] of [["here", "task/ours"], ["at a sibling", "task/theirs"]]) {
+    const root = await project(t, { claude: claudeLog("true") });
+    const theirs = await siblingOf(t, root, "other");
+    await branchAt(root, branch);
+    await journalIn(where === "here" ? root : theirs, branch.slice("task/".length), branch, true);
+    const { out } = await runWith(root, ["--slug", "slug"]);
+    assert.equal(verdict(out, branchRow), "?", `${where}: ${out}`);
+    assert.match(row(out, branchRow), new RegExp(`\\? ${branch} \\(checked out under no project and named by no open journal\\)`), where);
+  }
 });
 
 // @anchor row2ReusedNameOpenHereFails
