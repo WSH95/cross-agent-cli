@@ -769,3 +769,17 @@ against the `AGENTS.md` blob `43d92acbb62da520252ef77906037a632d1183e0`,
 unchanged on `main` since `2de546f` and still `main`'s at `60fa393`, and awaits
 the user's approval.
 
+**AGENTS.md changes approved (2026-10-02).** The user approved
+`task-12-agents-md.diff`, applied on `main` by `git apply` against the blob
+`43d92acbb62da520252ef77906037a632d1183e0` it was built on: seven tasks' Layout
+and Run changes as one diff. The opening paragraph names `dev-team-engine`
+beside `dev-team` and `solo`. The `src/delegate.ts` bullet gains the
+engine-placed lead's mount and composed prompt, the cascade over asks, and
+`src/mailbox.ts`. The `src/cli.ts` bullet becomes the operator CLI's twelve
+verbs and its exit protocol. The Claude adapter's summary names `dontAsk`, the
+file tools' permission rules and the tool allowlist. The launcher and modes
+bullets describe the placement sections and the engine lead's own loop. The
+attach sentence names the Claude Code and Grok hosts, and a Codex plugin bullet
+follows it. Planned is the backlog (row 14) alone. Run gains the read-only CLI
+line and the Codex and Grok host lines. The managed blocks are untouched, and
+`CLAUDE.md`, which includes `AGENTS.md` by reference, is unchanged.

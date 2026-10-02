@@ -5,8 +5,9 @@ skill — that runs headless `claude`, `codex`, and `grok` processes as a team
 from any host that can attach an MCP server and a skill (Claude Code, Codex,
 and Grok today). A team is a *mode*: roles, a lead loop, and a git policy,
 kept as data under `modes/`; `dev-team` (planner, plan reviewer,
-implementer, code reviewer, in git worktrees) and `solo` are built in. The
-design in `docs/design.md` is authoritative; `docs/probes.md` records what
+implementer, code reviewer, in git worktrees), `dev-team-engine` (the same
+team with its loop in a lead the server launches) and `solo` are built in.
+The design in `docs/design.md` is authoritative; `docs/probes.md` records what
 each engine CLI was observed to do.
 
 ## Project facts
@@ -26,16 +27,23 @@ Shipped:
   from process ancestry; `src/project.ts` finds the project (`--project`,
   `CROSS_AGENT_PROJECT`, or the nearest `.cross-agent/config.json`).
 - `src/delegate.ts` (`delegate` under `spawn.lock`: validation, the launch
-  spec, the detached runner), `src/tasks.ts` (`check`, `result`, `cancel`
-  with its cascade, `list_tasks`; ownership by lineage ids), `src/wait.ts`
-  (`wait` with stall detection; `observeStall` shared with `check`).
+  spec, the detached runner, and an engine-placed lead's mount and composed
+  prompt), `src/tasks.ts` (`check`, `result`, `cancel` with its cascade over
+  tasks and asks, `list_tasks`; ownership by lineage ids), `src/wait.ts`
+  (`wait` with stall detection; `observeStall` shared with `check`),
+  `src/mailbox.ts` (`ask`, `list_asks`, `answer` over `.cross-agent/asks/`).
 - `src/config.ts`: `.cross-agent/config.json` loading and validation
   (`loadConfig` for the bindings alone; `loadConfigWithMode` for the config
   and the mode checked against each other; `effectiveMaxDepth`).
 - `src/modes.ts`: the mode loader, `describe_mode`'s payload, the built-in
   `consult` role, and `builtInModesDir`.
-- `src/cli.ts`: `cross-agent init [--mode <name>] [--project <root>]`, the
-  one operator verb built (exit 0 wrote, 1 error, 2 usage).
+- `src/cli.ts`: the operator CLI — `init`, `modes`, `tasks`, `show`, `log`,
+  `cancel`, `verify-worktree`, `git`, `journal`, `list-asks`, `answer` and
+  `report` on one verb table, each calling the function its tool calls, with
+  `--project`, `--json` and `--help` on every verb and one exit protocol (0 ok,
+  1 error, 2 usage, 3 precondition, 4 still running, 5 needs the operator, 6
+  stalled); its reads write nothing, and a verb that writes refuses inside a
+  task's environment.
 - `src/ledger.ts` (task records; async conditional `update` under the
   record lock; the runner's outcome sidecar), `src/locks.ts` (OS-held
   `flock` on a pipe), `src/process.ts`
@@ -55,8 +63,9 @@ Shipped:
   `sandboxFor`), `src/engines/binaries.ts`, `src/engines/text.ts` (the
   readers the adapters share: `truncate`, `assistantText`, `failureText`),
   and the three adapters
-  `src/engines/{claude,codex,grok}.ts` (Claude: stream-json, settings
-  sandbox, deny list; Codex: `exec`/`exec resume` with the prompt on stdin;
+  `src/engines/{claude,codex,grok}.ts` (Claude: stream-json, `dontAsk`
+  with the settings sandbox, the file tools' permission rules and a tool
+  allowlist, deny list; Codex: `exec`/`exec resume` with the prompt on stdin;
   Grok: `streaming-messages-json`, `--rules`, not an engine-placed lead);
   `tests/fixtures/fake-engine.mjs` stands in for a CLI;
   `tests/helpers/project.ts` builds a per-test project and sweeps every
@@ -67,18 +76,30 @@ Shipped:
   does not declare.
 - `skills/cross-agent/SKILL.md`: the launcher skill, the one skill a host
   discovers. It carries what every mode shares — the roster, the brief, the
-  watch budget, the merge policy a `worktree: true` task settles under, the
-  `review` and `critique` verbs, the reconciliation pass, the report.
+  watch budget, the report — what every host-placed mode shares — the merge
+  policy a `worktree: true` task settles under, the `review` and `critique`
+  verbs, the reconciliation pass, each naming `host` placement — and the
+  engine-placement section a host follows while a lead runs the loop.
 - `modes/{dev-team,dev-team-engine,solo}/{mode.json, SKILL.md, roles/*.md}`:
   the three built-in modes. `SKILL.md` is that mode's loop, served by
   `describe_mode` and never copied into a host's skill directory;
   `roles/*.md` is one prompt per role, launched with the specialist.
-  `dev-team-engine`'s loop is a delta over `dev-team`'s until S11 gives the
-  engine lead its text.
+  `dev-team-engine`'s loop is the engine lead's own: the same ten steps,
+  every root step through `git_root` and `run_command`, every question
+  through `ask`.
 - `.claude-plugin/plugin.json`: the Claude Code plugin manifest, which declares
   the MCP server inline under `mcpServers` (a repository-root `.mcp.json`
   would double as this repository's own project config); `tests/packaging.test.ts`
-  pins it. A host attaches with `claude --plugin-dir <this repository>`.
+  pins it. A Claude Code host attaches with `claude --plugin-dir <this
+  repository>`; a Grok host reads the same manifest as a plugin in place, named
+  under `[plugins]` in the project's own `.grok/config.toml`, so no Grok
+  manifest exists.
+- `.codex-plugin/plugin.json`, its launcher `.codex-plugin/serve`, and
+  `.agents/plugins/marketplace.json`: the Codex plugin, offered from this
+  repository as a one-plugin marketplace. Codex runs it from a copy in its
+  cache and starts the server there through the launcher, so a Codex host
+  names its project in `CROSS_AGENT_PROJECT`; `assets/codex/mcp_servers.toml`
+  is the configured-server fallback. `tests/packaging.test.ts` pins them too.
 - `tools/probe.mjs`: a standalone harness for observing a real engine CLI
   (`--track` spawns the real runner from a delegate-shaped spec).
   `tools/e2e-verify.mjs` judges an end-to-end run by the design's eight
@@ -87,9 +108,7 @@ Shipped:
   `tools/` is product code.
 - `docs/design.md`, `docs/probes.md`.
 
-Planned, in the design's work plan: the Codex and Grok packaging (T14, T15);
-the `ask`/`list_asks`/`answer` mailbox an engine-placed lead needs (S11); the
-operator CLI's remaining verbs (T16).
+Planned, in the design's work plan: the backlog (row 14).
 
 ## Conventions
 
@@ -121,6 +140,18 @@ operator CLI's remaining verbs (T16).
 - The server: `node src/server.ts` (stdio; JSON-RPC lines in, lines out).
 - A project's config: `node src/cli.ts init --mode dev-team` (or `solo`, or
   `dev-team-engine`) in the project root.
+- A project's tasks from a terminal, without writing anything: `node src/cli.ts
+  tasks`, `node src/cli.ts show <id>`, `node src/cli.ts report` (each takes
+  `--json`).
+- A Codex host: export `HEAD` into a directory of its own (`git archive HEAD |
+  tar -x -C <dir>`), `codex plugin marketplace add <dir>`, `codex plugin add
+  cross-agent@agent-team-cli`, then `CROSS_AGENT_PROJECT=<project root> codex`
+  (README, "Install it in Codex").
+- A Grok host: in the project, after `init`, `.grok/` added to `.gitignore` and
+  that change committed, then `[plugins]` with `paths = ["<this repository's
+  absolute path>"]` and `enabled = ["cross-agent"]`, and `[mcp]` with
+  `max_output_bytes = 100000`, in `.grok/config.toml`, the folder trusted
+  (README, "Install it in Grok").
 - An engine probe: `node tools/probe.mjs --engine claude --cwd <dir> --sandbox read-only --prompt "…"`.
 
 <!-- PROJECT-STEWARD:BEGIN commands -->
