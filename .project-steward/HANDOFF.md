@@ -114,45 +114,35 @@ runs `dontAsk` with a `--tools` allowlist, `--setting-sources project` and permi
 rules confining file edits to the workspace; the verifier holes closed; E8 8 pass;
 `npm test` 785 / 784 / 1 skipped). Its re-review left two gaps of the build's own (a
 host-config symlink's referent; a TMPDIR-dependent test) and verifier minors; fix round 2
-landed (head `469d86b`, `npm test` 793 / 792 / 1 skipped) and its round-3 re-review is
-running (`task-12-findings-round-2.md`). After two fix rounds, any Important still open goes
-to one escalation pass, then the controller decides with the evidence. The residue that comes from Claude Code's
-own settings merge (a project's `.claude/settings.json` pre-approving file writes) the user
-accepted on 2026-10-02 as a documented limitation. Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
-restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
-v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
-runs before dispatch.
+landed (head `469d86b`, `npm test` 793 / 792 / 1 skipped). The escalation pass landed `84ba856`
+(808 / 807 / 1 skipped): host configuration must be regular files, so any symbolic link at or
+under `.claude/`, `.codex/`, `.grok/` or `.mcp.json` is refused at the worktree commit and at the
+root merge, and the verifier reads Node's code-loading options and builtin assignments. Its review
+(`task-12-findings-round-4.md`) left three verifier classes, now in a wrap-up on the task branch
+(Node options that load code from files it never opens; assignments it does not read; `--entry-url`
+URLs), and one stated boundary for design section 4 and the README (the root's own untracked host
+link). The residue that comes from Claude Code's own settings merge (a project's
+`.claude/settings.json` pre-approving file writes) the user accepted on 2026-10-02 as a documented
+limitation, with the other harness limitations of that day's standing word.
 
 
 ## Next steps
 
-1. **Task 6b first**, then **S11 — engine placement** (`atc-s96.24`,
-   remainder). S11's brief,
-   `.superpowers/sdd/the-development-of-this-calm-planet/task-7-brief.md`,
-   needs refreshing: Codex is available again, so E2 runs, and the Codex
-   lead needs `tool_timeout_sec` (Codex's per-tool default is 60 s).
-   After each task run
-   `node tools/check-citations.mjs --since <BASE>` — it must report 0 drifted
-   and 0 not judged — because `npm test` cannot see a citation that moved.
-2. **Then** T16 (`.16`, the operator CLI; its brief `task-10-brief.md` v2 is in
-   plan review), then T14 (`.14`,
-   Codex packaging), T15
-   (`.15`, Grok packaging; the sample folder is trusted; `.53`'s hop
-   measurement and the read-only Grok probe row belong here), docs nits (`.42`), the go/no-go (`.18`), the final
-   whole-branch review, wrap.
-3. **Merges.** Rebase `task/cross-agent-m3` onto `main` (main's own commits
-   touch only `.project-steward/`, `AGENTS.md`, `VERIFY.md`), fast-forward,
-   run `npm test` at the root, record the SHA and counts in `VERIFY.md`.
-   Never push.
+1. **Task 12's wrap-up** (`task-12-findings-round-4.md`, items 1–9): verify each reviewer
+   reproduction against the new head, run the gates, then merge (rebase onto `main`, the
+   `VERIFY.md` corrections drafted in `task-12-fix1-report.md`, a T12 section with E8).
+2. **Decision 0011 and the devpack `EVIDENCE.md` note** (a writer, `task-12-brief.md` Parts B
+   and C, with the rulings since v2).
+3. **The close** (Part D): the Codex config restore takes the surgical branch, because
+   `~/.codex/config.toml` also changed outside T14's tables (`model`, `service_tier` and the
+   Codex app's version lines, 2026-10-02 08:13Z), and those lines stay as found. Then the sample
+   check, the worktree archive and removal, the beads, and the `AGENTS.md` diff shown for
+   approval. Never push.
 
 ## Blockers
 
-- Questions only you can answer are in `.project-steward/QUESTIONS.md`: the
-  authority hop budget for nested hosts (`atc-s96.53`) and whether a Grok
-  specialist in a linked worktree should reach the server through a
-  user-scope mount (your Grok config).
-- None hard. `atc-s96.53` (the hop
-  budget under other hosts) is a measurement, not a blocker.
+- None. `QUESTIONS.md`'s two open items (Codex `tool_timeout_sec`, the Agent tool) close at
+  the close of the plan.
 
 ## Key files
 
