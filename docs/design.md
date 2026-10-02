@@ -755,10 +755,13 @@ git form inside the `spawn.lock` this call already holds rather than through
 `git_root worktree remove`, which takes that same lock; the discard takes
 `git.lock` and then the repository lock itself, in the standing order
 (`src/delegate.ts#discardWorktree`, `tests/delegate.test.ts#discardUnderGitLocks`).
-That covers the three that leave something standing: a `git_root` refusal for a
+That covers the four that leave something standing: a `git_root` refusal for a
 command that ran, which is what a journal step that could not be written is; a
-worktree that does not verify; and a throw while the record, its scratch directory
-or its spec is written. Only what exists is removed, and each command's exit code is
+creation that answered `lockLost: true`; a worktree that does not verify; and a
+throw while the record, its scratch directory or its spec is written. What exists is established before any lock is taken, and only
+that is removed or named: a discard of nothing — a creation refused before git ran, or
+one that never got its lock — takes no lock and names no leftover
+(`tests/delegate.test.ts#discardNothingTakesNoLock`). Each command's exit code is
 read: the journal goes only once both the worktree and the branch have, and
 otherwise it is kept and the refusal — or the error a failed record write throws —
 names what survived (`tests/delegate.test.ts#discardKeepsJournalOnFailure`). A

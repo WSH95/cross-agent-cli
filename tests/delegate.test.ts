@@ -1420,6 +1420,25 @@ test("a discard whose repository lock is lost while it runs keeps the journal an
   assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`);
 });
 
+// @anchor discardNothingTakesNoLock
+test("a one-shot refused before git made anything discards nothing, waits for no lock and names no leftovers", async (t) => {
+  const p = await projectWithRoles(t);
+  const linked = await linkedProject(t, p.root, "feature");
+  // The config's default branch is not the branch the root has checked out, so `git_root`
+  // refuses to create the worktree before it takes any lock: nothing exists to discard.
+  configuredAt(p, linked, "other");
+  // And another project's git step holds the repository lock for longer than this test runs.
+  const shared = await acquire(repositoryLockPath(path.join(p.root, ".git")), { operation: "another project's git step", waitSeconds: 5 });
+  t.after(() => shared.release());
+  const started = Date.now();
+  const reason = refusal(await delegate(linked, request({ role: "planner", cwd: linked, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) }));
+  const waited = Date.now() - started;
+  assert.ok(waited < 30_000, `the refusal waited ${waited} ms for a lock its discard did not need`);
+  assert.match(reason, /project\.defaultBranch/);
+  assert.doesNotMatch(reason, /not discarded|is kept|standing/, "and it names nothing that was never made");
+  assert.deepEqual(scan(linked).records, []);
+});
+
 // A root that is not its repository's main checkout (design section 4): what a launch there
 // protects, what it refuses, and two projects of one repository side by side.
 

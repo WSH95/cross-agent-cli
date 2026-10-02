@@ -10,7 +10,7 @@ import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, 
 import type { LineageEntry } from "./guard.ts";
 import { revision, run } from "./gitmutate.ts";
 import { gitRoot, trackedStateFault } from "./gitroot.ts";
-import { removeJournal } from "./journal.ts";
+import { readJournal, removeJournal } from "./journal.ts";
 import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
@@ -634,20 +634,38 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
 
 /**
  * Everything a one-shot that never launched would otherwise leave standing: its worktree,
- * its branch and its journal. It runs inside the `spawn.lock` this delegation already
- * holds, so it takes `git.lock` and then the repository lock itself, in the standing order,
- * and uses the explicit git form rather than `git_root worktree remove`, which takes
- * `spawn.lock` again; `--force` is right here and nowhere else, because the only thing in
- * that worktree is what git has just put there and no task ever ran in it. Only what
- * exists is removed — the failure this follows may have come before git created anything —
- * and every command's exit code is read: the journal goes only once the worktree and the
- * branch both have, because a kept journal is how reconciliation finds what is left, and
- * what is left is named in the refusal. A lock lost while the commands ran leaves their
- * outcome uncertified, since another project's verb may have run beside them, so the
- * journal is kept then too, and the loss travels with the answer.
+ * its branch and its journal. What exists is established first, before any lock, because
+ * the failure this follows may have come before git created anything — a refusal, or a
+ * lock the creation never got — and a discard of nothing takes no lock and names nothing.
+ * It runs inside the `spawn.lock` this delegation already holds, so it takes `git.lock` and
+ * then the repository lock itself, in the standing order, and uses the explicit git form
+ * rather than `git_root worktree remove`, which takes `spawn.lock` again; `--force` is
+ * right here and nowhere else, because the only thing in that worktree is what git has
+ * just put there and no task ever ran in it. Every command's exit code is read: the
+ * journal goes only once the worktree and the branch both have, because a kept journal is
+ * how reconciliation finds what is left, and what is left — only what exists — is named in
+ * the refusal. A lock lost while the commands ran leaves their outcome uncertified, since
+ * another project's verb may have run beside them, so the journal is kept then too, and
+ * the loss travels with the answer.
  */
 async function discardWorktree(projectRoot: string, repo: Repository, worktree: TaskWorktree): Promise<Discarded> {
-  const kept = (why: string): Discarded => ({ text: `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}` });
+  const made = directory(worktree.path);
+  let branched = true;
+  try {
+    branched = await revision(repo.gitDir, repo.workTree, worktree.branch) !== undefined;
+  } catch { /* a git that cannot run is named by the delete it then fails */ }
+  let journaled = true;
+  try {
+    journaled = readJournal(projectRoot, worktree.slug) !== null;
+  } catch { /* a journal that does not read is still there, and is kept */ }
+  if (!made && !branched && !journaled) return { text: "" };
+  const standing = [...(made ? [worktree.path] : []), ...(branched ? [`branch ${worktree.branch}`] : [])];
+  const were = standing.length > 1 ? "were" : "was";
+  const journal = `journal ${worktree.slug} is kept for reconciliation to find`;
+  const kept = (why: string): Discarded => {
+    const left = [...(standing.length > 0 ? [`${standing.join(" and ")} ${were} not discarded`] : []), ...(journaled ? [journal] : [])];
+    return { text: `. The discard took no lock (${why}), so ${left.join(", and ")}` };
+  };
   const waitSeconds = lockWaitSeconds(projectRoot);
   const operation = `delegate discarding ${worktree.slug}`;
   let lock: Lock;
@@ -665,14 +683,10 @@ async function discardWorktree(projectRoot: string, repo: Repository, worktree: 
     }
     try {
       const survived: string[] = [];
-      if (directory(worktree.path)) {
+      if (made) {
         const failed = await gitFailure(repo, ["worktree", "remove", "--force", worktree.path]);
         if (failed !== null) survived.push(`${worktree.path} (${failed})`);
       }
-      let branched = true;
-      try {
-        branched = await revision(repo.gitDir, repo.workTree, worktree.branch) !== undefined;
-      } catch { /* a git that cannot run is named by the delete it then fails */ }
       if (branched) {
         const failed = await gitFailure(repo, ["branch", "-D", worktree.branch]);
         if (failed !== null) survived.push(`branch ${worktree.branch} (${failed})`);
@@ -680,16 +694,19 @@ async function discardWorktree(projectRoot: string, repo: Repository, worktree: 
       const lost = lock.lost || shared.lost;
       if (survived.length > 0 || lost) {
         const left = survived.length > 0 ? `. Discarding the task's worktree left ${survived.join(" and ")} standing` : "";
-        const uncertified = lost ? `. A lock held while the task's worktree was discarded was lost, so the discard is not certified` : "";
+        const uncertified = lost ? ". A lock held while the task's worktree was discarded was lost, so the discard is not certified" : "";
         return {
-          text: `${left}${uncertified}; journal ${worktree.slug} is kept for reconciliation to find`,
+          text: `${left}${uncertified}${journaled ? `; ${journal}` : ""}`,
           ...(lost ? { lockLost: true as const } : {}),
         };
       }
-      try {
-        removeJournal(projectRoot, worktree.slug);
-      } catch (error) {
-        return { text: `. ${worktree.path} and ${worktree.branch} were discarded, but journal ${worktree.slug} could not be removed: ${message(error)}` };
+      if (journaled) {
+        try {
+          removeJournal(projectRoot, worktree.slug);
+        } catch (error) {
+          const discarded = standing.length > 0 ? `. ${standing.join(" and ")} ${were} discarded, but journal` : ". Journal";
+          return { text: `${discarded} ${worktree.slug} could not be removed: ${message(error)}` };
+        }
       }
       return { text: "" };
     } finally {
