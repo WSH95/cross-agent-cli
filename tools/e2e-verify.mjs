@@ -134,6 +134,8 @@ for (const branch of live) {
   if (here && there.length === 0) classed.fail.push(`${branch} (an open journal of this project names it)`);
   else if (!here && there.length > 0) classed.sibling.push(`${branch} (an open journal at ${there.map((each) => each.path).join(", ")} names it)`);
   else if (claims.length > 0) classed.unknown.push(`${branch} (open journals here and at ${there.map((each) => each.path).join(", ")} both name it)`);
+  // Unproven, it can be another project's only where the repository holds one.
+  else if (siblings.length === 0) classed.fail.push(`${branch} (no other project of this repository could hold it)`);
   else classed.unknown.push(`${branch} (checked out under no project and named by no open journal)`);
 }
 check(`no ${branchPattern} branch remains`,

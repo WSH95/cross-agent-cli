@@ -4398,8 +4398,10 @@ binding, and the project follows its own path (Context).
   out under `--project`, or named by an open journal of this project, fails the row
   (`#row2LocalLeftoverFails`, `#row2ReusedNameOpenHereFails`); checked out under a
   sibling's root, or named by an open journal there, is that sibling's, named and
-  ignored (`#row2SiblingProven`); evidence on both sides, or none, is `?` with the
-  claims in the detail (`#row2ConflictQuestioned`, `#row2UnknownOwnerQuestioned`). A
+  ignored (`#row2SiblingProven`); evidence on both sides is `?` with the claims in the
+  detail (`#row2ConflictQuestioned`), and no evidence is `?` where a sibling exists to
+  own the branch and fails the row, as before worktree projects, where none does
+  (`#row2UnknownOwnerQuestioned`, `#row2NoSiblingFails`). A
   journal with a `branch-deleted` step is closed and claims nothing
   (`#row2ClosedJournalClaimsNothing`), a current checkout outranks history, and an
   unjournaled branch is never taken as another project's. **E1 met all eight under Claude

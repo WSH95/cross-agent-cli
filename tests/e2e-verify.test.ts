@@ -2118,8 +2118,20 @@ test("row 2 fails on a branch this project proves its own: a checkout under its 
   }
 });
 
+// @anchor row2NoSiblingFails
+test("row 2 fails on a branch nobody proves where the repository holds no other project, as it did before worktree projects", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  await branchAt(root, "task/stray");
+  // A worktree nobody initialized is no project, and so no owner.
+  const unconfigured = await siblingOf(t, root, "other", false);
+  await exec("git", ["-C", unconfigured, "worktree", "add", "-b", "task/elsewhere", path.join(unconfigured, ".worktrees", "elsewhere")]);
+  const { out } = await runWith(root, []);
+  assert.equal(verdict(out, branchRow), "FAIL", out);
+  for (const branch of ["task/stray", "task/elsewhere"]) assert.ok(row(out, branchRow).includes(branch), out);
+});
+
 // @anchor row2UnknownOwnerQuestioned
-test("row 2 answers ? for a branch nobody proves, never taking it for another project's", async (t) => {
+test("row 2 answers ? for a branch nobody proves while a sibling project exists, never taking it for that project's", async (t) => {
   const root = await project(t, { claude: claudeLog("true") });
   await siblingOf(t, root, "other");
   await branchAt(root, "task/stray");
