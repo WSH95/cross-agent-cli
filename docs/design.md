@@ -3051,7 +3051,7 @@ README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
 discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and `describe_mode` answers 20,271 bytes under `dev-team` and 25,270
+20,000 bytes by default, and `describe_mode` answers 20,291 bytes under `dev-team` and 25,270
 under `dev-team-engine` (`tests/packaging.test.ts#describeModeSizes`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
 600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
@@ -3395,9 +3395,10 @@ reason), and the loop-guard scope as a hard requirement.
      (`claude`, `codex`, `grok`, `node <repo>/src/server.ts`) attempted on
      each engine, with `node --version` as the control. **Done** — Claude and
      Grok deny all four and allow the control; Codex ignores an execpolicy
-     rules file in `exec`, see P3b. Outstanding: the `cross-agent` and `node
-     <repo>/src/cli.ts` targets, a configured `engines.<e>.bin` path, and a
-     resumed session.
+     rules file in `exec`, see P3b. The rest ran in task 12's fix round, on
+     Claude and on Grok: the `cross-agent` and `node <repo>/src/cli.ts`
+     targets and a configured `engines.<e>.bin` path, in a fresh session and
+     in that session resumed, each refused (`docs/probes.md#t12Fix1`).
    - P3b Codex network: a workspace-write child cannot reach a model API or
      complete a nested engine run. **Done.**
    - P5 `codex exec --ignore-user-config`: auth kept, no trust prompt, no user

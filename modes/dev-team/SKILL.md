@@ -4,9 +4,9 @@ One task at a time, through four specialists: the planner and the plan reviewer
 read the project at its root, the implementer works in a linked worktree on its
 own branch, and the code reviewer reads what it committed there. `lead.placement`
 is `host`, so the session reading this runs the loop and owns every root git
-operation. No specialist runs a git command that writes — a worktree's `.git` is
-a writable file inside the implementer's sandbox, which is exactly why nothing
-here trusts it.
+operation. No specialist runs a git command that writes, and nothing here trusts
+a worktree's `.git` pointer: Claude's and Codex's sandboxes keep the implementer
+from writing it, and Grok's cannot.
 
 `<slug>` is the short name you choose in step 1: the directory under the mode's
 `git.worktreeDir`, the branch its `git.branchPattern` makes (`task/<slug>` for
