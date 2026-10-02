@@ -28,6 +28,12 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
 
 /** The util-linux child that actually holds a lock, found by the file on its command line. */
 export function holderOf(file: string): number | null {
+  return holdersOf(file)[0] ?? null;
+}
+
+/** Every util-linux child holding a lock or waiting for it, found by the file on its command line. */
+export function holdersOf(file: string): number[] {
+  const found: number[] = [];
   for (const entry of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     let cmdline: string;
@@ -37,9 +43,9 @@ export function holderOf(file: string): number | null {
       continue;
     }
     const argv = cmdline.split("\0");
-    if (argv[0]?.endsWith("flock") && argv.includes(file)) return Number(entry);
+    if (argv[0]?.endsWith("flock") && argv.includes(file)) found.push(Number(entry));
   }
-  return null;
+  return found;
 }
 
 export interface GitShim {

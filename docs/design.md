@@ -758,17 +758,19 @@ git form inside the `spawn.lock` this call already holds rather than through
 That covers the four that leave something standing: a `git_root` refusal for a
 command that ran, which is what a journal step that could not be written is; a
 creation that answered `lockLost: true`; a worktree that does not verify; and a
-throw while the record, its scratch directory or its spec is written. What exists is established before any lock is taken, and only
-that is removed or named: a discard of nothing — a creation refused before git ran, or
-one that never got its lock — takes no lock and names no leftover
-(`tests/delegate.test.ts#discardNothingTakesNoLock`). Each command's exit code is
-read: the journal goes only once both the worktree and the branch have, and
-otherwise it is kept and the refusal — or the error a failed record write throws —
-names what survived (`tests/delegate.test.ts#discardKeepsJournalOnFailure`). A
-lock the discard held and lost while its commands ran leaves them uncertified, since
-another project's verb may have run beside them: the journal is kept then too, and
-the answer says so, a refusal with `lockLost: true`
-(`tests/delegate.test.ts#discardLockLostKeepsJournal`).
+throw while the record, its scratch directory or its spec is written, which is the
+one-shot's refusal too, keeping the error it follows. What exists is established
+before any lock is taken, and only that is removed or named: a discard of nothing — a
+creation refused before git ran, or one that never got its lock — takes no lock and
+names no leftover (`tests/delegate.test.ts#discardNothingTakesNoLock`). Each
+command's exit code is read: the journal goes only once both the worktree and the
+branch have, and otherwise it is kept and the refusal names what survived
+(`tests/delegate.test.ts#discardKeepsJournalOnFailure`). A lock the discard held and
+lost leaves it uncertified, since another project's verb may have run beside it —
+lost while its commands ran, or `git.lock` lost while it waited for a repository lock
+it never got: the journal is kept then too, and the refusal says so and carries
+`lockLost: true` (`tests/delegate.test.ts#discardLockLostKeepsJournal`,
+`#discardLockLostOnRefusal`, `#discardLockLostWhileWaiting`).
 Reconciliation does not clean up worktrees — it reports an unmerged branch with a
 dead task to the operator (section 7) — so the kept journal is what finds such a
 leftover. A one-shot needs a repository the project can write: at a root with no

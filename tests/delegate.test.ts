@@ -19,7 +19,7 @@ import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
-import { git, gitShim } from "./helpers/git.ts";
+import { git, gitShim, holderOf, holdersOf } from "./helpers/git.ts";
 import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
@@ -922,15 +922,15 @@ test("a one-shot that fails after its worktree exists leaves no worktree, branch
   assert.deepEqual(await left(journalled), []);
 
   // (b) A throw after the worktree exists — here the ledger's own directory cannot be
-  // written — escapes as an error, and must not escape with a worktree behind it.
+  // written — is the one-shot's refusal, naming the error, and leaves no worktree behind.
   const recorded = await projectWithRoles(t);
   fs.mkdirSync(path.join(recorded.root, ".cross-agent", "journal"), { recursive: true });
   fs.mkdirSync(path.join(recorded.root, ".worktrees"), { recursive: true });
   fs.mkdirSync(path.join(recorded.root, ".cross-agent", "tasks"), { recursive: true });
   t.after(() => { try { fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o755); } catch { /* gone */ } });
   fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o555);
-  await assert.rejects(
-    () => delegate(recorded.root, request({ role: "planner", cwd: recorded.root, worktree: true }), options(recorded)),
+  assert.match(
+    refusal(await delegate(recorded.root, request({ role: "planner", cwd: recorded.root, worktree: true }), options(recorded))),
     /EACCES|permission denied/,
   );
   fs.chmodSync(path.join(recorded.root, ".cross-agent", "tasks"), 0o755);
@@ -1352,14 +1352,9 @@ test("a discard that leaves the worktree or its branch standing keeps the journa
   // And the discard's removal dies on a signal, so the branch it would delete next is still
   // checked out in the surviving worktree, which git refuses to delete.
   await gitShim(t, { signalOn: "--force" });
-  await assert.rejects(
-    () => delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) }),
-    (error: Error) => {
-      assert.match(error.message, /EACCES|permission denied/);
-      assert.match(error.message, /journal \S+ is kept/);
-      return true;
-    },
-  );
+  const reason = refusal(await delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) }));
+  assert.match(reason, /EACCES|permission denied/);
+  assert.match(reason, /journal \S+ is kept/);
   fs.chmodSync(tasks, 0o755);
   const [slug] = fs.readdirSync(path.join(p.root, ".worktrees"));
   assert.ok(slug !== undefined, "the worktree survived");
@@ -1403,14 +1398,17 @@ test("a discard whose repository lock is lost while it runs keeps the journal an
   // The discard's removal is held for two seconds, and the repository lock's holder dies
   // inside them.
   const recorder = await gitShim(t, { sleepOn: "--force" });
-  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) })
-    .then((result) => assert.fail(`expected a throw, got ${JSON.stringify(result)}`), (error: Error) => error);
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
   await poll(async () => (await recorder.argv()).includes("--force"), Boolean);
   assert.equal(killLockHolder(repositoryLockPath(path.join(p.root, ".git"))), true, "the repository lock is held while the discard runs");
-  const error = await pending;
-  assert.match(error.message, /EACCES|permission denied/);
-  assert.match(error.message, /lock .*was lost.* not certified/);
-  assert.match(error.message, /journal \S+ is kept/);
+  // The failure is a refusal like any other of the one-shot's, which keeps the error it
+  // follows and carries the lost lock as a field the caller reads.
+  const result = await pending;
+  const reason = refusal(result);
+  assert.equal(!result.ok && result.lockLost, true, "the refusal carries the lost lock");
+  assert.match(reason, /EACCES|permission denied/);
+  assert.match(reason, /lock .*was lost.* not certified/);
+  assert.match(reason, /journal \S+ is kept/);
   fs.chmodSync(tasks, 0o755);
   // git removed what it was asked to; whether anything ran beside it is what nobody knows,
   // so the journal stays for reconciliation.
@@ -1418,6 +1416,70 @@ test("a discard whose repository lock is lost while it runs keeps the journal an
   const [slug] = listJournals(p.root);
   assert.ok(slug !== undefined, "the journal is kept");
   assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`);
+});
+
+// @anchor discardLockLostOnRefusal
+test("a refusal whose discard loses the repository lock while it runs carries the lost lock", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const p = await projectWithRoles(t);
+  const journals = path.join(p.root, ".cross-agent", "journal");
+  fs.mkdirSync(journals, { recursive: true });
+  t.after(() => { try { fs.chmodSync(journals, 0o755); } catch { /* gone */ } });
+  // The `worktree-created` step cannot be written after `git worktree add` has run, so
+  // `git_root` refuses and the refusal discards what git made.
+  fs.chmodSync(journals, 0o555);
+  const recorder = await gitShim(t, { sleepOn: "--force" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
+  await poll(async () => (await recorder.argv()).includes("--force"), Boolean);
+  assert.equal(killLockHolder(repositoryLockPath(path.join(p.root, ".git"))), true, "the repository lock is held while the discard runs");
+  const result = await pending;
+  const reason = refusal(result);
+  assert.equal(!result.ok && result.lockLost, true, "the refusal carries the lost lock");
+  assert.match(reason, /journal step could not be written/);
+  assert.match(reason, /lock .*was lost.* not certified/);
+  assert.deepEqual(scan(p.root).records, []);
+});
+
+// @anchor discardLockLostWhileWaiting
+test("a discard that loses git.lock while it waits for the repository lock, and never gets that lock, carries the lost lock", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const p = await projectWithRoles(t);
+  const tasks = path.join(p.root, ".cross-agent", "tasks");
+  fs.mkdirSync(tasks, { recursive: true });
+  t.after(() => { try { fs.chmodSync(tasks, 0o755); } catch { /* gone */ } });
+  // The record cannot be written once the worktree and its journal exist.
+  fs.chmodSync(tasks, 0o555);
+  // The discard's first read, before it takes any lock, is held for two seconds, and in
+  // them another project's git step takes the repository lock.
+  const recorder = await gitShim(t, { sleepOn: "refs/heads/task/" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
+  await poll(async () => (await recorder.argv()).some((argument) => argument.startsWith("refs/heads/task/")), Boolean);
+  const shared = repositoryLockPath(path.join(p.root, ".git"));
+  const other = await acquire(shared, { operation: "another project's git step", waitSeconds: 5 });
+  t.after(() => other.release());
+  const theirs = holderOf(shared);
+  // The discard takes git.lock and waits for the repository lock. git.lock's holder dies
+  // while it waits, and then the wait ends without the lock, as a timeout ends it.
+  const waiter = await poll(() => holdersOf(shared).find((pid) => pid !== theirs), (pid) => pid !== undefined);
+  assert.equal(killLockHolder(lockPath(p.root, gitLockName())), true, "the discard holds git.lock while it waits");
+  await delay(300);
+  process.kill(waiter!, "SIGKILL");
+  const result = await pending;
+  const reason = refusal(result);
+  assert.equal(!result.ok && result.lockLost, true, "the refusal carries the lock lost while the discard waited");
+  assert.match(reason, /EACCES|permission denied/);
+  assert.match(reason, /git\.lock[^.]*was lost/);
+  fs.chmodSync(tasks, 0o755);
+  // Nothing was discarded without its locks: the journal still finds what is left.
+  const [slug] = listJournals(p.root);
+  assert.ok(slug !== undefined, "the journal is kept");
+  assert.equal(fs.existsSync(path.join(p.root, ".worktrees", slug)), true, "and so is the worktree it names");
 });
 
 // @anchor discardNothingTakesNoLock

@@ -550,7 +550,8 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
 
     // 7. The record, its spec, and the runner that owns the engine from here on. A throw
     // in any of the three is a task that will never run, so it leaves nothing standing
-    // either: the worktree, its branch and its journal go with it.
+    // either: the worktree, its branch and its journal go with it, and a one-shot's throw is
+    // its refusal.
     let record: TaskRecord;
     let spec: LaunchSpec;
     // Computed at every launch, resumes included, from the workspace this task runs in.
@@ -598,10 +599,10 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       writeSpec(projectRoot, record.id, spec);
     } catch (error) {
       if (oneShot !== undefined) {
-        // What the discard could not remove, or could not certify, travels with the error:
-        // it is all the caller sees.
+        // Refused as every failure since its worktree was made is: the error, what the
+        // discard could not remove or certify, and a lock it lost as a field the caller reads.
         const discarded = await discardWorktree(projectRoot, repo!, oneShot);
-        if (discarded.text !== "") throw new Error(`${message(error)}${discarded.text}`, { cause: error });
+        return refuse(`${message(error)}${discarded.text}`, discarded.lockLost);
       }
       throw error;
     }
@@ -646,7 +647,8 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
  * how reconciliation finds what is left, and what is left — only what exists — is named in
  * the refusal. A lock lost while the commands ran leaves their outcome uncertified, since
  * another project's verb may have run beside them, so the journal is kept then too, and
- * the loss travels with the answer.
+ * the loss travels with the answer, as does `git.lock` lost while the discard waited for
+ * a repository lock it never got.
  */
 async function discardWorktree(projectRoot: string, repo: Repository, worktree: TaskWorktree): Promise<Discarded> {
   const made = directory(worktree.path);
@@ -662,9 +664,13 @@ async function discardWorktree(projectRoot: string, repo: Repository, worktree: 
   const standing = [...(made ? [worktree.path] : []), ...(branched ? [`branch ${worktree.branch}`] : [])];
   const were = standing.length > 1 ? "were" : "was";
   const journal = `journal ${worktree.slug} is kept for reconciliation to find`;
-  const kept = (why: string): Discarded => {
+  // What a discard that could not take its locks leaves, and `git.lock` lost while the
+  // discard held it and waited for the repository lock.
+  const kept = (why: string, held?: Lock): Discarded => {
     const left = [...(standing.length > 0 ? [`${standing.join(" and ")} ${were} not discarded`] : []), ...(journaled ? [journal] : [])];
-    return { text: `. The discard took no lock (${why}), so ${left.join(", and ")}` };
+    const lost = held?.lost === true;
+    const losing = lost ? ", and git.lock, which it held while it waited, was lost" : "";
+    return { text: `. The discard could not take its locks (${why})${losing}, so ${left.join(", and ")}`, ...(lost ? { lockLost: true as const } : {}) };
   };
   const waitSeconds = lockWaitSeconds(projectRoot);
   const operation = `delegate discarding ${worktree.slug}`;
@@ -679,7 +685,7 @@ async function discardWorktree(projectRoot: string, repo: Repository, worktree: 
     try {
       shared = await acquire(repositoryLockPath(repo.commonDir), { waitSeconds: repositoryLockWait(waitSeconds), operation });
     } catch (error) {
-      return kept(message(error));
+      return kept(message(error), lock);
     }
     try {
       const survived: string[] = [];
