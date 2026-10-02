@@ -360,8 +360,9 @@ expands it — and `"cross-agent"` to the existing `enabled` array, and set
 value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
-default, past what `describe_mode` answers: 20,653 bytes under `dev-team`, 25,632 under
-`dev-team-engine` and 3,463 under `solo`, so the default cuts both dev-team modes. Under the
+default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
+21,156 bytes under `dev-team`, 26,068 under `dev-team-engine` and 3,463 under `solo`, and
+the answer adds the project's root beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with
 the line, it read the answer whole (`docs/probes.md`, "T15: the Grok attach").

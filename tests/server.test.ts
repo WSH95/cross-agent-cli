@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Authority } from "../src/authority.ts";
 import { create, taskStatuses } from "../src/ledger.ts";
-import { builtInModesDir, loadMode } from "../src/modes.ts";
+import { builtInModesDir, describeMode, loadMode } from "../src/modes.ts";
 import type { Mode } from "../src/modes.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import type { ServerOptions, ToolContext } from "../src/server.ts";
@@ -1234,4 +1234,35 @@ test("the server reconciles once before it serves and names on stderr what it co
   await waitFor(() => stderr.includes(record.id), 8000);
   assert.match(stderr, new RegExp(`cross-agent: task ${record.id}: .*lock`));
   assert.equal(record.status, "launching");
+});
+
+// @anchor describeModeCarriesProjectRoot
+test("describe_mode answers with projectRoot, the root this server serves, beside the mode's own text", async (t) => {
+  for (const mode of ["dev-team", "solo"]) {
+    const root = await realpath(await projectWithConfig(t, { mode, roles: {} }));
+    const request = inProcess({ tools: projectTools(root, { mode: loadMode(builtInModesDir(), mode) }), authority: () => operator });
+    const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
+    const answer = JSON.parse((((reply.result as Json).content as Json[])[0].text as string)) as Json;
+    assert.equal(answer.projectRoot, root, mode);
+    // The mode's text is `describeMode`'s, unchanged: the handler adds the root beside it.
+    const { projectRoot: _, ...text } = answer;
+    assert.deepEqual(text, JSON.parse(JSON.stringify(describeMode(builtInModesDir(), mode))), mode);
+  }
+});
+
+// @anchor describeModeAnswerSize
+test("describe_mode's whole answer is the mode's text, 19 bytes more, and projectRoot's own JSON", async (t) => {
+  const answered = async (root: string, mode: string) => {
+    const request = inProcess({ tools: projectTools(root, { mode: loadMode(builtInModesDir(), mode) }), authority: () => operator });
+    const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
+    return Buffer.byteLength((((reply.result as Json).content as Json[])[0].text as string));
+  };
+  const textOf = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
+  for (const mode of ["dev-team", "dev-team-engine", "solo"]) {
+    const root = await realpath(await projectWithConfig(t, { mode, roles: {} }));
+    assert.equal(await answered(root, mode), textOf(mode) + 19 + Buffer.byteLength(JSON.stringify(root)), mode);
+  }
+  // A known root: a directory holding no config answers solo's defaults, and `"projectRoot":
+  // "/x"` adds 23 bytes to them.
+  assert.equal(await answered("/x", "solo"), textOf("solo") + 23);
 });

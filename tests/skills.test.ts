@@ -293,6 +293,8 @@ test("a host offered none of this server's tools tells the user the server did n
   // T14's probe (c): a Codex session started without `CROSS_AGENT_PROJECT` was offered the
   // plugin's skill while the plugin's server never started, and nothing said so (atc-s96.71).
   const before = flat(sectionOf(launcher(), "Before anything"));
+  // What a host that is offered the tools reads first: which project this server serves.
+  assert.match(before, /`projectRoot`, the canonical root of the project this server serves/);
   assert.match(before, /no `describe_mode` is offered to you/);
   assert.match(before, /server did not start/);
   assert.match(before, /tell the user[^.]*stop/);
@@ -313,6 +315,9 @@ test("under engine placement the host shows the roster before it starts the lead
   const roster = section.search(/`list_roles`[^.]*roster|roster[^.]*`list_roles`/);
   assert.ok(roster >= 0, "the engine-placement section names list_roles and the roster");
   assert.ok(section.indexOf("`delegate {role: <lead.role>") > roster, "and shows the roster before its first delegate of the lead");
+  // With the project it serves on its first line, judged before the lead starts.
+  const served = section.indexOf("`projectRoot`");
+  assert.ok(served >= 0 && served < section.indexOf("`delegate {role: <lead.role>"), "and projectRoot with it, before the lead starts");
 });
 
 // @anchor headlessHostOpenAsk
@@ -859,4 +864,33 @@ test("every committed dev-team role prompt came through the converter and was ed
   assert.match(implementer, /worktree/, "the one role that writes is told where");
   const lead = fs.readFileSync(path.join(modes, "dev-team-engine", "roles", "lead.md"), "utf8");
   assert.match(lead, /`git_root`/, "the engine-placed lead reaches the root through the tools and not its own hands");
+});
+
+// @anchor rosterProjectRootCases
+test("the roster's first line is projectRoot, judged against the project the user is in: stop, proceed, or proceed as asked", () => {
+  const before = flat(sectionOf(launcher(), "Before anything"));
+  assert.match(before, /first line is `projectRoot`/);
+  // An initialized sibling — a worktree or checkout with its own config — served by M stops.
+  assert.match(before, /\*\*[Ss]top\*\*[^.]*initialized project other than `projectRoot`[^.]*\.cross-agent\/config\.json/);
+  assert.match(before, /named a project and `projectRoot` is another/);
+  // An uninitialized sibling proceeds, served by its main project, and the line says so.
+  assert.match(before, /\*\*[Pp]roceed\*\*[^.]*uninitialized worktree/);
+  assert.match(before, /served by the main project at <projectRoot>; run `cross-agent init` here for a project of its own/);
+  // A root the operator named outright proceeds as asked, wherever the host sits.
+  assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
+});
+
+// @anchor rootCheckOwnBranch
+test("both loops read the root's own branch, and reconcile only their own project's leftovers among the repository's", () => {
+  for (const mode of ["dev-team", "dev-team-engine"]) {
+    const step = flat(sectionOf(loop(mode), "1. Root check"));
+    assert.match(step, /git_root \{args: \["rev-parse", "--abbrev-ref", "HEAD"\]\}/, mode);
+    assert.doesNotMatch(step, /first stanza/, `${mode}: the first stanza is the repository's main worktree, not the project root`);
+    assert.match(step, /sibling project/, mode);
+    assert.match(step, /open journal/, mode);
+    assert.match(step, /`branch-deleted`/, mode);
+  }
+  // The rebase state is read where the verifier says the worktree's git directory is.
+  assert.match(flat(launcher()), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/);
+  assert.match(flat(loop("dev-team")), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/);
 });

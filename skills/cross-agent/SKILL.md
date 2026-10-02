@@ -15,8 +15,9 @@ and none of its tasks can be waited on, cancelled or reported.
 
 Call `describe_mode`. It answers with the active mode — its `lead` among the
 rest — the mode's `loop`, its `roles` — each with its workspace, sandbox default
-and prompt — and its `git` policy: `worktreeDir`, `branchPattern`, and `implicit:
-true` where those two are this build's defaults rather than the mode's own.
+and prompt — its `git` policy: `worktreeDir`, `branchPattern`, and `implicit:
+true` where those two are this build's defaults rather than the mode's own — and
+`projectRoot`, the canonical root of the project this server serves.
 
 `mode.lead.placement` decides who runs that loop. Under `host` — `dev-team`,
 `solo` — **the `loop` it returns is your instructions for this project.** It is
@@ -32,7 +33,8 @@ If `describe_mode` refuses, tell the user the reason and stop. A project with no
 on defaults, so a one-off delegation needs no setup at all. A refusal means the
 config names a mode this server could not read, and `cross-agent init --mode
 <name>` is what binds a team to this project; it exits 0 when it wrote the config
-or found one already there, and 3 when the mode or the directory is not there.
+or found one already there, and 3 when the mode or the directory is not there, or
+the directory is a worktree it cannot make a project of.
 
 If no `describe_mode` is offered to you, under any prefix, a Grok host looks first:
 Grok lists an MCP server's tools behind its own `search_tool`, so search it for
@@ -44,13 +46,30 @@ names the project before `codex` starts, and says nothing when it does not; unde
 Grok, only in a trusted project whose `.grok/config.toml` names this checkout. The
 README's install section for your host gives the steps.
 
-Then call `list_roles` and show the roster before you dispatch anything: one
-line per role with its engine, model, effort, workspace and sandbox. A role
-whose `binding` is `null` is bound to no engine; it is still a role you can
-delegate, but your call has to name the `engine`. A `warning` in the answer
-means `.cross-agent/config.json` was pointed at another mode after this server
-started: which tools exist was settled when it loaded, so report the drift and
-ask for a restart instead of working around it.
+Then call `list_roles` and show the roster before you dispatch anything: its
+first line is `projectRoot`, then one line per role with its engine, model,
+effort, workspace and sandbox. A role whose `binding` is `null` is bound to no
+engine; it is still a role you can delegate, but your call has to name the
+`engine`. A `warning` in the answer means `.cross-agent/config.json` was pointed
+at another mode after this server started: which tools exist was settled when it
+loaded, so report the drift and ask for a restart instead of working around it.
+
+Judge `projectRoot` against the project the user works in before anything is
+dispatched. It is not always the directory you were started in: a worktree nobody
+initialized is served by its main project on purpose, and only `cross-agent init`
+run in it makes it a project of its own.
+
+- **Stop**, telling the user, when the working directory lies in an initialized
+  project other than `projectRoot` — a worktree or checkout holding its own
+  `.cross-agent/config.json` — or when the user named a project and `projectRoot` is
+  another. A Grok attach copied with a binding in it, or a stale
+  `CROSS_AGENT_PROJECT`, serves the wrong project this way.
+- **Proceed** when the working directory is in an uninitialized worktree of
+  `projectRoot`'s repository, or anywhere in it that no config claims, and say so
+  on the roster's first line: served by the main project at <projectRoot>; run
+  `cross-agent init` here for a project of its own.
+- **Proceed as asked** when the operator named `projectRoot` outright, with
+  `--project` or `CROSS_AGENT_PROJECT`, wherever your host sits.
 
 ## Starting a task
 
@@ -195,9 +214,13 @@ completed; `git_root {args: ["worktree", "list", "--porcelain"]}`; `git_root
 {args: ["branch", "--list", <branchPattern>]}`, the mode's own pattern from
 `describe_mode`'s `git` field; `git_root {args: ["status",
 "--porcelain", "--untracked-files=normal"]}`; and the rebase state of each task
-worktree, which is a `rebase-merge` or `rebase-apply` directory under
-`.git/worktrees/<slug>`. `verify_worktree {path, branch}` settles whether a
-directory is still the linked worktree of that branch before you trust it.
+worktree, a `rebase-merge` or `rebase-apply` directory under the `gitDir`
+`verify_worktree {path, branch}` answers for it — `branch` being `"HEAD"` while a
+stopped rebase has detached it — and never under a path made from the slug, since
+git names that directory. `verify_worktree` also settles whether a directory is
+still the linked worktree of that branch before you trust it. Both lists are the
+repository's: a sibling project's root, its task worktrees and its branches show
+there too, and they are that project's, never your leftovers.
 
 Then, leftover by leftover — the same rules for a `host` loop's leftovers and for a
 dead engine lead's: an interrupted rebase is aborted where it started —
@@ -242,8 +265,10 @@ below is yours there.
    "remove", <worktree path>], slug}`; `git_root {args: ["branch", "-d",
    <branch>], slug}`; then the report. `<branch>` is the one the record and the
    journal name — `git.branchPattern` with the slug in place of its `*`, which
-   is not always `task/…` — and the merge runs at the project root, so its HEAD
-   has to be on `project.defaultBranch` or `git_root` refuses before merging.
+   is not always `task/…` — and the merge runs at the project root, which for a
+   worktree initialized as a project of its own is that worktree, on its own
+   branch, so its HEAD has to be on `project.defaultBranch` or `git_root` refuses
+   before merging.
    **`manual`, or any failure at any step of `auto`** — stop where you are,
    leave the branch and its worktree standing, and report the reason together
    with the three commands that finish the job at the root: `git merge --ff-only
@@ -336,9 +361,10 @@ Under a mode whose `lead.placement` is `engine` the loop runs in a spawned Claud
 or Codex session, not in yours, and your session stays free while it works. Your
 part is setup, monitoring and answering.
 
-Show the roster first, as `## Before anything` asks: `list_roles`, one line per
-role, the lead's among them, with its engine, model, effort, workspace and sandbox,
-so the user sees what this run will start before it starts. Then start the lead with
+Show the roster first, as `## Before anything` asks: `projectRoot` on its first
+line, judged as that section says, then `list_roles`, one line per role, the lead's
+among them, with its engine, model, effort, workspace and sandbox, so the user sees
+what this run will start, and where, before it starts. Then start the lead with
 one call: `delegate {role: <lead.role>, cwd: <project root>, brief}`, the role being
 `mode.lead.role` from `describe_mode` and the brief the task itself. The server
 mounts itself into the lead and launches it with the mode's loop and the lead's own

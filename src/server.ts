@@ -504,12 +504,14 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
   return [
     {
       name: "describe_mode",
-      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, and its git policy. Call this first: it is how a launcher learns the loop, which is served rather than copied.",
+      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, and projectRoot, the root of the project this server serves. Call this first: it is how a launcher learns the loop, which is served rather than copied.",
       inputSchema: { type: "object", properties: {} },
       rows: ["operator", "lead", "specialist"],
       handler: () => {
         const described = describeMode(modesDir, loadConfig(projectRoot).mode);
-        return "reason" in described ? { ...text(described), isError: true } : text(described);
+        // The project beside the mode's own text: what a launcher shows with the roster and
+        // judges against the project its user works in (design section 7).
+        return "reason" in described ? { ...text(described), isError: true } : text({ ...described, projectRoot });
       },
     },
     {

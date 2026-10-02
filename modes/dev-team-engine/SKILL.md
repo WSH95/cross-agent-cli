@@ -46,14 +46,19 @@ still running is waited on.
 
 Then `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}` must
 print nothing, and the root must sit on `<default>`, because step 9 refuses to merge
-anywhere else: read it from the first stanza of `git_root {args: ["worktree", "list",
-"--porcelain"]}`, the main worktree's, which prints `branch refs/heads/<default>`
-when the root is where it should be. If either is not so — `detached` included —
-`ask {question}` the operator with what git printed, and go on only when the answer
-says the root is ready. That listing is also half of the slug check: choose a
-`<slug>` that neither it nor `git_root {args: ["branch", "--list", "task/*"]}`
-already shows, and ask rather than reuse one when the task named a slug that is
-taken.
+anywhere else: `git_root {args: ["rev-parse", "--abbrev-ref", "HEAD"]}` prints the
+branch the project root has checked out, `<default>` when the root is where it should
+be. If either is not so — `HEAD`, a detached one, included — `ask {question}` the
+operator with what git printed, and go on only when the answer says the root is
+ready. Then choose the slug against `git_root {args: ["worktree", "list",
+"--porcelain"]}` and `git_root {args: ["branch", "--list", "task/*"]}`. Both list
+the repository's, not this project's: a sibling project's root, its task worktrees
+and its branches show there too, and they are that project's, never leftovers of
+yours. Choose a `<slug>` neither list shows, and ask rather than reuse one when the
+task named a slug that is taken. What lies under this project's `git.worktreeDir`,
+or what one of its own open journals names, is all that is yours to reconcile: a
+journal holding a `branch-deleted` step is closed, and claims nothing about a branch
+of that name now.
 
 ## 2. Plan
 

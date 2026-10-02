@@ -38,13 +38,17 @@ left standing.
 
 Then `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`
 must print nothing; if it prints, show the user and stop. The root must also sit
-on `<default>`, because step 9 refuses to merge anywhere else: read it from the
-first stanza of `git_root {args: ["worktree", "list", "--porcelain"]}`, which is
-the main worktree's, and which prints `branch refs/heads/<default>` when the
-root is where it should be — anything else there, `detached` included, stops the
-task here. That listing is also half of the slug check: choose a `<slug>` that
-neither it nor `git_root {args: ["branch", "--list", "task/*"]}` already
-shows.
+on `<default>`, because step 9 refuses to merge anywhere else: `git_root {args:
+["rev-parse", "--abbrev-ref", "HEAD"]}` prints the branch the project root has
+checked out, `<default>` when the root is where it should be — anything else,
+`HEAD` for a detached one included, stops the task here. Then choose the slug
+against `git_root {args: ["worktree", "list", "--porcelain"]}` and `git_root
+{args: ["branch", "--list", "task/*"]}`. Both list the repository's, not this
+project's: a sibling project's root, its task worktrees and its branches show
+there too, and they are not yours to touch. Choose a `<slug>` neither list shows,
+and treat as a leftover only what lies under this project's `git.worktreeDir` or
+what one of its own open journals names: a journal holding a `branch-deleted` step
+is closed, and claims nothing about a branch of that name now.
 
 ## 2. Plan
 
@@ -206,8 +210,9 @@ one, is a reconciliation trigger — a refusal is not a claim that nothing
 happened. Stop the loop and reconcile this slug before anything else: `list_tasks`, this
 task's journal, `git_root {args: ["worktree", "list", "--porcelain"]}`,
 `git_root {args: ["status", "--porcelain", "--untracked-files=normal"]}`, and
-the `rebase-merge` or `rebase-apply` directory under `.git/worktrees/<slug>` —
-what the journal records is what completed, and the difference between that and
+the `rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree
+{path: <worktree path>, branch}` answers, `branch` being `"HEAD"` while a stopped
+rebase has detached it — what the journal records is what completed, and the difference between that and
 what git shows is what you repair, by step 1's rules, before you decide whether
 the step can be repeated. An `ok: true` carrying
 `lockLost: true` says the command ran but was not exclusive for all of its life:
