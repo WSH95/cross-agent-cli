@@ -253,7 +253,9 @@ function recordedHeartbeat(event, calls) {
 //   `(( … ))` or subshell after `if`, `while` or `!` is read as at a command's start. `--`
 //   ends option parsing; arguments after inline node code and `--` are data, not a script.
 // - The data commands (`dataOnly`) account for their stdin and arguments as data, except
-//   execution options, code-carrying assignments and arithmetic/subscript readers. Quoted
+//   options that name a program they run, judged as that program wherever getopt reads
+//   them (each command audited against its own manual in task 12), code-carrying
+//   assignments and arithmetic/subscript readers. Quoted
 //   substitutions given to such builtins, or carried into arithmetic on the same line,
 //   are `?`; `let` is unmodeled. Ordinary mentions printed or searched for still pass.
 // - Assignments are inspected in prefixes, declaration builtins, env and env -S, with `=`
@@ -514,7 +516,10 @@ function git(...argv) {
  * modeled. The command word's basename decides:
  * - an engine name, `cross-agent` or a configured binary: a launch;
  * - a data command (`dataOnly`, below): stdin and arguments are data except for code
- *   assignments, deferred subscripts, `rg --pre` and `sort --compress-program`;
+ *   assignments, deferred subscripts and the options that name a program it runs —
+ *   `rg --pre` and `--hostname-bin`, `sort --compress-program` and its abbreviations, and
+ *   wget's askpass program, given by `--use-askpass` or a `use_askpass` command `-e` runs
+ *   (`wgetRun`), with a wgetrc file it would read unmodeled;
  * - literal `git show <revision>:<path>` and `git grep` without options: object/path reads;
  * - an exec wrapper (`sudo`, `doas`, `env`, `exec`, `nohup`, `setsid`, `time`, `timeout`,
  *   `nice`, `command`, `stdbuf`, `xargs`): its options walked letter by letter, each operand
@@ -678,6 +683,42 @@ function launcherFor(settings) {
   const rubySpec = { flags: "acdlnpsSvwyh", values: "CIEr", attached: "FiWxKT", digits: "0", code: "e",
     long: long("--verbose --version --help --copyright --jit --yydebug", "--enable --disable --encoding --external-encoding --internal-encoding --backtrace-limit --dump --crash-report --parser") };
   const awkSpec = { flags: "bcCgMnNOPrsStV", values: "FvfEeilL", attached: "dDop", long: {} };
+  // wget 1.21.4's options, read from its own `--help`: three of them run or load a program.
+  // `--use-askpass` names the program wget asks for credentials, `-e`/`--execute` runs a
+  // wgetrc command whose `use_askpass` names one, and `--config` reads a wgetrc file. Each
+  // was watched running its program on this machine (task 12, fix round 1); `-n` takes the
+  // letter after it (`-nv`).
+  const wgetSpec = { flags: "VhbdqvFcNS46xErkKmpHL", values: "eoaiBtOTwQPUlARDIXn", long: long(
+    "--version --help --background --debug --quiet --verbose --force-html --no-config --retry-connrefused "
+    + "--retry-on-host-error --no-netrc --continue --show-progress --timestamping --no-if-modified-since "
+    + "--no-use-server-timestamps --server-response --spider --random-wait --no-proxy --no-dns-cache --ignore-case "
+    + "--inet4-only --inet6-only --ask-password --no-iri --unlink --xattr --force-directories --protocol-directories "
+    + "--no-cache --adjust-extension --ignore-length --save-headers --no-http-keep-alive --no-cookies "
+    + "--keep-session-cookies --content-disposition --content-on-error --auth-no-challenge --https-only "
+    + "--no-check-certificate --no-hsts --no-remove-listing --no-glob --no-passive-ftp --preserve-permissions "
+    + "--retr-symlinks --ftps-implicit --ftps-resume-ssl --ftps-clear-data-connection --ftps-fallback-to-ftp --warc-cdx "
+    + "--no-warc-compression --no-warc-digests --no-warc-keep-log --recursive --delete-after --convert-links "
+    + "--convert-file-only --backup-converted --mirror --page-requisites --strict-comments --follow-ftp --span-hosts "
+    + "--relative --trust-server-names --no-verbose --no-clobber --no-directories --no-host-directories --no-parent",
+    "--execute --output-file --append-output --report-speed --input-file --base --config --rejected-log --tries "
+    + "--retry-on-http-error --output-document --start-pos --progress --timeout --dns-timeout --connect-timeout "
+    + "--read-timeout --wait --waitretry --quota --bind-address --limit-rate --restrict-file-names --prefer-family --user "
+    + "--password --use-askpass --local-encoding --remote-encoding --directory-prefix --cut-dirs --http-user "
+    + "--http-password --default-page --header --compression --max-redirect --proxy-user --proxy-password --referer "
+    + "--user-agent --load-cookies --save-cookies --post-data --post-file --method --body-data --body-file "
+    + "--secure-protocol --certificate --certificate-type --private-key --private-key-type --ca-certificate "
+    + "--ca-directory --crl-file --pinnedpubkey --random-file --ciphers --hsts-file --ftp-user --ftp-password "
+    + "--warc-file --warc-header --warc-max-size --warc-dedup --warc-tempdir --level --backups --accept --reject "
+    + "--accept-regex --reject-regex --regex-type --domains --exclude-domains --follow-tags --ignore-tags "
+    + "--include-directories --exclude-directories") };
+  // The other data commands' options that name a program they run, from the same audit of
+  // every command in `dataOnly` against its own manual: rg's `--pre` and `--hostname-bin`,
+  // and sort's `--compress-program`, which GNU getopt also takes abbreviated, down to `--co`
+  // (`--c` is `--check`'s too, so sort refuses it).
+  const programOptions = new Map([
+    ["rg", [{ name: "--pre" }, { name: "--hostname-bin" }]],
+    ["sort", [{ name: "--compress-program", shortest: "--co" }]],
+  ]);
 
   /**
    * One command list, read as bash reads it: its simple commands — each its words, the stdin
@@ -1278,33 +1319,79 @@ function launcherFor(settings) {
     if (context.named && subscriptReader && (context.deferred || words.slice(1).some((word) => substitutionsIn(word.value)))) {
       verdict = worse(verdict, doubt("a builtin may evaluate a quoted substitution or subscript", values(words).join(" ")));
     }
-    const run = { rg: "--pre", sort: "--compress-program" }[name];
-    if (run === undefined) return verdict;
+    if (name === "wget") return worse(verdict, wgetRun(words, command, context));
+    const runs = programOptions.get(name);
+    if (runs === undefined) return verdict;
     for (let k = 1; k < words.length; k++) {
       const value = words[k].value;
       if (value === "--") break;
       if (words[k].expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
-      const program = value === run ? words[++k]?.value : value.startsWith(`${run}=`) ? value.slice(run.length + 1) : undefined;
-      if (words[k]?.expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
-      if (program !== undefined && program !== "") {
-        verdict = worse(verdict, judgeWords([asWord(program)], command, context));
+      const equals = value.indexOf("=");
+      const flag = equals === -1 ? value : value.slice(0, equals);
+      for (const { name: option, shortest } of runs) {
+        const abbreviated = shortest !== undefined && flag.length > 2 && option.startsWith(flag);
+        if (abbreviated && flag.length < shortest.length) {
+          verdict = worse(verdict, context.named ? doubt("an abbreviation the command itself refuses as ambiguous", value) : pass);
+          continue;
+        }
+        if (flag !== option && !abbreviated) continue;
+        const program = equals === -1 ? words[++k]?.value : value.slice(equals + 1);
+        if (words[k]?.expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
+        if (program !== undefined && program !== "") verdict = worse(verdict, judgeWords([asWord(program)], command, context));
+        break;
       }
     }
     return verdict;
   }
 
   /**
+   * wget, whose options GNU getopt reads wherever they stand among its URLs: the askpass
+   * program it is handed, by `--use-askpass` or by a `use_askpass` wgetrc command `-e`
+   * executes — named in any case, with `-` or `_` or neither — is judged as a command word;
+   * an empty one is the program `WGET_ASKPASS` or `SSH_ASKPASS` names, and a `--config` file
+   * and an option this table does not hold, an abbreviation included, are unread. Each of
+   * those is `?` on a line that names an engine.
+   */
+  function wgetRun(words, command, context) {
+    const line = values(words).join(" ");
+    const askpass = (program) => program === undefined ? pass
+      : program === "" ? (context.named ? doubt("an askpass program the environment names", line) : pass)
+        : judgeWords([asWord(program)], command, context);
+    let verdict = pass;
+    let k = 1;
+    while (k < words.length) {
+      const word = words[k];
+      if (!word.expansions && (word.value === "-" || !word.value.startsWith("-"))) { k++; continue; }
+      const walk = options(words, k, wgetSpec);
+      if (!walk.known && context.named) verdict = worse(verdict, doubt(unmodeled, line));
+      if (walk.expanded) return context.named ? worse(verdict, doubt(unmodeled, line)) : verdict;
+      for (const { option, value } of walk.read) {
+        if (option === "--use-askpass") verdict = worse(verdict, askpass(value));
+        else if (option === "-e" || option === "--execute") {
+          // wget refuses a command it cannot parse and runs nothing at all.
+          const setting = /^\s*([A-Za-z0-9_-]+)\s*=\s*(.*?)\s*$/s.exec(value ?? "");
+          if (setting !== null && setting[1].toLowerCase().replace(/[-_]/g, "") === "useaskpass") verdict = worse(verdict, askpass(setting[2]));
+        } else if (option === "--config" && context.named) verdict = worse(verdict, doubt("a wgetrc file this grammar does not read", line));
+      }
+      if (walk.ended) break;
+      k = walk.k > k ? walk.k : k + 1;
+    }
+    return verdict;
+  }
+
+  /**
    * Past a command's options, getopt style, against `spec` (see the tables above). Returns
-   * the index of the first operand, whether every option was one the table knows, and each
-   * option read with its value.
+   * the index of the first operand, whether every option was one the table knows, each
+   * option read with its value, and whether a `--` ended them.
    */
   function options(words, k, spec) {
     let known = true;
+    let ended = false;
     const read = [];
     while (k < words.length) {
       if (words[k].expansions) return { k, known: false, expanded: true, read };
       const word = words[k].value;
-      if (word === "--") { k++; break; }
+      if (word === "--") { k++; ended = true; break; }
       if (word === "-" || !word.startsWith("-")) break;
       if (word.startsWith("--")) {
         const equals = word.indexOf("=");
@@ -1347,7 +1434,7 @@ function launcherFor(settings) {
       const last = read[read.length - 1];
       if (last !== undefined && (spec.stop?.includes(last.option.slice(1)) || (spec.codeEnds && spec.code?.includes(last.option.slice(1))))) break;
     }
-    return { k, known, read };
+    return { k, known, read, ended };
   }
 
   /** An exec wrapper: past its options, the command it runs. */

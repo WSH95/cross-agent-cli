@@ -855,6 +855,59 @@ test("reading a file that happens to be named like one of them is not a launch",
   }
 });
 
+// @anchor dataProgramOptions
+test("a data command's option that runs a program is judged as that program, joined, split, permuted or wrapped", async (t) => {
+  // Task 12's review found `wget --use-askpass=claude …` answering pass. Each form below was
+  // run on this machine first (wget 1.21.4, GNU sort, ripgrep 14.1.1): wget runs the askpass
+  // program it is handed, the `use_askpass` wgetrc command `-e` executes names one, GNU sort
+  // resolves an abbreviation of `--compress-program`, and rg runs `--hostname-bin`.
+  await judgedAs(t, [
+    ["wget --use-askpass=claude https://example.com", "FAIL"],
+    ["wget --use-askpass claude https://example.com", "FAIL"],
+    ["wget -q --use-askpass=/usr/local/bin/claude https://example.com", "FAIL"],
+    ["wget https://example.com --use-askpass=claude", "FAIL"],
+    ["wget -e use_askpass=claude https://example.com", "FAIL"],
+    ["wget -euse_askpass=claude https://example.com", "FAIL"],
+    ["wget -qe useaskpass=claude https://example.com", "FAIL"],
+    ["wget -e 'USE-ASKPASS = claude' https://example.com", "FAIL"],
+    ["wget --execute=use_askpass=claude https://example.com", "FAIL"],
+    ["wget --execute use_askpass=claude https://example.com", "FAIL"],
+    ["sudo -u nobody wget --use-askpass=claude https://example.com", "FAIL"],
+    ["bash -lc 'wget --use-askpass=claude https://example.com'", "FAIL"],
+    ["sort --compress=claude data.txt", "FAIL"],
+    ["sort --comp claude data.txt", "FAIL"],
+    ["rg --hostname-bin=claude --hyperlink-format=default x", "FAIL"],
+    ["rg --hostname-bin claude --hyperlink-format=default x", "FAIL"],
+    // What this reader does not resolve, on a line that names an engine: an abbreviated
+    // option, a program the environment names, a wgetrc file it would have to read, an
+    // option wget's table does not hold, an abbreviation sort itself would refuse.
+    ["wget --use-ask=claude https://example.com", "?"],
+    ["WGET_ASKPASS=claude wget --use-askpass= https://example.com", "?"],
+    ["wget --config=/tmp/rc https://example.com/claude", "?"],
+    ["wget --mystery-flag https://example.com/claude", "?"],
+    ["sort --c=claude data.txt", "?"],
+    // An engine's name wget only fetches or writes is data, and so is a program naming none.
+    ["wget -O claude.html https://docs.example.com/claude", "pass"],
+    ["wget -e robots=off https://example.com/claude", "pass"],
+    ["wget -e use_askpass=/usr/lib/ssh/x11-ssh-askpass https://example.com", "pass"],
+    ["sort --compress-program=gzip data.txt", "pass"],
+  ]);
+});
+
+test("a data command's program option in an argv a Codex rollout recorded is judged the same way", async (t) => {
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-02f2d355c7aa";
+  const log = codexLog("/bin/bash -lc 'printf inside > ./PROBE-wget.txt'");
+  const item = (command: string[]) => ({ event: { type: "item_completed", thread_id: sessionId, item: {
+    type: "CommandExecution", id: "exec-wget", command, status: "completed", exit_code: 0 } } });
+  const launched = await project(t, { codex: { body: log, sessionId, rollout: rolloutOf(sessionId, [
+    { cmd: "printf inside > ./PROBE-wget.txt", exit: 0 },
+    item(["wget", "--use-askpass", "claude", "https://example.com"]),
+  ]) } });
+  const answer = await run(launched);
+  assert.equal(verdict(answer.out, scan), "FAIL", answer.out);
+  assert.equal(answer.code, 1);
+});
+
 // @anchor inlineCodeUnjudged
 test("an engine named inside an interpreter's inline code is answered with a question mark", async (t) => {
   // A launch written as another language's code cannot be read by a shell's rules, and a
