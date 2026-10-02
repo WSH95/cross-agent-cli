@@ -127,16 +127,18 @@ substring offsets, integer variables, a name's value evaluated) still passing, a
 commit for that class landed after the check. Task 12's fixes are **merged** — `main` at `7bf9731` (22
 commits over `4a25ed8`), `VERIFY.md` T12 section at `0296b39`; `npm test` 813 / 812 / 1 skipped;
 checker 1300 citations, none by line. `.57` closed (`--setting-sources project` drops the operator's
-plugins, skills and commands); beads `.92`–`.94` filed. Decision 0011 and the devpack note are with a
-writer on the task branch. The residue that comes from Claude Code's own settings merge (a project's
+plugins, skills and commands); beads `.92`–`.94` filed. Decision 0011 is written on the task branch
+(`8336827`, not merged): go with conditions (a)–(d). The devpack `EVIDENCE.md` note is appended and
+uncommitted for the user's review. E9 is running in the sample: an engine-placed Claude lead on the
+shipped Claude line under a Claude Code host, with a Codex planner on the CLI installed now. The residue that comes from Claude Code's own settings merge (a project's
 `.claude/settings.json` pre-approving file writes) the user accepted on 2026-10-02 as a documented
 limitation, with the other harness limitations of that day's standing word.
 
 
 ## Next steps
 
-1. **Decision 0011 and the devpack `EVIDENCE.md` note** (a writer, `task-12-brief.md` Parts B
-   and C with `task-12-brief-addendum.md`): read the decision against Part B, then D1's merge.
+1. **E9, then Decision 0011's update**: record E9 (`docs/probes.md#t12Fix3`), have the writer add
+   its row and update the rows not run, read the decision against Part B, then D1's merge.
 2. **The close** (Part D): the Codex config restore takes the surgical branch, because
    `~/.codex/config.toml` also changed outside T14's tables (`model`, `service_tier` and the
    Codex app's version lines, 2026-10-02 08:13Z), and those lines stay as found. Then the sample

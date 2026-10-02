@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T12:10:00Z — claude
+[auto-checkpoint] Decision 0011 written on the task branch (go with conditions); devpack note uncommitted; E9 running (an engine-placed Claude lead on the shipped Claude line).
+
 ### 2026-10-02T11:20:00Z — claude
 Task 12's fixes merged: main at 7bf9731 (22 commits; npm test 813/812/1; citations 1300, none by line), VERIFY.md T12 section at 0296b39; .57 closed. Decision 0011 and the devpack note are with a writer.
 
