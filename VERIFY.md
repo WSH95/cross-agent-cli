@@ -994,3 +994,36 @@ Applied in place at this merge:
   - the M3 citation row's `39505aa` (`2de4f84`);
   - the 6b merge row's `0f9ff3a` (`af0f266`);
   - T11's `b717c92` (`b4f8f52`), `6bb6122` (`5b6531a`), `0e19e65` (`caaa328`), `8040e3a` (`7d5d902`) and `2124be0` (`71696ff`).
+
+## Close of the plan (merged 2026-10-02)
+
+| what | value |
+|---|---|
+| merge | `main` at `8074e8f`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded. It carries three commits over `60fa393`: Decision 0011, E9's record, and 0011's pass for E9 |
+| `npm test` at the root | 813 tests: 812 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `8074e8f` |
+| citation checker | 1306 citations in 2 files (0 by line, 1306 by symbol), 0 misses; `--since 4bcc986`: 0 drifted, 0 not judged |
+| final review | three independent reviews in four rounds, over `4bcc986..416165c` and then each fix. Round 1 found 3 Critical, 3 Important and 9 Minor; every finding's disposition is in Decision 0011 and the T12 section above |
+| fix runs | `docs/probes.md#t12Fix1` (the probe, the Claude line that ships, E8), `#t12Fix2` (a project's own Claude settings, the network, the sensitive paths), `#t12Fix3` (E9) |
+| decision | go with conditions, by Decision 0011 |
+| beads | `atc-s96.18` |
+
+Decision 0011's conditions:
+- (a) a Codex host names its project in `CROSS_AGENT_PROJECT`;
+- (b) a Grok host trusts the folder, keeps `[plugins]` and the result cap in an ignored `.grok/config.toml`;
+- (c) where a Grok role runs read-only on a rootful-podman Linux machine, `/run/podman` is at 0711;
+- (d) where a Claude role runs on Linux, `bwrap` and `socat` are installed with the AppArmor profile.
+
+### E9 — one `dev-team-engine` task under a Claude Code host, a Claude lead on the shipped line
+
+| | |
+|---|---|
+| host | `claude -p --plugin-dir <root checkout>` at `main` `60fa393` (the code of `7bf9731`), `claude-sonnet-5` medium, engine placement, 9 turns, 494.9 s, $0.262 |
+| engines | Claude Code 2.1.286, codex-cli 0.160.0, grok 1.0.46; `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium; E7's configuration, unedited |
+| slug, commit | `t12-e9`, `5f391d4` (`main` 15f7b28 → 5f391d4), 105 → 109 tests |
+| host `wait` | one, `done`: 453.6 s by its transcript, `elapsedSeconds` 456 |
+| lead | `9979292e…`, claude, 456 s, $0.676, no ask; six `wait`s, each `done`: 23.1, 79.2, 9.0, 64.1, 27.1, 45.1 s by its transcript |
+| specialists | planner (codex) 25 s; plan reviewer (grok) 82 s revise; planner `resume` 20 s; plan reviewer 67 s approve; implementer (claude) 29 s; code reviewer (grok, read-only, in the worktree) 48 s ready; $0.340, Codex 160,159 tokens in / 1,569 out |
+| live argv | the lead: `dontAsk`, `--tools Bash,Read,ToolSearch`, `--setting-sources project`, `--strict-mcp-config`, `--mcp-config` the lead mount, allow `Read` and `mcp__cross-agent`; 31 MCP calls, none refused. The implementer: `dontAsk`, the edit `--tools`, the same two flags, `Edit` allowed in its worktree and denied on both `.git` paths |
+| verdict | `e2e-verify --since 9979292e… --slug t12-e9`: 8 pass, 0 fail, 0 without evidence; depth and lineage PASS |
+| deviations | host: no roster (`atc-s96.66`); no `result`, closing on `wait`'s tail (whole here) with a sentence before the report. Lead: no `list_roles`, so its report names the Codex planner `claude`/`claude-sonnet-5` (`atc-s96.95`); `result` after the planner's waits only |
+| not exercised | an ask and the headless host's resume, a resumed Claude specialist in a loop, a read-only Claude specialist under engine placement, a rebase that moved the branch |
