@@ -111,8 +111,9 @@ role's workspace — a bare `Edit` or `Write`, `Edit(//…)`, `Edit(~/…)`,
 the specialist is otherwise refused, in a workspace you have trusted. Do not
 commit such a rule in a project where specialists run; keep it in
 `.claude/settings.local.json`, which a specialist does not load. For
-information, that file also brings a specialist its `env` and its `apiKeyHelper`;
-its `sandbox.network.allowedDomains` does not reach a sandboxed one.
+information, that file also brings a specialist its `env` (probed). Its
+`apiKeyHelper` reaching a specialist remains unprobed; its
+`sandbox.network.allowedDomains` does not reach a sandboxed one.
 
 **Inside its sandbox a Claude specialist reaches no network host**, and inside its
 own workspace its file tools are refused Claude Code's sensitive paths —
@@ -323,6 +324,11 @@ worktree: Grok takes a linked worktree as a project of its own, so it would load
 plugin for every worktree specialist, and a specialist's edit to it — or to `.claude/`,
 `.codex/` or `.mcp.json` — is refused at the worktree's commit and at the merge, naming
 the path, so the ignore is what keeps the file out of the worktrees in the first place.
+Host configuration must be regular files: a symbolic link at any of the four root
+paths, or anywhere below them, is refused by name, case-insensitively. A commit checks
+its current tree, index and working tree (even ignored links); a merge checks the
+incoming branch's tree. Replace links with regular files before retrying, by hand at
+the root for tracked configuration.
 `printf` puts it on a line of its own: `init` leaves a last line
 with no newline alone when it has nothing to add, and `echo` would join `.grok/` onto it.
 Commit that `.gitignore` change before the team's first task, as the Claude Code section

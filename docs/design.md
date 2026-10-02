@@ -2362,21 +2362,28 @@ so under `core.ignoreStat`, and both reads are taken under `git.lock` before the
 command runs (`src/gitmutate.ts#hostConfigFault`, `#carriedUnder`,
 `#differsFromIndex`, `#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
 `#hostConfigAnyCase`, `#commitRefusesAssumeUnchanged`,
-`#commitUnderIgnoreStat`). **A link among the four is followed to what it loads.** A
-project may keep `.mcp.json` as a link to `servers.json`, and a task that changed
-`servers.json` changed the operator's servers while both gates read the four names alone.
-So each link among the four — in the worktree's index at the commit, in the default
-branch's tree and the branch's at the merge — is resolved against its own directory,
-through any link on the way, and the path it reaches is guarded with the four: a change
-there is refused, named with the link (`src/gitmutate.ts#followHostLink`, `#hostLinks`,
-`src/gitroot.ts#smuggled`; `tests/gitmutate.test.ts#commitGuardsLinkReferent`,
-`tests/gitroot.test.ts#mergeGuardsLinkReferent`). A link whose target leaves the
-repository — absolute, climbing out, into `.git`, or a chain without end — is refused at
-both gates whatever the task changed, because no review sees what the host loads through
-it; the operator replaces it at the root by hand
-(`tests/gitmutate.test.ts#commitRefusesOutsideLink`,
-`tests/gitroot.test.ts#mergeRefusesOutsideLink`). A link that changes while the commit
-check reads it is a change, not an error (`tests/gitmutate.test.ts#linkReplacedMidCheck`).
+`#commitUnderIgnoreStat`). **Host configuration must be regular files.** A symbolic link at any
+of the four root paths, or anywhere below them, is refused by name even when
+unchanged. At a worktree commit the check reads the commit's current tree
+(`HEAD`), the index and the working tree, including ignored links. At the
+root's merge it reads the incoming branch's tree. No link target is followed:
+the operator must replace links with regular files, by hand at the root for
+tracked configuration, before retrying
+(`src/gitmutate.ts#hostConfigFault`, `#hostDiskLinks`, `#hostTreeLinks`,
+`src/gitroot.ts#smuggled`; `tests/gitmutate.test.ts#commitMarkedSymlink`,
+`#commitGuardsLinkReferent`, `#commitHostLinksEveryView`,
+`#commitHostLinkTraversalClass`, `#commitRefusesOutsideLink`;
+`tests/gitroot.test.ts#mergeGuardsLinkReferent`, `#mergeHostLinkTraversalClass`,
+`#mergeRefusesOutsideLink`). This closes the whole link-traversal class,
+including directory aliases and targets whose `..` cancels a link component.
+The tree read lists only the four host pathspecs, never the whole tree; because
+`ls-tree` does not support case-insensitive pathspecs, it uses `diff-tree`
+against the empty tree to read modes under those four instead
+(`src/gitmutate.ts#hostTreeLinks`,
+`tests/gitroot.test.ts#mergeListsOnlyHostPaths`). The existing byte and
+symlink-mode checks for assume-unchanged entries remain; a link replaced while
+that check reads it differs rather than throwing
+(`tests/gitmutate.test.ts#linkReplacedMidCheck`).
 The commit check does not see a git alias for
 `commit`, a `merge`, `cherry-pick`, `revert` or `am` run in the worktree, or
 `commit --amend` over an older commit that already carries one; the merge
@@ -2384,7 +2391,7 @@ refuses each of those. A removal of a tracked one is carried the same way, in a
 commit as in a merge: a server or a hook taken away changes the operator's
 session as much as one added. The commit's rule reads the worktree rather than
 the index because `commit -a`, `commit --include` and a pathspec commit record
-what the index does not hold; the price is that an untracked host file
+what the index does not hold; the price is that an untracked regular host file
 `.gitignore` does not cover blocks a commit even unstaged, and the refusal says
 what clears it: remove the file, ignore it if it is the operator's own, or clear
 its assume-unchanged mark. Git sees no empty directory, so an empty `.claude/`

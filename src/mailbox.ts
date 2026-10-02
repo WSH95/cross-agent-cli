@@ -78,6 +78,7 @@ function askFault(value: unknown, file: string): string | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return "not a JSON object";
   const record = value as Record<string, unknown>;
   if (typeof record.id !== "string" || record.id !== path.basename(file, ".json")) return "id does not name its own file";
+  if (!isAskId(record.id)) return "id must be letters, digits, \"-\" and \"_\"";
   for (const field of ["taskId", "question"] as const) {
     if (typeof record[field] !== "string") return `${field} must be a string`;
   }

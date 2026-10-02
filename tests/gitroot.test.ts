@@ -283,7 +283,7 @@ test("a merge carrying a host's project configuration in another case is refused
 });
 
 // @anchor mergeGuardsLinkReferent
-test("a merge changing a host-configuration link's referent is refused naming referent and link, and one leaving it merges", async (t) => {
+test("a merge with a host-configuration link is refused even with an unchanged referent, closing the link class", async (t) => {
   const { root } = await repository(t);
   // The project keeps its servers in a file of its own, and `.mcp.json` links to it.
   fs.writeFileSync(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
@@ -299,16 +299,19 @@ test("a merge changing a host-configuration link's referent is refused naming re
   const before = await state(root);
   const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/changed"], slug: "changed" }, { waitSeconds: 5 }));
   assert.match(reason, /^git_root refuses to merge/);
-  assert.ok(reason.includes("servers.json (what the link .mcp.json loads)"), reason);
+  assert.ok(reason.includes(".mcp.json (symbolic link)"), reason);
+  assert.match(reason, /replace.*regular files/i);
   assert.deepEqual(await state(root), before, "the default branch did not move");
 
-  // A branch that leaves the referent alone merges.
+  // The regular-files rule also refuses a branch that leaves the referent alone.
   const quiet = path.join(root, ".worktrees", "quiet");
   accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/quiet", quiet, "main"], slug: "quiet" }, { waitSeconds: 5 }));
   fs.writeFileSync(path.join(quiet, "work.txt"), "the change the brief asked for\n");
   await git(quiet, "add", "work.txt");
   await git(quiet, "commit", "-m", "work");
-  accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/quiet"], slug: "quiet" }, { waitSeconds: 5 }));
+  const unchanged = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/quiet"], slug: "quiet" }, { waitSeconds: 5 }));
+  assert.ok(unchanged.includes(".mcp.json (symbolic link)"), unchanged);
+  assert.match(unchanged, /replace.*regular files/i);
 });
 
 // @anchor mergeRefusesOutsideLink
@@ -328,8 +331,69 @@ test("a merge in a project whose host-configuration link leaves the repository i
   await git(directory, "commit", "-m", "work");
   const before = await state(root);
   const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/outside"], slug: "outside" }, { waitSeconds: 5 }));
-  assert.ok(reason.includes("shared (a link to ../outside, outside the repository, on the way from .grok/config.toml)"), reason);
+  // No traversal remains: the host link is named, without following the outside directory.
+  assert.ok(reason.includes(".grok/config.toml (symbolic link)"), reason);
+  assert.match(reason, /replace.*regular files/i);
   assert.deepEqual(await state(root), before, "the default branch did not move");
+});
+
+// @anchor mergeHostLinkTraversalClass
+test("merge refuses unchanged host links in every case and depth without following their targets", async (t) => {
+  const { root } = await repository(t);
+  fs.mkdirSync(path.join(root, "config"));
+  fs.writeFileSync(path.join(root, "servers.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "shared-settings.json"), "{}\n");
+  fs.symlinkSync("../shared-settings.json", path.join(root, "config", "settings.json"));
+  const links = [".MCP.JSON", ".Claude", ".CODEX/deep/config file.toml", ".GrOk"];
+  fs.symlinkSync("via/../servers.json", path.join(root, links[0]));
+  fs.symlinkSync("config", path.join(root, links[1]));
+  fs.mkdirSync(path.dirname(path.join(root, links[2])), { recursive: true });
+  fs.symlinkSync(".", path.join(root, links[2]));
+  fs.symlinkSync("config", path.join(root, links[3]));
+  await git(root, "add", "-f", "--", ...links, "config", "servers.json", "shared-settings.json");
+  await git(root, "commit", "-m", "operator's host links");
+  const directory = path.join(root, ".worktrees", "links");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/links", directory, "main"], slug: "links" }, { waitSeconds: 5 }));
+  fs.symlinkSync("/outside/dir", path.join(directory, "via"));
+  fs.writeFileSync(path.join(directory, "shared-settings.json"), '{"hooks": {}}\n');
+  await git(directory, "add", "via", "shared-settings.json");
+  await git(directory, "commit", "-m", "referents beyond the old walker");
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/links"], slug: "links" }, { waitSeconds: 5 }));
+  for (const link of links) assert.ok(reason.includes(`${link} (symbolic link)`), reason);
+  assert.match(reason, /replace.*regular files/i);
+  assert.deepEqual(await state(root), before);
+});
+
+// @anchor mergeListsOnlyHostPaths
+test("a branch with many unrelated files merges while the link check lists only the four host paths", async (t) => {
+  const { root } = await repository(t);
+  // Keep an unchanged regular host file in the tree, alongside enough unrelated files to
+  // make an unfiltered recursive listing wasteful. The argv assertion pins the buffer bound
+  // without making every suite run create the 120,000-file review reproduction.
+  fs.writeFileSync(path.join(root, ".mcp.json"), "{}\n");
+  fs.mkdirSync(path.join(root, "many"));
+  for (let index = 0; index < 2000; index++) fs.writeFileSync(path.join(root, "many", `${index}.txt`), "ordinary\n");
+  await git(root, "add", ".mcp.json", "many");
+  await git(root, "commit", "-m", "many ordinary files");
+  const directory = path.join(root, ".worktrees", "bounded");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/bounded", directory, "main"], slug: "bounded" }, { waitSeconds: 5 }));
+  fs.writeFileSync(path.join(directory, "many", "0.txt"), "changed\n");
+  await git(directory, "commit", "-a", "-m", "ordinary change");
+  const recorder = await gitShim(t);
+  accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/bounded"], slug: "bounded" }, { waitSeconds: 5 }));
+  const calls: string[][] = [];
+  for (const argument of await recorder.argv()) {
+    if (argument.startsWith("--git-dir=")) calls.push([]);
+    calls.at(-1)!.push(argument);
+  }
+  const listings = calls.filter((argv) => argv.includes("ls-tree") || argv.includes("diff-tree"));
+  assert.ok(listings.length > 0, "the incoming tree was inspected for links");
+  for (const argv of listings) {
+    assert.deepEqual(argv.slice(argv.indexOf("--") + 1),
+      [":(icase).claude", ":(icase).codex", ":(icase).grok", ":(icase).mcp.json"], argv.join(" "));
+  }
+  assert.equal(await git(root, "rev-parse", "HEAD"), await git(root, "rev-parse", "task/bounded"));
 });
 
 // @anchor mergeNamesEveryPath

@@ -97,74 +97,24 @@ export function isHostConfigPath(file: string): boolean {
   return hostConfigPaths.some((entry) => lower === entry || lower.startsWith(`${entry}/`));
 }
 
-const maxLinkHops = 40;
-
 /**
- * Where a host-configuration link leads in one tree, read through `linkAt` — a path's target
- * when that path is a symbolic link in the tree, null when it is not. Each link on the way,
- * one standing for a directory of the path included, is resolved against its own directory
- * until the path is no link. The answer is the links passed and the path reached, both inside
- * the repository, or the link whose target leaves it: an absolute target, one that climbs out,
- * one into `.git`, and a chain longer than any git would check out.
+ * Host links in a committed tree, without following any target. `ls-tree` does not support
+ * `:(icase)`, so diff against the empty tree to list modes under exactly the four pathspecs.
+ * Unrelated files never enter the bounded output buffer. `hash-object` without `-w` writes
+ * nothing and uses the repository's object format (SHA-1 or SHA-256).
  */
-export async function followHostLink(
-  link: string, linkAt: (file: string) => Promise<string | null>,
-): Promise<{ through: string[]; referent: string } | { outside: string; target: string }> {
-  const through: string[] = [];
-  let current = link;
-  for (let hop = 0; hop <= maxLinkHops; hop++) {
-    const parts = current.split("/");
-    let next: string | undefined;
-    for (let index = 1; index <= parts.length && next === undefined; index++) {
-      const prefix = parts.slice(0, index).join("/");
-      const target = await linkAt(prefix);
-      if (target === null) continue;
-      through.push(prefix);
-      const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(prefix), target, ...parts.slice(index))).replace(/\/+$/, "");
-      // A target that does not read as text is one no review can follow either.
-      if (path.posix.isAbsolute(target) || target.includes("\uFFFD") || resolved === ".." || resolved.startsWith("../")
-        || /^\.git(\/|$)/i.test(resolved)) {
-        return { outside: prefix, target };
-      }
-      next = resolved === "" ? "." : resolved;
-    }
-    if (next === undefined) return { through, referent: current };
-    current = next;
+export async function hostTreeLinks(gitDir: string, workTree: string, tree: string): Promise<string[]> {
+  const empty = await run(gitDir, workTree, ["hash-object", "-t", "tree", "--", "/dev/null"]);
+  if (empty.exitCode !== 0) throw new GitRunError(`could not read the empty tree in ${workTree}: ${empty.stderr.trim()}`);
+  const listed = await run(gitDir, workTree, ["diff-tree", "-r", "--raw", "-z", "--no-renames", empty.stdout.trim(), tree, "--", ...hostConfigPathspecs]);
+  if (listed.exitCode !== 0) throw new GitRunError(`could not read host configuration in ${tree}: ${listed.stderr.trim()}`);
+  // `:<old-mode> <new-mode> <old-object> <new-object> A\0<path>\0`, unquoted.
+  const entries = listed.stdout.split("\0");
+  const links: string[] = [];
+  for (let index = 0; index + 1 < entries.length; index += 2) {
+    if (entries[index].startsWith(":000000 120000 ")) links.push(entries[index + 1]);
   }
-  return { outside: link, target: `more than ${maxLinkHops} links in a row` };
-}
-
-/**
- * What the links among the four load in one tree: each path inside the repository a link
- * passes through or ends at, with the link it serves, which both gates guard as they guard
- * the four — leaving out a path among the four, which they guard already — and each link
- * that leaves the repository, named as a refusal names it.
- */
-export async function hostLinks(
-  links: readonly string[], linkAt: (file: string) => Promise<string | null>,
-): Promise<{ guarded: Map<string, string>; outside: string[] }> {
-  const guarded = new Map<string, string>();
-  const outside: string[] = [];
-  for (const link of links) {
-    const followed = await followHostLink(link, linkAt);
-    if ("outside" in followed) {
-      const via = followed.outside === link ? "" : `, on the way from ${link}`;
-      outside.push(`${followed.outside} (a link to ${followed.target}, outside the repository${via})`);
-      continue;
-    }
-    for (const file of [...followed.through.slice(1), followed.referent]) {
-      if (!isHostConfigPath(file) && !guarded.has(file)) guarded.set(file, link);
-    }
-  }
-  return { guarded, outside };
-}
-
-/** The link a changed path is loaded through, when `hostLinks` guards it: a refusal names both. */
-export function loadedThrough(file: string, guarded: ReadonlyMap<string, string>): string | undefined {
-  for (const [referent, link] of guarded) {
-    if (referent === "." || file === referent || file.startsWith(`${referent}/`)) return link;
-  }
-  return undefined;
+  return links;
 }
 
 function argumentFault(args: unknown): string | null {
@@ -329,27 +279,27 @@ async function carriedUnder(
   return { carried, marked };
 }
 
-/** A symbolic link's target in this worktree, or null for a path that is no link or cannot be read. */
-function linkOnDisk(workTree: string, file: string): string | null {
-  try {
+/** Host links on disk, including ignored ones: directories are walked, links never are. */
+function hostDiskLinks(workTree: string): string[] {
+  const links: string[] = [];
+  const visit = (file: string) => {
     const full = path.join(workTree, file);
-    return fs.lstatSync(full).isSymbolicLink() ? fs.readlinkSync(full, "utf8") : null;
-  } catch {
-    return null;
-  }
+    const stat = fs.lstatSync(full, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink()) links.push(file);
+    else if (stat?.isDirectory()) for (const child of fs.readdirSync(full)) visit(`${file}/${child}`);
+  };
+  for (const entry of fs.readdirSync(workTree)) if (isHostConfigPath(entry)) visit(entry);
+  return links;
 }
 
 const hiddenByMark = "marked assume-unchanged, which hides its changes from git status";
 
 /**
- * Why a commit in this worktree may not run, or null: it would carry a host's project
- * configuration (`carriedUnder` the four), or what a link among them loads. Each such link
- * the index tracks is followed on disk (`hostLinks`): a change to what it loads inside the
- * repository is refused naming that path and the link, and a link that leaves the
- * repository is refused whatever the commit holds, because no review sees what the host
- * loads through it. Git sees no empty directory, so an empty `.claude/` an engine leaves
- * behind is never named. This is the early warning; the merge is the gate, and it refuses
- * what this does not see (`src/gitroot.ts#smuggled`).
+ * Why a commit in this worktree may not run, or null: changes under the four host paths,
+ * or any symbolic link there in HEAD, the index or on disk, ignored links included. Host
+ * configuration must be regular files; a link is refused by name even when unchanged.
+ * `carriedUnder` still checks marked regular files by their bytes. Empty directories carry
+ * nothing. This is the early warning; the merge is the gate (`src/gitroot.ts#smuggled`).
  */
 async function hostConfigFault(gitDir: string, workTree: string): Promise<string | null> {
   const host = await carriedUnder(gitDir, workTree, hostConfigPathspecs);
@@ -358,26 +308,24 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
   if (indexed.exitCode !== 0) {
     return `git_mutate could not read what a commit in ${workTree} would carry: ${indexed.stderr.trim() || `git ls-files exited ${indexed.exitCode}`}`;
   }
-  const links = indexed.stdout.split("\0").filter((entry) => entry.startsWith("120000 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1));
-  const { guarded, outside } = await hostLinks(links, async (file) => linkOnDisk(workTree, file));
-  let loaded: string[] = [];
-  if (guarded.size > 0) {
-    const referents = await carriedUnder(gitDir, workTree, [...guarded.keys()].map((file) => `:(literal)${file}`));
-    if ("unread" in referents) return referents.unread;
-    const named = (entry: string, mark: boolean) => {
-      const link = loadedThrough(entry.split(" -> ").pop()!, guarded) ?? loadedThrough(entry.split(" -> ")[0], guarded);
-      return `${entry} (what the link ${link} loads${mark ? `, ${hiddenByMark}` : ""})`;
-    };
-    loaded = [...referents.carried.map((entry) => named(entry, false)), ...referents.marked.map((entry) => named(entry, true))];
+  const links = new Set(await hostTreeLinks(gitDir, workTree, "HEAD"));
+  for (const entry of indexed.stdout.split("\0")) {
+    if (entry.startsWith("120000 ")) links.add(entry.slice(entry.indexOf("\t") + 1));
   }
-  const paths = [...host.carried, ...host.marked.map((file) => `${file} (${hiddenByMark})`), ...loaded, ...outside];
+  try {
+    for (const file of hostDiskLinks(workTree)) links.add(file);
+  } catch (error) {
+    return `git_mutate could not read host configuration in ${workTree}: ${message(error)}`;
+  }
+  const paths = [...host.carried, ...host.marked.map((file) => `${file} (${hiddenByMark})`),
+    ...[...links].map((file) => `${file} (symbolic link)`)];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
-    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case, and what a link among them loads — "
-    + "loads hooks, MCP servers or plugins in the operator's own host session and is never committed through a task; remove it from the worktree, "
-    + "or ignore it if it is the operator's own, put back what a link loads as the branch has it, clear any assume-unchanged mark "
-    + "(update-index --no-assume-unchanged), and commit again"
-    + (outside.length === 0 ? "" : "; a link out of the repository is the operator's to replace, at the root and by hand, with the file it points at or a link inside the repository");
+    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case — "
+    + "loads hooks, MCP servers or plugins in the operator's own host session and is never committed through a task; remove changes from the worktree, "
+    + "or ignore regular files if they are the operator's own, clear any assume-unchanged mark "
+    + "(update-index --no-assume-unchanged), and commit again. "
+    + "Host configuration must be regular files: replace symbolic links with regular files, at the root by hand for tracked links, before retrying";
 }
 
 /**

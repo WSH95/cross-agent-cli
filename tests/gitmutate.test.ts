@@ -663,10 +663,10 @@ test("under core.ignoreStat a host file git marked assume-unchanged blocks a com
 });
 
 // @anchor commitMarkedSymlink
-test("a marked host-configuration symlink is judged by its target, not by what it points at", async (t) => {
+test("an unchanged marked host-configuration symlink is refused because the whole link class is forbidden", async (t) => {
   const { root, add } = await repository(t);
-  // A tracked link's index blob is its target's path; `hash-object` on the link hashes the
-  // file it points at. Compared that way, an unchanged link differed and blocked every commit.
+  // A marked link used to be allowed when its target was unchanged. The escalation
+  // forbids every host link; the existing index-byte and type checks still apply too.
   await writeFile(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
   await symlink("servers.json", path.join(root, ".mcp.json"));
   await git(root, "add", "servers.json", ".mcp.json");
@@ -675,10 +675,12 @@ test("a marked host-configuration symlink is judged by its target, not by what i
   const worktree = await add("linked");
   assert.equal(await git(worktree, "ls-files", "-v", "-s", "--", ".mcp.json"), `h 120000 ${await git(worktree, "rev-parse", "HEAD:.mcp.json")} 0\t.mcp.json`);
 
-  // Unchanged, the marked link carries nothing: the unrelated commit goes through.
+  // The escalation closes the link class by rule: even unchanged links block unrelated work.
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
   accepted(await gitMutate(root, { slug: "linked", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"] }, { waitSeconds: 5 }));
-  assert.equal(accepted(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
+  const unchanged = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.match(unchanged, /\.mcp\.json.*symbolic link/);
+  assert.match(unchanged, /replace.*regular files/i);
 
   // Pointed somewhere else, which `git status` does not show under the mark: refused, named.
   await rm(path.join(worktree, ".mcp.json"));
@@ -716,7 +718,7 @@ test("a marked host link replaced while the commit check reads it differs, rathe
 });
 
 // @anchor commitGuardsLinkReferent
-test("a host-configuration link's referent in the repository is guarded at the commit, naming referent and link", async (t) => {
+test("host-configuration links are refused at commit even with unchanged in-repository referents, closing the link class", async (t) => {
   const { root, add } = await repository(t);
   // The project keeps its servers and its Claude settings in files of its own, and the paths
   // the hosts read link to them: one beside the link, one in a directory reached through `..`.
@@ -731,24 +733,24 @@ test("a host-configuration link's referent in the repository is guarded at the c
   const worktree = await add("referent");
   const step6 = ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"];
 
-  // The referents untouched, the work commits.
+  // Unchanged referents used to allow the work; the regular-files rule refuses the links.
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
   accepted(await gitMutate(root, { slug: "referent", args: step6 }, { waitSeconds: 5 }));
-  assert.equal(accepted(await gitMutate(root, { slug: "referent", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
+  const unchanged = refusal(await gitMutate(root, { slug: "referent", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  for (const link of [".mcp.json", ".claude/settings.json"]) assert.ok(unchanged.includes(`${link} (symbolic link)`), unchanged);
 
-  // Each referent changed is the configuration its host loads, changed: refused, both named.
+  // Changed referents do not change the rule: the host links themselves are named.
   const head = await git(worktree, "rev-parse", "HEAD");
   await writeFile(path.join(worktree, "servers.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
   await writeFile(path.join(worktree, "config", "claude.json"), '{"permissions": {"allow": ["Edit"]}}\n');
   const reason = refusal(await gitMutate(root, { slug: "referent", args: ["commit", "-a", "-m", "x"] }, { waitSeconds: 5 }));
   assert.match(reason, /^git_mutate refuses to commit/);
-  assert.ok(reason.includes("servers.json (what the link .mcp.json loads)"), reason);
-  assert.ok(reason.includes("config/claude.json (what the link .claude/settings.json loads)"), reason);
+  for (const link of [".mcp.json", ".claude/settings.json"]) assert.ok(reason.includes(`${link} (symbolic link)`), reason);
   assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
 
-  // Put back, the next commit goes through.
+  // Restoring the referents still leaves links, so it cannot clear the refusal.
   await git(worktree, "checkout", "HEAD", "--", "servers.json", "config/claude.json");
-  accepted(await gitMutate(root, { slug: "referent", args: ["commit", "--allow-empty", "-m", "y"] }, { waitSeconds: 5 }));
+  assert.match(refusal(await gitMutate(root, { slug: "referent", args: ["commit", "--allow-empty", "-m", "y"] }, { waitSeconds: 5 })), /replace.*regular files/i);
 });
 
 // @anchor commitRefusesOutsideLink
@@ -761,10 +763,68 @@ test("a host-configuration link whose target leaves the repository is refused at
     const worktree = await add(slug);
     await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
     accepted(await gitMutate(root, { slug, args: ["add", "--", "work.txt"] }, { waitSeconds: 5 }));
-    // Nothing a review reads shows what the host loads through it, so no commit goes through.
+    // No host link is followed, even to diagnose an outside target: the link is the refusal.
     const reason = refusal(await gitMutate(root, { slug, args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
-    assert.ok(reason.includes(`.mcp.json (a link to ${target}, outside the repository)`), `${slug}: ${reason}`);
+    assert.ok(reason.includes(".mcp.json (symbolic link)"), `${slug}: ${reason}`);
+    assert.match(reason, /replace.*regular files/i);
   }
+});
+
+// @anchor commitHostLinksEveryView
+test("host links in the commit tree, index or ignored working tree are refused in any case", async (t) => {
+  for (const [view, file] of [
+    ["tree", ".Claude/settings.json"], ["index", ".CODEX/config.toml"],
+    ["disk", ".GrOk"], ["disk", ".MCP.JSON"], ["disk", ".claude/deep/config file.json"],
+  ]) await t.test(`${view}: ${file}`, async (t) => {
+    const { root, add } = await repository(t);
+    if (view === "tree") {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await symlink("missing", path.join(root, file));
+      await git(root, "add", "-f", "--", file);
+      await git(root, "commit", "-m", "operator's host link");
+    }
+    const worktree = await add("views");
+    const head = await git(worktree, "rev-parse", "HEAD");
+    if (view === "tree") await git(worktree, "rm", "--", file);
+    else {
+      await mkdir(path.dirname(path.join(worktree, file)), { recursive: true });
+      await symlink(".", path.join(worktree, file));
+      if (view === "index") {
+        await git(worktree, "add", "-f", "--", file);
+        await rm(path.join(worktree, file));
+      } else {
+        await writeFile(path.join(worktree, ".gitignore"), `${file.split("/")[0]}\n`);
+        assert.equal(await git(worktree, "status", "--porcelain", "--", file), "", "the link is ignored");
+      }
+    }
+    const reason = refusal(await gitMutate(root, { slug: "views", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+    assert.ok(reason.includes(`${file} (symbolic link)`), reason);
+    assert.match(reason, /replace.*regular files/i);
+    assert.equal(await git(worktree, "rev-parse", "HEAD"), head);
+  });
+});
+
+// @anchor commitHostLinkTraversalClass
+test("commit refuses host links before a cancelled path component or an aliased directory can hide a referent", async (t) => {
+  for (const kind of ["cancelled-component", "aliased-directory"]) await t.test(kind, async (t) => {
+    const { root, add } = await repository(t);
+    await mkdir(path.join(root, "config"));
+    await writeFile(path.join(root, "servers.json"), "{}\n");
+    await writeFile(path.join(root, "shared-settings.json"), "{}\n");
+    const link = kind === "cancelled-component" ? ".mcp.json" : ".claude";
+    await symlink(kind === "cancelled-component" ? "via/../servers.json" : "config", path.join(root, link));
+    await symlink("../shared-settings.json", path.join(root, "config", "settings.json"));
+    await git(root, "add", "--", link, "servers.json", "shared-settings.json", "config");
+    await git(root, "commit", "-m", "operator's host links");
+    const worktree = await add("traversal");
+    if (kind === "cancelled-component") await symlink("/outside/dir", path.join(worktree, "via"));
+    else await writeFile(path.join(worktree, "shared-settings.json"), '{"hooks": {}}\n');
+    await git(worktree, "add", "-A");
+    const head = await git(worktree, "rev-parse", "HEAD");
+    const reason = refusal(await gitMutate(root, { slug: "traversal", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+    assert.ok(reason.includes(`${link} (symbolic link)`), reason);
+    assert.equal(await git(worktree, "rev-parse", "HEAD"), head);
+  });
 });
 
 // @anchor configLockGit

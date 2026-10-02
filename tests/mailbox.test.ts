@@ -143,6 +143,23 @@ test("list_asks shows the operator every ask and a lead its own lineage's, filte
   assert.deepEqual(listAsks(p.root).invalid.map((entry) => path.basename(entry.file)), ["broken.json"]);
 });
 
+// @anchor invalidStoredAskId
+test("an ask whose stored id is outside the ask alphabet is invalid in listings and lineage history", async (t) => {
+  const p = await mailboxProject(t);
+  const valid = createAsk(p.root, { taskId: "lead-a", question: "Valid?" });
+  const file = path.join(asksDir(p.root), "bad.id.json");
+  fs.writeFileSync(file, JSON.stringify({ ...valid, id: "bad.id" }));
+  const listed = listAsks(p.root);
+  assert.deepEqual(listed.asks.map((entry) => entry.id), [valid.id]);
+  assert.equal(listed.invalid.length, 1);
+  assert.equal(listed.invalid[0].file, file);
+  assert.equal(listed.invalid[0].taskId, "lead-a");
+  assert.match(listed.invalid[0].reason, /invalid ask.*id/);
+  const history = lineageAsks(p.root, ["lead-a"]);
+  assert.deepEqual(history.asks.map((entry) => entry.id), [valid.id]);
+  assert.deepEqual(history.unreadable, listed.invalid);
+});
+
 // @anchor abortedAskEnds
 test("an aborted ask ends within 100 ms with its id and status, and the record is untouched", async (t) => {
   const p = await mailboxProject(t);

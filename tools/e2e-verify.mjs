@@ -281,6 +281,11 @@ function recordedHeartbeat(event, calls) {
 // - Assignments are inspected in prefixes, declaration builtins, env and env -S, with `=`
 //   or `+=`: NODE_OPTIONS is read for loaders, PROMPT_COMMAND for commands, startup paths
 //   and prompt templates for substitutions. Expanded values and unread named files are `?`.
+//   read, printf -v, getopts, for/select, mapfile/readarray and declaration namerefs that
+//   assign code-carrying or unread environment variables also give `?` on named lines.
+// - Node module-loading options and data-URL scripts are unread code: `?` on named lines,
+//   except this repository's own server/CLI entries, which are launches. Unknown Node
+//   options and missing or option-shaped values are `?`; flag prefixes are not wildcards.
 // - Known stdin left unconsumed by a modeled reader is `?` if it names a target or judges
 //   as a launch. Unknown stdin at a shell, wrapper (including sudo -s/-i and xargs) or
 //   remote command is `?` on a named line; xargs builds argv rather than forwarding stdin.
@@ -579,7 +584,8 @@ function git(...argv) {
  *   `--require`, `-r`, `--loader`, `--experimental-loader`, `--test-reporter` or
  *   `--test-global-setup` loads, before the first operand, or the script, ending in
  *   `src/server.ts` or `src/cli.ts`, is a launch; `-e`/`-p` code and a program on stdin are
- *   inline code;
+ *   inline code. Any other module operand, including a data URL, is unread code and `?`
+ *   on a named line; unknown options are `?` as well;
  * - an interpreter (`python*`, `perl`, `ruby`, `awk` and its kin): options walked letter by
  *   letter against its own table; inline code (`-c`, `-e`, `-E`, an awk program or `-v`
  *   value, a program on stdin) that names an engine, `cross-agent`, a configured binary or
@@ -589,8 +595,8 @@ function git(...argv) {
  *   script file it is input the code may read and run, which no modeled reader consumes;
  * - `if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!` and `{` are passed over, and a
  *   `[[ … ]]`, `(( … ))` or subshell after them is read as at a command's start; `for`
- *   and `select` lists are data; arithmetic and subscript readers carrying deferred
- *   substitutions are unmodeled.
+ *   and `select` lists are data, but their variable is an assignment of unknown value;
+ *   arithmetic and subscript readers carrying deferred substitutions are unmodeled.
  * A `case` statement and a function named like an engine change what later words mean, and
  * a line bash would refuse — an unterminated quote or substitution, a `(` where no command
  * starts, a `)` with no `(`, a redirection with no target — runs nothing as read here: on a
@@ -609,7 +615,8 @@ function launcherFor(settings) {
   const engineNames = new Set(["claude", "codex", "grok", "cross-agent", ...bins.map(basename)]);
   const binPaths = new Set(bins);
   const isEngine = (value) => engineNames.has(basename(value)) || binPaths.has(value);
-  const isEntryPoint = (value) => typeof value === "string" && /(?:^|\/)src\/(?:server|cli)\.(?:ts|js)$/.test(value);
+  const isEntryPoint = (value) => typeof value === "string" && !/^data:/i.test(value)
+    && /(?:^|\/)src\/(?:server|cli)\.(?:ts|js)$/.test(value);
   // A name as a word of its own: a run of word characters, dots and hyphens, its leading
   // hyphens and trailing dots dropped — `claude`, `/usr/bin/claude`, `ProxyCommand=claude`,
   // `${E:-claude}`, `s/x/claude/e` and the directory in `skills/cross-agent/SKILL.md` name
@@ -723,6 +730,17 @@ function launcherFor(settings) {
     + "--trace-env-native-stack --trace-exit --trace-promises --trace-sigint --trace-sync-io --trace-tls --trace-uncaught "
     + "--trace-warnings --track-heap-objects --use-bundled-ca --use-env-proxy --use-openssl-ca --use-system-ca --v8-options "
     + "--watch --watch-preserve-output --zero-fill-buffers --expose-internals").split(" "));
+  // Spell these out too: recognizing a prefix would silently accept future code loaders.
+  for (const flag of ("--experimental-addon-modules --experimental-default-config-file --experimental-eventsource "
+    + "--experimental-import-meta-resolve --experimental-inspector-network-resource --experimental-network-inspection "
+    + "--experimental-print-required-tla --experimental-test-coverage --experimental-test-module-mocks "
+    + "--experimental-transform-types --experimental-vm-modules --experimental-webstorage --experimental-worker-inspection "
+    + "--experimental-strip-types --experimental-require-module --no-addons --no-async-context-frame --no-deprecation "
+    + "--no-experimental-detect-module --no-experimental-global-navigator --no-experimental-repl-await "
+    + "--no-experimental-require-module --no-experimental-sqlite --no-experimental-strip-types --no-experimental-websocket "
+    + "--no-extra-info-on-fatal-exception --no-force-async-hooks-checks --no-global-search-paths "
+    + "--no-network-family-autoselection --no-warnings").split(" ")) nodeFlags.add(flag);
+  const nodeOptionalValues = new Set(["--inspect", "--inspect-brk", "--inspect-wait"]);
   // Python, Perl, Ruby and awk, each against its own `--help`.
   const pythonSpec = { flags: "bBdEhiIOPqRsSuvVx", values: "WX", code: "c", stop: "m",
     long: long("--help --help-env --help-xoptions --help-all --version", "--check-hash-based-pycs") };
@@ -1307,7 +1325,7 @@ function launcherFor(settings) {
       const list = lexList(code, 0, null);
       const read = nodeWalk([asWord("node"), ...list.commands.flatMap((command) => command.words)], true);
       if (read.launch) return { verdict: "launch", why: "", at: shown(word.value) };
-      return (!read.known || list.problems.length > 0) && named ? doubt(unmodeled, word.value) : pass;
+      return (read.unreadLoad || !read.known || list.problems.length > 0) && named ? doubt(unmodeled, word.value) : pass;
     }
     // Startup paths and prompt templates expand substitutions, but their literal text
     // is not a command. PROMPT_COMMAND, in contrast, is a shell command list.
@@ -1356,7 +1374,8 @@ function launcherFor(settings) {
       if (["if", "then", "elif", "else", "while", "until", "do", "!", "{"].includes(value)) {
         return words.length > 1 ? judgeWords(words.slice(1), command, context) : pass;
       }
-      if (["fi", "done", "esac", "}", "for", "select", "in", "[[", "]]"].includes(value)) return pass;
+      if (["for", "select"].includes(value)) return unknownAssignment(words[1]?.value, context, line);
+      if (["fi", "done", "esac", "}", "in", "[[", "]]"].includes(value)) return pass;
       if (value === "case") return { verdict: "?", cap: true, why: "a case statement, whose patterns this grammar does not read", at: line };
       if (value === "function") {
         const defined = words[1]?.value ?? "";
@@ -1397,6 +1416,7 @@ function launcherFor(settings) {
     command.stdinRead = true;
     let verdict = pass;
     if (declarations.has(name)) for (const word of words.slice(1)) verdict = worse(verdict, assignmentCode(word, context));
+    verdict = worse(verdict, builtinAssignments(name, words, context));
     const subscriptReader = declarations.has(name) || ["read", "unset"].includes(name)
       || (["test", "[", "printf"].includes(name) && words.some((word) => word.value === "-v"));
     if (context.named && subscriptReader && (context.deferred || words.slice(1).some((word) => substitutionsIn(word.value)))) {
@@ -1405,6 +1425,38 @@ function launcherFor(settings) {
     if (name === "wget") return worse(verdict, wgetRun(words, command, context));
     const modeled = programSpecs.get(name);
     return modeled === undefined ? verdict : worse(verdict, programRun(words, command, context, modeled));
+  }
+
+  /** A builtin writes a value we cannot read, possibly through a declaration's nameref. */
+  function unknownAssignment(variable, context, line) {
+    const name = /^([A-Za-z_]\w*)(?:\[|$)/.exec(variable ?? "")?.[1];
+    return context.named && (unreadEnvironment.has(name) || shellCodeVariables.has(name) || name === "NODE_OPTIONS")
+      ? doubt("a builtin assigns an unread environment or code variable", line) : pass;
+  }
+
+  function builtinAssignments(name, words, context) {
+    const line = values(words).join(" ");
+    let targets = [];
+    let walk;
+    if (name === "read") {
+      walk = options(words, 1, { flags: "ersE", values: "adinNptu", long: {} });
+      targets = [...walk.read.filter(({ option }) => option === "-a").map(({ value }) => value), ...values(words.slice(walk.k))];
+    } else if (name === "printf") {
+      walk = options(words, 1, { flags: "", values: "v", long: {} });
+      targets = walk.read.filter(({ option }) => option === "-v").map(({ value }) => value);
+    } else if (name === "getopts") {
+      targets = [words[2]?.value];
+    } else if (declarations.has(name)) {
+      walk = options(words, 1, { flags: "aAfFgiIlnrtuxp", values: "", long: {} });
+      if (walk.read.some(({ option }) => option === "-n")) {
+        for (const word of words.slice(walk.k)) {
+          const [variable, referent] = word.value.split("=");
+          targets.push(variable, referent);
+        }
+      } else return pass;
+    } else return pass;
+    if (context.named && walk && (!walk.known || walk.expanded || walk.read.some(optionAsValue))) return doubt(unmodeled, line);
+    return targets.reduce((verdict, variable) => worse(verdict, unknownAssignment(variable, context, line)), pass);
   }
 
   /**
@@ -1702,7 +1754,7 @@ function launcherFor(settings) {
    * code it was given, and where its operands start.
    */
   function nodeWalk(words, optionsOnly = false) {
-    const read = { launch: false, known: true, code: [], script: undefined, stdin: false };
+    const read = { launch: false, known: true, unreadLoad: false, code: [], script: undefined, stdin: false };
     for (let k = 1; k < words.length; k++) {
       if (words[k].expansions) { read.known = false; break; }
       const word = words[k].value;
@@ -1719,19 +1771,29 @@ function launcherFor(settings) {
         break;
       }
       const equals = word.indexOf("=");
-      const option = equals === -1 ? word : word.slice(0, equals);
-      const attached = equals === -1 ? undefined : word.slice(equals + 1);
+      const shortRequire = word.startsWith("-r") && word.length > 2;
+      const option = shortRequire ? "-r" : equals === -1 ? word : word.slice(0, equals);
+      const attached = shortRequire ? word.slice(2) : equals === -1 ? undefined : word.slice(equals + 1);
       if (attached === undefined && (nodeCode.has(option) || nodeLoads.has(option) || nodeValues.has(option)) && words[k + 1]?.expansions) {
         read.known = false;
         break;
       }
-      const operand = () => attached ?? words[++k]?.value ?? "";
-      if (nodeCode.has(option)) { read.code.push(operand()); continue; }
-      if (nodeLoads.has(option)) { if (isEntryPoint(operand())) read.launch = true; continue; }
-      if (nodeValues.has(option)) { if (attached === undefined) k++; continue; }
-      if (nodeFlags.has(option) || option.startsWith("--no-") || option.startsWith("--experimental-") || option.startsWith("--harmony")) continue;
+      if (nodeCode.has(option) || nodeLoads.has(option) || nodeValues.has(option)) {
+        const operand = attached ?? words[++k]?.value;
+        if (operand === undefined || (!nodeCode.has(option) && optionAsValue({ value: operand, separate: attached === undefined }))) {
+          read.known = false;
+          continue;
+        }
+        if (nodeCode.has(option)) read.code.push(operand);
+        else if (nodeLoads.has(option)) {
+          if (isEntryPoint(operand)) read.launch = true;
+          else read.unreadLoad = true;
+        }
+        continue;
+      }
+      if (nodeFlags.has(option) && (attached === undefined || nodeOptionalValues.has(option))) continue;
       // An option this table does not know: whether it takes the next word is unknown.
-      if (attached === undefined) read.known = false;
+      read.known = false;
     }
     return read;
   }
@@ -1749,7 +1811,7 @@ function launcherFor(settings) {
     const read = nodeWalk(words);
     if (read.launch) return launchAt(words);
     if (read.script !== undefined && isEntryPoint(read.script)) return read.known ? launchAt(words) : doubt(unmodeled, line);
-    const unread = !read.known && (context.named || namesTarget(line)) ? doubt(unmodeled, line) : pass;
+    const unread = (read.unreadLoad || /^data:/i.test(read.script ?? "") || !read.known) && (context.named || namesTarget(line)) ? doubt(unmodeled, line) : pass;
     if (read.code.length > 0) return worse(read.code.some(namesTarget) ? doubt(inline, line) : pass, unread);
     if (read.script !== undefined && !stdinScripts.has(read.script)) return unread;
     return worse(programOnStdin(command, context, line), unread);

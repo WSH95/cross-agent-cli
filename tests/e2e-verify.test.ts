@@ -1018,6 +1018,84 @@ test("an option the model of wget, sort or rg does not hold, or one handed anoth
   ]);
 });
 
+// @anchor nodeLoadersUnread
+test("Node module-loading options are unread code on named lines unless they load this repository's entry", async (t) => {
+  await judgedAs(t, [
+    [`node --import 'data:text/javascript,import{execFileSync}from"node:child_process";execFileSync("claude",["-p","hi"])' -e 0`, "?"],
+    [`node --loader='data:text/javascript,console.log("claude")' -e 0`, "?"],
+    [`node --import 'data:text/javascript,//src/server.ts' -e 0`, "?"],
+    [`node --entry-url 'data:text/javascript,console.log("claude")'`, "?"],
+    [`node --import 'DATA:text/javascript,//src/server.ts' -e 0`, "?"],
+    [`node --entry-url 'DATA:text/javascript,console.log("claude")'`, "?"],
+    ["node --experimental-loader ./loader.mjs -e 0 # claude", "?"],
+    ["node --require ./hook.cjs -e 0 # claude", "?"],
+    ["node -r ./hook.cjs -e 0 # codex", "?"],
+    ["node -r./hook.cjs -e 0 # grok", "?"],
+    ["node --import=package-name -e 0 # claude", "?"],
+    ["node --test-reporter ./reporter.mjs --test # claude", "?"],
+    ["node --test-global-setup ./setup.mjs --test # claude", "?"],
+    [`NODE_OPTIONS='--import data:text/javascript,0' node -e 0 # claude`, "?"],
+    [`export NODE_OPTIONS='--loader ./loader.mjs'; node -e 0 # codex`, "?"],
+    // Literal entry points are still definite launches, and unnamed lines keep the audit's scope.
+    ["node --import=./src/server.ts -e 0", "FAIL"],
+    ["node -r./src/cli.ts other.js", "FAIL"],
+    ["node --experimental-loader src/server.ts other.js", "FAIL"],
+    ["node --test-reporter ./src/cli.ts --test", "FAIL"],
+    ["node --import ./loader.mjs -e 0", "pass"],
+    // Options after the script operand are the script's data.
+    ["node other.js --import=claude", "pass"],
+  ]);
+});
+
+// @anchor nodeUnknownOptions
+test("Node options outside its table and options consumed as values are questions on named lines", async (t) => {
+  await judgedAs(t, [
+    ["node --foobar=claude -e 0", "?"],
+    ["node --no-such-option -e 0 # claude", "?"],
+    ["node --experimental-unknown=claude -e 0", "?"],
+    ["node --harmony-unknown=claude -e 0", "?"],
+    ["node --title --import=claude -e 0", "?"],
+    ["node --import --title=claude -e 0", "?"],
+    ["node --require # claude", "?"],
+    ["node --title # claude", "?"],
+    // Explicitly modeled flags and ordinary values remain data.
+    ["node --experimental-strip-types --no-warnings --title claude -e 0", "pass"],
+    ["node --title=claude -e 0", "pass"],
+    ["node --title='' -e '' # claude", "pass"],
+    ["node --inspect=127.0.0.1:9229 -e 0 # claude", "pass"],
+    ["node --foobar=unknown -e 0", "pass"],
+  ]);
+});
+
+// @anchor builtinEnvironmentAssignments
+test("shell builtins and loops assigning unread environment variables are questions on named lines", async (t) => {
+  await judgedAs(t, [
+    ["read HOME <<< /tmp/home; wget https://example.com/claude", "?"],
+    ["read -r -p 'config path' WGETRC; wget https://example.com/claude", "?"],
+    ["read -a RIPGREP_CONFIG_PATH; rg claude src", "?"],
+    ["read NODE_OPTIONS; node other.js claude", "?"],
+    ["read BASH_ENV; bash -c 'echo claude'", "?"],
+    ["printf -v WGETRC '%s' /tmp/rc; export WGETRC; wget https://example.com/claude", "?"],
+    ["printf -vHOME '%s' /tmp/home; wget https://example.com/claude", "?"],
+    ["getopts 'a:' SSH_ASKPASS -a /tmp/askpass; echo claude", "?"],
+    ["for HOME in /tmp/home; do wget https://example.com/claude; done", "?"],
+    ["select LD_PRELOAD in /tmp/module.so; do echo claude; done", "?"],
+    ["mapfile -t WGETRC < paths.txt; echo claude", "?"],
+    ["readarray -u 3 RIPGREP_CONFIG_PATH; echo claude", "?"],
+    ["declare -n WGETRC=source; echo claude", "?"],
+    ["declare -n ref=HOME; ref=/tmp/home; echo claude", "?"],
+    ["declare -nx ref=NODE_OPTIONS; echo claude", "?"],
+    ["typeset -n ref=BASH_ENV; echo claude", "?"],
+    // Merely printing or reading an ordinary variable does not assign the environment.
+    ["printf '%s' WGETRC claude", "pass"],
+    ["read -p HOME ordinary; echo claude", "pass"],
+    ["printf -v ordinary '%s' HOME; echo claude", "pass"],
+    ["getopts 'a:' ordinary HOME; echo claude", "pass"],
+    ["for ordinary in HOME; do echo claude; done", "pass"],
+    ["read HOME <<< /tmp/home; echo ordinary", "pass"],
+  ]);
+});
+
 test("a data command's program option in an argv a Codex rollout recorded is judged the same way", async (t) => {
   const sessionId = "01a0f44a-eb7a-7603-ae3a-02f2d355c7aa";
   const log = codexLog("/bin/bash -lc 'printf inside > ./PROBE-wget.txt'");
