@@ -19,7 +19,8 @@ import type { EffectiveGitPolicy, Mode, ModeLead, Workspace } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule, parseFlags } from "./project.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
-import { enclosingWorktree, locateRepository, nestedReason, verifyWorktree } from "./worktree.ts";
+import { enclosingWorktree, locateRepository, nestedReason, ownGit, verifyWorktree } from "./worktree.ts";
+import type { Repository } from "./worktree.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
 // one parser and one exit protocol. Each verb calls the function its tool calls, with the
@@ -263,14 +264,29 @@ const initVerb: Verb = {
     const enclosure = await enclosingWorktree(root);
     if (enclosure !== null) return refused("reason" in enclosure ? enclosure.reason : nestedReason(root, enclosure));
     const dotGit = fs.lstatSync(path.join(root, ".git"), { throwIfNoEntry: false });
-    if (dotGit?.isFile()) return initWorktree(root, parsed, context);
+    if (dotGit !== undefined && !dotGit.isDirectory()) {
+      // A pointer file or a link. A linked worktree is initialized on its own branch. A
+      // checkout whose git directory lies outside it — a separated main's, a submodule, a
+      // `.git` linking to the root's git directory — is a work tree by its own git, and
+      // takes the mode's defaults below as any main checkout does. Anything else is no project.
+      const located = await locateRepository(root);
+      if (located.kind === "linked" || located.kind === "bare-linked") return initWorktree(root, located, parsed, context);
+      if (located.kind === "refused") return refused(`init makes no project of a root its repository refuses: ${located.reason}`);
+      if (located.kind === "unsupported") {
+        let workTree = false;
+        try {
+          workTree = (await ownGit(root)).workTree;
+        } catch { /* a git that cannot say is no work tree's */ }
+        if (!workTree) return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
+      }
+    }
     if (parsed.values["--from"] !== undefined) {
       return refused(`--from copies a project's config into a worktree of its repository, and ${root} is ${dotGit === undefined ? "no repository's checkout" : "a main checkout"}, where init writes the mode's own`);
     }
     if (dotGit?.isDirectory()) {
       // A bare repository at `.git` makes the directory holding it no work tree of it.
       const located = await locateRepository(root);
-      if (located.kind === "unsupported") return refused(`init makes no project of an unsupported root: ${located.reason}`);
+      if (located.kind === "unsupported") return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
     }
     const mode = parsed.values["--mode"] ?? DEFAULT_MODE;
     try {
@@ -299,9 +315,7 @@ const initVerb: Verb = {
  * that holds one, and is the mode's defaults otherwise; every refusal comes before anything
  * is written.
  */
-async function initWorktree(root: string, parsed: Parsed, context: Context): Promise<Answer> {
-  const located = await locateRepository(root);
-  if ("reason" in located) return refused(`init makes no project of a ${located.kind} root: ${located.reason}`);
+async function initWorktree(root: string, located: Repository, parsed: Parsed, context: Context): Promise<Answer> {
   const branch = located.branch;
   if (branch === null) return refused(`${root} has a detached HEAD, which names no branch to make the project's default; check out its branch first`);
   if (nameFault(branch) !== null) {

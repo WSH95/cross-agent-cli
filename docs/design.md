@@ -245,8 +245,10 @@ its repository: `M/branches/x` is refused as a root, as `M/.worktrees/<slug>` al
 was a task's. The umbrella layout — `U/.git` a pointer file to the bare `U/.bare`,
 with `U/main` and `U/feature` its worktrees — and a bare repository beside its
 worktrees, `repo.git`, are fine, because neither `U` nor `repo.git` is a work tree by
-its own git; and a submodule checkout is no project root. A Codex host's plugin
-server is the exception: Codex starts it in its cache copy of the plugin, where
+its own git; and a submodule checkout, a separated main's own checkout and a main
+checkout whose `.git` links to its git directory, once initialized, are projects whose
+root roles launch and which take no writes (section 4). A Codex host's plugin server
+is the exception: Codex starts it in its cache copy of the plugin, where
 discovery finds no project the operator meant — nothing from an export's copy, and
 from a checkout's, whose `.git` came along, a repository the operator did not name:
 the copy itself, for a main checkout or a worktree initialized as a project of its
@@ -3464,10 +3466,15 @@ handler passes:
   (`tests/cli.test.ts#initRemovedPointerRefused`, `#initReplacedPointerRefused`). A
   main checkout is unchanged, and still writes `defaultBranch: "main"` whatever it
   has checked out; a directory holding a bare repository at `.git` is no work tree
-  of it, and a 3. At a `.git` file the repository is located, and a refused or
-  unsupported root — a root inside its own git directory, a submodule — is a 3 naming
-  the kind (`#initInsideCommonDirRefused`, `#initSubmoduleRefused`), and so is a
-  detached HEAD (`#initDetachedRefused`). The worktree's branch becomes the default
+  of it, and a 3. At a `.git` file or link the repository is located. A refused root —
+  a root inside its own git directory, a link git does not read as the root's git
+  directory — is a 3 naming why (`#initInsideCommonDirRefused`). An unsupported root
+  that is a work tree by its own git — a separated main's own checkout, a submodule, a
+  `.git` linking to the root's git directory — is initialized as a main checkout is,
+  with the mode's defaults on `main`, as it was before worktree projects
+  (`#initUnsupportedWorkTreeDefaults`), and the umbrella, no work tree, is a 3
+  (`#initUmbrellaWorktree`). At a linked worktree a detached HEAD is a 3
+  (`#initDetachedRefused`). The worktree's branch becomes the default
   branch, so it must be a name `git_root` takes in every read of it —
   `src/gitroot.ts#nameFault`'s letters, digits, `.`, `_`, `/` and `-`, no `..`, no
   trailing `/` or `.lock`, where `git check-ref-format` would take `feature+one`
@@ -3700,8 +3707,9 @@ Four limits of worktree projects are deferred the same way, each for its reason:
   task-directory containment, `<root>/<worktreeDir>/`, enforced first at every task
   entry point — `delegate`, `git_mutate`, `run_command`, `verify_worktree` — so that
   only a worktree there counts as nested.
-- **Writes at a separated main's checkout or a submodule**, which take none today:
-  they need a kind of their own with the external git directory protected. A
+- **Writes at a separated main's checkout, a submodule, or a main checkout whose
+  `.git` links to its git directory**, which take none today: they need a kind of
+  their own with the external git directory protected. A
   separated main's checkout cannot be found from its worktrees, since git records no
   path to it, which is why `init` there asks for `--from`.
 - **Cancelling a hung git child.** `gitMutate` holds `spawn.lock` for the whole call

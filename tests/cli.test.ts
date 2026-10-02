@@ -14,7 +14,8 @@ import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir } from "../src/modes.ts";
 import { git } from "./helpers/git.ts";
 import {
-  bareDotGitProject, layoutRoot, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, umbrellaProject,
+  bareDotGitProject, layoutRoot, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, symlinkedGitProject,
+  umbrellaProject,
 } from "./helpers/project.ts";
 import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
 import type { SeededProject } from "./helpers/seed.ts";
@@ -1686,7 +1687,9 @@ test("init in an umbrella layout's worktree takes the mode's defaults on its own
   assert.equal(written(umbrella.root).mode, "solo");
   assert.equal(defaultBranchOf(umbrella.root), "feature");
   // The umbrella itself is no work tree of the repository, and no project.
-  assert.match(await refusedInit([], umbrella.umbrella, umbrella.umbrella), /unsupported/);
+  const reason = await refusedInit([], umbrella.umbrella, umbrella.umbrella);
+  assert.match(reason, /an unsupported root that is no work tree/);
+  assert.doesNotMatch(reason, /\ba unsupported\b/);
 });
 
 // @anchor initBareDotGitDefaults
@@ -1768,10 +1771,24 @@ test("init in a worktree inside its own git directory is a 3 naming the fix", as
   assert.match(await refusedInit([], root, root), /beside the git directory/);
 });
 
-// @anchor initSubmoduleRefused
-test("init in a submodule is a 3 naming the kind", async (t) => {
+// @anchor initUnsupportedWorkTreeDefaults
+test("init at a checkout whose git directory lies outside it writes the mode's defaults on main, as before worktree projects", async (t) => {
+  // A separated main's own checkout, a submodule, and a main checkout whose .git links to
+  // its git directory are work trees by their own git: init there is a main checkout's.
+  const separated = await separatedMainProject(t);
   const { submodule } = await submoduleProject(t);
-  assert.match(await refusedInit([], submodule, submodule), /unsupported/);
+  const linkedGit = await symlinkedGitProject(t);
+  for (const root of [separated.main, submodule, linkedGit.main]) {
+    const ran = await run(["init"], root);
+    assert.equal(ran.code, 0, `${root}: ${ran.stderr}`);
+    assert.equal(written(root).mode, "dev-team", root);
+    assert.equal(defaultBranchOf(root), "main", root);
+  }
+  // A link git does not read as the root's own git directory makes no project.
+  const other = await mainCheckout(scratch(t), "N");
+  fs.rmSync(path.join(other, ".git"), { recursive: true });
+  fs.symlinkSync(scratch(t), path.join(other, ".git"), "dir");
+  assert.match(await refusedInit([], other, other), /refuses/);
 });
 
 // @anchor initBranchOutsideAlphabetRefused
