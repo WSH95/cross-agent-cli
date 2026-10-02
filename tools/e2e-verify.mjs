@@ -38,8 +38,9 @@
 // sibling projects, so row 1 counts the stanzas at or under `--project`, and row 2 classes a
 // live branch of the pattern by positive evidence alone — a checkout under a project's root,
 // or an open journal there — and answers `?` where both sides claim it, or where none does
-// and another project could hold it: a sibling, or a separated main's checkout, which the
-// registry never names. With no evidence and no other project, the branch is this one's.
+// and another project could hold it: a sibling, a stanza whose config cannot be read, or a
+// separated main's checkout, which the registry never names. With no evidence and no other
+// project, the branch is this one's.
 //
 // One line per check: `pass`, `FAIL`, or `?` where the evidence is missing rather than
 // contradicted (no journal, no records, a log in a shape this cannot read), which is not
@@ -110,8 +111,18 @@ const ours = stanzas.filter((stanza) => within(root, stanza.path));
 const extras = ours.filter((stanza) => stanza.path !== root);
 check("only the root worktree", ours.length === 1 && extras.length === 0 ? "pass" : "FAIL",
   extras.length > 0 ? extras.map((stanza) => stanza.path).join(", ") : ours.length === 1 ? root : `no stanza is ${root}`);
-// A sibling is a project by discovery's own test: its config a regular file.
-const siblings = stanzas.filter((stanza) => !within(root, stanza.path) && holdsConfig(stanza.path));
+// A sibling is a project by discovery's own test: its config a regular file. A stanza whose
+// config cannot be read for any reason but its absence may be one, whose claims cannot be read.
+const unreadStanzas = [];
+const siblings = stanzas.filter((stanza) => {
+  if (within(root, stanza.path)) return false;
+  try {
+    return holdsConfig(stanza.path);
+  } catch (error) {
+    unreadStanzas.push(`${stanza.path}: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+});
 // A separated main's stanza is its git directory, not its checkout, so a project there is
 // one the registry never names: an unproven branch may be its.
 const hiddenMain = stanzas[0] !== undefined && separatedGitDirectory(stanzas[0].path);
@@ -142,6 +153,7 @@ for (const branch of live) {
   else if (claims.length > 0) classed.unknown.push(`${branch} (open journals here and at ${there.map((each) => each.path).join(", ")} both name it)`);
   // Unproven, it can be another project's only where the repository holds one, or may.
   else if (hiddenMain) classed.unknown.push(`${branch} (a separated main's checkout is not in git's registry, so whether a project there holds it cannot be read)`);
+  else if (unreadStanzas.length > 0) classed.unknown.push(`${branch} (a project whose config cannot be read may hold it: ${unreadStanzas.join("; ")})`);
   else if (siblings.length === 0) classed.fail.push(`${branch} (no other project of this repository could hold it)`);
   else classed.unknown.push(`${branch} (checked out under no project and named by no open journal)`);
 }

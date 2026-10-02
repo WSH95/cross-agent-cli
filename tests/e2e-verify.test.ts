@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2156,6 +2156,33 @@ test("row 2 answers ? for an unproven branch beside a separated main, whose chec
   await exec("git", ["-C", bare.root, "branch", "task/stray"]);
   const bareRun = await runWith(bare.root, []);
   assert.equal(verdict(bareRun.out, branchRow), "FAIL", bareRun.out);
+});
+
+// @anchor row2UnreadableSiblingQuestioned
+test("row 2 answers ? for an unclaimed branch beside a stanza whose config cannot be read, naming it, and never crashes", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root reads a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const root = await project(t, { claude: claudeLog("true") });
+  await branchAt(root, "task/stray");
+  // A worktree whose `.cross-agent/` no one may read may be a project, and what it claims
+  // cannot be read.
+  const locked = await siblingOf(t, root, "locked");
+  const state = path.join(locked, ".cross-agent");
+  await chmod(state, 0o000);
+  try {
+    const { out } = await runWith(root, []);
+    assert.equal(verdict(out, branchRow), "?", out);
+    const detail = row(out, branchRow);
+    assert.ok(detail.includes("task/stray") && detail.includes(locked) && detail.includes("EACCES"), detail);
+    // A branch this project claims still fails the row.
+    await exec("git", ["-C", root, "worktree", "add", "-b", "task/ours", path.join(root, ".worktrees", "ours")]);
+    const claimed = await runWith(root, []);
+    assert.equal(verdict(claimed.out, branchRow), "FAIL", claimed.out);
+  } finally {
+    await chmod(state, 0o755);
+  }
 });
 
 // @anchor row2UnknownOwnerQuestioned
