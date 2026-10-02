@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -331,6 +331,25 @@ test("--project and CROSS_AGENT_PROJECT choose the project over stdio", async (t
       client.close();
     }
   }
+});
+
+// @anchor symlinkedServer
+test("a server started through a linked checkout runs, rather than exiting 0 unheard", async (t) => {
+  // Node runs the module at its real path; a server that compared the path it was started
+  // by with its own URL exited 0 without serving whenever a link stood on that path.
+  const empty = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-empty-")));
+  const links = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-links-")));
+  t.after(() => rm(empty, { recursive: true, force: true }));
+  t.after(() => rm(links, { recursive: true, force: true }));
+  await symlink(path.join(here, ".."), path.join(links, "checkout"));
+  const child = spawn(process.execPath, [path.join(links, "checkout", "src", "server.ts")], { cwd: empty, stdio: ["ignore", "ignore", "pipe"], env: suiteEnv });
+  let stderr = "";
+  child.stderr!.setEncoding("utf8");
+  child.stderr!.on("data", (chunk: string) => { stderr += chunk; });
+  const [code] = await once(child, "close");
+  // It ran: no project here, so it says so and exits 1, as the entry point started directly does.
+  assert.equal(code, 1, stderr);
+  assert.match(stderr, /^cross-agent: no \.cross-agent\/config\.json in /);
 });
 
 test("a server that finds no project exits naming the reason", async (t) => {

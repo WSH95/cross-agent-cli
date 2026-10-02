@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
 import { resolveAuthority } from "./authority.ts";
 import type { Authority, Row } from "./authority.ts";
 import { effectiveMaxDepth, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, roleProfile } from "./config.ts";
@@ -17,7 +16,7 @@ import { answerAsk, ask, askStatuses, lineageAsks, listAsks } from "./mailbox.ts
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
-import { discoverProject } from "./project.ts";
+import { discoverProject, isMainModule } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
 import { scan, taskStatuses } from "./ledger.ts";
@@ -703,8 +702,7 @@ async function main(): Promise<void> {
   createServer({ tools: projectTools(root, { mode }), authority }).connect(process.stdin, process.stdout);
 }
 
-const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`cross-agent: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

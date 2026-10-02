@@ -214,6 +214,24 @@ test("the packaged entry point runs from its own shebang, as the bin field names
   assert.equal(written(root).mode, "solo");
 });
 
+// @anchor symlinkedEntryPoint
+test("the CLI runs when started through a link: npm's bin link and a linked checkout", async (t) => {
+  // `npm link` and `npm install -g` install the bin as a symlink, and a checkout may be
+  // reached through one. Node runs the module at its real path, so an entry point that
+  // compared the path it was started by with its own URL did nothing and exited 0.
+  const root = scratch(t);
+  const links = scratch(t);
+  const entry = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
+  fs.mkdirSync(path.join(links, "bin"));
+  fs.symlinkSync(entry, path.join(links, "bin", "cross-agent"));
+  fs.symlinkSync(fileURLToPath(new URL("..", import.meta.url)), path.join(links, "checkout"));
+  for (const bin of [[path.join(links, "bin", "cross-agent")], [process.execPath, path.join(links, "checkout", "src", "cli.ts")]]) {
+    const ran = await run(["--help"], root, bin);
+    assert.equal(ran.code, 0, `${bin.join(" ")}: ${ran.stderr}`);
+    assert.match(ran.stdout, /cross-agent init/, `${bin.join(" ")} printed its usage`);
+  }
+});
+
 // @anchor exitProtocol
 test("the exit protocol is one set of codes, and --help prints it beside every verb", async (t) => {
   const { EXIT } = await import("../src/cli.ts");

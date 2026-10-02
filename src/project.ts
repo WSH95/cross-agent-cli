@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CONFIG_PATH } from "./config.ts";
 import { gitEnvironment } from "./worktree.ts";
@@ -54,6 +55,23 @@ async function inMainWorktree(cwd: string): Promise<string> {
  * it must not act on half of. The server takes `--project` alone; the operator CLI takes
  * its own flags and shares the parser, so a second flag does not break the first.
  */
+/**
+ * Whether this process was started to run the module at `moduleUrl`, the entry point's own
+ * `import.meta.url`: the script node was given, `argv[1]`, and the module, compared by real
+ * path. Node runs a main module at its real path, so the bin link `npm link` installs and a
+ * checkout reached through a link are that same file under another name, and an entry point
+ * comparing names did nothing and exited 0 (task 12's review).
+ */
+export function isMainModule(moduleUrl: string): boolean {
+  const script = process.argv[1];
+  if (script === undefined) return false;
+  try {
+    return fs.realpathSync(script) === fs.realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
 export function parseFlags(argv: readonly string[], spec: Record<string, string>): Flags {
   const usage = Object.entries(spec).map(([flag, value]) => `[${flag} <${value}>]`).join(" ");
   const values: Record<string, string> = {};

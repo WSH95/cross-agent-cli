@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { gitMutate } from "./gitmutate.ts";
@@ -14,7 +13,7 @@ import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
 import type { EffectiveGitPolicy, ModeLead, Workspace } from "./modes.ts";
-import { discoverProject, parseFlags } from "./project.ts";
+import { discoverProject, isMainModule, parseFlags } from "./project.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
 import { verifyWorktree } from "./worktree.ts";
@@ -994,8 +993,7 @@ export async function runCli(
   return answered.code;
 }
 
-const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   void runCli(process.argv.slice(2), process.cwd(), {
     out: (text) => process.stdout.write(text),
     err: (text) => process.stderr.write(text),
