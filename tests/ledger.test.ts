@@ -13,7 +13,7 @@ import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { git } from "./helpers/git.ts";
-import { layoutRoot, poll } from "./helpers/project.ts";
+import { layoutRoot, mainCheckout, poll } from "./helpers/project.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -708,6 +708,18 @@ test("excludeLedger at a linked root writes the repository's common info/exclude
     assert.equal(fs.readFileSync(path.join(made.root, ".git"), "utf8").startsWith("gitdir: "), true, `${layout}: the pointer is untouched`);
     assert.equal(await git(made.root, "status", "--porcelain", "--untracked-files=all"), "", `${layout}: nothing for git status to show`);
   }
+});
+
+// @anchor excludeLedgerNewlineCommonDir
+test("excludeLedger at a linked root whose common directory's path holds a newline writes that directory's info/exclude", async (t) => {
+  const temporary = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-exclude-")));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const main = await mainCheckout(temporary, "M\nname ");
+  const linked = path.join(temporary, "L");
+  await git(main, "worktree", "add", "-b", "feature", linked);
+  excludeLedger(linked);
+  const lines = fs.readFileSync(path.join(main, ".git", "info", "exclude"), "utf8").split(/\r?\n/);
+  for (const line of [".cross-agent/", ".worktrees/"]) assert.equal(lines.filter((entry) => entry === line).length, 1, line);
 });
 
 // @anchor excludeLedgerKeepsFile

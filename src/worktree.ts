@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG_PATH } from "./config.ts";
 import { run } from "./gitmutate.ts";
+import { gitdirOf, withoutLineEnds } from "./ledger.ts";
 
 /**
  * What a verified linked worktree is: its administrative directory, its work tree, the
@@ -269,8 +270,10 @@ export async function locateRepository(projectRoot: string): Promise<Located> {
 
 async function asMainCheckout(workTree: string, gitDir: string): Promise<Located> {
   // Asked without a work tree named: `--work-tree=<root>` would make a work tree of a bare
-  // repository at `<root>/.git`, whose parent is no work tree of it.
-  const [bare, found] = withoutNewline(await git(workTree, "rev-parse", "--is-bare-repository", "--absolute-git-dir")).split("\n");
+  // repository at `<root>/.git`, whose parent is no work tree of it. A path is asked for on
+  // its own, since one may hold a newline.
+  const bare = withoutNewline(await git(workTree, "rev-parse", "--is-bare-repository"));
+  const found = withoutNewline(await git(workTree, "rev-parse", "--absolute-git-dir"));
   if (await realpath(found) !== gitDir) return refused(`git at ${workTree} reads the repository at ${found}, not ${gitDir}`);
   if (bare === "true") {
     return { kind: "unsupported", workTree, gitDir, reason: `${gitDir} is a bare repository, and ${workTree} is no work tree of it: serve one of its worktrees` };
@@ -309,23 +312,24 @@ async function asLinkedGitDirectory(workTree: string, pointer: string): Promise<
 async function asLinkedWorktree(workTree: string, pointer: string): Promise<Located> {
   // Read as a candidate only, the way git reads a pointer: one `gitdir:` line, relative to
   // the root. What it claims is confirmed below before anything acts on it.
-  const named = /^gitdir: (.+)$/.exec((await readFile(pointer, "utf8")).replace(/\s+$/, ""));
+  const named = gitdirOf(await readFile(pointer, "utf8"));
   if (named === null) return refused(`${pointer} is not a worktree pointer: it holds no gitdir: line`);
   let admin: string;
   try {
-    admin = await realpath(path.resolve(workTree, named[1]));
+    admin = await realpath(path.resolve(workTree, named));
   } catch (error) {
-    return refused(`${pointer} names ${named[1]}, which cannot be resolved: ${message(error)}`);
+    return refused(`${pointer} names ${named}, which cannot be resolved: ${message(error)}`);
   }
   let common: string | undefined;
   try {
-    common = (await readFile(path.join(admin, "commondir"), "utf8")).trim();
+    common = withoutLineEnds(await readFile(path.join(admin, "commondir"), "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   // @anchor rootIsLinked
   if (common === undefined) {
-    const [absolute, shared] = withoutNewline(await git(workTree, "rev-parse", "--absolute-git-dir", "--git-common-dir")).split("\n");
+    const absolute = withoutNewline(await git(workTree, "rev-parse", "--absolute-git-dir"));
+    const shared = withoutNewline(await git(workTree, "rev-parse", "--git-common-dir"));
     if (await realpath(absolute) === admin && await realpath(path.resolve(workTree, shared)) === admin) {
       return {
         kind: "unsupported", workTree, gitDir: admin,
@@ -335,7 +339,8 @@ async function asLinkedWorktree(workTree: string, pointer: string): Promise<Loca
     return refused(`${pointer} leads to ${admin}, which names no common directory`);
   }
   const commonDir = await realpath(path.resolve(admin, common));
-  const [absolute, shared] = withoutNewline(await explicitly(admin, workTree, "rev-parse", "--absolute-git-dir", "--git-common-dir")).split("\n");
+  const absolute = withoutNewline(await explicitly(admin, workTree, "rev-parse", "--absolute-git-dir"));
+  const shared = withoutNewline(await explicitly(admin, workTree, "rev-parse", "--git-common-dir"));
   if (await realpath(absolute) !== admin || await realpath(path.resolve(workTree, shared)) !== commonDir) {
     return refused(`git reads ${admin} as ${absolute} sharing ${shared}, not as ${pointer} claims`);
   }

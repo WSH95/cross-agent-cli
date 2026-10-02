@@ -830,6 +830,9 @@ Everything below is built, the operator CLI's listing among it
   that administrative directory's `commondir` — no git runs and no ancestor is read
   ahead of a lock — and a pointer that leads nowhere writes nothing
   (`src/ledger.ts#excludingDirectory`, `tests/ledger.test.ts#excludeLedgerLinkedRoot`).
+  Both are read as git reads them, only their trailing line ends removed, so a path
+  keeps its spaces and a newline inside it (`src/ledger.ts#gitdirOf`,
+  `tests/ledger.test.ts#excludeLedgerNewlineCommonDir`).
   The two lines are the same whichever project writes them. The file is written
   whole, through a temporary and a rename, so two first callers — two projects of
   one repository among them — leave each entry once
@@ -2127,10 +2130,12 @@ work tree that registers it. A `.git` directory is a main checkout unless the ro
 own git, asked without a work tree named, calls it bare — `--work-tree=<root>` would
 make a work tree of a bare repository at `<root>/.git` — and then it is `unsupported`.
 A `.git` file is read as a candidate only, through its `gitdir:` line and that
-administrative directory's `commondir`. With no `commondir`, and `rev-parse
+administrative directory's `commondir`, each as git reads it (`src/ledger.ts#gitdirOf`),
+and every path git prints is asked for on its own, since one may hold a newline
+(`tests/worktree.test.ts#locateRepositoryNewlinePaths`). With no `commondir`, and `rev-parse
 --absolute-git-dir` and `--git-common-dir` both naming that directory, the root is a
 main checkout with a separated git directory, a submodule, or the umbrella itself —
-`unsupported` (`#rootIsLinked`). A `.git` that is a symbolic link is `unsupported` too,
+`unsupported` (`src/worktree.ts#rootIsLinked`). A `.git` that is a symbolic link is `unsupported` too,
 carrying its target, when git at the root reads that target as both its git directory
 and its own common directory, the root as its top level, and nothing as bare: a main
 checkout whose git directory lies outside it, as a separated main's does. Any other

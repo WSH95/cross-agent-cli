@@ -179,14 +179,34 @@ function excludingDirectory(projectRoot: string): string | null {
   if (entry?.isDirectory()) return dotGit;
   if (!entry?.isFile()) return null;
   try {
-    const named = /^gitdir: (.+)$/.exec(fs.readFileSync(dotGit, "utf8").replace(/\s+$/, ""));
+    const named = gitdirOf(fs.readFileSync(dotGit, "utf8"));
     if (named === null) return null;
-    const admin = path.resolve(projectRoot, named[1]);
-    const common = path.resolve(admin, fs.readFileSync(path.join(admin, "commondir"), "utf8").trim());
+    const admin = path.resolve(projectRoot, named);
+    const common = path.resolve(admin, withoutLineEnds(fs.readFileSync(path.join(admin, "commondir"), "utf8")));
     return fs.statSync(common, { throwIfNoEntry: false })?.isDirectory() ? common : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * A path git wrote into one of its own files, as git reads it back: every trailing carriage
+ * return and newline removed and nothing else, so the path keeps its spaces and any newline
+ * inside it.
+ */
+export function withoutLineEnds(text: string): string {
+  return text.replace(/[\r\n]+$/, "");
+}
+
+/**
+ * The path a `.git` pointer file names, read as git reads one (`setup.c`'s
+ * `read_gitfile_gently`): the text after a leading `gitdir: `, through `withoutLineEnds`.
+ * Null where the file holds anything else, or names nothing.
+ */
+export function gitdirOf(text: string): string | null {
+  if (!text.startsWith("gitdir: ")) return null;
+  const named = withoutLineEnds(text).slice("gitdir: ".length);
+  return named === "" ? null : named;
 }
 
 /**

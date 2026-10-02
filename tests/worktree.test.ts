@@ -511,6 +511,24 @@ test("a main checkout whose .git links to its own git directory is unsupported, 
   }
 });
 
+// @anchor locateRepositoryNewlinePaths
+test("a main checkout and a common directory whose paths hold a newline locate, as the worktree sharing that directory does", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M\nname ");
+  const linked = path.join(temporary, "L");
+  await git(main, "worktree", "add", "-b", "feature", linked);
+  const own = repositoryOf(await locateRepository(main));
+  assert.equal(own.kind, "main");
+  assert.equal(own.gitDir, path.join(main, ".git"));
+  // The pointer names an administrative directory under that common directory, newline and
+  // trailing space included, and git reads it whole.
+  const shared = repositoryOf(await locateRepository(linked));
+  assert.equal(shared.kind, "linked");
+  assert.equal(shared.commonDir, path.join(main, ".git"));
+  assert.equal(shared.main, main);
+  assert.equal(shared.branch, "feature");
+});
+
 // @anchor locateRepositoryBareDotGitAllowed
 test("a bare repository at U/.git, its main unlabelled under worktreeConfig, has bare-linked worktrees", async (t) => {
   const fixture = await bareDotGitProject(t);
