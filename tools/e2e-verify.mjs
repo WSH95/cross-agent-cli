@@ -376,7 +376,9 @@ for (const record of run) {
           // Grok's dispatcher: the tool it dispatches to is the call, in the one recorded shape.
           const input = block.input;
           const keys = input !== null && typeof input === "object" && !Array.isArray(input) ? Object.keys(input).sort().join(" ") : "";
-          const target = keys === "tool_input tool_name" && typeof input.tool_name === "string" ? input.tool_name : undefined;
+          const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+          const target = keys === "tool_input tool_name" && typeof input.tool_name === "string" && object(input.tool_input)
+            ? input.tool_name : undefined;
           const bare = target?.startsWith(grokServerPrefix) ? target.slice(grokServerPrefix.length) : target;
           if (bare === undefined || !serverTools.has(bare)) { unknownItems.push("use_tool in a shape no archived run recorded"); continue; }
           calls.push(target);
@@ -650,6 +652,14 @@ function launcherFor(settings) {
   const shells = new Set(["sh", "bash", "dash", "zsh", "ksh", "ash", "mksh", "hush"]);
   const declarations = new Set(["export", "declare", "typeset", "local", "readonly"]);
   const shellCodeVariables = new Set(["BASH_ENV", "ENV", "PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4"]);
+  // What a data command reads from its environment that can make it run a program, from the
+  // audit of `dataOnly` against each command's manual and binary (task 12, fix round 2): wget's
+  // startup files (`WGETRC`, `SYSTEM_WGETRC`, and `HOME`'s `.wgetrc`), whose `use_askpass` names
+  // a program, and the askpass programs themselves; rg's config file, read as flags, `--pre`
+  // among them; iconv's module path, whose modules are shared objects it loads; and the
+  // dynamic loader's own, which reach every command here. None of them is read.
+  const unreadEnvironment = new Set(["WGETRC", "SYSTEM_WGETRC", "HOME", "WGET_ASKPASS", "SSH_ASKPASS",
+    "RIPGREP_CONFIG_PATH", "GCONV_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"]);
   const substitutionsIn = (text) => /\$\(|`/.test(text);
   const shellFlags = "abefhiklmnprtuvxBCDEHPT";
   const shellLong = new Set(["--login", "--noprofile", "--norc", "--posix", "--restricted", "--verbose", "--version",
@@ -749,14 +759,46 @@ function launcherFor(settings) {
     + "--warc-file --warc-header --warc-max-size --warc-dedup --warc-tempdir --level --backups --accept --reject "
     + "--accept-regex --reject-regex --regex-type --domains --exclude-domains --follow-tags --ignore-tags "
     + "--include-directories --exclude-directories") };
-  // The other data commands' options that name a program they run, from the same audit of
-  // every command in `dataOnly` against its own manual: rg's `--pre` and `--hostname-bin`,
-  // and sort's `--compress-program`, which GNU getopt also takes abbreviated, down to `--co`
-  // (`--c` is `--check`'s too, so sort refuses it).
-  const programOptions = new Map([
-    ["rg", [{ name: "--pre" }, { name: "--hostname-bin" }]],
-    ["sort", [{ name: "--compress-program", shortest: "--co" }]],
+  // The other data commands whose options name a program they run, from the same audit of
+  // every command in `dataOnly` against its own manual: GNU sort 9.4's `--compress-program`,
+  // and ripgrep 14.1.1's `--pre` and `--hostname-bin`, each with the whole table its own
+  // `--help` lists, so an option the table does not hold is known to be unknown. sort's
+  // getopt takes an unambiguous abbreviation (`--co` is `--compress-program`; `--c` is
+  // `--check`'s too, and sort refuses it); rg takes none.
+  const sortSpec = { flags: "bdfgiMhnRrVcCmsuz", values: "koStT", abbreviates: true, long: long(
+    "--ignore-leading-blanks --dictionary-order --ignore-case --general-numeric-sort --ignore-nonprinting --month-sort "
+    + "--human-numeric-sort --numeric-sort --random-sort --reverse --version-sort --debug --merge --stable --unique "
+    + "--zero-terminated --help --version",
+    "--random-source --sort --batch-size --compress-program --files0-from --key --output --buffer-size "
+    + "--field-separator --temporary-directory --parallel", "--check") };
+  const rgSpec = { flags: "zsFivxUPSawL.ubhnN0opqHIclV", values: "efEmjgdtTABCMr", long: long(
+    "--search-zip --case-sensitive --crlf --fixed-strings --ignore-case --invert-match --line-regexp --mmap --multiline "
+    + "--multiline-dotall --no-unicode --null-data --pcre2 --smart-case --stop-on-nonmatch --text --word-regexp "
+    + "--auto-hybrid-regex --no-pcre2-unicode --binary --follow --glob-case-insensitive --hidden "
+    + "--ignore-file-case-insensitive --no-ignore --no-ignore-dot --no-ignore-exclude --no-ignore-files "
+    + "--no-ignore-global --no-ignore-parent --no-ignore-vcs --no-require-git --one-file-system --unrestricted "
+    + "--block-buffered --byte-offset --column --heading --help --include-zero --line-buffered --line-number "
+    + "--no-line-number --max-columns-preview --null --only-matching --passthru --pretty --quiet --trim --vimgrep "
+    + "--with-filename --no-filename --sort-files --count --count-matches --files-with-matches --files-without-match "
+    + "--json --debug --no-ignore-messages --no-messages --stats --trace --files --no-config --pcre2-version --type-list "
+    + "--version --ignore --ignore-dot --ignore-exclude --ignore-files --ignore-global --ignore-messages --ignore-parent "
+    + "--ignore-vcs --messages --no-auto-hybrid-regex --no-binary --no-block-buffered --no-byte-offset --no-column "
+    + "--no-context-separator --no-crlf --no-encoding --no-fixed-strings --no-follow --no-glob-case-insensitive "
+    + "--no-heading --no-hidden --no-ignore-file-case-insensitive --no-include-zero --no-invert-match --no-json "
+    + "--no-line-buffered --no-max-columns-preview --no-mmap --no-multiline --no-multiline-dotall --no-one-file-system "
+    + "--no-pcre2 --no-pre --no-search-zip --no-sort-files --no-stats --no-text --no-trim --passthrough --pcre2-unicode "
+    + "--print0 --require-git --unicode",
+    "--regexp --file --pre --pre-glob --dfa-size-limit --encoding --engine --max-count --regex-size-limit --threads "
+    + "--glob --iglob --ignore-file --max-depth --maxdepth --max-filesize --type --type-not --type-add --type-clear "
+    + "--after-context --before-context --color --colors --context --context-separator --field-context-separator "
+    + "--field-match-separator --hostname-bin --hyperlink-format --max-columns --path-separator --replace --sort "
+    + "--sortr --generate") };
+  const programSpecs = new Map([
+    ["sort", { spec: sortSpec, runs: new Set(["--compress-program"]) }],
+    ["rg", { spec: rgSpec, runs: new Set(["--pre", "--hostname-bin"]) }],
   ]);
+  // A value-taking option handed the next word as its value, when that word is another option.
+  const optionAsValue = ({ value, separate }) => separate === true && typeof value === "string" && value.length > 1 && value.startsWith("-");
 
   /**
    * One command list, read as bash reads it: its simple commands — each its words, the stdin
@@ -1255,6 +1297,9 @@ function launcherFor(settings) {
     const match = /^([A-Za-z_]\w*)(?:\[[^\]]*\])?\+?=([\s\S]*)$/.exec(word.value);
     if (match === null) return pass;
     const [, name, code] = match;
+    if (unreadEnvironment.has(name)) {
+      return context.named || namesTarget(code) ? doubt("a file or program the environment names, which this grammar does not read", word.value) : pass;
+    }
     if (name !== "NODE_OPTIONS" && !shellCodeVariables.has(name)) return pass;
     const named = context.named || namesTarget(code);
     if (word.expansions) return named ? doubt("an expansion in a code-carrying assignment", word.value) : pass;
@@ -1358,26 +1403,34 @@ function launcherFor(settings) {
       verdict = worse(verdict, doubt("a builtin may evaluate a quoted substitution or subscript", values(words).join(" ")));
     }
     if (name === "wget") return worse(verdict, wgetRun(words, command, context));
-    const runs = programOptions.get(name);
-    if (runs === undefined) return verdict;
-    for (let k = 1; k < words.length; k++) {
-      const value = words[k].value;
-      if (value === "--") break;
-      if (words[k].expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
-      const equals = value.indexOf("=");
-      const flag = equals === -1 ? value : value.slice(0, equals);
-      for (const { name: option, shortest } of runs) {
-        const abbreviated = shortest !== undefined && flag.length > 2 && option.startsWith(flag);
-        if (abbreviated && flag.length < shortest.length) {
-          verdict = worse(verdict, context.named ? doubt("an abbreviation the command itself refuses as ambiguous", value) : pass);
-          continue;
+    const modeled = programSpecs.get(name);
+    return modeled === undefined ? verdict : worse(verdict, programRun(words, command, context, modeled));
+  }
+
+  /**
+   * sort and rg, whose parsers read options wherever they stand among the operands: the
+   * program an option names is judged as a command word, and on a line that names an engine
+   * an option the table does not hold — an abbreviation sort itself refuses as ambiguous
+   * included — and a value-taking option handed another option as its value are each `?`.
+   */
+  function programRun(words, command, context, { spec, runs }) {
+    const line = values(words).join(" ");
+    let verdict = pass;
+    let k = 1;
+    while (k < words.length) {
+      const word = words[k];
+      if (!word.expansions && (word.value === "-" || !word.value.startsWith("-"))) { k++; continue; }
+      const walk = options(words, k, spec);
+      if (!walk.known && context.named) verdict = worse(verdict, doubt(unmodeled, line));
+      if (walk.expanded) return context.named ? worse(verdict, doubt(unmodeled, line)) : verdict;
+      for (const read of walk.read) {
+        if (optionAsValue(read) && context.named) verdict = worse(verdict, doubt("an option handed another option as its value", line));
+        if (runs.has(read.option) && read.value !== undefined && read.value !== "") {
+          verdict = worse(verdict, judgeWords([asWord(read.value)], command, context));
         }
-        if (flag !== option && !abbreviated) continue;
-        const program = equals === -1 ? words[++k]?.value : value.slice(equals + 1);
-        if (words[k]?.expansions) return worse(verdict, context.named ? doubt(unmodeled, value) : pass);
-        if (program !== undefined && program !== "") verdict = worse(verdict, judgeWords([asWord(program)], command, context));
-        break;
       }
+      if (walk.ended) break;
+      k = walk.k > k ? walk.k : k + 1;
     }
     return verdict;
   }
@@ -1403,7 +1456,9 @@ function launcherFor(settings) {
       const walk = options(words, k, wgetSpec);
       if (!walk.known && context.named) verdict = worse(verdict, doubt(unmodeled, line));
       if (walk.expanded) return context.named ? worse(verdict, doubt(unmodeled, line)) : verdict;
-      for (const { option, value } of walk.read) {
+      for (const read of walk.read) {
+        const { option, value } = read;
+        if (optionAsValue(read) && context.named) verdict = worse(verdict, doubt("an option handed another option as its value", line));
         if (option === "--use-askpass") verdict = worse(verdict, askpass(value));
         else if (option === "-e" || option === "--execute") {
           // wget refuses a command it cannot parse and runs nothing at all.
@@ -1420,7 +1475,8 @@ function launcherFor(settings) {
   /**
    * Past a command's options, getopt style, against `spec` (see the tables above). Returns
    * the index of the first operand, whether every option was one the table knows, each
-   * option read with its value, and whether a `--` ended them.
+   * option read with its value — `separate` when that value was the next word — and whether
+   * a `--` ended them.
    */
   function options(words, k, spec) {
     let known = true;
@@ -1433,12 +1489,17 @@ function launcherFor(settings) {
       if (word === "-" || !word.startsWith("-")) break;
       if (word.startsWith("--")) {
         const equals = word.indexOf("=");
-        const option = equals === -1 ? word : word.slice(0, equals);
+        const spelled = equals === -1 ? word : word.slice(0, equals);
+        // GNU getopt's unambiguous abbreviation, where the command takes one; an ambiguous
+        // one the command refuses is unknown here.
+        const matches = spec.abbreviates && spec.long?.[spelled] === undefined
+          ? Object.keys(spec.long).filter((name) => name.startsWith(spelled)) : [];
+        const option = matches.length === 1 ? matches[0] : spelled;
         const kind = spec.long?.[option];
         if (kind === undefined) known = false;
         if (kind === "value" && equals === -1) {
           if (words[k + 1]?.expansions) return { k, known: false, expanded: true, read };
-          read.push({ option, value: words[k + 1]?.value }); k += 2; continue;
+          read.push({ option, value: words[k + 1]?.value, separate: true }); k += 2; continue;
         }
         read.push({ option, value: equals === -1 ? undefined : word.slice(equals + 1) });
         k++;
@@ -1461,7 +1522,7 @@ function launcherFor(settings) {
           if (rest !== "") read.push({ option: `-${letter}`, value: rest });
           else {
             if (words[k + 1]?.expansions) return { k, known: false, expanded: true, read };
-            read.push({ option: `-${letter}`, value: words[k + 1]?.value }); next = k + 2;
+            read.push({ option: `-${letter}`, value: words[k + 1]?.value, separate: true }); next = k + 2;
           }
           break;
         }

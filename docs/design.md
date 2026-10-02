@@ -2945,7 +2945,8 @@ of its text — a Grok session's inherited slash commands include one called
 `delegate`, and the word proves nothing (`tools/e2e-verify.mjs`). That scan
 reads Claude's and Grok's `tool_use` blocks against each engine's own tool
 vocabulary, the names its archived transcripts call, Grok's `use_tool` dispatcher
-in the one shape a run recorded, and Codex's `agent_message`,
+in the one shape a run recorded (`tool_name` naming this server's tool, `tool_input` an
+object, nothing else), and Codex's `agent_message`,
 `command_execution` and `mcp_tool_call` items, and **nothing else**: a tool outside
 its engine's list or a call with no name answers `?`
 (`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for one event it reads by its whole shape and passes as no

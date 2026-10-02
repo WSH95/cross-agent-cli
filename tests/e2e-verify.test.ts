@@ -350,6 +350,10 @@ test("a Claude or Grok tool call is read only when the archived runs show that e
     ["grok", [toolCall("use_tool", { tool_name: "shell__run", tool_input: { command: "claude -p hi" } })], "?"],
     ["grok", [toolCall("use_tool", { server: "cross-agent", function: "delegate" })], "?"],
     ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: {}, extra: 1 })], "?"],
+    // `tool_input` is an object in every recorded call: anything else in its place is a question.
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: "claude -p hi" })], "?"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: null })], "?"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: ["claude -p hi"] })], "?"],
     ["grok", [toolCall("Bash", { command: "true" })], "?"],
     // What was read is still judged first.
     ["claude", [toolCall("Bash", { command: "claude -p hi" }), toolCall("Agent", { prompt: "x" })], "FAIL"],
@@ -964,6 +968,53 @@ test("a data command's option that runs a program is judged as that program, joi
     ["wget -e robots=off https://example.com/claude", "pass"],
     ["wget -e use_askpass=/usr/lib/ssh/x11-ssh-askpass https://example.com", "pass"],
     ["sort --compress-program=gzip data.txt", "pass"],
+  ]);
+});
+
+// @anchor environmentConfigFiles
+test("a file or program a data command takes from the environment is unread beside an engine's name", async (t) => {
+  // Task 12's re-review found `WGETRC=…` and `RIPGREP_CONFIG_PATH=…` passing: wget runs the
+  // askpass program its startup file names, and rg reads its config file as flags, `--pre`
+  // among them. The audit of `dataOnly` against each command's manual and binary adds wget's
+  // system file, `HOME`'s `.wgetrc` and askpass programs, iconv's `GCONV_PATH` modules, and
+  // the loader's own variables. Assigned as a prefix, through `env` or by `export`, before
+  // the line that names an engine or on it.
+  await judgedAs(t, [
+    ["WGETRC=/tmp/rc wget https://example.com/claude", "?"],
+    ["env WGETRC=/tmp/rc wget https://example.com/claude", "?"],
+    ["export WGETRC=/tmp/rc\nwget https://example.com/claude", "?"],
+    ["SYSTEM_WGETRC=/tmp/rc wget https://example.com/claude", "?"],
+    ["HOME=/tmp/home wget https://example.com/claude", "?"],
+    ["SSH_ASKPASS=/tmp/askpass wget --use-askpass= https://example.com/claude", "?"],
+    ["RIPGREP_CONFIG_PATH=/tmp/rgrc rg claude src", "?"],
+    ["env RIPGREP_CONFIG_PATH=/tmp/rgrc rg claude src", "?"],
+    ["export RIPGREP_CONFIG_PATH=/tmp/rgrc; rg claude src", "?"],
+    ["declare -x RIPGREP_CONFIG_PATH=/tmp/rgrc; rg claude src", "?"],
+    ["GCONV_PATH=/tmp/gconv iconv -f UTF-8 -t ASCII notes/claude/a.txt", "?"],
+    ["LD_PRELOAD=/tmp/x.so cat notes/claude/a.txt", "?"],
+    // Away from an engine's name they are data, as the rest of such a line is.
+    ["WGETRC=/tmp/rc wget https://example.com", "pass"],
+    ["export RIPGREP_CONFIG_PATH=/tmp/rgrc; rg pattern src", "pass"],
+  ]);
+});
+
+// @anchor unknownProgramOptions
+test("an option the model of wget, sort or rg does not hold, or one handed another as its value, is a question", async (t) => {
+  // Task 12's re-review found each of these passing on a line that names an engine. sort
+  // refuses an option it does not know, rg too (it takes no abbreviation), and wget's `-n`
+  // takes the next word whole, so none of them runs a program; this reader cannot say so.
+  await judgedAs(t, [
+    ["sort --foobar=claude data.txt", "?"],
+    ["rg --pr=claude README.md", "?"],
+    ["wget -n --use-askpass=claude https://example.com", "?"],
+    ["sort -o --compress-program=claude data.txt", "?"],
+    ["rg -e --pre=claude README.md", "?"],
+    // Options each table holds, and a lone `-`, which is no option.
+    ["rg -n --hidden --no-ignore -g '*.py' -C2 claude .", "pass"],
+    ["rg claude src -l --sort path", "pass"],
+    ["sort -u -k2,2 -t, -o out.csv claude.csv", "pass"],
+    ["sort --numeric-sort --rev claude.txt", "pass"],
+    ["wget -O - https://example.com/claude", "pass"],
   ]);
 });
 
