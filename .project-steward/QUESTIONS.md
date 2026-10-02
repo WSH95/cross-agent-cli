@@ -22,11 +22,20 @@ Add the answer to the item when it is resolved.
       call refused at Grok's permission layer before the server sees it
       (`docs/probes.md#grokDenyMcp`); the specialist row by ancestry stays the
       guard.
-- [ ] Does Codex honour `tool_timeout_sec` from a plugin's `.mcp.json`, or
-      only from `config.toml`? (T14)
-- [ ] Under a Claude Code host, should Claude-engine specialists use the
+- [x] Does Codex honour `tool_timeout_sec` from a plugin's `.mcp.json`, or
+      only from `config.toml`? (T14) **Answered at T14**: Codex's plugin form is
+      `.codex-plugin/plugin.json`, not an `.mcp.json`, and its
+      `tool_timeout_sec: 3600` was honoured: a 600-second `wait` through the
+      plugin returned at 600.004 s, and a copy declaring 60 cut the same call at
+      60 s (`docs/probes.md#codexHostTimeout`; `VERIFY.md` T14, "Probes", B3).
+- [x] Under a Claude Code host, should Claude-engine specialists use the
       host's own Agent tool instead of a nested `claude -p`, to share the
-      prompt cache? (after T13's end-to-end run)
+      prompt cache? (after T13's end-to-end run) **Out of scope** (the plan the
+      user approved, 2026-09-30): a specialist is a headless CLI process the
+      server spawns under its own sandbox, found by the ledger and the environ
+      scan and bound by the deny list; a host's own subagent tool would run a
+      specialist outside all three, and the design's loop guard and "Not built"
+      list are written for processes the server spawns.
 - [x] The authority walk stops at 8 hops. A Claude Code host started inside
       another Claude Code session puts the MCP server 9 hops from init, so it
       fails closed to the specialist row and offers no `delegate` (T13; an

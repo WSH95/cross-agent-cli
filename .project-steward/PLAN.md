@@ -9,8 +9,7 @@ probes P1, P2 (Codex, Grok), P3, P3b, P5, P7 and the design changes they
 forced (93b9956, 529fc46, dda08d1). P8 (Grok `streaming-messages-json`),
 P9 (per-engine lead mount and instruction delivery), P10 (`codex exec
 resume` keeps neither cwd nor sandbox) recorded on 2026-09-09 (`atc-s96.21`,
-closed). Open: probe P2 for Claude, blocked on the bwrap AppArmor profile
-(`atc-s96.17`).
+closed). Probe P2 for Claude ran at T13 (`atc-s96.17`, closed).
 
 ## M1: core runtime (done 2026-09-19, merged as `bd37e0e`; `VERIFY.md`)
 
@@ -38,7 +37,7 @@ Engine contract v2 (S5, `.22`); T7 Claude (`.7`), T8 Codex (`.8`), T9 Grok
 refresh after the adapters (`atc-vao`, closed) and the final whole-branch
 review's fix (beads `.39`–`.43` for its residuals).
 
-## M3: modes, skills and packaging
+## M3: modes, skills and packaging (done 2026-10-01)
 
 Modes and the worktree workspace provider with the built-in `dev-team` and
 `solo` (S8, `.23`); T12 the launcher skill and the mode loops (`.12`); then
@@ -52,9 +51,13 @@ Merged 2026-09-19 as `3023e30` (`VERIFY.md` M3): S8 (`.23`), Task 4b (root git
 tools and the journal's named steps, part of `.24`), 4c (`consult`, the
 no-config `solo` default, `worktree: true` one-shots; `.27`), T12 (`.12`).
 T13 merged 2026-09-19 as `e9cbac0` (`.13`, `.17`, `.52`, `.54`, `.55` closed;
-`VERIFY.md` T13 section). Open: S11 (the rest of `.24`), T14, T15.
+`VERIFY.md` T13 section). Then 6b (pre-flight probes and hardening) as `d428145`,
+S11 (the rest of `.24`) as `ebc9960`, T14 as `827739c` and T15 as `157b6b4`, each
+with its `VERIFY.md` section.
 
-## M4: operator CLI and decision
+## M4: operator CLI and decision (done 2026-10-02)
 
 T16 operator CLI (`.16`); go or no-go for the plugin as the second binding
-(`.18`).
+(`.18`). T16 merged as `1f57683`, the follow-ups (task 11) as `71696ff`, the final
+whole-branch review's fixes as `7bf9731`, and Decision 0011 as `8074e8f`, each with its
+`VERIFY.md` section.
