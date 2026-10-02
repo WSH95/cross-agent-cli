@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T09:31:22Z — cli
+Task 12: the escalation pass landed 84ba856 on the task branch (808/807/1; citations 1294, 0 by line). Its review is done. The host-configuration rule (regular files only) holds at both gates. Three verifier classes remain: Node options that load code from unread files, assignments the grammar does not read, and --entry-url URLs. Each is being fixed as a class in one wrap-up, verified by the controller. The root's own untracked host link is ruled a stated boundary in design section 4 and the README. Next: verify the wrap-up, merge, then the Decision 0011 writer and the close.
+
 ### 2026-10-02T08:23:56Z — claude
 [auto-checkpoint] Task 12 fix round 2 landed (469d86b; 793/792/1); round-3 re-review running (one seat in: symlink-guard and Node inline-loader gaps open).
 
