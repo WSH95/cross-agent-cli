@@ -58,7 +58,9 @@ export async function verifyWorktree(projectRoot: string, worktreePath: string, 
   let operation = "resolve the project root and worktree path";
   try {
     const root = await realpath(projectRoot);
-    const workTree = await realpath(worktreePath);
+    // A relative path is the project's: the server's own directory is wherever its host
+    // started it, which for the Codex plugin is its cached copy.
+    const workTree = await realpath(path.resolve(root, worktreePath));
     operation = "list the project's linked worktrees";
     // NUL-delimited porcelain disables C-style quoting, even for newlines in paths.
     const listing = await git(root, "worktree", "list", "--porcelain", "-z");

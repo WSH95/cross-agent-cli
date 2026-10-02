@@ -818,6 +818,15 @@ test("the converter never writes over a draft that is already there", async (t) 
   assert.match(err, /roles\/planner\.md/, "the refusal names the file it would have replaced");
 });
 
+// @anchor worktreePathAbsolute
+test("both dev-team loops make the worktree path absolute, as delegate's cwd must be", () => {
+  // `delegate` refuses a relative `cwd`; the host-placed loop wrote `<git.worktreeDir>/<slug>`
+  // where the engine-placed one wrote the project root before it (task 12's review).
+  for (const mode of ["dev-team", "dev-team-engine"]) {
+    assert.match(flat(loop(mode)), /`<worktree path>` is `<project root>\/<git\.worktreeDir>\/<slug>`/, mode);
+  }
+});
+
 // @anchor implementerSandboxSentence
 test("the implementer is told its shell and its file tools write its worktree alone, and that its pointer is verified", () => {
   // The sandbox binds a Claude role's shell; its file tools are fenced by the permission

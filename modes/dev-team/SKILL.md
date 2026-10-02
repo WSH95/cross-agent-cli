@@ -16,11 +16,11 @@ Because it is all four, its alphabet is the narrowest of them: letters, digits,
 `.`, `_` and `-`, starting with a letter, a digit or an underscore, or the
 journal refuses the call before any git runs.
 `<default>` is `project.defaultBranch`, and `<worktree path>` is
-`<git.worktreeDir>/<slug>`. `describe_mode` gives you the policy those come
-from, and each role's own prompt — the text `delegate` launches that role with,
-so a brief below adds this task's own work to it and never repeats it;
-`list_roles` gives you the engine, model and effort behind each role name below,
-and you announce each of them as you dispatch it.
+`<project root>/<git.worktreeDir>/<slug>`, absolute. `describe_mode` gives you
+the policy those come from, and each role's own prompt — the text `delegate`
+launches that role with, so a brief below adds this task's own work to it and
+never repeats it; `list_roles` gives you the engine, model and effort behind
+each role name below, and you announce each of them as you dispatch it.
 
 ## 1. Root check
 

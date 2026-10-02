@@ -130,6 +130,18 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
 }
 
 // @anchor gitenvironmentPassesGit
+// @anchor relativeToProjectRoot
+test("verifyWorktree reads a relative worktree path against the project root, not the server's own directory", async (t) => {
+  const { root } = await repository(t);
+  await git(root, "worktree", "add", "-b", "task/relative", path.join(".worktrees", "relative"));
+  // The server's working directory is wherever its host started it — the Codex plugin's is
+  // its cached copy — so a path the loop writes relative to the project is the project's.
+  assert.notEqual(await realpath(process.cwd()), await realpath(root));
+  const verified = await verifyWorktree(root, path.join(".worktrees", "relative"), "task/relative");
+  assert.ok(!("reason" in verified), JSON.stringify(verified));
+  assert.equal(verified.workTree, await realpath(path.join(root, ".worktrees", "relative")));
+});
+
 test("gitEnvironment passes what git needs to run as this user, and nothing else", () => {
   assert.deepEqual(gitEnvironment({
     PATH: "/usr/bin", HOME: "/home/someone", USER: "someone", LANG: "en_GB.UTF-8", LC_ALL: "C",
