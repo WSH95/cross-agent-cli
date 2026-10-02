@@ -2885,6 +2885,70 @@ one (same role, brief and cwd) and relaunched with its brief's first line naming
 config was restored, `cmp`-equal to its copy taken before the round, and the four records
 moved (`deny-targets/cleanup.txt`).
 
+**E8: one `dev-team` task under a Claude Code host, every specialist on Claude under the
+fix** (`e8/`). The rerun rule's run for a change to every Claude spawn line: host placement,
+the adapter's three Claude profiles in one loop — read-only at the root, writable in a
+worktree, read-only in that worktree. The sample was switched to `dev-team` with
+`limits.maxDepth: 1` and every role on `claude-sonnet-5` at medium (`e8/config.diff`). The
+host, started by `tools/claude-host.sh` with `setsid --fork` from the sample and this
+session's markers scrubbed:
+
+```
+claude -p --plugin-dir <worktree> --model claude-sonnet-5 --effort medium \
+  --permission-mode bypassPermissions --output-format stream-json --verbose < e8/prompt.md
+```
+
+prompted "T12-E8 — … add `slug_camel(text) -> str` — the words `slug_words(text)` return, the
+first as it is and each later one with its first character upper-cased, joined with nothing,
+so `slug_camel("Hello, Big World!")` is `"helloBigWorld"` — beside `slugify` in `slugkit/`,
+with tests; use the slug `t12-e8`." Its init line named the plugin's server connected with the
+operator row's twelve tools. It ran 28 turns, 193.8 s by its result line, $0.693:
+
+```
+Skill(cross-agent:cross-agent) → ToolSearch → describe_mode → list_roles → list_tasks
+git_root status / worktree list / branch --list task/*        → clean, main, none
+delegate planner (claude)                     → wait 31 s → 98acff45  31.4 s
+delegate plan-reviewer (claude)               → wait 19 s → 8cfad372  19.3 s, approve
+git_root worktree add -b task/t12-e8 <sample>/.worktrees/t12-e8 main   (the absolute path)
+run_command setup
+delegate implementer (claude, task/t12-e8)    → wait 24 s → d00f1bc5  24.1 s, 101 → 105 tests
+git_mutate add -A … ; git_mutate commit       → 15f7b28
+delegate code-reviewer (claude, read-only)    → wait 23 s → 40367623  22.5 s, ready
+git_mutate rebase main                        → up to date
+git_root merge --ff-only task/t12-e8          → main 90281e2 → 15f7b28
+run_command test where=root                   → 105 tests, OK
+git_root worktree remove …; git_root branch -d task/t12-e8
+Bash: append the run's lines to .cross-agent/log.md
+```
+
+The four `wait` calls each answered `done`, after the `elapsedSeconds` shown. Every specialist's
+live argv, read from `/proc` while it ran (`e8/proc-argv.ndjson`), carried `--permission-mode
+dontAsk`, `--setting-sources project` and `--strict-mcp-config`, and `--tools
+Bash,Read,ToolSearch` for the planner, the plan reviewer and the code reviewer and
+`Bash,Read,Edit,Write,NotebookEdit,ToolSearch` for the implementer; the two worktree specs
+carried `protectedPaths`, the worktree's `.git` and the sample's. The implementer edited
+with `Edit` three times inside its worktree and ran the suite with `Bash`; the code reviewer
+read the branch with `Bash` alone; nothing any of them called was refused.
+
+**The verdict.** `node tools/e2e-verify.mjs --project <sample> --since 98acff45… --slug
+t12-e8`, `CODEX_HOME` unset, at this round's verifier (`e8/e8-verify.txt`): **eight `pass`**,
+exit 0 — the root worktree alone, no `task/*` branch, a clean tree, the suite on `main`, four
+records with their logs at depth 1 against a cap of 1, the journal `worktree-created, git,
+committed, git, merged, tests-passed, worktree-removed, branch-deleted`
+(`defaultShaBeforeMerge` 90281e2, `branchHead` 15f7b28), and the four transcripts read under
+the closed tool vocabulary with no `delegate` and no engine launch.
+
+**Deviations.** The host printed no roster before its first dispatch, and its narration and
+the lines it appended to `.cross-agent/log.md` named `codex`/`gpt-6-luna` for the planner and
+`grok`/`grok-4.7` for both reviewers — the engines earlier runs' lines in that log carry —
+while `list_roles` had answered `claude` for every role and the four records ran on Claude.
+The plan was approved in one round and the code was ready, so no `resume` ran, and the rebase
+was a no-op. The specialists cost $0.420. The sample's config was restored afterwards,
+`cmp`-equal to its copy taken before the round, and the sample is left on `main` at
+`15f7b28`, 105 tests green, clean, the root worktree alone, with E8's four records kept as
+E6's and E7's were (`e8/close.txt`). Every engine run of the round, the probes and E8
+included, cost $3.63 on the subscriptions, with 38,641 Codex tokens in and 294 out.
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
