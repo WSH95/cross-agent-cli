@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T07:10:28Z
+updated_at: 2026-10-02T08:23:56Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -114,7 +114,9 @@ runs `dontAsk` with a `--tools` allowlist, `--setting-sources project` and permi
 rules confining file edits to the workspace; the verifier holes closed; E8 8 pass;
 `npm test` 785 / 784 / 1 skipped). Its re-review left two gaps of the build's own (a
 host-config symlink's referent; a TMPDIR-dependent test) and verifier minors; fix round 2
-is in progress (`task-12-findings-round-2.md`). The residue that comes from Claude Code's
+landed (head `469d86b`, `npm test` 793 / 792 / 1 skipped) and its round-3 re-review is
+running (`task-12-findings-round-2.md`). After two fix rounds, any Important still open goes
+to one escalation pass, then the controller decides with the evidence. The residue that comes from Claude Code's
 own settings merge (a project's `.claude/settings.json` pre-approving file writes) the user
 accepted on 2026-10-02 as a documented limitation. Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
 restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief

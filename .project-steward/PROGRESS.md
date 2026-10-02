@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T08:23:56Z — claude
+[auto-checkpoint] Task 12 fix round 2 landed (469d86b; 793/792/1); round-3 re-review running (one seat in: symlink-guard and Node inline-loader gaps open).
+
 ### 2026-10-02T07:10:28Z — claude
 [auto-checkpoint] Task 12 fix round 2 in progress (symlink referents, a TMPDIR test, verifier minors); the user accepted Claude Code's own settings-merge residue as a documented limitation.
 
