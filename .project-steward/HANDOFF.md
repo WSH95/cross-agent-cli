@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T23:18:41Z
+updated_at: 2026-10-02T23:45:19Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -76,7 +76,10 @@ checkout and a `feature/dotted` worktree initialized as its own project each ran
 each merge landed on its own branch, and a read-only role at the branch root could write neither
 the shared git directory nor its `.git` (`docs/probes.md#worktreeProjects` on the task branch;
 evidence `~/.cache/agent-team/probe-logs/t13-e10/`). The sample ends on `main` at `ba496c7`, with
-`feature/dotted` kept at `0ed8097`. Next: the round-3 re-review (running), then the merge.
+`feature/dotted` kept at `0ed8097`. The round-3 re-review found no Critical or Important issue, which
+ends the review loop. A wrap-up of its Minor findings (wording, two numbers in the record, the verifier
+answering `?` for an unreadable sibling) is running, then the merge. `.102` was filed: `describe_mode`
+should warn when the server's own working directory lies in another initialized project.
 
 ## Next steps
 
