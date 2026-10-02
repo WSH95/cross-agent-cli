@@ -32,9 +32,9 @@ Decisions taken with the user:
 - The user's `agent-plugins` marketplace and the `agent-artifact-maintainer`
   skill are unrelated to this project.
 - New repository `~/Documents/agent-team-cli`, plugin name **`cross-agent`**.
-  Its feature tasks are M7's "first real repository" for the OpenMausBot
-  pack, sent to Sudo one at a time. This repo is not bound by the devpack's
-  AGENTS.md (no 500-line ceiling).
+  Its first feature tasks (T1 to T5) were M7's "first real repository" for the
+  OpenMausBot pack, sent to Sudo one at a time. This repo is not bound by the
+  devpack's AGENTS.md (no 500-line ceiling).
 - Prose in prompts, briefs, and docs stays purposeful; no artificial length
   limit.
 - The devpack's four-role team is the built-in mode **`dev-team`**. A mode is
@@ -42,6 +42,11 @@ Decisions taken with the user:
 - The mode format is **native only**. OpenMausBot's `openmaus.package` v1 is
   not a supported import format; the devpack's role text is carried over once
   by a converter, not read at runtime.
+- **Its own path** (2026-10-02). cross-agent follows its own development path:
+  it is not the OpenMausBot pack's second binding and is not tied to the
+  devpack. If team or workflow configuration needs importing or exporting,
+  that is a feature of this repository, in its own format (`atc-s96.96`;
+  Decision 0011).
 - A **lead** is whichever session holds the lead tools and runs the mode's
   loop. `placement: "host"` puts that session in the operator's own host;
   `placement: "engine"` puts it in a spawned engine. `host` is built first;
@@ -3668,9 +3673,11 @@ Integration probes after each packaging task, run by the operator:
 
 ### Phase 2: evidence and decisions
 
-EVIDENCE.md gets one table per pack task (as for T7 to T9 in 0.4.0) plus the
-probes and the end-to-end runs. Pack findings feed 0.4.x fixes; a Decision
-records the go or no-go for the plugin as the second binding (`atc-s96.18`).
+The probes and the end-to-end runs are recorded in `docs/probes.md` and
+`VERIFY.md`. Decision 0011 (`atc-s96.18`) holds the record of the eleven runs and
+the operator conditions they set. Phase 2 was first planned as a go or no-go on
+the plugin as the devpack's second binding; on 2026-10-02 the user withdrew that
+binding, and the project follows its own path (Context).
 
 ## Verification
 

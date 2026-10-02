@@ -783,3 +783,25 @@ attach sentence names the Claude Code and Grok hosts, and a Codex plugin bullet
 follows it. Planned is the backlog (row 14) alone. Run gains the read-only CLI
 line and the Codex and Grok host lines. The managed blocks are untouched, and
 `CLAUDE.md`, which includes `AGENTS.md` by reference, is unchanged.
+
+**The user's word on this decision (2026-10-02): the binding withdrawn.** "No
+need to be the second binding of dev pack. … This project will follow its own
+development path; if we remain tied to the Dev Pack, we'll be restricted. If
+this tool needs to support the import and export of configuration files for
+Team Pack or Workflow, that functionality should be developed within this
+project."
+
+So this entry decides no binding. cross-agent is not the OpenMausBot pack's
+second binding, and the devpack's Decision 0008 no longer frames it. The design
+already said so: "Standalone: no OpenMausBot dependency", and the mode format is
+native only (design "Context").
+
+What stands is this project's own record at the close:
+- the eleven runs;
+- conditions (a) to (d), as the operator prerequisites a release names;
+- the accepted limitations;
+- the deferred beads.
+
+Importing and exporting team or workflow configuration, if it is needed, is a
+feature of this repository in its own format (`atc-s96.96`). The note drafted
+for the devpack's `EVIDENCE.md` under part C was withdrawn uncommitted.

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T12:55:00Z — claude
+The user approved the consolidated AGENTS.md diff (applied, 8b0a8cc) and withdrew the devpack binding: cross-agent follows its own path; Decision 0011 stands as the project's record of its runs and conditions; team and workflow configuration import and export, if needed, is this project's own (atc-s96.96). The design's Context, README Status, PLAN, the charter and the handoff say so; the uncommitted devpack note was withdrawn (patch kept in the SDD directory).
+
 ### 2026-10-02T12:25:32Z — claude
 The plan closed: Decision 0011 (go with conditions) merged at 8074e8f; VERIFY.md 'Close of the plan'; README Status, QUESTIONS and PLAN updated; the Codex config restored but for the user's own later lines; the worktree archived and removed; the beads noted. The AGENTS.md diff awaits the user's approval.
 

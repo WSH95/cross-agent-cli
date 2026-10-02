@@ -28,7 +28,11 @@ Its guarantees:
 
 **The final review.** Three independent reviews in four rounds, from `4bcc986`, with two fix rounds, one escalation pass and a controller-verified wrap-up. Every finding was fixed, accepted as a limitation by the user's word, or ruled with its evidence (`VERIFY.md` "T12" and "Close of the plan").
 
-**Decision 0011** (`.project-steward/DECISIONS.md`): go with conditions. Eleven end-to-end runs, E1 to E9 with E2b and E2c, each ended clean. Six read eight `pass`, and five carry a `?` that a person read. The conditions are operator steps the README names:
+**Decision 0011** (`.project-steward/DECISIONS.md`) records the eleven end-to-end runs, E1 to E9 with E2b and E2c. Each ended clean: six read eight `pass`, and five carry a `?` that a person read.
+
+It was written as a go or no-go on the plugin as the devpack's second binding. On 2026-10-02 the user withdrew that binding: cross-agent follows its own development path, untied to the OpenMausBot devpack, and any team or workflow configuration import and export is built here (`atc-s96.96`).
+
+What stands is the project's own record. The operator conditions a release names:
 - (a) a Codex host exports `CROSS_AGENT_PROJECT`;
 - (b) a Grok host trusts the folder and keeps `[plugins]` and the result cap in an ignored `.grok/config.toml`;
 - (c) `/run/podman` is at 0711 where Grok runs read-only on a rootful-podman machine;
@@ -45,22 +49,15 @@ Nothing. The task worktree and its branch are removed. Their ignored state is ar
 
 ## Next steps
 
-1. **The consolidated `AGENTS.md` diff awaits the user's word.** It is `.superpowers/sdd/the-development-of-this-calm-planet/task-12-agents-md.diff`: six hunks, built against the `AGENTS.md` blob `43d92acbb62da520252ef77906037a632d1183e0` at `main` `128df05`. `CLAUDE.md` needs no hunk. On approval:
-   - run `git rev-parse HEAD:AGENTS.md`;
-   - if it still names that blob, `git apply --check` and then `git apply` the approved hunks; otherwise rebuild the hunks against the current file and show them again;
-   - append the approval to Decision 0011;
-   - commit on `main`.
-2. **The user's word on Decision 0011**, appended to it as "Approved (<date>)" or "Overturned (<date>): …".
-3. **The devpack note** in `~/Documents/agent-team-devpack/EVIDENCE.md` is appended and uncommitted, for the user to review. It covers what cross-agent's end-to-end runs say the pack should change.
-4. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
+1. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
    - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
-   - P4: the rest;
+   - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-5. **The Codex backups.** `~/.codex/config.toml` lost T14's tables only. The backup `~/.codex/config.toml.bak-t14-2026-10-01` and the copy `~/.codex/config.toml.pre-restore-2026-10-02` are kept for the user to delete when they choose.
+2. **The Codex backups.** `~/.codex/config.toml` lost T14's tables only. The backup `~/.codex/config.toml.bak-t14-2026-10-01` and the copy `~/.codex/config.toml.pre-restore-2026-10-02` are kept for the user to delete when they choose.
 
 ## Blockers
 
-None. The `AGENTS.md` diff waits on the user's approval, and nothing else waits on it.
+None. The `AGENTS.md` diff was approved and applied on 2026-10-02.
 
 ## Key files
 

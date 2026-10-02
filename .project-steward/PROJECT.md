@@ -12,9 +12,11 @@ CLI's sandbox, in git worktrees the lead owns.
   dependencies; `node:test`
 - Design authority: `docs/design.md`; observed engine behaviour:
   `docs/probes.md`
-- Origin: Decision 0008 of `~/Documents/agent-team-devpack` (the OpenMausBot
-  dev-team pack; this plugin is the same team's second binding), design
-  reviewed twice by Codex gpt-6-astra on 2026-09-07
+- Origin: the OpenMausBot dev-team pack in `~/Documents/agent-team-devpack`
+  (its Decision 0008), whose four roles became the built-in `dev-team` mode;
+  design reviewed twice by Codex gpt-6-astra on 2026-09-07. Since 2026-10-02
+  the project follows its own path and is not the pack's second binding
+  (Decision 0011, the user's word)
 - License: Apache-2.0
 
 ## Goals

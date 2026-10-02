@@ -57,7 +57,8 @@ with its `VERIFY.md` section.
 
 ## M4: operator CLI and decision (done 2026-10-02)
 
-T16 operator CLI (`.16`); go or no-go for the plugin as the second binding
-(`.18`). T16 merged as `1f57683`, the follow-ups (task 11) as `71696ff`, the final
+T16 operator CLI (`.16`); the record of the end-to-end runs (`.18`, Decision
+0011). On 2026-10-02 the user ruled that the plugin is not the devpack's second
+binding: the project follows its own path. T16 merged as `1f57683`, the follow-ups (task 11) as `71696ff`, the final
 whole-branch review's fixes as `7bf9731`, and Decision 0011 as `8074e8f`, each with its
 `VERIFY.md` section.
