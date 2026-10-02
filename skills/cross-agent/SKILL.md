@@ -70,10 +70,15 @@ run in it makes it a project of its own.
   `projectRoot`'s repository, or anywhere in it that no config claims. Where
   `projectRoot` is not the nearest directory at or above the working directory that
   holds a `.git`, say so on the roster's first line: served by the main project at
-  <projectRoot>; run `cross-agent init` here for a project of its own.
+  <projectRoot>; run `cross-agent init` here for a project of its own. Leave the
+  `init` advice out when the working directory lies under `projectRoot`'s
+  `git.worktreeDir`: that is a task's worktree, where `init` exits 3.
 - **Proceed as asked** when the user named or confirmed `projectRoot` in this
   session — with `--project`, `CROSS_AGENT_PROJECT` or in words — wherever your host
   sits.
+- **Otherwise** — a binding found only in the environment, with the working directory
+  in no project or outside `projectRoot`'s repository — show `projectRoot` and ask the
+  user to confirm it before you dispatch anything.
 
 ## Starting a task
 

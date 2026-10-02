@@ -867,7 +867,7 @@ test("every committed dev-team role prompt came through the converter and was ed
 });
 
 // @anchor rosterProjectRootCases
-test("the roster's first line is projectRoot, judged against the project the user is in: stop, proceed, or proceed as asked", () => {
+test("the roster's first line is projectRoot, judged against the project the user is in: stop, proceed, proceed as asked, or confirm", () => {
   const before = flat(sectionOf(launcher(), "Before anything"));
   assert.match(before, /first line is `projectRoot`/);
   // An initialized sibling — a worktree or checkout with its own config — served by M stops.
@@ -884,6 +884,10 @@ test("the roster's first line is projectRoot, judged against the project the use
   assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*named or confirmed `projectRoot` in this session[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
   assert.match(before, /config\.json` — and the user has not named or confirmed `projectRoot` in this session, or when the user named a project and `projectRoot` is another/);
   assert.match(before, /`CROSS_AGENT_PROJECT` found only in the environment[^.]*confirms nothing/);
+  // Inside a task's worktree the line serves its root, and `init` there would exit 3.
+  assert.match(before, /[Ll]eave the `init` advice out when the working directory lies under `projectRoot`'s `git\.worktreeDir`/);
+  // Any start the cases above leave open is confirmed before anything is dispatched.
+  assert.match(before, /\*\*[Oo]therwise\*\*[^*]*show `projectRoot` and ask the user to confirm it before you dispatch anything/);
 });
 
 // @anchor rootCheckOwnBranch
