@@ -2403,9 +2403,11 @@ projects waits the repository lock's sixty seconds or more and refuses, naming t
 lock; such a refusal is retryable after the loop's reconciliation. The call cannot be
 cancelled from inside: `gitMutate` holds `spawn.lock` for the whole call, and
 `cancel` needs that same lock. A `git_root` step's `worktree add` or `merge` holds
-`git.lock` and the repository lock, not `spawn.lock`, so `cancel` can run beside it,
-and still does not end that git child, which nothing but the call owns; a `merge`'s
-hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree.
+`git.lock` and the repository lock, not `spawn.lock`, so `cancel` can run beside it —
+except the `worktree add` `delegate` runs for a one-shot, inside its own `spawn.lock`,
+where `cancel` waits too — and still does not end that git child, which nothing but
+the call owns; a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout
+hook in the new worktree.
 The README gives the operator's recovery: find the hung git by its command line —
 `--work-tree=<the task's worktree>` for a `git_mutate` step,
 `--work-tree=<the project root>` for a `git_root` step — since no `CROSS_AGENT_*`

@@ -304,9 +304,10 @@ test("the docs put each hook where git runs it, keep spawn.lock out of git_root'
     assert.match(text, /a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree/, name);
     assert.doesNotMatch(text, /`worktree add` and `merge` run the repository's hooks at the root/, name);
   }
-  // git_root's steps hold git.lock and the repository lock, and cancel does not end their git.
+  // git_root's steps hold git.lock and the repository lock, and cancel does not end their git;
+  // the worktree add delegate runs for a one-shot is inside the delegation's own spawn.lock.
   assert.match(design, /holds `git\.lock` and the repository lock, not `spawn\.lock`/);
-  assert.match(design, /`cancel` can run beside it, and still does not end that git child/);
+  assert.match(design, /`cancel` can run beside it — except the `worktree add` `delegate` runs for a one-shot, inside its own `spawn\.lock`, where `cancel` waits too — and still does not end that git child/);
   assert.doesNotMatch(design, /A `git_root` step holds both locks the same way/);
   // Worktree roles at a symlinked .git are refused because the class takes no writes.
   assert.match(design, /an `unsupported` root takes none, and no root git tool ever ran there/);
