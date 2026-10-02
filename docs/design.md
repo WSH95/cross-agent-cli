@@ -1642,11 +1642,12 @@ stdin, Codex on stdin behind a `-` positional, Grok as `-p`'s own value —
 which is a property of the line, not of the pipeline.
 
 - **Claude** (`src/engines/claude.ts#claude`): `claude -p --output-format
-  stream-json --verbose --permission-mode bypassPermissions
-  --strict-mcp-config` — then, for an engine-placed lead only, `--mcp-config
-  <file>` — then `--model <m>`, `--effort <e>`, `--session-id <uuid>` or
-  `--resume <id>` and never both, `--append-system-prompt-file <role.md>`,
-  `--settings <json>` (`disableAllHooks: true` and the sandbox), and last
+  stream-json --verbose --permission-mode dontAsk --tools <the role's tools>
+  --setting-sources project --strict-mcp-config` — then, for an engine-placed
+  lead only, `--mcp-config <file>` — then `--model <m>`, `--effort <e>`,
+  `--session-id <uuid>` or `--resume <id>` and never both,
+  `--append-system-prompt-file <role.md>`, `--settings <json>`
+  (`disableAllHooks: true`, the sandbox and the permission rules), and last
   `--disallowedTools <deny list>`. cwd =
   the role's workspace, passed through as the request wrote it because it is
   already canonical and the writable root has to name the directory the child
@@ -1660,6 +1661,30 @@ which is a property of the line, not of the pipeline.
   for byte — read-only, writable, resumed, and with a lead's mount and its
   config as a plan file (`tests/engines/claude.test.ts#readOnlyRole`, `#writeRoleArgv`,
   `#resumedRunCarries`, `#enginePlacedLead`).
+  **The sandbox binds the shell; the file tools have a fence of their own.**
+  Claude Code's sandbox applies to Bash and its children only, and the built-in
+  file tools answer to the permission layer, which `bypassPermissions` used to
+  open: a worktree consult's Write tool wrote the project root, its `.git`,
+  `.cross-agent/`, `$HOME` and its own pointer file, and a read-only consult's
+  `EnterWorktree` added a worktree and a branch to the project's repository, all
+  while the sandbox denied the same writes to the shell
+  (`docs/probes.md#t12Fix1`). So the line runs in `dontAsk`, which denies,
+  headless, every call nothing pre-approves, and the settings say what each
+  role may do beyond reading inside its workspace and running its sandboxed
+  shell: read anywhere, as the shell can; edit its own workspace, for a role
+  that may edit; run its shell when no sandbox approves it (`off`); call its
+  lead mount's tools (`src/engines/claude.ts#fileToolRules`). The protected
+  paths are denied by name in this layer as in the sandbox, and a deny rule
+  holds in every mode. `--tools` names the built-in tools a role keeps — the
+  shell, the reader and `ToolSearch`, and the editing tools for a role that
+  may edit — so `EnterWorktree`, `Agent`, `Workflow`, `RemoteTrigger`,
+  `SendMessage`, the `Cron` tools, `ScheduleWakeup` and the rest of the default
+  set are offered to no role (`src/engines/claude.ts#claudeTools`,
+  `tests/engines/claude.test.ts#fileToolsConfined`, `#claudeToolAllowlist`).
+  `--setting-sources project` keeps the operator's user and local settings
+  out — their allow rules would pre-approve what `dontAsk` denies — and keeps
+  the project's own settings and instruction files, which an empty list and
+  `--restricted` both drop (`docs/probes.md#t12Fix1`).
   Sandbox through the settings JSON (`sandbox.enabled`,
   `filesystem.allowWrite`, `filesystem.denyWrite`, `autoAllowBashIfSandboxed`,
   `allowUnsandboxedCommands`, `failIfUnavailable`;
@@ -1692,7 +1717,7 @@ which is a property of the line, not of the pipeline.
   (`src/engines/claude.ts#sandboxHatch`, `tests/engines/claude.test.ts#sandboxedRoleMay`). P1's
   rerun on 2026-09-18 is the reason and not a precaution: a sandboxed child
   whose `curl` died at bubblewrap's setup took that hatch by itself and
-  reached the network, and under `bypassPermissions` nothing prompts
+  reached the network, since nothing prompts a headless run
   (`docs/probes.md#p1EscapeHatch`). Both settings belong to a sandbox that is on, so
   the `off` profile — the one that asked for none — sends neither. **The
   operator's hooks are off under every profile.** `--strict-mcp-config` excludes
@@ -1701,8 +1726,10 @@ which is a property of the line, not of the pipeline.
   turn and, in this repository, answered a `Stop` hook instead of its brief
   (`docs/probes.md#smoke6b`); the settings carry `disableAllHooks: true`
   (`tests/engines/claude.test.ts#hooksDisabled`), and a run under them showed no
-  hook event of any kind (`docs/probes.md#claudeHooksIsolation`). The operator's
-  slash commands and skills still load, which is a bead of its own.
+  hook event of any kind (`docs/probes.md#claudeHooksIsolation`). The
+  operator's plugins, and the skills and commands they bring, no longer load
+  under `--setting-sources project`, and no role holds the `Skill` tool that
+  would run one (`docs/probes.md#t12Fix1`).
   `--append-system-prompt-file <role.md>` is **settled by P9**
   (`docs/probes.md#p9Mounts`, `#p9ClaudeInstructions`): `claude --help` documents that
   spelling only as the `[-file]` form of `--append-system-prompt`, but the
@@ -1900,7 +1927,8 @@ does not depend on spelling is the by-name one — `claude`, `codex`, `grok`,
 spells it. The targets are the
 guard's; the forms are each adapter's `denyArgs`. Claude `Bash(<target> *)` and
 `Bash(<target>)` in one appendable `--disallowedTools` array (enforced under
-`bypassPermissions`, P3); Grok one `--deny "Bash(<target> *)"` per target
+`bypassPermissions`, P3, and under the `dontAsk` the adapter runs in since
+`docs/probes.md#t12Fix1`); Grok one `--deny "Bash(<target> *)"` per target
 (enforced, P3); Codex an empty argv, because `codex exec` does not honour an
 execpolicy rules file and its children rely on the sandbox's network denial
 instead (P3b). Each builder is unit-tested for the exact list in its adapter's
@@ -1945,7 +1973,10 @@ P10 on 2026-09-09, which exercised the output formats, both lead mounts, all
 three instruction paths, and `codex exec resume` — with three exceptions, each
 named where it occurs. P2 for Claude ran on 2026-09-19 (`atc-s96.17`) in three
 rows — the first, its rerun under `filesystem.denyWrite`, and a read-only row —
-so nothing in the Claude sandbox line is a `--help` fact any more. And the flags
+so nothing in the Claude sandbox line is a `--help` fact any more, and the
+permission layer beside it — `dontAsk`, `--tools`, `--setting-sources project` and
+the file tools' rules — was chosen among four candidates by run and rerun through
+the product (`docs/probes.md#t12Fix1`). And the flags
 no run had to
 exercise — `codex exec`'s and `codex exec resume`'s full option lists, the `-`
 positional each of those two heads reads stdin behind, Claude's `--effort`,
@@ -1969,8 +2000,10 @@ the mode's worktree provider, for the operator and lead rows, with `path` and
 `cross-agent git` CLI calls `gitMutate` with the options the tool passes
 (`src/cli.ts#gitVerb`).
 
-Specialists never write git metadata. A linked worktree's `.git` is a writable
-file inside the implementer's sandbox, so the lead never trusts it:
+Specialists never write git metadata. A linked worktree's `.git` is a file
+inside the implementer's workspace — Claude's sandbox and file tools and Codex's
+sandbox refuse a write to it, Grok's sandbox does not (P2, `docs/probes.md#t12Fix1`)
+— so the lead never trusts it:
 `git_mutate` (and the identical `cross-agent git <slug> -- <args>` CLI,
 `src/cli.ts#gitVerb`) is the only way a lead mutates git in a worktree. Its
 request is `{slug, path?, branch?, args}` (`src/gitmutate.ts#GitMutateRequest`):
@@ -2434,7 +2467,8 @@ each with its own unit test:
    plus `describe_mode`, and all five are registered
    (`src/server.ts#projectTools`); the matrix's rows replaced `toolsAtDepth`, the
    depth-only tool list that used to approximate it.
-2. **No self-mount**: `--strict-mcp-config` without this server for Claude,
+2. **No self-mount**: `--strict-mcp-config` without this server, beside
+   `--setting-sources project`, for Claude,
    `--ignore-user-config` for Codex, and nothing for Grok, whose headless CLI has
    no `--plugin-dir` at all — only `grok agent` does (`docs/probes.md#t15Attach`). Grok
    specialists **do** reach a server, because Grok has no per-invocation

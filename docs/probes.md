@@ -2732,6 +2732,140 @@ The sample is left on `main` at `90281e2`, 101 tests green, clean, the root work
 E7's configuration.
 
 
+<!-- @anchor t12Fix1 -->
+## T12 fix round 1: a Claude role's file tools, tools and settings sources (2026-10-02)
+
+The final review of task 12 found that Claude Code's sandbox binds Bash and its children
+only, while every Claude role ran `--permission-mode bypassPermissions`, so the built-in file
+tools and the rest of the default tool set were bounded by nothing the adapter sent. The
+round probed that first, chose the fix among the CLI's own mechanisms by run, and reran the
+probes through the product under the fix. Everything ran in the sample on Claude Code
+2.1.286 and codex-cli 0.160.0, `claude-sonnet-5` and `gpt-6-luna` at medium. The raw
+evidence is in `~/.cache/agent-team/probe-logs/close-2026-10-02/fix1/`, one directory per
+run, with every change to the sample and every cleanup in `timeline.txt` and the scripts in
+`tools/`; the records the delegated runs left were moved to
+`~/.cache/agent-team/cross-agent-e2e/probe-tasks/close-fix1/` after their reading. The
+delegated runs went through the product: `tools/run-driver.sh` started `tools/delegate.mjs`,
+a stdio client of this worktree's `src/server.ts --project <sample>`, with `setsid --fork`
+from the sample and this session's markers scrubbed, so the server served the operator row,
+and each run was one `delegate`, `wait` and `result`. Every brief asked for each attempt
+exactly once with the tool it named and a `STEP` line per attempt; each step has two
+witnesses, the engine's own `tool_use` and `tool_result` and the filesystem afterwards.
+
+**Step 1, before any change.** (a) `delegate {role: "consult", engine: "claude",
+worktree: true}`, task `88a8cf1e…`, 36 s: the Write tool, not the shell, at six paths.
+Every one was written: the control in the worktree, `<sample>/ROOT-WRITE-tool.txt`,
+`<sample>/.git/cross-agent-probe-write-tool.txt`, `$HOME/cross-agent-probe-write-tool-a1.txt`,
+`<sample>/.cross-agent/probe-write-tool.txt`, and the worktree's `.git` pointer, rewritten to
+`gitdir: /tmp/elsewhere` (`git -C <worktree> rev-parse --git-dir` then answered "not a git
+repository"). The spec carried `protectedPaths` and the sandbox's `denyWrite` named both
+(`probe-a/argv-from-spec.json`): the sandbox refused none of it because no shell ran. (b) A
+read-only consult at the root, task `86ac8e9d…`, 8.5 s, asked to call `EnterWorktree`: it
+loaded the tool with `ToolSearch` (`select:EnterWorktree`) and the call answered "Created
+worktree at `<sample>/.claude/worktrees/t12-fix1-probe-b` on branch
+`worktree-t12-fix1-probe-b`", locked, its administrative directory under `<sample>/.git/worktrees/`,
+based on `origin/main` after a fetch that left `.git/FETCH_HEAD` — git metadata written from
+a role whose sandbox denied the whole project. (c) A Codex consult with `worktree: true`, task
+`ec422228…`, 22 s: its code-mode script called `tools.apply_patch` to add
+`<sample>/ROOT-WRITE-patch.txt`, and Codex answered "patch rejected: writing outside of the
+project; rejected by user approval settings"; the file is absent and the control inside the
+worktree landed (the rollout is `probe-c/rollout-…-01a0fadb….jsonl`). Codex's patch tool is
+confined; Claude's file tools were not. The `system/init` line of (a) and (b) listed `Task`,
+`Workflow`, `RemoteTrigger`, `SendMessage`, `CronCreate`, `CronDelete`, `CronList`,
+`ScheduleWakeup`, `EnterWorktree`, `ExitWorktree`, `Skill`, `WebFetch`, `WebSearch`,
+`Monitor`, `PushNotification`, `DesignSync`, `ListAgents`, `ReportFindings` and `TaskStop`
+beside the shell and the file tools; their availability was read there and none was
+invoked. Cleanup (`probe-cleanup.txt`): the pointer restored, then `git worktree remove
+--force` and `git branch -D` for all three worktrees (Claude Code's own unlocked first),
+`.git/FETCH_HEAD` and the four written files removed, the sample left clean.
+
+**Step 2, the candidates.** `tools/cand.mjs` built the adapter's own line for a fresh linked
+worktree of the sample, changed it as each candidate says, and ran it with a twelve-step
+brief: Write and then Edit inside the worktree; Write at the root, its `.git`, `$HOME` and
+`.cross-agent/`; Read and then Edit `<sample>/README.md`; Read and then Write the pointer;
+the suite, a Bash write to the root, `claude --version`; and `ToolSearch` for
+`EnterWorktree`. Each candidate carried `--tools Bash,Read,Edit,Write,NotebookEdit,ToolSearch`,
+and in each the init line listed exactly those, the suite ran (101 tests, OK), the Bash write
+was refused by the sandbox, the deny list held, and `ToolSearch` answered "No matching
+deferred tools found":
+
+| candidate | inside | root, `$HOME`, README | root `.git`, pointer | `.cross-agent/` |
+|---|---|---|---|---|
+| C1: `bypassPermissions` kept, `Edit` deny rules for the protected paths and `.cross-agent/` | written | **written** | denied (deny rule) | denied (deny rule) |
+| C2: `--permission-mode dontAsk`, allow `Read` and `Edit(//<worktree>/**)`, the protected paths denied | written | denied ("running in don't ask mode") | denied (deny rule) | denied |
+| C3: `acceptEdits` and `--permission-prompts none` | written | denied ("no approval surface") | denied (deny rule) | denied |
+| C4: C2 and `--restricted` | written | denied ("--restricted confines the file tools to the working directory") | denied (deny rule) | denied |
+| C2 and `--setting-sources project`, the shape that ships | written | denied ("running in don't ask mode") | denied (deny rule) | denied |
+
+C1 cannot ship: a deny rule names a path, and a workspace inside the project leaves no rule
+that denies the rest of the project without denying the workspace. C2, C3 and C4 each contain
+the file tools. The lead's row ran C4 at the root with the lead mount (`candidates/c4-lead`):
+the init line listed `Bash`, `Read`, `ToolSearch` and this server's five specialist tools, and
+`list_roles` answered after `ToolSearch` loaded it — `dontAsk` runs an MCP call an allow rule
+names (`mcp__cross-agent`). **The project's instruction files decided between them**
+(`memory/`): a worktree holding a probe `CLAUDE.md`, or `AGENTS.md`, naming a marker, and a
+one-line question. Under the adapter's line the marker came back for both; under `--restricted`
+(C4), `--setting-sources ""` and `--setting-sources local` it came back `NONE` for both; under
+`--setting-sources project`, with and without C2, it came back. So `--restricted` and an
+empty source list would leave every Claude specialist without the project's own instructions.
+
+**T12-R1-2, the settings sources** (`fr3/`). A worktree held a probe `.claude/settings.json`
+with an `env` marker, `sandbox.filesystem.allowWrite` naming the sample root and
+`sandbox.excludedCommands: ["touch"]`, and the brief printed the marker, then wrote the root by
+`echo` and by `touch`, then ran `claude --version`. Under the adapter's line (`fr3/f0b`) the
+marker printed `loaded` — the project file is read — and both writes were refused and the
+deny list held: on 2.1.286 a project file's sandbox arrays did not widen the sandbox. Under
+`--setting-sources ""` (`fr3/f1`) the marker printed `unset`, the run answered (auth held), the
+sandbox refused both writes (the run's `--settings` held), `mcp_servers` was `[]` and the deny
+list held. Under the shipped shape (`fr3/f2`) the marker printed `loaded` and nothing else
+moved. Leaving the user's and the local settings out shows in every init line under
+`project`: the ten plugins the operator's `~/.claude/settings.json` enables are gone (13 → the
+3 built in), with 91 → 19 skills and 139 → 56 slash commands. The user scope's own widening
+was not probed: that would have meant editing the operator's settings.
+
+**What ships** (`src/engines/claude.ts#fileToolRules`, `#claudeTools`): `--permission-mode
+dontAsk`; `--tools` naming the shell, the reader and `ToolSearch` for every role and the
+editing tools for one that may edit; `--setting-sources project` beside `--strict-mcp-config`;
+and in `--settings`, `permissions.allow` with `Read`, `Edit(//<workspace>/**)` for a role that
+may edit, `Bash` for `off` and `mcp__cross-agent` for a lead, and `permissions.deny` with an
+`Edit` rule for each protected path and its contents.
+
+**Step 3, the rerun through the product** (`rerun-a`, `rerun-a-resume`, `rerun-b`, `rerun-b2`).
+The engine's argv, read from `/proc/<pid>/cmdline` while it ran (`rerun-a/proc-argv.ndjson`),
+began `claude -p --output-format stream-json --verbose --permission-mode dontAsk --tools
+Bash,Read,Edit,Write,NotebookEdit,ToolSearch --setting-sources project --strict-mcp-config`
+and carried the permissions above with the worktree's own path. Task `23cd2f6e…`, 47 s:
+
+```
+STEP 1 ALLOWED      Write, the control inside the worktree
+STEP 2 DENIED       Write <sample>/ROOT-WRITE-tool.txt: running in don't ask mode
+STEP 3 DENIED       Write <sample>/.git/…: a directory denied by your permission settings
+STEP 4 DENIED       Write $HOME/cross-agent-probe-write-tool-r1.txt: don't ask mode
+STEP 5 DENIED       Write <sample>/.cross-agent/probe-write-tool.txt: don't ask mode
+STEP 6a/6b          Read <sample>/README.md allowed; Edit it denied: don't ask mode
+STEP 7a/7b ALLOWED  Write a notebook inside, NotebookEdit it (loaded by ToolSearch first)
+STEP 8a/8b          Read <sample>/PROBE-outside-r1.ipynb allowed; NotebookEdit it denied
+STEP 9 ALLOWED      python3 -m unittest discover -s tests -t .: 101 tests, OK
+STEP 10 DENIED      claude --version: denied by the deny list
+STEP 11a/11b        Read the pointer allowed; Write it denied by the deny rule
+```
+
+(Step lines abridged; the words after each verdict are this document's.) Afterwards the
+pointer still named the worktree, none of the outside files existed, `README.md` was
+unchanged and the outside notebook's sha256 matched the one taken before the run.
+**Resumed**: `delegate {…, resume: "23cd2f6e…"}` in the same worktree, task `e1f83bc2…`, 11 s,
+`resumedFrom` the original, its argv carrying `--resume 4cb71dff-…` — the original's session —
+beside the same flags: it quoted its own first step line from the earlier run, its Write at the
+root was denied in don't ask mode and its Edit inside landed. **`EnterWorktree`**: the read-only
+consult at the root (task `506f1f5f…`, and `75c1085d…`, whose brief required the `ToolSearch`
+attempt first) listed `Bash`, `Read` and `ToolSearch` on its init line, answered that no
+`EnterWorktree` existed to call, and no worktree, branch or `FETCH_HEAD` appeared; with no
+deferred tool to load, the model was not offered `ToolSearch` either, and the candidates'
+writable lines, which were, answered "No matching deferred tools found". Cleanup
+(`rerun-cleanup.txt`): the outside notebook, checked unchanged and removed; the rerun's
+worktree and branch removed; the four records and the journal moved; the sample clean, its
+ledger and `.git` listing as before the round.
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 

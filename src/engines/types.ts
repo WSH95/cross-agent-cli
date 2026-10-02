@@ -65,11 +65,13 @@ export interface SpawnRequest {
    * pointer file would be as far outside design section 4 as a writable one. Probe P2
    * (Claude, 2026-09-19) is why it exists: a writable root named the worktree alone and
    * the repository's `.git` beside it was still writable. What an adapter does with it is
-   * its own: Claude deny-lists them (`filesystem.denyWrite`), beside the workspace itself
-   * for a read-only role, Codex needs no argument because its `workspace-write` already
-   * protects `.git` inside the workspace and denies everything outside it, and Grok
-   * cannot enforce it at all, which is what leaves `verify_worktree` as the check
-   * (design section 4).
+   * its own: Claude deny-lists them twice, for its shell (`filesystem.denyWrite`, beside the
+   * workspace itself for a read-only role) and for its file tools (`Edit` deny rules), since
+   * the sandbox binds the shell alone and probe t12Fix1 watched the Write tool rewrite a
+   * pointer the sandbox refused; Codex needs no argument because its `workspace-write`
+   * already protects `.git` inside the workspace and denies everything outside it, its
+   * patch tool included (t12Fix1); and Grok cannot enforce it at all, which is what leaves
+   * `verify_worktree` as the check (design section 4).
    */
   protectedPaths?: string[];
   /** The task's own directory (`path.dirname(logPath)`): where an adapter's files go, never the specialist's worktree. */

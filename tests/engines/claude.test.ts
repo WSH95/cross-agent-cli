@@ -30,6 +30,35 @@ const someDeny = [
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
+// The built-in tools a role keeps (`--tools`): the shell and the reader for every role, the
+// editing tools for one that may edit, and `ToolSearch`, which loads a deferred tool's
+// definition. Probe t12Fix1 (b) watched a read-only consult load `EnterWorktree` that way
+// and create a worktree and a branch under the project's `.git`.
+const readTools = "Bash,Read,ToolSearch";
+const editTools = "Bash,Read,Edit,Write,NotebookEdit,ToolSearch";
+// What no role may hold, whatever its profile: tools that make git metadata, start work no
+// record holds, or act beyond this machine (the init lines of probe t12Fix1).
+const withheld = [
+  "Agent", "Task", "EnterWorktree", "ExitWorktree", "Workflow", "RemoteTrigger", "SendMessage",
+  "CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "Monitor", "TaskStop", "ListAgents",
+  "PushNotification", "DesignSync", "ReportFindings", "Skill", "WebFetch", "WebSearch",
+];
+
+/** A path as a permission rule names it: `//` and the absolute path (probe t12Fix1). */
+function rule(target: string): string {
+  return `/${target}`;
+}
+
+/** The allow rule for a workspace's edits, as it sits inside the `--settings` JSON. */
+function editRule(workspace: string): string {
+  return JSON.stringify("Edit(" + rule(workspace) + "/**)");
+}
+
+/** The `--settings` JSON a plan carries, parsed. */
+function settingsOf(argv: string[]): { permissions: Record<string, string[]>; sandbox: Record<string, unknown>; disableAllHooks: unknown } {
+  return JSON.parse(argv[argv.indexOf("--settings") + 1]);
+}
+
 function scratch(t: TestContext): string {
   const directory = mkdtempSync(path.join(tmpdir(), "cross-agent-claude-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -126,8 +155,11 @@ test("claude's denyArgs is one appendable --disallowedTools array carrying both 
 });
 
 // @anchor claudeExclusionargsFlag
-test("claude's exclusionArgs is the flag that makes a mount exclusive", () => {
-  assert.deepEqual(claude.exclusionArgs(), ["--strict-mcp-config"]);
+test("claude's exclusionArgs loads none of the operator's settings and makes a mount exclusive", () => {
+  // `project` alone: the operator's user and local settings stay out of every specialist,
+  // and the project's own instruction files still load, which `""` and `local` drop
+  // (probe t12Fix1). The strict flag stays last, so a lead's mount still follows it (P9).
+  assert.deepEqual(claude.exclusionArgs(), ["--setting-sources", "project", "--strict-mcp-config"]);
 });
 
 // @anchor claudeLeadmountReturns
@@ -204,12 +236,13 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
   assert.equal(plan.cwd, dirs.root);
   assert.equal(plan.env, request.env);
   assert.deepEqual(plan.argv, [
-    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config",
+    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+    "--tools", readTools,
+    "--setting-sources", "project", "--strict-mcp-config",
     "--model", "claude-opus-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read"]}}`,
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // The prompt is stdin's, so no positional argument follows the variadic flag.
@@ -223,13 +256,14 @@ test("a write role's argv carries the worktree as the only writable root, and th
   const plan = claude.plan(requestFor(dirs, { model: "claude-sonnet-5", effort: "high", denyTargets: [...targets] }));
   assert.equal(plan.cwd, dirs.worktree);
   assert.deepEqual(plan.argv, [
-    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config",
+    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+    "--tools", editTools,
+    "--setting-sources", "project", "--strict-mcp-config",
     "--model", "claude-sonnet-5",
     "--effort", "high",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools",
     "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
@@ -247,9 +281,10 @@ test("a writable role's protected paths are deny-listed beside the writable root
   const plan = claude.plan(requestFor(dirs, { protectedPaths }));
   // Probe P2 (Claude, 2026-09-19): `allowWrite` alone left the repository's common git
   // directory writable from inside the worktree. `denyWrite` is the rule that stops it,
-  // and deny wins over allow, so the two paths sit beside the writable root.
+  // and deny wins over allow, so the two paths sit beside the writable root. The file
+  // tools have the same pair in their own layer (`fileToolsConfined`).
   assert.deepEqual(
-    JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
+    settingsOf(plan.argv),
     {
       disableAllHooks: true,
       sandbox: {
@@ -257,8 +292,98 @@ test("a writable role's protected paths are deny-listed beside the writable root
         allowUnsandboxedCommands: false, failIfUnavailable: true,
         filesystem: { allowWrite: [dirs.worktree], denyWrite: protectedPaths },
       },
+      permissions: {
+        allow: ["Read", `Edit(${rule(dirs.worktree)}/**)`],
+        deny: protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
+      },
     },
   );
+});
+
+// @anchor fileToolsConfined
+test("a writable role's file tools may edit its own workspace and nothing else, never its protected paths", (t) => {
+  const dirs = layout(t);
+  const protectedPaths = [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")];
+  const { argv } = claude.plan(requestFor(dirs, { protectedPaths }));
+  // The sandbox binds Bash and its children only. Under `bypassPermissions` the Write tool
+  // wrote the project root, its `.git`, `.cross-agent/`, `$HOME` and the worktree's pointer
+  // (probe t12Fix1 (a)). `dontAsk` denies every call nothing pre-approved, so the one rule
+  // that approves an edit names the workspace, and the protected paths are denied by name:
+  // a deny rule holds in every mode and wins over an allow rule.
+  assert.equal(argv[argv.indexOf("--permission-mode") + 1], "dontAsk");
+  assert.equal(argv.includes("bypassPermissions"), false);
+  const { permissions } = settingsOf(argv);
+  assert.deepEqual(permissions.allow.filter((entry) => entry.startsWith("Edit(")), [`Edit(${rule(dirs.worktree)}/**)`]);
+  assert.deepEqual(permissions.deny, [
+    `Edit(${rule(path.join(dirs.worktree, ".git"))})`, `Edit(${rule(path.join(dirs.worktree, ".git"))}/**)`,
+    `Edit(${rule(path.join(dirs.root, ".git"))})`, `Edit(${rule(path.join(dirs.root, ".git"))}/**)`,
+  ]);
+  // Reads stay as they were: the reader is approved everywhere, as the shell's reads are.
+  assert.equal(permissions.allow[0], "Read");
+});
+
+test("a read-only role's file tools approve no edit at all", (t) => {
+  const dirs = layout(t);
+  const protectedPaths = [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")];
+  const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "read-only"), protectedPaths }));
+  assert.deepEqual(settingsOf(argv).permissions, {
+    allow: ["Read"],
+    deny: protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
+  });
+  assert.equal(argv[argv.indexOf("--tools") + 1], readTools);
+});
+
+test("a rule names its path literally, whatever gitignore characters the path holds", (t) => {
+  const dirs = layout(t);
+  // A permission rule is a gitignore pattern, so a workspace named with `*`, `?`, `[`, `]`
+  // or `\` would otherwise approve other directories or none: each is escaped.
+  const cwd = path.join(dirs.root, "odd [x]*?\\name");
+  const { argv } = claude.plan(requestFor(dirs, { cwd, protectedPaths: [path.join(cwd, ".git")] }));
+  const escaped = rule(cwd).replace(/[\\*?[\]]/g, "\\$&");
+  assert.deepEqual(settingsOf(argv).permissions, {
+    allow: ["Read", `Edit(${escaped}/**)`],
+    deny: [`Edit(${escaped}/.git)`, `Edit(${escaped}/.git/**)`],
+  });
+  assert.ok(escaped.includes("\\[x\\]\\*\\?\\\\name"), escaped);
+});
+
+// @anchor claudeToolAllowlist
+test("every role holds an explicit list of built-in tools, and none that starts work beyond its task", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const cases: Array<[string, Partial<SpawnRequest>, string]> = [
+    ["read-only", { sandbox: sandboxFor("claude", "read-only") }, readTools],
+    ["workspace-write", {}, editTools],
+    ["off", { sandbox: sandboxFor("claude", "off") }, editTools],
+    ["a read-only lead", { role: "lead", sandbox: sandboxFor("claude", "read-only"), lead }, readTools],
+  ];
+  for (const [name, patch, tools] of cases) {
+    const { argv } = claude.plan(requestFor(dirs, patch));
+    assert.equal(argv.filter((argument) => argument === "--tools").length, 1, name);
+    assert.equal(argv[argv.indexOf("--tools") + 1], tools, name);
+    const listed = tools.split(",");
+    for (const tool of withheld) assert.equal(listed.includes(tool), false, `${name}: ${tool}`);
+    // `--tools` takes `<tools...>`: a flag has to follow it, or it would swallow the line.
+    assert.match(argv[argv.indexOf("--tools") + 2], /^--/, name);
+  }
+});
+
+test("an engine-placed lead's mount tools are pre-approved, and only that server's", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const plan = claude.plan(requestFor(dirs, { role: "lead", cwd: dirs.root, sandbox: sandboxFor("claude", "read-only"), lead }));
+  // `dontAsk` denies an MCP call nothing approved, so the mount's server is named; the
+  // lead loads its deferred tools through `ToolSearch` (probe t12Fix1, the lead row).
+  assert.deepEqual(settingsOf(plan.argv).permissions, { allow: ["Read", "mcp__cross-agent"] });
+  assert.deepEqual(Object.keys(JSON.parse(plan.files![0].contents).mcpServers), ["cross-agent"]);
+});
+
+test("an off-profile role's shell is approved by rule, since no sandbox approves it", (t) => {
+  const dirs = layout(t);
+  const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
+  // With the sandbox off, `autoAllowBashIfSandboxed` approves nothing, and `dontAsk` would
+  // deny every command the profile asked to run unsandboxed. The file tools stay fenced.
+  assert.deepEqual(settingsOf(argv).permissions, { allow: ["Read", `Edit(${rule(dirs.worktree)}/**)`, "Bash"] });
 });
 
 test("a read-only role's own workspace is deny-listed, because the sandbox grants it by default", (t) => {
@@ -273,13 +398,17 @@ test("a read-only role's own workspace is deny-listed, because the sandbox grant
   // leaves `Bash`, and a role at the project root could write the project — including
   // `.cross-agent/` — which design section 4 rests on being impossible.
   assert.deepEqual(
-    JSON.parse(plan.argv[plan.argv.indexOf("--settings") + 1]),
+    settingsOf(plan.argv),
     {
       disableAllHooks: true,
       sandbox: {
         enabled: true, autoAllowBashIfSandboxed: true,
         allowUnsandboxedCommands: false, failIfUnavailable: true,
         filesystem: { denyWrite: [dirs.root, path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")] },
+      },
+      permissions: {
+        allow: ["Read"],
+        deny: [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")].flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
       },
     },
   );
@@ -315,11 +444,12 @@ test("a resumed run carries --resume and never a --session-id beside it", (t) =>
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { resumeSessionId: "138a9c9e-f573-45c5-80fc-fda76dddc834" }));
   assert.deepEqual(plan.argv, [
-    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config",
+    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+    "--tools", editTools,
+    "--setting-sources", "project", "--strict-mcp-config",
     "--resume", "138a9c9e-f573-45c5-80fc-fda76dddc834",
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools", ...someDeny,
   ]);
   assert.equal(plan.argv.includes("--session-id"), false);
@@ -335,20 +465,23 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
     env: { CROSS_AGENT_PROJECT: "/projects/team" },
   };
   const mount = path.join(dirs.task, "mcp-config.json");
-  const plan = claude.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead }));
+  const plan = claude.plan(requestFor(dirs, {
+    role: "lead", rolePrompt: "You are the lead.\n", lead, cwd: dirs.root, sandbox: sandboxFor("claude", "read-only"),
+  }));
   // P9's order: the mount travels with the flag that makes it exclusive.
   assert.deepEqual(plan.argv, [
-    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config", "--mcp-config", mount,
+    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+    "--tools", readTools,
+    "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
-    "--disallowedTools", ...someDeny,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read","mcp__cross-agent"]}}`,
+    "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // `--mcp-config` is variadic, so what follows it has to be a flag, and the argv may end
   // only in the deny list's values: any other variadic flag left last would swallow them.
   assert.equal(plan.argv[plan.argv.indexOf("--mcp-config") + 2], "--session-id");
-  assert.equal(plan.argv.at(-1), someDeny.at(-1));
+  assert.equal(plan.argv.at(-1), "NotebookEdit");
   // One mount, and one flag making it exclusive: a second would be a second server.
   assert.equal(plan.argv.filter((argument) => argument === "--strict-mcp-config").length, 1);
   assert.equal(plan.argv.filter((argument) => argument === "--mcp-config").length, 1);
@@ -364,7 +497,8 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
 test("the sandbox settings say disabled for the one profile that means it", (t) => {
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
-  assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1], '{"disableAllHooks":true,"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true}}');
+  assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1],
+    `{"disableAllHooks":true,"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true},"permissions":{"allow":["Read",${editRule(dirs.worktree)},"Bash"]}}`);
   // `off` is not read-only: an unsandboxed role still edits.
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
 });
@@ -539,12 +673,13 @@ test("a fake claude run through the pipeline yields the session, the activity an
     },
   });
   const argv = [
-    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
-    "--strict-mcp-config",
+    "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+    "--tools", editTools,
+    "--setting-sources", "project", "--strict-mcp-config",
     "--model", "claude-sonnet-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools", ...someDeny,
   ];
   // The role prompt is a file the child is pointed at, so it has to be on disk already.

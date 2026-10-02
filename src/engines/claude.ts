@@ -12,6 +12,32 @@ import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, S
  */
 const sandboxFailure = /Sandbox disabled|apply-seccomp/;
 
+/**
+ * The built-in tools a role keeps, as `--tools` names them: the shell and the file reader
+ * for every role, the editing tools for one that may edit, and `ToolSearch`, which loads a
+ * deferred tool's definition — an engine-placed lead's mount tools arrive deferred. Nothing
+ * else Claude Code ships is offered. Probe t12Fix1 (b) watched a read-only consult load
+ * `EnterWorktree` and create a worktree and a branch under the project's `.git`, outside any
+ * sandbox; the rest of the default set (`Task`, `Workflow`, `RemoteTrigger`, `SendMessage`,
+ * the `Cron` tools, `ScheduleWakeup` and their kin) start work no record holds or act
+ * beyond this machine.
+ */
+// @anchor claudeTools
+const readTools = ["Bash", "Read", "ToolSearch"];
+const editTools = ["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch"];
+
+/** The name `leadMount` gives this server, and so the prefix of every tool it brings. */
+const mountServer = "cross-agent";
+
+/**
+ * A path as a permission rule names it: `//` and the absolute path, which is what anchors a
+ * rule at the filesystem root, with gitignore's own pattern characters escaped so the rule
+ * names this directory and no other.
+ */
+function pathRule(target: string): string {
+  return `/${target}`.replace(/[\\*?[\]]/g, "\\$&");
+}
+
 /** Claude Code, on the spawn line P1 recorded and the output shape the probe logs sampled. */
 const claude = {
   name: "claude",
@@ -35,33 +61,40 @@ const claude = {
       : { ok: false, reason: `${missing.join(" and ")} not found on PATH; Claude's Linux sandbox needs bwrap and socat (probe P1)` };
   },
 
-  // Both forms in one appendable array, enforced under bypassPermissions (P3).
+  // Both forms in one appendable array, enforced under `bypassPermissions` (P3) and under
+  // `dontAsk`, the mode `plan` runs in (probe t12Fix1).
   denyArgs(targets: readonly string[]): string[] {
     return ["--disallowedTools", ...targets.flatMap((target) => [`Bash(${target} *)`, `Bash(${target})`])];
   },
 
-  // What makes a mount exclusive: dropping it pulled in five of the operator's own
-  // servers in an otherwise identical run (P9).
+  // The operator's own configuration stays the operator's. `--setting-sources project` loads
+  // neither the user's settings nor the local ones — whose allow rules would pre-approve
+  // what `dontAsk` denies, and whose plugins brought every specialist the operator's skills
+  // — and keeps the project's own settings and instruction files, which `""` and `local`
+  // drop (probe t12Fix1). The strict flag is what makes a mount exclusive: dropping it
+  // pulled in five of the operator's own servers in an otherwise identical run (P9). It
+  // comes last, so a lead's mount follows it.
   exclusionArgs(): string[] {
-    return ["--strict-mcp-config"];
+    return ["--setting-sources", "project", "--strict-mcp-config"];
   },
 
   leadMount(spec: LeadMountSpec, scratchDir: string): LeadMount {
     const file = path.join(scratchDir, "mcp-config.json");
     const contents = JSON.stringify(
-      { mcpServers: { "cross-agent": { command: spec.command, args: spec.args, env: spec.env } } }, null, 2,
+      { mcpServers: { [mountServer]: { command: spec.command, args: spec.args, env: spec.env } } }, null, 2,
     ) + "\n";
     return { argv: ["--mcp-config", file], files: [{ path: file, contents }] };
   },
 
   /**
-   * P1's spawn line, with P9's role-prompt file and lead mount. The sandbox is the
-   * `--settings` JSON's alone, so the mode has to be right: it is, by the time this runs,
-   * because the pipeline re-derives it from `sandboxProfiles` and refuses a request whose
-   * pair disagrees (`src/engines/spawn.ts:70-78`).
+   * P1's spawn line, with P9's role-prompt file and lead mount and t12Fix1's permission
+   * layer. The sandbox is the `--settings` JSON's alone, so the mode has to be right: it is,
+   * by the time this runs, because the pipeline re-derives it from `sandboxProfiles` and
+   * refuses a request whose pair disagrees (`src/engines/spawn.ts#spawnChecks`).
    */
   plan(request: SpawnRequest): SpawnPlan {
     const { mode } = request.sandbox;
+    const editable = mode !== "read-only";
     // The operator's hooks stay the operator's. `--strict-mcp-config` excludes MCP servers
     // and nothing else, so a specialist ran every `SessionStart` hook of this machine, took
     // their `additionalContext` into its first turn, and answered a `Stop` hook instead of
@@ -74,6 +107,7 @@ const claude = {
         allowUnsandboxedCommands?: false; failIfUnavailable?: true;
         filesystem?: { allowWrite?: string[]; denyWrite?: string[] };
       };
+      permissions?: { allow: string[]; deny?: string[] };
     } = { disableAllHooks: true, sandbox: { enabled: mode !== "off", autoAllowBashIfSandboxed: true } };
     // @anchor sandboxHatch
     // A sandbox the specialist cannot step out of. `allowUnsandboxedCommands: false` makes
@@ -106,9 +140,33 @@ const claude = {
     } else if (mode === "read-only") {
       settings.sandbox.filesystem = { denyWrite: [request.cwd, ...protectedPaths] };
     }
+    // @anchor fileToolRules
+    // The file tools' own fence, because the sandbox binds Bash and its children only: under
+    // `bypassPermissions` the Write tool of a worktree consult wrote the project root, its
+    // `.git`, `.cross-agent/`, `$HOME` and its own pointer file (probe t12Fix1 (a)). Under
+    // `dontAsk` a call nothing pre-approves is denied, headless, without a prompt, so these
+    // rules say what each role may do beyond reading inside its workspace and running its
+    // sandboxed shell, which need no approval: read anywhere, as the shell can; edit its own
+    // workspace if it may edit at all; run its shell when no sandbox approves it (`off`);
+    // call its lead mount's tools. The protected paths are denied by name in this layer too,
+    // and a deny rule holds in every mode and wins over an allow rule.
+    settings.permissions = {
+      allow: [
+        "Read",
+        ...(editable ? [`Edit(${pathRule(request.cwd)}/**)`] : []),
+        ...(mode === "off" ? ["Bash"] : []),
+        ...(request.lead === undefined ? [] : [`mcp__${mountServer}`]),
+      ],
+      ...(protectedPaths.length === 0 ? {} : {
+        deny: protectedPaths.flatMap((target) => [`Edit(${pathRule(target)})`, `Edit(${pathRule(target)}/**)`]),
+      }),
+    };
 
+    // `--tools` takes `<tools...>`, so a flag follows it; the exclusion flags end with the
+    // strict one, which a lead's mount follows.
     const argv = [
-      "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "bypassPermissions",
+      "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
+      "--tools", (editable ? editTools : readTools).join(","),
       ...claude.exclusionArgs(),
     ];
     const files: NonNullable<SpawnPlan["files"]> = [];

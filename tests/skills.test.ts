@@ -818,6 +818,19 @@ test("the converter never writes over a draft that is already there", async (t) 
   assert.match(err, /roles\/planner\.md/, "the refusal names the file it would have replaced");
 });
 
+// @anchor implementerSandboxSentence
+test("the implementer is told its shell and its file tools write its worktree alone, and that its pointer is verified", () => {
+  // The sandbox binds a Claude role's shell; its file tools are fenced by the permission
+  // layer since t12Fix1, and a Grok sandbox lets the pointer be rewritten (P2). So the
+  // prompt names both writers, and it no longer says the pointer is writable everywhere.
+  for (const mode of ["dev-team", "dev-team-engine"]) {
+    const implementer = flat(fs.readFileSync(path.join(builtInModesDir(), mode, "roles", "implementer.md"), "utf8"));
+    assert.match(implementer, /Your shell and your file tools can write there and nowhere else/, mode);
+    assert.doesNotMatch(implementer, /is a writable file inside your sandbox/, mode);
+    assert.match(implementer, /verifies it before every git operation/, mode);
+  }
+});
+
 test("every committed dev-team role prompt came through the converter and was edited for this runtime", () => {
   const modes = builtInModesDir();
   const codas = new Map([

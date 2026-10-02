@@ -524,6 +524,11 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
   assert.deepEqual(JSON.parse(fs.readFileSync(mountFile, "utf8")), {
     mcpServers: { "cross-agent": { command: process.execPath, args: [repositoryServer, "--project", p.root] } },
   });
+  // Under `dontAsk` an MCP call nothing approved is denied, so the lead's settings approve
+  // its mount's server by name, and its read-only file tools approve no edit (t12Fix1).
+  const leadSettings = JSON.parse(claude.argv[claude.argv.indexOf("--settings") + 1]) as { permissions: { allow: string[] } };
+  assert.deepEqual(leadSettings.permissions.allow, ["Read", "mcp__cross-agent"]);
+  assert.equal(claude.argv[claude.argv.indexOf("--permission-mode") + 1], "dontAsk");
 
   // Codex: the five `-c` settings, under the flag that removes the operator's own servers.
   const codex = await argvOf("codex", "S11: a Codex lead's brief.");

@@ -15,7 +15,7 @@
 // probe gives a child this server to see; the adapter writes its own config file from it.
 //
 // The flags a plan cannot express are gone with the hand-built argv they belonged to:
-// `--permission-mode` (the adapters fix `bypassPermissions`), `--no-strict-mcp` (the
+// `--permission-mode` (each adapter fixes its own), `--no-strict-mcp` (the
 // exclusion flag is not optional), `--output-format` (Grok's is settled at
 // `streaming-messages-json`, P8), `--codex-config` and Codex's `--rules` (P3: rules files
 // are not enforced in `codex exec`). The probes that used them — P3, P8, P9, P10 — are
