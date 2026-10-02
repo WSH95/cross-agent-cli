@@ -11,6 +11,9 @@ import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
 import { canonicalPath } from "../../src/reservation.ts";
 import { spawnEngine } from "../../src/engines/spawn.ts";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines/types.ts";
+import { protectedPathsFor } from "../../src/delegate.ts";
+import { locateRepository } from "../../src/worktree.ts";
+import { layoutRoot } from "../helpers/project.ts";
 
 const fake = fileURLToPath(new URL("../fixtures/fake-engine.mjs", import.meta.url));
 
@@ -413,6 +416,24 @@ test("a read-only role's own workspace is deny-listed, because the sandbox grant
     },
   );
   assert.equal(plan.argv.includes("allowWrite"), false);
+});
+
+// @anchor readOnlyLinkedRootDenies
+test("a read-only role at a linked root is denied the root's pointer and the shared git directory beside its own cwd", async (t) => {
+  const made = await layoutRoot(t, "linked");
+  const located = await locateRepository(made.root);
+  assert.ok(!("reason" in located), JSON.stringify(located));
+  // The paths `delegate` names for a root role at a root that is not its main checkout: the
+  // common directory lies outside the root, so denying the cwd alone would leave it writable.
+  const protectedPaths = protectedPathsFor(located)!;
+  assert.deepEqual(protectedPaths, [path.join(made.root, ".git"), located.commonDir]);
+  assert.equal(located.commonDir.startsWith(made.root + path.sep), false);
+  const dirs = layout(t);
+  const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "read-only"), cwd: made.root, protectedPaths }));
+  const settings = settingsOf(plan.argv);
+  assert.deepEqual(settings.sandbox.filesystem, { denyWrite: [made.root, ...protectedPaths] });
+  assert.deepEqual(settings.permissions.deny, protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]));
+  assert.deepEqual(settings.permissions.allow, ["Read"], "and no edit is approved anywhere");
 });
 
 test("an off-profile role gets no filesystem rules at all", (t) => {

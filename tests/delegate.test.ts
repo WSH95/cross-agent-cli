@@ -10,7 +10,7 @@ import { CONFIG_PATH } from "../src/config.ts";
 import { delegate, writableProfiles } from "../src/delegate.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
 import { readJournal } from "../src/journal.ts";
-import { create, readSpec, update, writeSpec } from "../src/ledger.ts";
+import { create, readSpec, scan, update, writeSpec } from "../src/ledger.ts";
 import { reservedBy } from "../src/reservation.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
@@ -20,7 +20,7 @@ import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } fro
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { git, gitShim } from "./helpers/git.ts";
-import { alive, engineEnv, environOf, killLockHolder, poll, reserve, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { alive, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -1365,4 +1365,144 @@ test("a discard that leaves the worktree or its branch standing keeps the journa
   assert.ok(slug !== undefined, "the worktree survived");
   assert.match(await git(p.root, "branch", "--list", "task/*"), new RegExp(`task/${slug}`), "and so did its branch");
   assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`, "and the journal that finds them both");
+});
+
+// A root that is not its repository's main checkout (design section 6): what a launch there
+// protects, what it refuses, and two projects of one repository side by side.
+
+/**
+ * `root` configured as `base`'s own config is, on `branch`: a project of its own. Its tasks
+ * are launched with `base`'s environment, whose marker `base`'s sweep stops them by.
+ */
+function configuredAt(base: TestProject, root: string, branch: string): void {
+  fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify({ ...configFor(base.bin), project: { defaultBranch: branch } }));
+}
+
+/** One record of the ledger at `root`, waited to a state. */
+async function settledAt(root: string, id: string, accepts: (record: TaskRecord) => boolean): Promise<TaskRecord> {
+  return (await poll(() => scan(root).records.find((record) => record.id === id), (record) => record !== undefined && accepts(record)))!;
+}
+
+// @anchor protectedPathsLinkedRoot
+test("a launch at a linked root protects the root's pointer and the shared git directory, for root roles, worktree roles and resumes", async (t) => {
+  const p = await projectWithRoles(t);
+  const linked = await linkedProject(t, p.root, "feature");
+  configuredAt(p, linked, "feature");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const common = path.join(p.root, ".git");
+
+  // A root role at the linked root: its cwd is denied by its own read-only rule, and the
+  // pointer there and the directory it leads to are named, the second lying outside it.
+  const planner = launched(await delegate(linked, request({ role: "planner", cwd: linked }), options));
+  assert.deepEqual(readSpec(linked, planner).protectedPaths, [path.join(linked, ".git"), common]);
+  // A continuation of the root role is a launch at the root like its original.
+  await settledAt(linked, planner, (record) => record.status === "done" && Boolean(record.sessionId));
+  const resumed = launched(await delegate(linked, { ...request({ role: "planner", cwd: linked }), resume: planner, brief: "Again." }, options));
+  assert.deepEqual(readSpec(linked, resumed).protectedPaths, [path.join(linked, ".git"), common]);
+  // A worktree role there, once the root is free of tasks that contain its worktrees: its own
+  // pointer, the shared directory, and the root's pointer.
+  await settledAt(linked, resumed, (record) => record.status === "done");
+  const worktree = path.join(linked, ".worktrees", "w");
+  await git(linked, "worktree", "add", "-b", "task/w", worktree);
+  const implementer = launched(await delegate(linked, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
+  assert.deepEqual(readSpec(linked, implementer).protectedPaths, [path.join(worktree, ".git"), common, path.join(linked, ".git")]);
+  // At the main checkout nothing changes: a root role carries none.
+  const main = launched(await delegate(p.root, request({ role: "planner", cwd: p.root }), options));
+  assert.equal(readSpec(p.root, main).protectedPaths, undefined);
+});
+
+// @anchor oneShotInLinkedRoot
+test("a one-shot at an initialized linked root branches from the root's own branch, in the root's own worktree directory", async (t) => {
+  const p = await projectWithRoles(t);
+  const linked = await linkedProject(t, p.root, "feature");
+  configuredAt(p, linked, "feature");
+  await git(linked, "commit", "--allow-empty", "-m", "on feature alone");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const id = launched(await delegate(linked, request({ role: "planner", cwd: linked, worktree: true }), options));
+  const worktree = path.join(linked, ".worktrees", id);
+  assert.deepEqual(scan(linked).records.find((record) => record.id === id)?.worktree, { path: worktree, branch: `task/${id}`, slug: id });
+  assert.equal(await git(linked, "rev-parse", `task/${id}`), await git(linked, "rev-parse", "feature"));
+  assert.notEqual(await git(linked, "rev-parse", `task/${id}`), await git(p.root, "rev-parse", "main"));
+  assert.equal(readJournal(linked, id)?.defaultBranch, "feature");
+  assert.deepEqual(readSpec(linked, id).protectedPaths, [path.join(worktree, ".git"), path.join(p.root, ".git"), path.join(linked, ".git")]);
+  assert.equal(readJournal(p.root, id), null, "the main project's journals hold nothing of it");
+});
+
+// @anchor oneShotBareConfiglessRefused
+test("a one-shot at a root that is no main checkout and holds no config is refused, and leaves nothing", async (t) => {
+  const p = await projectWithRoles(t);
+  const bare = await bareProject(t);
+  // The config-less root runs the mode a project with no config runs.
+  const solo = buildMode(p.modesDir, "solo", [{ key: "consult" }]);
+  const options = { authority: operator, mode: solo, env: engineEnv(p) };
+  assert.match(
+    refusal(await delegate(bare.root, request({ role: "consult", cwd: bare.root, engine: "grok", worktree: true }), options)),
+    /not an initialized project; run "cross-agent init" in /,
+  );
+  assert.equal(fs.existsSync(path.join(bare.root, ".worktrees")), false);
+  assert.equal(await git(bare.root, "branch", "--list", "task/*"), "");
+  assert.equal(fs.existsSync(path.join(bare.root, ".cross-agent", "journal")), false);
+});
+
+// @anchor refusedRepositoryRefusesLaunch
+test("a launch at a root its repository refuses is refused, and nothing is recorded there", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  // A task worktree configured as a project, whatever its config says.
+  const nested = await p.worktree("task/nested");
+  configuredAt(p, nested, "task/nested");
+  assert.match(refusal(await delegate(nested, request({ role: "planner", cwd: nested }), options)), /never a project root/);
+  assert.deepEqual(scan(nested).records, []);
+  // A root inside its own git directory, every part of which a task is denied.
+  const inside = await rootInsideCommonDir(t);
+  configuredAt(p, inside.root, "feature");
+  assert.match(refusal(await delegate(inside.root, request({ role: "planner", cwd: inside.root }), options)), /beside the git directory/);
+  assert.deepEqual(scan(inside.root).records, []);
+});
+
+// @anchor twoProjectsOneRepository
+test("two projects of one repository delegate side by side, each in its own worktrees, ledger and journals", async (t) => {
+  const p = await projectWithRoles(t);
+  const linked = await linkedProject(t, p.root, "feature");
+  configuredAt(p, linked, "feature");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const [ours, theirs] = await Promise.all([
+    delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), options),
+    delegate(linked, request({ role: "planner", cwd: linked, worktree: true }), options),
+  ]);
+  const mainId = launched(ours);
+  const linkedId = launched(theirs);
+  assert.deepEqual(scan(p.root).records.map((record) => record.id), [mainId]);
+  assert.deepEqual(scan(linked).records.map((record) => record.id), [linkedId]);
+  assert.equal(readJournal(p.root, mainId)?.defaultBranch, "main");
+  assert.equal(readJournal(linked, linkedId)?.defaultBranch, "feature");
+  assert.equal(readJournal(p.root, linkedId), null);
+  assert.equal(readJournal(linked, mainId), null);
+  // One registry holds both worktrees, each under its own project's root.
+  const listing = await git(p.root, "worktree", "list", "--porcelain");
+  for (const directory of [path.join(p.root, ".worktrees", mainId), path.join(linked, ".worktrees", linkedId)]) {
+    assert.ok(listing.includes(`worktree ${directory}\n`), `${directory} in ${listing}`);
+  }
+  // And the exclusions both projects write are one file's, each line once, which keeps the
+  // worktree project's root as clean as the main checkout's.
+  const exclude = fs.readFileSync(path.join(p.root, ".git", "info", "exclude"), "utf8").split(/\r?\n/);
+  for (const line of [".cross-agent/", ".worktrees/"]) assert.equal(exclude.filter((entry) => entry === line).length, 1, line);
+  assert.equal(await git(linked, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+// @anchor consultAtSeparatedMainLaunches
+test("a consult at a main checkout with a separated git directory launches, protecting its pointer and that directory", async (t) => {
+  const p = await projectWithRoles(t);
+  const separated = await separatedMainProject(t);
+  configuredAt(p, separated.main, "main");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const id = launched(await delegate(separated.main, request({ role: "consult", cwd: separated.main, engine: "grok" }), options));
+  assert.deepEqual(readSpec(separated.main, id).protectedPaths, [path.join(separated.main, ".git"), separated.gitDir]);
+  // Such a root takes no writes: no one-shot, and no worktree role.
+  refusal(await delegate(separated.main, request({ role: "planner", cwd: separated.main, worktree: true }), options));
+  const worktree = path.join(separated.main, ".worktrees", "w");
+  await git(separated.main, "worktree", "add", "-b", "task/w", worktree);
+  refusal(await delegate(separated.main, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
+  assert.equal(await git(separated.main, "branch", "--list", "--format=%(refname:short)", "task/*"), "task/w", "and nothing of a one-shot was made");
 });

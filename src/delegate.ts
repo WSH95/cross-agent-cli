@@ -25,7 +25,7 @@ import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName, LeadMountSpec } from "./engines/types.ts";
 import { locateRepository, verifyWorktree } from "./worktree.ts";
-import type { Repository, RepositoryIdentity, VerifiedWorktree } from "./worktree.ts";
+import type { Located, Repository, RepositoryIdentity, VerifiedWorktree } from "./worktree.ts";
 
 // `delegate`: validate under `spawn.lock`, write the record and the launch spec, start the
 // detached runner. Everything it refuses, it refuses before a record exists, so a refusal
@@ -252,8 +252,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   // the runner from it. Both root tools refuse to work in such a project (design section
   // 4) and so does the launch boundary. A project that is not a repository of its own
   // tracks nothing, and has nothing to check.
+  // The repository, located once, decides the launch (design section 6). A root it refuses
+  // — inside a worktree an enclosing work tree registers, inside its own git directory, or
+  // with a `.git` that does not verify — is no project's root, and nothing launches there.
+  // An unsupported root and a root with no `.git` launch as they always have.
   const located = await locateRepository(projectRoot);
-  // What every verification of this call is held to: the repository located once, here.
+  if (located.kind === "refused") return refuse(located.reason);
   const repo = "reason" in located ? undefined : located;
   if (repo !== undefined) {
     let tracked: string | null;
@@ -371,6 +375,9 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       if (request.branch !== undefined) {
         return refuse(`worktree: true creates this task's own branch, so the request names none; ${JSON.stringify(request.branch)} would have to exist already`);
       }
+      // A one-shot's worktree is a write to the repository, which an unsupported root takes
+      // none of and a root with no `.git` does not have.
+      if (repo === undefined) return refuse("reason" in located ? located.reason : `${projectRoot} has no repository`);
       const slug = newTaskId();
       oneShot = {
         path: canonicalPath(path.join(projectRoot, policy.worktreeDir, slug)),
@@ -514,13 +521,13 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       // for a `worktree add` whose journal step could not be written, and that command
       // has run. So every failure from here to the runner discards what exists.
       if (!created.ok) {
-        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, repo, oneShot)}`);
+        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, repo!, oneShot)}`);
       }
       // What a worktree role's own delegation is held to, applied to the one just made:
       // the record is about to say a writable engine runs there.
       const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch, repo);
       if ("reason" in verified) {
-        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, repo, oneShot)}`);
+        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, repo!, oneShot)}`);
       }
       verifiedWorktree = verified;
     }
@@ -530,6 +537,8 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // either: the worktree, its branch and its journal go with it.
     let record: TaskRecord;
     let spec: LaunchSpec;
+    // Computed at every launch, resumes included, from the workspace this task runs in.
+    const protectedPaths = protectedPathsFor(located, verifiedWorktree);
     try {
       record = create(projectRoot, {
         role: request.role, brief: request.brief, cwd: workspace, engine, model, effort, depth,
@@ -558,14 +567,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         sessionId: randomUUID(),
         ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
         denyTargets: denyTargets(config, repositoryRoot),
-        // The git metadata of a worktree workspace, which a sandbox has to refuse however
-        // its engine names the rule and whatever profile runs there: the pointer file the
-        // specialist could redirect and the repository's own git directory every worktree
-        // shares (probe P2, Claude). A root workspace has no worktree of its own to
-        // protect, and its own read-only rule is the adapter's.
-        ...(verifiedWorktree === undefined ? {} : {
-          protectedPaths: [path.join(verifiedWorktree.workTree, ".git"), verifiedWorktree.commonDir],
-        }),
+        ...(protectedPaths === undefined ? {} : { protectedPaths }),
         env: {
           ...childEnv(env, options.authority.depth, record.id, childLineage(lineage, {
             taskId: record.id, role: request.role, cwd: workspace,
@@ -581,7 +583,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     } catch (error) {
       if (oneShot !== undefined) {
         // What the discard could not remove travels with the error: it is all the caller sees.
-        const left = await discardWorktree(projectRoot, repo, oneShot);
+        const left = await discardWorktree(projectRoot, repo!, oneShot);
         if (left !== "") throw new Error(`${message(error)}${left}`, { cause: error });
       }
       throw error;
@@ -625,10 +627,8 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
  * branch both have, because a kept journal is how reconciliation finds what is left, and
  * what is left is named in the refusal.
  */
-async function discardWorktree(projectRoot: string, repo: Repository | undefined, worktree: TaskWorktree): Promise<string> {
+async function discardWorktree(projectRoot: string, located: Repository, worktree: TaskWorktree): Promise<string> {
   const kept = (why: string) => `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}`;
-  const located = repo ?? await locateRepository(projectRoot);
-  if ("reason" in located) return kept(located.reason);
   const waitSeconds = lockWaitSeconds(projectRoot);
   const operation = `delegate discarding ${worktree.slug}`;
   let lock: Lock;
@@ -683,6 +683,27 @@ async function gitFailure(repo: Repository, args: string[]): Promise<string | nu
   } catch (error) {
     return message(error);
   }
+}
+
+/**
+ * The git metadata a launch's sandbox has to refuse, however its engine names the rule and
+ * whatever profile runs there (design section 6). A worktree workspace protects the
+ * pointer file its specialist could redirect and the common directory every worktree
+ * shares (probe P2, Claude), and, where the project root is not its repository's main
+ * checkout, that root's own pointer too. A root workspace at a main checkout protects
+ * nothing of its own: its read-only rule is the adapter's, and denies the root's `.git`
+ * with it. At any other root the git directory the root's pointer leads to lies outside the
+ * denied cwd, so the pointer and that directory are named: the common directory, or for an
+ * unsupported root its own git directory.
+ */
+export function protectedPathsFor(located: Located, worktree?: VerifiedWorktree): string[] | undefined {
+  const linked = located.kind === "linked" || located.kind === "bare-linked" ? located : undefined;
+  if (worktree !== undefined) {
+    const own = [path.join(worktree.workTree, ".git"), worktree.commonDir];
+    return linked === undefined ? own : [...own, path.join(linked.workTree, ".git")];
+  }
+  if (located.kind === "unsupported") return [path.join(located.workTree, ".git"), located.gitDir];
+  return linked === undefined ? undefined : [path.join(linked.workTree, ".git"), linked.commonDir];
 }
 
 function binEnvironment(config: CrossAgentConfig, engine: EngineName): NodeJS.ProcessEnv {
