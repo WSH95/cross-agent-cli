@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T12:25:32Z
+updated_at: 2026-10-02T22:41:28Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -67,8 +67,12 @@ The follow-ups the plan names are filed as `.98`–`.101`.
 
 Code review round 1 found no Critical findings: two Important and eleven Minor, all resolvable. Fix
 round 1 landed (`3760c38..2276ff4`, 923 / 922 / 1 skipped; 1440 citations). It restores single-checkout
-behaviour where the first pass had changed it. The round-2 re-review is running. An end-to-end run with
-two concurrent projects in one repository (E10) follows.
+behaviour where the first pass had changed it. Round 2 found no Critical: four Important (lock loss
+on cleanup paths, `spawn.lock` re-read before the record, the verifier beside a separated main, a
+reused branch name after a failed closing-journal append) and five Minor. Fix round 2 landed
+(`2276ff4..7907167`, 932 / 931 / 1 skipped; 1450 citations). Next: the end-to-end run with two
+concurrent projects in one repository (E10, every engine `claude-sonnet-5`), then the round-3
+re-review, then the merge.
 
 ## Next steps
 
