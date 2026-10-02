@@ -2991,7 +2991,7 @@ refusal would also turn away a project whose tracked settings allow `Edit` withi
 **The network** (`network/`, `direct/netproject`, `direct/netflag`, `direct/nohatch`). The
 brief asked a read-only consult to run `curl -sS -m 20 -o /dev/null -w '%{http_code}'
 https://example.com` once. Under 416165c's line, `bypassPermissions`, it printed `200`; under
-84d1010's, `dontAsk`, the sandbox's proxy refused it, "deny network-outbound example.com:443
+f432318's, `dontAsk`, the sandbox's proxy refused it, "deny network-outbound example.com:443
 (user denied)", curl exiting 56, although the model had asked the Bash tool for the domain
 (`allowed_domains: ["example.com"]`): a sandboxed specialist now reaches no host. With
 `example.com` in a project `.claude/settings.json`'s `sandbox.network.allowedDomains` the
