@@ -286,7 +286,7 @@ async function judge(
 function journalFault(slug: string, journal: Journal | null, verb: Verb, parts: Parts): string | null {
   // A closed journal is terminal: its `branch-deleted` step ended the task, and a branch of
   // that name now — a later task's of this project, or a sibling project's that reused the
-  // name — is no branch of its task, so nothing it names is acted on again (design section 6).
+  // name — is no branch of its task, so nothing it names is acted on again (design section 4).
   if (journal !== null && journal.steps.some((step) => step.step === "branch-deleted")) {
     return `slug ${slug} is closed by its branch-deleted step, so ${journal.branch} now is no branch of its task; git_root ${verb.form} is refused`;
   }
@@ -359,7 +359,8 @@ export async function trackedStateFault(gitDir: string, workTree: string): Promi
  * One whitelisted git verb at the project root, journaled (design section 4). The request
  * is judged first — the verb, its shape, its arguments, the slug — because none of that
  * needs a lock; then `git.lock` is held for the journal's own checks, the command, and the
- * step. **`spawn.lock` only for `worktree remove`**, taken before `git.lock`: git removes a
+ * step, with the repository lock inside it for a verb that changes the repository. **`spawn.lock`
+ * only for `worktree remove`**, taken before `git.lock`: git removes a
  * clean worktree whatever is running in it, so that verb alone reads a reservation, and
  * the lock keeps that read from racing a `delegate` about to take the same workspace
  * (section 2, `#reservationFault`). Every other verb reads none — the project root is no
@@ -420,7 +421,7 @@ export async function gitRoot(
   const operation = `git_root ${verb.head.join(" ")}${slug === undefined ? "" : ` ${slug}`}`;
   // Only the verb that takes a workspace away reads a reservation, and only it needs the
   // lock that orders that read against `delegate` (design section 2). The order is always
-  // spawn.lock and then git.lock.
+  // spawn.lock, then git.lock, then the repository lock.
   let claim: Lock | undefined;
   if (verb.step === "worktree-removed") {
     try {

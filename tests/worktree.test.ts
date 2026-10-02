@@ -24,7 +24,7 @@ async function repository(t: TestContext) {
   await mkdir(root);
   await git(root, "init", "-b", "main");
   await git(root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial");
-  // Under the project root, where a task's worktree belongs (design section 6), and excluded
+  // Under the project root, where a task's worktree belongs (design section 4), and excluded
   // there as a project excludes its worktree directory.
   await writeFile(path.join(root, ".git", "info", "exclude"), ".worktrees/\n");
   async function add(name: string, relativePath = name): Promise<string> {
@@ -240,7 +240,7 @@ test("verifyWorktree refuses a .git symlink to a sibling pointer", async (t) => 
 });
 
 // `locateRepository`: the project's repository, verified once per tool call (design
-// section 1). A task worktree is never a project root, and what proves it is the registry
+// section 4). A task worktree is never a project root, and what proves it is the registry
 // of an enclosing work tree, read from outside the candidate: the candidate's own `.git`
 // plays no part, whether intact, deleted, replaced or rewritten.
 
@@ -514,7 +514,7 @@ test("a worktree of a separated main is linked with no main: its main stanza nam
 });
 
 // `verifyWorktree` against a root that is not its repository's main checkout (design
-// section 6): identity from the located repository, membership and nesting from a fresh
+// section 4): identity from the located repository, membership and nesting from a fresh
 // listing, and a task worktree only strictly under the project root.
 
 // @anchor verifyWorktreeContainment

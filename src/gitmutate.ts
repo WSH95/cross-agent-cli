@@ -348,8 +348,9 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
  * The lead's only way to mutate git inside a worktree (design section 4). Nothing here
  * trusts a linked worktree's `.git` pointer, which Grok's sandbox cannot keep an
  * implementer from writing: the four steps are refuse while the workspace is reserved,
- * verify the worktree from the root, run the command under `git.lock` against the
- * directories the verifier returned, and journal the step with the SHAs around it. This
+ * verify the worktree from the root, run the command under `git.lock` and the repository
+ * lock against the directories the verifier returned, and journal the step with the SHAs
+ * around it. This
  * function judges the request, which needs no lock at all, and then takes `spawn.lock`
  * for the four.
  */
@@ -383,9 +384,10 @@ export async function gitMutate(
   const unwritable = rootWriteFault(repo, projectRoot, defaultBranch, "write");
   if (unwritable !== null) return { ok: false, reason: unwritable };
 
-  // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
-  // around validate-and-spawn (T10), so holding it across this whole call is what keeps
-  // the reservation check below from racing a delegation about to take this workspace.
+  // The lock order is always spawn.lock, then git.lock, then the repository lock.
+  // `delegate` holds spawn.lock around validate-and-spawn (T10), so holding it across this
+  // whole call is what keeps the reservation check below from racing a delegation about
+  // to take this workspace.
   let claim: Lock;
   try {
     claim = await projectLock(projectRoot, spawnLockName(), {
@@ -533,9 +535,9 @@ async function mutate(
       ok: true, exitCode: 0, stdout: ran.stdout, stderr: ran.stderr,
       ...(before === undefined ? {} : { before }),
       ...(after === undefined ? {} : { after }),
-      // The command ran and is journaled, but if the kernel dropped either lock while it
-      // did, another mutation or a delegate may already have started: the caller is told
-      // rather than left to believe the whole call was exclusive.
+      // The command ran and is journaled, but if the kernel dropped any of its locks while
+      // it did, another mutation, another project's or a delegate may already have started:
+      // the caller is told rather than left to believe the whole call was exclusive.
       ...(lock.lost || claim.lost || shared.lost ? { lockLost: true as const } : {}),
       journal: journal.steps[journal.steps.length - 1],
     };

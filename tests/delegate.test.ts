@@ -1367,7 +1367,7 @@ test("a discard that leaves the worktree or its branch standing keeps the journa
   assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`, "and the journal that finds them both");
 });
 
-// A root that is not its repository's main checkout (design section 6): what a launch there
+// A root that is not its repository's main checkout (design section 4): what a launch there
 // protects, what it refuses, and two projects of one repository side by side.
 
 /**

@@ -252,7 +252,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   // the runner from it. Both root tools refuse to work in such a project (design section
   // 4) and so does the launch boundary. A project that is not a repository of its own
   // tracks nothing, and has nothing to check.
-  // The repository, located once, decides the launch (design section 6). A root it refuses
+  // The repository, located once, decides the launch (design section 4). A root it refuses
   // — inside a worktree an enclosing work tree registers, inside its own git directory, or
   // with a `.git` that does not verify — is no project's root, and nothing launches there.
   // An unsupported root and a root with no `.git` launch as they always have.
@@ -627,7 +627,7 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
  * branch both have, because a kept journal is how reconciliation finds what is left, and
  * what is left is named in the refusal.
  */
-async function discardWorktree(projectRoot: string, located: Repository, worktree: TaskWorktree): Promise<string> {
+async function discardWorktree(projectRoot: string, repo: Repository, worktree: TaskWorktree): Promise<string> {
   const kept = (why: string) => `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}`;
   const waitSeconds = lockWaitSeconds(projectRoot);
   const operation = `delegate discarding ${worktree.slug}`;
@@ -640,22 +640,22 @@ async function discardWorktree(projectRoot: string, located: Repository, worktre
   try {
     let shared: Lock;
     try {
-      shared = await acquire(repositoryLockPath(located.commonDir), { waitSeconds: repositoryLockWait(waitSeconds), operation });
+      shared = await acquire(repositoryLockPath(repo.commonDir), { waitSeconds: repositoryLockWait(waitSeconds), operation });
     } catch (error) {
       return kept(message(error));
     }
     try {
       const survived: string[] = [];
       if (directory(worktree.path)) {
-        const failed = await gitFailure(located, ["worktree", "remove", "--force", worktree.path]);
+        const failed = await gitFailure(repo, ["worktree", "remove", "--force", worktree.path]);
         if (failed !== null) survived.push(`${worktree.path} (${failed})`);
       }
       let branched = true;
       try {
-        branched = await revision(located.gitDir, located.workTree, worktree.branch) !== undefined;
+        branched = await revision(repo.gitDir, repo.workTree, worktree.branch) !== undefined;
       } catch { /* a git that cannot run is named by the delete it then fails */ }
       if (branched) {
-        const failed = await gitFailure(located, ["branch", "-D", worktree.branch]);
+        const failed = await gitFailure(repo, ["branch", "-D", worktree.branch]);
         if (failed !== null) survived.push(`branch ${worktree.branch} (${failed})`);
       }
       if (survived.length > 0) {
@@ -687,7 +687,7 @@ async function gitFailure(repo: Repository, args: string[]): Promise<string | nu
 
 /**
  * The git metadata a launch's sandbox has to refuse, however its engine names the rule and
- * whatever profile runs there (design section 6). A worktree workspace protects the
+ * whatever profile runs there (design section 4). A worktree workspace protects the
  * pointer file its specialist could redirect and the common directory every worktree
  * shares (probe P2, Claude), and, where the project root is not its repository's main
  * checkout, that root's own pointer too. A root workspace at a main checkout protects

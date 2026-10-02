@@ -127,7 +127,7 @@ test("no config and no repository is a reason, never a guess", async (t) => {
   }
 });
 
-// Design section 2: a cwd inside a worktree that an enclosing work tree registers is read as
+// Design, "Which project": a cwd inside a worktree that an enclosing work tree registers is read as
 // that work tree first, from outside it and before any config is looked at; then the nearest
 // `.git` holder's own config, which is local opt-in, comes before today's mapping to the main
 // checkout. A worktree project is one `cross-agent init` was run in.

@@ -260,7 +260,7 @@ export function track(t: TestContext, child: ReturnType<typeof spawn>): ReturnTy
   return child;
 }
 
-// Repository layouts whose project roots are linked worktrees (design section 1). Each is
+// Repository layouts whose project roots are linked worktrees (design, "Which project"). Each is
 // made in a directory of its own, canonical and removed when the test ends, through the
 // harness's own git, so nothing of the suite's environment shapes the repository.
 

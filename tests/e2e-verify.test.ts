@@ -2042,7 +2042,7 @@ test("the journal has to hold the loop's steps in order, and an empty one fails"
   assert.equal(verdict((await run(foreign)).out, journal), "?");
 });
 
-// Rows 1 and 2 are the project's own (design section 8): the repository's registry and its
+// Rows 1 and 2 are the project's own (design, "Verification"): the repository's registry and its
 // branches hold a sibling project's root, its task worktrees and its branches too, and a
 // branch is this project's leftover only on positive evidence — a checkout under its root
 // or an open journal of its own — and another's only on the same kind of evidence there.

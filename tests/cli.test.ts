@@ -1503,7 +1503,7 @@ test("show takes a task's status, exit and final message from one read of its re
 });
 
 // `cross-agent git-root`: one `git_root` verb from a terminal, under the same whitelist,
-// journal rules, opt-in rule and locks as the tool (design section 6), so an operator has a
+// journal rules, opt-in rule and locks as the tool (design section 10), so an operator has a
 // cooperating path for root git while a loop runs.
 
 /** A repository on `main` with one commit, holding `config` as its own. */
@@ -1628,7 +1628,7 @@ test("git-root exits 0 when git ran, 1 when git failed or its step went unrecord
   assert.equal(fs.existsSync(directory), true);
 });
 
-// `init` in a worktree (design section 3): judged from outside in before anything is
+// `init` in a worktree (design section 10): judged from outside in before anything is
 // written, its default branch the worktree's own, its config the main checkout's or the
 // mode's defaults, and the Grok attach copied as a regular file through no link.
 

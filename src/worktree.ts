@@ -144,7 +144,7 @@ export interface Enclosure {
 
 /**
  * The work tree whose repository registers a worktree holding `candidate`, inside that work
- * tree, or null (design section 1). The candidate is canonical, and its strict ancestors
+ * tree, or null (design section 4). The candidate is canonical, and its strict ancestors
  * are walked outside-in: one holding a `.git` entry encloses it when it is a work tree by
  * its own git and its own registry lists a worktree strictly under it that is or holds the
  * candidate. Nothing of the candidate's own `.git` is read, so ownership is proven by
@@ -187,7 +187,7 @@ export function nestedReason(candidate: string, { ancestor, worktree }: Enclosur
 }
 
 /**
- * What kind of root a project's repository has (design section 1): its own main checkout,
+ * What kind of root a project's repository has (design section 4): its own main checkout,
  * a linked worktree of a repository whose first stanza is a work tree or a separated git
  * directory, or a linked worktree of a bare repository.
  */
@@ -230,7 +230,7 @@ async function explicitly(gitDir: string, workTree: string, ...args: string[]): 
 }
 
 /**
- * The project's repository, verified once per tool call (design section 1), or why there
+ * The project's repository, verified once per tool call (design section 4), or why there
  * is none to work on. The root's nesting is decided first and from outside it; then its
  * `.git`: a directory is a main checkout unless its own git calls it bare, and a pointer
  * file is a linked worktree once git confirms it on explicit directories, its

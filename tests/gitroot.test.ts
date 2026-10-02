@@ -662,7 +662,7 @@ test("a task worktree named as the project is refused as nested, naming it and t
   const linked = await source.worktree("task/linked");
   // An operator who starts the server inside a task's worktree is told which work tree
   // registers it, the project to serve instead (atc-s96.50). Both root tools locate the
-  // repository the same way, from outside the candidate (design section 1).
+  // repository the same way, from outside the candidate (design section 4).
   const reason = refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 }));
   assert.ok(reason.includes(linked) && reason.includes(source.root), reason);
   assert.match(reason, /never a project root/);
@@ -954,7 +954,7 @@ test("rebase --abort and every journaled verb take the repository lock, past the
   accepted(await created);
 });
 
-// A closed journal is terminal (design section 6): its `branch-deleted` step ended the
+// A closed journal is terminal (design section 4): its `branch-deleted` step ended the
 // task, and a branch of that name now is another task's, this project's or a sibling's.
 
 // @anchor closedJournalReusedNameTwoProjects

@@ -259,7 +259,7 @@ const initVerb: Verb = {
       return refused(`cannot resolve the project: ${message(error)}`);
     }
     // Every target is judged from outside it first, before its own `.git` is looked at: a
-    // task worktree is never a project, whatever its pointer holds now (design section 3).
+    // task worktree is never a project, whatever its pointer holds now (design section 10).
     const enclosure = await enclosingWorktree(root);
     if (enclosure !== null) return refused("reason" in enclosure ? enclosure.reason : nestedReason(root, enclosure));
     const dotGit = fs.lstatSync(path.join(root, ".git"), { throwIfNoEntry: false });
@@ -295,7 +295,7 @@ const initVerb: Verb = {
 
 /**
  * `init` at a worktree, which makes it a project of its own on the branch it has checked
- * out (design section 3). The config is copied from `--from`, or from the main checkout when
+ * out (design section 10). The config is copied from `--from`, or from the main checkout when
  * that holds one, and is the mode's defaults otherwise; every refusal comes before anything
  * is written.
  */
@@ -376,7 +376,7 @@ type Attach = { copied: true; from: string; to: string } | { copied: false; from
 
 /**
  * The source's Grok attach, `.grok/config.toml`, copied byte for byte into the worktree, or
- * why it was not; null where the source holds none (design section 3). It is host
+ * why it was not; null where the source holds none (design section 10). It is host
  * configuration, which Grok loads in the operator's own session, so it moves as a regular
  * file and never through a link: both directories and the file are judged by `lstat`,
  * nothing already at the destination is replaced — a dangling link included — and the file
