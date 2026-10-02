@@ -24,7 +24,7 @@ import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName, LeadMountSpec } from "./engines/types.ts";
 import { locateRepository, verifyWorktree } from "./worktree.ts";
-import type { VerifiedWorktree } from "./worktree.ts";
+import type { RepositoryIdentity, VerifiedWorktree } from "./worktree.ts";
 
 // `delegate`: validate under `spawn.lock`, write the record and the launch spec, start the
 // detached runner. Everything it refuses, it refuses before a record exists, so a refusal
@@ -99,7 +99,7 @@ function directory(target: string): boolean {
 
 /** The workspace rule of the kind the mode gave this role (design, "Modes"). */
 async function workspaceFault(
-  projectRoot: string, workspace: Workspace, name: string, cwd: string, branch?: string,
+  projectRoot: string, workspace: Workspace, name: string, cwd: string, branch?: string, repo?: RepositoryIdentity,
 ): Promise<{ fault: string } | { verified?: VerifiedWorktree }> {
   if (workspace.kind === "root") {
     return cwd === canonicalPath(projectRoot) ? {} : { fault: `role ${JSON.stringify(name)} works at the project root ${projectRoot}, not ${cwd}` };
@@ -109,7 +109,7 @@ async function workspaceFault(
   }
   // The verification is the check and the source of `protectedPaths`: the caller keeps
   // what it resolved rather than running git a second time to learn the same thing.
-  const verified = await verifyWorktree(projectRoot, cwd, branch);
+  const verified = await verifyWorktree(projectRoot, cwd, branch, repo);
   return "reason" in verified ? { fault: verified.reason } : { verified };
 }
 
@@ -252,10 +252,12 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   // 4) and so does the launch boundary. A project that is not a repository of its own
   // tracks nothing, and has nothing to check.
   const located = await locateRepository(projectRoot);
-  if (!("reason" in located)) {
+  // What every verification of this call is held to: the repository located once, here.
+  const repo = "reason" in located ? undefined : located;
+  if (repo !== undefined) {
     let tracked: string | null;
     try {
-      tracked = await trackedStateFault(located.gitDir, located.workTree);
+      tracked = await trackedStateFault(repo.gitDir, repo.workTree);
     } catch (error) {
       return refuse(message(error));
     }
@@ -423,7 +425,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     /** The worktree this task will run in, once something has verified it. */
     let verifiedWorktree: VerifiedWorktree | undefined;
     if (continued === undefined) {
-      const checked = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch);
+      const checked = await workspaceFault(projectRoot, declared.workspace, request.role, cwd, request.branch, repo);
       if ("fault" in checked) return refuse(checked.fault);
       verifiedWorktree = checked.verified;
     }
@@ -462,7 +464,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       // The worktree the original ran in has to still be that worktree: a lead that has
       // already merged and cleaned up is told so by name rather than handed a fresh one.
       if (continued !== undefined) {
-        const verified = await verifyWorktree(projectRoot, continued.path, continued.branch);
+        const verified = await verifyWorktree(projectRoot, continued.path, continued.branch, repo);
         if ("reason" in verified) {
           return refuse(`task ${request.resume} ran in ${continued.path} on ${continued.branch}, which is no longer a worktree of this project: ${verified.reason}`);
         }
@@ -515,7 +517,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       }
       // What a worktree role's own delegation is held to, applied to the one just made:
       // the record is about to say a writable engine runs there.
-      const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch);
+      const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch, repo);
       if ("reason" in verified) {
         return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, oneShot)}`);
       }

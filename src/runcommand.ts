@@ -210,7 +210,7 @@ export async function runCommand(
   } else {
     // Verified exactly as `git_mutate` verifies it, on the branch the journal records: the
     // lead does not get to say which branch a directory is on (design section 4).
-    const verified = await verifyWorktree(projectRoot, path.resolve(projectRoot, where), journal!.branch);
+    const verified = await verifyWorktree(projectRoot, path.resolve(projectRoot, where), journal!.branch, located);
     if ("reason" in verified) return { ok: false, reason: verified.reason };
     if (journal!.worktree !== undefined && journal!.worktree !== verified.workTree) {
       return { ok: false, reason: `slug ${slug} is journaled on worktree ${journal!.worktree}; refusing ${verified.workTree}` };

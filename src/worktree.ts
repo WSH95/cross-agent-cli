@@ -110,6 +110,15 @@ export async function worktreeStanzas(dir: string): Promise<Stanza[]> {
 }
 
 /**
+ * The registry read through a git directory this call has already verified, from `root`:
+ * a read like the verifier's others, which run with `-C`, and never one of the commands a
+ * tool runs in the explicit form (`src/gitmutate.ts#run`).
+ */
+async function registryOf(gitDir: string, root: string): Promise<Stanza[]> {
+  return stanzasOf(await git(root, `--git-dir=${gitDir}`, "worktree", "list", "--porcelain", "-z"), root);
+}
+
+/**
  * What the canonical `dir` is by its own git: a bare repository, and whether it is a work
  * tree at its own top level. This is the one test for a work tree here — of an enclosing
  * ancestor and of a registry's first stanza alike — because a registry cannot answer it:
@@ -260,7 +269,7 @@ async function asMainCheckout(workTree: string, gitDir: string): Promise<Located
   if (bare === "true") {
     return { kind: "unsupported", workTree, gitDir, reason: `${gitDir} is a bare repository, and ${workTree} is no work tree of it: serve one of its worktrees` };
   }
-  const stanzas = await stanzasOf(await explicitly(gitDir, workTree, "worktree", "list", "--porcelain", "-z"), workTree);
+  const stanzas = await registryOf(gitDir, workTree);
   const own = stanzas.find((stanza) => stanza.path === workTree);
   return { kind: "main", workTree, gitDir, commonDir: gitDir, branch: own?.branch ?? null, stanzas, main: workTree };
 }
@@ -311,7 +320,7 @@ async function asLinkedWorktree(workTree: string, pointer: string): Promise<Loca
     return refused(`${workTree} lies inside its repository's git directory ${commonDir}: place worktrees beside the git directory, never inside it`);
   }
   // @anchor rootListed
-  const stanzas = await stanzasOf(await explicitly(admin, workTree, "worktree", "list", "--porcelain", "-z"), workTree);
+  const stanzas = await registryOf(admin, workTree);
   const own = stanzas.find((stanza) => !stanza.main && stanza.path === workTree);
   if (own === undefined) return refused(`${workTree} is not in its repository's worktree list`);
   const first = stanzas.find((stanza) => stanza.main);
@@ -324,34 +333,52 @@ async function asLinkedWorktree(workTree: string, pointer: string): Promise<Loca
   };
 }
 
-/** Verifies a linked worktree without changing its files or Git metadata. */
-export async function verifyWorktree(projectRoot: string, worktreePath: string, branch: string): Promise<WorktreeResult> {
-  let operation = "resolve the project root and worktree path";
+/** What `verifyWorktree` takes from a located repository: its identity, never its listing. */
+export type RepositoryIdentity = Pick<Repository, "kind" | "workTree" | "gitDir" | "commonDir">;
+
+/**
+ * Verifies a task worktree of the project at `projectRoot` without changing its files or
+ * Git metadata (design section 4). The repository is `repo` where the caller has located it
+ * already, and is located here otherwise; it supplies identity alone, because membership
+ * and nesting are read from a listing taken on every call — `delegate` locates the
+ * repository before `worktree add` and verifies after it.
+ */
+export async function verifyWorktree(
+  projectRoot: string, worktreePath: string, branch: string, repo?: RepositoryIdentity,
+): Promise<WorktreeResult> {
+  let operation = "locate the project's repository";
   try {
-    const root = await realpath(projectRoot);
+    let identity = repo;
+    if (identity === undefined) {
+      const located = await locateRepository(projectRoot);
+      if ("reason" in located) return { reason: located.reason };
+      identity = located;
+    }
+    const root = identity.workTree;
+    operation = "resolve the worktree path";
     // A relative path is the project's: the server's own directory is wherever its host
     // started it, which for the Codex plugin is its cached copy.
     const workTree = await realpath(path.resolve(root, worktreePath));
-    operation = "list the project's linked worktrees";
-    // NUL-delimited porcelain disables C-style quoting, even for newlines in paths.
-    const listing = await git(root, "worktree", "list", "--porcelain", "-z");
-    const entries = listing.split("\0\0").filter(Boolean);
-    let linked = false;
-    for (const entry of entries.slice(1)) {
-      const field = entry.split("\0").find((line) => line.startsWith("worktree "));
-      if (!field) continue;
-      try {
-        if (await realpath(path.resolve(root, field.slice("worktree ".length))) === workTree) {
-          linked = true;
-          break;
-        }
-      } catch (error) {
-        // Stale registrations do not prevent checking another, existing worktree.
-        if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-      }
-    }
+    operation = "list the repository's worktrees";
+    const stanzas = await registryOf(identity.gitDir, root);
     // @anchor linkedWorktree
-    if (!linked) return { reason: `${workTree} is not a linked worktree of ${root}; the main worktree and subdirectories are not accepted.` };
+    if (!stanzas.some((stanza) => !stanza.main && stanza.path === workTree)) {
+      return { reason: `${workTree} is not a linked worktree of ${root}; the main worktree and subdirectories are not accepted.` };
+    }
+    // @anchor underProjectRoot
+    // A linked root and its siblings are worktrees of one repository: only what lies under
+    // this root is this project's.
+    if (!contains(root, workTree)) {
+      return { reason: `${workTree} is not under the project root ${root}; a worktree outside it is another project's or none.` };
+    }
+    // @anchor notNestedWorktree
+    // Only stanzas strictly under the root are read: the root's own nesting was settled
+    // when its repository was located, and a stanza at or above it — a bare main whatever
+    // its label, a separated main's git directory — encloses every task of the project.
+    const outer = stanzas.find((stanza) => contains(root, stanza.path) && contains(stanza.path, workTree));
+    if (outer !== undefined) {
+      return { reason: `${workTree} lies inside ${outer.path}, another worktree of this project; a worktree nested in another is a tree the outer one's own git would see.` };
+    }
 
     operation = "inspect the worktree's .git pointer file";
     // Following a pointer symlink could make a sibling's backlink look valid.
@@ -364,7 +391,7 @@ export async function verifyWorktree(projectRoot: string, worktreePath: string, 
     const gitDir = await realpath(path.resolve(workTree, withoutNewline(await git(workTree, "rev-parse", "--git-dir"))));
     const commonDir = await realpath(path.resolve(workTree, withoutNewline(await git(workTree, "rev-parse", "--git-common-dir"))));
     const actualBranch = withoutNewline(await git(workTree, "rev-parse", "--abbrev-ref", "HEAD"));
-    const expectedCommon = await realpath(path.join(root, ".git"));
+    const expectedCommon = identity.commonDir;
     const adminRoot = await realpath(path.join(expectedCommon, "worktrees"));
     // @anchor administrativeParent
     if (path.dirname(gitDir) !== adminRoot) {

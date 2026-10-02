@@ -24,8 +24,11 @@ async function repository(t: TestContext) {
   await mkdir(root);
   await git(root, "init", "-b", "main");
   await git(root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial");
+  // Under the project root, where a task's worktree belongs (design section 6), and excluded
+  // there as a project excludes its worktree directory.
+  await writeFile(path.join(root, ".git", "info", "exclude"), ".worktrees/\n");
   async function add(name: string, relativePath = name): Promise<string> {
-    const worktree = path.join(temporary, "linked", relativePath);
+    const worktree = path.join(root, ".worktrees", relativePath);
     await git(root, "worktree", "add", "-b", `task/${name}`, worktree);
     return worktree;
   }
@@ -70,7 +73,7 @@ test("verifyWorktree accepts canonical-equivalent symlink paths", async (t) => {
   const candidate = await add("symlink");
   const alias = path.join(temporary, "alias");
   await symlink(temporary, alias, "dir");
-  assert.deepEqual(await verifyWorktree(path.join(alias, "project"), path.join(alias, "linked", "symlink"), "task/symlink"), {
+  assert.deepEqual(await verifyWorktree(path.join(alias, "project"), path.join(alias, "project", ".worktrees", "symlink"), "task/symlink"), {
     gitDir: await realpath(path.join(root, ".git", "worktrees", "symlink")),
     workTree: await realpath(candidate),
     branch: "task/symlink",
@@ -508,4 +511,74 @@ test("a worktree of a separated main is linked with no main: its main stanza nam
   assert.equal(located.main, null);
   assert.equal(located.commonDir, gitDir);
   assert.equal(located.stanzas.find((stanza) => stanza.main)?.path, gitDir);
+});
+
+// `verifyWorktree` against a root that is not its repository's main checkout (design
+// section 6): identity from the located repository, membership and nesting from a fresh
+// listing, and a task worktree only strictly under the project root.
+
+// @anchor verifyWorktreeContainment
+test("verifyWorktree accepts a task worktree strictly under the project root and nothing of its siblings'", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const root = await linkedProject(t, main, "feature");
+  const sibling = await linkedProject(t, main, "other");
+  const task = path.join(root, ".worktrees", "x");
+  await git(root, "worktree", "add", "-b", "task/x", task);
+  const theirs = path.join(sibling, ".worktrees", "y");
+  await git(sibling, "worktree", "add", "-b", "task/y", theirs);
+
+  assert.deepEqual(await verifyWorktree(root, task, "task/x"), {
+    gitDir: await realpath(path.join(main, ".git", "worktrees", "x")),
+    workTree: await realpath(task), branch: "task/x",
+    // The repository's common directory, which a linked root shares with its main checkout.
+    commonDir: path.join(main, ".git"),
+  });
+  // The root itself, a sibling project's root and that project's task worktree are all
+  // linked worktrees of this repository, and none of them is this project's.
+  for (const [candidate, branch] of [[root, "feature"], [sibling, "other"], [theirs, "task/y"]]) {
+    assert.match(refusal(await verifyWorktree(root, candidate, branch)), /not under the project root/, candidate);
+  }
+  // The main checkout is no linked worktree at all.
+  assert.match(refusal(await verifyWorktree(root, main, "main")), /is not a linked worktree of/);
+  // A worktree nested inside this project's own task worktree is refused, its pointer intact or not.
+  const nested = path.join(task, ".worktrees", "z");
+  await git(root, "worktree", "add", "-b", "task/z", nested);
+  assert.match(refusal(await verifyWorktree(root, nested, "task/z")), /inside .* another worktree/);
+  await rm(path.join(task, ".git"));
+  assert.match(refusal(await verifyWorktree(root, nested, "task/z")), /inside .* another worktree/);
+});
+
+// @anchor verifyWorktreeIgnoresStanzasAboveRoot
+test("verifyWorktree reads no stanza at or above the root: a bare main, labelled or not, encloses nothing", async (t) => {
+  const fixture = await bareDotGitProject(t);
+  const task = path.join(fixture.root, ".worktrees", "x");
+  await git(fixture.root, "worktree", "add", "-b", "task/x", task);
+  const expected = {
+    gitDir: path.join(fixture.commonDir, "worktrees", "x"), workTree: await realpath(task), branch: "task/x",
+    commonDir: fixture.commonDir,
+  };
+  // Unlabelled: `core.bare` lives in the main's own `config.worktree`, which a listing from
+  // the root does not read, so `U` is listed as a work tree enclosing the task worktree.
+  assert.doesNotMatch((await git(fixture.root, "worktree", "list", "--porcelain")).split("\n\n")[0], /^bare$/m);
+  assert.deepEqual(await verifyWorktree(fixture.root, task, "task/x"), expected);
+  // Labelled: `core.bare` back in the shared config.
+  await git(fixture.commonDir, "config", "--worktree", "--unset", "core.bare");
+  await git(fixture.commonDir, "config", "core.bare", "true");
+  assert.match((await git(fixture.root, "worktree", "list", "--porcelain")).split("\n\n")[0], /^bare$/m);
+  assert.deepEqual(await verifyWorktree(fixture.root, task, "task/x"), expected);
+});
+
+// @anchor verifyWorktreeFreshListing
+test("verifyWorktree lists the registry afresh, so a repository located before a worktree add verifies it", async (t) => {
+  const umbrella = await umbrellaProject(t);
+  const located = await locateRepository(umbrella.root);
+  assert.ok(!("reason" in located), JSON.stringify(located));
+  const task = path.join(umbrella.root, ".worktrees", "x");
+  await git(umbrella.root, "worktree", "add", "-b", "task/x", task);
+  assert.equal(located.stanzas.some((stanza) => stanza.path === task), false, "the located snapshot predates it");
+  assert.deepEqual(await verifyWorktree(umbrella.root, task, "task/x", located), {
+    gitDir: path.join(umbrella.commonDir, "worktrees", "x"), workTree: await realpath(task), branch: "task/x",
+    commonDir: umbrella.commonDir,
+  });
 });

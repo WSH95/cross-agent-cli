@@ -12,7 +12,8 @@ import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
 import type { Reservations } from "./reservation.ts";
-import { gitEnvironment, verifyWorktree } from "./worktree.ts";
+import { gitEnvironment, locateRepository, verifyWorktree } from "./worktree.ts";
+import type { Repository } from "./worktree.ts";
 
 export interface GitMutateRequest {
   slug: string;
@@ -369,6 +370,9 @@ export async function gitMutate(
   const slug = request.slug;
   const branch = request.branch ?? (options.branchPattern ?? "task/*").replace("*", slug);
   const target = path.resolve(projectRoot, request.path ?? path.join(options.dir ?? ".worktrees", slug));
+  const repo = await locateRepository(projectRoot);
+  if ("reason" in repo) return { ok: false, reason: repo.reason };
+  if (repo.kind !== "main") return { ok: false, reason: `git_mutate works in the task worktrees of a repository's main checkout, and ${repo.workTree} is a linked worktree` };
 
   // The lock order is always spawn.lock and then git.lock. `delegate` holds spawn.lock
   // around validate-and-spawn (T10), so holding it across this whole call is what keeps
@@ -384,7 +388,7 @@ export async function gitMutate(
     return { ok: false, reason: message(error) };
   }
   try {
-    return await mutate(projectRoot, request, options, { slug, branch, target, claim });
+    return await mutate(projectRoot, request, options, { slug, branch, target, claim, repo });
   } finally {
     await claim.release();
   }
@@ -393,7 +397,7 @@ export async function gitMutate(
 /** The four steps, with `spawn.lock` held for all of them. */
 async function mutate(
   projectRoot: string, request: GitMutateRequest, options: GitMutateOptions,
-  { slug, branch, target, claim }: { slug: string; branch: string; target: string; claim: Lock },
+  { slug, branch, target, claim, repo }: { slug: string; branch: string; target: string; claim: Lock; repo: Repository },
 ): Promise<GitMutateResult> {
   // A journal belongs to one branch: every step's SHAs were recorded against it, so a call
   // on another branch under the same slug is refused before anything runs. The journal is
@@ -438,13 +442,13 @@ async function mutate(
   }
 
   // 2. Verification from the root, and its answer is what step 3 runs against.
-  let verified = await verifyWorktree(projectRoot, target, branch);
+  let verified = await verifyWorktree(projectRoot, target, branch, repo);
   if ("reason" in verified && abortsRebase(request.args)) {
     // The conflict path of section 4: HEAD is detached — `--abbrev-ref HEAD` answers
     // `HEAD`, which is no branch name git will take — so every other check the verifier
     // makes still has to pass, and git's own rebase state has to name this journal's
     // branch. The branch the step is recorded against is that one, not the detached HEAD.
-    const detached = await verifyWorktree(projectRoot, target, "HEAD");
+    const detached = await verifyWorktree(projectRoot, target, "HEAD", repo);
     if (!("reason" in detached) && await rebasing(detached.gitDir, branch)) verified = { ...detached, branch };
   }
   if ("reason" in verified) return { ok: false, reason: verified.reason };
