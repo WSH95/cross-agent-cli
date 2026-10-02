@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CONFIG_PATH } from "./config.ts";
-import { gitEnvironment } from "./worktree.ts";
+import { enclosingWorktree, gitEnvironment, nestedReason, ownGit, worktreeStanzas } from "./worktree.ts";
 
 export type Discovery = { root: string } | { reason: string };
 
@@ -17,14 +17,32 @@ function holdsConfig(dir: string): boolean {
   return fs.statSync(path.join(dir, CONFIG_PATH), { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The root as discovery may return it: a root inside a worktree that an enclosing work
+ * tree registers is never one, whichever way it was reached (design, "Which project").
+ */
+async function checked(root: string, source?: string): Promise<Discovery> {
+  const enclosure = await enclosingWorktree(root);
+  if (enclosure === null) return { root };
+  if ("reason" in enclosure) return enclosure;
+  return { reason: `${source === undefined ? "" : `${source} names `}${nestedReason(root, enclosure)}` };
+}
+
+/** A root a caller names: canonical, never a task worktree, and holding a config, each decided before any config is read. */
 async function named(value: string, source: string): Promise<Discovery> {
   let root: string;
   try {
     root = await realpath(value);
   } catch (error) {
-    return { reason: `cannot resolve ${source} ${value}: ${error instanceof Error ? error.message : String(error)}` };
+    return { reason: `cannot resolve ${source} ${value}: ${message(error)}` };
   }
-  return holdsConfig(root) ? { root } : { reason: `${source} ${root} holds no ${CONFIG_PATH}` };
+  const found = await checked(root, source);
+  if ("reason" in found) return found;
+  return holdsConfig(root) ? found : { reason: `${source} ${root} holds no ${CONFIG_PATH}` };
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
@@ -33,18 +51,53 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   return path.resolve(cwd, stdout.replace(/\n$/, ""));
 }
 
-// The ledger lives in the main checkout, and a linked worktree — `.worktrees/<slug>` or
-// one anywhere else on disk — is the same project, so its directories are read as the
-// same places in the main worktree. Anything git cannot answer for is read as it is.
-async function inMainWorktree(cwd: string): Promise<string> {
+/** The nearest ancestor-or-self of `dir` holding a `.git` entry, by filesystem reads alone, or null. */
+function nearestGit(dir: string): string | null {
+  for (let at = dir; ; at = path.dirname(at)) {
+    if (fs.lstatSync(path.join(at, ".git"), { throwIfNoEntry: false }) !== undefined) return at;
+    if (path.dirname(at) === at) return null;
+  }
+}
+
+/** The nearest ancestor-or-self of `dir` that exists. */
+function nearestExisting(dir: string): string {
+  let at = dir;
+  while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
+  return at;
+}
+
+/**
+ * Where the config walk starts for a working directory, and the main checkout it was read
+ * at when it was read at one (design, "Which project"). The cwd is taken out of every
+ * worktree an enclosing work tree registers first, outside-in and before any config is
+ * looked at, so a cwd inside a task worktree is read as its root whatever its pointer
+ * holds; each pass strips at least one path component, and the mapping is lexical, since
+ * the same path need not exist on the root's branch. Then local opt-in comes first: the
+ * nearest `.git` holder that holds a config of its own is its own project, and one that
+ * does not is read at its main checkout, the registry's first stanza when that is a work
+ * tree by its own git and not the holder itself — a separated main's first stanza is its
+ * git directory, and a main checkout, a bare repository or a registry that will not read
+ * leave the cwd where it is.
+ */
+async function projectStart(cwd: string): Promise<{ start: string; main?: string } | { reason: string }> {
+  let start: string;
   try {
-    const top = await git(cwd, "rev-parse", "--show-toplevel");
-    const gitDir = await git(cwd, "rev-parse", "--git-dir");
-    const commonDir = await git(cwd, "rev-parse", "--git-common-dir");
-    if (gitDir === commonDir || path.basename(commonDir) !== ".git") return cwd;
-    return path.join(path.dirname(commonDir), path.relative(top, cwd));
+    start = await realpath(cwd);
+  } catch (error) {
+    return { reason: `cannot resolve the working directory ${cwd}: ${message(error)}` };
+  }
+  for (let enclosure = await enclosingWorktree(start); enclosure !== null; enclosure = await enclosingWorktree(start)) {
+    if ("reason" in enclosure) return enclosure;
+    start = path.join(enclosure.ancestor, path.relative(enclosure.worktree, start));
+  }
+  const holder = nearestGit(start);
+  if (holder === null || holdsConfig(holder)) return { start };
+  try {
+    const first = (await worktreeStanzas(holder)).find((stanza) => stanza.main);
+    if (first === undefined || first.path === holder || !(await ownGit(first.path)).workTree) return { start };
+    return { start: path.join(first.path, path.relative(holder, start)), main: first.path };
   } catch {
-    return cwd;
+    return { start };
   }
 }
 
@@ -107,25 +160,25 @@ export async function discoverProject(argv: readonly string[], env: Readonly<Nod
     if (!path.isAbsolute(exported)) return { reason: `CROSS_AGENT_PROJECT must be an absolute path, not ${JSON.stringify(exported)}` };
     return named(exported, "CROSS_AGENT_PROJECT");
   }
-  let start: string;
-  try {
-    start = await inMainWorktree(await realpath(cwd));
-  } catch (error) {
-    return { reason: `cannot resolve the working directory ${cwd}: ${error instanceof Error ? error.message : String(error)}` };
-  }
+  const begun = await projectStart(cwd);
+  if ("reason" in begun) return begun;
+  const { start } = begun;
   for (let dir = start; ; dir = path.dirname(dir)) {
-    if (holdsConfig(dir)) return { root: dir };
+    if (holdsConfig(dir)) return checked(await realpath(dir));
     if (path.dirname(dir) === dir) break;
   }
-  // No config above it, so the project is the repository the working directory is in, read
-  // at its main checkout as every other answer is. A directory in no repository is still a
+  // No config above it: the main checkout the working directory was read at, or else the
+  // repository it is in, at its own toplevel. A directory in no repository is still a
   // reason: there is nothing for a ledger, a journal or a worktree to belong to.
+  if (begun.main !== undefined) return checked(begun.main);
+  let top: string;
   try {
-    return { root: await inMainWorktree(await git(await realpath(cwd), "rev-parse", "--show-toplevel")) };
+    top = await realpath(await git(nearestExisting(start), "rev-parse", "--show-toplevel"));
   } catch {
     return {
       reason: `no ${CONFIG_PATH} in ${start} or any directory above it, and ${start} is in no git repository: `
         + "without a config the project is the working directory's git toplevel",
     };
   }
+  return checked(top);
 }

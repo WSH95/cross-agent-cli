@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/config.ts";
 import { discoverProject } from "../src/project.ts";
+import { git } from "./helpers/git.ts";
+import { bareProject, linkedProject, mainCheckout, separatedMainProject, umbrellaProject } from "./helpers/project.ts";
 
 function scratch(t: TestContext): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-project-")));
@@ -51,7 +53,7 @@ test("the working directory resolves to the nearest directory above it holding a
 });
 
 // @anchor workingDirectoryInside
-test("a working directory inside a linked worktree resolves to the main project", async (t) => {
+test("a working directory inside an uninitialized linked worktree resolves to the main project", async (t) => {
   const root = scratch(t);
   const main = project(path.join(root, "main"));
   const git = (...args: string[]) => execFileSync("git", ["-C", main, ...args], { stdio: "ignore" });
@@ -59,10 +61,11 @@ test("a working directory inside a linked worktree resolves to the main project"
   git("-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false",
     "commit", "--allow-empty", "-m", "initial");
   // Outside the project, where walking up from it never reaches the main checkout, and
-  // with a config of its own, which is not the ledger's home.
+  // with no config of its own: only `cross-agent init` makes a worktree a project of its
+  // own (`#linkedWorktreeOwnProject`), and until then it is read at its main checkout.
   const worktree = path.join(root, "elsewhere", "task-x");
   git("worktree", "add", "-b", "task/x", worktree);
-  project(worktree);
+  fs.mkdirSync(path.join(worktree, "src"));
   assert.deepEqual(await discoverProject([], {}, path.join(worktree, "src")), { root: main });
   assert.deepEqual(await discoverProject([], {}, worktree), { root: main });
 });
@@ -122,4 +125,158 @@ test("no config and no repository is a reason, never a guess", async (t) => {
   for (const argv of [["--project"], ["--project", ""], ["--projct", empty], ["--project", empty, "--project", empty]]) {
     assert.deepEqual(await discoverProject(argv, {}, root), { reason: usage(argv.join(" ")) });
   }
+});
+
+// Design section 2: a cwd inside a worktree that an enclosing work tree registers is read as
+// that work tree first, from outside it and before any config is looked at; then the nearest
+// `.git` holder's own config, which is local opt-in, comes before today's mapping to the main
+// checkout. A worktree project is one `cross-agent init` was run in.
+
+/** A main checkout of this test's own, holding a config, and a task worktree under it on `task/t`. */
+async function mainWithTask(t: TestContext): Promise<{ root: string; main: string; task: string }> {
+  const root = scratch(t);
+  const main = await mainCheckout(root, "M");
+  project(main);
+  const task = path.join(main, ".worktrees", "t");
+  await git(main, "worktree", "add", "-b", "task/t", task);
+  return { root, main, task: fs.realpathSync(task) };
+}
+
+// @anchor linkedWorktreeOwnProject
+test("an initialized linked worktree is a project of its own, from anywhere inside it", async (t) => {
+  const root = scratch(t);
+  const main = project(await mainCheckout(root, "M"));
+  const linked = project(await linkedProject(t, main, "feature"));
+  assert.deepEqual(await discoverProject([], {}, path.join(linked, "src")), { root: linked });
+  assert.deepEqual(await discoverProject([], {}, linked), { root: linked });
+  assert.deepEqual(await discoverProject(["--project", linked], {}, root), { root: linked });
+  // The main checkout is still its own.
+  assert.deepEqual(await discoverProject([], {}, path.join(main, "src")), { root: main });
+});
+
+// @anchor bareWorktreeProject
+test("an initialized worktree of a bare repository beside it is a project of its own", async (t) => {
+  const bare = await bareProject(t);
+  project(bare.root);
+  assert.deepEqual(await discoverProject([], {}, path.join(bare.root, "src")), { root: bare.root });
+  // Its sibling, uninitialized, has no main checkout to be read at, and is its own toplevel.
+  const sibling = path.join(bare.dir, "main");
+  assert.deepEqual(await discoverProject([], {}, sibling), { root: sibling });
+});
+
+// @anchor umbrellaWorktreeProject
+test("an initialized worktree of the umbrella layout is a project of its own: the umbrella is no work tree", async (t) => {
+  const umbrella = await umbrellaProject(t);
+  project(umbrella.root);
+  assert.deepEqual(await discoverProject([], {}, path.join(umbrella.root, "src")), { root: umbrella.root });
+  assert.deepEqual(await discoverProject(["--project", umbrella.root], {}, umbrella.dir), { root: umbrella.root });
+});
+
+// @anchor cwdInsideTaskWorktreeMapsToRoot
+test("a working directory inside a task worktree is read as its enclosing root, before any config", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  // A config inside the task worktree is not the project's: the enclosing registry decides first.
+  project(task);
+  assert.deepEqual(await discoverProject([], {}, path.join(task, "src")), { root: main });
+  assert.deepEqual(await discoverProject([], {}, task), { root: main });
+});
+
+// @anchor removedPointerCwdMapsToRoot
+test("a working directory inside a task worktree whose pointer was deleted still maps to its root", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  project(task);
+  fs.rmSync(path.join(task, ".git"));
+  assert.deepEqual(await discoverProject([], {}, path.join(task, "src")), { root: main });
+});
+
+// @anchor replacedPointerCwdMapsToRoot
+test("a working directory inside a task worktree whose pointer was replaced by a repository still maps to its root", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  project(task);
+  fs.rmSync(path.join(task, ".git"));
+  await git(task, "init", "-b", "main");
+  assert.deepEqual(await discoverProject([], {}, path.join(task, "src")), { root: main });
+});
+
+// @anchor remapIsLexical
+test("the mapping out of a task worktree is lexical: a path that exists only on its branch still maps", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  const onBranch = path.join(task, "only", "on", "the", "branch");
+  fs.mkdirSync(onBranch, { recursive: true });
+  assert.equal(fs.existsSync(path.join(main, "only")), false);
+  assert.deepEqual(await discoverProject([], {}, onBranch), { root: main });
+});
+
+// @anchor namedTaskWorktreeRefused
+test("a task worktree named as the project is refused before its config is read", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  // A config that could not be parsed: naming the worktree never reaches it.
+  fs.mkdirSync(path.join(task, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(task, ".cross-agent", "config.json"), "{ not json");
+  fs.mkdirSync(path.join(task, "src"));
+  for (const found of [
+    await discoverProject(["--project", task], {}, main),
+    await discoverProject([], { CROSS_AGENT_PROJECT: task }, main),
+    await discoverProject(["--project", path.join(task, "src")], {}, main),
+  ]) {
+    assert.ok("reason" in found, JSON.stringify(found));
+    assert.ok(found.reason.includes(task) && found.reason.includes(main), found.reason);
+    assert.match(found.reason, /never a project root/);
+  }
+});
+
+// @anchor forgedRegistryRefused
+test("a task worktree that forges a registry of its own is still refused by name and still mapped from inside", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  project(task);
+  // The pointer replaced by a repository whose own registry lists the worktree as its main.
+  fs.rmSync(path.join(task, ".git"));
+  await git(task, "init", "-b", "main");
+  assert.equal(await git(task, "rev-parse", "--show-toplevel"), task, "its own git takes it for a main checkout");
+  const named = await discoverProject(["--project", task], {}, main);
+  assert.ok("reason" in named, JSON.stringify(named));
+  assert.match(named.reason, /never a project root/);
+  assert.deepEqual(await discoverProject([], {}, task), { root: main });
+});
+
+// @anchor unrelatedEnclosingRepository
+test("a worktree project inside an unrelated work tree that does not register it is found as itself", async (t) => {
+  const root = scratch(t);
+  const main = await mainCheckout(root, "M");
+  const unrelated = project(await mainCheckout(root, "X"));
+  const linked = path.join(unrelated, "nested", "L");
+  await git(main, "worktree", "add", "-b", "feature", linked);
+  project(linked);
+  assert.deepEqual(await discoverProject([], {}, path.join(linked, "src")), { root: linked });
+  assert.deepEqual(await discoverProject(["--project", linked], {}, root), { root: linked });
+});
+
+// @anchor uninitializedWorktreeUnderConfiguredDirectory
+test("an uninitialized linked worktree inside a configured directory is read at its main checkout, as today", async (t) => {
+  const root = scratch(t);
+  const main = project(await mainCheckout(root, "M"));
+  // A configured directory that is no repository, holding the worktree: the worktree's own
+  // `.git` comes first, and with no config of its own it is the main checkout's.
+  const holder = project(path.join(root, "holder"));
+  const linked = path.join(holder, "L");
+  await git(main, "worktree", "add", "-b", "feature", linked);
+  fs.mkdirSync(path.join(linked, "src"));
+  assert.deepEqual(await discoverProject([], {}, path.join(linked, "src")), { root: main });
+});
+
+// @anchor configuredSubdirectoryUnchanged
+test("a configured subdirectory of the main checkout is found from it and from the same place in an uninitialized worktree", async (t) => {
+  const root = scratch(t);
+  const main = await mainCheckout(root, "M");
+  const inner = project(path.join(main, "packages", "inner"));
+  assert.deepEqual(await discoverProject([], {}, path.join(inner, "src")), { root: inner });
+  const linked = await linkedProject(t, main, "feature");
+  fs.mkdirSync(path.join(linked, "packages", "inner", "src"), { recursive: true });
+  assert.deepEqual(await discoverProject([], {}, path.join(linked, "packages", "inner", "src")), { root: inner });
+});
+
+// @anchor separatedMainCwdUnmapped
+test("a worktree of a separated main stays where it is: its main stanza is a git directory, no checkout", async (t) => {
+  const { root } = await separatedMainProject(t);
+  assert.deepEqual(await discoverProject([], {}, root), { root });
 });

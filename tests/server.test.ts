@@ -304,6 +304,34 @@ test("verify_worktree returns success and refusal JSON as text", async (t) => {
   }
 });
 
+// @anchor startsAtRootFromDamagedTaskWorktree
+test("a server started inside a task worktree serves its root, however the worktree's pointer was damaged", async (t) => {
+  const root = await realpath(await projectWithConfig(t, { roles: { planner: { engine: "codex" } } }));
+  const exec = promisify(execFile);
+  await exec("git", ["-C", root, "init", "-b", "main"]);
+  await exec("git", ["-C", root, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "--allow-empty", "-m", "initial"]);
+  const task = path.join(root, ".worktrees", "t");
+  await exec("git", ["-C", root, "worktree", "add", "-b", "task/t", task]);
+  // A config of the worktree's own: a server that served the worktree would answer from it.
+  await mkdir(path.join(task, ".cross-agent"), { recursive: true });
+  await writeFile(path.join(task, ".cross-agent", "config.json"), JSON.stringify({ roles: { planner: { engine: "grok" } } }));
+  // The root's registry decides, before any config is read: the pointer deleted, then a
+  // repository of the worktree's own in its place.
+  for (const damage of ["deleted", "replaced"]) {
+    await rm(path.join(task, ".git"), { recursive: true, force: true });
+    if (damage === "replaced") await exec("git", ["-C", task, "init", "-b", "main"]);
+    const client = stdioClient(task);
+    try {
+      const reply = await client.request("tools/call", { name: "list_roles", arguments: {} });
+      const content = (reply.result as Json).content as Json[];
+      const roles = (JSON.parse(content[0].text as string) as { roles: Record<string, Json> }).roles;
+      assert.equal(roles.planner.engine, "codex", `${damage}: ${content[0].text as string}`);
+    } finally {
+      client.close();
+    }
+  }
+});
+
 test("verify_worktree checks required string arguments at runtime", async (t) => {
   const root = await projectWithConfig(t, { roles: {} });
   const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
