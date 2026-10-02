@@ -393,11 +393,11 @@ export async function trackedStateFault(gitDir: string, workTree: string): Promi
  * One whitelisted git verb at the project root, journaled (design section 4). The request
  * is judged first — the verb, its shape, its arguments, the slug — because none of that
  * needs a lock; then `git.lock` is held for the journal's own checks, the command, and the
- * step. **No `spawn.lock`**: that lock exists to keep `git_mutate`'s reservation check
- * from racing a `delegate` about to take the same workspace (section 2), and nothing here
- * reads a reservation — the project root is no task's workspace to clear, and the
- * whitelist has no `--force`, so a worktree a specialist is still working in refuses to be
- * removed on git's own terms.
+ * step. **`spawn.lock` only for `worktree remove`**, taken before `git.lock`: git removes a
+ * clean worktree whatever is running in it, so that verb alone reads a reservation, and
+ * the lock keeps that read from racing a `delegate` about to take the same workspace
+ * (section 2, `#reservationFault`). Every other verb reads none — the project root is no
+ * task's workspace to clear.
  */
 export async function gitRoot(
   projectRoot: string, request: GitRootRequest, options: GitRootOptions,

@@ -914,7 +914,7 @@ settled at 116 s, so nothing turned on it.
 
 <!-- @anchor i2UnderFix -->
 **The Claude row again, under the containment fix (2026-09-19, T6-R1-21).** The
-row above ran at `744c767`, before `protectedPaths` existed: its spec carries
+row above ran at `744c767` (rebased away; merged as `1f45e0f`), before `protectedPaths` existed: its spec carries
 none, and its settings named only a writable root. This run is the shipped
 configuration, through the product pipeline — the real stdio server, `delegate
 {worktree: true, engine: "claude"}`, the real detached runner, the real adapter
@@ -1046,7 +1046,7 @@ calls, which stage but move no branch — the table's last row, written with the
 arguments that ran, which is exactly what keeps a later reconciliation from
 reading `committed` for a commit nobody made.
 
-E1 ran at `744c767`, **before** the containment fix (T6-R0-1) and the deny-list
+E1 ran at `744c767` (rebased away; merged as `1f45e0f`), **before** the containment fix (T6-R0-1) and the deny-list
 root (T6-R0-3): its implementers' specs carry no `protectedPaths` and their deny
 rules name `node <sample>/src/server.ts`. None of the eight pass conditions
 depends on either, so the run stands as recorded; the shipped configuration's

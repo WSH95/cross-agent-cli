@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { builtInModesDir, describeMode } from "../src/modes.ts";
 
 // Claude Code packaging (design section 9). The attach contract is a stdio MCP server plus
 // the launcher skill; for this host that is one file — `.claude-plugin/plugin.json`, which
@@ -215,12 +216,14 @@ test("the Claude and Codex manifests agree on the plugin's name, version, descri
 });
 
 // @anchor codexFallbackSnippet
-test("the Codex fallback is the table codex mcp add writes plus the plugin mount's three keys, and the README installs, checks and removes both attaches", () => {
+test("the Codex fallback is the table codex mcp add writes plus the plugin mount's four keys, and the README installs, checks and removes both attaches", () => {
   const file = path.join(repoRoot, "assets", "codex", "mcp_servers.toml");
   assert.ok(fs.existsSync(file), "assets/codex/mcp_servers.toml is missing");
   // `codex mcp add cross-agent -- node <repo>/src/server.ts` writes the first three lines; the
-  // other three are the plugin mount's: the names Codex hands on, so that a session started
-  // inside a task hands its server the task's markers, and what a `wait` and `codex exec` need.
+  // other four are the plugin mount's: the names Codex hands on, so that a session started
+  // inside a task hands its server the task's markers, what a `wait` and `codex exec` need,
+  // and the start-up budget the plugin's manifest gives the server, so the two attaches
+  // start the same server alike (task 12's review).
   const lines = fs.readFileSync(file, "utf8").split("\n").filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
   assert.deepEqual(lines, [
     "[mcp_servers.cross-agent]",
@@ -229,6 +232,7 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
     'env_vars = ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]',
     "tool_timeout_sec = 3600",
     'default_tools_approval_mode = "approve"',
+    "startup_timeout_sec = 30",
   ]);
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
   const claude = readme.indexOf("## Install it in Claude Code");
@@ -258,6 +262,19 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
 // `${CLAUDE_PLUGIN_ROOT}` expanded to the checkout (T15's attach probe, A1). So no Grok manifest
 // ships, and what this test pins is the README's recipe: the project-scoped lines, the trust
 // they need, the result cap `describe_mode` needs, the checks and the way back.
+
+// @anchor describeModeSizes
+test("the README states describe_mode's answer at its size today, which Grok's default cap cuts under both dev-team modes", () => {
+  // The answer as the server sends it (`src/server.ts`, its `text`), in bytes, as Grok's
+  // `max_output_bytes` counts them. Task 12's review found the README's sizes a merge behind.
+  const size = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replace(/\s+/g, " ");
+  const stated = /past what `describe_mode` answers: ([\d,]+) bytes under `dev-team`, ([\d,]+) under `dev-team-engine` and ([\d,]+) under `solo`/.exec(readme);
+  assert.ok(stated !== null, "the README states the three sizes");
+  assert.deepEqual(stated.slice(1).map((value) => Number(value.replace(/,/g, ""))), [size("dev-team"), size("dev-team-engine"), size("solo")]);
+  assert.ok(size("dev-team") > 20_000 && size("dev-team-engine") > 20_000, "both dev-team answers pass Grok's default cap");
+  assert.ok(size("dev-team-engine") < 100_000, "and the cap the attach sets holds the larger");
+});
 
 // @anchor grokReadmeInstall
 test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {

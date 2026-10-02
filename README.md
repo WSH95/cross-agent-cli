@@ -55,7 +55,9 @@ whose mode places its lead in an engine, `list_asks` and `answer` too. Fewer
 means the server resolved a row below the operator's, and it says which on its
 own stderr the first time a request asks it to resolve one. To undo the install,
 drop the flag: nothing was copied anywhere, no global configuration was touched,
-and no `.mcp.json` was added to any project.
+and no `.mcp.json` was added to any project. The flag holds for one session, so a
+session you resume, `claude --resume <id>` or `claude -p --resume <id>`, attaches
+the plugin only when it is given `--plugin-dir` again.
 
 Then, once per project the team is to work in, write its bind-time config —
 which mode, and the engine, model and effort each of that mode's roles runs on:
@@ -165,6 +167,9 @@ cd ~/code/my-project
 CROSS_AGENT_PROJECT="$PWD" codex
 ```
 
+A resumed session is a process of its own and reads the variable again, so start
+`codex resume` or `codex exec resume` the same way, from the project with
+`CROSS_AGENT_PROJECT` set.
 Without `CROSS_AGENT_PROJECT` the plugin's launcher exits before any server starts,
 and Codex does not say so: under `codex exec` nothing reached its stderr, its `--json`
 events or the session's rollout, and the session simply had none of the server's
@@ -236,15 +241,20 @@ cp -R ~/Documents/agent-team-cli/skills/cross-agent/. ~/.codex/skills/cross-agen
 The skill's copy replaces any earlier one rather than landing inside it. Its
 directory, `~/.codex/skills/`, is where Codex's own skill installer puts a skill, as
 the codex-cli 0.159.3 binary's text says; no run here has loaded a skill from it.
-`codex mcp add` writes the command alone. Add the three keys it does not write to the
+The copy does not follow the checkout: after each update of the checkout, run the
+three lines that replace it again, or the session keeps the launcher skill it was
+given while the server it calls has moved on.
+`codex mcp add` writes the command alone. Add the four keys it does not write to the
 `[mcp_servers.cross-agent]` table it wrote, or paste `assets/codex/mcp_servers.toml`
 with `<repo>` replaced in place of the `add`: `env_vars = ["CROSS_AGENT_PROJECT",
 "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"]`, so that a session
 started inside a task hands its server the task's markers; `tool_timeout_sec = 3600`,
-without which a `wait` gets Codex's 60 seconds; and `default_tools_approval_mode =
+without which a `wait` gets Codex's 60 seconds; `default_tools_approval_mode =
 "approve"`, without which a call under `codex exec`, whose approval policy is `never`,
 failed with "MCP tool call requires approval, but approval policy is never"
-(`docs/probes.md`, "P9: per-engine lead mount and instruction delivery"). The skill is a copy of `skills/` alone; each mode's own loop
+(`docs/probes.md`, "P9: per-engine lead mount and instruction delivery"); and
+`startup_timeout_sec = 30`, the start-up budget the plugin's manifest gives the same
+server. The skill is a copy of `skills/` alone; each mode's own loop
 reaches the session through `describe_mode`. `codex mcp get cross-agent` shows the table
 as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
 ~/.codex/skills/cross-agent` undoes it. Install one attach or the other, not both: a
@@ -314,11 +324,11 @@ expands it — and `"cross-agent"` to the existing `enabled` array, and set
 value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
-default, past what `describe_mode` answers: 19,856 bytes under `dev-team`, 24,880 under
-`dev-team-engine` and 3,463 under `solo`. Under the default, a Grok host in a
-`dev-team-engine` project read the first 19.5 KB of the mode and a note naming the file
-under its session directory where Grok had written the rest; with the line, it read the
-answer whole (`docs/probes.md`, "T15: the Grok attach").
+default, past what `describe_mode` answers: 20,271 bytes under `dev-team`, 25,270 under
+`dev-team-engine` and 3,463 under `solo`, so the default cuts both dev-team modes. Under the
+default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
+a note naming the file under its session directory where Grok had written the rest; with
+the line, it read the answer whole (`docs/probes.md`, "T15: the Grok attach").
 
 A project's `.grok/config.toml` counts only in a folder Grok trusts: a headless session in
 an untrusted folder loads no project plugin and starts no project server. Trust the

@@ -129,7 +129,7 @@ const grok = {
       "--cwd", request.cwd,
       // The profile is Grok's own name for it, `off` included, and by the time this runs
       // the pipeline has re-derived its mode from `sandboxProfiles` and refused a request
-      // whose pair disagrees (`src/engines/spawn.ts:70-78`). Omitting the flag is
+      // whose pair disagrees (`src/engines/spawn.ts#spawnChecks`). Omitting the flag is
       // `grok-build-plugin-cc`'s write mode, which this design deliberately does not run.
       "--sandbox", request.sandbox.profile,
       "--permission-mode", "bypassPermissions",

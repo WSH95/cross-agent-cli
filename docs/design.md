@@ -2045,7 +2045,8 @@ different branches. It
    lead as a reason, and none of them as an exception (bead `atc-s96.40`);
 2. verifies the worktree from the root, with the checks
    `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`): `realpath` of
-   both paths; the worktree appears in `git worktree list --porcelain -z` as a
+   both paths, a relative worktree path read against the project root and never
+   the server's own directory; the worktree appears in `git worktree list --porcelain -z` as a
    linked worktree, which excludes the main worktree and any subdirectory
    (`#linkedWorktree`); its `.git` is a regular file, not a symlink
    (`#pointerIsFile`); `git
@@ -2863,7 +2864,7 @@ package rather than the devpack's, which lives outside this repository
 
 ### 9. Host packaging
 
-Claude Code's two manifests ship (step 10): `.claude-plugin/plugin.json` naming
+Claude Code's manifest ships (step 10): `.claude-plugin/plugin.json` naming
 the plugin at `package.json`'s version and declaring this server **inline**
 under `mcpServers`, with `skills/` found by convention and no `skills` key to
 say so (`tests/packaging.test.ts`). There is deliberately no `.mcp.json` at the
@@ -3028,9 +3029,9 @@ mount also carries `tool_timeout_sec: 3600`, `default_tools_approval_mode: "appr
 `startup_timeout_sec: 30`, and no `enabled`: whether the server runs is the operator's
 configuration's to say, through the plugin-level key (`docs/probes.md#codexPluginMount`).
 The documented fallback is a configured server — `codex mcp add cross-agent -- node
-<repo>/src/server.ts` plus the three keys it does not write, the same `env_vars`, the call
-budget and the approval mode, `assets/codex/mcp_servers.toml` giving the whole table, and a
-copy into `~/.codex/skills/cross-agent/`, a copy that takes
+<repo>/src/server.ts` plus the four keys it does not write, the same `env_vars`, the call
+budget, the approval mode and the start-up budget, `assets/codex/mcp_servers.toml` giving the
+whole table, and a copy into `~/.codex/skills/cross-agent/`, a copy that takes
 `skills/` alone, which is why a mode's loop is served by `describe_mode` rather than shipped
 as a second skill. That server starts where the session runs and needs no
 `CROSS_AGENT_PROJECT`, and it shadows the plugin's server of the same name
@@ -3050,7 +3051,8 @@ README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
 discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and `describe_mode` answers 24,880 under `dev-team-engine`. Grok's MCP
+20,000 bytes by default, and `describe_mode` answers 20,271 bytes under `dev-team` and 25,270
+under `dev-team-engine` (`tests/packaging.test.ts#describeModeSizes`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
 600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
 
@@ -3453,9 +3455,9 @@ below: the rename and this document's rewrite, the lifecycle step that closed
 the five correctness defects in shipped code, the T6 remainder, and the probes
 the adapters depend on. Steps 5 to 8 — the engine contract, all three adapters,
 the tools, and the modes with the worktree provider and `init --mode` — are
-built and green too. What is left starts at step 9, the skills and the mode
-loops, and then runs through each host's packaging with its integration probes
-and end-to-end run right after it.
+built and green too, and so are steps 9 to 13: the skills and the mode loops,
+then each host's packaging with its integration probes and end-to-end run right
+after it. What is left is the backlog, row 14.
 Rows 7 and 8 were where the built git and reservation machinery was finally
 reached by a caller: `delegate` consults a reservation, and `git_mutate` is
 registered by the mode that declares the worktree provider.
@@ -3472,7 +3474,7 @@ registered by the mode that declares the worktree provider.
 | 8 | Modes, worktree provider, `init --mode` | `atc-s96.23` | **Done.** `src/modes.ts` (the loader, `describeMode`, `builtInModesDir`), `modes/{dev-team,solo,dev-team-engine}/`, `describe_mode` and the worktree provider's two tools registered by the mode (`src/server.ts#worktreeTools`), `loadConfigWithMode` and `effectiveMaxDepth` (`src/config.ts`), `src/cli.ts` with `init`. The per-role directory kind left config with this row: `cwd` is refused by name, `workspace` with it, and where a role works is the mode's. Not in this row: `git_root` and `run_command` on the same provider (Task 4b), the real loop and role-prompt text (row 9), and `delegate` reading the mode's role prompt rather than config's (row 9). |
 | 9 | Launcher skill and mode loops | `atc-s96.12` | **Done.** `skills/cross-agent/SKILL.md` (the launcher, carrying the merge policy and the `review`/`critique` verbs for every mode); `modes/dev-team/SKILL.md` (the ten steps), `modes/solo/SKILL.md` (shortened to the one-shot, which hands over to the launcher) and `modes/dev-team-engine/SKILL.md` (the placement delta row 11 completes); every `dev-team` and `dev-team-engine` `roles/*.md` through `tools/from-openmaus.mjs` and its fixture tests, `modes/solo/roles/consult.md` being 4c's own text; `tests/skills.test.ts` holding each loop's calls to the tools that mode registers for its row; and, in the fix round, `delegate` launching a role with the mode's own prompt file rather than a one-line default, the config's `prompt` becoming the override it was meant to be (`src/delegate.ts#delegate`, `src/modes.ts#rolePrompt`, section 8). |
 | 10 | Claude Code packaging | `atc-s96.13` | **Done**; I2's Codex column ran with row 12. `.claude-plugin/plugin.json` carrying the server inline, and
-`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md` (M2). I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` ran at T14 (row 12, `docs/probes.md#i2Codex`). I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; while git ignores `.grok/` (section 9), a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
+`tests/packaging.test.ts`; `tools/probe.mjs --track`; probe P2's Claude row (`atc-s96.17`), which found one containment failure; I1's Claude rows and I2's Claude and Grok rows; E1 under `placement: host`, green on every pass condition. What is not run and why is in `VERIFY.md`, "M3, second merge — T13". I1's two Codex rows ran in the 6b pre-flight (2026-09-30), from a stdio operator driver and `tools/probe.mjs --track` rather than a Codex host: a delegated `consult` sees none of this server's tools, and a child given a lead's mount sees exactly the five specialist tools as `mcp__cross_agent__<tool>`, answers `list_roles` from the project `--project` names, and has no `delegate` (`docs/probes.md#i1Codex`, `#i1CodexTracked`); the refusal by name was not reached from Codex, as from no engine that honours `tools/list`. I2's Codex column and the guarded `tests/engines/codex.test.ts#codexI2Real` ran at T14 (row 12, `docs/probes.md#i2Codex`). I1's Grok row is **closed** (`atc-s96.54`): with the sample folder trusted, a Grok `consult` at the project root sees exactly the five specialist tools and is refused `delegate`; while git ignores `.grok/` (section 9), a Grok specialist inside a linked worktree would need a user-scope mount, which is the operator's decision. |
 | 11 | Engine placement | `atc-s96.24`, `.59` | **Done** (S11, from `cc10a2a`). `git_root`, `run_command` and the journal's named steps had moved forward as Task 4b, on the worktree provider (plan decision 4). S11 built the rest: stdin split on newlines alone (`atc-s96.59`); the mailbox and its three rows (`src/mailbox.ts`, `src/server.ts#mailboxTools`); `delegate`'s engine-placed lead — the mount with `--project`, the cap, the loop and the role prompt composed once, and the asks a resume carries (`src/delegate.ts#engineLead`); the Codex mount's per-tool timeout and its markers' whitelist, and an MCP call as activity (`src/engines/codex.ts#codex`); the cancel cascade over asks; `list_tasks`' `self` and `own`; the operator CLI's dispatcher with `answer` and `report` (`src/cli.ts#runCli`); the `dev-team-engine` loop and `roles/lead.md`; the launcher's routing on placement. End to end with the lead on **each supported lead engine** from one host — E3 on Claude, E2 on Codex — and the five failure injections (`docs/probes.md#e3`, `#e2`, `#injectCancelLead`, `#injectKilledLeadAsk`, `#injectRootSuiteFails`, `#injectAfterWorktreeRemove`, `#injectRebaseConflict`). Grok is out of this row: P9 found no per-run isolation, so it is a specialist and a host only ("The lead model", item 4), and config load and `delegate` refuse `placement: engine` with a Grok lead. |
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). **Grok done** (T15, from `f4d6647`): no manifest of its own — a project's `.grok/config.toml` names the checkout under `[plugins]` and raises `[mcp] max_output_bytes`, and Grok reads the Claude manifest, skill and inline server alike (section 9, `docs/probes.md#t15Attach`); I1 and I2 under a Grok host, its read-only row at the root, a deny rule on this server's tools, the ten-minute `wait`, the hop counts and the worktree mount (`docs/probes.md#i1GrokHost` and the sections after it); E6 under host placement and E7 under engine placement (`docs/probes.md#e6`, `#e7`). |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
@@ -3779,9 +3781,9 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   role writable, a mode default the bound engine does not accept, and a
   grok-bound lead under engine placement (`#overrideMayMake`, `#grokBoundLead`); the cap follows the
   placement and only ever falls (`#effectiveMaxDepthLower`), and `init` leaves the config directory
-  holding the config alone (`#initconfigLeavesConfig`). `solo` yields a `tools/list` without the
-  worktree tools and `dev-team` yields both, for the operator and lead rows and
-  never the specialist (`tests/server.test.ts#worktreeProviderTools`); `git_mutate` defaults its
+  holding the config alone (`#initconfigLeavesConfig`). Every mode, `solo` included, yields a
+  `tools/list` with the worktree provider's four tools for the operator and lead rows and
+  never for the specialist (`tests/server.test.ts#worktreeProviderTools`); `git_mutate` defaults its
   workspace and branch from that mode's own policy (`#gitMutateTakes`); `describe_mode`
   returns the loop and every role prompt byte for byte with nothing written
   anywhere (`tests/modes.test.ts#describemodeReturnsLoop`), answers every row and refuses
@@ -3929,7 +3931,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   (`#injectRebaseConflict`); a server killed during a task (the runner records the
   outcome; a restarted server adopts it); a runner killed with the engine alive
   (engine terminated); a needs-work round through `resume`. The second three are
-  recorded in `VERIFY.md` (M2): the two kills against the fake engine bound as
+  recorded in `VERIFY.md`, "M3, second merge — T13", under "Failure injections": the two kills against the fake engine bound as
   `engines.claude.bin`, over the real stdio server and the real detached runner,
   and the `resume` round inside E1 with the real implementer; S11's leads ran more
   `resume` rounds on their plans. The first three ran at S11 under a Claude lead,
@@ -3949,7 +3951,7 @@ records the go or no-go for the plugin as the second binding (`atc-s96.18`).
   not evidence of a pass — so every host's run is judged the same way rather
   than by whatever a report greps that day. **E1 met all eight under Claude
   Code** — six records at depth 1, a journal of nine steps, 69 tests green on
-  `main` — and is recorded in `VERIFY.md` (M2) with its transcript in
+  `main` — and is recorded in `VERIFY.md`, "M3, second merge — T13", under "E1", with its transcript in
   `docs/probes.md#e1`. **E3 and E2**, the engine-placed runs under Claude Code,
   are judged with `--since <lead id> --slug <slug>` — `s11-e3` and `s11-e2` —
   because the sample's ledger holds every earlier run's records and journals;

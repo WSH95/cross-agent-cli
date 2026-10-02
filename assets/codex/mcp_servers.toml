@@ -1,6 +1,6 @@
 # cross-agent for Codex without the plugin (README, "Install it in Codex"): the table
 # `codex mcp add cross-agent -- node <repo>/src/server.ts` writes into ~/.codex/config.toml,
-# plus the three keys it does not write. Pasting this whole table, with <repo> replaced by the
+# plus the four keys it does not write. Pasting this whole table, with <repo> replaced by the
 # checkout's absolute path, replaces the `codex mcp add`. With no `cwd` the server starts in
 # the session's directory and finds the project from there, as under Claude Code.
 [mcp_servers.cross-agent]
@@ -14,3 +14,5 @@ env_vars = ["CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CRO
 tool_timeout_sec = 3600
 # `codex exec` refuses every tool call that would ask for approval.
 default_tools_approval_mode = "approve"
+# The start-up budget the plugin's manifest gives the same server, where Codex's own is 10 s.
+startup_timeout_sec = 30
