@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T10:45:00Z — claude
+[auto-checkpoint] Task 12 wrap-up landed (8737da7..8f88e05, 812/811/1); controller check sent one arithmetic-class follow-up; beads .92–.94 filed.
+
 ### 2026-10-02T09:52:00Z — claude
 [auto-checkpoint] Task 12 wrap-up in flight on the task branch (from 84ba856); the escalation review's ruling and the HANDOFF's next steps updated.
 

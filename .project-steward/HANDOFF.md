@@ -121,7 +121,10 @@ root merge, and the verifier reads Node's code-loading options and builtin assig
 (`task-12-findings-round-4.md`) left three verifier classes, now in a wrap-up on the task branch
 (Node options that load code from files it never opens; assignments it does not read; `--entry-url`
 URLs), and one stated boundary for design section 4 and the README (the root's own untracked host
-link). The residue that comes from Claude Code's own settings merge (a project's
+link). The wrap-up landed `8737da7`..`8f88e05` (812 / 811 / 1 skipped; no archived verdict moved);
+the controller's check of each reproduction found bash's arithmetic contexts (array subscripts,
+substring offsets, integer variables, a name's value evaluated) still passing, and one follow-up
+commit for that class is in flight. Beads `.92`–`.94` filed from the fix rounds' proposals. The residue that comes from Claude Code's own settings merge (a project's
 `.claude/settings.json` pre-approving file writes) the user accepted on 2026-10-02 as a documented
 limitation, with the other harness limitations of that day's standing word.
 
