@@ -278,6 +278,22 @@ test("the README states the mode's text describe_mode answers with, without proj
   assert.ok(size("dev-team-engine") < 100_000, "and the cap the attach sets holds the larger");
 });
 
+// @anchor readmeSeveralBranches
+test("the README has a worktree project's .gitignore change committed first, and finds a hung git by either tool's command line", () => {
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const start = readme.indexOf("## Several branches at once");
+  const end = readme.indexOf("\n## ", start + 1);
+  assert.ok(start >= 0 && end > start, "the README has the section");
+  const section = readme.slice(start, end).replace(/\s+/g, " ");
+  // A loop's first step stops on a dirty root, and init's change to `.gitignore` is one.
+  assert.match(section, /[Cc]ommit the `\.gitignore` change `init` makes there on the worktree's branch before its first task/);
+  // A hung `git_mutate` step runs in the task's worktree, and a hung `git_root` step's hooks
+  // at the project root: the recovery names both.
+  assert.match(section, /`--work-tree=<the task's worktree>`[^.]*`git_mutate`[^.]*`--work-tree=<the project root>`[^.]*`git_root`/);
+  const design = fs.readFileSync(path.join(repoRoot, "docs", "design.md"), "utf8").replace(/\s+/g, " ");
+  assert.match(design, /hung git by its command line — `--work-tree=<the task's worktree>` for a `git_mutate` step, `--work-tree=<the project root>` for a `git_root` step/);
+});
+
 // @anchor grokReadmeInstall
 test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");

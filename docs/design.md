@@ -2392,9 +2392,12 @@ waits `lockWaitSeconds` and refuses, and every git write of the repository's oth
 projects waits the repository lock's sixty seconds or more and refuses, naming the
 lock; such a refusal is retryable after the loop's reconciliation. The call cannot be
 cancelled from inside: `gitMutate` holds `spawn.lock` for the whole call, and
-`cancel` needs that same lock. The README gives the operator's recovery: find the
-hung git by its command line, `--work-tree=<the task's worktree>`, since no
-`CROSS_AGENT_*` variable reaches git; end that process tree, hooks included; then
+`cancel` needs that same lock. A `git_root` step holds both locks the same way, and
+its `worktree add` and `merge` run the repository's hooks at the root. The README
+gives the operator's recovery: find the hung git by its command line —
+`--work-tree=<the task's worktree>` for a `git_mutate` step,
+`--work-tree=<the project root>` for a `git_root` step — since no `CROSS_AGENT_*`
+variable reaches git; end that process tree, hooks included; then
 `cross-agent tasks --reconcile` and `cross-agent journal <slug>`, which say whether
 the step landed.
 

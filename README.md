@@ -515,9 +515,11 @@ cross-agent init
 `init` there copies the main checkout's `.cross-agent/config.json` — the team as you
 bound it — with `project.defaultBranch` set to the worktree's branch, `x`, and writes
 the mode's defaults where the main checkout holds no config or you name a mode with
-`--mode`. A worktree nobody
-initialized stays its main checkout's project, as before: a host started in it serves
-the main checkout, and the roster's first line says so. Where the repository's git
+`--mode`. Commit the `.gitignore` change `init` makes there on the worktree's branch
+before its first task (`git add .gitignore && git commit -m '…' -- .gitignore`), as
+in any project: a loop's first step stops unless the root's tree is clean. A worktree
+nobody initialized stays its main checkout's project, as before: a host started in it
+serves the main checkout, and the roster's first line says so. Where the repository's git
 directory is separate from its checkout (`git init --separate-git-dir`), git records no
 path to the checkout, so name it: `cross-agent init --from <main checkout>`, or `--mode
 <name>` for the defaults. `init` refuses a worktree with a detached HEAD, one on a
@@ -536,9 +538,10 @@ every task is denied that whole directory.
 Grok loads a project's plugin from the `.grok/config.toml` of the folder it runs in,
 which git does not carry into a new worktree, so `init` copies the main checkout's file
 there and ignores `.grok/` beside it, as it does beside an attach the worktree already
-holds; trust the new folder in Grok, which cross-agent never does for you. A file that binds a project with `--project` or
-`CROSS_AGENT_PROJECT` is not copied, since it would serve the main project from the
-worktree: `init` prints the binding, and you set that worktree's attach up by hand. A
+holds; trust the new folder in Grok, which cross-agent never does for you. A file that
+binds a project with `--project` or `CROSS_AGENT_PROJECT` is not copied, since it would
+serve the main project from the worktree: `init` prints the binding, and you set that
+worktree's attach up by hand. A
 Codex host names each worktree's project in `CROSS_AGENT_PROJECT`, as for any project,
 and Codex may add a trust entry for each new directory to `~/.codex/config.toml` on its
 own, which cross-agent cannot prevent.
@@ -557,7 +560,10 @@ write, and a project waits for it at least sixty seconds, whatever its own
 call stuck behind it cannot be cancelled from inside. Recover by hand:
 
 1. Find the hung git by its command line, with `ps -eo pid,ppid,args`: it carries
-   `--work-tree=<the task's worktree>`.
+   `--work-tree=<the task's worktree>` for a `git_mutate` step, the `git <slug>` verb's
+   included, and `--work-tree=<the project root>` for a `git_root` step, the `git-root`
+   verb's included, since that tool's `worktree add` and `merge` run the repository's
+   hooks at the root.
 2. End that process tree, the hook's children included, and check that it has exited.
 3. Run `cross-agent tasks --reconcile`, then `cross-agent journal <slug>`, which says
    whether the step landed.
