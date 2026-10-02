@@ -318,6 +318,14 @@ comes after it.
   `engine` placement but for the pass `## Engine placement` hands you over a dead
   lead's leftovers — and never through a shell `git`: the journal is one document,
   and a step nobody wrote is a gap in it.
+- Git the user runs by hand while a loop runs at this root goes through the same
+  locks as the loop's: root git through `cross-agent git-root [--slug <slug>] --
+  <args…>`, one whitelisted root verb under the root tool's own rules, which exits
+  0 when git ran, 1 when git ran and failed or its step could not be journaled, and
+  3 when it was refused before git ran; worktree git through `cross-agent git
+  <slug> -- <args…>`, which exits 0, 1 or 3 by the same rule. Never suggest a plain
+  `checkout`, `branch -f` or `reset` at the root: it takes no lock, and can land
+  between a merge's check of HEAD and the merge.
 - A mid-session change to `.cross-agent/config.json`'s `mode` needs a server
   restart. `list_roles` names that drift; the tools this server registered are
   the ones its own mode declared.

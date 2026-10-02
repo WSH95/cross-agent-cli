@@ -6,12 +6,14 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
 import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir } from "../src/modes.ts";
 import { git } from "./helpers/git.ts";
+import { layoutRoot } from "./helpers/project.ts";
 import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
 import type { SeededProject } from "./helpers/seed.ts";
 
@@ -59,7 +61,7 @@ async function runEach(lines: string[][], cwd: string, env: NodeJS.ProcessEnv = 
 }
 
 /** Every verb, in the order usage lists them. */
-const usageOrder = ["init", "modes", "tasks", "show", "log", "cancel", "verify-worktree", "git", "journal", "list-asks", "answer", "report"];
+const usageOrder = ["init", "modes", "tasks", "show", "log", "cancel", "verify-worktree", "git", "git-root", "journal", "list-asks", "answer", "report"];
 
 function scratch(t: TestContext): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-")));
@@ -1496,4 +1498,130 @@ test("show takes a task's status, exit and final message from one read of its re
     }
     assert.equal(shown.served, 1, `${args.join(" ")} read the record once`);
   }
+});
+
+// `cross-agent git-root`: one `git_root` verb from a terminal, under the same whitelist,
+// journal rules, opt-in rule and locks as the tool (design section 6), so an operator has a
+// cooperating path for root git while a loop runs.
+
+/** A repository on `main` with one commit, holding `config` as its own. */
+async function rootProject(t: TestContext, config: Record<string, unknown>): Promise<string> {
+  const root = scratch(t);
+  await git(root, "init", "-b", "main");
+  await git(root, "commit", "--allow-empty", "-m", "initial");
+  fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify(config));
+  return root;
+}
+
+// @anchor cliGitRootRuns
+test("git-root runs one whitelisted verb at the project root as git_root does: a read, and a journaled merge at a linked root", async (t) => {
+  const made = await layoutRoot(t, "linked");
+  const root = made.root;
+  fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify({ mode: "dev-team", roles: {}, project: { defaultBranch: "feature", testCommand: "true" } }));
+  const { gitRoot } = await import("../src/gitroot.ts");
+  const { gitMutate } = await import("../src/gitmutate.ts");
+  const directory = path.join(root, ".worktrees", "x");
+  const created = await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  const committed = await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 });
+  assert.equal(committed.ok, true, JSON.stringify(committed));
+
+  const read = await run(["git-root", "--", "rev-parse", "--abbrev-ref", "HEAD"], root);
+  assert.equal(read.code, 0, read.stderr);
+  assert.equal(read.stdout, "feature\n", "a read prints git's own answer and journals nothing");
+  const merged = await run(["git-root", "--slug", "x", "--", "merge", "--ff-only", "task/x"], root);
+  assert.equal(merged.code, 0, merged.stderr);
+  const head = await git(root, "rev-parse", "task/x");
+  assert.equal(await git(root, "rev-parse", "feature"), head, "the merge landed on the root's own branch");
+  assert.match(merged.stdout, new RegExp(`^journal: merged \\S+→${head}$`, "m"));
+  const journal = await run(["journal", "x", "--json"], root);
+  assert.equal((JSON.parse(journal.stdout) as { steps: Array<{ step: string }> }).steps.at(-1)!.step, "merged");
+  // --json is the tool's own answer, whole.
+  const listed = await run(["git-root", "--json", "--", "worktree", "list", "--porcelain"], root);
+  assert.equal(listed.code, 0, listed.stderr);
+  const answer = JSON.parse(listed.stdout) as { ok: boolean; stdout: string };
+  assert.equal(answer.ok, true);
+  assert.match(answer.stdout, new RegExp(`^worktree ${literally(root)}$`, "m"));
+});
+
+// @anchor cliGitRootRefusedInTask
+test("git-root is refused under every task marker, a read as much as a mutation, before it writes a lock or an exclusion", async (t) => {
+  const root = scratch(t);
+  await git(root, "init", "-b", "main");
+  const initialized = await run(["init", "--mode", "solo"], root);
+  assert.equal(initialized.code, 0, initialized.stderr);
+  const exclude = path.join(root, ".git", "info", "exclude");
+  const excluded = () => (fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf8") : null);
+  const before = excluded();
+  for (const [variable, value] of [["CROSS_AGENT_TASK", "a-task"], ["CROSS_AGENT_DEPTH", "1"], ["CROSS_AGENT_LINEAGE", `lead:${root}`]]) {
+    for (const args of [["git-root", "--", "status"], ["git-root", "--slug", "x", "--", "merge", "--ff-only", "task/x"]]) {
+      const ran = await run(args, root, undefined, { ...suiteEnv, [variable]: value });
+      assert.equal(ran.code, 3, `${variable}: ${args.join(" ")}: ${ran.stderr}`);
+      assert.match(ran.stderr, new RegExp(`${variable} is set in this environment: git-root is an operator's command`));
+    }
+  }
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent", "locks")), false, "no lock directory");
+  assert.equal(excluded(), before, "and no exclusion line");
+});
+
+// @anchor cliGitRootTakesLocks
+test("git-root waits out the repository lock past its project's own wait, and is refused for git.lock after that wait", async (t) => {
+  const root = await rootProject(t, { mode: "solo", roles: {}, limits: { lockWaitSeconds: 1 } });
+  const { acquire, gitLockName, lockPath, repositoryLockPath } = await import("../src/locks.ts");
+  const shared = await acquire(repositoryLockPath(path.join(root, ".git")), { operation: "another project's git step", waitSeconds: 0 });
+  t.after(() => shared.release());
+  const directory = path.join(root, ".worktrees", "x");
+  const pending = run(["git-root", "--slug", "x", "--", "worktree", "add", "-b", "task/x", directory, "main"], root);
+  await delay(1500);
+  assert.equal(fs.existsSync(directory), false, "nothing ran while another project held the repository lock");
+  await shared.release();
+  const created = await pending;
+  assert.equal(created.code, 0, created.stderr);
+  assert.equal(fs.existsSync(directory), true);
+
+  const held = await acquire(lockPath(root, gitLockName()), { operation: "a test holding the git lock", waitSeconds: 0 });
+  t.after(() => held.release());
+  const blocked = await run(["git-root", "--", "status"], root);
+  await held.release();
+  assert.equal(blocked.code, 3, blocked.stderr);
+  assert.match(blocked.stderr, /git\.lock is held by another process \(waited 1s\)/);
+});
+
+// @anchor cliGitRootExitCodes
+test("git-root exits 0 when git ran, 1 when git failed or its step went unrecorded, 3 when refused before git, 2 for a line it cannot read", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so an unwritable journal cannot be staged");
+    return;
+  }
+  const root = await rootProject(t, { mode: "solo", roles: {} });
+  const ok = await run(["git-root", "--", "status", "--porcelain"], root);
+  assert.equal(ok.code, 0, ok.stderr);
+  // git ran and failed: its own words, and the reason after them.
+  const failed = await run(["git-root", "--", "rebase", "--abort"], root);
+  assert.equal(failed.code, 1, failed.stderr);
+  assert.match(failed.stderr, /exited 128/);
+  // Refused before git ran: a verb outside the whitelist, and a journaled verb with no slug.
+  for (const args of [["git-root", "--", "push", "origin", "main"], ["git-root", "--", "branch", "-d", "task/x"]]) {
+    const refusal = await run(args, root);
+    assert.equal(refusal.code, 3, `${args.join(" ")}: ${refusal.stderr}`);
+  }
+  // git's arguments come after `--`, and there has to be one.
+  assert.equal((await run(["git-root", "status"], root)).code, 2);
+  // git exited 0, and the step it completed could not be written: the command happened,
+  // and its answer says so rather than 0.
+  const journals = path.join(root, ".cross-agent", "journal");
+  fs.mkdirSync(journals, { recursive: true });
+  t.after(() => { try { fs.chmodSync(journals, 0o755); } catch { /* gone */ } });
+  fs.chmodSync(journals, 0o555);
+  const directory = path.join(root, ".worktrees", "y");
+  const unrecorded = await run(["git-root", "--slug", "y", "--json", "--", "worktree", "add", "-b", "task/y", directory, "main"], root);
+  fs.chmodSync(journals, 0o755);
+  assert.equal(unrecorded.code, 1, unrecorded.stdout);
+  const document = JSON.parse(unrecorded.stdout) as { ok: boolean; exitCode: number; reason: string };
+  assert.equal(document.ok, false);
+  assert.equal(document.exitCode, 0);
+  assert.match(document.reason, /journal step could not be written/);
+  assert.equal(fs.existsSync(directory), true);
 });

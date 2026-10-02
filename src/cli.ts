@@ -4,7 +4,9 @@ import path from "node:path";
 import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { gitMutate } from "./gitmutate.ts";
-import type { GitMutateRequest } from "./gitmutate.ts";
+import type { GitMutateRequest, GitMutateResult } from "./gitmutate.ts";
+import { gitRoot } from "./gitroot.ts";
+import type { GitRootResult } from "./gitroot.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
 import { find, isProcessAlive, isTaskId, isTerminal, readOutcome, runnerLogPath, scan, tailLines, taskStatuses } from "./ledger.ts";
@@ -589,24 +591,53 @@ const gitVerb: Verb = {
     const ran = await gitMutate(found.root, request, {
       waitSeconds: lockWaitSeconds(found.root), dir: policy.worktreeDir, branchPattern: policy.branchPattern,
     });
-    const own = (text: string | undefined) => (text === undefined || text === "" || text.endsWith("\n") ? text ?? "" : `${text}\n`);
-    if (ran.ok) {
-      const { step, before, after } = ran.journal;
-      const notes = own(ran.stderr) + (ran.lockLost
-        ? "cross-agent: lock lost while git ran: the command is done and journaled, but another mutation or a delegation may have run beside it\n"
-        : "");
-      return {
-        code: EXIT.ok, document: ran, text: `${own(ran.stdout)}journal: ${step} ${before ?? "-"}→${after ?? "-"}\n`,
-        ...(notes === "" ? {} : { notes }),
-      };
+    return gitAnswer(ran);
+  },
+};
+
+/** What `git` and `git-root` answer, by one rule, from the answer of the tool each one calls. */
+function gitAnswer(ran: GitMutateResult | GitRootResult): Answer {
+  const own = (text: string | undefined) => (text === undefined || text === "" || text.endsWith("\n") ? text ?? "" : `${text}\n`);
+  if (ran.ok) {
+    const journaled = ran.journal !== undefined;
+    const notes = own(ran.stderr) + (ran.lockLost
+      ? `cross-agent: lock lost while git ran: the command is done${journaled ? " and journaled" : ""}, but another mutation or a delegation may have run beside it\n`
+      : "");
+    const step = ran.journal === undefined ? "" : `journal: ${ran.journal.step} ${ran.journal.before ?? "-"}→${ran.journal.after ?? "-"}\n`;
+    return { code: EXIT.ok, document: ran, text: `${own(ran.stdout)}${step}`, ...(notes === "" ? {} : { notes }) };
+  }
+  // git ran and said so: its exit code is the answer's, and so are its own words. A step
+  // that could not be journaled after a zero exit carries that zero, and is the same 1.
+  if (ran.exitCode !== undefined) {
+    return { code: EXIT.error, document: ran, text: own(ran.stdout), stream: "stdout", notes: `${own(ran.stderr)}cross-agent: ${ran.reason}\n` };
+  }
+  // Everything else is a refusal before git ran.
+  return refused(ran.reason, ran);
+}
+
+const gitRootVerb: Verb = {
+  usage: "cross-agent git-root [--slug <slug>] [--project <root>] -- <git arguments…>",
+  summary: "one whitelisted git verb at the project root, under the project's locks and the repository lock, journaled as git_root runs it",
+  positionals: [],
+  rest: "git arguments",
+  flags: { "--slug": "slug" },
+  // Every call takes `git.lock`, which writes the ledger's exclusions and the lock directory
+  // (`src/ledger.ts#projectLock`), so a read here writes the project too, and is refused
+  // inside a task's environment: a task reads the root through the tool.
+  writes: true,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    let policy: EffectiveGitPolicy;
+    try {
+      policy = gitPolicy(loadConfigWithMode(found.root).mode);
+    } catch (error) {
+      return refused(message(error));
     }
-    // git ran and said so: its exit code is the answer's, and so are its own words. A step
-    // that could not be journaled after a zero exit carries that zero, and is the same 1.
-    if (ran.exitCode !== undefined) {
-      return { code: EXIT.error, document: ran, text: own(ran.stdout), stream: "stdout", notes: `${own(ran.stderr)}cross-agent: ${ran.reason}\n` };
-    }
-    // Everything else is a refusal before git ran.
-    return refused(ran.reason, ran);
+    const slug = parsed.values["--slug"];
+    return gitAnswer(await gitRoot(found.root, { args: parsed.rest, ...(slug === undefined ? {} : { slug }) }, {
+      waitSeconds: lockWaitSeconds(found.root), dir: policy.worktreeDir, branchPattern: policy.branchPattern,
+    }));
   },
 };
 
@@ -797,6 +828,7 @@ const verbs: Record<string, Verb> = {
   cancel: cancelVerb,
   "verify-worktree": verifyWorktreeVerb,
   git: gitVerb,
+  "git-root": gitRootVerb,
   journal: journalVerb,
   "list-asks": listAsksVerb,
   answer: answerVerb,

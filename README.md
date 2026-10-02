@@ -466,6 +466,7 @@ writes nothing: not a record, not a lock, not a stall reading.
 | `cancel <id>` | cancels a task and every task it delegated, leaves first, and its lineage's open asks; 4 while a task of the cascade is still active, which a second cancel retries | 0, 3, 4 |
 | `verify-worktree <path> <branch>` | verifies a linked worktree on its exact branch, as `verify_worktree` does | 0, 3 |
 | `git <slug> [--path <dir>] [--branch <name>] -- <args…>` | runs one git subcommand in a verified worktree, under the project's locks and journaled, as `git_mutate` does; 1 when git itself ran and failed, with its own output | 0, 1, 3 |
+| `git-root [--slug <slug>] -- <args…>` | runs one whitelisted git verb at the project root, under the project's locks and the repository lock, and journals the step it completes, as `git_root` does; 1 when git itself ran and failed, or ran and its step could not be journaled | 0, 1, 3 |
 | `journal [<slug>]` | one task's git journal, step by step, or every journal's slug; 1 when the journal file does not read, naming it | 0, 1, 3 |
 | `list-asks [--status <status>]` | every question an engine-placed lead has put to you, in the order asked; 5 while one it printed is open, and a damaged ask file is named rather than hiding the rest | 0, 5 |
 | `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed | 0, 3 |
@@ -476,7 +477,7 @@ One exit protocol for every verb:
 | code | meaning |
 | --- | --- |
 | 0 | ok |
-| 1 | error: something the command did not anticipate failed, or, for `git`, git itself — with `--json`, `{ok: false, error}` on stdout, or `git`'s answer whole |
+| 1 | error: something the command did not anticipate failed, or, for `git` and `git-root`, git itself — with `--json`, `{ok: false, error}` on stdout, or the git verb's answer whole |
 | 2 | usage: the command line could not be read — with `--json`, `{ok: false, error, usage}` on stdout, and nothing there without it |
 | 3 | precondition: the project, the mode, the ask or the task is not in the state the verb needs — with `--json`, the verb's answer naming the reason is the document on stdout |
 | 4 | still running: a task the verb names has not settled |
@@ -488,7 +489,7 @@ anticipated and 2 for a command line it cannot read, and every verb but `init`
 exits 3 when no project resolves. 4, 5 and 6 are verdicts and print on stdout:
 `show` exits 4 for a task still running and 6 for a stalled one, `cancel` 4
 for a cascade that left a task active, and `list-asks` 5 for an open ask. A verb
-that writes — `init`, `answer`, `cancel`, `git` and `tasks --reconcile` — exits
+that writes — `init`, `answer`, `cancel`, `git`, `git-root` and `tasks --reconcile` — exits
 3 when its own environment carries `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or
 `CROSS_AGENT_LINEAGE`, the markers of a task's process tree: writing is the
 operator's, and an engine reaches the project through the server.
