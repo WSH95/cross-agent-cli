@@ -2126,6 +2126,10 @@ test("row 2 fails on a branch nobody proves where the repository holds no other 
   // A worktree nobody initialized is no project, and so no owner.
   const unconfigured = await siblingOf(t, root, "other", false);
   await exec("git", ["-C", unconfigured, "worktree", "add", "-b", "task/elsewhere", path.join(unconfigured, ".worktrees", "elsewhere")]);
+  // Nor is a worktree whose `.cross-agent/config.json` is a directory: discovery reads a
+  // config as a regular file, and so does this row.
+  const pretender = await siblingOf(t, root, "pretender", false);
+  await mkdir(path.join(pretender, ".cross-agent", "config.json"), { recursive: true });
   const { out } = await runWith(root, []);
   assert.equal(verdict(out, branchRow), "FAIL", out);
   for (const branch of ["task/stray", "task/elsewhere"]) assert.ok(row(out, branchRow).includes(branch), out);

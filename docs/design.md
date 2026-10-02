@@ -4423,7 +4423,9 @@ binding, and the project follows its own path (Context).
   under `--project`, which must be exactly the root, naming any extra
   (`tests/e2e-verify.test.ts#rowsScopedToProject`). Row 2 first exempts a branch
   checked out exactly at a project root, this one's or a sibling's — a sibling being
-  any stanza that holds a config — and names it (`#row2ProjectRootBranchExempt`); it
+  any stanza that holds a config, a regular file as discovery reads one
+  (`src/project.ts#holdsConfig`, `tests/e2e-verify.test.ts#row2NoSiblingFails`) — and
+  names it (`#row2ProjectRootBranchExempt`); it
   then classes every other live branch of the pattern by positive evidence: checked
   out under `--project`, or named by an open journal of this project, fails the row
   (`#row2LocalLeftoverFails`, `#row2ReusedNameOpenHereFails`); checked out under a

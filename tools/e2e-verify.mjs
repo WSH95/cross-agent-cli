@@ -51,6 +51,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { holdsConfig } from "../src/project.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // What the Codex rollout reader (`rolloutCommands`, below) needs, set first because
@@ -109,8 +110,8 @@ const ours = stanzas.filter((stanza) => within(root, stanza.path));
 const extras = ours.filter((stanza) => stanza.path !== root);
 check("only the root worktree", ours.length === 1 && extras.length === 0 ? "pass" : "FAIL",
   extras.length > 0 ? extras.map((stanza) => stanza.path).join(", ") : ours.length === 1 ? root : `no stanza is ${root}`);
-const siblings = stanzas.filter((stanza) => !within(root, stanza.path)
-  && existsSync(path.join(stanza.path, ".cross-agent", "config.json")));
+// A sibling is a project by discovery's own test: its config a regular file.
+const siblings = stanzas.filter((stanza) => !within(root, stanza.path) && holdsConfig(stanza.path));
 // A separated main's stanza is its git directory, not its checkout, so a project there is
 // one the registry never names: an unproven branch may be its.
 const hiddenMain = stanzas[0] !== undefined && separatedGitDirectory(stanzas[0].path);
