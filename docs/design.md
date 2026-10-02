@@ -2515,10 +2515,12 @@ project retrying a finished cleanup would otherwise delete or merge another's
 (`tests/gitroot.test.ts#closedJournalReusedNameTwoProjects`, `#closedJournalRepeatedDelete`,
 `#worktreeRemoveTwiceRefused`). A journal stays open when git deleted its branch and the
 `branch-deleted` step could not be written, so `branch -d` also holds the branch to
-the tip the journal last recorded for it (`src/journal.ts#recordedTip`): the head the
-`merged` step merged; else the `after` of its last `git_mutate` step, which reads the
-branch it ran on; else the base its `worktree-created` step branched from. A branch
-elsewhere is refused, naming both SHAs and that the name may have been reused
+the last tip the journal's steps recorded, in order (`src/journal.ts#recordedTip`):
+the base its `worktree-created` step branched from, the `after` of each `git_mutate`
+step, which reads the branch it ran on, and the head its `merged` step merged. A
+`git_mutate` step after the merge moved the branch, so its record is the one that
+counts there; preferring the merged head would refuse a branch exactly where its own
+task last put it (`tests/journal.test.ts#recordedTip`). A branch elsewhere is refused, naming both SHAs and that the name may have been reused
 (`tests/gitroot.test.ts#openJournalReusedNameRefused`), and git still decides whether a
 branch at that tip is merged (`#branchDeleteAbandonedWithCommits`). A reused name at
 the very tip the journal recorded cannot be told apart, and is harmless: that commit

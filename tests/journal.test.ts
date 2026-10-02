@@ -175,7 +175,7 @@ test("a slug that is not a file name of its own is refused", (t) => {
 });
 
 // @anchor recordedTip
-test("a journal's recorded tip is the head it merged, else its git_mutate steps' last after, else the base its worktree branched from", () => {
+test("a journal's recorded tip is the last tip its steps recorded, in order", () => {
   const journal = (steps: JournalEntry[], branchHead?: string): Journal => ({
     slug: "x", branch: "task/x", defaultBranch: "main", ...(branchHead === undefined ? {} : { branchHead }), steps,
   });
@@ -189,6 +189,11 @@ test("a journal's recorded tip is the head it merged, else its git_mutate steps'
   assert.equal(recordedTip(journal([created, removed])), "base");
   assert.equal(recordedTip(journal([created, committed, reset, removed])), "c2");
   assert.equal(recordedTip(journal([created, committed, merged, removed], "c1")), "c1");
+  // A git_mutate step after the merge moved the branch, and its own record of that move is
+  // where the branch now is.
+  const moved: JournalEntry = { step: "git", at: 6, before: "c1", after: "c3", args: ["reset", "--hard", "c3"] };
+  assert.equal(recordedTip(journal([created, committed, merged, moved], "c1")), "c3");
+  assert.equal(recordedTip(journal([created, committed, merged, moved, removed], "c1")), "c3");
   // A journal git_mutate began records its tips from its first step.
   assert.equal(recordedTip(journal([committed])), "c1");
   assert.equal(recordedTip(journal([removed])), undefined);
