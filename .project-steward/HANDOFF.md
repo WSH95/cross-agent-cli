@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T04:18:31Z
+updated_at: 2026-10-02T05:52:29Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -108,8 +108,12 @@ the final whole-branch review, and the close) is **in flight**: brief `task-12-b
 v2. The final review of `4bcc986..416165c` found a Critical sandbox gap (Claude
 specialists' `Edit`/`Write` under `bypassPermissions`, and tools such as `EnterWorktree`,
 `SendMessage`, `RemoteTrigger`, escape the Bash-only sandbox) and two verifier Criticals;
-the user chose (2026-10-02) to probe first and fix now. Fix round 1 is in progress
-(`task-12-findings-round-1.md`). Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
+the user chose (2026-10-02) to probe first and fix now. The probe confirmed the gap;
+fix round 1 landed on the task branch (head `84d1010`, not merged: the Claude adapter
+runs `dontAsk` with a `--tools` allowlist, `--setting-sources project` and permission
+rules confining file edits to the workspace; the verifier holes closed; E8 8 pass;
+`npm test` 785 / 784 / 1 skipped). Its re-review is running (`task-12-findings-round-1.md`,
+`task-12-fix1-report.md`). Then Decision 0011 and the devpack note (a writer), then the close (the Codex config
 restore, the worktree archive and removal, the `AGENTS.md` diff shown for approval). Then task 12 (go/no-go, final review, close). Task 12 (go/no-go, final review, close) has a brief
 v1 (`task-12-brief.md`) whose plan review ended at round 1; its optimization pass
 runs before dispatch.

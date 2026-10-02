@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T05:52:29Z — claude
+[auto-checkpoint] Task 12 fix round 1 landed (84d1010; 785/784/1): the sandbox gap confirmed then closed (dontAsk, --tools allowlist, --setting-sources project, workspace-only edits), verifier holes closed, E8 8 pass; re-review running.
+
 ### 2026-10-02T04:18:31Z — claude
 [auto-checkpoint] Task 12 final review: a Critical sandbox gap (Claude file tools under bypassPermissions; EnterWorktree, SendMessage, RemoteTrigger) and two verifier Criticals; user chose probe-then-fix; fix round 1 in progress.
 
