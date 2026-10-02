@@ -6,6 +6,7 @@ import { isTaskId, isTerminal, projectLock, read, readSpec, runnerLogPath, updat
 import { runnerLockName } from "./locks.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord, UpdateOptions, UpdateResult } from "./ledger.ts";
 import { findByEnvironment, foreignEngineSettled, identityOf, terminateGroup, terminateGroupByPid } from "./process.ts";
+import { isMainModule } from "./project.ts";
 import { spawnEngine } from "./engines/spawn.ts";
 import type { SpawnHandle, SpawnResult } from "./engines/spawn.ts";
 import type { EngineAdapter } from "./engines/types.ts";
@@ -346,7 +347,7 @@ async function run(projectRoot: string, id: string): Promise<void> {
   });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   try {
     const args = process.argv.slice(2);
     const values: Record<string, string> = {};

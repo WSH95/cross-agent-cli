@@ -49,13 +49,6 @@ async function inMainWorktree(cwd: string): Promise<string> {
 }
 
 /**
- * The `--flag <value>` pairs a caller takes, each at most once, in any order. Anything
- * else — an unknown flag, a missing or empty value, a repeat, a bare argument — is a
- * reason and never a guess, because a command line this build cannot read in full is one
- * it must not act on half of. The server takes `--project` alone; the operator CLI takes
- * its own flags and shares the parser, so a second flag does not break the first.
- */
-/**
  * Whether this process was started to run the module at `moduleUrl`, the entry point's own
  * `import.meta.url`: the script node was given, `argv[1]`, and the module, compared by real
  * path. Node runs a main module at its real path, so the bin link `npm link` installs and a
@@ -72,6 +65,13 @@ export function isMainModule(moduleUrl: string): boolean {
   }
 }
 
+/**
+ * The `--flag <value>` pairs a caller takes, each at most once, in any order. Anything
+ * else — an unknown flag, a missing or empty value, a repeat, a bare argument — is a
+ * reason and never a guess, because a command line this build cannot read in full is one
+ * it must not act on half of. The server takes `--project` alone; the operator CLI takes
+ * its own flags and shares the parser, so a second flag does not break the first.
+ */
 export function parseFlags(argv: readonly string[], spec: Record<string, string>): Flags {
   const usage = Object.entries(spec).map(([flag, value]) => `[${flag} <${value}>]`).join(" ");
   const values: Record<string, string> = {};

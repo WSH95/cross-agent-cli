@@ -590,6 +590,26 @@ test("runner accepts a valid task ID beginning with a hyphen", async () => {
   } finally { await h.cleanup(); }
 });
 
+// @anchor symlinkedRunner
+test("a runner started through a linked checkout runs its task, rather than exiting 0 unheard", async (t) => {
+  // Node runs a main module at its real path, so an entry check that compared the path it
+  // was started by with its own URL did nothing through a link; the runner's compares real
+  // paths, as the server's and the CLI's do (`src/project.ts#isMainModule`).
+  const h = harness();
+  const links = fs.mkdtempSync(path.join(tmpdir(), "runner-link-"));
+  t.after(() => fs.rmSync(links, { recursive: true, force: true }));
+  fs.symlinkSync(worktree, path.join(links, "checkout"));
+  try {
+    ledger.writeSpec(h.root, h.record.id, h.spec);
+    const child = h.track(spawn(process.execPath, [path.join(links, "checkout", "src", "runner.ts"), "--project", h.root, "--task", h.record.id], {
+      cwd: worktree, detached: true, env: process.env, stdio: "ignore",
+    }));
+    await poll(() => child.closed, Boolean);
+    assert.equal(child.code, 0);
+    assert.equal(h.read().status, "done");
+  } finally { await h.cleanup(); }
+});
+
 test("zero exit without a result fails", async () => {
   const h = harness();
   try {
