@@ -20,7 +20,7 @@ import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } fro
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { git, gitShim } from "./helpers/git.ts";
-import { alive, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { alive, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -1558,4 +1558,20 @@ test("a consult at a main checkout with a separated git directory launches, prot
   await git(separated.main, "worktree", "add", "-b", "task/w", worktree);
   refusal(await delegate(separated.main, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
   assert.equal(await git(separated.main, "branch", "--list", "--format=%(refname:short)", "task/*"), "task/w", "and nothing of a one-shot was made");
+});
+
+// @anchor consultAtSymlinkedGitLaunches
+test("a consult at a main checkout whose .git links to its git directory launches, protecting the link and that directory", async (t) => {
+  const p = await projectWithRoles(t);
+  const linkedGit = await symlinkedGitProject(t);
+  configuredAt(p, linkedGit.main, "main");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const id = launched(await delegate(linkedGit.main, request({ role: "consult", cwd: linkedGit.main, engine: "grok" }), options));
+  assert.deepEqual(readSpec(linkedGit.main, id).protectedPaths, [path.join(linkedGit.main, ".git"), linkedGit.gitDir]);
+  // Such a root takes no writes, as a separated main does: no one-shot, and no worktree role.
+  refusal(await delegate(linkedGit.main, request({ role: "planner", cwd: linkedGit.main, worktree: true }), options));
+  const worktree = path.join(linkedGit.main, ".worktrees", "w");
+  await git(linkedGit.main, "worktree", "add", "-b", "task/w", worktree);
+  refusal(await delegate(linkedGit.main, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
+  assert.equal(await git(linkedGit.main, "branch", "--list", "--format=%(refname:short)", "task/*"), "task/w", "and nothing of a one-shot was made");
 });

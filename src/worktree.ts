@@ -211,9 +211,10 @@ export interface Repository {
 
 /**
  * `locateRepository`'s answer. `none` is a root with no `.git` at all, a config-only
- * project. `unsupported` is a root whose git directory is its own common directory — a
- * main checkout with a separated git directory, a submodule, a bare repository's umbrella
- * — carrying that directory. `refused` is everything else that does not verify.
+ * project. `unsupported` is a root whose git directory is its own common directory and lies
+ * outside it — a main checkout with a separated git directory or a `.git` linking to its
+ * git directory, a submodule, a bare repository's umbrella — or is bare, carrying that
+ * directory. `refused` is everything else that does not verify.
  */
 export type Located =
   | Repository
@@ -259,6 +260,7 @@ export async function locateRepository(projectRoot: string): Promise<Located> {
   try {
     if (entry.isDirectory()) return await asMainCheckout(workTree, pointer);
     if (entry.isFile()) return await asLinkedWorktree(workTree, pointer);
+    if (entry.isSymbolicLink()) return await asLinkedGitDirectory(workTree, pointer);
   } catch (error) {
     return refused(`cannot verify the repository at ${workTree}: ${gitFailure(error)}`);
   }
@@ -276,6 +278,32 @@ async function asMainCheckout(workTree: string, gitDir: string): Promise<Located
   const stanzas = await registryOf(gitDir, workTree);
   const own = stanzas.find((stanza) => stanza.path === workTree);
   return { kind: "main", workTree, gitDir, commonDir: gitDir, branch: own?.branch ?? null, stanzas, main: workTree };
+}
+
+/**
+ * A `.git` that is a symbolic link, which git follows to whatever it names. One that git at
+ * the root reads as the root's own git directory — the link's target is the git directory
+ * and its own common directory, the root is the top level, and nothing is bare — is a main
+ * checkout whose git directory lies outside it, as a separated one's does, and is
+ * unsupported the same way. Any other link is refused.
+ */
+async function asLinkedGitDirectory(workTree: string, pointer: string): Promise<Located> {
+  let target: string;
+  try {
+    target = await realpath(pointer);
+  } catch (error) {
+    return refused(`${pointer} is a symbolic link that cannot be resolved: ${message(error)}`);
+  }
+  const by = await ownGit(workTree);
+  const absolute = await realpath(withoutNewline(await git(workTree, "rev-parse", "--absolute-git-dir")));
+  const shared = await realpath(path.resolve(workTree, withoutNewline(await git(workTree, "rev-parse", "--git-common-dir"))));
+  if (by.bare || !by.workTree || absolute !== target || shared !== target) {
+    return refused(`${pointer} is a symbolic link to ${target}, which git at ${workTree} does not read as the git directory of the work tree there`);
+  }
+  return {
+    kind: "unsupported", workTree, gitDir: target,
+    reason: `${pointer} is a symbolic link to ${target}, a git directory outside ${workTree}, and such a root takes no writes`,
+  };
 }
 
 async function asLinkedWorktree(workTree: string, pointer: string): Promise<Located> {

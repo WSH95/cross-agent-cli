@@ -358,6 +358,16 @@ export async function separatedMainProject(t: TestContext): Promise<{ dir: strin
   return { dir, main, gitDir, root };
 }
 
+/** A main checkout `M` whose `.git` is a link to its git directory, `G` beside it. */
+export async function symlinkedGitProject(t: TestContext): Promise<{ dir: string; main: string; gitDir: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-gitlink-");
+  const main = await mainCheckout(dir, "M");
+  const gitDir = path.join(dir, "G");
+  fs.renameSync(path.join(main, ".git"), gitDir);
+  fs.symlinkSync(gitDir, path.join(main, ".git"), "dir");
+  return { dir, main, gitDir };
+}
+
 /**
  * A main checkout `real/M` reached through `alias`, a link to `real`, with a task worktree
  * `M/.worktrees/t` and a linked root `L` beside `M`, both added through the link.

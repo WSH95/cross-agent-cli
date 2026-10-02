@@ -2113,8 +2113,8 @@ The answer is `main`, `linked` or `bare-linked`, with the work tree, the root's 
 directory, the common directory, the branch checked out (null when detached), the
 registry, and `main`, the main checkout's path where one is known; or `none` for a root
 with no `.git`, a config-only project; or `unsupported`, carrying the root's git
-directory, for a root whose git directory is its own common directory; or `refused`
-for everything else. The checks run in this order. The root's nesting first, and from
+directory, for a root whose git directory is bare, or is its own common directory and
+lies outside the root; or `refused` for everything else. The checks run in this order. The root's nesting first, and from
 outside it: `enclosingWorktree` must find nothing (`#rootNotNested`), whatever the
 root's own `.git` holds now, so a task's worktree whose pointer was deleted, replaced
 by a repository of its own or rewritten is still refused, naming the worktree and the
@@ -2125,7 +2125,16 @@ A `.git` file is read as a candidate only, through its `gitdir:` line and that
 administrative directory's `commondir`. With no `commondir`, and `rev-parse
 --absolute-git-dir` and `--git-common-dir` both naming that directory, the root is a
 main checkout with a separated git directory, a submodule, or the umbrella itself —
-`unsupported` (`#rootIsLinked`). Otherwise git confirms the candidate on explicit
+`unsupported` (`#rootIsLinked`). A `.git` that is a symbolic link is `unsupported` too,
+carrying its target, when git at the root reads that target as both its git directory
+and its own common directory, the root as its top level, and nothing as bare: a main
+checkout whose git directory lies outside it, as a separated main's does. Any other
+link is refused (`tests/worktree.test.ts#locateRepositorySymlinkedGitUnsupported`).
+That is a deliberate change: before worktree projects, task worktrees made by hand
+under such a root verified and took `git_mutate`, though the git directory they share
+lay outside the denied cwd; now the root's own roles launch with the link and its
+target protected, and its worktree roles, one-shots and git writes are refused, as at
+a separated main. Otherwise git confirms a `.git` file's candidate on explicit
 directories (`src/gitmutate.ts#run`), its administrative directory sits directly in
 `<commonDir>/worktrees` (`src/worktree.ts#rootAdministrativeParent`), its `gitdir`
 points back at the root's pointer (`#rootGitdirBacklink`), the root lies outside the
@@ -2144,7 +2153,8 @@ which a listing from a linked worktree does not read (`tests/worktree.test.ts#lo
 `#locateRepositoryReplacedPointerStillNested`, `#locateRepositoryRefusesRewrittenPointer`,
 `#locateRepositoryRefusesRootInsideCommonDir`, `#locateRepositoryRefusesSubmodule`,
 `#locateRepositorySeparatedMainUnsupported`, `#locateRepositoryBareDirectoryUnsupported`,
-`#locateRepositoryBareDotGitAllowed`, `#locateRepositorySeparatedMainWorktreeMainNull`).
+`#locateRepositorySymlinkedGitUnsupported`, `#locateRepositoryBareDotGitAllowed`,
+`#locateRepositorySeparatedMainWorktreeMainNull`).
 
 `enclosingWorktree` walks a canonical candidate's strict ancestors outside-in
 (`src/worktree.ts#enclosingWorktree`). An ancestor without a `.git` entry is skipped.
@@ -2215,7 +2225,7 @@ per-path rule (section 3). Two projects of one repository delegate side by side,
 in its own worktree directory, ledger and journals, sharing one `info/exclude` and the
 repository lock (`tests/delegate.test.ts#protectedPathsLinkedRoot`,
 `#oneShotInLinkedRoot`, `#oneShotBareConfiglessRefused`, `#twoProjectsOneRepository`,
-`#consultAtSeparatedMainLaunches`).
+`#consultAtSeparatedMainLaunches`, `#consultAtSymlinkedGitLaunches`).
 
 Specialists never write git metadata. A linked worktree's `.git` is a file
 inside the implementer's workspace — Claude's sandbox and file tools and Codex's

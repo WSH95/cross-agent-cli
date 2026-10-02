@@ -261,7 +261,8 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   // The repository, located once, decides the launch (design section 4). A root it refuses
   // — inside a worktree an enclosing work tree registers, inside its own git directory, or
   // with a `.git` that does not verify — is no project's root, and nothing launches there.
-  // An unsupported root and a root with no `.git` launch as they always have.
+  // An unsupported root launches its root roles alone, and a root with no `.git` launches
+  // as it always has.
   const located = await locateRepository(projectRoot);
   if (located.kind === "refused") return refuse(located.reason);
   const repo = "reason" in located ? undefined : located;

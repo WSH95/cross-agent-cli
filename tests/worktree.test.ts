@@ -8,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { gitEnvironment, locateRepository, verifyWorktree } from "../src/worktree.ts";
 import type { Located, Repository, WorktreeResult } from "../src/worktree.ts";
-import { bareDotGitProject, bareProject, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, symlinkedAncestor, umbrellaProject } from "./helpers/project.ts";
+import { bareDotGitProject, bareProject, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, symlinkedAncestor, symlinkedGitProject, umbrellaProject } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
 
@@ -482,6 +482,33 @@ test("a main checkout with a separated git directory is unsupported, carrying th
   refused(located, "unsupported");
   assert.equal((located as { gitDir: string }).gitDir, gitDir);
   assert.equal((located as { workTree: string }).workTree, main);
+});
+
+// @anchor locateRepositorySymlinkedGitUnsupported
+test("a main checkout whose .git links to its own git directory is unsupported, carrying that directory, and any other link is refused", async (t) => {
+  const { dir, main, gitDir } = await symlinkedGitProject(t);
+  const located = await locateRepository(main);
+  assert.match(refused(located, "unsupported"), /symbolic link/);
+  assert.equal((located as { gitDir: string }).gitDir, gitDir);
+  assert.equal((located as { workTree: string }).workTree, main);
+  // Its task worktrees are not verified: the git directory they share lies outside the
+  // root, where no task's denial of its cwd reaches.
+  const task = path.join(main, ".worktrees", "w");
+  await git(main, "worktree", "add", "-b", "task/w", task);
+  assert.ok("reason" in await verifyWorktree(main, task, "task/w"), "verify_worktree refuses a task worktree there");
+
+  // A link git does not read as the root's own git directory is refused: one that leads
+  // nowhere, one to a directory that is no repository, one to a bare repository, and one
+  // to a linked worktree's administrative directory, which is not its own common directory.
+  const elsewhere = path.join(dir, "elsewhere");
+  await mkdir(elsewhere);
+  const bare = path.join(dir, "bare.git");
+  await git(dir, "init", "--bare", "-b", "main", bare);
+  for (const target of [path.join(dir, "missing"), elsewhere, bare, path.join(gitDir, "worktrees", "w")]) {
+    await rm(path.join(main, ".git"));
+    await symlink(target, path.join(main, ".git"), "dir");
+    refused(await locateRepository(main));
+  }
 });
 
 // @anchor locateRepositoryBareDotGitAllowed
