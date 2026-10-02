@@ -37,7 +37,9 @@
 // project of its own shares the registry and the branches with its main checkout and its
 // sibling projects, so row 1 counts the stanzas at or under `--project`, and row 2 classes a
 // live branch of the pattern by positive evidence alone — a checkout under a project's root,
-// or an open journal there — and answers `?` where there is none or where both sides claim it.
+// or an open journal there — and answers `?` where both sides claim it, or where none does
+// and another project could hold it: a sibling, or a separated main's checkout, which the
+// registry never names. With no evidence and no other project, the branch is this one's.
 //
 // One line per check: `pass`, `FAIL`, or `?` where the evidence is missing rather than
 // contradicted (no journal, no records, a log in a shape this cannot read), which is not
@@ -109,6 +111,9 @@ check("only the root worktree", ours.length === 1 && extras.length === 0 ? "pass
   extras.length > 0 ? extras.map((stanza) => stanza.path).join(", ") : ours.length === 1 ? root : `no stanza is ${root}`);
 const siblings = stanzas.filter((stanza) => !within(root, stanza.path)
   && existsSync(path.join(stanza.path, ".cross-agent", "config.json")));
+// A separated main's stanza is its git directory, not its checkout, so a project there is
+// one the registry never names: an unproven branch may be its.
+const hiddenMain = stanzas[0] !== undefined && separatedGitDirectory(stanzas[0].path);
 const projects = [{ path: root, journals: openJournals(root) }, ...siblings.map((stanza) => ({ path: stanza.path, journals: openJournals(stanza.path) }))];
 const live = git("branch", "--list", "--format=%(refname:short)", branchPattern).split("\n").filter(Boolean);
 const classed = { fail: [], unknown: [], sibling: [], exempt: [] };
@@ -134,7 +139,8 @@ for (const branch of live) {
   if (here && there.length === 0) classed.fail.push(`${branch} (an open journal of this project names it)`);
   else if (!here && there.length > 0) classed.sibling.push(`${branch} (an open journal at ${there.map((each) => each.path).join(", ")} names it)`);
   else if (claims.length > 0) classed.unknown.push(`${branch} (open journals here and at ${there.map((each) => each.path).join(", ")} both name it)`);
-  // Unproven, it can be another project's only where the repository holds one.
+  // Unproven, it can be another project's only where the repository holds one, or may.
+  else if (hiddenMain) classed.unknown.push(`${branch} (a separated main's checkout is not in git's registry, so whether a project there holds it cannot be read)`);
   else if (siblings.length === 0) classed.fail.push(`${branch} (no other project of this repository could hold it)`);
   else classed.unknown.push(`${branch} (checked out under no project and named by no open journal)`);
 }
@@ -606,6 +612,21 @@ function registry() {
     } catch { /* a stanza whose directory is gone is judged by the path git prints */ }
     return [{ path: resolved, branch: ref === undefined ? null : ref.slice("branch refs/heads/".length) }];
   });
+}
+
+/**
+ * Whether `dir` is a git directory that is neither bare nor a work tree: what git 2.43 names
+ * a separated main's stanza after, its checkout recorded nowhere. A bare repository's stanza
+ * hides no checkout, and every worktree of it is a stanza of its own.
+ */
+function separatedGitDirectory(dir) {
+  try {
+    const [bare, inside] = execFileSync("git", ["-C", dir, "rev-parse", "--is-bare-repository", "--is-inside-work-tree"], { encoding: "utf8" })
+      .trim().split("\n");
+    return bare === "false" && inside === "false";
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -4419,9 +4419,11 @@ binding, and the project follows its own path (Context).
   (`#row2LocalLeftoverFails`, `#row2ReusedNameOpenHereFails`); checked out under a
   sibling's root, or named by an open journal there, is that sibling's, named and
   ignored (`#row2SiblingProven`); evidence on both sides is `?` with the claims in the
-  detail (`#row2ConflictQuestioned`), and no evidence is `?` where a sibling exists to
-  own the branch and fails the row, as before worktree projects, where none does
-  (`#row2UnknownOwnerQuestioned`, `#row2NoSiblingFails`). A
+  detail (`#row2ConflictQuestioned`), and no evidence is `?` where another project could
+  own the branch — a sibling, or a separated main's checkout, which the registry names
+  only by its git directory — and fails the row, as before worktree projects, where none
+  could (`#row2UnknownOwnerQuestioned`, `#row2SeparatedMainQuestioned`,
+  `#row2NoSiblingFails`). A
   journal with a `branch-deleted` step is closed and claims nothing
   (`#row2ClosedJournalClaimsNothing`), a current checkout outranks history, and an
   unjournaled branch is never taken as another project's. **E1 met all eight under Claude

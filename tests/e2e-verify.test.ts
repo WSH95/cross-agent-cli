@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { bareProject, separatedMainProject } from "./helpers/project.ts";
 
 // `tools/e2e-verify.mjs` is what every end-to-end run is judged by, so what it cannot read
 // it must not call a pass. Two of its eight conditions are the ones a run can fail without
@@ -2128,6 +2129,29 @@ test("row 2 fails on a branch nobody proves where the repository holds no other 
   const { out } = await runWith(root, []);
   assert.equal(verdict(out, branchRow), "FAIL", out);
   for (const branch of ["task/stray", "task/elsewhere"]) assert.ok(row(out, branchRow).includes(branch), out);
+});
+
+// @anchor row2SeparatedMainQuestioned
+test("row 2 answers ? for an unproven branch beside a separated main, whose checkout git's registry never names", async (t) => {
+  const separated = await separatedMainProject(t);
+  // Both checkouts are projects: the separated main's own, which the registry lists only as
+  // its git directory, and the worktree beside it, judged here.
+  for (const [root, branch] of [[separated.main, "main"], [separated.root, "feature"]]) {
+    await mkdir(path.join(root, ".cross-agent", "journal"), { recursive: true });
+    await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ mode: "dev-team", project: { defaultBranch: branch } }));
+  }
+  await exec("git", ["-C", separated.main, "checkout", "-b", "task/topic"]);
+  const { out } = await runWith(separated.root, []);
+  assert.equal(verdict(out, branchRow), "?", out);
+  assert.match(row(out, branchRow), /task\/topic[^,]*separated main/);
+  // A bare repository's main stanza hides no checkout: every worktree of it is named, so
+  // an unproven branch there still fails where no sibling project exists.
+  const bare = await bareProject(t);
+  await mkdir(path.join(bare.root, ".cross-agent", "journal"), { recursive: true });
+  await writeFile(path.join(bare.root, ".cross-agent", "config.json"), JSON.stringify({ mode: "dev-team", project: { defaultBranch: "feature" } }));
+  await exec("git", ["-C", bare.root, "branch", "task/stray"]);
+  const bareRun = await runWith(bare.root, []);
+  assert.equal(verdict(bareRun.out, branchRow), "FAIL", bareRun.out);
 });
 
 // @anchor row2UnknownOwnerQuestioned
