@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2040,4 +2040,139 @@ test("the journal has to hold the loop's steps in order, and an empty one fails"
   // Not the journal schema at all: nothing to judge, rather than a pass or a failure.
   const foreign = await project(t, { claude: claudeLog("true") }, { journal: JSON.stringify({ notes: "something else" }) });
   assert.equal(verdict((await run(foreign)).out, journal), "?");
+});
+
+// Rows 1 and 2 are the project's own (design section 8): the repository's registry and its
+// branches hold a sibling project's root, its task worktrees and its branches too, and a
+// branch is this project's leftover only on positive evidence — a checkout under its root
+// or an open journal of its own — and another's only on the same kind of evidence there.
+
+const rootRow = "only the root worktree";
+const branchRow = "branch remains";
+
+/** A worktree of `root`'s repository beside it, on `branch`, holding a config unless `configured` is false. */
+async function siblingOf(t: TestContext, root: string, branch: string, configured = true): Promise<string> {
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), "e2e-verify-sibling-")));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const at = path.join(dir, "project");
+  await exec("git", ["-C", root, "worktree", "add", "-b", branch, at]);
+  if (configured) {
+    await mkdir(path.join(at, ".cross-agent", "journal"), { recursive: true });
+    await writeFile(path.join(at, ".cross-agent", "config.json"), JSON.stringify({ mode: "dev-team", project: { defaultBranch: branch } }));
+  }
+  return at;
+}
+
+/** `slug`'s journal in `project`, on `branch`: closed by a `branch-deleted` step, or open without one. */
+async function journalIn(project: string, slug: string, branch: string, closed: boolean): Promise<void> {
+  const steps = closed ? journalSteps : ["worktree-created", "committed"];
+  await writeFile(path.join(project, ".cross-agent", "journal", `${slug}.json`), JSON.stringify({ slug, branch, steps: steps.map((step) => ({ step })) }));
+}
+
+/** A task branch at `root`'s `main` with nothing checked out on it. */
+async function branchAt(root: string, branch: string): Promise<void> {
+  await exec("git", ["-C", root, "branch", branch]);
+}
+
+// @anchor rowsScopedToProject
+test("rows 1 and 2 judge a linked root by its own part of the repository, not its main checkout's or a sibling's", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  const linked = await siblingOf(t, root, "feature");
+  // A sibling project's task in flight: its worktree under its own root, on its own branch.
+  const theirs = await siblingOf(t, root, "other");
+  await exec("git", ["-C", theirs, "worktree", "add", "-b", "task/theirs", path.join(theirs, ".worktrees", "theirs")]);
+  const { out } = await runWith(linked, []);
+  assert.equal(verdict(out, rootRow), "pass", out);
+  assert.equal(verdict(out, branchRow), "pass", out);
+  // And a worktree under the linked root is its own leftover, named.
+  await exec("git", ["-C", linked, "worktree", "add", "-b", "task/ours", path.join(linked, ".worktrees", "ours")]);
+  const after = await runWith(linked, []);
+  assert.equal(verdict(after.out, rootRow), "FAIL", after.out);
+  assert.match(row(after.out, rootRow), /\.worktrees\/ours/);
+});
+
+// @anchor row2SiblingProven
+test("row 2 names and ignores a branch a sibling project proves its own, by a checkout under its root or an open journal there", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  const theirs = await siblingOf(t, root, "other");
+  await exec("git", ["-C", theirs, "worktree", "add", "-b", "task/checked", path.join(theirs, ".worktrees", "checked")]);
+  await branchAt(root, "task/journaled");
+  await journalIn(theirs, "journaled", "task/journaled", false);
+  const { out } = await runWith(root, []);
+  assert.equal(verdict(out, branchRow), "pass", out);
+  for (const branch of ["task/checked", "task/journaled"]) assert.ok(row(out, branchRow).includes(branch), out);
+});
+
+// @anchor row2LocalLeftoverFails
+test("row 2 fails on a branch this project proves its own: a checkout under its root, or an open journal of its own", async (t) => {
+  for (const proof of ["checkout", "journal"] as const) {
+    const root = await project(t, { claude: claudeLog("true") });
+    if (proof === "checkout") await exec("git", ["-C", root, "worktree", "add", "-b", "task/left", path.join(root, ".worktrees", "left")]);
+    else {
+      await branchAt(root, "task/left");
+      await journalIn(root, "left", "task/left", false);
+    }
+    const { out } = await runWith(root, []);
+    assert.equal(verdict(out, branchRow), "FAIL", `${proof}: ${out}`);
+    assert.ok(row(out, branchRow).includes("task/left"), out);
+  }
+});
+
+// @anchor row2UnknownOwnerQuestioned
+test("row 2 answers ? for a branch nobody proves, never taking it for another project's", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  await siblingOf(t, root, "other");
+  await branchAt(root, "task/stray");
+  const { out } = await runWith(root, []);
+  assert.equal(verdict(out, branchRow), "?", out);
+  assert.ok(row(out, branchRow).includes("task/stray"), out);
+});
+
+// @anchor row2ClosedJournalClaimsNothing
+test("row 2 takes a closed journal for no evidence: its branch-deleted step ended the task, here or at a sibling", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  const theirs = await siblingOf(t, root, "other");
+  await branchAt(root, "task/ours");
+  await journalIn(root, "ours", "task/ours", true);
+  await branchAt(root, "task/theirs");
+  await journalIn(theirs, "theirs", "task/theirs", true);
+  const { out } = await runWith(root, ["--slug", "slug"]);
+  assert.equal(verdict(out, branchRow), "?", out);
+});
+
+// @anchor row2ReusedNameOpenHereFails
+test("row 2 fails on a reused name this project's open journal claims, whatever a sibling's closed journal said", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  const theirs = await siblingOf(t, root, "other");
+  await branchAt(root, "task/reused");
+  await journalIn(theirs, "reused", "task/reused", true);
+  await journalIn(root, "reused", "task/reused", false);
+  const { out } = await runWith(root, []);
+  assert.equal(verdict(out, branchRow), "FAIL", out);
+});
+
+// @anchor row2ConflictQuestioned
+test("row 2 answers ? when open journals on both sides claim one branch nobody has checked out", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  const theirs = await siblingOf(t, root, "other");
+  await branchAt(root, "task/both");
+  await journalIn(root, "both", "task/both", false);
+  await journalIn(theirs, "both", "task/both", false);
+  const { out } = await runWith(root, []);
+  assert.equal(verdict(out, branchRow), "?", out);
+  assert.ok(row(out, branchRow).includes(theirs), "the claims are in the detail");
+});
+
+// @anchor row2ProjectRootBranchExempt
+test("row 2 exempts a branch checked out at a project root, its own or a sibling's, and names it", async (t) => {
+  const root = await project(t, { claude: claudeLog("true") });
+  // The project under judgment is itself on a task-shaped branch, and so is a sibling's root.
+  const linked = await siblingOf(t, root, "task/root");
+  const theirs = await siblingOf(t, root, "task/sibling");
+  const { out } = await runWith(linked, []);
+  assert.equal(verdict(out, branchRow), "pass", out);
+  for (const named of ["task/root", "task/sibling", theirs]) assert.ok(row(out, branchRow).includes(named), out);
+  // A branch in a task worktree's stanza is never exempt.
+  await exec("git", ["-C", linked, "worktree", "add", "-b", "task/inside", path.join(linked, ".worktrees", "inside")]);
+  assert.equal(verdict((await runWith(linked, [])).out, branchRow), "FAIL");
 });

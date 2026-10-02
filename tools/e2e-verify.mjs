@@ -33,13 +33,19 @@
 // after that record's own `createdAt`. The test command defaults to the project's
 // `.cross-agent/config.json` (`project.testCommand`).
 //
+// Rows 1 and 2 are the project's own part of the repository: a worktree initialized as a
+// project of its own shares the registry and the branches with its main checkout and its
+// sibling projects, so row 1 counts the stanzas at or under `--project`, and row 2 classes a
+// live branch of the pattern by positive evidence alone — a checkout under a project's root,
+// or an open journal there — and answers `?` where there is none or where both sides claim it.
+//
 // One line per check: `pass`, `FAIL`, or `?` where the evidence is missing rather than
 // contradicted (no journal, no records, a log in a shape this cannot read), which is not
 // the same thing and is never counted as a pass. Exit 0 only when every row passed, 1
 // when any failed, 2 when any row had no evidence and none failed; a project that cannot
 // be read at all exits 2 as well, with the reason on stderr.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,12 +99,47 @@ function check(name, verdict, detail) {
   console.log(`${verdict === "pass" ? "pass" : verdict === "FAIL" ? "FAIL" : "?   "}  ${name}${detail ? `: ${detail}` : ""}`);
 }
 
-// 1-3. What git says about the repository the run left behind.
-const worktrees = git("worktree", "list", "--porcelain").split("\n\n").filter(Boolean);
-check("only the root worktree", worktrees.length === 1 ? "pass" : "FAIL",
-  worktrees.length === 1 ? `${project}` : worktrees.map((entry) => entry.split("\n")[0]).join(", "));
-const leftoverBranches = git("branch", "--list", branchPattern).split("\n").map((line) => line.trim()).filter(Boolean);
-check(`no ${branchPattern} branch remains`, leftoverBranches.length === 0 ? "pass" : "FAIL", leftoverBranches.join(", "));
+// 1-3. What git says about the repository the run left behind, rows 1 and 2 read as this
+// project's own part of it.
+const root = realpathSync(project);
+const stanzas = registry();
+const ours = stanzas.filter((stanza) => within(root, stanza.path));
+const extras = ours.filter((stanza) => stanza.path !== root);
+check("only the root worktree", ours.length === 1 && extras.length === 0 ? "pass" : "FAIL",
+  extras.length > 0 ? extras.map((stanza) => stanza.path).join(", ") : ours.length === 1 ? root : `no stanza is ${root}`);
+const siblings = stanzas.filter((stanza) => !within(root, stanza.path)
+  && existsSync(path.join(stanza.path, ".cross-agent", "config.json")));
+const projects = [{ path: root, journals: openJournals(root) }, ...siblings.map((stanza) => ({ path: stanza.path, journals: openJournals(stanza.path) }))];
+const live = git("branch", "--list", "--format=%(refname:short)", branchPattern).split("\n").filter(Boolean);
+const classed = { fail: [], unknown: [], sibling: [], exempt: [] };
+for (const branch of live) {
+  // A project's own branch, checked out exactly at its root, is no task's leftover.
+  const atRoot = projects.find((each) => stanzas.some((stanza) => stanza.path === each.path && stanza.branch === branch));
+  if (atRoot !== undefined) {
+    classed.exempt.push(`${branch} (checked out at the project root ${atRoot.path})`);
+    continue;
+  }
+  // Current checkout outranks history: a branch checked out under a project's root is that
+  // project's, whatever any journal says; only then do open journals decide.
+  const checkout = stanzas.find((stanza) => stanza.branch === branch);
+  const holder = checkout === undefined ? undefined : projects.find((each) => within(each.path, checkout.path));
+  if (holder !== undefined) {
+    if (holder.path === root) classed.fail.push(`${branch} (checked out at ${checkout.path})`);
+    else classed.sibling.push(`${branch} (checked out at ${checkout.path}, under ${holder.path})`);
+    continue;
+  }
+  const claims = projects.filter((each) => each.journals.has(branch));
+  const here = claims.some((each) => each.path === root);
+  const there = claims.filter((each) => each.path !== root);
+  if (here && there.length === 0) classed.fail.push(`${branch} (an open journal of this project names it)`);
+  else if (!here && there.length > 0) classed.sibling.push(`${branch} (an open journal at ${there.map((each) => each.path).join(", ")} names it)`);
+  else if (claims.length > 0) classed.unknown.push(`${branch} (open journals here and at ${there.map((each) => each.path).join(", ")} both name it)`);
+  else classed.unknown.push(`${branch} (checked out under no project and named by no open journal)`);
+}
+check(`no ${branchPattern} branch remains`,
+  classed.fail.length > 0 ? "FAIL" : classed.unknown.length > 0 ? "?" : "pass",
+  [...classed.fail, ...classed.unknown.map((entry) => `? ${entry}`),
+    ...classed.sibling.map((entry) => `a sibling's: ${entry}`), ...classed.exempt.map((entry) => `exempt: ${entry}`)].join(", "));
 const status = git("status", "--porcelain", "--untracked-files=normal");
 check("the working tree is clean", status.trim() === "" ? "pass" : "FAIL", status.trim().split("\n").slice(0, 5).join(" | "));
 
@@ -543,6 +584,43 @@ function since(all) {
   const parsed = Date.parse(args.since);
   if (Number.isNaN(parsed)) fail(`--since ${args.since} is neither a task id of this project nor a date`);
   return parsed;
+}
+
+/** Whether `candidate` is `dir` or lies under it; both canonical. */
+function within(dir, candidate) {
+  return candidate === dir || candidate.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+}
+
+/** The repository's registry, each stanza's path canonical where it still exists, with its branch or null. */
+function registry() {
+  return git("worktree", "list", "--porcelain", "-z").split("\0\0").filter(Boolean).flatMap((entry) => {
+    const fields = entry.split("\0");
+    const listed = fields.find((line) => line.startsWith("worktree "))?.slice("worktree ".length);
+    if (listed === undefined) return [];
+    const ref = fields.find((line) => line.startsWith("branch refs/heads/"));
+    let resolved = listed;
+    try {
+      resolved = realpathSync(listed);
+    } catch { /* a stanza whose directory is gone is judged by the path git prints */ }
+    return [{ path: resolved, branch: ref === undefined ? null : ref.slice("branch refs/heads/".length) }];
+  });
+}
+
+/**
+ * The branches a project's open journals name: a journal with no `branch-deleted` step.
+ * A closed journal claims nothing, because the step that closed it ended its task, and a
+ * branch of that name now is another's.
+ */
+function openJournals(dir) {
+  const journals = path.join(dir, ".cross-agent", "journal");
+  const named = new Set();
+  for (const name of existsSync(journals) ? readdirSync(journals) : []) {
+    if (!name.endsWith(".json")) continue;
+    const journal = readJson(path.join(journals, name));
+    if (journal === null || typeof journal.branch !== "string" || !Array.isArray(journal.steps)) continue;
+    if (!journal.steps.some((step) => step?.step === "branch-deleted")) named.add(journal.branch);
+  }
+  return named;
 }
 
 function git(...argv) {
