@@ -3278,7 +3278,7 @@ Both leads ran the same ten steps (`main/lead-calls.txt`, `feature/lead-calls.tx
 each root's branch with `git_root rev-parse --abbrev-ref HEAD`: `main` and `feature/dotted`. Both
 `git_root worktree list --porcelain` answers listed both roots, the repository's own registry; the
 branch lead's `list_tasks` answered its own record alone (555 characters), the main lead's its
-project's whole history (24,595). The branch lead's loop:
+project's whole history (24,545). The branch lead's loop:
 
 ```
 list_tasks, describe_mode; git_root status / rev-parse --abbrev-ref HEAD / worktree list / branch --list task/*
@@ -3301,9 +3301,10 @@ tests, with one `Read` of the config and no setup run. The branch lead ran 26 ca
 s by its result line, 212 s by the ledger, $0.547; the main lead 27 calls, 28 turns, 172.8 s, 176 s,
 $0.534. Their own four `wait` calls took 83.1 s and 70.1 s in all, each answered `done`. None of the
 25 `git_root`, `git_mutate` and `run_command` calls of one lead overlapped one of the other's in
-time; the longest took 0.158 s, and the two `worktree add` calls, the closest pair, began 0.64 s
-apart. Both code reviews found the code ready at the first round, the main project's with two
-non-blocking notes and the branch project's with one, so no implementer was resumed.
+time; the longest took 0.158 s, and the two `worktree add` calls, the closest pair, began 0.71 s
+apart, the second 0.64 s after the first had ended (22:51:26.981Z, 22:51:27.055Z and
+22:51:27.691Z). Both code reviews found the code ready at the first round, the main project's with
+two non-blocking notes and the branch project's with one, so no implementer was resumed.
 
 The repository's one registry showed both task worktrees at once (`registry-trace.txt`, the
 watcher's 30-second listings, changes only): at 22:51:55Z four stanzas, `slugkit`,
