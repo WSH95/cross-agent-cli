@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T20:20:00Z — claude
+[auto-checkpoint] atc-s96.97 implemented on task/worktree-projects (98b0b4f..3760c38, 911/910/1; citations 1424); follow-ups .98–.101 filed; code review round 1 running.
+
 ### 2026-10-02T17:30:00Z — claude
 Planned and approved atc-s96.97 (a branch worktree, or a bare repository's worktree, as its own project; opt-in by init; bare supported; init copies the main project's setup and Grok attach; a new git-root CLI verb). Implementation started in .worktrees/worktree-projects from 66e8815.
 

@@ -57,9 +57,14 @@ The user's decisions:
 The plan was reviewed in five rounds and approved; every issue's resolvability is stated in it. It is
 `.superpowers/sdd/the-development-of-this-calm-planet/task-13-brief.md`.
 
-The implementation is under way in `.worktrees/worktree-projects` on `task/worktree-projects`, from
-`main` at `66e8815`. Code review and an end-to-end run with two concurrent projects in one repository
-(E10) follow.
+The implementation landed in `.worktrees/worktree-projects` on `task/worktree-projects`, from `main`
+at `66e8815`:
+- 15 commits (`98b0b4f..3760c38`);
+- `npm test` 911 / 910 / 0 fail / 1 skipped;
+- 1424 citations, none by line.
+
+The follow-ups the plan names are filed as `.98`–`.101`. Code review round 1 is running. An end-to-end
+run with two concurrent projects in one repository (E10) follows.
 
 ## Next steps
 
