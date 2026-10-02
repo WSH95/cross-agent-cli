@@ -63,8 +63,12 @@ at `66e8815`:
 - `npm test` 911 / 910 / 0 fail / 1 skipped;
 - 1424 citations, none by line.
 
-The follow-ups the plan names are filed as `.98`–`.101`. Code review round 1 is running. An end-to-end
-run with two concurrent projects in one repository (E10) follows.
+The follow-ups the plan names are filed as `.98`–`.101`.
+
+Code review round 1 found no Critical findings: two Important and eleven Minor, all resolvable. Fix
+round 1 landed (`3760c38..2276ff4`, 923 / 922 / 1 skipped; 1440 citations). It restores single-checkout
+behaviour where the first pass had changed it. The round-2 re-review is running. An end-to-end run with
+two concurrent projects in one repository (E10) follows.
 
 ## Next steps
 
