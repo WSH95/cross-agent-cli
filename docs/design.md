@@ -3518,8 +3518,10 @@ handler passes:
   (`#initUmbrellaWorktree`, `#initBareDotGitDefaults`), and a separated main's needs
   `--from <main checkout>` or `--mode`, since git records no path to that checkout
   (`#initSeparatedMainNeedsFrom`); `--mode` with `--from` is a 2, anywhere, naming both.
-  A worktree's document adds `defaultBranch`, `from` and `attach`. The source's Grok
-  attach, `.grok/config.toml`, is copied with it, byte for byte: it is host
+  A worktree's document adds `defaultBranch`, `from` and `attach`. The Grok attach,
+  `.grok/config.toml`, is `--from`'s, or else the main checkout's wherever one is
+  known, whatever the team config came from, `--mode`'s defaults included
+  (`tests/cli.test.ts#initModeCopiesGrokAttach`). It is copied byte for byte: it is host
   configuration, so it moves as a regular file and never through a link — both
   directories and the file judged by `lstat`, nothing at the destination replaced, a
   dangling link included, and the file opened `wx` — `.grok/` is ignored beside it, and

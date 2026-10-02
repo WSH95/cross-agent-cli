@@ -1892,6 +1892,25 @@ test("init copies the source's Grok attach once, a regular file written through 
   assert.deepEqual(fs.readdirSync(target), [], "no link was written through");
 });
 
+// @anchor initModeCopiesGrokAttach
+test("init in a worktree copies the main checkout's Grok attach whatever the team config came from", async (t) => {
+  // Beside a main config `--mode` writes the mode's defaults, and beside none init does:
+  // the attach is the main checkout's either way.
+  const configured = await initializedMain(t);
+  const bare = await mainCheckout(scratch(t), "N");
+  for (const [main, args] of [[configured, ["--mode", "solo"]], [bare, []]] as const) {
+    fs.mkdirSync(path.join(main, ".grok"));
+    fs.writeFileSync(path.join(main, ".grok", "config.toml"), shippedAttach);
+    const linked = await linkedProject(t, main, "feature");
+    const ran = await run(["init", ...args], linked);
+    assert.equal(ran.code, 0, ran.stderr);
+    assert.equal(written(linked).mode, args.length > 0 ? "solo" : "dev-team");
+    assert.equal(fs.readFileSync(path.join(linked, ".grok", "config.toml"), "utf8"), shippedAttach, main);
+    assert.match(ran.stdout, /trusted_folders\.toml/);
+    assert.ok(fs.readFileSync(path.join(linked, ".gitignore"), "utf8").split("\n").includes(".grok/"), main);
+  }
+});
+
 // @anchor initKeptGrokAttachIgnored
 test("a first init in a worktree that already holds a regular Grok attach keeps it and ignores .grok/", async (t) => {
   const main = await initializedMain(t);

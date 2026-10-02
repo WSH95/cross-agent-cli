@@ -363,7 +363,10 @@ async function initWorktree(root: string, located: Repository, parsed: Parsed, c
     return refused(`${root} has ${branch} checked out, which mode ${mode.id}'s task branch pattern ${pattern} matches: a project's default branch is never a task's, so check out another branch first`);
   }
   const result = initConfig(root, { mode: modeName, defaultBranch: branch, ...(copy === undefined ? {} : { copy }) });
-  const attach = source === undefined ? null : copyGrokAttach(source, root);
+  // The Grok attach is `--from`'s, or else the main checkout's wherever one is known,
+  // whatever the team config came from: a mode named changes the team, not the host.
+  const attachSource = from !== undefined ? source : located.main ?? undefined;
+  const attach = attachSource === undefined ? null : copyGrokAttach(attachSource, root);
   // An attach the worktree holds as a regular file, copied or its own, is host
   // configuration a clean tree must not show, whichever way init found it.
   const held = fs.lstatSync(path.join(root, ".grok"), { throwIfNoEntry: false })?.isDirectory() === true
