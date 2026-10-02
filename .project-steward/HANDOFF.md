@@ -50,10 +50,10 @@ Nothing. The task worktree and its branch are removed. Their ignored state is ar
 ## Next steps
 
 1. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
-   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
+   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read), `.97` (below);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-2. **The Codex backups.** `~/.codex/config.toml` lost T14's tables only. The backup `~/.codex/config.toml.bak-t14-2026-10-01` and the copy `~/.codex/config.toml.pre-restore-2026-10-02` are kept for the user to delete when they choose.
+2. **A linked worktree as its own project** (`atc-s96.97`, P3): the user's need to develop several branches of one repository at once, a worktree per branch. Today every worktree of a repository is one project anchored at the main checkout, and the workaround is a clone per branch.
 
 ## Blockers
 

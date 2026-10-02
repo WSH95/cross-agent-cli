@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T13:50:00Z — claude
+Housekeeping on the user's word: 2,772 old /tmp/cross-agent-* test fixtures removed; the Codex config backup and pre-restore copy deleted. Filed atc-s96.97: a linked worktree as its own project (several branches of one repository at once).
+
 ### 2026-10-02T12:55:00Z — claude
 The user approved the consolidated AGENTS.md diff (applied, 8b0a8cc) and withdrew the devpack binding: cross-agent follows its own path; Decision 0011 stands as the project's record of its runs and conditions; team and workflow configuration import and export, if needed, is this project's own (atc-s96.96). The design's Context, README Status, PLAN, the charter and the handoff say so; the uncommitted devpack note was withdrawn (patch kept in the SDD directory).
 
