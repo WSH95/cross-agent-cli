@@ -16,10 +16,10 @@ import { verifyWorktree } from "../src/worktree.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
-import { lockPath, spawnLockName } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
-import { git } from "./helpers/git.ts";
+import { git, gitShim } from "./helpers/git.ts";
 import { alive, engineEnv, environOf, killLockHolder, poll, reserve, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
@@ -1301,4 +1301,68 @@ test("every delegation of a project gets its own scratch directory and nothing e
   assert.notEqual(scratches[0], scratches[1]);
   for (const directory of scratches) assert.equal(fs.statSync(directory).isDirectory(), true);
   assert.equal(alive(p.record(first).engineIdentity), false);
+});
+
+// @anchor discardUnderGitLocks
+test("a one-shot discarded after git made its worktree is removed under git.lock and the repository lock", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const p = await projectWithRoles(t);
+  const journals = path.join(p.root, ".cross-agent", "journal");
+  fs.mkdirSync(journals, { recursive: true });
+  t.after(() => { try { fs.chmodSync(journals, 0o755); } catch { /* gone */ } });
+  // The `worktree-created` step cannot be written, after `git worktree add` has run.
+  fs.chmodSync(journals, 0o555);
+  // The discard's own removal is the one git command that carries `--force`: held for two
+  // seconds, while the locks around it are looked at.
+  const recorder = await gitShim(t, { sleepOn: "--force" });
+  const pending = delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) });
+  await poll(async () => (await recorder.argv()).includes("--force"), Boolean);
+  // A probe that takes a lock gives it straight back, so a failing run leaves no holder.
+  const held = async (file: string): Promise<boolean> => {
+    try {
+      await (await acquire(file, { operation: "a probe", waitSeconds: 0 })).release();
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (const file of [lockPath(p.root, gitLockName()), repositoryLockPath(path.join(p.root, ".git"))]) {
+    assert.equal(await held(file), true, `${file} is held while the discard runs`);
+  }
+  assert.match(refusal(await pending), /journal step could not be written/);
+  assert.deepEqual(fs.readdirSync(path.join(p.root, ".worktrees")), []);
+  assert.equal(await git(p.root, "branch", "--list", "task/*"), "");
+});
+
+// @anchor discardKeepsJournalOnFailure
+test("a discard that leaves the worktree or its branch standing keeps the journal and names what survived", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so the failure cannot be staged");
+    return;
+  }
+  const p = await projectWithRoles(t);
+  const tasks = path.join(p.root, ".cross-agent", "tasks");
+  fs.mkdirSync(tasks, { recursive: true });
+  t.after(() => { try { fs.chmodSync(tasks, 0o755); } catch { /* gone */ } });
+  // The record cannot be written: a throw once the worktree and its journal exist.
+  fs.chmodSync(tasks, 0o555);
+  // And the discard's removal dies on a signal, so the branch it would delete next is still
+  // checked out in the surviving worktree, which git refuses to delete.
+  await gitShim(t, { signalOn: "--force" });
+  await assert.rejects(
+    () => delegate(p.root, request({ role: "planner", cwd: p.root, worktree: true }), { authority: operator, mode: p.mode, env: engineEnv(p) }),
+    (error: Error) => {
+      assert.match(error.message, /EACCES|permission denied/);
+      assert.match(error.message, /journal \S+ is kept/);
+      return true;
+    },
+  );
+  fs.chmodSync(tasks, 0o755);
+  const [slug] = fs.readdirSync(path.join(p.root, ".worktrees"));
+  assert.ok(slug !== undefined, "the worktree survived");
+  assert.match(await git(p.root, "branch", "--list", "task/*"), new RegExp(`task/${slug}`), "and so did its branch");
+  assert.equal(readJournal(p.root, slug)?.branch, `task/${slug}`, "and the journal that finds them both");
 });

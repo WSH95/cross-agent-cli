@@ -4,16 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "./authority.ts";
-import { bindingFault, CONFIG_PATH, effectiveMaxDepth, engineLeadRole, loadConfig, modeDrift } from "./config.ts";
+import { bindingFault, CONFIG_PATH, effectiveMaxDepth, engineLeadRole, loadConfig, lockWaitSeconds, modeDrift, repositoryLockWait } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
-import { run } from "./gitmutate.ts";
+import { revision, run } from "./gitmutate.ts";
 import { gitRoot, trackedStateFault } from "./gitroot.ts";
 import { removeJournal } from "./journal.ts";
 import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
-import { spawnLockName } from "./locks.ts";
+import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
+import type { Lock } from "./locks.ts";
 import { asksSection, lineageAsks } from "./mailbox.ts";
 import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
@@ -24,7 +25,7 @@ import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName, LeadMountSpec } from "./engines/types.ts";
 import { locateRepository, verifyWorktree } from "./worktree.ts";
-import type { RepositoryIdentity, VerifiedWorktree } from "./worktree.ts";
+import type { Repository, RepositoryIdentity, VerifiedWorktree } from "./worktree.ts";
 
 // `delegate`: validate under `spawn.lock`, write the record and the launch spec, start the
 // detached runner. Everything it refuses, it refuses before a record exists, so a refusal
@@ -513,13 +514,13 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       // for a `worktree add` whose journal step could not be written, and that command
       // has run. So every failure from here to the runner discards what exists.
       if (!created.ok) {
-        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, oneShot)}`);
+        return refuse(`${created.reason}${printed(created.stderr)}${baseHint(created, config, projectRoot)}${await discardWorktree(projectRoot, repo, oneShot)}`);
       }
       // What a worktree role's own delegation is held to, applied to the one just made:
       // the record is about to say a writable engine runs there.
       const verified = await verifyWorktree(projectRoot, oneShot.path, oneShot.branch, repo);
       if ("reason" in verified) {
-        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, oneShot)}`);
+        return refuse(`the worktree for this task does not verify: ${verified.reason}${await discardWorktree(projectRoot, repo, oneShot)}`);
       }
       verifiedWorktree = verified;
     }
@@ -578,7 +579,11 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       };
       writeSpec(projectRoot, record.id, spec);
     } catch (error) {
-      if (oneShot !== undefined) await discardWorktree(projectRoot, oneShot);
+      if (oneShot !== undefined) {
+        // What the discard could not remove travels with the error: it is all the caller sees.
+        const left = await discardWorktree(projectRoot, repo, oneShot);
+        if (left !== "") throw new Error(`${message(error)}${left}`, { cause: error });
+      }
       throw error;
     }
     startRunner(projectRoot, record.id, env);
@@ -611,32 +616,73 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
 /**
  * Everything a one-shot that never launched would otherwise leave standing: its worktree,
  * its branch and its journal. It runs inside the `spawn.lock` this delegation already
- * holds, so it uses the explicit git form directly rather than `git_root worktree remove`,
- * which takes that same lock; `--force` is right here and nowhere else, because the only
- * thing in that worktree is what git has just put there and no task ever ran in it.
- * Reconciliation does not clean up worktrees, so a leftover here is a leftover for good.
- * It is best effort by construction — the failure it follows may be the reason a step of
- * it cannot run — and what it could not remove is named in the refusal.
+ * holds, so it takes `git.lock` and then the repository lock itself, in the standing order,
+ * and uses the explicit git form rather than `git_root worktree remove`, which takes
+ * `spawn.lock` again; `--force` is right here and nowhere else, because the only thing in
+ * that worktree is what git has just put there and no task ever ran in it. Only what
+ * exists is removed — the failure this follows may have come before git created anything —
+ * and every command's exit code is read: the journal goes only once the worktree and the
+ * branch both have, because a kept journal is how reconciliation finds what is left, and
+ * what is left is named in the refusal.
  */
-async function discardWorktree(projectRoot: string, worktree: TaskWorktree): Promise<string> {
-  const located = await locateRepository(projectRoot);
-  if (!("reason" in located)) {
-    for (const args of [["worktree", "remove", "--force", worktree.path], ["branch", "-D", worktree.branch]]) {
-      try {
-        await run(located.gitDir, located.workTree, args);
-      } catch {
-        // A git that could not run leaves what it was asked to remove; named below.
-      }
-    }
+async function discardWorktree(projectRoot: string, repo: Repository | undefined, worktree: TaskWorktree): Promise<string> {
+  const kept = (why: string) => `. ${worktree.path} on ${worktree.branch} was not discarded, and journal ${worktree.slug} is kept for reconciliation to find: ${why}`;
+  const located = repo ?? await locateRepository(projectRoot);
+  if ("reason" in located) return kept(located.reason);
+  const waitSeconds = lockWaitSeconds(projectRoot);
+  const operation = `delegate discarding ${worktree.slug}`;
+  let lock: Lock;
+  try {
+    lock = await projectLock(projectRoot, gitLockName(), { waitSeconds, operation });
+  } catch (error) {
+    return kept(message(error));
   }
   try {
-    removeJournal(projectRoot, worktree.slug);
-  } catch {
-    // Named below with the worktree it belongs to.
+    let shared: Lock;
+    try {
+      shared = await acquire(repositoryLockPath(located.commonDir), { waitSeconds: repositoryLockWait(waitSeconds), operation });
+    } catch (error) {
+      return kept(message(error));
+    }
+    try {
+      const survived: string[] = [];
+      if (directory(worktree.path)) {
+        const failed = await gitFailure(located, ["worktree", "remove", "--force", worktree.path]);
+        if (failed !== null) survived.push(`${worktree.path} (${failed})`);
+      }
+      let branched = true;
+      try {
+        branched = await revision(located.gitDir, located.workTree, worktree.branch) !== undefined;
+      } catch { /* a git that cannot run is named by the delete it then fails */ }
+      if (branched) {
+        const failed = await gitFailure(located, ["branch", "-D", worktree.branch]);
+        if (failed !== null) survived.push(`branch ${worktree.branch} (${failed})`);
+      }
+      if (survived.length > 0) {
+        return `. Discarding the task's worktree left ${survived.join(" and ")} standing; journal ${worktree.slug} is kept for reconciliation to find`;
+      }
+      try {
+        removeJournal(projectRoot, worktree.slug);
+      } catch (error) {
+        return `. ${worktree.path} and ${worktree.branch} were discarded, but journal ${worktree.slug} could not be removed: ${message(error)}`;
+      }
+      return "";
+    } finally {
+      await shared.release();
+    }
+  } finally {
+    await lock.release();
   }
-  return directory(worktree.path)
-    ? `. ${worktree.path} on ${worktree.branch} could not be removed and is still there`
-    : "";
+}
+
+/** Why one git command of a discard did not succeed, in git's own words, or null when it did. */
+async function gitFailure(repo: Repository, args: string[]): Promise<string | null> {
+  try {
+    const ran = await run(repo.gitDir, repo.workTree, args);
+    return ran.exitCode === 0 ? null : ran.stderr.trim() || `git ${args.join(" ")} exited ${ran.exitCode}`;
+  } catch (error) {
+    return message(error);
+  }
 }
 
 function binEnvironment(config: CrossAgentConfig, engine: EngineName): NodeJS.ProcessEnv {
