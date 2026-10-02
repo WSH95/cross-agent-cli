@@ -249,6 +249,9 @@ const initVerb: Verb = {
   flags: { "--mode": "name", "--from": "dir" },
   writes: true,
   async run(parsed, context) {
+    if (parsed.values["--mode"] !== undefined && parsed.values["--from"] !== undefined) {
+      throw new UsageError("--mode names a mode's defaults and --from a project's config to copy: give one of them");
+    }
     let root: string;
     try {
       // An existing directory, resolved before anything is written: `initConfig` creates
@@ -312,8 +315,8 @@ const initVerb: Verb = {
 /**
  * `init` at a worktree, which makes it a project of its own on the branch it has checked
  * out (design section 10). The config is copied from `--from`, or from the main checkout when
- * that holds one, and is the mode's defaults otherwise; every refusal comes before anything
- * is written.
+ * that holds one and no `--mode` names the defaults, and is the mode's defaults otherwise;
+ * every refusal comes before anything is written.
  */
 async function initWorktree(root: string, located: Repository, parsed: Parsed, context: Context): Promise<Answer> {
   const branch = located.branch;
@@ -331,13 +334,14 @@ async function initWorktree(root: string, located: Repository, parsed: Parsed, c
       return refused(`cannot resolve --from ${from}: ${message(error)}`);
     }
     if (!holdsConfig(source)) return refused(`--from ${source} holds no ${CONFIG_PATH}`);
-  } else if (located.main !== null) {
-    if (holdsConfig(located.main)) source = located.main;
-  } else if (located.kind === "linked" && named === undefined) {
-    return refused(`${root} is a worktree of a main checkout whose git directory is separated, and git records no path to that checkout: pass --from <main checkout> to copy its config, or --mode for the defaults`);
-  }
-  if (source !== undefined && named !== undefined) {
-    throw new UsageError(`--mode names the defaults, and ${path.join(source, CONFIG_PATH)} is the config init copies here; give one of them`);
+  } else if (named === undefined) {
+    // A mode named is the answer, its defaults; without one, the main checkout's config,
+    // where one is known and holds it.
+    if (located.main !== null) {
+      if (holdsConfig(located.main)) source = located.main;
+    } else if (located.kind === "linked") {
+      return refused(`${root} is a worktree of a main checkout whose git directory is separated, and git records no path to that checkout: pass --from <main checkout> to copy its config, or --mode for the defaults`);
+    }
   }
   let copy: CrossAgentConfig | undefined;
   try {

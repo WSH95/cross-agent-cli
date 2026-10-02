@@ -3487,11 +3487,11 @@ handler passes:
   `tests/cli.test.ts#initTaskPatternBranchRefused`). The config is a copy, its default branch replaced
   and everything else carried: of `--from`'s, which must hold one, checked before it is
   loaded (`tests/cli.test.ts#initFrom`, `#initFromMissing`, `#initFromNoConfig`), or else of the main
-  checkout's when it holds one (`#initInWorktree`). A bare repository's worktree takes
-  the mode's defaults (`#initUmbrellaWorktree`, `#initBareDotGitDefaults`), and a
-  separated main's needs `--from <main checkout>` or `--mode`, since git records no path
-  to that checkout (`#initSeparatedMainNeedsFrom`); `--mode` beside a config it would
-  copy is a 2. A worktree's document adds `defaultBranch`, `from` and `attach`.
+  checkout's when it holds one and no `--mode` names the mode's defaults instead
+  (`#initInWorktree`). A bare repository's worktree takes the mode's defaults
+  (`#initUmbrellaWorktree`, `#initBareDotGitDefaults`), and a separated main's needs
+  `--from <main checkout>` or `--mode`, since git records no path to that checkout
+  (`#initSeparatedMainNeedsFrom`); `--mode` with `--from` is a 2, anywhere, naming both. A worktree's document adds `defaultBranch`, `from` and `attach`.
   The source's Grok attach, `.grok/config.toml`, is copied with it, byte for byte: it is
   host configuration, so it moves as a regular file and never through a link — both
   directories and the file judged by `lstat`, nothing at the destination replaced, a

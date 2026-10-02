@@ -1669,9 +1669,17 @@ test("init in a linked worktree copies its main checkout's config, the worktree'
   assert.ok(ran.stdout.includes(path.join(main, CONFIG_PATH)), ran.stdout);
   assert.equal(fs.readFileSync(path.join(linked, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
   assert.equal(defaultBranchOf(main), "main", "the source is left as it was");
-  // A source found and a mode named are two answers to one question.
-  const both = await run(["init", "--mode", "solo"], linked);
+  // `--mode` names the mode's defaults, so beside a main checkout's config it is the answer
+  // rather than a 2: only `--from` names a config to copy, and the one found is not copied.
+  const defaults = await linkedProject(t, main, "feature/two");
+  const named = await run(["init", "--mode", "solo"], defaults);
+  assert.equal(named.code, 0, named.stderr);
+  assert.equal(written(defaults).mode, "solo");
+  assert.equal(defaultBranchOf(defaults), "feature/two");
+  // A config named and a mode named are two answers to one question.
+  const both = await run(["init", "--mode", "solo", "--from", main], await linkedProject(t, main, "feature/three"));
   assert.equal(both.code, 2, both.stderr);
+  assert.match(both.stderr, /--mode[\s\S]*--from|--from[\s\S]*--mode/);
   // A main checkout still writes `main`, whatever it has checked out.
   const trunk = await mainCheckout(scratch(t), "T");
   await git(trunk, "checkout", "-b", "trunk");
