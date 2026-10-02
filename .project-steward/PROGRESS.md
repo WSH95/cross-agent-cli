@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T11:20:00Z — claude
+Task 12's fixes merged: main at 7bf9731 (22 commits; npm test 813/812/1; citations 1300, none by line), VERIFY.md T12 section at 0296b39; .57 closed. Decision 0011 and the devpack note are with a writer.
+
 ### 2026-10-02T10:45:00Z — claude
 [auto-checkpoint] Task 12 wrap-up landed (8737da7..8f88e05, 812/811/1); controller check sent one arithmetic-class follow-up; beads .92–.94 filed.
 

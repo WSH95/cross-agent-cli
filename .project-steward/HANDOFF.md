@@ -124,19 +124,20 @@ URLs), and one stated boundary for design section 4 and the README (the root's o
 link). The wrap-up landed `8737da7`..`8f88e05` (812 / 811 / 1 skipped; no archived verdict moved);
 the controller's check of each reproduction found bash's arithmetic contexts (array subscripts,
 substring offsets, integer variables, a name's value evaluated) still passing, and one follow-up
-commit for that class is in flight. Beads `.92`–`.94` filed from the fix rounds' proposals. The residue that comes from Claude Code's own settings merge (a project's
+commit for that class landed after the check. Task 12's fixes are **merged** — `main` at `7bf9731` (22
+commits over `4a25ed8`), `VERIFY.md` T12 section at `0296b39`; `npm test` 813 / 812 / 1 skipped;
+checker 1300 citations, none by line. `.57` closed (`--setting-sources project` drops the operator's
+plugins, skills and commands); beads `.92`–`.94` filed. Decision 0011 and the devpack note are with a
+writer on the task branch. The residue that comes from Claude Code's own settings merge (a project's
 `.claude/settings.json` pre-approving file writes) the user accepted on 2026-10-02 as a documented
 limitation, with the other harness limitations of that day's standing word.
 
 
 ## Next steps
 
-1. **Task 12's wrap-up** (`task-12-findings-round-4.md`, items 1–9): verify each reviewer
-   reproduction against the new head, run the gates, then merge (rebase onto `main`, the
-   `VERIFY.md` corrections drafted in `task-12-fix1-report.md`, a T12 section with E8).
-2. **Decision 0011 and the devpack `EVIDENCE.md` note** (a writer, `task-12-brief.md` Parts B
-   and C, with the rulings since v2).
-3. **The close** (Part D): the Codex config restore takes the surgical branch, because
+1. **Decision 0011 and the devpack `EVIDENCE.md` note** (a writer, `task-12-brief.md` Parts B
+   and C with `task-12-brief-addendum.md`): read the decision against Part B, then D1's merge.
+2. **The close** (Part D): the Codex config restore takes the surgical branch, because
    `~/.codex/config.toml` also changed outside T14's tables (`model`, `service_tier` and the
    Codex app's version lines, 2026-10-02 08:13Z), and those lines stay as found. Then the sample
    check, the worktree archive and removal, the beads, and the `AGENTS.md` diff shown for
