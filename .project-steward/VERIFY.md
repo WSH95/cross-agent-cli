@@ -10,8 +10,8 @@ Run the relevant checks before marking work as verified in `HANDOFF.md`.
 | Lint | `none` | clean |
 | Engine probes | `node tools/probe.mjs --engine <e> --cwd <dir> …` | recorded in `docs/probes.md` |
 
-Last verified: 2026-10-01 at 71696ff on `main` (task 11 merged: `npm test` 769 tests,
-768 pass, 1 skipped, from the root, leaving no temporary directory; checker 1257
-citations, none by line, 0 misses; `--since 17de337` 0 drifted, 0 not judged). The
-skipped test is the guarded Codex I2 test (`CROSS_AGENT_REAL_CODEX=1`, green in T14).
+Last verified: 2026-10-02 at 7bf9731 on `main` (task 12's fixes merged: `npm test` 813 tests,
+812 pass, 1 skipped, from the root; checker 1300 citations, none by line, 0 misses;
+`--since 4bcc986` 0 drifted, 0 not judged). The skipped test is the guarded Codex I2 test
+(`CROSS_AGENT_REAL_CODEX=1`, green in T14).
 Details per milestone: `VERIFY.md` at the root.

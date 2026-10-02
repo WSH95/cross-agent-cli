@@ -31,7 +31,8 @@ before the fix the child escaped a failed sandboxed command with
 
 Not run yet: probe P2 for Claude (`atc-s96.17`, runnable now), the
 integration probes I1 and I2, every end-to-end run (E1–E7). Grok's
-`--prompt-file` fallback is `--help`-verified only (T15).
+`--prompt-file` fallback ran at 6b, alone and with `--rules` beside it, on grok 1.0.44
+(`docs/probes.md#grokRulesBesidePromptFile`).
 
 ## M3 — modes, root git tools, solo, the launcher and the loops (merged 2026-09-19)
 
@@ -62,7 +63,7 @@ the rest.
 | `main` after the merge | `e9cbac0` (fast-forward of `task/cross-agent-m3`: 19 T13 commits over `3023e30`, rebased onto `main` at `5846754`) |
 | `npm test` on the branch | 617 tests: 616 pass, 0 fail, 1 skipped (the Codex I2 test, written and guarded behind `CROSS_AGENT_REAL_CODEX=1`) |
 | `npm test` at the root after the merge | 617 tests: 616 pass, 0 fail, 1 skipped (the one skipped test is the Codex I2 test, written and guarded behind `CROSS_AGENT_REAL_CODEX=1`) |
-| citation checker | 823 citations in 2 files (74 by line, 749 by symbol or anchor), 0 misses; `node tools/check-citations.mjs --since 3023e30` and `--since 39505aa` both report 0 drifted, 0 not judged |
+| citation checker | 823 citations in 2 files (74 by line, 749 by symbol or anchor), 0 misses; `node tools/check-citations.mjs --since 3023e30` and `--since 39505aa` (merged as `2de4f84`) both report 0 drifted, 0 not judged |
 | host | `claude -p --plugin-dir <repo> --model claude-sonnet-5 --effort medium --permission-mode bypassPermissions --output-format stream-json --verbose`, claude 2.1.277 |
 | packaging | `.claude-plugin/plugin.json` alone: name, `package.json`'s version, and this server inline under `mcpServers`. No `.mcp.json` at the repository root — that file is Claude Code's project-scoped config, where `${CLAUDE_PLUGIN_ROOT}` has no value |
 | sample repository | `~/.cache/agent-team/cross-agent-e2e/slugkit` (clone of `~/Documents/atw-sample-slugkit`, Python; `python3 -m unittest discover -s tests -t .`) |
@@ -168,7 +169,7 @@ E1 $0.73.
 
 | what | value |
 |---|---|
-| merge | `main` at `d428145`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 24 commits over `cb87b01` (twelve, two fix rounds of six and four, the verifier's class-level rewrite `0f9ff3a`, and the wrap-up) |
+| merge | `main` at `d428145`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — 24 commits over `cb87b01` (twelve, two fix rounds of six and four, the verifier's class-level rewrite `0f9ff3a`, merged as `af0f266`, and the wrap-up) |
 | `npm test` at the root | 659 tests: 658 pass, 0 fail, 1 skipped (the Codex I2 test, guarded behind `CROSS_AGENT_REAL_CODEX=1`), on `main` at `d428145` |
 | citation checker | 909 citations in 2 files (37 by line, 872 by symbol or anchor), 0 misses; `--since cb87b01`: 0 drifted, 0 not judged |
 | verifier | `node --test tests/e2e-verify.test.ts` 40/40; the controller's launcher table 347/347; the 148 archived transcript commands judge 129 pass, 4 launch, 15 `?` (no false FAIL); this machine's Codex code-mode scripts, no FAIL |
@@ -843,7 +844,7 @@ tools.
 $2.79 on the subscriptions: hosts $0.740 (two B4 hosts unrecorded), specialists $2.045 (E7 $1.086,
 E6 $0.291, B0 $0.533). Codex specialists 682,863 tokens in / 4,839 out. Fix round 1 and the wrap-up ran no engine.
 
-Note: `VERIFY.md`'s M2 line "Grok's `--prompt-file` fallback is `--help`-verified only (T15)" was
+Note: the M1 paragraph's line "Grok's `--prompt-file` fallback is `--help`-verified only (T15)" was
 answered before T15, by T13's E2BIG fix and 6b's A5 (`docs/probes.md#grokRulesBesidePromptFile`).
 
 ## T11 — the docs nits and the small follow-ups (merged 2026-10-01)
@@ -853,8 +854,8 @@ answered before T15, by T13's E2BIG fix and 6b's A5 (`docs/probes.md#grokRulesBe
 | merge | `main` at `71696ff`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded — twenty commits over `0f8374c` (the task's nine, fix round 1's seven, the wrap-up's four) |
 | `npm test` at the root | 769 tests: 768 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `71696ff` |
 | citation checker | 1257 citations in 2 files (0 by line, 1257 by symbol), 0 misses; `--since 17de337`: 0 drifted, 0 not judged (at `17de337`: 1199, 37 by line) |
-| temporary directories | `ls -1d /tmp/* \| sort` around one `npm test`: 42 new entries at `17de337` (39 empty `cross-agent-bin-*`, 3 `cross-agent-*` projects), as at `6a13c0c` and `157b6b4`; 0 at `b717c92`, `6bb6122`, `0e19e65`, `8040e3a` and `2124be0` |
-| reconcile | `bash -c 'for i in 1 2 3 4 5; do timeout 180 node --test tests/reconcile.test.ts \|\| exit 1; done'`: exit 0, five `ℹ pass 33`, 0 fail, 8.3 s each, no `ENOTEMPTY`, nothing under `/tmp/cross-agent-reconcile-*` and no helper left, at `2124be0` |
+| temporary directories | `ls -1d /tmp/* \| sort` around one `npm test`: 42 new entries at `17de337` (39 empty `cross-agent-bin-*`, 3 `cross-agent-*` projects), as at `6a13c0c` and `157b6b4`; 0 at `b717c92`, `6bb6122`, `0e19e65`, `8040e3a` and `2124be0` (merged as `b4f8f52`, `5b6531a`, `caaa328`, `7d5d902` and `71696ff`) |
+| reconcile | `bash -c 'for i in 1 2 3 4 5; do timeout 180 node --test tests/reconcile.test.ts \|\| exit 1; done'`: exit 0, five `ℹ pass 33`, 0 fail, 8.3 s each, no `ENOTEMPTY`, nothing under `/tmp/cross-agent-reconcile-*` and no helper left, at `2124be0` (merged as `71696ff`) |
 | beads | `atc-s96.42`, `.45`, `.58`, `.63`, `.65`, `.67`, `.68`, `.75` |
 
 Landed: the design's last 37 line citations as anchors (0 by line), and the checker's header naming
@@ -875,7 +876,7 @@ runner log path.
 
 ### The uninitialized repository, by hand
 
-Run first at `6bb6122`, and re-run against an export of `8040e3a` and at `2124be0`, each byte for
+Run first at `6bb6122` (merged as `5b6531a`), and re-run against an export of `8040e3a` (`7d5d902`) and at `2124be0` (`71696ff`), each byte for
 byte identical; output verbatim but for two paths, `<worktree>` the task worktree and `<scratch>`
 the scratch directory's absolute path in the one line that prints it:
 
@@ -927,3 +928,69 @@ locks" and "base64url" ids were corrected beside the passages this task changed;
 the controller ruled, keeping the asks' time policy T16 chose; an assume-unchanged host file is
 refused only when its bytes differ from the index (W-2), since `core.ignoreStat` marks every
 tracked file.
+
+## T12 — the final review's fixes, merged (2026-10-02)
+
+| what | value |
+|---|---|
+| merge | `main` at `7bf9731`: `task/cross-agent-m3` rebased onto `main` and fast-forwarded. It carries 22 commits over `4a25ed8`: fix round 1's nine, fix round 2's seven, the escalation's one, the wrap-up's four, and one that names fix round 1's head by its rebased SHA in `docs/probes.md` |
+| review | three independent reviews of `4bcc986..416165c` (162 commits), then of each fix diff with the whole range judged again: four rounds, with one escalation pass after the second fix round. Findings, triage and rulings are in T12-R1-1 … R1-9, R2-1 … R2-9, R3-1 … R3-7 and W-1 … W-7, and the dispositions are in Decision 0011 |
+| `npm test` at the root | 813 tests: 812 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `7bf9731` |
+| citation checker | 1300 citations in 2 files (0 by line, 1300 by symbol), 0 misses; `--since 4bcc986`: 0 drifted, 0 not judged |
+| engines (probes and E8) | Claude Code 2.1.286, codex-cli 0.160.0, grok 1.0.46; `claude-sonnet-5`, `gpt-6-luna`, `grok-4.7`, each at medium |
+| records | `docs/probes.md#t12Fix1`, `#t12Fix2`; raw evidence `~/.cache/agent-team/probe-logs/close-2026-10-02/{fix1,fix2,wrapup}/` |
+| archived verdicts | every archived run (15: E1, E3, E2, E2b, E2c, I1–I5, E4–E8) and every archived record judged alone (121) reads the same condition-8 row and exit under each round's verifier as under the one before it |
+| sample at close | `main` at `15f7b28`, 105 tests, clean, the root worktree alone, 44 records; config and `.grok/config.toml` as before the rounds |
+| cost | fix round 1 $3.63 on the subscriptions, with Codex at 38,641 tokens in and 294 out; fix round 2 $0.554; the escalation and the wrap-up ran no engine |
+| beads | `atc-s96.57` (its probe ran: `--setting-sources project` drops the operator's plugins, skills and commands) |
+
+Landed:
+- **The Claude adapter.** The probe ran before any change and confirmed the gap. A writable role's Write tool wrote the root, its `.git`, `.cross-agent/`, `$HOME` and its own `.git` pointer, and a read-only role's `EnterWorktree` made a worktree and a branch. Every Claude role now runs `dontAsk`, with:
+  - a `--tools` allowlist (read roles: `Bash`, `Read`, `ToolSearch`; edit roles add `Edit`, `Write`, `NotebookEdit`);
+  - `--setting-sources project`;
+  - permission rules that allow `Read`, allow `Edit` in the role's own workspace, deny the protected paths by name, and allow this server's tools for a lead.
+
+  Rerun through the product, fresh and resumed, every outside write was refused, the in-workspace control was written, and `EnterWorktree` was absent. `cross-agent`, `node <repo>/src/cli.ts` and a configured bin, as deny targets on Claude and Grok, were refused fresh and resumed.
+- **Host configuration.** It must be regular files. A symbolic link at or under `.claude/`, `.codex/`, `.grok/` or `.mcp.json`, in any case, is refused by name:
+  - at a worktree commit, from its tree, index or working tree (ignored links and names that are not UTF-8 included);
+  - at the root's merge, from the branch's tree. That read lists only the four pathspecs, and 150,000 files merged in 394 ms.
+
+  A host link the operator keeps at the root, outside git, is outside the guard; design section 4 states this boundary.
+- **The verifier.** Each line answers `?` beside an engine's name unless noted:
+  - wget's askpass program and the program options of sort and rg are read against whole option tables;
+  - Claude and Grok tool calls are read against each engine's archived vocabulary, and `use_tool` only in its recorded shape;
+  - a file or program the environment names;
+  - node's code-loading options (module loaders, env and config files, `--run`, snapshots, the OpenSSL config) and its unknown options;
+  - a server launch written as an `--entry-url` URL is a launch;
+  - every way bash writes a variable that the grammar does not read: builtin destinations, namerefs, `{NAME}` redirections, `${NAME:=}`, and arithmetic wherever bash evaluates it.
+- **Smaller fixes.** The CLI, the server and the runner find their entry point by real path. `verify_worktree` reads a relative path against the project root, and both loops' worktree path is absolute. The Codex fallback carries `startup_timeout_sec = 30`. A damaged ask whose id fails the alphabet is invalid.
+
+Accepted limitations, by the user's word (2026-10-02), each documented in design section 3 or 4 and the README:
+- a project's tracked `.claude/settings.json` reaching every Claude role. Its file-tool allow rules beyond the workspace and its `additionalDirectories` would pre-approve what `dontAsk` refuses, and Claude Code applies them only in a trusted workspace; the untrusted sample dropped them, and the trusted case was not probed;
+- `dontAsk` refusing Claude Code's sensitive paths inside a workspace;
+- no network from a sandboxed Claude shell;
+- Grok's `.git` pointer, checked rather than protected;
+- the operator's Claude Code plugin hooks inside Grok specialists (`atc-s96.76`);
+- Grok specialists at an attached root offered the launcher skill (`atc-s96.78`).
+
+### E8 — one `dev-team` task under a Claude Code host, every specialist on Claude
+
+| | |
+|---|---|
+| host | `claude -p --plugin-dir <worktree>`, `claude-sonnet-5` medium, host placement, 28 turns, 193.8 s, $0.693 |
+| slug, commit | `t12-e8`, `15f7b28` (`main` 90281e2 → 15f7b28), 101 → 105 tests |
+| `wait` | four, each `done`: 31, 19, 24, 23 s |
+| specialists | planner 31.4 s, plan reviewer 19.3 s approve, implementer 24.1 s, code reviewer (read-only, in the worktree) 22.5 s ready; all Claude, $0.420 |
+| live argv | all four: `dontAsk`, the role's `--tools`, `--setting-sources project`, `--strict-mcp-config`; the worktree specs carry `protectedPaths` |
+| verdict | `e2e-verify --since 98acff45… --slug t12-e8`: 8 pass, 0 fail, 0 without evidence |
+| deviations | no roster before the first dispatch; the narration and `log.md` named `codex`/`grok` for three Claude roles (`atc-s96.66`); no `resume` ran |
+| not exercised | a resumed specialist, a Codex or Grok specialist, engine placement |
+
+### Corrections to earlier sections
+
+Applied in place at this merge:
+- **The M1 paragraph.** Its "Not run yet" sentence now says that Grok's `--prompt-file` fallback ran at 6b (`docs/probes.md#grokRulesBesidePromptFile`), and T15's note now points at "the M1 paragraph's line".
+- **Rebased-away SHAs.** Each is named beside the merged commit that carries it:
+  - the M3 citation row's `39505aa` (`2de4f84`);
+  - the 6b merge row's `0f9ff3a` (`af0f266`);
+  - T11's `b717c92` (`b4f8f52`), `6bb6122` (`5b6531a`), `0e19e65` (`caaa328`), `8040e3a` (`7d5d902`) and `2124be0` (`71696ff`).
