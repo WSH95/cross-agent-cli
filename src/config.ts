@@ -60,6 +60,13 @@ export interface InitConfigOptions {
   /** The mode to bind. Every role it declares gets a binding, in the order it declares them. */
   mode?: string;
   modesDir?: string;
+  /** The project's default branch: `main`, unless the root is a worktree, whose own branch it is. */
+  defaultBranch?: string;
+  /**
+   * A config to write instead of the mode's bindings — another project's, for a worktree
+   * initialized as a project of its own — carried whole but for its default branch.
+   */
+  copy?: CrossAgentConfig;
 }
 
 /** A config and the mode it binds, checked against each other (design section 6). */
@@ -368,7 +375,11 @@ function temporaryLocationWarning(projectRoot: string): string | undefined {
 function ignoreProjectState(projectRoot: string, mode: Mode): string[] {
   // The policy a one-shot would use where the mode declares none, so a `solo` project
   // ignores the directory its own `worktree: true` calls create (design, "Modes").
-  const wanted = [".cross-agent/", `${gitPolicy(mode).worktreeDir.replace(/\/+$/, "")}/`];
+  return ignoreEntries(projectRoot, [".cross-agent/", `${gitPolicy(mode).worktreeDir.replace(/\/+$/, "")}/`]);
+}
+
+/** Each of `wanted` added to the project's `.gitignore` where the file lacks it, and those added. */
+export function ignoreEntries(projectRoot: string, wanted: readonly string[]): string[] {
   const file = path.join(projectRoot, ".gitignore");
   let existing = "";
   try {
@@ -383,14 +394,8 @@ function ignoreProjectState(projectRoot: string, mode: Mode): string[] {
   return missing;
 }
 
-/**
- * Creates the section 6 config for a mode, exclusively, without reading or replacing an
- * existing file. The mode is loaded first, so an unknown or invalid one is refused before
- * anything is written, and its roles are bound in the order it declares them.
- */
-export function initConfig(projectRoot: string, options: InitConfigOptions = {}): InitConfigResult {
-  const name = options.mode ?? DEFAULT_MODE;
-  const mode = loadMode(options.modesDir ?? builtInModesDir(), name);
+/** The section 6 config that binds every role of `mode` to its built-in starting engine. */
+function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAgentConfig {
   const bindings = builtInBindings[mode.id];
   if (bindings === undefined) {
     throw new Error(`cross-agent init has no bindings for mode ${JSON.stringify(name)}; write ${CONFIG_PATH} by hand, binding each of ${mode.roles.map((role) => role.key).join(", ")} to an engine`);
@@ -400,9 +405,9 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
     if (binding === undefined) throw new Error(`cross-agent init has no binding for role ${JSON.stringify(role.key)} of mode ${JSON.stringify(name)}`);
     return [role.key, binding];
   }));
-  const document: CrossAgentConfig = {
+  return {
     mode: mode.id,
-    project: projectDefaults,
+    project: { ...projectDefaults, defaultBranch },
     roles,
     engines: { claude: {}, codex: {}, grok: {} },
     // The cap the mode needs, written rather than derived, because `effectiveMaxDepth`
@@ -411,6 +416,20 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
     limits: { ...limitDefaults, maxDepth: placementMaxDepth(mode) },
     billing: "subscription",
   };
+}
+
+/**
+ * Creates the section 6 config for a mode, or the copy of another project's, exclusively,
+ * without reading or replacing an existing file. The mode is loaded first, so an unknown or
+ * invalid one is refused before anything is written, and its roles are bound in the order
+ * it declares them.
+ */
+export function initConfig(projectRoot: string, options: InitConfigOptions = {}): InitConfigResult {
+  const name = options.copy?.mode ?? options.mode ?? DEFAULT_MODE;
+  const mode = loadMode(options.modesDir ?? builtInModesDir(), name);
+  const document = options.copy === undefined
+    ? boundDocument(mode, name, options.defaultBranch ?? projectDefaults.defaultBranch)
+    : { ...options.copy, project: { ...options.copy.project, defaultBranch: options.defaultBranch ?? options.copy.project.defaultBranch } };
   const file = path.join(projectRoot, CONFIG_PATH);
   mkdirSync(path.dirname(file), { recursive: true });
   const warning = temporaryLocationWarning(projectRoot);

@@ -157,7 +157,7 @@ function parse(args: string[]): Call | { reason: string } {
 }
 
 /** The mode's pattern with its one `*` standing for a non-empty name. */
-function matchesPattern(value: string, pattern: string): boolean {
+export function matchesPattern(value: string, pattern: string): boolean {
   const star = pattern.indexOf("*");
   if (star === -1) return value === pattern;
   const prefix = pattern.slice(0, star);
@@ -165,8 +165,13 @@ function matchesPattern(value: string, pattern: string): boolean {
   return value.length > prefix.length + suffix.length && value.startsWith(prefix) && value.endsWith(suffix);
 }
 
-/** A branch argument is a branch name: never a path, a range, a revision or an option. */
-function nameFault(value: string): string | null {
+/**
+ * A branch argument is a branch name: never a path, a range, a revision or an option —
+ * letters, digits, `.`, `_`, `/` and `-`, with no `..` and no trailing `/` or `.lock`.
+ * `cross-agent init` holds a worktree project's default branch to it too, since every
+ * read of that branch through this tool is judged by it.
+ */
+export function nameFault(value: string): string | null {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes("..") || value.endsWith("/") || value.endsWith(".lock")) {
     return `${JSON.stringify(value)} is not a branch name`;
   }

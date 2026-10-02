@@ -458,7 +458,7 @@ writes nothing: not a record, not a lock, not a stall reading.
 
 | verb | what it does | exits |
 | --- | --- | --- |
-| `init [--mode <name>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone | 0, 3 |
+| `init [--mode <name>] [--from <dir>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone. In a linked worktree it copies the config of the main checkout, or of `--from`, with the worktree's own branch as the default, and the Grok attach beside it; 3 for a task worktree, a detached HEAD, or a branch the mode's task pattern matches | 0, 3 |
 | `modes` | the installed modes, the active one starred, each with its roles; a config naming a mode this build does not have is a 3, with the listing still printed | 0, 3 |
 | `tasks [--status <status>] [--reconcile]` | every task, newest first — id, status, role, engine, depth, age, cwd — as the ledger holds it, a task whose runner is gone marked so, and every record file no reader could judge named; `--reconcile` runs `list_tasks`' reconciliation pass first, the one read that writes | 0 |
 | `show <id> [--lines <n>]` | one task: its record, the last lines of its engine's stream, its outcome, its journal and its final message; 4 while it runs and 6 when it is stalled, by the status the last `wait` or `check` wrote | 0, 3, 4, 6 |

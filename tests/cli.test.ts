@@ -13,7 +13,9 @@ import { CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/confi
 import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir } from "../src/modes.ts";
 import { git } from "./helpers/git.ts";
-import { layoutRoot } from "./helpers/project.ts";
+import {
+  bareDotGitProject, layoutRoot, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, umbrellaProject,
+} from "./helpers/project.ts";
 import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
 import type { SeededProject } from "./helpers/seed.ts";
 
@@ -1624,4 +1626,252 @@ test("git-root exits 0 when git ran, 1 when git failed or its step went unrecord
   assert.equal(document.exitCode, 0);
   assert.match(document.reason, /journal step could not be written/);
   assert.equal(fs.existsSync(directory), true);
+});
+
+// `init` in a worktree (design section 3): judged from outside in before anything is
+// written, its default branch the worktree's own, its config the main checkout's or the
+// mode's defaults, and the Grok attach copied as a regular file through no link.
+
+/** A main checkout initialized for `mode`, its consultant moved to a model of its own as an operator would. */
+async function initializedMain(t: TestContext, mode = "dev-team"): Promise<string> {
+  const main = await mainCheckout(scratch(t), "M");
+  const ran = await run(["init", "--mode", mode], main);
+  assert.equal(ran.code, 0, ran.stderr);
+  const config = written(main);
+  (config.roles as Record<string, Record<string, unknown>>).consult.model = "a-model-of-this-project";
+  fs.writeFileSync(path.join(main, CONFIG_PATH), JSON.stringify(config, null, 2));
+  return main;
+}
+
+/** A refused `init` in `cwd`: a 3 that changed nothing at `root`. */
+async function refusedInit(args: string[], cwd: string, root: string): Promise<string> {
+  const before = fs.readdirSync(root).sort();
+  const ran = await run(["init", ...args], cwd);
+  assert.equal(ran.code, 3, `${args.join(" ")}: ${ran.stderr}`);
+  assert.deepEqual(fs.readdirSync(root).sort(), before, "a refused init writes nothing");
+  return ran.stderr;
+}
+
+/** `written(root)`'s default branch. */
+function defaultBranchOf(root: string): string {
+  return (written(root).project as Record<string, string>).defaultBranch;
+}
+
+// @anchor initInWorktree
+test("init in a linked worktree copies its main checkout's config, the worktree's own branch its default", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "feature/one");
+  const ran = await run(["init"], linked);
+  assert.equal(ran.code, 0, ran.stderr);
+  const source = written(main);
+  assert.deepEqual(written(linked), { ...source, project: { ...(source.project as Record<string, string>), defaultBranch: "feature/one" } });
+  assert.ok(ran.stdout.includes(path.join(main, CONFIG_PATH)), ran.stdout);
+  assert.equal(fs.readFileSync(path.join(linked, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
+  assert.equal(defaultBranchOf(main), "main", "the source is left as it was");
+  // A source found and a mode named are two answers to one question.
+  const both = await run(["init", "--mode", "solo"], linked);
+  assert.equal(both.code, 2, both.stderr);
+  // A main checkout still writes `main`, whatever it has checked out.
+  const trunk = await mainCheckout(scratch(t), "T");
+  await git(trunk, "checkout", "-b", "trunk");
+  assert.equal((await run(["init", "--mode", "solo"], trunk)).code, 0);
+  assert.equal(defaultBranchOf(trunk), "main");
+});
+
+// @anchor initUmbrellaWorktree
+test("init in an umbrella layout's worktree takes the mode's defaults on its own branch: there is no checkout to copy", async (t) => {
+  const umbrella = await umbrellaProject(t);
+  const ran = await run(["init", "--mode", "solo"], umbrella.root);
+  assert.equal(ran.code, 0, ran.stderr);
+  assert.equal(written(umbrella.root).mode, "solo");
+  assert.equal(defaultBranchOf(umbrella.root), "feature");
+  // The umbrella itself is no work tree of the repository, and no project.
+  assert.match(await refusedInit([], umbrella.umbrella, umbrella.umbrella), /unsupported/);
+});
+
+// @anchor initBareDotGitDefaults
+test("init in a worktree of a bare repository at U/.git takes the defaults, though the listing names U without bare", async (t) => {
+  const fixture = await bareDotGitProject(t);
+  const ran = await run(["init"], fixture.root);
+  assert.equal(ran.code, 0, ran.stderr);
+  assert.equal(written(fixture.root).mode, "dev-team");
+  assert.equal(defaultBranchOf(fixture.root), "feature");
+  assert.match(await refusedInit([], fixture.bare, fixture.bare), /unsupported/);
+});
+
+// @anchor initFrom
+test("init --from copies the config the directory holds, on the worktree's own branch", async (t) => {
+  const source = await initializedMain(t, "solo");
+  const separated = await separatedMainProject(t);
+  const ran = await run(["init", "--from", source], separated.root);
+  assert.equal(ran.code, 0, ran.stderr);
+  const copied = written(source);
+  assert.deepEqual(written(separated.root), { ...copied, project: { ...(copied.project as Record<string, string>), defaultBranch: "feature" } });
+  const both = await run(["init", "--from", source, "--mode", "solo"], separated.root);
+  assert.equal(both.code, 2, both.stderr);
+  // A main checkout is no worktree to copy into: init writes the mode's own there.
+  const main = await mainCheckout(scratch(t), "N");
+  assert.match(await refusedInit(["--from", source], main, main), /--from/);
+});
+
+// @anchor initFromMissing
+test("init --from a directory that is not there is a 3, and writes nothing", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "feature");
+  assert.match(await refusedInit(["--from", path.join(main, "absent")], linked, linked), /absent/);
+});
+
+// @anchor initFromNoConfig
+test("init --from a directory holding no config is a 3, never a silent default", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "feature");
+  const empty = scratch(t);
+  assert.match(await refusedInit(["--from", empty], linked, linked), /holds no \.cross-agent\/config\.json/);
+});
+
+// @anchor initDetachedRefused
+test("init in a worktree with a detached HEAD is a 3: it has no branch to make the default", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "feature");
+  await git(linked, "checkout", "--detach");
+  assert.match(await refusedInit([], linked, linked), /detached/);
+});
+
+/** An initialized main checkout and a task worktree under it, `.worktrees/t` on `task/t`. */
+async function mainWithTaskWorktree(t: TestContext): Promise<{ main: string; task: string }> {
+  const main = await initializedMain(t);
+  const task = path.join(main, ".worktrees", "t");
+  await git(main, "worktree", "add", "-b", "task/t", task);
+  return { main, task: fs.realpathSync(task) };
+}
+
+// @anchor initRemovedPointerRefused
+test("init in a task worktree whose pointer was deleted is a 3 naming it and the work tree that registers it", async (t) => {
+  const { main, task } = await mainWithTaskWorktree(t);
+  fs.rmSync(path.join(task, ".git"));
+  const reason = await refusedInit([], task, task);
+  assert.ok(reason.includes(task) && reason.includes(main), reason);
+});
+
+// @anchor initReplacedPointerRefused
+test("init in a task worktree whose pointer was replaced by a repository is a 3, decided before its .git is read", async (t) => {
+  const { main, task } = await mainWithTaskWorktree(t);
+  fs.rmSync(path.join(task, ".git"));
+  await git(task, "init", "-b", "main");
+  const reason = await refusedInit([], task, task);
+  assert.ok(reason.includes(task) && reason.includes(main), reason);
+});
+
+// @anchor initInsideCommonDirRefused
+test("init in a worktree inside its own git directory is a 3 naming the fix", async (t) => {
+  const { root } = await rootInsideCommonDir(t);
+  assert.match(await refusedInit([], root, root), /beside the git directory/);
+});
+
+// @anchor initSubmoduleRefused
+test("init in a submodule is a 3 naming the kind", async (t) => {
+  const { submodule } = await submoduleProject(t);
+  assert.match(await refusedInit([], submodule, submodule), /unsupported/);
+});
+
+// @anchor initBranchOutsideAlphabetRefused
+test("init in a worktree on a branch git_root could not name is a 3 naming the branch and the rule", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "feature+one");
+  const reason = await refusedInit([], linked, linked);
+  assert.match(reason, /feature\+one/);
+  assert.match(reason, /letters, digits/);
+});
+
+// @anchor initSeparatedMainNeedsFrom
+test("init in a worktree of a separated main needs --from, or --mode for the defaults", async (t) => {
+  const separated = await separatedMainProject(t);
+  const reason = await refusedInit([], separated.root, separated.root);
+  assert.match(reason, /--from <main checkout>/);
+  assert.match(reason, /--mode/);
+  const ran = await run(["init", "--mode", "solo"], separated.root);
+  assert.equal(ran.code, 0, ran.stderr);
+  assert.equal(defaultBranchOf(separated.root), "feature");
+});
+
+// @anchor initTaskPatternBranchRefused
+test("init in a worktree on a branch the mode's task pattern matches is a 3 naming the pattern", async (t) => {
+  const main = await initializedMain(t);
+  const linked = await linkedProject(t, main, "task/topic");
+  const reason = await refusedInit([], linked, linked);
+  assert.match(reason, /task\/topic/);
+  assert.match(reason, /task\/\*/);
+});
+
+/** A `.grok/config.toml` as the README's attach writes it, discovering the project by the working directory. */
+const shippedAttach = '[plugins]\npaths = ["/home/someone/Documents/agent-team-cli"]\nenabled = ["cross-agent"]\n\n[mcp]\nmax_output_bytes = 100000\n';
+
+// @anchor initCopiesGrokAttach
+test("init copies the source's Grok attach once, a regular file written through no link, and leaves what is there alone", async (t) => {
+  const main = await initializedMain(t);
+  fs.mkdirSync(path.join(main, ".grok"));
+  fs.writeFileSync(path.join(main, ".grok", "config.toml"), shippedAttach);
+
+  // Copied once, byte for byte, ignored beside the project's own state, and the trust that
+  // only the user can give named.
+  const linked = await linkedProject(t, main, "feature");
+  const ran = await run(["init"], linked);
+  assert.equal(ran.code, 0, ran.stderr);
+  const copy = path.join(linked, ".grok", "config.toml");
+  assert.equal(fs.readFileSync(copy, "utf8"), shippedAttach);
+  assert.equal(fs.lstatSync(copy).isFile(), true);
+  assert.match(ran.stdout, /trusted_folders\.toml/);
+  assert.ok(fs.readFileSync(path.join(linked, ".gitignore"), "utf8").split("\n").includes(".grok/"));
+  // An existing file is kept, and named.
+  fs.writeFileSync(copy, "# edited by the operator\n");
+  const again = await run(["init"], linked);
+  assert.equal(again.code, 0, again.stderr);
+  assert.equal(fs.readFileSync(copy, "utf8"), "# edited by the operator\n");
+  assert.ok(`${again.stdout}${again.stderr}`.includes(copy), again.stderr);
+
+  // A source whose file is a link, or whose `.grok` is: not copied, and named.
+  const elsewhere = scratch(t);
+  fs.writeFileSync(path.join(elsewhere, "config.toml"), shippedAttach);
+  const leaf = await initializedMain(t);
+  fs.mkdirSync(path.join(leaf, ".grok"));
+  fs.symlinkSync(path.join(elsewhere, "config.toml"), path.join(leaf, ".grok", "config.toml"));
+  const parent = await initializedMain(t);
+  fs.symlinkSync(elsewhere, path.join(parent, ".grok"));
+  for (const source of [leaf, parent]) {
+    const worktree = await linkedProject(t, source, "feature");
+    const linkedRun = await run(["init"], worktree);
+    assert.equal(linkedRun.code, 0, linkedRun.stderr);
+    assert.equal(fs.existsSync(path.join(worktree, ".grok")), false, source);
+    assert.match(linkedRun.stderr, /symbolic link/);
+  }
+
+  // A destination whose `.grok` is a link, or whose file is a dangling one: left alone, and
+  // nothing is written through either.
+  const target = scratch(t);
+  const linkedParent = await linkedProject(t, main, "parent");
+  fs.symlinkSync(target, path.join(linkedParent, ".grok"));
+  const dangling = await linkedProject(t, main, "dangling");
+  fs.mkdirSync(path.join(dangling, ".grok"));
+  fs.symlinkSync(path.join(target, "nowhere.toml"), path.join(dangling, ".grok", "config.toml"));
+  for (const worktree of [linkedParent, dangling]) {
+    const destinationRun = await run(["init"], worktree);
+    assert.equal(destinationRun.code, 0, destinationRun.stderr);
+    assert.match(destinationRun.stderr, /left alone/);
+  }
+  assert.deepEqual(fs.readdirSync(target), [], "no link was written through");
+});
+
+// @anchor initBoundGrokAttachNotCopied
+test("init copies no Grok attach that binds a project, and prints the binding to set up by hand", async (t) => {
+  for (const binding of ['args = ["--project", "/projects/main"]', 'env = { CROSS_AGENT_PROJECT = "/projects/main" }']) {
+    const main = await initializedMain(t);
+    fs.mkdirSync(path.join(main, ".grok"));
+    fs.writeFileSync(path.join(main, ".grok", "config.toml"), `${shippedAttach}\n[mcp_servers.cross-agent]\n${binding}\n`);
+    const linked = await linkedProject(t, main, "feature");
+    const ran = await run(["init"], linked);
+    assert.equal(ran.code, 0, ran.stderr);
+    assert.equal(fs.existsSync(path.join(linked, ".grok")), false, binding);
+    assert.ok(ran.stderr.includes(binding), ran.stderr);
+    assert.match(ran.stderr, /by hand/);
+  }
 });

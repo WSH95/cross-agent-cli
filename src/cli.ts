@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { CONFIG_PATH, DEFAULT_MODE, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
+import { CONFIG_PATH, DEFAULT_MODE, ignoreEntries, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
+import type { CrossAgentConfig } from "./config.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest, GitMutateResult } from "./gitmutate.ts";
-import { gitRoot } from "./gitroot.ts";
+import { gitRoot, matchesPattern, nameFault } from "./gitroot.ts";
 import type { GitRootResult } from "./gitroot.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
@@ -14,11 +15,11 @@ import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
 import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
-import type { EffectiveGitPolicy, ModeLead, Workspace } from "./modes.ts";
-import { discoverProject, isMainModule, parseFlags } from "./project.ts";
+import type { EffectiveGitPolicy, Mode, ModeLead, Workspace } from "./modes.ts";
+import { discoverProject, holdsConfig, isMainModule, parseFlags } from "./project.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
-import { verifyWorktree } from "./worktree.ts";
+import { enclosingWorktree, locateRepository, nestedReason, verifyWorktree } from "./worktree.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
 // one parser and one exit protocol. Each verb calls the function its tool calls, with the
@@ -241,13 +242,12 @@ function journalSteps(journal: Journal): string[] {
 }
 
 const initVerb: Verb = {
-  usage: "cross-agent init [--mode <name>] [--project <root>]",
-  summary: "write .cross-agent/config.json, binding every role of a mode to an engine",
+  usage: "cross-agent init [--mode <name>] [--from <dir>] [--project <root>]",
+  summary: "write .cross-agent/config.json, binding every role of a mode to an engine; in a worktree, its main checkout's config on the worktree's own branch",
   positionals: [],
-  flags: { "--mode": "name" },
+  flags: { "--mode": "name", "--from": "dir" },
   writes: true,
   async run(parsed, context) {
-    const mode = parsed.values["--mode"] ?? DEFAULT_MODE;
     let root: string;
     try {
       // An existing directory, resolved before anything is written: `initConfig` creates
@@ -258,6 +258,21 @@ const initVerb: Verb = {
     } catch (error) {
       return refused(`cannot resolve the project: ${message(error)}`);
     }
+    // Every target is judged from outside it first, before its own `.git` is looked at: a
+    // task worktree is never a project, whatever its pointer holds now (design section 3).
+    const enclosure = await enclosingWorktree(root);
+    if (enclosure !== null) return refused("reason" in enclosure ? enclosure.reason : nestedReason(root, enclosure));
+    const dotGit = fs.lstatSync(path.join(root, ".git"), { throwIfNoEntry: false });
+    if (dotGit?.isFile()) return initWorktree(root, parsed, context);
+    if (parsed.values["--from"] !== undefined) {
+      return refused(`--from copies a project's config into a worktree of its repository, and ${root} is ${dotGit === undefined ? "no repository's checkout" : "a main checkout"}, where init writes the mode's own`);
+    }
+    if (dotGit?.isDirectory()) {
+      // A bare repository at `.git` makes the directory holding it no work tree of it.
+      const located = await locateRepository(root);
+      if (located.kind === "unsupported") return refused(`init makes no project of an unsupported root: ${located.reason}`);
+    }
+    const mode = parsed.values["--mode"] ?? DEFAULT_MODE;
     try {
       // The mode first, so a name this build has no mode for, or a mode that does not
       // validate, is the precondition it is rather than an error halfway through a write.
@@ -277,6 +292,129 @@ const initVerb: Verb = {
     };
   },
 };
+
+/**
+ * `init` at a worktree, which makes it a project of its own on the branch it has checked
+ * out (design section 3). The config is copied from `--from`, or from the main checkout when
+ * that holds one, and is the mode's defaults otherwise; every refusal comes before anything
+ * is written.
+ */
+async function initWorktree(root: string, parsed: Parsed, context: Context): Promise<Answer> {
+  const located = await locateRepository(root);
+  if ("reason" in located) return refused(`init makes no project of a ${located.kind} root: ${located.reason}`);
+  const branch = located.branch;
+  if (branch === null) return refused(`${root} has a detached HEAD, which names no branch to make the project's default; check out its branch first`);
+  if (nameFault(branch) !== null) {
+    return refused(`${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing "/" or ".lock"`);
+  }
+  const named = parsed.values["--mode"];
+  const from = parsed.values["--from"];
+  let source: string | undefined;
+  if (from !== undefined) {
+    try {
+      source = fs.realpathSync(path.resolve(context.cwd, from));
+    } catch (error) {
+      return refused(`cannot resolve --from ${from}: ${message(error)}`);
+    }
+    if (!holdsConfig(source)) return refused(`--from ${source} holds no ${CONFIG_PATH}`);
+  } else if (located.main !== null) {
+    if (holdsConfig(located.main)) source = located.main;
+  } else if (located.kind === "linked" && named === undefined) {
+    return refused(`${root} is a worktree of a main checkout whose git directory is separated, and git records no path to that checkout: pass --from <main checkout> to copy its config, or --mode for the defaults`);
+  }
+  if (source !== undefined && named !== undefined) {
+    throw new UsageError(`--mode names the defaults, and ${path.join(source, CONFIG_PATH)} is the config init copies here; give one of them`);
+  }
+  let copy: CrossAgentConfig | undefined;
+  try {
+    if (source !== undefined) copy = loadConfig(source);
+  } catch (error) {
+    return refused(message(error));
+  }
+  const modeName = copy?.mode ?? named ?? DEFAULT_MODE;
+  let mode: Mode;
+  try {
+    mode = loadMode(builtInModesDir(), modeName);
+  } catch (error) {
+    return refused(message(error));
+  }
+  // Settled once the mode is: every root verb, the verifier's row 2 and a sibling project's
+  // journaled `branch -d` act on the task pattern, so a project's own branch is never a task's.
+  const pattern = gitPolicy(mode).branchPattern;
+  if (matchesPattern(branch, pattern)) {
+    return refused(`${root} has ${branch} checked out, which mode ${mode.id}'s task branch pattern ${pattern} matches: a project's default branch is never a task's, so check out another branch first`);
+  }
+  const result = initConfig(root, { mode: modeName, defaultBranch: branch, ...(copy === undefined ? {} : { copy }) });
+  const attach = source === undefined ? null : copyGrokAttach(source, root);
+  const ignored = [...result.ignored, ...(attach?.copied === true ? ignoreEntries(root, [".grok/"]) : [])];
+  const file = path.join(root, CONFIG_PATH);
+  const origin = source === undefined ? null : path.join(source, CONFIG_PATH);
+  const lines = [result.wrote
+    ? `cross-agent: wrote ${file} from ${origin ?? `mode ${mode.id}'s defaults`}, its default branch ${branch}`
+    : `cross-agent: ${file} already exists; nothing was written`];
+  if (ignored.length > 0) lines.push(`cross-agent: added ${ignored.join(", ")} to ${path.join(root, ".gitignore")}`);
+  if (attach?.copied === true) {
+    lines.push(`cross-agent: copied ${attach.from} to ${attach.to}; Grok loads it only in a folder it trusts, and cross-agent never edits ~/.grok/trusted_folders.toml: trust ${root} there or at Grok's own prompt`);
+  }
+  const notes = [
+    ...(result.warning === undefined ? [] : [result.warning]),
+    ...(attach !== null && !attach.copied ? [`${attach.to} not written: ${attach.why}`] : []),
+  ].map((note) => `cross-agent: ${note}\n`).join("");
+  return {
+    code: EXIT.ok,
+    document: {
+      wrote: result.wrote, file, mode: mode.id, defaultBranch: branch, from: origin, ignored,
+      ...(attach === null ? {} : { attach }), ...(result.warning === undefined ? {} : { warning: result.warning }),
+    },
+    text: `${lines.join("\n")}\n`,
+    ...(notes === "" ? {} : { notes }),
+  };
+}
+
+/** What became of the Grok attach a worktree project's source holds. */
+type Attach = { copied: true; from: string; to: string } | { copied: false; from: string; to: string; why: string };
+
+/**
+ * The source's Grok attach, `.grok/config.toml`, copied byte for byte into the worktree, or
+ * why it was not; null where the source holds none (design section 3). It is host
+ * configuration, which Grok loads in the operator's own session, so it moves as a regular
+ * file and never through a link: both directories and the file are judged by `lstat`,
+ * nothing already at the destination is replaced — a dangling link included — and the file
+ * is created exclusively, which fails on a link at that path. A source that binds a project
+ * through `--project` or `CROSS_AGENT_PROJECT` is not copied: an explicit binding outranks
+ * the working directory, so its copy would serve that project from this worktree.
+ */
+function copyGrokAttach(source: string, root: string): Attach | null {
+  const sourceDir = path.join(source, ".grok");
+  const from = path.join(sourceDir, "config.toml");
+  const toDir = path.join(root, ".grok");
+  const to = path.join(toDir, "config.toml");
+  const not = (why: string): Attach => ({ copied: false, from, to, why });
+  const kind = (entry: fs.Stats) => (entry.isSymbolicLink() ? "a symbolic link" : entry.isDirectory() ? "a directory" : "no regular file");
+  const directory = fs.lstatSync(sourceDir, { throwIfNoEntry: false });
+  if (directory === undefined) return null;
+  if (!directory.isDirectory()) return not(`${sourceDir} is ${kind(directory)}, and host configuration is copied from regular files only`);
+  const file = fs.lstatSync(from, { throwIfNoEntry: false });
+  if (file === undefined) return null;
+  if (!file.isFile()) return not(`${from} is ${kind(file)}, and host configuration is copied from regular files only`);
+  const bytes = fs.readFileSync(from);
+  const bindings = bytes.toString("utf8").split("\n").map((line) => line.trim())
+    .filter((line) => line.includes("--project") || line.includes("CROSS_AGENT_PROJECT"));
+  if (bindings.length > 0) {
+    return not(`${from} binds a project — ${bindings.join("; ")} — and an explicit binding outranks the working directory, so a copy would serve that project from this worktree; set Grok's attach up for this worktree by hand`);
+  }
+  const destination = fs.lstatSync(toDir, { throwIfNoEntry: false });
+  if (destination === undefined) fs.mkdirSync(toDir);
+  else if (!destination.isDirectory()) return not(`${toDir} is ${kind(destination)}, left alone`);
+  if (fs.lstatSync(to, { throwIfNoEntry: false }) !== undefined) return not(`${to} already exists, left alone`);
+  const descriptor = fs.openSync(to, "wx");
+  try {
+    fs.writeFileSync(descriptor, bytes);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return { copied: true, from, to };
+}
 
 /** One installed mode as `modes` lists it, or the reason its directory does not load. */
 type ListedMode =

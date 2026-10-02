@@ -13,7 +13,8 @@ export type Flags = { values: Record<string, string> } | { reason: string };
 
 const exec = promisify(execFile);
 
-function holdsConfig(dir: string): boolean {
+/** Whether `dir` holds `.cross-agent/config.json`, a file: what makes a directory a project of its own. */
+export function holdsConfig(dir: string): boolean {
   return fs.statSync(path.join(dir, CONFIG_PATH), { throwIfNoEntry: false })?.isFile() ?? false;
 }
 
