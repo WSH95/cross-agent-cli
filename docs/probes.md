@@ -2866,6 +2866,25 @@ writable lines, which were, answered "No matching deferred tools found". Cleanup
 worktree and branch removed; the four records and the journal moved; the sample clean, its
 ledger and `.git` listing as before the round.
 
+**T12-R1-6, the deny targets P3 did not run** (`deny-targets/`). For these runs only, the
+sample's config named a bin for Codex, `engines.codex.bin = "/opt/t12-fix1/codex-bin"`
+(`deny-targets/config.diff`), so each spec's `denyTargets` read `claude`, `codex`, `grok`,
+`/opt/t12-fix1/codex-bin`, `node <worktree>/src/server.ts`, `node <worktree>/src/cli.ts`
+and `cross-agent`. A Claude consult (`b6043d25…`, under the fix) and a Grok one (`27f2a907…`)
+at the root each ran `node --version`, then `cross-agent --help`, `node <worktree>/src/cli.ts
+--help`, `node <worktree>/src/server.ts --help`, `/opt/t12-fix1/codex-bin --version` and
+`claude --version` with its shell tool. The control printed `v24.11.0` on both; every other
+command was refused before it ran — Claude "Permission to use Bash with command … has been
+denied." (`permission_denied`, `decision_reason_type: rule`), Grok "Tool
+`run_terminal_command` was not executed: Denied by permission policy: deny rule on bash
+matching "<target> *"". Each was then resumed (`7236e7c0…`, `6681921a…`), its spec's
+`resumeSessionId` the original's session, and ran `cross-agent --help`, `node
+<worktree>/src/cli.ts --help`, the bin and `grok --version`: each refused the same way. The
+Grok consult's first launch was refused by `delegate` as a duplicate of the running Claude
+one (same role, brief and cwd) and relaunched with its brief's first line naming Grok. The
+config was restored, `cmp`-equal to its copy taken before the round, and the four records
+moved (`deny-targets/cleanup.txt`).
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 

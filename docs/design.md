@@ -1932,8 +1932,12 @@ guard's; the forms are each adapter's `denyArgs`. Claude `Bash(<target> *)` and
 (enforced, P3); Codex an empty argv, because `codex exec` does not honour an
 execpolicy rules file and its children rely on the sandbox's network denial
 instead (P3b). Each builder is unit-tested for the exact list in its adapter's
-own test file; P3 covers each target on each engine, including a resumed
-session.
+own test file. P3 ran four targets — `claude`, `codex`, `grok` and `node
+<repo>/src/server.ts` — on Claude and on Grok, in fresh sessions. T12's fix round ran
+the rest on both engines: `cross-agent`, `node <repo>/src/cli.ts` and a configured
+bin, beside `node <repo>/src/server.ts` and `claude`, in a fresh session, then
+`cross-agent`, `node <repo>/src/cli.ts`, the bin and `grok` in that session resumed;
+the engine's own permission layer refused every one (`docs/probes.md#t12Fix1`).
 
 Sandbox facts from the probes that the adapters must respect: Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
