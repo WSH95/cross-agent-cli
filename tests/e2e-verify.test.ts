@@ -1210,6 +1210,66 @@ test("every way bash assigns a variable is an assignment of unknown value, quest
   ]);
 });
 
+// @anchor arithmeticContexts
+test("every place bash evaluates arithmetic is read: an expansion, a name it reads, or a set name it assigns is a question", async (t) => {
+  // Task 12 wrap-up, the controller's follow-up to W-2. Each line below assigns HOME in bash
+  // 5.2 (watched with `env -i … bash --norc`): an indexed array's subscript wherever it
+  // stands, a substring's offset or length, arithmetic that reads a name — bash evaluates
+  // that name's value as arithmetic in turn, so reading any variable can assign any other —
+  // and an integer variable's assignment.
+  const assigning = [
+    "a[HOME=5]=1; wget https://example.com/claude",
+    "echo ${a[HOME=5]}; wget https://example.com/claude",
+    "a=(1 2); echo ${#a[HOME=7]}; wget https://example.com/claude",
+    "read 'a[HOME=7]' <<< x; wget https://example.com/claude",
+    "printf -v 'a[HOME=3]' x; wget https://example.com/claude",
+    "declare 'a[HOME=4]=x'; wget https://example.com/claude",
+    "test -v 'a[HOME=2]'; wget https://example.com/claude",
+    "[[ -v a[HOME=1] ]]; wget https://example.com/claude",
+    "x=abc; echo ${x:0:HOME=11}; wget https://example.com/claude",
+    "x='HOME=5'; (( $x )); wget https://example.com/claude",
+    "x='HOME=5'; echo $(( $x )); wget https://example.com/claude",
+    "x='HOME=5'; a[$x]=1; wget https://example.com/claude",
+    "x=HOME; (( $x = 5 )); wget https://example.com/claude",
+    "declare -i y; y='HOME=6'; wget https://example.com/claude",
+    "declare -i n=3; echo claude",
+    "x='HOME=5'; (( x )); wget https://example.com/claude",
+    // The same class where the list above does not name it, each watched assigning HOME:
+    // `[ -v`, the operands of `[[`'s arithmetic comparisons, a compound array's keys, an
+    // indirect expansion whose name carries a subscript, `unset`'s operands (literal and
+    // expanded), `wait -p`'s name, an array substring's offset, and an unquoted heredoc's
+    // body when a builtin reads it, which the current shell expands.
+    "[ -v 'a[HOME=2]' ]; wget https://example.com/claude",
+    "[[ HOME=5 -eq 5 ]]; wget https://example.com/claude",
+    "a=([HOME=5]=x); wget https://example.com/claude",
+    "x='a[HOME=5]'; echo ${!x}; wget https://example.com/claude",
+    "a=(1 2 3); unset 'a[HOME=1]'; wget https://example.com/claude",
+    "x='a[HOME=2]'; unset \"$x\"; wget https://example.com/claude",
+    "wait -n -p 'a[HOME=3]'; wget https://example.com/claude",
+    "a=(1 2); echo \"${a[@]:HOME=1:1}\"; wget https://example.com/claude",
+    ": <<EOF\n${a[HOME=5]}\nEOF\nwget https://example.com/claude",
+  ];
+  const unnamed = (line: string) => line.replace("wget https://example.com/claude", "echo done").replace(/echo claude$/, "echo done");
+  await judgedAs(t, [
+    ...assigning.map((line) => [line, "?"] as const),
+    // The same forms on an unnamed line keep their answers.
+    ...assigning.map((line) => [unnamed(line), "pass"] as const),
+    // Numbers and operators alone, and a literal number assigned to an ordinary name, are
+    // read as they are; so are `@` and `*` subscripts, which are not arithmetic.
+    ["(( i = 0 )); echo claude", "pass"],
+    ["a[0]=1; echo claude", "pass"],
+    ["echo ${a[1]}; echo claude", "pass"],
+    ["x=abc; echo ${x:0:2}; echo claude", "pass"],
+    ["echo $(( 1 + 2 )); echo claude", "pass"],
+    ["[[ 1 -eq 1 ]]; echo claude", "pass"],
+    ["a=([0]=x); echo claude", "pass"],
+    ["unset 'a[0]'; echo claude", "pass"],
+    ["[[ -v a ]]; echo claude", "pass"],
+    ["echo ${!a[@]} ${#a[@]}; echo claude", "pass"],
+    ["a=(1 2); echo \"${a[@]:1:1}\"; echo claude", "pass"],
+  ]);
+});
+
 test("a data command's program option in an argv a Codex rollout recorded is judged the same way", async (t) => {
   const sessionId = "01a0f44a-eb7a-7603-ae3a-02f2d355c7aa";
   const log = codexLog("/bin/bash -lc 'printf inside > ./PROBE-wget.txt'");

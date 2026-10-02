@@ -285,8 +285,19 @@ function recordedHeartbeat(event, calls) {
 //   line when the name is unread environment or code, when an expansion hides which name it
 //   is, or when a nameref may alias it: read (after `--`, and `-a`), printf -v, getopts past
 //   its own options and `--`, wait -p, for/select, mapfile/readarray, a `{NAME}` redirection
-//   on any command, arithmetic assignment in `(( ))` and `$(( ))`, `${NAME=…}`/`${NAME:=}`,
-//   and any `-n` declaration whatever its operands.
+//   on any command, `${NAME=…}`/`${NAME:=}`, and any `-n` declaration whatever its operands.
+// - Arithmetic is read wherever bash evaluates it: `(( ))`, `$(( ))`, `$[ ]`, `let` and
+//   `for (( ;; ))` (both unmodeled); an indexed array's subscript wherever it stands — an
+//   assignment word, a compound array's `[key]=`, any `${a[…]…}` (`${#a[…]}` too), a
+//   builtin's variable operand (read, printf -v, declarations, unset, wait -p, getopts),
+//   `test -v`, `[ -v` and `[[ -v` — though not `@` or `*`; a substring's offset and length;
+//   the operands of `[[`'s -eq/-ne/-lt/-le/-gt/-ge; an unquoted heredoc's body; and every
+//   assignment to an integer variable, so any `-i` declaration is `?` whatever its operands,
+//   as `-n` is. On a named line an arithmetic text is `?` when it holds an expansion, when it
+//   reads a name — bash evaluates a name's value as arithmetic in turn, so reading any
+//   variable can assign any other — or when it assigns a name in the sets; an indirect
+//   `${!name}` is `?` too. Numbers and operators alone, and a literal number assigned to an
+//   ordinary name, stay as they are.
 // - Node module-loading options and data-URL scripts are unread code: `?` on named lines,
 //   except this repository's own server/CLI entries, which are launches. An option that
 //   reads a file as code or as options that load code is unread too — --env-file(-if-exists),
@@ -552,8 +563,10 @@ function git(...argv) {
  * `&`, newlines, a subshell's `(` and `)`, and a `{` or `}` standing as a command word;
  * single quotes, double quotes, `$'…'` (decoded as bash decodes it), `$"…"` and backslashes;
  * comments; redirections, whose target is never a command word; heredocs and here-strings;
- * function definitions; `[[ … ]]` and `(( … ))`. Deferred arithmetic/subscript evaluation
- * is not performed: quoted substitutions at those readers are doubts on named lines.
+ * function definitions; `[[ … ]]` and `(( … ))`. Arithmetic is never evaluated: each text
+ * bash would evaluate (`arithmeticDoubt`'s places, in the header) is read for an expansion,
+ * a name it reads and a name in the sets it assigns, and quoted substitutions at those
+ * readers are doubts on named lines.
  * Every `$(…)`, backtick and `<(…)`/`>(…)` is a command line of its own: in a word,
  * in double quotes, inside `${…}`, `$((…))` and `$[…]`, and in an unquoted heredoc's body;
  * a `$'…'` inside `${…}` is decoded too, so the names it spells count. What a command reads
@@ -604,7 +617,8 @@ function git(...argv) {
  * - `if`, `then`, `elif`, `else`, `while`, `until`, `do`, `!` and `{` are passed over, and a
  *   `[[ … ]]`, `(( … ))` or subshell after them is read as at a command's start; `for`
  *   and `select` lists are data, but their variable is an assignment of unknown value;
- *   arithmetic and subscript readers carrying deferred substitutions are unmodeled.
+ *   arithmetic texts and subscripts are read as the header says, and readers carrying
+ *   deferred substitutions are unmodeled.
  * A `case` statement and a function named like an engine change what later words mean, and
  * a line bash would refuse — an unterminated quote or substitution, a `(` where no command
  * starts, a `)` with no `(`, a redirection with no target — runs nothing as read here: on a
@@ -850,7 +864,7 @@ function launcherFor(settings) {
    */
   function lexList(text, start, closer) {
     const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null,
-      named: false, arithmetic: false, deferred: false, arithTexts: [] };
+      named: false, arithmetic: false, deferred: false, arithTexts: [], indirections: [] };
     // A `{ … }` or `( … )` group a pipe feeds: every command in it reads that pipe, the
     // first one exactly, the rest after whatever came before them may have read.
     const groups = [];
@@ -1033,6 +1047,12 @@ function launcherFor(settings) {
         const end = scanTo(k + 2, next === "{" ? "}" : "]", doubleContext);
         if (end === -1) list.problems.push(`an unterminated \`$${next}\``);
         else if (next === "[") list.arithTexts.push(text.slice(k + 2, end - 1));
+        else {
+          // A `${…}`'s subscript, offset and length are arithmetic; an indirect one reads a name.
+          const found = parameterArithmetic(text.slice(k, end));
+          list.arithTexts.push(...found.texts);
+          if (found.indirect) list.indirections.push(text.slice(k, end));
+        }
         return end;
       }
       if (/[A-Za-z_]/.test(next)) {
@@ -1127,6 +1147,9 @@ function launcherFor(settings) {
           const inner = lexList(body, 0, "heredoc");
           list.nested.push(...inner.nested);
           list.problems.push(...inner.problems);
+          // A builtin reading the heredoc has the current shell expand its arithmetic.
+          list.arithTexts.push(...inner.arithTexts);
+          list.indirections.push(...inner.indirections);
           doc.stdin.exact = !/[$`\\]/.test(body);
         }
       }
@@ -1227,6 +1250,8 @@ function launcherFor(settings) {
         if (word !== null && !word.quoted && /^[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=$/.test(word.shape)) {
           const end = scanTo(i + 1, ")");
           if (end === -1) { list.problems.push("an unterminated array"); literal(text.slice(i), false); i = text.length; continue; }
+          // An indexed array's `[key]=` is a subscript bash evaluates as arithmetic.
+          list.arithTexts.push(...arrayKeys(text.slice(i + 1, end - 1)));
           literal(text.slice(i, end), false);
           i = end;
           continue;
@@ -1304,9 +1329,15 @@ function launcherFor(settings) {
     };
     const arithmetic = list.arithmetic || list.commands.some((command) => command.arith || conditional(command.words));
     if (named && deferred && arithmetic) verdict = doubt("arithmetic may evaluate a quoted substitution or subscript", list.text);
-    // Arithmetic that assigns an unread environment or code variable (W-2).
-    if (named) for (const expr of list.arithTexts) {
-      for (const nm of arithTargets(expr)) verdict = worse(verdict, unknownAssignment(nm, inner, expr.trim()));
+    // Every arithmetic text bash evaluates on this line — `(( ))`, `$(( ))`, `$[ ]`, an
+    // indexed subscript in a `${…}` or a compound array's key, a substring's offset and
+    // length — and every indirect expansion, whose name may carry a subscript (W-2).
+    if (named) {
+      for (const expr of list.arithTexts) {
+        const why = arithmeticDoubt(expr);
+        if (why !== null) verdict = worse(verdict, doubt(why, expr.trim() === "" ? list.text : expr));
+      }
+      for (const raw of list.indirections) verdict = worse(verdict, doubt("an indirect expansion, whose name may carry a subscript bash evaluates", raw));
     }
     for (const nested of list.nested) verdict = worse(verdict, judgeList(nested, { ...inner, depth: context.depth + 1 }));
     for (const command of list.commands) {
@@ -1340,6 +1371,8 @@ function launcherFor(settings) {
     let k = 0;
     while (k < command.words.length && isAssignment(command.words[k])) {
       verdict = worse(verdict, assignmentCode(command.words[k], context));
+      // An assignment word's `a[…]=` subscript is arithmetic bash evaluates.
+      verdict = worse(verdict, subscriptVerdict(command.words[k].value, context, command.words[k].value));
       k++;
     }
     if (k < command.words.length) verdict = worse(verdict, judgeWords(command.words.slice(k), command, context));
@@ -1417,7 +1450,8 @@ function launcherFor(settings) {
         return words.length > 1 ? judgeWords(words.slice(1), command, context) : pass;
       }
       if (["for", "select"].includes(value)) return unknownAssignment(words[1]?.value, context, line);
-      if (["fi", "done", "esac", "}", "in", "[[", "]]"].includes(value)) return pass;
+      if (value === "[[") return conditionalArithmetic(words, context, line);
+      if (["fi", "done", "esac", "}", "in", "]]"].includes(value)) return pass;
       if (value === "case") return { verdict: "?", cap: true, why: "a case statement, whose patterns this grammar does not read", at: line };
       if (value === "function") {
         const defined = words[1]?.value ?? "";
@@ -1469,70 +1503,211 @@ function launcherFor(settings) {
     return modeled === undefined ? verdict : worse(verdict, programRun(words, command, context, modeled));
   }
 
+  // A name whose assignment this grammar questions: unread environment, shell code, NODE_OPTIONS.
+  const codeOrEnvironment = (name) => unreadEnvironment.has(name) || shellCodeVariables.has(name) || name === "NODE_OPTIONS";
+
   /** A builtin writes a value we cannot read, possibly through a declaration's nameref. */
   function unknownAssignment(variable, context, line) {
     const name = /^([A-Za-z_]\w*)(?:\[|$)/.exec(variable ?? "")?.[1];
-    return context.named && (unreadEnvironment.has(name) || shellCodeVariables.has(name) || name === "NODE_OPTIONS")
+    return context.named && codeOrEnvironment(name)
       ? doubt("a builtin assigns an unread environment or code variable", line) : pass;
   }
 
-  // Names an arithmetic expression assigns (task 12 wrap-up, W-2): `NAME =`, a compound
-  // `NAME op=`, `NAME[sub]=`, and `++NAME` / `NAME++` / `--NAME` / `NAME--`. The `(?!=)`
-  // keeps `==` out, and `<=`, `>=`, `!=` leave an operator this does not read before the `=`.
-  const arithTargets = (text) => {
-    const names = [];
-    for (const m of String(text).matchAll(/([A-Za-z_]\w*)(?:\[[^\]]*\])?\s*(?:\*\*|<<|>>|[-+*/%&|^])?=(?!=)/g)) names.push(m[1]);
-    for (const m of String(text).matchAll(/([A-Za-z_]\w*)\s*(?:\+\+|--)/g)) names.push(m[1]);
-    for (const m of String(text).matchAll(/(?:\+\+|--)\s*([A-Za-z_]\w*)/g)) names.push(m[1]);
-    return names;
-  };
+  /**
+   * Why arithmetic bash evaluates is a doubt on a named line, or null (task 12 wrap-up, the
+   * controller's follow-up to W-2): it holds an expansion; it reads a name, because bash
+   * evaluates a name's value as arithmetic in turn, so reading any variable can assign any
+   * other; or it assigns an unread environment or code variable. Numbers and operators alone,
+   * and a plain `NAME =` (or `NAME[…] =`) target that is an ordinary name, are read as they
+   * are. A token that starts with a digit is a number (`16#ff`, `0x1f`), never a name; a
+   * compound `op=` and `++`/`--` read their name as well as assign it.
+   */
+  function arithmeticDoubt(text) {
+    const source = String(text);
+    if (/[$`]/.test(source)) return "an expansion in arithmetic bash evaluates";
+    const tokens = [];
+    for (let k = 0; k < source.length;) {
+      const rest = source.slice(k);
+      const token = /^\s+/.exec(rest) ?? /^[0-9][0-9A-Za-z_#@]*/.exec(rest) ?? /^[A-Za-z_]\w*/.exec(rest)
+        ?? /^(?:\*\*=|<<=|>>=|\+\+|--|\*\*|<<|>>|<=|>=|==|!=|&&|\|\||[-+*/%&|^]=)/.exec(rest) ?? [rest[0]];
+      if (!/^\s/.test(token[0])) tokens.push(token[0]);
+      k += token[0].length;
+    }
+    for (let t = 0; t < tokens.length; t++) {
+      if (!/^[A-Za-z_]/.test(tokens[t])) continue;
+      // A plain assignment's target: the name, an optional subscript, then `=`, with no
+      // `++`/`--` before it; the subscript's own names are read where they stand.
+      let next = t + 1;
+      if (tokens[next] === "[") {
+        for (let depth = 0; next < tokens.length; next++) {
+          if (tokens[next] === "[") depth++;
+          else if (tokens[next] === "]" && --depth === 0) { next++; break; }
+        }
+      }
+      const target = tokens[next] === "=" && tokens[t - 1] !== "++" && tokens[t - 1] !== "--";
+      if (!target) return `arithmetic bash evaluates reads ${tokens[t]}, whose value it evaluates as arithmetic in turn`;
+      if (codeOrEnvironment(tokens[t])) return `arithmetic assigns ${tokens[t]}, an unread environment or code variable`;
+    }
+    return null;
+  }
+
+  /** The subscript of a `name[…]` word, bracket-balanced; undefined for none and for `@` or `*`. */
+  function subscriptOf(value) {
+    const head = /^[A-Za-z_]\w*\[/.exec(String(value));
+    if (head === null) return undefined;
+    for (let k = head[0].length - 1, depth = 0; k < value.length; k++) {
+      if (value[k] === "[") depth++;
+      else if (value[k] === "]" && --depth === 0) {
+        const inner = value.slice(head[0].length, k);
+        return inner === "@" || inner === "*" ? undefined : inner;
+      }
+    }
+    return undefined;
+  }
+
+  /** An indexed array's subscript in a variable operand or an assignment word, as arithmetic. */
+  function subscriptVerdict(value, context, at) {
+    if (!context.named) return pass;
+    const inner = subscriptOf(value);
+    const why = inner === undefined ? null : arithmeticDoubt(inner);
+    return why === null ? pass : doubt(why, at);
+  }
+
+  /**
+   * The arithmetic a `${…}` expansion has bash evaluate: an indexed subscript (not `@` or
+   * `*`), and a substring's offset and length (`${x:off:len}`; `:-`, `:=`, `:?` and `:+` are
+   * other operators). `indirect` is a `${!name…}`, which reads the variable its name's value
+   * names, a subscript bash evaluates included; `${!name*}`, `${!name@}` and `${!name[@]}`
+   * only list names or keys.
+   */
+  function parameterArithmetic(raw) {
+    const body = raw.slice(2, -1);
+    const found = { texts: [], indirect: false };
+    const head = /^([#!]?)([A-Za-z_]\w*)/.exec(body);
+    if (head === null) return found;
+    let k = head[0].length;
+    let subscript;
+    if (body[k] === "[") {
+      for (let j = k, depth = 0; j < body.length; j++) {
+        if (body[j] === "[") depth++;
+        else if (body[j] === "]" && --depth === 0) { subscript = body.slice(k + 1, j); k = j + 1; break; }
+      }
+      if (subscript !== undefined && subscript !== "@" && subscript !== "*") found.texts.push(subscript);
+    }
+    if (head[1] === "!" && !/^[*@]$/.test(body.slice(k)) && subscript !== "@" && subscript !== "*") found.indirect = true;
+    if (head[1] === "" && body[k] === ":" && !/[-=?+]/.test(body[k + 1] ?? "")) {
+      const rest = body.slice(k + 1);
+      let split = -1;
+      for (let j = 0, depth = 0; j < rest.length && split === -1; j++) {
+        if ("([{".includes(rest[j])) depth++;
+        else if (")]}".includes(rest[j])) depth--;
+        else if (rest[j] === ":" && depth === 0) split = j;
+      }
+      found.texts.push(split === -1 ? rest : rest.slice(0, split));
+      if (split !== -1) found.texts.push(rest.slice(split + 1));
+    }
+    return found;
+  }
+
+  /** The `[key]=` and `[key]+=` subscripts of a compound array assignment's elements. */
+  function arrayKeys(elements) {
+    const keys = [];
+    for (let k = 0; k < elements.length; k++) {
+      if (elements[k] !== "[" || (k > 0 && !/\s/.test(elements[k - 1]))) continue;
+      for (let j = k, depth = 0; j < elements.length; j++) {
+        if (elements[j] === "[") depth++;
+        else if (elements[j] === "]" && --depth === 0) {
+          const key = elements.slice(k + 1, j);
+          if (/^\+?=/.test(elements.slice(j + 1)) && key !== "@" && key !== "*") keys.push(key);
+          k = j;
+          break;
+        }
+      }
+    }
+    return keys;
+  }
+
+  /**
+   * `[[ … ]]` (task 12 wrap-up, the controller's follow-up): a `-v` operand names a variable
+   * whose subscript bash evaluates, and the operands of `-eq`, `-ne`, `-lt`, `-le`, `-gt` and
+   * `-ge` are arithmetic bash evaluates.
+   */
+  function conditionalArithmetic(words, context, line) {
+    if (!context.named) return pass;
+    let verdict = pass;
+    for (let k = 1; k < words.length; k++) {
+      const word = words[k];
+      if (word.quoted || word.expansions) continue;
+      if (word.value === "-v" && words[k + 1] !== undefined) {
+        const operand = words[k + 1];
+        verdict = worse(verdict, operand.expansions ? doubt(unmodeled, line) : subscriptVerdict(operand.value, context, line));
+      }
+      if (/^-(?:eq|ne|lt|le|gt|ge)$/.test(word.value)) {
+        for (const operand of [words[k - 1], words[k + 1]]) {
+          const why = operand === undefined ? null : arithmeticDoubt(operand.value);
+          if (why !== null) verdict = worse(verdict, doubt(why, line));
+        }
+      }
+    }
+    return verdict;
+  }
   // Names a `${NAME=…}` or `${NAME:=…}` parameter expansion assigns when the name is unset.
   const paramAssignTargets = (text) => [...String(text).matchAll(/\$\{([A-Za-z_]\w*)(?:\[[^\]]*\])?:?=/g)].map((m) => m[1]);
 
   /**
    * A builtin that writes a variable whose value this grammar cannot read (task 12 wrap-up,
-   * W-2). `destinationWords` are the destination words it has in hand — questioned when one
-   * holds an expansion that hides which variable is written, or when it names an unread
-   * environment or code variable; `destinationNames` are plain names from option values,
-   * whose expansions the option walk already answered. A `-n` declaration taints the line
-   * whatever its operands, because a later assignment through the nameref reaches a name
-   * this grammar does not track.
+   * W-2), or reads one by a name whose subscript bash evaluates as arithmetic. `assignWords`
+   * are destination words it has in hand and `assignNames` plain names from option values,
+   * each questioned when it names an unread environment or code variable; `subscriptWords`
+   * are variable operands it does not assign — `unset`'s, a `test`/`[` `-v`'s, a
+   * declaration's (whose `NAME=…` `assignmentCode` judges). Any of them is questioned when an
+   * expansion hides which variable it names, or when its subscript is arithmetic
+   * `arithmeticDoubt` questions. A `-n` or `-i` declaration taints the line whatever its
+   * operands: a later assignment through the nameref reaches a name this grammar does not
+   * track, and every assignment to an integer variable is arithmetic bash evaluates.
    */
   function builtinAssignments(name, words, context) {
     const line = values(words).join(" ");
-    let destinationWords = [];
-    let destinationNames = [];
+    let assignWords = [];
+    let assignNames = [];
+    let subscriptWords = [];
     let walk;
     if (name === "read") {
       walk = options(words, 1, { flags: "ersE", values: "adinNptu", long: {} });
-      destinationWords = words.slice(walk.k);
-      destinationNames = walk.read.filter(({ option }) => option === "-a").map(({ value }) => value);
+      assignWords = words.slice(walk.k);
+      assignNames = walk.read.filter(({ option }) => option === "-a").map(({ value }) => value);
     } else if (name === "printf") {
       walk = options(words, 1, { flags: "", values: "v", long: {} });
-      destinationNames = walk.read.filter(({ option }) => option === "-v").map(({ value }) => value);
+      assignNames = walk.read.filter(({ option }) => option === "-v").map(({ value }) => value);
     } else if (name === "getopts") {
       // getopts optstring name [arg …]: its options and `--` end first, the optstring is
       // the first operand and the name the second, wherever a `--` put them.
       walk = options(words, 1, { flags: "", values: "", long: {} });
       const operands = words.slice(walk.k);
-      if (operands.length >= 2) destinationWords = [operands[1]];
+      if (operands.length >= 2) assignWords = [operands[1]];
     } else if (name === "wait") {
       walk = options(words, 1, { flags: "nf", values: "p", long: {} });
-      destinationNames = walk.read.filter(({ option }) => option === "-p").map(({ value }) => value);
+      assignNames = walk.read.filter(({ option }) => option === "-p").map(({ value }) => value);
+    } else if (name === "unset") {
+      walk = options(words, 1, { flags: "fvn", values: "", long: {} });
+      subscriptWords = words.slice(walk.k);
+    } else if (name === "test" || name === "[") {
+      for (let k = 1; k + 1 < words.length; k++) {
+        if (!words[k].quoted && !words[k].expansions && words[k].value === "-v") subscriptWords.push(words[k + 1]);
+      }
     } else if (declarations.has(name)) {
       walk = options(words, 1, { flags: "aAfFgiIlnrtuxp", values: "", long: {} });
-      if (walk.read.some(({ option }) => option === "-n")) return context.named ? doubt(unmodeled, line) : pass;
-      // A literal `NAME=…` operand is judged by `assignmentCode`; an expanded one could name
-      // a code variable, so it is a destination here.
-      destinationWords = words.slice(walk.k).filter((word) => word.expansions);
+      if (walk.read.some(({ option }) => option === "-n" || option === "-i")) return context.named ? doubt(unmodeled, line) : pass;
+      subscriptWords = words.slice(walk.k);
     } else return pass;
     if (context.named && walk && (!walk.known || walk.expanded || walk.read.some(optionAsValue))) return doubt(unmodeled, line);
     let verdict = pass;
-    for (const word of destinationWords) {
-      if (word.expansions) { if (context.named) verdict = worse(verdict, doubt(unmodeled, line)); }
-      else verdict = worse(verdict, unknownAssignment(word.value, context, line));
+    for (const word of [...assignWords, ...subscriptWords]) {
+      if (word.expansions) { if (context.named) verdict = worse(verdict, doubt(unmodeled, line)); continue; }
+      verdict = worse(verdict, subscriptVerdict(word.value, context, line));
+      if (assignWords.includes(word)) verdict = worse(verdict, unknownAssignment(word.value, context, line));
     }
-    for (const nm of destinationNames) verdict = worse(verdict, unknownAssignment(nm, context, line));
+    for (const nm of assignNames) verdict = worse(worse(verdict, unknownAssignment(nm, context, line)), subscriptVerdict(nm, context, line));
     return verdict;
   }
 

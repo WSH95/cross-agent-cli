@@ -3058,9 +3058,24 @@ before the entry test (`#nodeConfigFilesUnread`, `#nodeEntryUrlScript`). Beyond
 assignment of unknown value, `?` on a named line when the name is unread
 environment or code, when an expansion hides which name it is, or when a nameref
 may alias it: an expanded destination anywhere, `getopts` past its own options
-and `--`, `wait -p`, a `{NAME}` redirection on any command, arithmetic
-assignment in `(( ))` and `$(( ))`, `${NAME=…}`/`${NAME:=}`, and any `-n`
-declaration whatever its operands (`#builtinAssignmentForms`).
+and `--`, `wait -p`, a `{NAME}` redirection on any command, `${NAME=…}`/`${NAME:=}`,
+and any `-n` declaration whatever its operands (`#builtinAssignmentForms`).
+Arithmetic is read wherever bash evaluates it: `(( ))`, `$(( ))`, `$[ ]`, and
+`let` and `for (( ;; ))`, which stay unmodeled; an indexed array's subscript
+wherever it stands — an assignment word, a compound array's `[key]=`, any
+`${a[…]…}` with `${#a[…]}`, a builtin's variable operand (`read`, `printf -v`,
+the declarations, `unset`, `wait -p`, `getopts`), and `test -v`, `[ -v` and
+`[[ -v`, though not the `@` and `*` subscripts; a substring's offset and length;
+the operands of `[[`'s `-eq`, `-ne`, `-lt`, `-le`, `-gt` and `-ge`; an unquoted
+heredoc's body, which the current shell expands for a builtin; and every
+assignment to an integer variable. On a named line an arithmetic text answers `?`
+when it holds an expansion, when it reads a name — bash evaluates a name's value
+as arithmetic in turn, so `x='HOME=5'; (( x ))` assigns `HOME`, and reading any
+variable can assign any other — or when it assigns a name in the sets; an
+indirect `${!name}`, whose name's value may carry a subscript, answers `?` too,
+and so does any `-i` declaration whatever its operands, as `-n` does. Numbers and
+operators alone, and a literal number assigned to an ordinary name (`(( i = 0 ))`,
+`a[0]=1`, `${a[1]}`, `${x:0:2}`), stay as they are (`#arithmeticContexts`).
 The data readers account for stdin and arguments as data except for execution
 options, code assignments and deferred arithmetic/subscript evaluation; quoted
 substitutions at those readers, including values carried into arithmetic on the
