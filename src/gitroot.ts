@@ -279,6 +279,12 @@ async function judge(
  * of another name is merged and cleaned up under that name, and nothing else is.
  */
 function journalFault(slug: string, journal: Journal | null, verb: Verb, parts: Parts): string | null {
+  // A closed journal is terminal: its `branch-deleted` step ended the task, and a branch of
+  // that name now — a later task's of this project, or a sibling project's that reused the
+  // name — is no branch of its task, so nothing it names is acted on again (design section 6).
+  if (journal !== null && journal.steps.some((step) => step.step === "branch-deleted")) {
+    return `slug ${slug} is closed by its branch-deleted step, so ${journal.branch} now is no branch of its task; git_root ${verb.form} is refused`;
+  }
   if (verb.step === "worktree-created") {
     if (journal === null) return null;
     if (journal.steps.some((step) => step.step === "worktree-created")) {
@@ -293,6 +299,9 @@ function journalFault(slug: string, journal: Journal | null, verb: Verb, parts: 
   if (journal === null) return `slug ${slug} has no journal; its branch and its worktree are what this verb is held to`;
   if (verb.step === "worktree-removed") {
     if (journal.worktree === undefined) return `slug ${slug} records no worktree; there is nothing this verb may remove`;
+    if (journal.steps.some((step) => step.step === "worktree-removed")) {
+      return `slug ${slug} already has a worktree-removed step: a task's worktree is removed once, and one at ${journal.worktree} now is no worktree of its task`;
+    }
     if (journal.worktree !== parts.dir) return `slug ${slug} is journaled on worktree ${journal.worktree}; refusing ${parts.dir}`;
     return null;
   }

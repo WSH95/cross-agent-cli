@@ -953,3 +953,63 @@ test("rebase --abort and every journaled verb take the repository lock, past the
   await shared.release();
   accepted(await created);
 });
+
+// A closed journal is terminal (design section 6): its `branch-deleted` step ended the
+// task, and a branch of that name now is another task's, this project's or a sibling's.
+
+// @anchor closedJournalReusedNameTwoProjects
+test("a closed journal acts on nothing more: a sibling project's reused branch name survives a retried cleanup", async (t) => {
+  const made = await layoutRoot(t, "linked");
+  const main = made.main!;
+  for (const [project, branch] of [[main, "main"], [made.root, "feature"]]) {
+    fs.mkdirSync(path.join(project, ".cross-agent"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".cross-agent", "config.json"), JSON.stringify({ roles: {}, project: { defaultBranch: branch } }));
+  }
+  // The main project runs task x to its end.
+  const ours = path.join(main, ".worktrees", "x");
+  accepted(await gitRoot(main, { args: ["worktree", "add", "-b", "task/x", ours, "main"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(main, { args: ["worktree", "remove", ours], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(main, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+  // The worktree project names its own task x, and stands between its worktree remove and
+  // its branch -d: the branch is merged into main, so git alone would delete it for anyone.
+  const theirs = path.join(made.root, ".worktrees", "x");
+  accepted(await gitRoot(made.root, { args: ["worktree", "add", "-b", "task/x", theirs, "feature"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(made.root, { args: ["worktree", "remove", theirs], slug: "x" }, { waitSeconds: 5 }));
+  const head = await git(main, "rev-parse", "refs/heads/task/x");
+
+  // The main project's cleanup, retried from its own journal, which still names task/x.
+  for (const args of [["branch", "-d", "task/x"], ["merge", "--ff-only", "task/x"]]) {
+    const reason = refusal(await gitRoot(main, { args, slug: "x" }, { waitSeconds: 5 }));
+    assert.match(reason, /slug x/, args.join(" "));
+    assert.match(reason, /branch-deleted/, args.join(" "));
+  }
+  assert.equal(await git(main, "rev-parse", "refs/heads/task/x"), head, "the sibling's branch survives");
+  assert.deepEqual(readJournal(main, "x")!.steps.map((step) => step.step), ["worktree-created", "worktree-removed", "branch-deleted"]);
+});
+
+// @anchor closedJournalRepeatedDelete
+test("a repeated branch -d on a closed journal is refused, even once a branch of that name exists again", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "x");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
+  assert.match(refusal(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 })), /branch-deleted/);
+  await git(root, "branch", "task/x");
+  assert.match(refusal(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 })), /branch-deleted/);
+  assert.match(await git(root, "branch", "--list", "task/x"), /task\/x/);
+});
+
+// @anchor worktreeRemoveTwiceRefused
+test("worktree remove runs once per journal: a worktree at that path again is no task of it", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "x");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
+  // The same path on the same branch again, made by hand.
+  await git(root, "worktree", "add", directory, "task/x");
+  const reason = refusal(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
+  assert.match(reason, /slug x/);
+  assert.match(reason, /worktree-removed/);
+  assert.equal(fs.existsSync(directory), true);
+});
