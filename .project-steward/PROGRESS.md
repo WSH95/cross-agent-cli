@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-02T12:25:32Z — claude
+The plan closed: Decision 0011 (go with conditions) merged at 8074e8f; VERIFY.md 'Close of the plan'; README Status, QUESTIONS and PLAN updated; the Codex config restored but for the user's own later lines; the worktree archived and removed; the beads noted. The AGENTS.md diff awaits the user's approval.
+
 ### 2026-10-02T12:10:00Z — claude
 [auto-checkpoint] Decision 0011 written on the task branch (go with conditions); devpack note uncommitted; E9 running (an engine-placed Claude lead on the shipped Claude line).
 
