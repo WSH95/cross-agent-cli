@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -660,6 +660,40 @@ test("under core.ignoreStat a host file git marked assume-unchanged blocks a com
   const reason = refusal(await gitMutate(root, { slug: "ignorestat", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
   assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
   assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+});
+
+// @anchor commitMarkedSymlink
+test("a marked host-configuration symlink is judged by its target, not by what it points at", async (t) => {
+  const { root, add } = await repository(t);
+  // A tracked link's index blob is its target's path; `hash-object` on the link hashes the
+  // file it points at. Compared that way, an unchanged link differed and blocked every commit.
+  await writeFile(path.join(root, "servers.json"), '{"mcpServers": {}}\n');
+  await symlink("servers.json", path.join(root, ".mcp.json"));
+  await git(root, "add", "servers.json", ".mcp.json");
+  await git(root, "commit", "-m", "the project's own servers, through a link");
+  await git(root, "config", "core.ignoreStat", "true");
+  const worktree = await add("linked");
+  assert.equal(await git(worktree, "ls-files", "-v", "-s", "--", ".mcp.json"), `h 120000 ${await git(worktree, "rev-parse", "HEAD:.mcp.json")} 0\t.mcp.json`);
+
+  // Unchanged, the marked link carries nothing: the unrelated commit goes through.
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+  accepted(await gitMutate(root, { slug: "linked", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"] }, { waitSeconds: 5 }));
+  assert.equal(accepted(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
+
+  // Pointed somewhere else, which `git status` does not show under the mark: refused, named.
+  await rm(path.join(worktree, ".mcp.json"));
+  await symlink("/tmp/not-the-project-servers.json", path.join(worktree, ".mcp.json"));
+  assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all", "--", ".mcp.json"), "");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  const reason = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
+  assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+
+  // A link replaced by a regular file holding the same bytes is a change of type: refused too.
+  await rm(path.join(worktree, ".mcp.json"));
+  await writeFile(path.join(worktree, ".mcp.json"), "servers.json");
+  const typed = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
+  assert.match(typed, /\.mcp\.json \(marked assume-unchanged/);
 });
 
 // @anchor configLockGit

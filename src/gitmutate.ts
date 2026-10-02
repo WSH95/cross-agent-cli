@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -181,15 +183,30 @@ export async function revision(gitDir: string, workTree: string, branch: string)
 /**
  * Whether a tracked file's working-tree bytes differ from its index entry: what a commit
  * naming the path would record, read where git's own view is not to be trusted, under an
- * assume-unchanged mark that `status` takes at its word. A file that cannot be hashed, one
- * gone from the worktree included, and one with no single index entry are taken to differ.
+ * assume-unchanged mark that `status` takes at its word. A symbolic link's entry (mode
+ * `120000`) holds its target's path, so a link is judged by the bytes `readlink` returns,
+ * hashed as a blob the way git hashes one; `hash-object` would follow it and hash the file it
+ * points at. A file that cannot be read, one gone from the worktree included, one whose kind
+ * is no longer its entry's, and one with no single index entry are taken to differ.
  */
 async function differsFromIndex(gitDir: string, workTree: string, file: string): Promise<boolean> {
   const staged = await run(gitDir, workTree, ["ls-files", "-s", "-z", "--", `:(literal)${file}`]);
   // `<mode> <object> <stage>\t<path>`, stage 0 for a path with no conflict.
-  const object = /^[0-7]+ ([0-9a-f]+) 0\t/.exec(staged.stdout)?.[1];
+  const entry = /^([0-7]+) ([0-9a-f]+) 0\t/.exec(staged.stdout);
+  if (staged.exitCode !== 0 || entry === null) return true;
+  const [, mode, object] = entry;
+  const onDisk = fs.lstatSync(path.join(workTree, file), { throwIfNoEntry: false });
+  if (onDisk === undefined || onDisk.isSymbolicLink() !== (mode === "120000")) return true;
+  if (onDisk.isSymbolicLink()) {
+    const format = await run(gitDir, workTree, ["rev-parse", "--show-object-format"]);
+    if (format.exitCode !== 0) return true;
+    const algorithm = format.stdout.trim() === "sha256" ? "sha256" : "sha1";
+    const target = fs.readlinkSync(path.join(workTree, file), { encoding: "buffer" });
+    const blob = createHash(algorithm).update(Buffer.concat([Buffer.from(`blob ${target.length}\0`), target])).digest("hex");
+    return blob !== object;
+  }
   const hashed = await run(gitDir, workTree, ["hash-object", "--", file]);
-  return staged.exitCode !== 0 || hashed.exitCode !== 0 || object === undefined || hashed.stdout.trim() !== object;
+  return hashed.exitCode !== 0 || hashed.stdout.trim() !== object;
 }
 
 /**
