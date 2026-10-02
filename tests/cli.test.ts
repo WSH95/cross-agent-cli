@@ -1886,6 +1886,25 @@ test("init copies the source's Grok attach once, a regular file written through 
   assert.deepEqual(fs.readdirSync(target), [], "no link was written through");
 });
 
+// @anchor initKeptGrokAttachIgnored
+test("a first init in a worktree that already holds a regular Grok attach keeps it and ignores .grok/", async (t) => {
+  const main = await initializedMain(t);
+  fs.mkdirSync(path.join(main, ".grok"));
+  fs.writeFileSync(path.join(main, ".grok", "config.toml"), shippedAttach);
+  // The worktree's own attach, and no rule ignoring it: kept beside a source that has one,
+  // and beside the mode's defaults, which copy none.
+  for (const [branch, args] of [["kept", []], ["defaults", ["--mode", "solo"]]] as const) {
+    const linked = await linkedProject(t, main, branch);
+    fs.mkdirSync(path.join(linked, ".grok"));
+    fs.writeFileSync(path.join(linked, ".grok", "config.toml"), "# the worktree's own\n");
+    const ran = await run(["init", ...args], linked);
+    assert.equal(ran.code, 0, ran.stderr);
+    assert.equal(fs.readFileSync(path.join(linked, ".grok", "config.toml"), "utf8"), "# the worktree's own\n", branch);
+    assert.ok(fs.readFileSync(path.join(linked, ".gitignore"), "utf8").split("\n").includes(".grok/"), `${branch}: .grok/ is ignored`);
+    assert.doesNotMatch(await git(linked, "status", "--porcelain", "--untracked-files=normal"), /\.grok/, branch);
+  }
+});
+
 // @anchor initBoundGrokAttachNotCopied
 test("init copies no Grok attach that binds a project, and prints the binding to set up by hand", async (t) => {
   for (const binding of ['args = ["--project", "/projects/main"]', 'env = { CROSS_AGENT_PROJECT = "/projects/main" }']) {

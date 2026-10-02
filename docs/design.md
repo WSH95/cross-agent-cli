@@ -3496,13 +3496,17 @@ handler passes:
   (`#initInWorktree`). A bare repository's worktree takes the mode's defaults
   (`#initUmbrellaWorktree`, `#initBareDotGitDefaults`), and a separated main's needs
   `--from <main checkout>` or `--mode`, since git records no path to that checkout
-  (`#initSeparatedMainNeedsFrom`); `--mode` with `--from` is a 2, anywhere, naming both. A worktree's document adds `defaultBranch`, `from` and `attach`.
-  The source's Grok attach, `.grok/config.toml`, is copied with it, byte for byte: it is
-  host configuration, so it moves as a regular file and never through a link — both
+  (`#initSeparatedMainNeedsFrom`); `--mode` with `--from` is a 2, anywhere, naming both.
+  A worktree's document adds `defaultBranch`, `from` and `attach`. The source's Grok
+  attach, `.grok/config.toml`, is copied with it, byte for byte: it is host
+  configuration, so it moves as a regular file and never through a link — both
   directories and the file judged by `lstat`, nothing at the destination replaced, a
   dangling link included, and the file opened `wx` — `.grok/` is ignored beside it, and
   `init` says the folder may still need Grok's trust, which cross-agent never edits
-  (`src/cli.ts#copyGrokAttach`, `tests/cli.test.ts#initCopiesGrokAttach`). A source that binds a project
+  (`src/cli.ts#copyGrokAttach`, `tests/cli.test.ts#initCopiesGrokAttach`). `.grok/` is
+  ignored too wherever the worktree already holds a regular attach of its own, which
+  init keeps, beside a source or the mode's defaults alike
+  (`tests/cli.test.ts#initKeptGrokAttachIgnored`). A source that binds a project
   through `--project` or `CROSS_AGENT_PROJECT` is not copied — an explicit binding
   outranks the working directory, and would serve that project from the worktree — and
   `init` prints the binding to set up by hand (`tests/cli.test.ts#initBoundGrokAttachNotCopied`).

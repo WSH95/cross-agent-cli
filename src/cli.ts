@@ -364,7 +364,11 @@ async function initWorktree(root: string, located: Repository, parsed: Parsed, c
   }
   const result = initConfig(root, { mode: modeName, defaultBranch: branch, ...(copy === undefined ? {} : { copy }) });
   const attach = source === undefined ? null : copyGrokAttach(source, root);
-  const ignored = [...result.ignored, ...(attach?.copied === true ? ignoreEntries(root, [".grok/"]) : [])];
+  // An attach the worktree holds as a regular file, copied or its own, is host
+  // configuration a clean tree must not show, whichever way init found it.
+  const held = fs.lstatSync(path.join(root, ".grok"), { throwIfNoEntry: false })?.isDirectory() === true
+    && fs.lstatSync(path.join(root, ".grok", "config.toml"), { throwIfNoEntry: false })?.isFile() === true;
+  const ignored = [...result.ignored, ...(held ? ignoreEntries(root, [".grok/"]) : [])];
   const file = path.join(root, CONFIG_PATH);
   const origin = source === undefined ? null : path.join(source, CONFIG_PATH);
   const lines = [result.wrote

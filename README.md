@@ -535,8 +535,8 @@ every task is denied that whole directory.
 
 Grok loads a project's plugin from the `.grok/config.toml` of the folder it runs in,
 which git does not carry into a new worktree, so `init` copies the main checkout's file
-there and ignores `.grok/` beside it; trust the new folder in Grok, which cross-agent
-never does for you. A file that binds a project with `--project` or
+there and ignores `.grok/` beside it, as it does beside an attach the worktree already
+holds; trust the new folder in Grok, which cross-agent never does for you. A file that binds a project with `--project` or
 `CROSS_AGENT_PROJECT` is not copied, since it would serve the main project from the
 worktree: `init` prints the binding, and you set that worktree's attach up by hand. A
 Codex host names each worktree's project in `CROSS_AGENT_PROJECT`, as for any project,
