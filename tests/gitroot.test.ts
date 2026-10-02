@@ -657,27 +657,26 @@ test("a tracked .cross-agent/ is refused by every verb, naming .gitignore", asyn
 });
 
 // @anchor linkedWorktreeRoot
-test("a linked worktree named as the project is refused, naming the main worktree to point at", async (t) => {
+test("a task worktree named as the project is refused as nested, naming it and the work tree that registers it", async (t) => {
   const source = await repository(t);
   const linked = await source.worktree("task/linked");
-  // An operator who starts the server inside a task's worktree gets the one repair that
-  // works: the path of the repository's main worktree and the two ways to name it
-  // (atc-s96.50). Both root tools resolve the repository the same way.
+  // An operator who starts the server inside a task's worktree is told which work tree
+  // registers it, the project to serve instead (atc-s96.50). Both root tools locate the
+  // repository the same way, from outside the candidate (design section 1).
   const reason = refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 }));
-  assert.equal(reason,
-    `${path.join(linked, ".git")} is a worktree pointer; git_root runs at the repository's main worktree ${source.root} — point --project or CROSS_AGENT_PROJECT there`);
+  assert.ok(reason.includes(linked) && reason.includes(source.root), reason);
+  assert.match(reason, /never a project root/);
   const ran = await runCommand(linked, { which: "test", where: "root" });
   assert.equal(ran.ok, false, JSON.stringify(ran));
   assert.equal((ran as { reason: string }).reason, reason);
 
-  // A pointer that cannot be followed back to a main worktree, and a symlink, keep the
-  // general refusal: neither is a pointer this can read.
-  const general = /is not a directory; git_root runs at the repository's own main worktree$/;
+  // Its pointer decides nothing: rewritten, or replaced by a link to the main checkout's
+  // git directory, the worktree is still the one the main checkout registers.
   fs.writeFileSync(path.join(linked, ".git"), "not a gitdir line\n");
-  assert.match(refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 })), general);
+  assert.equal(refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 })), reason);
   fs.rmSync(path.join(linked, ".git"));
   fs.symlinkSync(path.join(source.root, ".git"), path.join(linked, ".git"));
-  assert.match(refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 })), general);
+  assert.equal(refusal(await gitRoot(linked, { args: ["status", "--porcelain"] }, { waitSeconds: 5 })), reason);
 });
 
 test("git_root holds git.lock for the call and takes no spawn.lock", async (t) => {

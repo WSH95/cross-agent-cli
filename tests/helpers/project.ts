@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { create, scan, update, writeSpec } from "../../src/ledger.ts";
 import type { LaunchSpec, TaskRecord } from "../../src/ledger.ts";
 import type { Mode } from "../../src/modes.ts";
+import { git } from "./git.ts";
 import { buildMode } from "./mode.ts";
 import type { RoleSpec } from "./mode.ts";
 
@@ -257,4 +258,138 @@ export function track(t: TestContext, child: ReturnType<typeof spawn>): ReturnTy
     try { if (child.pid) process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
   });
   return child;
+}
+
+// Repository layouts whose project roots are linked worktrees (design section 1). Each is
+// made in a directory of its own, canonical and removed when the test ends, through the
+// harness's own git, so nothing of the suite's environment shapes the repository.
+
+/** A canonical directory of this test's own, removed when it ends. */
+function fixtureDirectory(t: TestContext, prefix: string): string {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), prefix)));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+/** One empty commit on `main` in the repository at `gitDir`, made without a work tree. */
+async function firstCommit(gitDir: string): Promise<void> {
+  const tree = await git(gitDir, "hash-object", "-t", "tree", "-w", "/dev/null");
+  await git(gitDir, "update-ref", "refs/heads/main", await git(gitDir, "commit-tree", tree, "-m", "initial"));
+}
+
+/** A main checkout `<directory>/<name>` with one commit, on `main`. */
+export async function mainCheckout(directory: string, name: string): Promise<string> {
+  const root = path.join(directory, name);
+  fs.mkdirSync(root, { recursive: true });
+  await git(root, "init", "-b", "main");
+  await git(root, "commit", "--allow-empty", "-m", "initial");
+  return fs.realpathSync(root);
+}
+
+/** A linked worktree of the main checkout `main` on a new `branch`, beside it rather than inside it. */
+export async function linkedProject(t: TestContext, main: string, branch: string): Promise<string> {
+  const directory = path.join(fixtureDirectory(t, "cross-agent-linked-"), branch.replace(/[^A-Za-z0-9_-]/g, "-"));
+  await git(main, "worktree", "add", "-b", branch, directory);
+  return fs.realpathSync(directory);
+}
+
+/** A repository with no main checkout: the worktree a test serves is `root`, on `feature`. */
+export interface Layout {
+  /** The fixture's own directory. */
+  dir: string;
+  root: string;
+  /** The repository's common directory. */
+  commonDir: string;
+}
+
+/** `repo.git` beside its two worktrees, `main` and `feature`. */
+export async function bareProject(t: TestContext): Promise<Layout> {
+  const dir = fixtureDirectory(t, "cross-agent-bare-");
+  const commonDir = path.join(dir, "repo.git");
+  await git(dir, "init", "--bare", "-b", "main", commonDir);
+  await firstCommit(commonDir);
+  await git(commonDir, "worktree", "add", path.join(dir, "main"), "main");
+  await git(commonDir, "worktree", "add", "-b", "feature", path.join(dir, "feature"), "main");
+  return { dir, root: path.join(dir, "feature"), commonDir };
+}
+
+/** The umbrella: `U/.git` a pointer file to the bare `U/.bare`, with `U/main` and `U/feature` its worktrees. */
+export async function umbrellaProject(t: TestContext): Promise<Layout & { umbrella: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-umbrella-");
+  const umbrella = path.join(dir, "U");
+  const commonDir = path.join(umbrella, ".bare");
+  fs.mkdirSync(umbrella);
+  await git(dir, "init", "--bare", "-b", "main", commonDir);
+  await firstCommit(commonDir);
+  fs.writeFileSync(path.join(umbrella, ".git"), "gitdir: ./.bare\n");
+  await git(umbrella, "worktree", "add", path.join(umbrella, "main"), "main");
+  await git(umbrella, "worktree", "add", "-b", "feature", path.join(umbrella, "feature"), "main");
+  return { dir, umbrella, root: path.join(umbrella, "feature"), commonDir };
+}
+
+/**
+ * A bare repository at `U/.git` with `U/main` and `U/feature` its worktrees, and
+ * `core.bare` moved into `U/.git/config.worktree` under `extensions.worktreeConfig`: a
+ * listing from `U/feature` does not read that file, so it names `U` without `bare`.
+ */
+export async function bareDotGitProject(t: TestContext): Promise<Layout & { bare: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-baredotgit-");
+  const bare = path.join(dir, "U");
+  const commonDir = path.join(bare, ".git");
+  await git(dir, "init", "--bare", "-b", "main", commonDir);
+  await firstCommit(commonDir);
+  await git(commonDir, "worktree", "add", path.join(bare, "main"), "main");
+  await git(commonDir, "worktree", "add", "-b", "feature", path.join(bare, "feature"), "main");
+  await git(commonDir, "config", "extensions.worktreeConfig", "true");
+  await git(commonDir, "config", "--unset", "core.bare");
+  await git(commonDir, "config", "--worktree", "core.bare", "true");
+  return { dir, bare, root: path.join(bare, "feature"), commonDir };
+}
+
+/** `git init --separate-git-dir`: the main checkout `M` whose git directory is `G`, and `L` a linked worktree beside it, on `feature`. */
+export async function separatedMainProject(t: TestContext): Promise<{ dir: string; main: string; gitDir: string; root: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-separated-");
+  const main = path.join(dir, "M");
+  const gitDir = path.join(dir, "G");
+  await git(dir, "init", "-b", "main", "--separate-git-dir", gitDir, main);
+  await git(main, "commit", "--allow-empty", "-m", "initial");
+  const root = path.join(dir, "L");
+  await git(main, "worktree", "add", "-b", "feature", root);
+  return { dir, main, gitDir, root };
+}
+
+/**
+ * A main checkout `real/M` reached through `alias`, a link to `real`, with a task worktree
+ * `M/.worktrees/t` and a linked root `L` beside `M`, both added through the link.
+ */
+export async function symlinkedAncestor(t: TestContext): Promise<{ alias: string; real: string; main: string; task: string; root: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-alias-");
+  const real = path.join(dir, "real");
+  fs.mkdirSync(real);
+  const alias = path.join(dir, "alias");
+  fs.symlinkSync(real, alias, "dir");
+  const main = await mainCheckout(real, "M");
+  await git(path.join(alias, "M"), "worktree", "add", "-b", "task/t", path.join(alias, "M", ".worktrees", "t"));
+  await git(path.join(alias, "M"), "worktree", "add", "-b", "feature", path.join(alias, "L"));
+  return { alias, real, main, task: path.join(main, ".worktrees", "t"), root: path.join(real, "L") };
+}
+
+/** A superproject `super` whose submodule `sub` is a checkout of a repository beside it. */
+export async function submoduleProject(t: TestContext): Promise<{ superproject: string; submodule: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-submodule-");
+  const source = await mainCheckout(dir, "source");
+  const superproject = await mainCheckout(dir, "super");
+  await git(superproject, "-c", "protocol.file.allow=always", "submodule", "add", source, "sub");
+  return { superproject, submodule: path.join(superproject, "sub") };
+}
+
+/** `repo.git` with a worktree inside it, on `feature`: a root inside its own common directory. */
+export async function rootInsideCommonDir(t: TestContext): Promise<{ commonDir: string; root: string }> {
+  const dir = fixtureDirectory(t, "cross-agent-inside-");
+  const commonDir = path.join(dir, "repo.git");
+  await git(dir, "init", "--bare", "-b", "main", commonDir);
+  await firstCommit(commonDir);
+  const root = path.join(commonDir, "inside");
+  await git(commonDir, "worktree", "add", "-b", "feature", root, "main");
+  return { commonDir, root };
 }

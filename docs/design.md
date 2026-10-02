@@ -2264,15 +2264,13 @@ would let a lead believe its read was recorded (`src/gitroot.ts#gitRoot`).
 The verb runs from the project root, in the same explicit form and the same
 allowlisted environment as `git_mutate`'s — `git --git-dir=<root>/.git
 --work-tree=<root> <args>`, `execFile` with an argv array and never a shell,
-capped at 16 MB (`src/gitmutate.ts#run`, `src/gitroot.ts#repositoryAt`); the
-root is the repository's own main worktree, so a `.git` there that is a pointer
-file or a symlink is the redirection the verifier refuses inside a worktree and
-is refused here too. A pointer that leads back to a main worktree — a server
-started inside a task's worktree resolves its project there — is refused naming
-that main worktree and the two ways to point at it, `--project` and
-`CROSS_AGENT_PROJECT`, for `run_command` as well, which resolves the repository
-the same way; a symlink or an unreadable pointer keeps the general refusal
-(`tests/gitroot.test.ts#linkedWorktreeRoot`, bead `atc-s96.50`). It runs under `.cross-agent/locks/git.lock`, and the
+capped at 16 MB (`src/gitmutate.ts#run`, `src/worktree.ts#locateRepository`); the
+root is the repository's own main checkout, located from outside it: a root inside a
+worktree that an enclosing work tree's registry lists is refused naming both — a
+server started inside a task's worktree is told which work tree to serve instead —
+whatever that worktree's own pointer holds, and `run_command` locates the
+repository the same way (`tests/gitroot.test.ts#linkedWorktreeRoot`, bead
+`atc-s96.50`). It runs under `.cross-agent/locks/git.lock`, and the
 journal's own checks, the command and the step all happen inside that one lock,
 so two first calls on one slug cannot both find no journal and both create a
 worktree (`src/gitroot.ts#execute`). **One verb takes `spawn.lock` first**, in

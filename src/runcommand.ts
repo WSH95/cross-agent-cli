@@ -4,14 +4,14 @@ import { constants } from "node:os";
 import path from "node:path";
 import { loadConfig } from "./config.ts";
 import { revision } from "./gitmutate.ts";
-import { repositoryAt, trackedStateFault } from "./gitroot.ts";
+import { trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
 import { gitLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
-import { verifyWorktree } from "./worktree.ts";
+import { locateRepository, verifyWorktree } from "./worktree.ts";
 
 export interface RunCommandRequest {
   /** Which configured command to run: a selector, never a command string. */
@@ -193,8 +193,9 @@ export async function runCommand(
 
   // The command this tool runs is read from `.cross-agent/config.json`, which is safe
   // exactly while a specialist cannot commit a change to it (design section 4).
-  const located = await repositoryAt(projectRoot);
+  const located = await locateRepository(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
+  if (located.kind !== "main") return { ok: false, reason: `run_command runs at a repository's main checkout, and ${located.workTree} is a linked worktree` };
   let tracked: string | null;
   try {
     tracked = await trackedStateFault(located.gitDir, located.workTree);

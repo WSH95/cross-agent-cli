@@ -6,8 +6,9 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { gitEnvironment, verifyWorktree } from "../src/worktree.ts";
-import type { WorktreeResult } from "../src/worktree.ts";
+import { gitEnvironment, locateRepository, verifyWorktree } from "../src/worktree.ts";
+import type { Located, Repository, WorktreeResult } from "../src/worktree.ts";
+import { bareDotGitProject, bareProject, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, symlinkedAncestor, umbrellaProject } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
 
@@ -233,4 +234,278 @@ test("verifyWorktree refuses a .git symlink to a sibling pointer", async (t) => 
     await rm(pointer, { force: true });
     await writeFile(pointer, original);
   }
+});
+
+// `locateRepository`: the project's repository, verified once per tool call (design
+// section 1). A task worktree is never a project root, and what proves it is the registry
+// of an enclosing work tree, read from outside the candidate: the candidate's own `.git`
+// plays no part, whether intact, deleted, replaced or rewritten.
+
+/** A canonical temporary directory of this test's own. */
+async function scratch(t: TestContext): Promise<string> {
+  const directory = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-locate-")));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+/** The refusal `locateRepository` answers with, and its kind. */
+function refused(located: Located, kind: "refused" | "unsupported" | "none" = "refused"): string {
+  assert.ok("reason" in located, JSON.stringify(located));
+  assert.equal(located.kind, kind, located.reason);
+  return located.reason;
+}
+
+function repositoryOf(located: Located): Repository {
+  assert.ok(!("reason" in located), JSON.stringify(located));
+  return located;
+}
+
+/** A main checkout of this test's own and a task worktree under it, at `.worktrees/t` on `task/t`. */
+async function mainWithTask(t: TestContext): Promise<{ main: string; task: string }> {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const task = path.join(main, ".worktrees", "t");
+  await git(main, "worktree", "add", "-b", "task/t", task);
+  return { main, task: await realpath(task) };
+}
+
+/** The nested refusal names the worktree and the work tree whose registry lists it. */
+function nestedIn(reason: string, worktree: string, ancestor: string): void {
+  assert.ok(reason.includes(worktree), reason);
+  assert.ok(reason.includes(ancestor), reason);
+  assert.match(reason, /never a project root/);
+}
+
+// @anchor locateRepositoryKinds
+test("locateRepository answers a main checkout, a linked root, a bare repository's worktree and a directory with no .git", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  assert.deepEqual(await locateRepository(main), {
+    kind: "main", workTree: main, gitDir: path.join(main, ".git"), commonDir: path.join(main, ".git"),
+    branch: "main", main, stanzas: [{ path: main, branch: "main", main: true }],
+  });
+
+  const linked = await linkedProject(t, main, "feature");
+  const located = repositoryOf(await locateRepository(linked));
+  assert.equal(located.kind, "linked");
+  assert.equal(located.workTree, linked);
+  assert.equal(located.gitDir, await realpath(path.join(main, ".git", "worktrees", path.basename(linked))));
+  assert.equal(located.commonDir, path.join(main, ".git"));
+  assert.equal(located.branch, "feature");
+  assert.equal(located.main, main, "the first stanza is a work tree by its own git: the main checkout");
+  assert.deepEqual(located.stanzas.map((stanza) => [stanza.path, stanza.branch, stanza.main]), [[main, "main", true], [linked, "feature", false]]);
+
+  // Detached, the root is still a linked root, with no branch.
+  await git(linked, "checkout", "--detach");
+  assert.equal(repositoryOf(await locateRepository(linked)).branch, null);
+
+  const bare = await bareProject(t);
+  const beside = repositoryOf(await locateRepository(bare.root));
+  assert.equal(beside.kind, "bare-linked");
+  assert.equal(beside.main, null);
+  assert.equal(beside.commonDir, bare.commonDir);
+  assert.equal(beside.branch, "feature");
+
+  const plain = path.join(temporary, "plain");
+  await mkdir(plain);
+  refused(await locateRepository(plain), "none");
+});
+
+// @anchor locateRepositoryRefusesNested
+test("locateRepository refuses a task worktree, naming it and the work tree whose registry lists it", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  nestedIn(refused(await locateRepository(task)), task, main);
+  // A directory inside it is refused the same way.
+  await mkdir(path.join(task, "src"));
+  nestedIn(refused(await locateRepository(path.join(task, "src"))), task, main);
+});
+
+// @anchor locateRepositoryRemovedPointerStillNested
+test("a task worktree whose .git pointer is deleted is still refused as nested", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  await rm(path.join(task, ".git"));
+  nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+// @anchor locateRepositoryReplacedPointerStillNested
+test("a task worktree whose .git pointer is replaced by a repository of its own is still refused as nested", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  await rm(path.join(task, ".git"));
+  await git(task, "init", "-b", "main");
+  assert.equal(await git(task, "rev-parse", "--absolute-git-dir"), path.join(task, ".git"), "its own git now takes it for a main checkout");
+  nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+// @anchor locateRepositoryRefusesForgedRegistry
+test("a registry a task worktree forges inside itself proves nothing against the one that registers it", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  // Everything a specialist confined to the worktree can write: a common directory of its
+  // own, an administrative directory in it backlinked to the worktree, and a pointer to it.
+  const forged = path.join(task, ".forged");
+  await git(task, "init", "--bare", "-b", "main", forged);
+  const tree = await git(forged, "hash-object", "-t", "tree", "-w", "/dev/null");
+  const commit = await git(forged, "-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "commit-tree", tree, "-m", "forged");
+  await git(forged, "update-ref", "refs/heads/feature", commit);
+  const admin = path.join(forged, "worktrees", "t");
+  await mkdir(admin, { recursive: true });
+  await writeFile(path.join(admin, "commondir"), "../..\n");
+  await writeFile(path.join(admin, "gitdir"), `${path.join(task, ".git")}\n`);
+  await writeFile(path.join(admin, "HEAD"), "ref: refs/heads/feature\n");
+  await writeFile(path.join(task, ".git"), `gitdir: ${admin}\n`);
+  assert.equal(await realpath(await git(task, "rev-parse", "--git-common-dir")), await realpath(forged), "git takes the forgery at its word");
+  nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+// @anchor locateRepositoryUnrelatedAncestor
+test("a linked root inside an unrelated work tree that does not register it is a linked root", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const unrelated = await mainCheckout(temporary, "X");
+  const root = path.join(unrelated, "sub", "L");
+  await git(main, "worktree", "add", "-b", "feature", root);
+  const located = repositoryOf(await locateRepository(root));
+  assert.equal(located.kind, "linked");
+  assert.equal(located.main, main);
+});
+
+// @anchor locateRepositoryRefusesRewrittenPointer
+test("locateRepository refuses a linked root whose pointer names another worktree's administrative directory", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const first = path.join(temporary, "L1");
+  const second = path.join(temporary, "L2");
+  await git(main, "worktree", "add", "-b", "one", first);
+  await git(main, "worktree", "add", "-b", "two", second);
+  await writeFile(path.join(first, ".git"), `gitdir: ${path.join(main, ".git", "worktrees", "L2")}\n`);
+  assert.match(refused(await locateRepository(first)), /points back/);
+  await writeFile(path.join(first, ".git"), `gitdir: ${path.join(temporary, "missing-admin")}\n`);
+  refused(await locateRepository(first));
+  await writeFile(path.join(first, ".git"), "not a pointer\n");
+  refused(await locateRepository(first));
+});
+
+// @anchor locateRepositoryUmbrellaAllowed
+test("the umbrella layout's worktrees are roots: U is no work tree by its own git, and U itself is unsupported", async (t) => {
+  const umbrella = await umbrellaProject(t);
+  const located = repositoryOf(await locateRepository(umbrella.root));
+  assert.equal(located.kind, "bare-linked");
+  assert.equal(located.main, null);
+  assert.equal(located.commonDir, umbrella.commonDir);
+  assert.equal(located.gitDir, path.join(umbrella.commonDir, "worktrees", "feature"));
+  const own = await locateRepository(umbrella.umbrella);
+  refused(own, "unsupported");
+  assert.equal((own as { gitDir: string }).gitDir, umbrella.commonDir);
+});
+
+// @anchor locateRepositorySiblingBareAllowed
+test("a bare repository's worktrees beside it are roots", async (t) => {
+  const bare = await bareProject(t);
+  for (const [root, branch] of [[bare.root, "feature"], [path.join(bare.dir, "main"), "main"]]) {
+    const located = repositoryOf(await locateRepository(root));
+    assert.equal(located.kind, "bare-linked");
+    assert.equal(located.branch, branch);
+    assert.equal(located.commonDir, bare.commonDir);
+  }
+});
+
+// @anchor locateRepositorySymlinkedAncestorCanonical
+test("a root reached through a symlinked ancestor is located at its canonical path, and nesting is judged there", async (t) => {
+  const fixture = await symlinkedAncestor(t);
+  nestedIn(refused(await locateRepository(path.join(fixture.alias, "M", ".worktrees", "t"))), fixture.task, fixture.main);
+  const located = repositoryOf(await locateRepository(path.join(fixture.alias, "L")));
+  assert.equal(located.workTree, fixture.root);
+  assert.equal(located.main, fixture.main);
+  assert.equal(repositoryOf(await locateRepository(path.join(fixture.alias, "M"))).workTree, fixture.main);
+});
+
+// @anchor locateRepositoryRefusesSubmodule
+test("a submodule checkout is unsupported: its .git leads to a git directory that is its own common directory", async (t) => {
+  const { superproject, submodule } = await submoduleProject(t);
+  const located = await locateRepository(submodule);
+  refused(located, "unsupported");
+  assert.equal((located as { gitDir: string }).gitDir, path.join(superproject, ".git", "modules", "sub"));
+  assert.equal((located as { workTree: string }).workTree, submodule);
+});
+
+// @anchor locateRepositoryRefusesInsideMainCheckout
+test("a linked worktree inside its main checkout, outside the task directory too, is refused", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const inside = path.join(main, "branches", "x");
+  await git(main, "worktree", "add", "-b", "x", inside);
+  nestedIn(refused(await locateRepository(inside)), inside, main);
+});
+
+// @anchor locateRepositoryRefusesRootInsideCommonDir
+test("a root inside its own common directory is refused, naming the fix", async (t) => {
+  const { commonDir, root } = await rootInsideCommonDir(t);
+  const reason = refused(await locateRepository(root));
+  assert.ok(reason.includes(commonDir), reason);
+  assert.match(reason, /beside the git directory/);
+});
+
+// @anchor locateRepositoryUnreadableAncestorRefused
+test("an ancestor holding a .git its own git cannot read refuses, naming it and git's words", async (t) => {
+  const temporary = await scratch(t);
+  const main = await mainCheckout(temporary, "M");
+  const ancestor = path.join(temporary, "A");
+  await mkdir(ancestor);
+  await writeFile(path.join(ancestor, ".git"), "not a gitdir line\n");
+  const root = path.join(ancestor, "inner", "L");
+  await git(main, "worktree", "add", "-b", "feature", root);
+  const reason = refused(await locateRepository(root));
+  assert.ok(reason.includes(ancestor), reason);
+  assert.match(reason, /gitfile/);
+});
+
+// @anchor locateRepositorySeparatedMainEnclosesTask
+test("a main checkout with a separated git directory encloses its task worktree, whatever the task's pointer", async (t) => {
+  const { main } = await separatedMainProject(t);
+  const task = path.join(main, ".worktrees", "t");
+  await git(main, "worktree", "add", "-b", "task/t", task);
+  // The registry names the separated git directory as the main stanza, so the enclosing work
+  // tree is found by its own git, never by that stanza.
+  nestedIn(refused(await locateRepository(task)), task, main);
+  await rm(path.join(task, ".git"));
+  nestedIn(refused(await locateRepository(task)), task, main);
+  await git(task, "init", "-b", "main");
+  nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+// @anchor locateRepositorySeparatedMainUnsupported
+test("a main checkout with a separated git directory is unsupported, carrying that directory", async (t) => {
+  const { main, gitDir } = await separatedMainProject(t);
+  const located = await locateRepository(main);
+  refused(located, "unsupported");
+  assert.equal((located as { gitDir: string }).gitDir, gitDir);
+  assert.equal((located as { workTree: string }).workTree, main);
+});
+
+// @anchor locateRepositoryBareDotGitAllowed
+test("a bare repository at U/.git, its main unlabelled under worktreeConfig, has bare-linked worktrees", async (t) => {
+  const fixture = await bareDotGitProject(t);
+  const listing = await git(fixture.root, "worktree", "list", "--porcelain");
+  assert.doesNotMatch(listing.split("\n\n")[0], /^bare$/m, "the listing from the worktree names U without bare");
+  const located = repositoryOf(await locateRepository(fixture.root));
+  assert.equal(located.kind, "bare-linked");
+  assert.equal(located.main, null);
+  assert.equal(located.commonDir, fixture.commonDir);
+});
+
+// @anchor locateRepositoryBareDirectoryUnsupported
+test("the directory holding a bare repository at .git is unsupported: it is no work tree of that repository", async (t) => {
+  const fixture = await bareDotGitProject(t);
+  const located = await locateRepository(fixture.bare);
+  refused(located, "unsupported");
+  assert.equal((located as { gitDir: string }).gitDir, fixture.commonDir);
+});
+
+// @anchor locateRepositorySeparatedMainWorktreeMainNull
+test("a worktree of a separated main is linked with no main: its main stanza names the git directory", async (t) => {
+  const { root, gitDir } = await separatedMainProject(t);
+  const located = repositoryOf(await locateRepository(root));
+  assert.equal(located.kind, "linked");
+  assert.equal(located.main, null);
+  assert.equal(located.commonDir, gitDir);
+  assert.equal(located.stanzas.find((stanza) => stanza.main)?.path, gitDir);
 });

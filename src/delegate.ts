@@ -9,7 +9,7 @@ import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
 import { run } from "./gitmutate.ts";
-import { gitRoot, repositoryAt, trackedStateFault } from "./gitroot.ts";
+import { gitRoot, trackedStateFault } from "./gitroot.ts";
 import { removeJournal } from "./journal.ts";
 import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
@@ -23,7 +23,7 @@ import { adapterFor, sandboxFor } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName, LeadMountSpec } from "./engines/types.ts";
-import { verifyWorktree } from "./worktree.ts";
+import { locateRepository, verifyWorktree } from "./worktree.ts";
 import type { VerifiedWorktree } from "./worktree.ts";
 
 // `delegate`: validate under `spawn.lock`, write the record and the launch spec, start the
@@ -251,7 +251,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
   // the runner from it. Both root tools refuse to work in such a project (design section
   // 4) and so does the launch boundary. A project that is not a repository of its own
   // tracks nothing, and has nothing to check.
-  const located = await repositoryAt(projectRoot);
+  const located = await locateRepository(projectRoot);
   if (!("reason" in located)) {
     let tracked: string | null;
     try {
@@ -617,7 +617,7 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
  * it cannot run — and what it could not remove is named in the refusal.
  */
 async function discardWorktree(projectRoot: string, worktree: TaskWorktree): Promise<string> {
-  const located = await repositoryAt(projectRoot);
+  const located = await locateRepository(projectRoot);
   if (!("reason" in located)) {
     for (const args of [["worktree", "remove", "--force", worktree.path], ["branch", "-D", worktree.branch]]) {
       try {
