@@ -217,24 +217,43 @@ with no environment, the one form both lead engines' mounts accept
 (`src/engines/types.ts#LeadMountSpec`, `src/delegate.ts#engineLead`). `childEnv` also sets
 `CROSS_AGENT_PROJECT=<canonical root>` (`src/guard.ts#childEnv`), so a server a
 Grok child starts from inherited configuration finds the right ledger. For a
-host session with neither, the fallback is the nearest ancestor directory of the
-working directory containing `.cross-agent/config.json`, resolved through `git
-rev-parse --git-common-dir` so a linked worktree maps back to its main project.
-`discoverProject` applies that order and answers with the canonical root or the
-reason there is none, and the server exits naming that reason rather than guess
-(`src/project.ts#discoverProject`, `src/server.ts#main`). Where **no** ancestor
-holds a config, the project is the working directory's own git toplevel, running
-`solo` on the defaults `loadConfig` answers with when there is no file, so a
-one-off delegation needs no `init` first ("Modes"); a directory in no git
-repository is still the reason there is none. A Codex host's plugin server is the
-exception: Codex starts it in its cache copy of the plugin, where discovery finds no
-project the operator meant — nothing from an export's copy, and from a checkout's, whose
-`.git` came along, a repository the operator did not name: the copy itself for a main
-checkout, the checkout it was copied from for a linked worktree. So the operator names
-the project in `CROSS_AGENT_PROJECT`, and the plugin's launcher will not start the
-server without it (section 9, `docs/probes.md#codexPluginMount`). A root a caller **names** —
-`--project` or `CROSS_AGENT_PROJECT` — must hold a config even so: naming one is
-a claim about a project, and a typo in that claim is not a new project.
+host session with neither, discovery reads the working directory in three passes
+(`src/project.ts#projectStart`, `#discoverProject`). First, from outside in and before
+any config is looked at, the working directory is taken out of every worktree that an
+enclosing work tree registers inside itself, and read at the same place in that work
+tree, lexically, since the path need not exist on its branch: a directory inside a
+task's worktree is its root's, whatever became of the worktree's pointer
+(`src/worktree.ts#enclosingWorktree`). Then local opt-in: the nearest directory
+holding a `.git` entry is a project of its own when it holds `.cross-agent/config.json`
+too — a linked worktree `cross-agent init` was run in — and otherwise it is read at
+its main checkout, the registry's first stanza when that is a work tree by its own
+git, which keeps the old mapping wherever it was right. A separated main's first
+stanza is its git directory, and a main checkout, a bare repository or a registry
+that will not read leave the working directory where it is. Last, the walk: the
+nearest directory at or above that start holding a config. Where **no** directory
+does, the project is the main checkout the start was read at, or else the working
+directory's own git toplevel, running `solo` on the defaults `loadConfig` answers with
+when there is no file, so a one-off delegation needs no `init` first ("Modes"); a
+directory in no git repository is still the reason there is none. Every root this
+answers with, and every root a caller names, is checked against the registries of the
+work trees enclosing it before it is returned and before any config is read
+(`src/project.ts#named`), and the server exits naming the reason rather than guess
+(`src/server.ts#main`). So a worktree project may not lie inside another work tree of
+its repository: `M/branches/x` is refused as a root, as `M/.worktrees/<slug>` always
+was a task's. The umbrella layout — `U/.git` a pointer file to the bare `U/.bare`,
+with `U/main` and `U/feature` its worktrees — and a bare repository beside its
+worktrees, `repo.git`, are fine, because neither `U` nor `repo.git` is a work tree by
+its own git; and a submodule checkout is no project root. A Codex host's plugin
+server is the exception: Codex starts it in its cache copy of the plugin, where
+discovery finds no project the operator meant — nothing from an export's copy, and
+from a checkout's, whose `.git` came along, a repository the operator did not name:
+the copy itself, for a main checkout or a worktree initialized as a project of its
+own, and the main checkout its pointer leads to, for any other linked worktree. So
+the operator names the project in `CROSS_AGENT_PROJECT`, and the plugin's launcher
+will not start the server without it (section 9, `docs/probes.md#codexPluginMount`).
+A root a caller **names** — `--project` or `CROSS_AGENT_PROJECT` — must hold a config
+even so: naming one is a claim about a project, and a typo in that claim is not a new
+project.
 
 #### Permission matrix
 
@@ -267,8 +286,8 @@ that spelling, so nothing in the matrix depends on it.
 #### Engine placement needs four things the host placement does not
 
 1. **Root git tools.** `git_mutate` operates only on a verified linked
-   worktree; `verifyWorktree` rejects the main worktree and subdirectories
-   (`src/worktree.ts#verifyWorktree`). The loop also creates worktrees, merges
+   worktree; `verifyWorktree` rejects the main worktree, subdirectories, and any
+   worktree not strictly under the project root (`src/worktree.ts#verifyWorktree`). The loop also creates worktrees, merges
    on the default branch, runs the tests there, removes worktrees and deletes
    branches (section 4). An engine lead is read-only at the root, so the design
    gives it two tools whose contracts section 4 states in full: `git_root`, one
@@ -729,13 +748,20 @@ creates this task's branch and one named beside it could only be another
 task's. **Every failure from the `worktree add` to the runner discards
 what exists** — the worktree, its branch and its journal, through the explicit
 git form inside the `spawn.lock` this call already holds rather than through
-`git_root worktree remove`, which takes that same lock
-(`src/delegate.ts#discardWorktree`). That covers the three that leave something
-standing: a `git_root` refusal for a command that ran, which is what a journal
-step that could not be written is; a worktree that does not verify; and a throw
-while the record, its scratch directory or its spec is written. Reconciliation
-does not clean up worktrees — it reports an unmerged branch with a dead task to
-the operator (section 7) — so a leftover here would be a leftover for good. The
+`git_root worktree remove`, which takes that same lock; the discard takes
+`git.lock` and then the repository lock itself, in the standing order
+(`src/delegate.ts#discardWorktree`, `tests/delegate.test.ts#discardUnderGitLocks`).
+That covers the three that leave something standing: a `git_root` refusal for a
+command that ran, which is what a journal step that could not be written is; a
+worktree that does not verify; and a throw while the record, its scratch directory
+or its spec is written. Only what exists is removed, and each command's exit code is
+read: the journal goes only once both the worktree and the branch have, and
+otherwise it is kept and the refusal — or the error a failed record write throws —
+names what survived (`tests/delegate.test.ts#discardKeepsJournalOnFailure`).
+Reconciliation does not clean up worktrees — it reports an unmerged branch with a
+dead task to the operator (section 7) — so the kept journal is what finds such a
+leftover. A one-shot needs a repository the project can write: at a root with no
+`.git`, or an unsupported one, it is refused before anything is minted (section 4). The
 policy is the mode's where it declares one and the implicit `.worktrees` /
 `task/*` where it does not, which is how `solo` has one at all
 (`src/modes.ts#gitPolicy`). What becomes of the branch afterwards is the
@@ -782,13 +808,21 @@ Everything below is built, the operator CLI's listing among it
   earlier build minted in, so an id can begin with `-`, which is why the
   runner's argument parser consumes each option's value literally
   (`src/runner.ts#taskArgument`). `.cross-agent/` and `.worktrees/` are added to
-  `.git/info/exclude` by whichever comes first, the first `create` — the one
-  caller of `initialize` — or the first project lock, which can precede any
+  the repository's `info/exclude` by whichever comes first, the first `create` —
+  the one caller of `initialize` — or the first project lock, which can precede any
   record and is what would otherwise make `.cross-agent/locks/` unexcluded
   (`src/ledger.ts#excludeLedger`, `#projectLock`,
-  `tests/gitmutate.test.ts#gitMutateUninitializedExcluded`). The file is written
-  whole, through a temporary and a rename, so two first callers leave each entry
-  once (`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`,
+  `tests/gitmutate.test.ts#gitMutateUninitializedExcluded`). The file is
+  `<root>/.git/info/exclude` at a main checkout; at a worktree project, whose `.git`
+  is a pointer file, it is the common directory's, which every worktree of the
+  repository reads, reached by synchronous reads of the pointer's `gitdir:` line and
+  that administrative directory's `commondir` — no git runs and no ancestor is read
+  ahead of a lock — and a pointer that leads nowhere writes nothing
+  (`src/ledger.ts#excludingDirectory`, `tests/ledger.test.ts#excludeLedgerLinkedRoot`).
+  The two lines are the same whichever project writes them. The file is written
+  whole, through a temporary and a rename, so two first callers — two projects of
+  one repository among them — leave each entry once
+  (`tests/ledger.test.ts#excludeLedgerIdempotent`, `#excludeLedgerConcurrent`,
   whose eight callers start together at a barrier); the rename keeps the file's
   mode, and where `info/exclude` is a link it is the file the link names that is
   written, the link left a link (`#excludeLedgerKeepsFile`).
@@ -1262,9 +1296,21 @@ Everything below is built, the operator CLI's listing among it
   (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`). All five are taken by
   built code today: `delegate` and `cancel` hold `spawn.lock` — the one around
   validate-and-spawn, the other around the parent's claim and the snapshot of
-  its descendants (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). **One
-  helper, one waiting rule**: every waiter blocks up to `lockWaitSeconds` and
-  then refuses, naming the operation. The key is in config and validated — a
+  its descendants (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). A sixth lock
+  is no project's: the **repository lock**, `<commonDir>/cross-agent.lock` in the git
+  directory every worktree of a repository shares, so the projects of one repository —
+  its main checkout and the worktrees initialized as projects of their own — order
+  their git writes against each other (`src/locks.ts#repositoryLockPath`). It is taken
+  with `acquire` directly and innermost: the order is `spawn.lock` → `git.lock` →
+  the repository lock, and no project lock is taken while it is held. Every
+  `git_mutate`, `git_root`'s journaled verbs and `rebase --abort`, and `delegate`'s
+  discard of a one-shot that never launched hold it; a read holds none
+  (`src/gitmutate.ts#mutate`, `src/gitroot.ts#gitRoot`, `src/delegate.ts#discardWorktree`,
+  `tests/gitmutate.test.ts#repositoryLockOrder`, `#repositoryLockContention`,
+  `#repositoryLockReleasedOnError`, `tests/gitroot.test.ts#rebaseAbortTakesRepositoryLock`).
+  Its loss is reported as a project lock's is, as `lockLost: true`
+  (`tests/gitmutate.test.ts#lockLostWhile`). **One helper, one waiting rule**: every
+  waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation. The key is in config and validated — a
   finite number, defaulting to 5 and refused when negative, because `flock -w
   -1` sets no timer and exits before it looks at the file, which the helper
   would read as a live holder (`src/config.ts#CrossAgentConfig`,
@@ -1281,9 +1327,14 @@ Everything below is built, the operator CLI's listing among it
   taken on paths that run before anyone has a readable config, and a caller
   whose only question was how long to wait should not be thrown at (bead
   `atc-s96.34`, closed). Nothing uses `flock -n`; a caller that wants no wait
-  passes `waitSeconds: 0`. The one exception to the waiting rule is
-  `runner-<id>.lock`, whose whole purpose is an immediate failure, so the second
-  runner takes it with a zero wait and exits.
+  passes `waitSeconds: 0`. The exceptions to the waiting rule are two.
+  `runner-<id>.lock`'s whole purpose is an immediate failure, so the second runner
+  takes it with a zero wait and exits. The repository lock waits at least sixty
+  seconds, whatever `limits.lockWaitSeconds` says, because its holder may be another
+  project's git step — a commit whose hooks run as long as they run — and a project
+  whose own wait is a few seconds would refuse a step it only had to wait for; an
+  operator whose hooks run longer raises `limits.lockWaitSeconds`, and no key of its
+  own is needed (`src/config.ts#repositoryLockWait`).
 - **Bounded settlement.** `spawnEngine` settles on the child's `exit` plus a
   bounded stdio drain (`drainMs`, default 2000; `src/engines/spawn.ts#exitDrain`)
   and on `close` if that arrives first (`src/engines/spawn.ts#closeSettles`); on timeout
@@ -1737,7 +1788,10 @@ which is a property of the line, not of the pipeline.
   common directory, both resolved by `verifyWorktree` and put in the spec by
   `delegate` — and a deny rule wins over an allow one. The rerun with the two
   paths named denied the write and changed nothing else
-  (`docs/probes.md#p2Rerun`). The other two adapters take the same field
+  (`docs/probes.md#p2Rerun`). At a project root that is not its repository's main
+  checkout the same field carries the root's own pointer too, and a read-only role at
+  such a root is denied that pointer and the common directory beside its own cwd, which
+  is the only path its default rule names (section 4, `src/delegate.ts#protectedPathsFor`). The other two adapters take the same field
   differently: Codex needs no argument, because its `workspace-write` denies
   every write outside the workspace and protects the `.git` entry inside it
   (P2, Codex), and Grok cannot enforce it at all, which is why a Grok
@@ -2038,6 +2092,121 @@ the mode's worktree provider, for the operator and lead rows, with `path` and
 `cross-agent git` CLI calls `gitMutate` with the options the tool passes
 (`src/cli.ts#gitVerb`).
 
+**The project's repository.** A project root is its repository's main checkout, or a
+linked worktree initialized as a project of its own: a user developing several
+branches at once runs one loop per branch worktree, each merging into its own branch
+("Which project"). Every git tool, `run_command`, `delegate`, `cross-agent init` and
+discovery's named roots locate the repository once per call, and pass what they found
+on — to `trackedStateFault`, `rootWriteFault`, the discard of a one-shot and
+`verifyWorktree`, which takes its identity alone (`src/worktree.ts#locateRepository`).
+The answer is `main`, `linked` or `bare-linked`, with the work tree, the root's own git
+directory, the common directory, the branch checked out (null when detached), the
+registry, and `main`, the main checkout's path where one is known; or `none` for a root
+with no `.git`, a config-only project; or `unsupported`, carrying the root's git
+directory, for a root whose git directory is its own common directory; or `refused`
+for everything else. The checks run in this order. The root's nesting first, and from
+outside it: `enclosingWorktree` must find nothing (`#rootNotNested`), whatever the
+root's own `.git` holds now, so a task's worktree whose pointer was deleted, replaced
+by a repository of its own or rewritten is still refused, naming the worktree and the
+work tree that registers it. A `.git` directory is a main checkout unless the root's
+own git, asked without a work tree named, calls it bare — `--work-tree=<root>` would
+make a work tree of a bare repository at `<root>/.git` — and then it is `unsupported`.
+A `.git` file is read as a candidate only, through its `gitdir:` line and that
+administrative directory's `commondir`. With no `commondir`, and `rev-parse
+--absolute-git-dir` and `--git-common-dir` both naming that directory, the root is a
+main checkout with a separated git directory, a submodule, or the umbrella itself —
+`unsupported` (`#rootIsLinked`). Otherwise git confirms the candidate on explicit
+directories (`src/gitmutate.ts#run`), its administrative directory sits directly in
+`<commonDir>/worktrees` (`src/worktree.ts#rootAdministrativeParent`), its `gitdir`
+points back at the root's pointer (`#rootGitdirBacklink`), the root lies outside the
+common directory — every task is denied the whole of it, so a root inside would deny
+its own tasks their workspace, and the refusal says to place worktrees beside the git
+directory (`#rootOutsideCommonDir`) — and the registry lists the root, with its branch
+(`#rootListed`). The registry's first stanza is then classified by its own git, never
+by the listing's `bare` label (`src/worktree.ts#ownGit`): a work tree at its own top
+level is the main checkout, and the root `linked`; a bare repository makes the root
+`bare-linked`; and a git directory that is neither — a separated main's, which git
+2.43's `get_main_worktree` names after the common directory with `/.git` stripped —
+makes it `linked` with no known main. The label cannot be trusted: under
+`extensions.worktreeConfig`, `core.bare` lives in the main's own `config.worktree`,
+which a listing from a linked worktree does not read (`tests/worktree.test.ts#locateRepositoryKinds`,
+`#locateRepositoryRefusesNested`, `#locateRepositoryRemovedPointerStillNested`,
+`#locateRepositoryReplacedPointerStillNested`, `#locateRepositoryRefusesRewrittenPointer`,
+`#locateRepositoryRefusesRootInsideCommonDir`, `#locateRepositoryRefusesSubmodule`,
+`#locateRepositorySeparatedMainUnsupported`, `#locateRepositoryBareDirectoryUnsupported`,
+`#locateRepositoryBareDotGitAllowed`, `#locateRepositorySeparatedMainWorktreeMainNull`).
+
+`enclosingWorktree` walks a canonical candidate's strict ancestors outside-in
+(`src/worktree.ts#enclosingWorktree`). An ancestor without a `.git` entry is skipped.
+For one with it, the ancestor's own git decides whether it is a work tree:
+`--is-inside-work-tree` must print `true` and `--show-toplevel` name the ancestor
+itself, which a bare repository at `A/.git` and the umbrella's pointer to a bare
+directory never do, and which a separated main does. Only then is its registry read,
+from its own `.git` (`#worktreeStanzas`), and the ancestor encloses the candidate when
+a stanza strictly under it is or holds the candidate, the innermost one named. Every
+registration whose directory exists counts, whatever its pointer or its annotation:
+git marks one `prunable` only when its pointer fails `lstat`, and never marks a
+`locked` one. An ancestor whose git fails refuses, naming it and git's own words
+(`tests/worktree.test.ts#locateRepositoryUnreadableAncestorRefused`). The umbrella and
+a bare repository beside or holding its worktrees pass, and a root under an unrelated
+work tree that does not register it passes (`#locateRepositoryUmbrellaAllowed`,
+`#locateRepositorySiblingBareAllowed`, `#locateRepositoryUnrelatedAncestor`); a linked
+root inside its main checkout, `M/branches/x`, is refused, and a separated main
+encloses its task worktrees by its own git, whatever their pointers
+(`#locateRepositoryRefusesInsideMainCheckout`, `#locateRepositorySeparatedMainEnclosesTask`).
+**Ownership is proven by the ancestors' registries alone**, metadata no specialist
+confined to the candidate can write: the candidate's own pointer proves only that it
+is self-consistent, which a forged registry inside the candidate also is
+(`#locateRepositoryRefusesForgedRegistry`, and Grok's sandbox, which leaves the
+pointer writable, `src/engines/grok.ts`, section 3). A registration pruned from the
+common directory is outside the rule; there the specialist row's tool set is the
+backstop, as for every task. The cost is one `lstat` per ancestor and up to three git
+reads per ancestor holding a `.git`, and one or two more for a linked root's first
+stanza, once per call and with nothing cached across calls.
+
+**Writes at a root that is not the main checkout are opt-in**
+(`src/worktree.ts#rootWriteFault`). A main checkout takes them as it always has.
+Any other root takes none without its own `.cross-agent/config.json` — an
+uninitialized worktree is served as its main checkout's project, or with no main as
+one nobody configured — and the refusal names `cross-agent init`; with a config, a
+write also needs the root's HEAD on a branch, and that branch to be
+`project.defaultBranch`, the refusal naming both and the fix. Scope `"initialized"`
+asks the first question alone and covers every `run_command` at such a root, a test
+run with no slug, a setup run and a worktree run included; scope `"write"` asks all
+three and covers `git_root`'s journaled verbs, every `git_mutate`, before
+`spawn.lock`, and `run_command`'s journaled root run. Reads, and `rebase --abort`,
+which undoes a stopped rebase, need neither, and an initialized main checkout on
+another branch still runs setup (`tests/gitroot.test.ts#linkedRootRuns`, run over a
+linked root, a bare repository's worktree beside it and under `U/.git`, and the
+umbrella's; `#bareConfiglessRefused`, `#defaultBranchMismatch`;
+`tests/runcommand.test.ts#linkedRootTests`, `#noSlugTestConfiglessRefused`,
+`#setupConfiglessRefused`, `#initializedNonMainRunsSetup`,
+`#mainOnOtherBranchRunsSetup`, `#linkedRootWorktreeRun`).
+
+**`delegate` lets the located repository decide the launch.** A `refused` root — inside
+a worktree its enclosing work tree registers, inside its own git directory, or with a
+`.git` that does not verify — launches nothing
+(`tests/delegate.test.ts#refusedRepositoryRefusesLaunch`). An `unsupported` root
+launches root roles as it always did, read-only and with the tracked-state check
+skipped, and refuses one-shots and worktree roles; a root with no `.git` keeps
+launching. The paths a launch's sandbox must refuse are computed at every launch,
+resumes included (`src/delegate.ts#protectedPathsFor`):
+
+| root kind | root roles and their continuations | worktree roles and one-shots |
+|---|---|---|
+| main | none: the role's own read-only rule denies the root's `.git` with its cwd | `<wt>/.git` and the common directory |
+| linked or bare-linked | the root's `.git` and the common directory, which lies outside the denied cwd | `<wt>/.git`, the common directory and the root's `.git` |
+| unsupported | the root's `.git` and its own git directory | refused |
+
+A Claude role reads them as `denyWrite` rules and `Edit` deny rules
+(`tests/engines/claude.test.ts#readOnlyLinkedRootDenies`); Codex's read-only and
+workspace-write sandboxes deny the paths without being told, and Grok's cannot take a
+per-path rule (section 3). Two projects of one repository delegate side by side, each
+in its own worktree directory, ledger and journals, sharing one `info/exclude` and the
+repository lock (`tests/delegate.test.ts#protectedPathsLinkedRoot`,
+`#oneShotInLinkedRoot`, `#oneShotBareConfiglessRefused`, `#twoProjectsOneRepository`,
+`#consultAtSeparatedMainLaunches`).
+
 Specialists never write git metadata. A linked worktree's `.git` is a file
 inside the implementer's workspace — Claude's sandbox and file tools and Codex's
 sandbox refuse a write to it, Grok's sandbox does not (P2, `docs/probes.md#t12Fix1`)
@@ -2060,7 +2229,9 @@ attached forms `--git-dir=` and `--work-tree=`
 (`src/gitmutate.ts#globalOptions`, `#argumentFault`), each of which turns a
 whitelisted verb into an arbitrary one against an arbitrary repository; and
 `slug`'s journal must be readable, so the step it will append is known to be
-recordable before anything runs. The four steps then run with `spawn.lock` held
+recordable before anything runs. The repository is located then too, and a root that
+is not its main checkout must take the write (`rootWriteFault`'s `"write"` scope,
+above), before any lock is taken. The four steps then run with `spawn.lock` held
 for all of them (`src/gitmutate.ts#gitMutate`), which is what stops the
 reservation `git_mutate` reads in step 1 from racing a `delegate` about to take
 the same workspace (section 2). Inside that lock, and only inside it, the
@@ -2078,16 +2249,24 @@ different branches. It
    operating system's own words: every stop a mutation can meet reaches the
    lead as a reason, and none of them as an exception (bead `atc-s96.40`);
 2. verifies the worktree from the root, with the checks
-   `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`): `realpath` of
-   both paths, a relative worktree path read against the project root and never
-   the server's own directory; the worktree appears in `git worktree list --porcelain -z` as a
-   linked worktree, which excludes the main worktree and any subdirectory
-   (`#linkedWorktree`); its `.git` is a regular file, not a symlink
-   (`#pointerIsFile`); `git
+   `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`), the repository's
+   identity taken from the call's own location of it: `realpath` of both paths, a
+   relative worktree path read against the project root and never the server's own
+   directory; the worktree appears in a `git worktree list --porcelain -z` taken on
+   every call — `delegate` locates the repository before its `worktree add` and
+   verifies after it — as a linked worktree, which excludes the main worktree and any
+   subdirectory (`#linkedWorktree`); it lies strictly under the project root
+   (`#underProjectRoot`), so a sibling project's root and its tasks are not this
+   project's; no stanza strictly under the root encloses it (`#notNestedWorktree`),
+   and no stanza at or above the root is read, since the root's own nesting was
+   settled when its repository was located — a bare main, labelled or not, encloses
+   every task (`tests/worktree.test.ts#verifyWorktreeContainment`,
+   `#verifyWorktreeIgnoresStanzasAboveRoot`, `#verifyWorktreeFreshListing`); its `.git`
+   is a regular file, not a symlink (`src/worktree.ts#pointerIsFile`); `git
    rev-parse --git-dir` resolves to a directory whose **parent** is
-   `<root>/.git/worktrees` (`#administrativeParent`) — the check is on the parent directory,
-   not on equality with a slug-derived name; `--git-common-dir` equals
-   `<root>/.git` (`#commonDirectory`); `--abbrev-ref HEAD` is exactly the requested
+   `<commonDir>/worktrees` (`#administrativeParent`) — the check is on the parent directory,
+   not on equality with a slug-derived name; `--git-common-dir` equals the
+   repository's common directory (`#commonDirectory`); `--abbrev-ref HEAD` is exactly the requested
    branch (`#branchMatches`); and the administrative directory's own `gitdir` backlink resolves
    to that worktree's `.git` and no other (`#gitdirBacklink`), which is what rejects a
    pointer redirected at a sibling. On success it returns `{gitDir, workTree,
@@ -2105,9 +2284,9 @@ different branches. It
    conflict path of the loop below: the rebase runs **in the worktree**, so its
    abort does too, and `git_root rebase --abort` covers only a rebase started at
    the root, which the loop never does;
-3. runs, while `.cross-agent/locks/git.lock` is held, `git --git-dir=<the
-   gitDir verify_worktree returned> --work-tree=<the workTree it returned>
-   <args>`, so the pointer file is never consulted and the paths are never
+3. runs, while `.cross-agent/locks/git.lock` and, inside it, the repository lock
+   are held, `git --git-dir=<the gitDir verify_worktree returned> --work-tree=<the
+   workTree it returned> <args>`, so the pointer file is never consulted and the paths are never
    re-derived from the slug (`src/gitmutate.ts#run`, `#mutate`). It is
    `execFile` with an argv array, never a shell, with `cwd` the verified work
    tree and the **allowlisted** git environment of the paragraph below
@@ -2177,8 +2356,17 @@ verifier refused *every* worktree. It failed closed, so it was never a hole,
 but the lead could do nothing at all.
 
 One residual is stated rather than hidden: there is no timeout on the git
-child, so a command that hangs holds `git.lock` until it is killed, and every
-other mutation then waits `lockWaitSeconds` and refuses.
+child, so a command that hangs — a hook that never returns — holds `git.lock` and
+the repository lock until it is killed. Every other mutation of the project then
+waits `lockWaitSeconds` and refuses, and every git write of the repository's other
+projects waits the repository lock's sixty seconds or more and refuses, naming the
+lock; such a refusal is retryable after the loop's reconciliation. The call cannot be
+cancelled from inside: `gitMutate` holds `spawn.lock` for the whole call, and
+`cancel` needs that same lock. The README gives the operator's recovery: find the
+hung git by its command line, `--work-tree=<the task's worktree>`, since no
+`CROSS_AGENT_*` variable reaches git; end that process tree, hooks included; then
+`cross-agent tasks --reconcile` and `cross-agent journal <slug>`, which say whether
+the step landed.
 
 `git_mutate` never throws for an operational failure. A missing git binary or
 a signal-killed child has no exit code to judge, so it is named as its own
@@ -2189,10 +2377,11 @@ a lock **lost** while the command ran (section 2: the helper child died, so the
 kernel let the next waiter in) does not undo the command: the step is still
 journaled, and the result carries `lockLost: true`
 (`src/gitmutate.ts#GitMutateResult`, `#mutate`), so the lead knows the mutation
-happened but was not exclusive for all of its life. **Either** lock's loss is
+happened but was not exclusive for all of its life. **Any** lock's loss is
 reported — `spawn.lock` guards the reservation this call passed, `git.lock`
-the command itself, and a caller told about only one would draw the wrong
-conclusion from the other's silence.
+the command against the project's other mutations, the repository lock the command
+against the repository's other projects, and a caller told about only one would
+draw the wrong conclusion from another's silence.
 
 The lead creates the worktree after plan approval, commits the task branch
 with the implementer's summary, rebases it, merges with `--ff-only`, runs the
@@ -2215,12 +2404,27 @@ sandbox protects `.git` too, so `git_mutate` calls made by a Codex lead need
 that host's approval escalation, as EVIDENCE.md recorded for the 0.4.0 Codex
 lead.
 
+**Git the operator runs by hand** takes no lock of this project's, so while a
+project's loop runs it can interleave with the loop's own steps as well as collide
+with them. Git's own `.lock` files make a collision fail, to be retried; an
+interleaving goes undetected: `git_root merge` checks HEAD and merges in two git
+processes, and a `checkout` landing between them would put the merge on the branch
+it checked out. So the operator's cooperating path is the two CLI verbs: root git
+through `cross-agent git-root [--slug <slug>] -- <args…>`, which calls `gitRoot`
+with the options the tool passes and so has the same whitelist, journal rules,
+`rootWriteFault`, `git.lock` and repository lock (`src/cli.ts#gitRootVerb`), and
+worktree git through `cross-agent git <slug> -- <args…>`. No `checkout`, `branch -f`
+or `reset` is run by hand at a root while its loop runs. What remains is stated: a
+plain git command outside these verbs can still interleave.
+
 **`git_root`.** `gitRoot(root, {args, slug?}, options)`
 (`src/gitroot.ts#gitRoot`, `#GitRootRequest`, `#GitRootOptions`). `args` is one
 whitelisted verb **in the shape it is whitelisted in**: `worktree add -b
 <branch> <dir> <base>`, `worktree remove <dir>`, `branch -d <branch>`, `merge
 --ff-only <branch>`, `rebase --abort`, or the read-only `status`, `log`,
-`rev-parse`, `merge-base`, `branch --list`, `worktree list`. The whitelist is
+`rev-parse`, `rev-parse --abbrev-ref HEAD` — the branch the root has checked out,
+what the loop's first step reads, matched before the generic `rev-parse`, which still
+refuses `HEAD` — `merge-base`, `branch --list`, `worktree list` (`tests/gitroot.test.ts#revParseHead`). The whitelist is
 the whole security argument for handing an engine any root git access at all,
 so it is a fixed list in code, never config (`src/gitroot.ts#whitelist`), and it
 carries each verb's own grammar: the options it accepts — `--porcelain`,
@@ -2257,23 +2461,34 @@ recorded `branch`, and `worktree remove <dir>` requires `<dir>` to resolve to
 its recorded `worktree` — which is how a journal `git_mutate` bound to a
 worktree carrying another name's branch is still merged and cleaned up under
 the name it recorded. A second `merged` step is refused before git runs, as the
-journal itself refuses one after (section 7). A verb that journals nothing —
+journal itself refuses one after (section 7). **A closed journal is terminal**: every
+journaled verb is refused on a journal holding a `branch-deleted` step, and `worktree
+remove` after a `worktree-removed` one, naming the slug and the closing step. A closed
+journal still names its branch, and a branch of that name now — a later task's of
+this project, or a sibling project's that reused the name — is no task of it, so a
+project retrying a finished cleanup would otherwise delete or merge another's
+(`tests/gitroot.test.ts#closedJournalReusedNameTwoProjects`, `#closedJournalRepeatedDelete`,
+`#worktreeRemoveTwiceRefused`). A verb that journals nothing —
 the read-only set and `rebase --abort` — takes **no** slug, because silence
 would let a lead believe its read was recorded (`src/gitroot.ts#gitRoot`).
 
 The verb runs from the project root, in the same explicit form and the same
-allowlisted environment as `git_mutate`'s — `git --git-dir=<root>/.git
---work-tree=<root> <args>`, `execFile` with an argv array and never a shell,
-capped at 16 MB (`src/gitmutate.ts#run`, `src/worktree.ts#locateRepository`); the
-root is the repository's own main checkout, located from outside it: a root inside a
-worktree that an enclosing work tree's registry lists is refused naming both — a
-server started inside a task's worktree is told which work tree to serve instead —
-whatever that worktree's own pointer holds, and `run_command` locates the
+allowlisted environment as `git_mutate`'s — `git --git-dir=<the root's own git
+directory> --work-tree=<root> <args>`, `<root>/.git` at a main checkout and its
+administrative directory at a worktree project, `execFile` with an argv array and
+never a shell, capped at 16 MB (`src/gitmutate.ts#run`,
+`src/worktree.ts#locateRepository`). The root is located from outside it: a root
+inside a worktree that an enclosing work tree's registry lists is refused naming both
+— a server started inside a task's worktree is told which work tree to serve instead
+— whatever that worktree's own pointer holds, and `run_command` locates the
 repository the same way (`tests/gitroot.test.ts#linkedWorktreeRoot`, bead
-`atc-s96.50`). It runs under `.cross-agent/locks/git.lock`, and the
-journal's own checks, the command and the step all happen inside that one lock,
+`atc-s96.50`); a journaled verb at a root that is not the main checkout is held to
+`rootWriteFault`'s `"write"` scope. It runs under `.cross-agent/locks/git.lock`, and
+the journal's own checks, the command and the step all happen inside that one lock,
 so two first calls on one slug cannot both find no journal and both create a
-worktree (`src/gitroot.ts#execute`). **One verb takes `spawn.lock` first**, in
+worktree (`src/gitroot.ts#execute`); a journaled verb and `rebase --abort` take the
+repository lock inside it, so no other project of the repository runs git between
+the merge's check of HEAD and the merge, which are two git processes. **One verb takes `spawn.lock` first**, in
 the standing order: `worktree remove` takes a workspace away, and git removes a
 clean worktree whatever is running in it, so that verb reads the reservation
 `git_mutate` reads and refuses in the same words — `<path> is reserved by task
@@ -2457,12 +2672,15 @@ the ones `gitEnvironment` drops — are dropped here too, because a suite that
 runs git would otherwise be pointed at another repository, index, object store
 or configuration by whatever the server inherited
 (`src/runcommand.ts#commandEnv`, `#redirectingGit`, `src/guard.ts#childEnv`,
-`src/worktree.ts#gitEnvironment`, section 5). A worktree `where` is verified exactly as
-`git_mutate` verifies it, with the branch taken from the journal of the `slug`
-the call names — **required** there, because a worktree may carry another
-slug's branch and the lead does not get to say which branch a directory is on —
-and the journal's recorded path must be that worktree
-(`src/runcommand.ts#runCommand`).
+`src/worktree.ts#gitEnvironment`, section 5). `where: "root"` runs at the located
+repository's work tree. A worktree `where` is verified exactly as `git_mutate`
+verifies it, against the repository this call located, with the branch taken from the
+journal of the `slug` the call names — **required** there, because a worktree may
+carry another slug's branch and the lead does not get to say which branch a directory
+is on — and the journal's recorded path must be that worktree, where it then runs
+(`src/runcommand.ts#runCommand`). At a root that is not its repository's main
+checkout both kinds of `where` need the project initialized there, and the run that
+journals needs `rootWriteFault`'s `"write"` scope as well (above).
 
 The result is `{ok: true, exitCode, tail, journal?}` or `{ok: false, reason}`
 (`src/runcommand.ts#RunCommandResult`). **A failing suite is an answer, not a
@@ -2893,7 +3111,18 @@ run's five tasks, each `passed`.
   the exit code: any `ok: false` call may have changed the repository without
   journaling a step (section 4). What the pass reads: `list_tasks`, the
   journal, `git worktree list`, `git branch --list 'task/*'`,
-  `git status --porcelain --untracked-files=normal`, and `git rebase` state.
+  `git status --porcelain --untracked-files=normal`, and `git rebase` state,
+  read under the `gitDir` `verify_worktree` answers for the worktree — with
+  `branch: "HEAD"` while a stopped rebase has detached it — and never under a path
+  made from the slug, since git names the administrative directory and a worktree
+  project's lies in the repository's common directory. The root check reads the
+  root's own branch with `git_root rev-parse --abbrev-ref HEAD`, not the registry's
+  first stanza, which is the main worktree's. The worktree and branch lists are the
+  repository's, so a sibling project's root, its task worktrees and its branches show
+  there too: the loop chooses a slug neither list shows, and reconciles only what lies
+  under its own `worktreeDir` or what one of its own **open** journals names. A
+  journal holding a `branch-deleted` step is closed and claims nothing about a branch
+  of that name now (`tests/skills.test.ts#rootCheckOwnBranch`, section 4).
   Rules: an interrupted rebase is aborted; a merged branch with a surviving
   worktree continues at the cleanup gate; a branch-only leftover is deleted
   with `branch -d`; a running task is waited on; an unmerged branch with a
@@ -3151,7 +3380,11 @@ where a project's file does not reach while git ignores `.grok/`: Grok takes a l
 as a project of its own, so a committed file would be read in every one, which is why the
 README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
-discovery finds the project's config (`src/project.ts#discoverProject`). The same project file
+discovery finds the project's config (`src/project.ts#discoverProject`). A branch worktree
+made a project of its own needs the attach in its own directory, which git does not
+carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` into it,
+as a regular file through no link, unless the file binds a project, and trusting the
+folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
 20,000 bytes by default, and the mode's text `describe_mode` answers with, without the
 `projectRoot` beside it, is 21,156 bytes under `dev-team` and 26,068 under
@@ -3198,13 +3431,46 @@ source as it does from any other.
 Each verb calls the function its tool calls, with the options the tool's
 handler passes:
 
-- `cross-agent init [--mode <name>] [--project <root>]` writes the bind-time
-  config for a mode (`src/cli.ts#initVerb`); a project that already holds one is
-  not rewritten, and that is a 0 with a line saying so; a `--project` that does
+- `cross-agent init [--mode <name>] [--from <dir>] [--project <root>]` writes the
+  bind-time config for a mode (`src/cli.ts#initVerb`); a project that already holds
+  one is not rewritten, and that is a 0 with a line saying so; a `--project` that does
   not resolve to an existing directory, and a mode this build has not got or
   cannot validate, are a 3, because `initConfig` creates `.cross-agent/` with
   its parents and a typo would otherwise leave a project tree nobody asked for.
-  Its document is `{wrote, file, mode, ignored, warning?}`.
+  Its document is `{wrote, file, mode, ignored, warning?}`. Every target is judged
+  from outside it first: one inside a worktree an enclosing work tree registers is a
+  3 with nothing written, before its own `.git` is looked at, so a task worktree
+  whose pointer was deleted or replaced is never initialized
+  (`tests/cli.test.ts#initRemovedPointerRefused`, `#initReplacedPointerRefused`). A
+  main checkout is unchanged, and still writes `defaultBranch: "main"` whatever it
+  has checked out; a directory holding a bare repository at `.git` is no work tree
+  of it, and a 3. At a `.git` file the repository is located, and a refused or
+  unsupported root — a root inside its own git directory, a submodule — is a 3 naming
+  the kind (`#initInsideCommonDirRefused`, `#initSubmoduleRefused`), and so is a
+  detached HEAD (`#initDetachedRefused`). The worktree's branch becomes the default
+  branch, so it must be a name `git_root` takes in every read of it —
+  `src/gitroot.ts#nameFault`'s letters, digits, `.`, `_`, `/` and `-`, no `..`, no
+  trailing `/` or `.lock`, where `git check-ref-format` would take `feature+one`
+  (`tests/cli.test.ts#initBranchOutsideAlphabetRefused`) — and, once the mode is settled, a branch the
+  mode's task pattern does not match, since every root verb, row 2 of the verifier and
+  a sibling's journaled `branch -d` act on that pattern (`src/gitroot.ts#matchesPattern`,
+  `tests/cli.test.ts#initTaskPatternBranchRefused`). The config is a copy, its default branch replaced
+  and everything else carried: of `--from`'s, which must hold one, checked before it is
+  loaded (`tests/cli.test.ts#initFrom`, `#initFromMissing`, `#initFromNoConfig`), or else of the main
+  checkout's when it holds one (`#initInWorktree`). A bare repository's worktree takes
+  the mode's defaults (`#initUmbrellaWorktree`, `#initBareDotGitDefaults`), and a
+  separated main's needs `--from <main checkout>` or `--mode`, since git records no path
+  to that checkout (`#initSeparatedMainNeedsFrom`); `--mode` beside a config it would
+  copy is a 2. A worktree's document adds `defaultBranch`, `from` and `attach`.
+  The source's Grok attach, `.grok/config.toml`, is copied with it, byte for byte: it is
+  host configuration, so it moves as a regular file and never through a link — both
+  directories and the file judged by `lstat`, nothing at the destination replaced, a
+  dangling link included, and the file opened `wx` — `.grok/` is ignored beside it, and
+  `init` says the folder may still need Grok's trust, which cross-agent never edits
+  (`src/cli.ts#copyGrokAttach`, `tests/cli.test.ts#initCopiesGrokAttach`). A source that binds a project
+  through `--project` or `CROSS_AGENT_PROJECT` is not copied — an explicit binding
+  outranks the working directory, and would serve that project from the worktree — and
+  `init` prints the binding to set up by hand (`tests/cli.test.ts#initBoundGrokAttachNotCopied`).
 - `cross-agent modes` lists every built-in mode as the loader reads it, with its
   roles, and marks the one the config names — the read `describe_mode` makes
   (`src/cli.ts#modesVerb`). A config naming a mode this build does not have is
@@ -3260,6 +3526,18 @@ handler passes:
   be written after a zero exit included; every refusal before git ran is a 3, a
   held `git.lock` among them. The document is the `GitMutateResult` whatever the
   code (`tests/cli.test.ts#cliGit`).
+- `cross-agent git-root [--slug <slug>] -- <args…>` is `gitRoot` with what `git_root`'s
+  handler passes, so it has the tool's whitelist, journal rules, `rootWriteFault`,
+  `git.lock` and repository lock (`src/cli.ts#gitRootVerb`): the operator's
+  cooperating path for root git while a loop runs (section 4). `--slug` is required
+  exactly when the verb journals. Its exits mirror `git`'s, through the same answer
+  (`src/cli.ts#gitAnswer`): 0 when git ran, a 1 when git ran and failed or exited 0
+  with its step unjournaled, a 3 for a refusal before git ran
+  (`tests/cli.test.ts#cliGitRootRuns`, `#cliGitRootExitCodes`, `#cliGitRootTakesLocks`).
+  Every call takes `git.lock`, which writes the ledger's exclusions and the lock
+  directory, so the whole verb, a read included, is a write and is refused inside a
+  task's environment before anything changes (`#cliGitRootRefusedInTask`): a task reads
+  the root through the tool.
 - `cross-agent journal [<slug>]` is one journal whole, or with no slug every
   journal's slug as `{slugs}` (`src/cli.ts#journalVerb`,
   `src/journal.ts#readJournal`, `#listJournals`): a 0, a 3 for a journal nobody
@@ -3298,7 +3576,7 @@ answer — an empty listing is a 0 — and leaves no `.cross-agent/`, no change 
 task in every status, a damaged record and a damaged ask, each read leaves every
 file under `.cross-agent/` byte for byte, a `running` task far past its stall
 threshold included (`#cliReadsLeaveSeededLedger`). The verbs that write —
-`init`, `answer`, `cancel`, `git` and `tasks --reconcile` — refuse with 3,
+`init`, `answer`, `cancel`, `git`, `git-root` and `tasks --reconcile` — refuse with 3,
 naming the variable, when the CLI's own environment carries `CROSS_AGENT_TASK`,
 `CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`, the markers `childEnv` gives a
 task's process tree (`src/guard.ts#childEnv`): writing is the operator's power,
@@ -3312,7 +3590,7 @@ project, and the reads answer the same with a marker as without one.
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
 log <id> | cancel <id> | verify-worktree <path> <branch> | git <slug> --
-<args> | journal [<slug>] | list-asks | answer <ask-id> <text> | report`.
+<args> | git-root -- <args> | journal [<slug>] | list-asks | answer <ask-id> <text> | report`.
 `modes` lists the installed modes and marks the active one; `answer` replies to
 a pending `ask` without a host session, and `list-asks` shows a terminal the
 questions it can answer; `report` renders the per-task summary from the ledger
@@ -3394,6 +3672,24 @@ with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
 - **Session transfer between engines.** Not planned: resume is bound to the
   original task's engine (`src/guard.ts#resumeRefusal`), and a transfer would
   have to reconstruct one engine's session state inside another's.
+
+Four limits of worktree projects are deferred the same way, each for its reason:
+
+- **A worktree project inside its main checkout's directory** — `M/branches/x`, or
+  a host's own `.claude/worktrees/<name>` — is refused as a root. Supporting it needs
+  task-directory containment, `<root>/<worktreeDir>/`, enforced first at every task
+  entry point — `delegate`, `git_mutate`, `run_command`, `verify_worktree` — so that
+  only a worktree there counts as nested.
+- **Writes at a separated main's checkout or a submodule**, which take none today:
+  they need a kind of their own with the external git directory protected. A
+  separated main's checkout cannot be found from its worktrees, since git records no
+  path to it, which is why `init` there asks for `--from`.
+- **Cancelling a hung git child.** `gitMutate` holds `spawn.lock` for the whole call
+  and `cancel` needs that lock, so cancelling one needs subprocess ownership that does
+  not first take it; the README gives the operator's recovery by hand (section 4).
+- **A wider branch alphabet**, what `git check-ref-format --branch` accepts less
+  paths, ranges and options, where `src/gitroot.ts#nameFault` now refuses a name such
+  as `feature+one` that a worktree project's default branch could otherwise carry.
 
 ## Repository layout (`~/Documents/agent-team-cli`)
 
@@ -3823,9 +4119,13 @@ binding, and the project follows its own path (Context).
   the row from one request to the next (`#rowResolvedAgain`); a specialist's `delegate`, `wait` and `cancel` are refused by
   this server's own name with the resolver's reason, and its read tools answer
   (`#specialistRowCannot`). The project is `--project`, then `CROSS_AGENT_PROJECT`, then
-  the nearest configured directory, a linked worktree resolving to its main
-  project and no config anywhere to a reason (`tests/project.test.ts#projectWinsCross`,
-  `#workingDirectoryResolves`, `#workingDirectoryInside`, `#projectConfigAnywhere`). A resolver that throws is answered `-32603`, lists
+  the nearest configured directory, an uninitialized linked worktree resolving to its
+  main project, an initialized one to itself, a directory inside a task's worktree to
+  its root whatever the worktree's pointer holds, and no config anywhere to a reason
+  (`tests/project.test.ts#projectWinsCross`, `#workingDirectoryResolves`,
+  `#workingDirectoryInside`, `#linkedWorktreeOwnProject`, `#cwdInsideTaskWorktreeMapsToRoot`,
+  `#removedPointerCwdMapsToRoot`, `#replacedPointerCwdMapsToRoot`, `#namedTaskWorktreeRefused`,
+  `#projectConfigAnywhere`; `tests/server.test.ts#startsAtRootFromDamagedTaskWorktree`). A resolver that throws is answered `-32603`, lists
   nothing and runs no handler (`tests/server.test.ts#resolverThrowsAnswers`). **Recorded** on 2026-09-19: a Grok
   specialist inheriting the operator's MCP configuration — the project-scoped
   mount, in a folder its operator trusts — sees exactly the specialist row and
@@ -4056,7 +4356,22 @@ binding, and the project follows its own path (Context).
   the specialists' transcripts show no `delegate` and no engine launch. The eight are checked by `tools/e2e-verify.mjs`, which reads the
   project and its ledger and prints `pass`, `FAIL` or `?` — evidence missing is
   not evidence of a pass — so every host's run is judged the same way rather
-  than by whatever a report greps that day. **E1 met all eight under Claude
+  than by whatever a report greps that day. Its first two rows read the project's
+  own part of the repository, since a worktree project shares the registry and the
+  branches with its main checkout and its siblings. Row 1 counts the stanzas at or
+  under `--project`, which must be exactly the root, naming any extra
+  (`tests/e2e-verify.test.ts#rowsScopedToProject`). Row 2 first exempts a branch
+  checked out exactly at a project root, this one's or a sibling's — a sibling being
+  any stanza that holds a config — and names it (`#row2ProjectRootBranchExempt`); it
+  then classes every other live branch of the pattern by positive evidence: checked
+  out under `--project`, or named by an open journal of this project, fails the row
+  (`#row2LocalLeftoverFails`, `#row2ReusedNameOpenHereFails`); checked out under a
+  sibling's root, or named by an open journal there, is that sibling's, named and
+  ignored (`#row2SiblingProven`); evidence on both sides, or none, is `?` with the
+  claims in the detail (`#row2ConflictQuestioned`, `#row2UnknownOwnerQuestioned`). A
+  journal with a `branch-deleted` step is closed and claims nothing
+  (`#row2ClosedJournalClaimsNothing`), a current checkout outranks history, and an
+  unjournaled branch is never taken as another project's. **E1 met all eight under Claude
   Code** — six records at depth 1, a journal of nine steps, 69 tests green on
   `main` — and is recorded in `VERIFY.md`, "M3, second merge — T13", under "E1", with its transcript in
   `docs/probes.md#e1`. **E3 and E2**, the engine-placed runs under Claude Code,

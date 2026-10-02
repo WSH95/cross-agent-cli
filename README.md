@@ -31,8 +31,9 @@ the twelve tools it gates under every mode — `delegate`, `wait`, `check`,
 provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside them
 under `dev-team-engine`, fourteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
-operator CLI; the launcher skill with each mode's own loop; and the packaging
-for Claude Code, Codex and Grok. `docs/design.md`
+operator CLI; the launcher skill with each mode's own loop; the packaging for Claude
+Code, Codex and Grok; and branch worktrees as projects of their own, each running its
+team on its own branch ("Several branches at once"). `docs/design.md`
 is the design and the work plan; `docs/probes.md` records what each engine CLI
 was observed to do, and `VERIFY.md` what each milestone's own runs showed.
 Nothing of the design's work plan is left but its backlog row. The plan closed on
@@ -186,8 +187,9 @@ Codex starts the plugin's server in its copy, not where the session runs: codex-
 substituted no `${PLUGIN_ROOT}` in the inline `command`, `args` and `cwd` it was given.
 From the copy the server cannot find your project. A copy of an export holds no
 project, and a copy of a checkout carries the checkout's `.git`, which leads discovery
-to a repository you did not name: the copy itself, or, for a linked worktree, the
-checkout it came from. So name the project, as the absolute path of a directory
+to a repository you did not name: the copy itself, for a main checkout or a worktree
+initialized as a project of its own, or, for any other linked worktree, the main
+checkout its pointer leads to. So name the project, as the absolute path of a directory
 holding `.cross-agent/config.json`, before Codex starts:
 
 ```
@@ -454,8 +456,9 @@ takes `--project <root>`, `--json` for one JSON document on stdout whatever the
 exit, and `--help`. Without `--project`, `init` writes in the current directory,
 and every other verb reads the project the server would find:
 `CROSS_AGENT_PROJECT`, then the nearest `.cross-agent/config.json`, then the git
-toplevel. Each verb calls the function its tool calls, and a verb that reads
-writes nothing: not a record, not a lock, not a stall reading.
+toplevel — a directory inside a task's worktree read as its root, and a worktree
+nobody initialized as its main checkout. Each verb calls the function its tool calls,
+and a verb that reads writes nothing: not a record, not a lock, not a stall reading.
 
 | verb | what it does | exits |
 | --- | --- | --- |
@@ -494,6 +497,69 @@ that writes — `init`, `answer`, `cancel`, `git`, `git-root` and `tasks --recon
 3 when its own environment carries `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or
 `CROSS_AGENT_LINEAGE`, the markers of a task's process tree: writing is the
 operator's, and an engine reaches the project through the server.
+
+## Several branches at once
+
+A worktree can be a project of its own, its team running on its own branch: its tasks
+branch from and merge into that branch, its root roles and its suite run in it, and the
+projects of one repository run at the same time. Make the worktree beside the main
+checkout, then initialize it:
+
+```
+cd ~/code/my-project
+git worktree add ../my-project-x -b x
+cd ../my-project-x
+cross-agent init
+```
+
+`init` there copies the main checkout's `.cross-agent/config.json` — the team as you
+bound it — with `project.defaultBranch` set to the worktree's branch, `x`, and writes
+the mode's defaults where the main checkout holds no config. A worktree nobody
+initialized stays its main checkout's project, as before: a host started in it serves
+the main checkout, and the roster's first line says so. Where the repository's git
+directory is separate from its checkout (`git init --separate-git-dir`), git records no
+path to the checkout, so name it: `cross-agent init --from <main checkout>`, or `--mode
+<name>` for the defaults. `init` refuses a worktree with a detached HEAD, one on a
+branch the mode's task pattern matches (`task/*`), and one on a branch outside the names
+the root tools take: letters, digits, `.`, `_`, `/` and `-`.
+
+A worktree project may not lie inside another work tree of its repository: one under
+the main checkout, such as `my-project/branches/x`, is refused, as a task's worktree
+under `.worktrees/` always was. A bare repository works too, with its worktrees beside
+it — `repo.git` with `main/` and `x/` next to it — or in the umbrella layout, `U/.git` a
+file reading `gitdir: ./.bare` with `U/main` and `U/x` its worktrees; there `init`
+writes the mode's defaults, having no main checkout to copy. Put worktrees beside a bare
+repository, never inside it: a root inside its own git directory is refused, because
+every task is denied that whole directory.
+
+Grok loads a project's plugin from the `.grok/config.toml` of the folder it runs in,
+which git does not carry into a new worktree, so `init` copies the main checkout's file
+there and ignores `.grok/` beside it; trust the new folder in Grok, which cross-agent
+never does for you. A file that binds a project with `--project` or
+`CROSS_AGENT_PROJECT` is not copied, since it would serve the main project from the
+worktree: `init` prints the binding, and you set that worktree's attach up by hand. A
+Codex host names each worktree's project in `CROSS_AGENT_PROJECT`, as for any project,
+and Codex may add a trust entry for each new directory to `~/.codex/config.toml` on its
+own, which cross-agent cannot prevent.
+
+While a project's loop runs, run git at its root by hand only through `cross-agent
+git-root [--slug <slug>] -- <args…>`, which takes the loop's own locks and exits 0, 1
+or 3 as `git` does, and git in a task's worktree only through `cross-agent git <slug>
+-- <args…>`. No `checkout`, `branch -f` or `reset` at that root: a plain git command
+takes no lock, and one landing between the merge's check of the root's branch and the
+merge itself would put the merge on another branch.
+
+The projects of one repository take turns at a lock in its git directory for every git
+write, and a project waits for it at least sixty seconds, whatever its own
+`limits.lockWaitSeconds`; where your hooks run longer than that, raise
+`limits.lockWaitSeconds`. A hook that hangs holds the lock until it is killed, and a
+call stuck behind it cannot be cancelled from inside. Recover by hand:
+
+1. Find the hung git by its command line, with `ps -eo pid,ppid,args`: it carries
+   `--work-tree=<the task's worktree>`.
+2. End that process tree, the hook's children included, and check that it has exited.
+3. Run `cross-agent tasks --reconcile`, then `cross-agent journal <slug>`, which says
+   whether the step landed.
 
 ## The lead, in one paragraph
 

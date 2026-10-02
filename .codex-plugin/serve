@@ -6,8 +6,9 @@
 # finds no project the operator meant: a copy of an export holds no `.git` and no config, so
 # discovery finds nothing, and a copy of a checkout carries the checkout's `.git`, so
 # discovery finds a repository the operator did not name — the copy itself, for a main
-# checkout, or the checkout it was copied from, for a linked worktree. So the server serves
-# the project the operator names in CROSS_AGENT_PROJECT, and without one it does not start.
+# checkout or a worktree initialized as a project of its own, or the main checkout its
+# pointer leads to, for any other linked worktree. So the server serves the project the
+# operator names in CROSS_AGENT_PROJECT, and without one it does not start.
 if [ -z "${CROSS_AGENT_PROJECT:-}" ]; then
   echo "cross-agent: not started: under Codex this server runs in its plugin's directory and serves only the project CROSS_AGENT_PROJECT names; export CROSS_AGENT_PROJECT=<project root> before starting codex" >&2
   exit 1
