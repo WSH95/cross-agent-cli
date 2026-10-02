@@ -166,20 +166,45 @@ const patchFields = new Set<string>([
 ] satisfies (keyof TaskPatch)[]);
 
 /**
+ * The git directory whose `info/exclude` a project's root reads, from files alone: `.git`
+ * itself when it is a directory, and where it is a linked worktree's pointer file, the
+ * common directory its `gitdir:` line's administrative directory names in `commondir` —
+ * the one `info/exclude` every worktree of the repository reads. Null where neither leads
+ * to a directory: no `.git`, or a pointer that resolves to nothing. No git runs and no
+ * ancestor is read, because this runs ahead of every project lock.
+ */
+function excludingDirectory(projectRoot: string): string | null {
+  const dotGit = path.resolve(projectRoot, ".git");
+  const entry = fs.statSync(dotGit, { throwIfNoEntry: false });
+  if (entry?.isDirectory()) return dotGit;
+  if (!entry?.isFile()) return null;
+  try {
+    const named = /^gitdir: (.+)$/.exec(fs.readFileSync(dotGit, "utf8").replace(/\s+$/, ""));
+    if (named === null) return null;
+    const admin = path.resolve(projectRoot, named[1]);
+    const common = path.resolve(admin, fs.readFileSync(path.join(admin, "commondir"), "utf8").trim());
+    return fs.statSync(common, { throwIfNoEntry: false })?.isDirectory() ? common : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Adds `.cross-agent/` and `.worktrees/` to the repository's `info/exclude` where either
- * is missing, and nothing else: no ledger, no lock directory, and nothing at all where
- * `.git` is not a directory (a linked worktree's pointer file, or no repository). The
- * file is written whole, through a temporary beside it and a rename, rather than appended
- * to: two first callers that both read it before either wrote compute the same text, so
- * whichever rename lands last leaves each entry once. The rename replaces the file, so it is
- * the file itself that is written, at the mode it had: where `info/exclude` is a link, the
- * file the link names gets the lines and the link stays a link (one that names nothing is
- * replaced by the file). A temporary a crash leaves is `.<name>.<random>.tmp` beside that
- * file, which git does not read.
+ * is missing, and nothing else: no ledger, no lock directory, and nothing at all where no
+ * git directory is found (`excludingDirectory`). The lines are these two whichever project
+ * of the repository writes them, so every writer computes the same text. The file is
+ * written whole, through a temporary beside it and a rename, rather than appended to: two
+ * first callers that both read it before either wrote compute the same text, so whichever
+ * rename lands last leaves each entry once. The rename replaces the file, so it is the file
+ * itself that is written, at the mode it had: where `info/exclude` is a link, the file the
+ * link names gets the lines and the link stays a link (one that names nothing is replaced
+ * by the file). A temporary a crash leaves is `.<name>.<random>.tmp` beside that file,
+ * which git does not read.
  */
 export function excludeLedger(projectRoot: string): void {
-  const gitDirectory = path.resolve(projectRoot, ".git");
-  if (!fs.statSync(gitDirectory, { throwIfNoEntry: false })?.isDirectory()) return;
+  const gitDirectory = excludingDirectory(projectRoot);
+  if (gitDirectory === null) return;
   const exclude = path.join(gitDirectory, "info", "exclude");
   let target = exclude;
   let existing = "";

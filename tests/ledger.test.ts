@@ -12,7 +12,8 @@ import { create, excludeLedger, find, read, update, list, newTaskId, scan, Inval
 import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
-import { poll } from "./helpers/project.ts";
+import { git } from "./helpers/git.ts";
+import { layoutRoot, poll } from "./helpers/project.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -646,7 +647,7 @@ test("ledger initialization skips absent git directories and worktree pointer fi
 });
 
 // @anchor excludeLedgerIdempotent
-test("excludeLedger writes each exclusion once and nothing else, and nothing at all outside a .git directory", (t) => {
+test("excludeLedger writes each exclusion once and nothing else, and nothing at all where .git neither is nor leads to a git directory", (t) => {
   // A repository with no exclude file: the two lines, once however often it is asked, and no ledger.
   const root = project(t);
   fs.mkdirSync(path.join(root, ".git"));
@@ -663,7 +664,7 @@ test("excludeLedger writes each exclusion once and nothing else, and nothing at 
   excludeLedger(existing);
   assert.equal(fs.readFileSync(path.join(existing, ".git", "info", "exclude"), "utf8"), "# existing\n.cross-agent/\n.worktrees/\n");
 
-  // No `.git` at all, and a `.git` that is a linked worktree's pointer file: nothing written.
+  // No `.git` at all, and a pointer file that leads nowhere: nothing written.
   const plain = project(t);
   excludeLedger(plain);
   assert.deepEqual(fs.readdirSync(plain), []);
@@ -673,6 +674,40 @@ test("excludeLedger writes each exclusion once and nothing else, and nothing at 
   excludeLedger(linked);
   assert.deepEqual(fs.readdirSync(linked), [".git"]);
   assert.equal(fs.readFileSync(path.join(linked, ".git"), "utf8"), pointer);
+
+  // A pointer that does lead somewhere, through its administrative directory's `commondir`,
+  // writes the exclusions of the common directory it names, once, and nothing beside itself.
+  const common = project(t);
+  const admin = path.join(common, "worktrees", "ledger");
+  fs.mkdirSync(admin, { recursive: true });
+  fs.writeFileSync(path.join(admin, "commondir"), "../..\n");
+  const resolved = project(t);
+  fs.writeFileSync(path.join(resolved, ".git"), `gitdir: ${admin}\n`);
+  excludeLedger(resolved);
+  excludeLedger(resolved);
+  assert.equal(fs.readFileSync(path.join(common, "info", "exclude"), "utf8"), ".cross-agent/\n.worktrees/\n");
+  assert.deepEqual(fs.readdirSync(resolved), [".git"]);
+});
+
+// @anchor excludeLedgerLinkedRoot
+test("excludeLedger at a linked root writes the repository's common info/exclude, which every worktree of it reads", async (t) => {
+  for (const layout of ["linked", "bare-linked"] as const) {
+    const made = await layoutRoot(t, layout);
+    const exclude = path.join(made.commonDir, "info", "exclude");
+    const before = fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf8") : "";
+    fs.mkdirSync(path.join(made.root, ".cross-agent", "locks"), { recursive: true });
+    fs.mkdirSync(path.join(made.root, ".worktrees", "x"), { recursive: true });
+    fs.writeFileSync(path.join(made.root, ".worktrees", "x", "file"), "a task's tree\n");
+    excludeLedger(made.root);
+    excludeLedger(made.root);
+    const lines = fs.readFileSync(exclude, "utf8");
+    assert.ok(lines.startsWith(before), `${layout}: what the file held is kept`);
+    for (const line of [".cross-agent/", ".worktrees/"]) {
+      assert.equal(lines.split(/\r?\n/).filter((entry) => entry === line).length, 1, `${layout}: ${line} once`);
+    }
+    assert.equal(fs.readFileSync(path.join(made.root, ".git"), "utf8").startsWith("gitdir: "), true, `${layout}: the pointer is untouched`);
+    assert.equal(await git(made.root, "status", "--porcelain", "--untracked-files=all"), "", `${layout}: nothing for git status to show`);
+  }
 });
 
 // @anchor excludeLedgerKeepsFile
