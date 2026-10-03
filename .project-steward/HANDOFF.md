@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T14:43:41Z
+updated_at: 2026-10-03T15:49:23Z
 updated_by: claude
 session_status: active
 branch: main
@@ -62,7 +62,14 @@ The plan is `.superpowers/sdd/the-development-of-this-calm-planet/task-15-brief.
 
 Three plan reviews each found major issues. All were folded, the last ones being the gates on
 every route to the merge, how fix rounds are counted, and two test pins. After the third round the
-user chose a fourth; revision 3 is being written (earlier revisions are kept as `-r1`, `-r2`).
+user chose a fourth, then a fifth. Rounds 4 and 5 kept finding edge routes in step 7's prose. The
+user chose to restructure step 7 as an explicit state table:
+- one classifier that every review round enters;
+- a round counts only when every seat returned a valid verdict;
+- the lead rebases and gates before every review round;
+- every user answer is mapped.
+
+Revision 5 is being written, and a sixth review follows it. Earlier revisions are kept as `-r1` to `-r4`.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T15:49:23Z — claude
+[auto-checkpoint] atc-s96.104: plan reviews 4 and 5 found new edge routes in step 7; the user chose to restructure step 7 as an explicit state table (one classifier entry, complete-round precondition, rebase-and-gate before every review round, every answer mapped); revision 5 being written, then review round 6.
+
 ### 2026-10-03T14:43:41Z — claude
 [auto-checkpoint] atc-s96.104: plan reviews 1–3 found major issues each (all folded; the remaining three narrow); after round 3 the user chose a fourth round; revision 3 being written.
 
