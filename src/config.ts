@@ -52,7 +52,11 @@ export interface CrossAgentConfig {
     lockWaitSeconds: number;
     /** How long `cancel` gives a runner to settle a task before it terminates the engine group itself. */
     cancelGraceSeconds: number;
+    /** Consecutive plan-review rounds ending `major issues` before the team loop asks the user (D2). */
+    planReviewRounds: number;
   };
+  /** What the team loop does with a Critical or Important finding still standing after the resolver's round (D3). */
+  review: { afterResolver: AfterResolver };
   billing: "subscription" | "api";
 }
 
@@ -85,6 +89,13 @@ export interface BoundConfig {
 export const DEFAULT_MODE = "dev-team";
 
 /**
+ * `review.afterResolver`'s three values: ask the user, the default; let the lead rule and
+ * record the waiver itself; or ask whatever stands, Minor findings included.
+ */
+export const afterResolverOptions = ["ask", "lead-decides", "always-ask"] as const;
+export type AfterResolver = typeof afterResolverOptions[number];
+
+/**
  * What a project with no config runs as. `discoverProject` answers with the git toplevel
  * where nothing above the working directory holds a config, and this is the config that
  * project has: one role, read-only at the root, and no binding — `delegate` takes the
@@ -97,8 +108,9 @@ const projectDefaults: CrossAgentConfig["project"] = {
 };
 const limitDefaults: CrossAgentConfig["limits"] = {
   maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
-  cancelGraceSeconds: 5,
+  cancelGraceSeconds: 5, planReviewRounds: 3,
 };
+const reviewDefaults: CrossAgentConfig["review"] = { afterResolver: "ask" };
 /** The built-in consultant's starting binding; every `delegate` may name another engine. */
 const consultBinding: RoleConfig = { engine: "codex", model: "gpt-6-astra" };
 const devTeamBindings: Record<string, RoleBinding> = {
@@ -136,7 +148,7 @@ const builtInBindings: Record<string, Record<string, RoleBinding>> = {
  */
 export function defaultConfig(): CrossAgentConfig {
   return {
-    mode: NO_CONFIG_MODE, project: { ...projectDefaults }, roles: {}, limits: { ...limitDefaults },
+    mode: NO_CONFIG_MODE, project: { ...projectDefaults }, roles: {}, limits: { ...limitDefaults }, review: { ...reviewDefaults },
     billing: "subscription",
   };
 }
@@ -252,8 +264,14 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
   if (!Number.isInteger(limits.maxDepth) || limits.maxDepth < 0) {
     invalid("limits.maxDepth", "a whole number of delegation hops, not negative");
   }
+  // A count of rounds, and the loop asks after the first one at the least.
+  if (!Number.isInteger(limits.planReviewRounds) || limits.planReviewRounds < 1) {
+    invalid("limits.planReviewRounds", "a whole number of plan-review rounds, at least 1");
+  }
+  const review = { ...reviewDefaults, ...object(document.review === undefined ? {} : document.review, "review") };
+  oneOf(review.afterResolver, "review.afterResolver", afterResolverOptions);
   const billing = oneOf(document.billing === undefined ? "subscription" : document.billing, "billing", ["subscription", "api"] as const);
-  return { ...document, mode, project, roles, limits, billing } as CrossAgentConfig;
+  return { ...document, mode, project, roles, limits, review, billing } as CrossAgentConfig;
 }
 
 /**
@@ -473,6 +491,7 @@ function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAg
     // takes the lower of the two and the documented default would hold an engine-placed
     // lead's specialists at depth 1.
     limits: { ...limitDefaults, maxDepth: placementMaxDepth(mode) },
+    review: { ...reviewDefaults },
     billing: "subscription",
   };
 }

@@ -15,8 +15,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
 const limitDefaults = {
   maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
-  cancelGraceSeconds: 5,
+  cancelGraceSeconds: 5, planReviewRounds: 3,
 };
+const reviewDefaults = { afterResolver: "ask" };
 const sectionSixDefaults = {
   mode: "dev-team",
   project: projectDefaults,
@@ -36,6 +37,7 @@ const sectionSixDefaults = {
   },
   engines: { claude: {}, codex: {}, grok: {} },
   limits: limitDefaults,
+  review: reviewDefaults,
   billing: "subscription",
 };
 
@@ -88,6 +90,7 @@ test("loadConfig applies every default", (t) => {
   // neither carries neither here.
   assert.deepEqual(loaded.roles, { planner: { engine: "codex" } });
   assert.deepEqual(loaded.limits, limitDefaults);
+  assert.deepEqual(loaded.review, reviewDefaults);
   assert.equal(loaded.billing, "subscription");
 
   writeConfig(root, {
@@ -116,8 +119,9 @@ test("loadConfig preserves explicit values and custom or empty role maps", (t) =
     engines: { claude: { bin: "/custom/claude" }, codex: {}, grok: { bin: "custom-grok" } },
     limits: {
       maxDepth: 2, stallMinutes: 0.5, waitDefaultSeconds: 0, duplicateWindowMinutes: 0, lockWaitSeconds: 0,
-      cancelGraceSeconds: 1.5,
+      cancelGraceSeconds: 1.5, planReviewRounds: 5,
     },
+    review: { afterResolver: "lead-decides" },
     billing: "api",
   };
   writeConfig(root, explicit);
@@ -191,7 +195,7 @@ test("loadConfig rejects malformed JSON, invalid shapes, and invalid field types
   const invalid: Array<[unknown, string]> = [
     [null, "$"], [[], "$"], [true, "$"], ["config", "$"], [{}, "roles"],
   ];
-  for (const field of ["project", "roles", "engines", "limits"]) {
+  for (const field of ["project", "roles", "engines", "limits", "review"]) {
     for (const value of [null, [], "invalid", 1, false]) {
       invalid.push([{ roles: {}, [field]: value }, field]);
     }
@@ -254,7 +258,7 @@ test("a project with no config file loads solo's defaults, bound to nothing and 
   // defaults, and no role binding, because binding is `cross-agent init`'s to write and
   // an engine named in the call is what a one-shot uses instead.
   assert.deepEqual(config.loadConfig(root), {
-    mode: "solo", project: projectDefaults, roles: {}, limits: limitDefaults, billing: "subscription",
+    mode: "solo", project: projectDefaults, roles: {}, limits: limitDefaults, review: reviewDefaults, billing: "subscription",
   });
   assert.deepEqual(config.loadConfig(root), config.defaultConfig());
   assert.deepEqual(readdirSync(root), [], "reading a project that has no config writes none");
@@ -528,6 +532,31 @@ test("a config written before the resolver existed loads, and lists the resolver
   assert.deepEqual(config.seatsOf(bound.config, "code-reviewer"), [{ engine: "grok", model: "grok-4.7", effort: "medium", sandbox: "read-only" }]);
 });
 
+// @anchor reviewSettings
+test("limits.planReviewRounds is a whole number of rounds from 1, and review.afterResolver one of three values", (t) => {
+  const root = project(t);
+  // How many consecutive plan reviews may end on major issues before the loop asks, and what
+  // the loop does with a significant finding the resolver's round left standing.
+  for (const value of [0, -1, 1.5, "3"]) {
+    writeConfig(root, { roles: {}, limits: { planReviewRounds: value } });
+    validationError(root, "limits.planReviewRounds");
+  }
+  writeConfig(root, { roles: {}, limits: { planReviewRounds: 0 } });
+  assert.throws(() => config.loadConfig(root), /a whole number of plan-review rounds, at least 1/);
+  for (const [value, field] of [[[], "review"], [{ afterResolver: "stop" }, "review.afterResolver"], [{ afterResolver: 1 }, "review.afterResolver"]] as const) {
+    writeConfig(root, { roles: {}, review: value });
+    validationError(root, field);
+  }
+  writeConfig(root, { roles: {}, review: { afterResolver: "stop" } });
+  assert.throws(() => config.loadConfig(root), /ask \| lead-decides \| always-ask/);
+  for (const afterResolver of ["ask", "lead-decides", "always-ask"]) {
+    writeConfig(root, { roles: {}, limits: { planReviewRounds: 1 }, review: { afterResolver } });
+    const loaded = config.loadConfig(root);
+    assert.equal(loaded.limits.planReviewRounds, 1);
+    assert.deepEqual(loaded.review, { afterResolver });
+  }
+});
+
 // @anchor grokBoundLead
 test("an engine-placed mode whose lead is bound to grok is refused at load", (t) => {
   const root = project(t);
@@ -593,12 +622,16 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
   assert.equal(led.config.limits.maxDepth, 2);
   assert.equal(config.effectiveMaxDepth(led.mode, led.config), 2);
 
-  // Every role the mode declares is bound, and every binding names a role it declares.
+  // Every role the mode declares is bound, and every binding names a role it declares. The
+  // loop's two settings are written for every mode, so an operator finds them to edit.
   for (const name of ["dev-team", "dev-team-engine", "solo"]) {
     const each = project(t);
     config.initConfig(each, { mode: name });
     const bound = config.loadConfigWithMode(each, builtInModesDir());
     assert.deepEqual(Object.keys(bound.config.roles), bound.mode.roles.map((role) => role.key), name);
+    const document = JSON.parse(readFileSync(path.join(each, config.CONFIG_PATH), "utf8")) as { limits: Record<string, number>; review: unknown };
+    assert.equal(document.limits.planReviewRounds, 3, name);
+    assert.deepEqual(document.review, reviewDefaults, name);
   }
 
   const unknown = project(t);

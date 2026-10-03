@@ -109,8 +109,10 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
     engines: { claude: {}, codex: {}, grok: {} },
     limits: {
       maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
-      cancelGraceSeconds: 5,
+      cancelGraceSeconds: 5, planReviewRounds: 3,
     },
+    // What the loop does after the resolver's round: ask the user, unless edited here.
+    review: { afterResolver: "ask" },
     billing: "subscription",
   });
   // What it wrote loads, against the mode it named: every role runs under the profile the
