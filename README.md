@@ -47,7 +47,7 @@ plugin and declares this server under `mcpServers`, and `skills/` is found by
 convention. In development, point a session at the checkout:
 
 ```
-claude --plugin-dir ~/Documents/agent-team-cli
+claude --plugin-dir ~/Documents/cross-agent-cli
 ```
 
 The session should report the server as `plugin:cross-agent:cross-agent`,
@@ -73,7 +73,7 @@ cross-agent init --mode dev-team
 
 `cross-agent` is `package.json`'s `bin`, so it is on `PATH` only where the
 package is linked; everywhere else the same command is `node
-~/Documents/agent-team-cli/src/cli.ts init --mode dev-team`. Either way `init`
+~/Documents/cross-agent-cli/src/cli.ts init --mode dev-team`. Either way `init`
 writes `.cross-agent/config.json` with every role bound to a default you then
 edit, adds `.cross-agent/` and the mode's worktree directory to `.gitignore`,
 and leaves an existing config alone. Commit that `.gitignore` change before the
@@ -156,28 +156,28 @@ register a clean export of the checkout's `HEAD`, in a directory of its own, and
 install the plugin from it:
 
 ```
-sha=$(git -C ~/Documents/agent-team-cli rev-parse HEAD)
+sha=$(git -C ~/Documents/cross-agent-cli rev-parse HEAD)
 mkdir -p ~/.cache/agent-team/codex-plugin-export/$sha
-git -C ~/Documents/agent-team-cli archive HEAD | tar -x -C ~/.cache/agent-team/codex-plugin-export/$sha
+git -C ~/Documents/cross-agent-cli archive HEAD | tar -x -C ~/.cache/agent-team/codex-plugin-export/$sha
 codex plugin marketplace add ~/.cache/agent-team/codex-plugin-export/$sha
-codex plugin add cross-agent@agent-team-cli
+codex plugin add cross-agent@cross-agent-cli
 ```
 
 Codex runs the plugin from the copy it took at install time, under
-`~/.codex/plugins/cache/agent-team-cli/cross-agent/<version>/`, and the marketplace
+`~/.codex/plugins/cache/cross-agent-cli/cross-agent/<version>/`, and the marketplace
 stays registered at the export, so keep the export while it is. To move to a newer
 checkout, export its `HEAD` into a new directory as above and register that one in
 place of the old, so that no file deleted since lingers in the copy:
 
 ```
-codex plugin remove cross-agent@agent-team-cli
-codex plugin marketplace remove agent-team-cli
+codex plugin remove cross-agent@cross-agent-cli
+codex plugin marketplace remove cross-agent-cli
 codex plugin marketplace add ~/.cache/agent-team/codex-plugin-export/<new sha>
-codex plugin add cross-agent@agent-team-cli
+codex plugin add cross-agent@cross-agent-cli
 ```
 
 Registering the checkout itself, `codex plugin marketplace add
-~/Documents/agent-team-cli`, works too, at a cost: the copy then takes everything in
+~/Documents/cross-agent-cli`, works too, at a cost: the copy then takes everything in
 the directory — the `.git` directory, `.worktrees/` with each worktree's
 `.cross-agent/` task records, untracked and ignored files — 89 MB of this checkout on
 2026-10-01 against 2.9 MB for an export, and every update is the remove and add above.
@@ -209,7 +209,7 @@ and `CROSS_AGENT_LINEAGE`, whenever the session has them, so a Codex session sta
 inside a task — from a test suite the lead runs, say — gets a specialist's tools, never
 the operator's; from a clean shell there are none to hand on.
 
-To check the install, `codex plugin list --json` lists `cross-agent@agent-team-cli`
+To check the install, `codex plugin list --json` lists `cross-agent@cross-agent-cli`
 with `"installed": true` and `"enabled": true`, `codex mcp list` shows a server
 `cross-agent` whose command is `./.codex-plugin/serve`, and a session started as
 above answers `list_roles` with the project's roles. Its tools are the ones Claude
@@ -224,11 +224,11 @@ launcher; each one started with `CROSS_AGENT_PROJECT` set gets the server. To ha
 only when you ask for it, turn it off in `~/.codex/config.toml`:
 
 ```
-[plugins."cross-agent@agent-team-cli"]
+[plugins."cross-agent@cross-agent-cli"]
 enabled = false
 ```
 
-and on for one session with `codex -c plugins.cross-agent@agent-team-cli.enabled=true`.
+and on for one session with `codex -c plugins.cross-agent@cross-agent-cli.enabled=true`.
 The key is unquoted on the command line; quoted, it names nothing. `codex plugin add`
 writes `enabled = true` again, so turn it off again after every reinstall. Do not write
 `enabled = false` under `[mcp_servers.cross-agent]` while the plugin is installed:
@@ -246,14 +246,14 @@ entries outlive the repositories they name, and they are yours to delete.
 To remove it:
 
 ```
-codex plugin remove cross-agent@agent-team-cli
-codex plugin marketplace remove agent-team-cli
+codex plugin remove cross-agent@cross-agent-cli
+codex plugin marketplace remove cross-agent-cli
 ```
 
-The first deletes the `[plugins."cross-agent@agent-team-cli"]` table, whatever it
+The first deletes the `[plugins."cross-agent@cross-agent-cli"]` table, whatever it
 says, and the cached copy, leaving the empty directory
-`~/.codex/plugins/cache/agent-team-cli/`; the second deletes the
-`[marketplaces.agent-team-cli]` table. The export is yours to delete after that.
+`~/.codex/plugins/cache/cross-agent-cli/`; the second deletes the
+`[marketplaces.cross-agent-cli]` table. The export is yours to delete after that.
 
 ### Without the plugin
 
@@ -262,10 +262,10 @@ checkout itself rather than a copy, and it starts where the session runs, so it 
 the project as the Claude Code plugin does and needs no `CROSS_AGENT_PROJECT`:
 
 ```
-codex mcp add cross-agent -- node ~/Documents/agent-team-cli/src/server.ts
+codex mcp add cross-agent -- node ~/Documents/cross-agent-cli/src/server.ts
 rm -rf ~/.codex/skills/cross-agent
 mkdir -p ~/.codex/skills/cross-agent
-cp -R ~/Documents/agent-team-cli/skills/cross-agent/. ~/.codex/skills/cross-agent/
+cp -R ~/Documents/cross-agent-cli/skills/cross-agent/. ~/.codex/skills/cross-agent/
 ```
 
 The skill's copy replaces any earlier one rather than landing inside it. Its
@@ -310,7 +310,7 @@ git add .gitignore && git commit -m 'Ignore cross-agent and Grok state' -- .giti
 mkdir -p .grok
 cat >> .grok/config.toml <<EOF
 [plugins]
-paths = ["$HOME/Documents/agent-team-cli"]
+paths = ["$HOME/Documents/cross-agent-cli"]
 enabled = ["cross-agent"]
 
 [mcp]
@@ -322,7 +322,7 @@ EOF
 the plugin's server in the session's own working directory, and the server serves the
 project whose `.cross-agent/config.json` it finds there or above it. `cross-agent` is on
 `PATH` only where the package is linked; elsewhere the command is `node
-~/Documents/agent-team-cli/src/cli.ts init --mode dev-team`, as in the Claude Code section.
+~/Documents/cross-agent-cli/src/cli.ts init --mode dev-team`, as in the Claude Code section.
 `.grok/` goes into `.gitignore` beside `init`'s own entries because its file names your
 checkout's path, and because a committed `.grok/config.toml` would reach every task
 worktree: Grok takes a linked worktree as a project of its own, so it would load the
@@ -356,7 +356,7 @@ that also named `.grok/config.toml` would track the file again.
 The heredoc is for a project whose `.grok/config.toml` has no `[plugins]` or `[mcp]` table
 yet: TOML refuses a table, or a key, declared twice. Where the file has them, edit them
 instead: add the checkout's absolute path, your home directory written out, to the existing
-`paths` array — what the heredoc's `$HOME/Documents/agent-team-cli` becomes once the shell
+`paths` array — what the heredoc's `$HOME/Documents/cross-agent-cli` becomes once the shell
 expands it — and `"cross-agent"` to the existing `enabled` array, and set
 `max_output_bytes` under `[mcp]` to 100000 unless it is already larger, keeping the larger
 value. Where you raise it, note the value you replace, for the removal below.
@@ -450,7 +450,7 @@ No dependencies; Node 24 or later runs the TypeScript sources directly.
 
 ## The operator CLI
 
-`cross-agent <verb>` — or `node ~/Documents/agent-team-cli/src/cli.ts <verb>`
+`cross-agent <verb>` — or `node ~/Documents/cross-agent-cli/src/cli.ts <verb>`
 where the package is not linked — is the operator's own entry point. Every verb
 takes `--project <root>`, `--json` for one JSON document on stdout whatever the
 exit, and `--help`. Without `--project`, `init` writes in the current directory,
