@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T00:06:53Z
+updated_at: 2026-10-03T08:18:00Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -89,9 +89,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Blockers
 
-The `AGENTS.md` diff for the worktree projects (its Layout and Run lines) waits for the user's
-approval. It is `.superpowers/sdd/the-development-of-this-calm-planet/task-13-agents-md.diff`, which
-`git apply --check` accepts on `main`.
+None. The `AGENTS.md` diff for the worktree projects was approved and applied on 2026-10-03
+(Decision 0012).
 
 ## Key files
 

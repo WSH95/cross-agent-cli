@@ -805,3 +805,59 @@ What stands is this project's own record at the close:
 Importing and exporting team or workflow configuration, if it is needed, is a
 feature of this repository in its own format (`atc-s96.96`). The note drafted
 for the devpack's `EVIDENCE.md` under part C was withdrawn uncommitted.
+
+## 0012 — 2026-10-03 — A branch worktree as a project of its own (`atc-s96.97`); AGENTS.md Layout and Run (user-approved diff)
+
+Context: The user develops several branches of one repository at once, one
+worktree per branch, and asked on 2026-10-02 whether cross-agent works in each.
+It did not:
+- every worktree of a repository was one project, anchored at the main checkout;
+- its tasks branched from and merged into that checkout's default branch;
+- bare repositories were refused.
+
+Decision: The user chose, on 2026-10-02:
+- **Opt-in by `init`.** A worktree becomes a project of its own only when
+  `cross-agent init` is run in it. One never initialized keeps its mapping to
+  the main project.
+- **Bare repositories** (`git clone --bare`, then one `git worktree add` per
+  branch) are supported.
+- **`init` in a worktree copies the main project's setup.** The team config is
+  copied with `defaultBranch` set to the worktree's branch, or the mode's
+  defaults are used where there is none. The main checkout's Grok attach file
+  is copied too.
+- **A `cross-agent git-root` verb,** the operator's cooperating path for root
+  git while a loop runs.
+
+It was built as `docs/design.md` describes it ("Which project", section 4, the
+locks) and merged at `fb0d050` (`VERIFY.md` "T13").
+
+Two rulings were taken in review:
+- `branch -d` holds a branch to the last tip its journal's steps recorded, in
+  step order (`src/journal.ts#recordedTip`). A journaled move after a merge is
+  the better evidence.
+- E10's condition that `~/.grok/` stay unchanged by sha256 is met in purpose,
+  not in letter. The operator's own running `grok` wrote its log and memtrace
+  during the run, and 86 unreadable `sandbox-blocked.<pid>` files were compared
+  by mtime. No configuration, auth or trust file changed
+  (`docs/probes.md#worktreeProjects`).
+
+The user approved `task-13-agents-md.diff` on 2026-10-03. It was applied on
+`main` by `git apply` against the blob `8efa36be7e739ec3156825a462980bb6e93209d7`:
+- the `src/project.ts` sentence names the two new discovery rules;
+- the CLI bullet lists `git-root`;
+- the `src/locks.ts`, `src/worktree.ts`, `src/gitmutate.ts` and `src/gitroot.ts`
+  lines name the repository lock and the repository located from outside;
+- Run gains `init` in a branch worktree.
+
+The managed blocks are untouched, and `CLAUDE.md`, which includes `AGENTS.md`
+by reference, is unchanged.
+
+Consequences: The limits the plan stated stand, documented in the README
+("Several branches at once") and the design:
+- Grok folder trust is the operator's;
+- Codex writes its own trust entries;
+- a hung git hook needs manual recovery;
+- plain git run by hand during a loop can interleave;
+- a separated main's worktree needs `init --from <main checkout>`.
+
+The follow-ups are `atc-s96.98` to `.102`.

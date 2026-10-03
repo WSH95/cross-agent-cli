@@ -25,7 +25,9 @@ Shipped:
 - `src/server.ts`: the stdio JSON-RPC (MCP) server and its tool registry,
   gated per request by the permission-matrix row `src/authority.ts` resolves
   from process ancestry; `src/project.ts` finds the project (`--project`,
-  `CROSS_AGENT_PROJECT`, or the nearest `.cross-agent/config.json`).
+  `CROSS_AGENT_PROJECT`, or the nearest `.cross-agent/config.json`, a directory
+  inside a task's worktree read as its root and a worktree `init` was run in as a
+  project of its own).
 - `src/delegate.ts` (`delegate` under `spawn.lock`: validation, the launch
   spec, the detached runner, and an engine-placed lead's mount and composed
   prompt), `src/tasks.ts` (`check`, `result`, `cancel` with its cascade over
@@ -38,21 +40,24 @@ Shipped:
 - `src/modes.ts`: the mode loader, `describe_mode`'s payload, the built-in
   `consult` role, and `builtInModesDir`.
 - `src/cli.ts`: the operator CLI — `init`, `modes`, `tasks`, `show`, `log`,
-  `cancel`, `verify-worktree`, `git`, `journal`, `list-asks`, `answer` and
-  `report` on one verb table, each calling the function its tool calls, with
+  `cancel`, `verify-worktree`, `git`, `git-root`, `journal`, `list-asks`, `answer`
+  and `report` on one verb table, each calling the function its tool calls, with
   `--project`, `--json` and `--help` on every verb and one exit protocol (0 ok,
   1 error, 2 usage, 3 precondition, 4 still running, 5 needs the operator, 6
   stalled); its reads write nothing, and a verb that writes refuses inside a
   task's environment.
 - `src/ledger.ts` (task records; async conditional `update` under the
   record lock; the runner's outcome sidecar), `src/locks.ts` (OS-held
-  `flock` on a pipe), `src/process.ts`
+  `flock` on a pipe, and the repository lock in the common directory),
+  `src/process.ts`
   (identities, groups, the environ scan, orphan cleanup), `src/reconcile.ts`
-  (reconciliation on the group scan), `src/worktree.ts` (linked-worktree
-  verification), `src/reservation.ts` (workspace reservation),
-  `src/gitmutate.ts` (`git_mutate` on the verified git-dir under
-  `spawn.lock` → `git.lock`), `src/gitroot.ts` (`git_root`: one
-  whitelisted verb at the project root under `git.lock`),
+  (reconciliation on the group scan), `src/worktree.ts` (the project's
+  repository, located from outside it, the opt-in rule for writes at a root that
+  is not the main checkout, and linked-worktree verification),
+  `src/reservation.ts` (workspace reservation), `src/gitmutate.ts` (`git_mutate`
+  on the verified git-dir under `spawn.lock` → `git.lock` → the repository
+  lock), `src/gitroot.ts` (`git_root`: one whitelisted verb at the project root
+  under `git.lock`, and the repository lock for a verb that changes it),
   `src/runcommand.ts` (`run_command`: the configured test or setup
   command by selector), `src/journal.ts` (the per-task git journal),
   `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,
@@ -139,7 +144,9 @@ Planned, in the design's work plan: the backlog (row 14).
 
 - The server: `node src/server.ts` (stdio; JSON-RPC lines in, lines out).
 - A project's config: `node src/cli.ts init --mode dev-team` (or `solo`, or
-  `dev-team-engine`) in the project root.
+  `dev-team-engine`) in the project root; in a branch worktree beside it, `node
+  src/cli.ts init` copies the main checkout's config onto the worktree's own branch
+  (README, "Several branches at once").
 - A project's tasks from a terminal, without writing anything: `node src/cli.ts
   tasks`, `node src/cli.ts show <id>`, `node src/cli.ts report` (each takes
   `--json`).
