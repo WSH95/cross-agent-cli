@@ -1,4 +1,4 @@
-# agent-team-cli project charter
+# cross-agent-cli project charter
 
 cross-agent: a multi-engine orchestrator that runs a dev team (planner, plan
 reviewer, implementer, code reviewer) as one MCP server plus one skill for

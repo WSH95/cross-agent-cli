@@ -1,4 +1,4 @@
-# agent-team-cli
+# cross-agent-cli
 
 `cross-agent`: a multi-engine orchestrator — one MCP server plus a launcher
 skill — that runs headless `claude`, `codex`, and `grok` processes as a team
@@ -152,7 +152,7 @@ Planned, in the design's work plan: the backlog (row 14).
   `--json`).
 - A Codex host: export `HEAD` into a directory of its own (`git archive HEAD |
   tar -x -C <dir>`), `codex plugin marketplace add <dir>`, `codex plugin add
-  cross-agent@agent-team-cli`, then `CROSS_AGENT_PROJECT=<project root> codex`
+  cross-agent@cross-agent-cli`, then `CROSS_AGENT_PROJECT=<project root> codex`
   (README, "Install it in Codex").
 - A Grok host: in the project, after `init`, `.grok/` added to `.gitignore` and
   that change committed, then `[plugins]` with `paths = ["<this repository's

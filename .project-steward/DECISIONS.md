@@ -861,3 +861,46 @@ Consequences: The limits the plan stated stand, documented in the README
 - a separated main's worktree needs `init --from <main checkout>`.
 
 The follow-ups are `atc-s96.98` to `.102`.
+
+## 0013 — 2026-10-03 — The repository renamed from `agent-team-cli` to `cross-agent-cli` (`atc-s96.103`); AGENTS.md (user-approved)
+
+Context: The user asked on 2026-10-03 to rename the project from `agent-team-cli` to `cross-agent-cli`. The product was already `cross-agent`: the package, the CLI command, both plugin manifests' `name`, the MCP server and the launcher skill. `agent-team-cli` was the repository's own name:
+- the directory `~/Documents/agent-team-cli`;
+- the Codex marketplace name, and so the install id `cross-agent@agent-team-cli`;
+- both manifests' `author`;
+- the README's install paths and three design lines;
+- `AGENTS.md`'s title and Codex line;
+- the steward project name.
+
+Decision: The user chose, on 2026-10-03:
+- the new name wherever it is live;
+- records of past runs (`docs/probes.md`, `VERIFY.md`) keep the paths, marketplace name and plugin id their runs used, with one note each saying so;
+- the bead prefix `atc-`, git history and `~/.cache/agent-team/` unchanged;
+- the directory moved last;
+- no migration or compatibility work: "This tool has never been used in any development project, so there is no need to consider any migration work related to it."
+
+The plan (three plan reviews) and the implementation (five commits, test first; a three-seat review with no Critical or Important finding) were merged at `1a17004`. `npm test` gives 933 tests, 932 pass, 1 skipped; citations are 1458, none by line, 0 misses.
+
+The user approved the `AGENTS.md` change on 2026-10-03: "I approve you to modify the AGENTS.md, just complete the task for me". It changes the title and the Codex install id. The managed blocks are untouched, and `CLAUDE.md`, which includes `AGENTS.md` by reference, is unchanged. The steward's project name follows, in `PROJECT.md` and `state.json`.
+
+The move: since the user asked for the task to be completed, the controller runs the move as the session's last step. The plan had left it to the user. Two scripts run, both kept beside the plan:
+- **`task-14-move.sh`:**
+  - a preflight of every process's cwd and command line, with only inspected pids allowed;
+  - `mv -T`;
+  - `core.hooksPath`, absolute to the old path, set to the relative `.beads/hooks`;
+  - the e2e sample's Grok attach repointed and verified.
+- **`task-14-smoke.sh`:** one `claude-sonnet-5` turn under `--plugin-dir` at the new path. It passes only with the plugin's server connected and the operator row's exact tool set.
+
+Their results follow below.
+
+Consequences: These steps are left to the user, because the app or the CLI owns each one:
+- Claude Code asks to trust the new path on its first start there.
+- Codex writes its own trust entry.
+- The Codex desktop app's project list re-adds the folder at the new path; the stale `agent-team-cli` and `cross-agent-m3` projects are removed through the app.
+- VS Code reopens the folder.
+
+These entries keep the old path, harmlessly:
+- `~/.claude.json`'s project key;
+- `~/.codex/config.toml`'s trust entry;
+- the dormant OpenMausBot Phase 0 binding under `~/.cache/agent-team/openmausbot-data-4/`;
+- the probe archives.

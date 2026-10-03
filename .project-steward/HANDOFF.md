@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T10:43:47Z
+updated_at: 2026-10-03T11:13:53Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -40,7 +40,7 @@ What stands is the project's own record. The operator conditions a release names
 
 **Attaching each host:**
 - **Claude Code:** `claude --plugin-dir <this repository>`.
-- **Codex:** an exported `HEAD` added as a local marketplace (`codex plugin marketplace add`, `codex plugin add cross-agent@agent-team-cli`), then started as `CROSS_AGENT_PROJECT="$PWD" codex`.
+- **Codex:** an exported `HEAD` added as a local marketplace (`codex plugin marketplace add`, `codex plugin add cross-agent@cross-agent-cli`), then started as `CROSS_AGENT_PROJECT="$PWD" codex`.
 - **Grok:** the project's own `.grok/config.toml`, with `[plugins] paths` naming this repository, `enabled = ["cross-agent"]` and `[mcp] max_output_bytes = 100000`, in a trusted folder.
 
 ## In flight

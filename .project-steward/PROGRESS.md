@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T11:13:53Z — claude
+atc-s96.103 merged (1a17004): the repository's live names are cross-agent-cli (Codex marketplace and install id, manifests' author, README, design); records keep their paths with a note; AGENTS.md updated on the user's approval (Decision 0013). The directory move and the smoke test follow at the session's end.
+
 ### 2026-10-03T10:43:47Z — claude
 [auto-checkpoint] atc-s96.103: plan final (revision 3, three reviews); implemented on task/cross-agent-cli-rename (e22958b..b2f4658; 933/932/1 skipped; grep gate exact); code review next.
 
