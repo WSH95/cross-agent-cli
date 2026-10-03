@@ -135,6 +135,32 @@ for (const name of ["repository root", "root subdirectory", "unrelated repositor
   });
 }
 
+// @anchor notProjectState
+test("verifyWorktree refuses a workspace at or under the project's .cross-agent, detached or not, and still inspects a detached task worktree by HEAD", async (t) => {
+  const { root, add } = await repository(t);
+  // A detached checkout of the repository's own, registered like any worktree, in the
+  // directory the server writes alone: the gate's checkout has this shape.
+  const checkout = path.join(root, ".cross-agent", "gate", "x", "tree");
+  await mkdir(path.dirname(checkout), { recursive: true });
+  await git(root, "worktree", "add", "--detach", checkout, "main");
+  for (const branch of ["HEAD", "task/x"]) {
+    const reason = refusal(await verifyWorktree(root, checkout, branch));
+    assert.equal(reason, `${await realpath(checkout)} lies under the project's own .cross-agent/, which the server writes and no task works in.`);
+  }
+  assert.match(refusal(await verifyWorktree(root, path.join(root, ".cross-agent"), "HEAD")), /lies under the project's own \.cross-agent\//);
+
+  // The rule is about where a workspace is, not what it has checked out: a task worktree
+  // a stopped rebase has detached is inspected by its HEAD as before.
+  const task = await add("detached");
+  await git(task, "checkout", "--detach");
+  assert.deepEqual(await verifyWorktree(root, task, "HEAD"), {
+    gitDir: await realpath(path.join(root, ".git", "worktrees", "detached")),
+    workTree: await realpath(task),
+    branch: "HEAD",
+    commonDir: await realpath(path.join(root, ".git")),
+  });
+});
+
 // @anchor relativeToProjectRoot
 test("verifyWorktree reads a relative worktree path against the project root, not the server's own directory", async (t) => {
   const { root } = await repository(t);

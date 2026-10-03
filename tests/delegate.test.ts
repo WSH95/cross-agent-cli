@@ -260,6 +260,23 @@ test("a role, a workspace and a branch the project does not have are each refuse
   assert.deepEqual(p.records(), [], "nothing refused leaves a record behind");
 });
 
+// @anchor noWorkspaceUnderState
+test("a delegation into a checkout under .cross-agent is refused before any record or launch, with branch HEAD and with a branch name alike", async (t) => {
+  const p = await projectWithRoles(t);
+  const checkout = path.join(p.root, ".cross-agent", "gate", "x", "tree");
+  fs.mkdirSync(path.dirname(checkout), { recursive: true });
+  await git(p.root, "worktree", "add", "--detach", checkout, "main");
+  const head = await git(checkout, "rev-parse", "HEAD");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  for (const branch of ["HEAD", "task/x"]) {
+    const reason = refusal(await delegate(p.root, request({ role: "implementer", cwd: checkout, branch }), options));
+    assert.match(reason, /lies under the project's own \.cross-agent\//, branch);
+  }
+  assert.deepEqual(p.records(), [], "nothing was recorded, so nothing launched");
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), head);
+  assert.equal(await git(checkout, "status", "--porcelain"), "");
+});
+
 test("a workspace an unsettled writable task holds refuses every delegation onto it, above it and below it", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/held");

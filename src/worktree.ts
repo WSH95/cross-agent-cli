@@ -421,6 +421,19 @@ export async function verifyWorktree(
     // A relative path is the project's: the server's own directory is wherever its host
     // started it, which for the Codex plugin is its cached copy.
     const workTree = await realpath(path.resolve(root, worktreePath));
+    // @anchor notProjectState
+    // The project's own directory is the server's to write — the ledger, the journal, the
+    // locks and the gate's checkouts of a branch head live there — so nothing at or under
+    // it is a task's workspace, whatever it has checked out: a detached checkout there would
+    // otherwise verify as `branch: "HEAD"` and take a writer, a mutation or a run.
+    const state = path.join(root, ".cross-agent");
+    let canonicalState = state;
+    try {
+      canonicalState = await realpath(state);
+    } catch { /* no state directory yet: the path itself is the one to compare */ }
+    if ([state, canonicalState].some((directory) => workTree === directory || contains(directory, workTree))) {
+      return { reason: `${workTree} lies under the project's own .cross-agent/, which the server writes and no task works in.` };
+    }
     operation = "list the repository's worktrees";
     const stanzas = await registryOf(identity.gitDir, root);
     // @anchor linkedWorktree

@@ -259,6 +259,21 @@ test("git_mutate refuses every workspace while a task record cannot be read", as
   accepted(await gitMutate(root, { slug: "unknown", args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
 });
 
+// @anchor noMutationUnderState
+test("git_mutate refuses a path under .cross-agent before git runs, whatever branch and slug it is given", async (t) => {
+  const { root } = await repository(t);
+  const checkout = path.join(root, ".cross-agent", "gate", "x", "tree");
+  await mkdir(path.dirname(checkout), { recursive: true });
+  await git(root, "worktree", "add", "--detach", checkout, "main");
+  const head = await git(checkout, "rev-parse", "HEAD");
+  for (const branch of ["HEAD", "task/x"]) {
+    const reason = refusal(await gitMutate(root, { slug: "fresh", path: checkout, branch, args: ["commit", "--allow-empty", "-m", "x"] }, { waitSeconds: 5 }));
+    assert.match(reason, /lies under the project's own \.cross-agent\//, branch);
+  }
+  assert.equal(readJournal(root, "fresh"), null);
+  assert.equal(await git(checkout, "rev-parse", "HEAD"), head, "nothing was committed there");
+});
+
 // @anchor gitMutateRefusesWorktree
 test("git_mutate refuses a worktree the verifier rejects, with the verifier's own reason", async (t) => {
   const { temporary, root, add } = await repository(t);

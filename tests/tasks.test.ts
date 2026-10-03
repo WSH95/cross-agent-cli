@@ -187,6 +187,28 @@ test("check reports the task, what is running it, and the tail of its own event 
   assert.deepEqual(missing, { ok: false, reason: "no task no-such-task" });
 });
 
+// @anchor viewCarriesSeat
+test("list_tasks and check carry seat and underReview, and only when a record has them", async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-view-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const head = "0123456789abcdef0123456789abcdef01234567";
+  const seated = create(root, { role: "code-reviewer", brief: "review seat two", cwd: root, engine: "codex", seat: 2, underReview: head });
+  const plain = create(root, { role: "planner", brief: "plan", cwd: root, engine: "codex" });
+
+  const listed = await listTasks(root, undefined, { reconcile: false });
+  const byId = new Map(listed.tasks.map((task) => [task.id, task]));
+  assert.equal(byId.get(seated.id)?.seat, 2);
+  assert.equal(byId.get(seated.id)?.underReview, head);
+  for (const key of ["seat", "underReview"]) assert.equal(Object.hasOwn(byId.get(plain.id)!, key), false, key);
+
+  const checked = await check(root, seated.id);
+  assert.equal(checked.ok && checked.seat, 2);
+  assert.equal(checked.ok && checked.underReview, head);
+  const unseated = await check(root, plain.id);
+  assert.ok(unseated.ok);
+  for (const key of ["seat", "underReview"]) assert.equal(Object.hasOwn(unseated, key), false, key);
+});
+
 // @anchor checkWritesStall
 test("check writes the stall its clock reads, and writes the task back when events resume", async (t) => {
   // 0.02 of a minute is 1.2 seconds: a fraction is a valid `stallMinutes` and the reading

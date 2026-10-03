@@ -54,6 +54,10 @@ export interface CreateTask {
   resumedFrom?: string | null;
   /** The worktree this delegation created for the task, when it was given one. */
   worktree?: TaskWorktree;
+  /** The seat this task sits in, 1-based, for a role config binds to a list. */
+  seat?: number;
+  /** The branch head this task was delegated to review, for a role that gates the merge. */
+  underReview?: string;
 }
 
 export interface TaskRecord {
@@ -104,6 +108,19 @@ export interface TaskRecord {
   reason?: string;
   /** The engine's stdio drain expired: this record's evidence may be missing its tail. */
   truncated?: boolean;
+  /**
+   * The seat this task sits in, 1-based, written once at creation for a role config binds to
+   * a list of bindings, and absent for a role bound to one. The duplicate window and the
+   * resume binding read it beside the role (design section 5, layer 4).
+   */
+  seat?: number;
+  /**
+   * The branch head this task was delegated to review, written once for a role that gates
+   * the merge: the commit the merge's review guard credits its verdict to
+   * (`src/review.ts#reviewsOf`), and the commit its worktree is held at while it runs
+   * (`src/review.ts#reviewHold`).
+   */
+  underReview?: string;
 }
 
 export type TaskPatch = Partial<Omit<TaskRecord, "id" | "createdAt" | "updatedAt">>;
@@ -354,6 +371,11 @@ function recordFault(value: unknown, file: string): string | null {
       if (typeof (worktree as Record<string, unknown>)[field] !== "string") return `worktree needs a string ${field}`;
     }
   }
+  // Absent where a task has none, and nothing else: a seat is a position, never null.
+  if (record.seat !== undefined && (!Number.isSafeInteger(record.seat) || (record.seat as number) < 1)) {
+    return "seat must be a positive whole number";
+  }
+  if (record.underReview !== undefined && typeof record.underReview !== "string") return "underReview must be a string";
   return null;
 }
 
@@ -440,6 +462,8 @@ export function create(projectRoot: string, input: CreateTask, now = Date.now())
     ...(input.parentTaskId === undefined ? {} : { parentTaskId: input.parentTaskId }),
     ...(input.resumedFrom === undefined ? {} : { resumedFrom: input.resumedFrom }),
     ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+    ...(input.seat === undefined ? {} : { seat: input.seat }),
+    ...(input.underReview === undefined ? {} : { underReview: input.underReview }),
   };
   writeAtomic(file, record);
   return record;

@@ -84,6 +84,10 @@ export interface TaskView {
   updatedAt: number;
   lastEventAt: number | null;
   reason?: string;
+  /** The seat of a role bound to a list, present only where the record has one. */
+  seat?: number;
+  /** The branch head a gating review was delegated at, present only where the record has one. */
+  underReview?: string;
 }
 
 function view(record: TaskRecord): TaskView {
@@ -94,6 +98,8 @@ function view(record: TaskRecord): TaskView {
     parentTaskId: record.parentTaskId ?? null, resumedFrom: record.resumedFrom ?? null,
     createdAt: record.createdAt, updatedAt: record.updatedAt, lastEventAt: record.lastEventAt ?? null,
     ...(record.reason === undefined ? {} : { reason: record.reason }),
+    ...(record.seat === undefined ? {} : { seat: record.seat }),
+    ...(record.underReview === undefined ? {} : { underReview: record.underReview }),
   };
 }
 

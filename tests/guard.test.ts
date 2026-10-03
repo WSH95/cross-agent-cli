@@ -164,6 +164,21 @@ test("duplicateRefusal allows different briefs, roles, and cwd values", () => {
   assert.equal(duplicateRefusal(request, [], now, windowMinutes), null);
 });
 
+// @anchor duplicateSeats
+test("duplicateRefusal reads the seat as part of a delegation's identity", () => {
+  // Seats of one role review one branch on one brief at once; each is its own delegation.
+  const live = record({ id: "seat-one", status: "running", seat: 1 });
+  assert.equal(duplicateRefusal({ ...request, seat: 2 }, [live], now, windowMinutes), null);
+  assert.equal(duplicateRefusal({ ...request, seat: 1 }, [live], now, windowMinutes), "already running, wait on seat-one");
+  // A role bound to one binding has no seat, and a seated record is not its duplicate.
+  assert.equal(duplicateRefusal(request, [live], now, windowMinutes), null);
+  // The finished window is per seat too, and `force` crosses it as it does for any task.
+  const finished = record({ id: "seat-two", seat: 2, updatedAt: now - 1 });
+  assert.match(duplicateRefusal({ ...request, seat: 2 }, [finished], now, windowMinutes)!, /task seat-two finished within the 10-minute duplicate window/);
+  assert.equal(duplicateRefusal({ ...request, seat: 1 }, [finished], now, windowMinutes), null);
+  assert.equal(duplicateRefusal({ ...request, seat: 2, force: true }, [finished], now, windowMinutes), null);
+});
+
 test("resumeRefusal rejects active records and each mismatched binding field", () => {
   for (const status of activeStatuses) {
     const active = { ...record({ status }), sandbox: resumeRequest.sandbox };
@@ -185,6 +200,13 @@ test("resumeRefusal rejects active records and each mismatched binding field", (
     assert.ok(refusal.includes(finished.id), refusal);
     assert.ok(refusal.includes(field), refusal);
   }
+  // A seat is bound like the rest: a continuation reads the branch it read before, under the
+  // binding of the seat it was, so another seat, or none, is another task.
+  const seated = { ...record({ seat: 2 }), sandbox: resumeRequest.sandbox };
+  assert.equal(resumeRefusal({ ...resumeRequest, seat: 1 }, seated), `refused resume of task ${seated.id}: seat 1 differs from the original 2`);
+  assert.equal(resumeRefusal(resumeRequest, seated), `refused resume of task ${seated.id}: seat none differs from the original 2`);
+  assert.equal(resumeRefusal({ ...resumeRequest, seat: 2 }, seated), null);
+  assert.equal(resumeRefusal({ ...resumeRequest, seat: 1 }, finished), `refused resume of task ${finished.id}: seat 1 differs from the original none`);
 });
 
 test("resumeRefusal accepts matching terminal records and refuses missing sandbox metadata", () => {

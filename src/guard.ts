@@ -14,6 +14,8 @@ export interface DuplicateRequest {
   role: string;
   cwd: string;
   brief: string;
+  /** The seat of a role bound to a list: seats of one role and brief are separate tasks. */
+  seat?: number;
   force?: boolean;
   /**
    * This call would take a worktree of its own, so its workspace is new by construction
@@ -28,6 +30,8 @@ export interface ResumeRequest {
   engine: EngineName;
   cwd: string;
   sandbox: SandboxProfile;
+  /** The seat the continuation sits in, which has to be the original's. */
+  seat?: number;
 }
 
 type ResumeRecord = TaskRecord & { sandbox?: SandboxProfile };
@@ -86,7 +90,7 @@ export function duplicateRefusal(
 ): string | null {
   const briefHash = createHash("sha256").update(request.brief).digest("hex");
   const matches = records.filter((record) =>
-    record.role === request.role && record.briefHash === briefHash
+    record.role === request.role && record.seat === request.seat && record.briefHash === briefHash
     && (request.worktree === true ? record.worktree !== undefined : record.cwd === request.cwd),
   );
   const active = matches.find((record) => activeStatuses.has(record.status));
@@ -111,6 +115,10 @@ export function resumeRefusal(request: ResumeRequest, record: ResumeRecord): str
     if (request[field] !== record[field]) {
       return `refused resume of task ${record.id}: ${field} ${JSON.stringify(request[field])} differs from the original ${JSON.stringify(record[field])}`;
     }
+  }
+  // A seat reads under its own binding, so a continuation in another seat is another task.
+  if (request.seat !== record.seat) {
+    return `refused resume of task ${record.id}: seat ${request.seat ?? "none"} differs from the original ${record.seat ?? "none"}`;
   }
   return null;
 }

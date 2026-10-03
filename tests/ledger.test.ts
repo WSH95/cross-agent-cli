@@ -430,6 +430,8 @@ test("read validates the shape every reader depends on and names the file and th
     { ...complete, runnerIdentity: { pid: 7, startTime: "1" }, engineIdentity: { pid: 7, startTime: "1", pgid: 7 } },
     // A record a later build wrote carries fields this one does not know.
     { ...complete, depth: 2, truncated: true, parentTaskId: "abc" },
+    // A seat of a role bound to a list, and the branch head a gating review was delegated at.
+    { ...complete, seat: 3, underReview: "0123456789abcdef0123456789abcdef01234567" },
   ]) {
     put(valid);
     assert.deepEqual(read(root, record.id), valid);
@@ -449,6 +451,9 @@ test("read validates the shape every reader depends on and names the file and th
     ["runnerIdentity", { runnerIdentity: { pid: 7, startTime: "1", bootId: 5 } }],
     ["engineIdentity", { engineIdentity: { pid: 7, startTime: "1", bootId: "b" } }],
     ["engineIdentity", { engineIdentity: { ...liveIdentity(), pgid: "7" } }],
+    // A seat is a 1-based position, and null is no seat at all.
+    ...[0, 1.5, "2", null].map((seat): [string, Record<string, unknown>] => ["seat must be a positive whole number", { seat }]),
+    ["underReview must be a string", { underReview: 5 }],
   ];
   for (const [field, fault] of faults) {
     put({ ...complete, ...fault });
@@ -811,6 +816,14 @@ test("create writes the fields a cascade, a resume and a stall clock read", (t) 
   assert.equal(child.effort, "high");
   assert.equal(child.acknowledgedAt, undefined, "only the runner's acknowledgement writes it");
   assert.deepEqual(read(root, child.id), child);
+
+  // A seat and the head under review are written once, at creation, and only where given.
+  const seated = create(root, { ...input(root), seat: 2, underReview: "0123456789abcdef0123456789abcdef01234567" }, now);
+  assert.equal(seated.seat, 2);
+  assert.equal(seated.underReview, "0123456789abcdef0123456789abcdef01234567");
+  assert.deepEqual(read(root, seated.id), seated);
+  assert.equal("seat" in child, false);
+  assert.equal("underReview" in child, false);
 
   // A task nobody delegated is at depth 0, has no parent and continues nothing. A null
   // model or effort is what `delegate` writes when neither the request nor the role binds
