@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T13:09:52Z
+updated_at: 2026-10-03T13:32:54Z
 updated_by: claude
 session_status: active
 branch: main
@@ -54,7 +54,13 @@ The user's decisions:
 - a new `resolver` role on a stronger model resolves the significant findings two fix rounds leave standing;
 - what happens to significant findings still standing after the resolver is a config option, defaulting to stop and ask the user.
 
-Planning is running (`.superpowers/sdd/the-development-of-this-calm-planet/task-15-planning-brief.md`).
+The plan is `.superpowers/sdd/the-development-of-this-calm-planet/task-15-brief.md`. In it:
+- several seats are a mode fact, `"seats": "many"`;
+- `delegate` gains a `seat`, written `code-reviewer#2`;
+- the settings are `limits.planReviewRounds` and `review.afterResolver`, both read through `describe_mode`;
+- E11 is engine-placed, on cost-effective models.
+
+Its first plan review is running.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.

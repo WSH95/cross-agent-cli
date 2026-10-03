@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T13:32:54Z — claude
+[auto-checkpoint] atc-s96.104: plan written (task-15-brief.md: seats as a mode fact, delegate's seat, limits.planReviewRounds, review.afterResolver, a resolver role, E11); plan review round 1 running.
+
 ### 2026-10-03T13:09:52Z — claude
 atc-s96.104 opened: the built-in team modes adopt this session's plan iteration and fix rounds, N code reviewers (a list under roles.code-reviewer), a resolver role; plan-round and post-escalation limits configurable. Planning running.
 
