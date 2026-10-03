@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T13:09:52Z — claude
+atc-s96.104 opened: the built-in team modes adopt this session's plan iteration and fix rounds, N code reviewers (a list under roles.code-reviewer), a resolver role; plan-round and post-escalation limits configurable. Planning running.
+
 ### 2026-10-03T11:33:08Z — claude
 atc-s96.97 (a branch worktree as its own project) and atc-s96.103 (the repository renamed to cross-agent-cli, moved to ~/Documents/cross-agent-cli) are done; the open work is the deferred beads and the worktree-project follow-ups .98-.102.
 

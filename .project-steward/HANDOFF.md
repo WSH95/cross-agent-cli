@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-03T11:33:08Z
+updated_at: 2026-10-03T13:09:52Z
 updated_by: claude
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
@@ -45,7 +45,16 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-None.
+**`atc-s96.104`: the built-in team modes adopt this session's plan iteration and fix rounds,
+with N code reviewers and a `resolver` role** (the user's request, 2026-10-03).
+
+The user's decisions:
+- `roles.code-reviewer` may be a list of bindings, one reviewer each;
+- after N consecutive plan-review rounds with major issues the loop asks the user, N a config limit defaulting to 3;
+- a new `resolver` role on a stronger model resolves the significant findings two fix rounds leave standing;
+- what happens to significant findings still standing after the resolver is a config option, defaulting to stop and ask the user.
+
+Planning is running (`.superpowers/sdd/the-development-of-this-calm-planet/task-15-planning-brief.md`).
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.
