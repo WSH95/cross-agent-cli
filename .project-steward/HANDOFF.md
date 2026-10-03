@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T08:18:00Z
+updated_at: 2026-10-03T09:11:11Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -45,7 +45,16 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-None. **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
+**`atc-s96.103`: rename the repository from `agent-team-cli` to `cross-agent-cli`** (the user's
+request, 2026-10-03). The product is already `cross-agent`. The live names change: the Codex
+marketplace name, both manifests' `author`, README paths, live docs, test pins, and `AGENTS.md`'s
+title and Codex line (the last as a diff for the user's approval). Records of past runs keep their
+paths, with one note. There is no migration or compatibility work: the tool has never been used in a
+development project (the user). The directory moves last; then `core.hooksPath` (absolute today),
+the e2e sample's Grok attach and Claude Code and Codex trust follow. Planning is running
+(`.superpowers/sdd/the-development-of-this-calm-planet/task-14-planning-brief.md`).
+
+**`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
 A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when
 `cross-agent init` is run in it, so several branches of one repository can each run their own
 loop at once (README, "Several branches at once").
