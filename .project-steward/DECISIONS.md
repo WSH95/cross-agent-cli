@@ -904,3 +904,24 @@ These entries keep the old path, harmlessly:
 - `~/.codex/config.toml`'s trust entry;
 - the dormant OpenMausBot Phase 0 binding under `~/.cache/agent-team/openmausbot-data-4/`;
 - the probe archives.
+
+**After the move (2026-10-03).** The controller ran `task-14-move.sh` from `~` at 11:31Z. It allowed ten processes it had inspected:
+- this session's `claude`;
+- the ghostty terminal and its tab shells. Two of them are the parents of the operator's own `grok` and `codex` sessions, which run in `~/Documents/blank` and use nothing from the repository.
+- VS Code's terminal and two language servers;
+- the podman `catatonit` pause process.
+
+Of the other processes, 229 had a cwd the scan could not read, and none of their command lines named the tree.
+
+The results:
+- The repository moved with `mv -T`, and `core.hooksPath` became `.beads/hooks`.
+- `bd hooks list` reports the five shims installed, and `bd where` names the new path with prefix `atc`.
+- The e2e sample's Grok attach names the new path.
+- `git status` is as before: the two expected paths.
+
+`task-14-smoke.sh` passed. It ran one `claude-sonnet-5` turn from the sample with `--plugin-dir ~/Documents/cross-agent-cli`:
+- exit 0, with a `result` of success ("ok"), in 2.9 s for $0.080;
+- the plugin loaded from the new path, its server connected, and its tools were exactly the operator row's fourteen;
+- the record is `~/.cache/agent-team/probe-logs/rename-20261003T113212Z/`.
+
+The smoke test ran from this session, not from a separate terminal. The session carries no `CROSS_AGENT_*` marker, and in that case the resolver grants the operator row (`docs/probes.md#walk32`). A temporary symlink at the old path kept the session's tools working for these last steps, and it was removed as the session's final action.

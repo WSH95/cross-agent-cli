@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T11:30:39Z
+updated_at: 2026-10-03T11:32:57Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -45,9 +45,22 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-**`atc-s96.103`: the repository renamed from `agent-team-cli` to `cross-agent-cli`.**
-- **Merged on 2026-10-03:** `1a17004`, with the controller's commit `6c3e5c3`. That commit carries the `AGENTS.md` change the user approved, the steward project name, and Decision 0013.
-- **The directory move:** run by the controller as the session's last step. Its results are recorded in Decision 0013 and below.
+None.
+
+**`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
+- **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.
+- **What kept the old path:** records of past runs keep the paths they ran at, with one note each in `docs/probes.md` and `VERIFY.md`.
+- **The move:** the controller moved the directory. `core.hooksPath` is now the relative `.beads/hooks`, and the e2e sample's Grok attach was repointed.
+- **The smoke test:** it passed, with the plugin loaded from the new path, its server connected, and the operator row's fourteen tools.
+
+Decision 0013 records all of it.
+
+**Left to the user:**
+- trust the new folder when Claude Code first starts there;
+- in the Codex desktop app, add the folder at the new path, and remove the stale `agent-team-cli` and `cross-agent-m3` projects;
+- reopen VS Code at the new path.
+
+Codex writes its own trust entry for the new path. Stale entries that name the old path (`~/.claude.json`'s project key, `~/.codex/config.toml`'s trust entry, and the dormant OpenMausBot data under `~/.cache/agent-team/`) are harmless.
 
 **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
 A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when

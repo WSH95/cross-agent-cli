@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T11:32:57Z — claude
+atc-s96.103 done: the directory moved to ~/Documents/cross-agent-cli (move script: preflight with ten inspected pids allowed, mv -T, core.hooksPath .beads/hooks, the sample's attach repointed); the smoke test passed (claude-sonnet-5, exit 0, plugin from the new path, server connected, the operator row's fourteen tools; $0.080). Left to the user: Claude Code trust, the Codex desktop project list, VS Code.
+
 ### 2026-10-03T11:13:53Z — claude
 atc-s96.103 merged (1a17004): the repository's live names are cross-agent-cli (Codex marketplace and install id, manifests' author, README, design); records keep their paths with a note; AGENTS.md updated on the user's approval (Decision 0013). The directory move and the smoke test follow at the session's end.
 
