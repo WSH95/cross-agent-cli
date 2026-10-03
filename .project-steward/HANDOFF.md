@@ -81,7 +81,17 @@ The reset plan went through four reviews: 5, 3, 2 and 2 majors. At the plateau t
 - the merge acts on one resolved head;
 - a `waive_review` tool and a `cross-agent waive` verb record waivers.
 
-It is implemented in `.worktrees/team-modes` (`task/team-modes`): 13 commits, `92b35be..c3bae4c`, with 991 tests (990 pass, 1 skipped) and 0 citation misses. The code review is next.
+It is implemented in `.worktrees/team-modes` (`task/team-modes`): 13 commits, `92b35be..c3bae4c`, with 991 tests (990 pass, 1 skipped) and 0 citation misses.
+
+Code review round 1 (`task-15-findings-round-1.md`) found:
+- **3 Critical, all in the setup marker:**
+  - it is cleared when the shell exits while its group still lives;
+  - a setup runs unmarked if the server dies before the marker is written, or if the process identity cannot be read;
+  - a late cleanup can delete another setup's marker.
+- **1 Important:** `always-ask` is skipped when only Minor rows remain after the resolver.
+- **3 Minor.**
+
+Fix round 1 is running. Next: the controller's gates and commit, round 2's review, then E11 and the merge.
 
 A stray empty `/tmp/.git`, made by an unknown process, broke plain `npm test`; it was removed. It exposed a robustness bug in worktree projects: an invalid `.git` in an ancestor makes every project below it refuse. That is filed as `atc-s96.106` (P2). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
 
