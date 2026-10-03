@@ -202,8 +202,9 @@ either gave it. A round with a Critical or Important row standing is a fix round
 After two fix rounds with Critical or Important rows still standing, the resolver
 takes the table once: `delegate {role: "resolver", cwd: <worktree path>, branch:
 <branch>, brief: <the table, every review, the plan and the branch>}`, `wait`,
-`result`, step 6, and one more round from the gate. If Critical or Important rows
-still stand after it, `review.afterResolver` from `describe_mode` decides. `ask`,
+`result`, step 6, and one more round from the gate. Before the wrap-up route, apply
+`review.afterResolver` from `describe_mode`: `ask` and `lead-decides` when a Critical
+or Important row stands; `always-ask` when any row stands, Minor included. `ask`,
 the default: stop and ask the user with the findings per round, the convergence
 verdict and its evidence — the rounds are **not converging** when the major count
 did not fall, or most majors were introduced by the last fix — and four options:
@@ -215,8 +216,7 @@ change to the smallest that meets the acceptance, then the gate and a round) or
 **pause** — and recommend simplify when the rounds are not converging.
 `lead-decides`: rule on each standing row with its evidence, name each you accept
 as a limitation in your report, record `waive_review {slug, commit: <the branch
-head>}` and go to step 8. `always-ask`: the same stop as `ask`, whatever stands,
-Minor rows included.
+head>}` and go to step 8. `always-ask`: the same stop as `ask`.
 
 A round with only Minor rows standing gets one wrap-up fix — the implementer
 resumed with those rows — then step 6, the gate and one more round; Minor rows

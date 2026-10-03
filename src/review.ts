@@ -8,7 +8,7 @@ import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { isTerminal, projectLock, scan, writeAtomic } from "./ledger.ts";
 import type { ProcessIdentity, TaskRecord } from "./ledger.ts";
-import { gitLockName } from "./locks.ts";
+import { gitLockName, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { groupAlive } from "./process.ts";
 import { canonicalPath } from "./reservation.ts";
@@ -90,10 +90,10 @@ export function setupMarkerPath(projectRoot: string, workTree: string): string {
 }
 
 /**
- * Writes the marker for a setup that has just started in `workTree`, atomically: the
+ * Writes the marker under the caller's `spawn.lock`, atomically: the
  * identity of the detached command, which leads its own process group, so the marker
- * holds for as long as anything that command started lives, whatever becomes of the
- * server that started it.
+ * holds until its group is gone, whatever becomes of the server that started it. A
+ * descendant that starts its own session leaves the group, and no marker can follow it.
  */
 export function markSetup(projectRoot: string, workTree: string, slug: string, identity: ProcessIdentity): string {
   const file = setupMarkerPath(projectRoot, workTree);
@@ -106,26 +106,40 @@ export function markSetup(projectRoot: string, workTree: string, slug: string, i
 }
 
 /**
- * Removes a marker; a marker already gone is removed. Given the pid of the setup that
- * wrote it, a marker naming another process is left alone: once this setup's group is gone
- * another setup may have marked the worktree for itself.
+ * Clears this setup's marker only after its group is gone, under `spawn.lock`: checking
+ * the full identity and removing the file are one operation against a successor's write.
+ * If the lock cannot be had, the marker stays for the next setupRunning reader to clear.
  */
-export function clearSetup(projectRoot: string, workTree: string, pid?: number): void {
-  const file = setupMarkerPath(projectRoot, workTree);
-  if (pid !== undefined) {
+export async function clearSetup(
+  projectRoot: string, workTree: string, identity: ProcessIdentity, options: { waitSeconds: number },
+): Promise<void> {
+  if (!identity) return;
+  let lock: Lock;
+  try {
+    lock = await projectLock(projectRoot, spawnLockName(), { waitSeconds: options.waitSeconds, operation: "clear setup marker" });
+  } catch {
+    return;
+  }
+  try {
+    const file = setupMarkerPath(projectRoot, workTree);
     try {
-      if ((JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: unknown }).pid !== pid) return;
+      const marker = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (marker.pid !== identity.pid || marker.startTime !== identity.startTime || marker.bootId !== identity.bootId
+        || marker.pgid !== identity.pid || groupAlive({ ...identity, pgid: identity.pid })) return;
     } catch {
       return;
     }
+    fs.rmSync(file, { force: true });
+  } finally {
+    await lock.release();
   }
-  fs.rmSync(file, { force: true });
 }
 
 /**
  * Why `workTree` is held by a running setup, or null: a marker whose group `groupAlive`
  * finds alive is the hold, one whose group is gone is cleared and holds nothing, and one
- * that cannot be read is named and holds.
+ * that cannot be read is named and holds. The caller holds `spawn.lock` through this read
+ * and the setup or review it admits.
  */
 export function setupRunning(projectRoot: string, workTree: string): string | null {
   const file = setupMarkerPath(projectRoot, workTree);

@@ -314,6 +314,13 @@ test("the docs put each hook where git runs it, keep spawn.lock out of git_root'
   assert.doesNotMatch(design, /though the git directory they share lay outside the denied cwd/);
 });
 
+// @anchor runCommandLocations
+test("the run_command design distinguishes the verified task worktree from the gate's detached checkout", () => {
+  const design = fs.readFileSync(path.join(repoRoot, "docs", "design.md"), "utf8").replace(/\s+/g, " ");
+  assert.ok(design.includes("The setup command runs in that verified task worktree; the suite runs in the gate's detached checkout of the branch head"),
+    "the design must distinguish setup in the verified worktree from tests in the gate's detached checkout");
+});
+
 // @anchor grokReadmeInstall
 test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");

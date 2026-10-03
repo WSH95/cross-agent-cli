@@ -362,7 +362,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
     },
     {
       name: "git_root",
-      description: "Run one whitelisted git verb at the project root, under the project's git lock and, for a verb that changes the repository, the repository's own lock, and journal the step it completes. The verbs are worktree add -b, worktree remove, branch -d, merge --ff-only, rebase --abort, and the read-only status, log, rev-parse, rev-parse --abbrev-ref HEAD, merge-base, branch --list and worktree list; a verb that journals a step names the slug whose journal it belongs to.",
+      description: "Run one whitelisted git verb at the project root, under the project's git lock and, for a verb that changes the repository, the repository's own lock, and journal the step it completes. A merge --ff-only refuses a head without a tested step (unless testCommand is none), and for a team task in a gating mode, without every seat's clean review or a waiver. The verbs are worktree add -b, worktree remove, branch -d, merge --ff-only, rebase --abort, and the read-only status, log, rev-parse, rev-parse --abbrev-ref HEAD, merge-base, branch --list and worktree list; a verb that journals a step names the slug whose journal it belongs to.",
       inputSchema: {
         type: "object",
         properties: { args: { type: "array", items: { type: "string" } }, slug: { type: "string" } },
@@ -385,7 +385,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
     },
     {
       name: "run_command",
-      description: "Run this project's configured test or setup command — by selector, never as a command string — at the project root or in a verified worktree, returning the exit code and the last 64 KB of its output. A passing test run at the root after the merge journals the slug's tests-passed step.",
+      description: "Run this project's configured test or setup command — by selector, never as a command string — at the project root or for a verified worktree, returning the exit code and the last 64 KB of its output. Worktree tests run in a detached checkout of the branch head under .cross-agent/gate/ and journal tested on success. A passing test run at the root after the merge journals the slug's tests-passed step.",
       inputSchema: {
         type: "object",
         properties: {

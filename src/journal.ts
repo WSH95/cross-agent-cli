@@ -8,7 +8,7 @@ import { writeAtomic } from "./ledger.ts";
  */
 export type JournalStep =
   | "worktree-created" | "committed" | "rebased" | "merged"
-  | "tests-passed" | "worktree-removed" | "branch-deleted" | "git";
+  | "tests-passed" | "tested" | "review-waived" | "worktree-removed" | "branch-deleted" | "git";
 
 export interface JournalEntry {
   step: JournalStep;

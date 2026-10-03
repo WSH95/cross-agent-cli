@@ -977,6 +977,16 @@ test("both dev-team loops gate every review round on a rebase and a tested head,
   assert.match(engine, /dispatch nothing until the answer/);
 });
 
+// @anchor afterResolverBeforeWrapUp
+for (const mode of teamLoops) {
+  test(`${mode} applies afterResolver to Minor-only leftovers under always-ask before wrap-up`, () => {
+    const step = flat(sectionOf(loop(mode), "7. Code review"));
+    const condition = 'Before the wrap-up route, apply `review.afterResolver` from `describe_mode`: `ask` and `lead-decides` when a Critical or Important row stands; `always-ask` when any row stands, Minor included.';
+    assert.ok(step.includes(condition), `${mode}: afterResolver must cover Minor-only leftovers under always-ask before wrap-up`);
+    assertInOrder(step, ['delegate {role: "resolver"', condition, 'A round with only Minor rows standing gets one wrap-up fix'], mode);
+  });
+}
+
 // @anchor rebaseGate
 test("both dev-team loops send a branch a rebase moved back through step 7's gate, and one it left alone on to the merge", () => {
   for (const mode of teamLoops) {

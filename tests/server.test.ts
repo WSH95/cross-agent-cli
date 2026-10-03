@@ -152,6 +152,21 @@ test("tools/list offers each row of the permission matrix exactly its tools", as
   }
 });
 
+// @anchor gateToolDescriptions
+for (const [name, pins] of [
+  ["run_command", [/detached checkout of the branch head under \.cross-agent\/gate\//, /journal tested on success/]],
+  ["git_root", [/merge --ff-only refuses a head without a tested step/, /unless testCommand is none/,
+    /for a team task.*without every seat's clean review or a waiver/]],
+] as const) {
+  test(`tools/list describes ${name}'s gate guarantees`, async (t) => {
+    const root = await projectWithConfig(t, { roles: {} });
+    const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+    const tools = ((await request("tools/list")).result as Json).tools as Json[];
+    const description = tools.find((tool) => tool.name === name)!.description as string;
+    for (const pin of pins) assert.match(description, pin, `${name}: ${pin}`);
+  });
+}
+
 test("list_tasks filters by the ledger's own statuses, the one list the ledger exports", async (t) => {
   const root = await projectWithConfig(t, { roles: {} });
   const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });

@@ -21,6 +21,23 @@ function file(root: string, slug: string): string {
   return path.join(directory(root), `${slug}.json`);
 }
 
+// @anchor reviewGateStepTypes
+for (const step of ["tested", "review-waived"] as const) {
+  test(`JournalStep includes ${step}, which can repeat without moving recordedTip`, (t) => {
+    // Node erases types without checking them, so the union needs a source pin as well
+    // as the runtime checks: a writer must be able to pass either step to appendStep.
+    const source = fs.readFileSync(new URL("../src/journal.ts", import.meta.url), "utf8");
+    const declared = /export type JournalStep\s*=([^;]+);/.exec(source)?.[1] ?? "";
+    assert.ok(declared.includes(`"${step}"`), `JournalStep must include "${step}"`);
+    const root = project(t);
+    appendStep(root, "gate", "worktree-created", { branch: "task/gate", defaultBranch: "main", before: "created-tip", after: "created-tip" });
+    appendStep(root, "gate", step, { after: "evidence-head" });
+    const journal = appendStep(root, "gate", step, { after: "evidence-head" });
+    assert.equal(journal.steps.filter((entry) => entry.step === step).length, 2);
+    assert.equal(recordedTip(journal), "created-tip");
+  });
+}
+
 test("a missing journal is created by the first step and read back", (t) => {
   const root = project(t);
   assert.equal(readJournal(root, "alpha"), null);

@@ -372,7 +372,7 @@ test("an initialized main checkout on another branch runs setup, as it always ha
 });
 
 // @anchor linkedRootWorktreeRun
-test("a worktree run at a linked root runs in the worktree it verifies, and needs the root initialized", async (t) => {
+test("a worktree test run at a linked root verifies the task worktree, tests the gate's detached checkout, and needs the root initialized", async (t) => {
   const { root } = await nonMainRoot(t, "linked", { defaultBranch: "feature", testCommand: "pwd" });
   const directory = path.join(root, ".worktrees", "x");
   assert.equal((await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })).ok, true);
@@ -540,6 +540,19 @@ test("the gate's checkout lives under the project's own .cross-agent/gate, and a
   assert.deepEqual(fs.readdirSync(outside), [], "nothing was checked out there");
   assert.equal(await git(root, "worktree", "list", "--porcelain"), registry);
   assert.equal(readJournal(root, "x")!.steps.length, steps, "and nothing was journaled");
+});
+
+// @anchor setupStdinEnds
+test("a marked worktree setup receives EOF on stdin and preserves its configured command", async (t) => {
+  const { root } = await repository(t);
+  const directory = await committedTask(root, "stdin");
+  const marker = setupMarkerPath(root, directory);
+  configure(root, {
+    setupCommand: `test -f ${JSON.stringify(marker)} || exit 7; if IFS= read -r line; then exit 8; fi; printf '%s' 'set up: "$HOME"'`,
+  });
+  const ran = accepted(await runCommand(root, { which: "setup", where: directory, slug: "stdin" }));
+  assert.equal(ran.exitCode, 0, ran.tail);
+  assert.equal(ran.tail, 'set up: "$HOME"');
 });
 
 // @anchor setupRefusedUnderReview

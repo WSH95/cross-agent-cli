@@ -19,7 +19,7 @@ import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { groupAlive, identityOf, terminateGroupByPid } from "../src/process.ts";
-import { markSetup, setupMarkerPath } from "../src/review.ts";
+import { markSetup, setupMarkerPath, setupRunning } from "../src/review.ts";
 import { runCommand } from "../src/runcommand.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { buildMode } from "./helpers/mode.ts";
@@ -1955,6 +1955,158 @@ test("a running worktree setup holds its worktree against a gating review, in bo
   const refused = await runCommand(p.root, { which: "setup", where: worktree, slug: "setting" });
   assert.equal(refused.ok, false);
   assert.match((refused as { reason: string }).reason, new RegExp(`under review by task ${id}`));
+});
+
+// @anchor reviewRefusedWhileSetupBackgroundLives
+test("a setup that backgrounds a child keeps its marker and refuses a gating review until its group is gone", async (t) => {
+  const p = await projectWithRoles(t);
+  const started = path.join(p.root, "background-started");
+  const release = path.join(p.root, "background-may-end");
+  const late = path.join(p.root, "late");
+  // A release barrier keeps the regression deterministic under load; after release the
+  // background child still sleeps and writes, with neither output pipe holding shell().
+  const command = `(${waitingSetup(started, release)}; sleep 2; touch ${JSON.stringify(late)}) >/dev/null 2>&1 & echo $$`;
+  const { worktree, head } = await journaledWorktree(p, "background", { setupCommand: command });
+  const ran = await runCommand(p.root, { which: "setup", where: worktree, slug: "background" });
+  assert.equal(ran.ok, true, JSON.stringify(ran));
+  if (!ran.ok) return;
+  assert.equal(ran.exitCode, 0);
+  const pgid = Number(ran.tail.trim());
+  t.after(async () => { await terminateGroupByPid(pgid); });
+  await poll(() => fs.existsSync(started), Boolean);
+  assert.equal(fs.existsSync(late), false);
+  const file = setupMarkerPath(p.root, worktree);
+  assert.equal(fs.existsSync(file), true, "the setup marker must outlive the shell while its background group lives");
+  const written = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(written.pgid, pgid);
+  assert.equal(groupAlive(written), true);
+
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/background" }), brief: "Review round 1." };
+  assert.match(refusal(await delegate(p.root, review, options)), new RegExp(`\\(process group ${pgid}\\); wait for it, or end that group`));
+  assert.deepEqual(p.records(), []);
+
+  fs.writeFileSync(release, "");
+  await poll(() => fs.existsSync(late), Boolean);
+  await poll(() => groupAlive(written), (living) => !living);
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+  assert.equal(fs.existsSync(file), false, "the next delegation clears the dead group's marker");
+});
+
+// @anchor setupDiesBeforePublication
+test("a setup whose server dies before publishing its marker never runs and leaves no group holding a review", async (t) => {
+  const p = await projectWithRoles(t);
+  const own = path.join(p.root, "command-ran");
+  const { worktree, head } = await journaledWorktree(p, "unpublished", { setupCommand: `touch ${JSON.stringify(own)}; sleep 120` });
+  const fixture = path.join(import.meta.dirname, "fixtures", "run-setup.mjs");
+  const server = track(t, spawn(process.execPath, [fixture, p.root, worktree, "unpublished", "die-before-marker"], {
+    detached: true, stdio: "ignore", env: p.env,
+  }));
+  await poll(() => proc(server.pid!), (stat) => stat === null || stat.state === "Z");
+  const identity = JSON.parse(fs.readFileSync(path.join(p.root, "setup-spawned.json"), "utf8"));
+  t.after(async () => { await terminateGroupByPid(identity.pgid); });
+  assert.equal(fs.existsSync(setupMarkerPath(p.root, worktree)), false, "the fixture died before the rename");
+  await poll(() => fs.existsSync(own) || !groupAlive(identity), Boolean);
+  assert.equal(fs.existsSync(own), false, "a setup must not execute before its marker is published");
+  assert.equal(groupAlive(identity), false, "EOF before go must end the waiting group");
+
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = request({ role: "reviewer", cwd: worktree, branch: "task/unpublished" });
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+});
+
+// @anchor setupNeedsIdentity
+test("a setup whose identity cannot be read is refused before its command runs", async (t) => {
+  const p = await projectWithRoles(t);
+  const own = path.join(p.root, "command-ran");
+  const { worktree, head } = await journaledWorktree(p, "no-identity", { setupCommand: `touch ${JSON.stringify(own)}` });
+  const fixture = path.join(import.meta.dirname, "fixtures", "run-setup.mjs");
+  const server = track(t, spawn(process.execPath, [fixture, p.root, worktree, "no-identity", "null-identity"], {
+    detached: true, stdio: ["ignore", "pipe", "pipe"], env: p.env,
+  }));
+  let stderr = "";
+  server.stdout!.resume();
+  server.stderr!.on("data", (data) => { stderr += data; });
+  const code = await new Promise((resolve) => server.once("close", resolve));
+  assert.equal(code, 0, stderr);
+  const answer = JSON.parse(fs.readFileSync(path.join(p.root, "setup-result.json"), "utf8"));
+  const identity = JSON.parse(fs.readFileSync(path.join(p.root, "setup-spawned.json"), "utf8"));
+  t.after(async () => { await terminateGroupByPid(identity.pgid); });
+  assert.equal(answer.ok, false, "a setup with no process identity must be refused");
+  assert.match(answer.reason, /setupCommand could not run.*identity/);
+  await poll(() => groupAlive(identity), (living) => !living);
+  assert.equal(fs.existsSync(own), false);
+  assert.equal(fs.existsSync(setupMarkerPath(p.root, worktree)), false);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = request({ role: "reviewer", cwd: worktree, branch: "task/no-identity" });
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+});
+
+// @anchor setupCleanupOrdersWithSuccessor
+test("setup cleanup waits for spawn.lock and leaves a successor's live marker holding the review", async (t) => {
+  const p = await projectWithRoles(t);
+  const started = path.join(p.root, "setup-started");
+  const release = path.join(p.root, "setup-may-end");
+  const { worktree } = await journaledWorktree(p, "cleanup", { setupCommand: waitingSetup(started, release) });
+  let settled = false;
+  const setup = runCommand(p.root, { which: "setup", where: worktree, slug: "cleanup" }).then((ran) => { settled = true; return ran; });
+  await poll(() => fs.existsSync(started), Boolean);
+  const marker = setupMarkerPath(p.root, worktree);
+  const original = JSON.parse(fs.readFileSync(marker, "utf8"));
+  const lockFile = lockPath(p.root, spawnLockName());
+  const lock = await acquire(lockFile, { operation: "order A's cleanup before B's publication", waitSeconds: 5 });
+  try {
+    fs.writeFileSync(release, "");
+    await poll(() => settled || holdersOf(lockFile).length > 1, Boolean);
+    assert.equal(settled, false, "setup cleanup must wait for spawn.lock before reading or removing its marker");
+    assert.deepEqual(JSON.parse(fs.readFileSync(marker, "utf8")), original, "A's marker is still present under the lock");
+    assert.equal(groupAlive(original), false);
+
+    // B takes over the same worktree under the lock before A can finish its cleanup.
+    const successor = track(t, spawn("sleep", ["120"], { detached: true, stdio: "ignore" }));
+    const identity = identityOf(successor.pid!)!;
+    markSetup(p.root, worktree, "successor", identity);
+    const replacement = fs.readFileSync(marker, "utf8");
+    await lock.release();
+    assert.equal((await setup).ok, true);
+    assert.equal(fs.readFileSync(marker, "utf8"), replacement, "A's cleanup leaves B's marker intact");
+    assert.match(setupRunning(p.root, worktree)!, /task successor is running/);
+    const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+    const review = request({ role: "reviewer", cwd: worktree, branch: "task/cleanup" });
+    assert.match(refusal(await delegate(p.root, review, options)), new RegExp(`process group ${identity.pid}`));
+    assert.deepEqual(p.records(), []);
+  } finally {
+    await lock.release();
+    await setup;
+  }
+});
+
+// @anchor setupCleanupLockTimeout
+test("setup cleanup leaves its marker for the next reader when spawn.lock exceeds lockWaitSeconds", async (t) => {
+  const p = await projectWithRoles(t);
+  const started = path.join(p.root, "setup-started");
+  const release = path.join(p.root, "setup-may-end");
+  const commands = { setupCommand: waitingSetup(started, release) };
+  const { worktree, head } = await journaledWorktree(p, "cleanup-timeout", commands);
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({ ...configFor(p.bin, { lockWaitSeconds: 0 }), project: commands }));
+  const setup = runCommand(p.root, { which: "setup", where: worktree, slug: "cleanup-timeout" });
+  await poll(() => fs.existsSync(started), Boolean);
+  const marker = setupMarkerPath(p.root, worktree);
+  const original = fs.readFileSync(marker, "utf8");
+  const lock = await acquire(lockPath(p.root, spawnLockName()), { operation: "hold cleanup past its budget", waitSeconds: 5 });
+  try {
+    fs.writeFileSync(release, "");
+    assert.equal((await setup).ok, true, "a cleanup timeout does not replace the command's answer");
+    assert.equal(fs.existsSync(marker), true, "a cleanup that cannot take spawn.lock must leave its marker");
+    assert.equal(fs.readFileSync(marker, "utf8"), original);
+  } finally {
+    await lock.release();
+    await setup;
+  }
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = request({ role: "reviewer", cwd: worktree, branch: "task/cleanup-timeout" });
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+  assert.equal(fs.existsSync(marker), false, "the later reader clears the dead group's marker");
 });
 
 // @anchor reviewRefusedWhileSetupSurvives

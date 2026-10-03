@@ -10,6 +10,7 @@ import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
+import type { ProcessIdentity } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { identityOf } from "./process.ts";
@@ -110,8 +111,10 @@ interface Ran {
 /**
  * Runs one configured command to completion, or kills its whole process group. `started`
  * is told the command's pid as soon as it exists, before this awaits anything, so a caller
- * holding a lock can record the command before it lets the lock go; a `started` that throws
- * kills the command it was told about, and the throw is this call's.
+ * holding a lock can record the command before it lets the lock go. With `started`, the
+ * child waits for `go` on stdin before it execs the command: publication comes first, and
+ * a parent that dies before it sends `go` leaves EOF and no run. A `started` that throws
+ * kills the waiting group, and the throw is this call's. The command itself sees EOF.
  */
 async function shell(
   command: string, cwd: string, env: NodeJS.ProcessEnv, seconds: number, started?: (pid: number) => void,
@@ -119,7 +122,10 @@ async function shell(
   // `detached` makes the child a process-group leader, so what the timeout kills is the
   // command and everything it started — a suite that backgrounds a server would otherwise
   // outlive the run that started it.
-  const child = spawn("sh", ["-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const args = started === undefined ? ["-c", command]
+    : ["-c", 'IFS= read -r start && [ "$start" = go ] && exec sh -c "$1"', "sh", command];
+  const child = spawn("sh", args, { cwd, env, stdio: [started === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: true });
+  child.stdin?.on("error", () => { /* A child that exited before go leaves a broken pipe. */ });
   if (child.pid !== undefined && started !== undefined) {
     try {
       started(child.pid);
@@ -127,8 +133,10 @@ async function shell(
       try {
         process.kill(-child.pid, "SIGKILL");
       } catch { /* it exited first */ }
+      child.stdin?.destroy();
       throw error;
     }
+    child.stdin!.end("go\n");
   }
   const chunks: Buffer[] = [];
   let size = 0;
@@ -476,7 +484,9 @@ interface WorktreeSetup {
  * own marker is written before the lock is let go: whichever of a setup and a review takes
  * the lock first, the other sees it. The marker names the command's own group, so a server
  * that dies mid-setup leaves a hold that lasts exactly as long as that group, with no timer;
- * this call clears its marker when the command ends.
+ * this call keeps its marker until its group is gone. A descendant that starts its own
+ * session leaves the group, and no marker can follow it. Cleanup retakes `spawn.lock`,
+ * removes only this setup's full identity, and leaves the marker if the lock times out.
  */
 async function worktreeSetup(projectRoot: string, { verified, slug, config, env, seconds }: WorktreeSetup): Promise<RunCommandResult> {
   let claim: Lock;
@@ -485,17 +495,20 @@ async function worktreeSetup(projectRoot: string, { verified, slug, config, env,
   } catch (error) {
     return { ok: false, reason: message(error) };
   }
-  let marked: number | undefined;
+  let marked: ProcessIdentity | undefined;
   let pending: Promise<Ran>;
   try {
     const held = reviewHold(projectRoot, verified.workTree) ?? setupRunning(projectRoot, verified.workTree);
     if (held !== null) return { ok: false, reason: held };
     pending = shell(config.project.setupCommand, verified.workTree, env, seconds, (pid) => {
       const identity = identityOf(pid);
-      if (identity === null) return;
+      if (identity === null) throw new Error(`cannot read the setup process identity for pid ${pid}`);
       markSetup(projectRoot, verified.workTree, slug, identity);
-      marked = pid;
+      marked = identity;
     });
+    // A startup refusal may settle while release() awaits the lock holder's exit. It is
+    // reported by the await below, but must already have a rejection handler here.
+    void pending.catch(() => {});
   } finally {
     await claim.release();
   }
@@ -511,7 +524,9 @@ async function worktreeSetup(projectRoot: string, { verified, slug, config, env,
   } catch (error) {
     return { ok: false, reason: `setupCommand could not run in ${verified.workTree}: ${message(error)}` };
   } finally {
-    clearSetup(projectRoot, verified.workTree, marked);
+    if (marked !== undefined) {
+      await clearSetup(projectRoot, verified.workTree, marked, { waitSeconds: config.limits.lockWaitSeconds });
+    }
   }
 }
 

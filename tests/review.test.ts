@@ -7,9 +7,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { appendStep, readJournal } from "../src/journal.ts";
 import { create, update } from "../src/ledger.ts";
+import type { ProcessIdentity } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath } from "../src/locks.ts";
 import { groupAlive, identityOf } from "../src/process.ts";
-import { markSetup, reviewHold, setupMarkerPath, setupRunning, verdictOf, waiveReview } from "../src/review.ts";
+import { clearSetup, markSetup, reviewHold, setupMarkerPath, setupRunning, verdictOf, waiveReview } from "../src/review.ts";
 import { git, holdersOf } from "./helpers/git.ts";
 import { poll, project, track } from "./helpers/project.ts";
 
@@ -93,6 +94,40 @@ test("setupRunning holds while the marker's group lives, clears a marker whose g
   const unread = setupRunning(root, worktree);
   assert.ok(unread !== null && unread.includes(file), unread ?? "null");
   assert.equal(fs.existsSync(file), true);
+});
+
+// @anchor setupCleanupIdentity
+test("clearSetup removes only its full identity's marker after the group is gone", async (t) => {
+  const root = scratch(t);
+  const worktree = path.join(root, "tree");
+  const child = track(t, spawn("sleep", ["60"], { detached: true, stdio: "ignore" }));
+  const identity = identityOf(child.pid!)!;
+  const file = markSetup(root, worktree, "setup", identity);
+  await clearSetup(root, worktree, identity, { waitSeconds: 5 });
+  assert.equal(fs.existsSync(file), true, "a living group keeps its own marker");
+  process.kill(-child.pid!, "SIGKILL");
+  await poll(() => groupAlive({ ...identity, pgid: identity.pid }), (living) => !living);
+  for (const replacement of [{ ...identity, startTime: `${identity.startTime}0` }, { ...identity, bootId: "another-boot" }]) {
+    markSetup(root, worktree, "replacement", replacement);
+    await clearSetup(root, worktree, identity, { waitSeconds: 5 });
+    assert.equal(fs.existsSync(file), true, "matching only the pid cannot authorize removal");
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).startTime, replacement.startTime);
+  }
+  markSetup(root, worktree, "setup", identity);
+  await clearSetup(root, worktree, identity, { waitSeconds: 5 });
+  assert.equal(fs.existsSync(file), false, "the matching dead group's marker is removed");
+});
+
+// @anchor setupCleanupNeedsIdentity
+test("clearSetup without an identity leaves the setup marker intact", async (t) => {
+  const root = scratch(t);
+  const worktree = path.join(root, "tree");
+  const child = track(t, spawn("sleep", ["60"], { detached: true, stdio: "ignore" }));
+  const file = markSetup(root, worktree, "setup", identityOf(child.pid!)!);
+  const original = fs.readFileSync(file, "utf8");
+  await clearSetup(root, worktree, undefined as unknown as ProcessIdentity, { waitSeconds: 5 });
+  assert.equal(fs.existsSync(file), true, "no identity must never authorize marker removal");
+  assert.equal(fs.readFileSync(file, "utf8"), original);
 });
 
 /** A team project with a two-seat reviewer and a task worktree `x` whose journal is open. */

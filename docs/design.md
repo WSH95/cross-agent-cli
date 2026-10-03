@@ -2788,10 +2788,11 @@ repository's work tree. A worktree `where` is verified exactly as `git_mutate`
 verifies it, against the repository this call located, with the branch taken from the
 journal of the `slug` the call names — **required** there, because a worktree may
 carry another slug's branch and the lead does not get to say which branch a directory
-is on — and the journal's recorded path must be that worktree, where it then runs
-(`src/runcommand.ts#runCommand`). At a root that is not its repository's main
-checkout both kinds of `where` need the project initialized there, and the run that
-journals needs `rootWriteFault`'s `"write"` scope as well (above).
+is on — and the journal's recorded path must be that worktree. The setup command
+runs in that verified task worktree; the suite runs in the gate's detached checkout
+of the branch head (`src/runcommand.ts#worktreeSetup`, `#gateRun`). At a root that is
+not its repository's main checkout both kinds of `where` need the project initialized
+there, and the run that journals needs `rootWriteFault`'s `"write"` scope as well (above).
 
 The result is `{ok: true, exitCode, tail, journal?}` or `{ok: false, reason}`
 (`src/runcommand.ts#RunCommandResult`). **A failing suite is an answer, not a
@@ -2925,7 +2926,7 @@ and so is a worktree setup, each naming the review (`src/review.ts#reviewHold`,
 `tests/runcommand.test.ts#setupRefusedUnderReview`). A worktree setup, under
 `spawn.lock`, finds neither a review nor another live marker there, writes
 `.cross-agent/setups/<hash>.json` naming its command's process group before the
-lock is let go, and clears it when the command ends (`src/runcommand.ts#runCommand`,
+lock is let go, and keeps it until its group is gone (`src/runcommand.ts#worktreeSetup`,
 `src/review.ts#markSetup`, `#setupRunning`). Both checks and the marker's write
 happen under `spawn.lock`, which `delegate` holds through its record write, so the
 two orders close with no window: a setup that checks first has its marker written
@@ -2934,9 +2935,25 @@ review the setup then sees (`tests/delegate.test.ts#setupHoldsWorktree`,
 `#reviewRefusedDuringSetup`). A server that dies mid-setup leaves the marker and
 the command's group, and the hold lasts exactly as long as anything of that group
 lives — `groupAlive` is what the reader asks — with no timer anywhere; the next
-reader clears a marker whose group is gone, and one it cannot read holds by name
-(`src/process.ts#groupAlive`, `tests/delegate.test.ts#reviewRefusedWhileSetupSurvives`,
-`tests/review.test.ts#setupMarker`).
+reader clears a marker whose group is gone, and one it cannot read holds by name.
+A descendant that starts its own session leaves the group, and no marker can follow
+it (`src/process.ts#groupAlive`, `tests/delegate.test.ts#reviewRefusedWhileSetupSurvives`,
+`tests/review.test.ts#setupMarker`, `tests/delegate.test.ts#reviewRefusedWhileSetupBackgroundLives`).
+
+Before publication the detached child waits for `go` on stdin; only after the
+marker is published does the parent send it and close stdin. A parent that dies
+first leaves EOF, so the command never runs. An unreadable process identity
+refuses the setup and kills the waiting group (`src/runcommand.ts#shell`,
+`#worktreeSetup`; `tests/delegate.test.ts#setupDiesBeforePublication`,
+`#setupNeedsIdentity`). The command receives stdin at EOF as before
+(`tests/runcommand.test.ts#setupStdinEnds`).
+
+End-of-run cleanup retakes `spawn.lock`, checks the marker's full identity
+(`pid`, `startTime`, `bootId`), and removes it only when that group is gone. If
+the lock cannot be taken within `limits.lockWaitSeconds`, the marker stays for
+a later reader (`src/review.ts#clearSetup`; `tests/delegate.test.ts#setupCleanupOrdersWithSuccessor`,
+`#setupCleanupLockTimeout`, `tests/review.test.ts#setupCleanupIdentity`,
+`#setupCleanupNeedsIdentity`).
 
 **The waiver is written under the lock.** `waive_review {slug, commit}` and
 `cross-agent waive <slug> <commit>` record a `review-waived` step whose `before` and
