@@ -464,8 +464,8 @@ and a verb that reads writes nothing: not a record, not a lock, not a stall read
 | --- | --- | --- |
 | `init [--mode <name>] [--from <dir>]` | writes `.cross-agent/config.json` for a mode, every role bound to a default you then edit; an existing config is left alone. In a linked worktree it copies the config of the main checkout, or of `--from`, with the worktree's own branch as the default, or with `--mode` writes that mode's defaults instead, and copies the Grok attach of `--from` or of the main checkout beside it; `--mode` with `--from` is a 2; 3 for a task worktree, a detached HEAD, or a branch the mode's task pattern matches | 0, 3 |
 | `modes` | the installed modes, the active one starred, each with its roles; a config naming a mode this build does not have is a 3, with the listing still printed | 0, 3 |
-| `tasks [--status <status>] [--reconcile]` | every task, newest first — id, status, role, engine, depth, age, cwd — as the ledger holds it, a task whose runner is gone marked so, and every record file no reader could judge named; `--reconcile` runs `list_tasks`' reconciliation pass first, the one read that writes | 0 |
-| `show <id> [--lines <n>]` | one task: its record, the last lines of its engine's stream, its outcome, its journal and its final message; 4 while it runs and 6 when it is stalled, by the status the last `wait` or `check` wrote | 0, 3, 4, 6 |
+| `tasks [--status <status>] [--reconcile]` | every task, newest first — id, status, role (`code-reviewer#2` for a code reviewer's second seat; `--json` keeps `role` and `seat` apart), engine, depth, age, cwd — as the ledger holds it, a task whose runner is gone marked so, and every record file no reader could judge named; `--reconcile` runs `list_tasks`' reconciliation pass first, the one read that writes | 0 |
+| `show <id> [--lines <n>]` | one task: its record, the role spelled as `tasks` spells it and a review's `underReview` commit among its fields, the last lines of its engine's stream, its outcome, its journal and its final message; 4 while it runs and 6 when it is stalled, by the status the last `wait` or `check` wrote | 0, 3, 4, 6 |
 | `log <id> [--lines <n>]` | the last lines of a task's engine event stream, 50 by default | 0, 3 |
 | `cancel <id>` | cancels a task and every task it delegated, leaves first, and its lineage's open asks; 4 while a task of the cascade is still active, which a second cancel retries | 0, 3, 4 |
 | `verify-worktree <path> <branch>` | verifies a linked worktree on its exact branch, as `verify_worktree` does | 0, 3 |
@@ -475,7 +475,7 @@ and a verb that reads writes nothing: not a record, not a lock, not a stall read
 | `waive <slug> <commit>` | records your waiver of the review guard for the branch head of a task, as `waive_review` does; 3 when the commit is not that head or the task is merged or closed | 0, 3 |
 | `list-asks [--status <status>]` | every question an engine-placed lead has put to you, in the order asked; 5 while one it printed is open, and a damaged ask file is named rather than hiding the rest | 0, 5 |
 | `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed | 0, 3 |
-| `report [--since <task id>]` | every task, newest first — role, engine, model, effort, duration, outcome, id — then each task's final message, indented under its heading; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) | 0, 3 |
+| `report [--since <task id>]` | every task, newest first — role (as `tasks` spells it), engine, model, effort, duration, outcome, id — then each task's final message, indented under its heading; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) | 0, 3 |
 
 One exit protocol for every verb:
 

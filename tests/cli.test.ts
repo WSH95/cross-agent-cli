@@ -545,6 +545,54 @@ test("report over an empty or absent ledger is 0, says nothing, and creates noth
   assert.equal(fs.existsSync(path.join(root, ".cross-agent", "tasks")), false);
 });
 
+// @anchor cliSeatSpelling
+test("a seated record is spelled role#seat by tasks, show and report, and keeps role and seat apart in their JSON", async (t) => {
+  const root = await engineProject(t);
+  const { create, update } = await import("../src/ledger.ts");
+  const base = Date.now() - 600_000;
+  const head = "0123456789abcdef0123456789abcdef01234567";
+  const unseated = create(root, { role: "planner", brief: "plan", cwd: root, engine: "claude", depth: 2 }, base);
+  const seated = create(root, { role: "code-reviewer", brief: "review", cwd: root, engine: "codex", depth: 2, seat: 2, underReview: head }, base + 1_000);
+  for (const record of [unseated, seated]) {
+    assert.equal((await update(root, record.id, { status: "running" }, base + 2_000)).applied, true);
+    assert.equal((await update(root, record.id, { status: "done" }, base + 3_000)).applied, true);
+    fs.writeFileSync(record.resultPath, "VERDICT: no major issues\n");
+  }
+  const ran = await runEach([
+    ["tasks"], ["tasks", "--json"], ["show", seated.id], ["show", seated.id, "--json"], ["show", unseated.id], ["report"], ["report", "--json"],
+  ], root);
+  for (const answer of ran) assert.equal(answer.code, 0, answer.stderr);
+  const [tasks, tasksJson, show, showJson, showUnseated, report, reportJson] = ran;
+
+  // `tasks`: the role column spells the seat; the view keeps the two fields apart.
+  const roleOf = (id: string) => tasks.stdout.split("\n").find((line) => line.startsWith(id))!.split(/\s+/)[2];
+  assert.equal(roleOf(seated.id), "code-reviewer#2");
+  assert.equal(roleOf(unseated.id), "planner");
+  const views = (JSON.parse(tasksJson.stdout) as { tasks: Array<Record<string, unknown>> }).tasks;
+  const view = views.find((entry) => entry.id === seated.id)!;
+  assert.deepEqual([view.role, view.seat, view.underReview], ["code-reviewer", 2, head]);
+  assert.equal("seat" in views.find((entry) => entry.id === unseated.id)!, false);
+
+  // `show`: one role line, no seat line of its own, and the head the review covers.
+  assert.match(show.stdout, /^role: code-reviewer#2$/m);
+  assert.doesNotMatch(show.stdout, /^seat:/m);
+  assert.match(show.stdout, new RegExp(`^underReview: ${head}$`, "m"));
+  assert.match(showUnseated.stdout, /^role: planner$/m);
+  assert.doesNotMatch(showUnseated.stdout, /^underReview:/m);
+  const record = (JSON.parse(showJson.stdout) as { record: TaskRecord }).record;
+  assert.deepEqual([record.role, record.seat, record.underReview], ["code-reviewer", 2, head]);
+
+  // `report`: the row's first field and the heading; the JSON carries seat only where there is one.
+  const rows = report.stdout.split("\n").filter((line) => /^\S.* \| /.test(line));
+  assert.deepEqual(rows.map((line) => line.split(" | ")[0]), ["code-reviewer#2", "planner"]);
+  assert.equal(rows[0].split(" | ").length, 7, "seven fields stay seven");
+  assert.match(report.stdout, new RegExp(`^## ${seated.id} — code-reviewer#2, passed$`, "m"));
+  assert.match(report.stdout, new RegExp(`^## ${unseated.id} — planner, passed$`, "m"));
+  const reported = (JSON.parse(reportJson.stdout) as { tasks: Array<Record<string, unknown>> }).tasks;
+  assert.deepEqual([reported[0].id, reported[0].role, reported[0].seat], [seated.id, "code-reviewer", 2]);
+  assert.equal("seat" in reported[1], false, "an unseated task's entry has no seat");
+});
+
 /** A git repository with one empty commit and nothing of this project's in it: no config, no ledger. */
 async function bareRepository(t: TestContext): Promise<string> {
   const root = scratch(t);

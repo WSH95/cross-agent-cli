@@ -175,6 +175,11 @@ function runsOn(task: { engine: string; model?: string | null; effort?: string |
   return `${task.engine}/${task.model ?? "-"}/${task.effort ?? "-"}`;
 }
 
+/** A task's role as one cell: `<role>#<seat>` for a seat of a many-seat role, the role alone otherwise. */
+function roleCell(task: { role: string; seat?: number | null }): string {
+  return task.seat === undefined || task.seat === null ? task.role : `${task.role}#${task.seat}`;
+}
+
 /** Rows as columns two spaces apart, each padded to its widest cell but the last. */
 function columns(rows: string[][]): string {
   const widths = rows[0].map((_, index) => Math.max(...rows.map((row) => row[index].length)));
@@ -539,7 +544,7 @@ const tasksVerb: Verb = {
           // alive is what the next reconciliation pass settles.
           const gone = !isTerminal(task.status) && task.status !== "launching" && !isProcessAlive(records.get(task.id)?.runnerIdentity);
           return [
-            task.id, gone ? `${task.status} (runner gone)` : task.status, task.role, runsOn(task), String(task.depth),
+            task.id, gone ? `${task.status} (runner gone)` : task.status, roleCell(task), runsOn(task), String(task.depth),
             span(elapsedSeconds(task, now)), task.cwd,
           ];
         }),
@@ -606,13 +611,14 @@ const showVerb: Verb = {
     };
     field("id", record.id);
     field("status", record.status);
-    field("role", record.role);
+    field("role", roleCell(record));
     field("engine", runsOn(record));
     field("depth", record.depth ?? 0);
     field("parentTaskId", record.parentTaskId);
     field("resumedFrom", record.resumedFrom);
     field("cwd", record.cwd);
     if (record.worktree !== undefined) field("worktree", `${record.worktree.path} on ${record.worktree.branch}, slug ${record.worktree.slug}`);
+    field("underReview", record.underReview);
     field("createdAt", stamp(record.createdAt, now));
     field("updatedAt", stamp(record.updatedAt, now));
     if (typeof record.acknowledgedAt === "number") field("acknowledgedAt", stamp(record.acknowledgedAt, now));
@@ -945,6 +951,8 @@ const answerVerb: Verb = {
 interface ReportedTask {
   id: string;
   role: string;
+  /** The seat of a many-seat role, present only on a record that has one. */
+  seat?: number;
   engine: string;
   model: string | null;
   effort: string | null;
@@ -975,7 +983,8 @@ function reported(record: TaskRecord, now: number): ReportedTask {
   const terminal = isTerminal(record.status);
   const outcome = !terminal || result === null ? "unknown" : record.status === "done" ? "passed" : "failed";
   return {
-    id: record.id, role: record.role, engine: record.engine, model: record.model ?? null, effort: record.effort ?? null,
+    id: record.id, role: record.role, ...(record.seat === undefined ? {} : { seat: record.seat }),
+    engine: record.engine, model: record.model ?? null, effort: record.effort ?? null,
     // A settled task's duration stops at its settlement, as `check` reports it.
     status: record.status, durationSeconds: elapsedSeconds(record, now), outcome, result,
   };
@@ -1004,11 +1013,11 @@ const reportVerb: Verb = {
       .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
       .map((record) => reported(record, now));
     const rows = tasks.map((task) => [
-      task.role, task.engine, task.model ?? "-", task.effort ?? "-", `${task.durationSeconds}s`, task.outcome, task.id,
+      roleCell(task), task.engine, task.model ?? "-", task.effort ?? "-", `${task.durationSeconds}s`, task.outcome, task.id,
     ].join(" | "));
     const messages = tasks.map((task) => {
       const body = indented(task.result ?? "(no result file)");
-      return `## ${task.id} — ${task.role}, ${task.outcome}\n${body === "" ? "" : `\n${body}\n`}`;
+      return `## ${task.id} — ${roleCell(task)}, ${task.outcome}\n${body === "" ? "" : `\n${body}\n`}`;
     });
     return {
       code: EXIT.ok,
