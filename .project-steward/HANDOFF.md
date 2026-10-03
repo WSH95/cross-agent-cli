@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T13:32:54Z
+updated_at: 2026-10-03T14:43:41Z
 updated_by: claude
 session_status: active
 branch: main
@@ -60,7 +60,9 @@ The plan is `.superpowers/sdd/the-development-of-this-calm-planet/task-15-brief.
 - the settings are `limits.planReviewRounds` and `review.afterResolver`, both read through `describe_mode`;
 - E11 is engine-placed, on cost-effective models.
 
-Its first plan review is running.
+Three plan reviews each found major issues. All were folded, the last ones being the gates on
+every route to the merge, how fix rounds are counted, and two test pins. After the third round the
+user chose a fourth; revision 3 is being written (earlier revisions are kept as `-r1`, `-r2`).
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.

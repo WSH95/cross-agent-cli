@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T14:43:41Z — claude
+[auto-checkpoint] atc-s96.104: plan reviews 1–3 found major issues each (all folded; the remaining three narrow); after round 3 the user chose a fourth round; revision 3 being written.
+
 ### 2026-10-03T13:32:54Z — claude
 [auto-checkpoint] atc-s96.104: plan written (task-15-brief.md: seats as a mode fact, delegate's seat, limits.planReviewRounds, review.afterResolver, a resolver role, E11); plan review round 1 running.
 
