@@ -571,6 +571,10 @@ test("the lead's role prompt states who it is, its report, what it may not do, a
     /never (start|run) an engine CLI/i, /only the tasks you own/, /never decide[^.]*operator/i, /no file/]) {
     assert.match(lead, rule, `the lead's prompt says ${rule}`);
   }
+  // Triage is the lead's own work; a waiver is the operator's unless the config hands the lead that ruling.
+  assert.match(lead, /Triage is yours/);
+  assert.match(lead, /lead-decides/);
+  assert.match(lead, /every stop with its answer/);
   // The budget: every `wait` and `ask` is one call of 600 seconds, inside each engine's own timeout.
   assert.match(lead, /600/);
   assert.match(lead, /Claude[^.]*28 hours/);
@@ -586,6 +590,8 @@ test("the lead's report spells each specialist's line in cross-agent report's se
   assert.match(lead, /`<role> \| <engine> \| <model> \| <effort> \| <N>s \| <outcome> \| <task id>`/);
   assert.match(lead, /`elapsedSeconds` of the `wait` that saw the task settle/);
   assert.match(lead, /every field present on every line/);
+  // A seat of a many-seat role is spelled as the command spells it.
+  assert.match(lead, /`<role>#<seat>`/);
 });
 
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {
@@ -597,9 +603,13 @@ test("every tool the dev-team loop calls is offered to the row its placement run
 test("both dev-team loops name the journal step each of their git calls completes", () => {
   for (const name of ["dev-team", "dev-team-engine"]) {
     const text = flat(loop(name));
-    for (const step of ["worktree-created", "committed", "rebased", "merged", "tests-passed", "worktree-removed", "branch-deleted"]) {
+    for (const step of ["worktree-created", "committed", "rebased", "merged", "tests-passed", "tested", "review-waived", "worktree-removed", "branch-deleted"]) {
       assert.match(text, new RegExp("`" + step + "`"), `the ${name} loop never says which call writes ${step}`);
     }
+    // The gate's step is written before every round, and again on the way back from a rebase that moved the branch.
+    const tested = loop(name).split("\n").find((line) => line.startsWith("| `tested` |"));
+    assert.ok(tested !== undefined, `${name}: the journal table has a row for tested`);
+    assert.match(tested, /step 7's gate[^|]*return from step 8/, name);
     assert.match(text, /`ok: false`/, `${name}: any refusal is a reconciliation trigger, whatever its exit code`);
   }
 });
@@ -849,9 +859,9 @@ test("every committed dev-team role prompt came through the converter and was ed
   const modes = builtInModesDir();
   const codas = new Map([
     ["planner", "You write no files and you delegate nothing; your final message is the plan."],
-    ["plan-reviewer", "You write no files and you delegate nothing; your final message is the review."],
+    ["plan-reviewer", "You write no files and you delegate nothing; your final message is the review, and its last line is the VERDICT."],
     ["implementer", "You run no git command that writes: the session that delegated you commits what you leave. You delegate nothing; your final message is the report that commit is made from."],
-    ["code-reviewer", "You write no files and you delegate nothing; your final message is the review, verdict first."],
+    ["code-reviewer", "You write no files and you delegate nothing; your final message is the review, and its last line is the VERDICT."],
     // The resolver writes in the worktree as the implementer does, and commits as little.
     ["resolver", "You run no git command that writes: the session that delegated you commits what you leave. You delegate nothing; your final message is the report that commit is made from."],
   ]);
@@ -908,4 +918,137 @@ test("both loops read the root's own branch, and reconcile only their own projec
     assert.match(flat(text), /`rebase-merge` or `rebase-apply` directory under the `gitDir` `verify_worktree/, where);
     assert.match(flat(text), /`branch` being `"HEAD"` while a\s+stopped rebase has detached it/, where);
   }
+});
+
+/** A dev-team specialist's prompt, flattened; both team modes carry the same file, byte for byte. */
+function rolePrompt(key: string): string {
+  return flat(fs.readFileSync(path.join(builtInModesDir(), "dev-team", "roles", `${key}.md`), "utf8"));
+}
+
+/** The two loops of the team, which state every rule below alike. */
+const teamLoops = ["dev-team", "dev-team-engine"];
+
+// @anchor rosterBeforeDispatch
+test("both dev-team loops check the roster before anything is dispatched: every role bound, the resolver too, or a stop naming the binding", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "1. Root check"));
+    for (const pin of [/`list_roles`/, /`binding: null`/, /resolver/, /`cross-agent init` leaves alone/]) assert.match(step, pin, `${mode}: ${pin}`);
+  }
+  assert.match(flat(sectionOf(loop("dev-team"), "1. Root check")), /show the user the role/);
+  assert.match(flat(sectionOf(loop("dev-team-engine"), "1. Root check")), /`ask \{question\}` the operator with the role/);
+});
+
+// @anchor planIteration
+test("both dev-team loops iterate the plan review on its VERDICT line, up to limits.planReviewRounds, and say what the approved plan carries", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "3. Plan review"));
+    for (const pin of [/`VERDICT: no major issues`/, /`VERDICT: major issues`/, /`VERDICT: human decision`/,
+      /verifies each finding before folding it/, /ADDRESSED, PARTLY or NOT/, /`limits\.planReviewRounds`/, /`review\.planReviewRounds`/,
+      /no further review/, /neither counts toward the limit nor resets/, /"Issues" section/, /Anything else this step does not cover/]) {
+      assert.match(step, pin, `${mode}: ${pin}`);
+    }
+    // A `major issues` round is counted before the planner is resumed, and its revision is reviewed again.
+    const counted = step.indexOf("`major issues` —");
+    assert.ok(counted > 0, `${mode}: step 3 says what a major issues round does`);
+    assertInOrder(step.slice(counted),
+      ["`major issues` —", "count first", "limits.planReviewRounds", "resume the planner the same way", 'delegate {role: "plan-reviewer"'], mode);
+  }
+});
+
+// @anchor reviewGate
+test("both dev-team loops gate every review round on a rebase and a tested head, seat every reviewer, and triage, fix, resolve or stop", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "7. Code review"));
+    assertInOrder(step, ['git_mutate {slug, args: ["rebase", <default>]}', 'run_command {which: "test", where: <worktree path>, slug}',
+      'delegate {role: "code-reviewer", seat: <n>', 'delegate {role: "implementer"', 'delegate {role: "resolver"'], mode);
+    for (const pin of [/checks the branch head out on its own/, /journals `tested`/, /refused while the worktree holds uncommitted changes/,
+      /`VERDICT: no major issues`/, /`VERDICT: major issues`/, /`VERDICT: needs rebase`/, /`VERDICT: discard`/,
+      /the server reads for itself/, /refuses the branch head unless every seat/, /two fix rounds/, /`review\.afterResolver`/,
+      /`lead-decides`/, /`always-ask`/, /waive_review \{slug, commit: <the branch head>\}/, /one wrap-up fix/, /one more round;/,
+      /Anything this step does not cover/]) {
+      assert.match(step, pin, `${mode}: ${pin}`);
+    }
+  }
+  const host = flat(sectionOf(loop("dev-team"), "7. Code review"));
+  assert.match(host, /stop and ask the user/);
+  assert.match(host, /cross-agent waive <slug> <commit>/);
+  const engine = flat(sectionOf(loop("dev-team-engine"), "7. Code review"));
+  assert.match(engine, /ask \{question\}/);
+  assert.match(engine, /dispatch nothing until the answer/);
+});
+
+// @anchor rebaseGate
+test("both dev-team loops send a branch a rebase moved back through step 7's gate, and one it left alone on to the merge", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "8. Rebase"));
+    for (const pin of [/nobody tested or reviewed/, /step 7 again, from its gate/, /moved nothing[^.]*step 9/, /rebase", "--abort/]) {
+      assert.match(step, pin, `${mode}: ${pin}`);
+    }
+  }
+});
+
+// @anchor mergeGuardsNamed
+test("both dev-team loops name the merge's two guards where step 9 says what the merge refuses", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "9. Merge"));
+    assert.match(step, /`tested` step at the branch head/, mode);
+    assert.match(step, /`review-waived` step names it/, mode);
+  }
+});
+
+// @anchor noChangeCommit
+test("both dev-team loops read the staged names before they commit, and skip a commit of nothing", () => {
+  for (const mode of teamLoops) {
+    const step = flat(sectionOf(loop(mode), "6. Commit what it left"));
+    assertInOrder(step, ['git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+      'git_mutate {slug, args: ["diff", "--cached", "--name-only"]}', 'git_mutate {slug, args: ["commit", "-m", <the implementer\'s summary>]}'], mode);
+    assert.match(step, /nothing printed is nothing to commit/, mode);
+  }
+});
+
+// @anchor scopeRule
+test("a finding outside the task's acceptance is out of scope wherever it is judged: a follow-up that never blocks and changes nothing", () => {
+  for (const mode of teamLoops) {
+    for (const heading of ["3. Plan review", "7. Code review"]) assert.match(flat(sectionOf(loop(mode), heading)), /out of scope/, `${mode} step ${heading}`);
+    assert.match(flat(sectionOf(loop(mode), "3. Plan review")), /never blocks/, mode);
+  }
+  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]) assert.match(rolePrompt(key), /out of scope/, key);
+  for (const key of ["plan-reviewer", "code-reviewer"]) assert.match(rolePrompt(key), /never blocks/, key);
+  for (const key of ["implementer", "resolver"]) assert.match(rolePrompt(key), /out of scope[^.]*changes? nothing/, key);
+});
+
+// @anchor convergenceMarks
+test("every re-review marks each major finding carried, introduced or new, and both loops judge convergence by that mark", () => {
+  const mark = /carried, introduced by the last (fold|fix) or newly noticed/;
+  for (const key of ["plan-reviewer", "code-reviewer"]) assert.match(rolePrompt(key), mark, key);
+  for (const mode of teamLoops) {
+    for (const heading of ["3. Plan review", "7. Code review"]) {
+      const step = flat(sectionOf(loop(mode), heading));
+      assert.match(step, mark, `${mode} step ${heading}`);
+      assert.match(step, /not converging\*?\*? when the major count did not fall, or most majors were introduced by the last (fold|fix)/, `${mode} step ${heading}`);
+    }
+  }
+});
+
+// @anchor limitDiagnosis
+test("at a review limit both loops stop with the findings per round, a convergence verdict and four options, and recommend simplify when the rounds are not converging", () => {
+  for (const mode of teamLoops) {
+    for (const heading of ["3. Plan review", "7. Code review"]) {
+      const step = flat(sectionOf(loop(mode), heading));
+      for (const pin of [/findings per round/, /convergence verdict/, /fold and proceed/, /one more round/, /simplify/, /pause/,
+        /recommend simplify when the rounds are not converging/]) {
+        assert.match(step, pin, `${mode} step ${heading}: ${pin}`);
+      }
+    }
+  }
+});
+
+// @anchor proportion
+test("the planner plans the smallest change that meets the acceptance, and the plan reviewer asks for nothing beyond it", () => {
+  const planner = rolePrompt("planner");
+  assert.match(planner, /smallest change that meets the acceptance/);
+  assert.match(planner, /as optional rather than planning it/);
+  const reviewer = rolePrompt("plan-reviewer");
+  assert.match(reviewer, /Do not ask for additions beyond the acceptance/);
+  assert.match(reviewer, /optional follow-ups/);
 });

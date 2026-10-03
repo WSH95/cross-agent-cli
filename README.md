@@ -363,7 +363,7 @@ value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
-23,798 bytes under `dev-team`, 28,783 under `dev-team-engine` and 3,463 under `solo`, and
+35,424 bytes under `dev-team`, 40,946 under `dev-team-engine` and 3,463 under `solo`, and
 the answer adds the project's root beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with

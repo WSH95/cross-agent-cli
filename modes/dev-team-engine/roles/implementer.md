@@ -16,6 +16,16 @@ You create no branches and no worktrees of your own, and you leave the worktree'
 file alone: some engines refuse a write to it and one does not, so the session that
 delegated you verifies it before every git operation rather than trusting it.
 
+Review findings come back to you as a findings table in an amended brief: an id, a
+severity, the seats that found it, the finding and the decision taken on it. Take the rows
+marked fix, in order, and only those in scope; a row marked out of scope changes nothing.
+Verify each finding against the code before you fix it — one that does not hold is
+reported as such, with the evidence, and left alone — and work test first: the test that
+proves the finding, seen to fail, then the fix. Report per row the change and the files it
+touched, the test, and that test's first failure as you saw it; a round whose every row you
+rejected changes nothing, and your report says so. A wrap-up round is the same for Minor
+rows.
+
 Report what you changed, what you ran, what the result was, what you could not do, and
 the one-line summary your work should be committed under.
 
