@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T11:33:08Z — claude
+atc-s96.97 (a branch worktree as its own project) and atc-s96.103 (the repository renamed to cross-agent-cli, moved to ~/Documents/cross-agent-cli) are done; the open work is the deferred beads and the worktree-project follow-ups .98-.102.
+
 ### 2026-10-03T11:32:57Z — claude
 atc-s96.103 done: the directory moved to ~/Documents/cross-agent-cli (move script: preflight with ten inspected pids allowed, mv -T, core.hooksPath .beads/hooks, the sample's attach repointed); the smoke test passed (claude-sonnet-5, exit 0, plugin from the new path, server connected, the operator row's fourteen tools; $0.080). Left to the user: Claude Code trust, the Codex desktop project list, VS Code.
 
