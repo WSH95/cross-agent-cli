@@ -788,7 +788,7 @@ test("a shell command that starts an engine is an offence through a shell's own 
     // A path is still that engine, and this server's own entry point is a launch too: the
     // deny list names both (design section 3), so the scan has to see both.
     { claude: claudeLog("/usr/bin/claude -p hello") },
-    { claude: claudeLog("node /home/op/agent-team-cli/src/server.ts --project /tmp/x") },
+    { claude: claudeLog("node /home/op/cross-agent-cli/src/server.ts --project /tmp/x") },
     // The shape the probes recorded: Codex wraps everything in `/bin/bash -lc '…'`, so the
     // engine's name is preceded by a quote and not by whitespace.
     { codex: codexLog("/bin/bash -lc 'grok -p hello'") },
@@ -797,7 +797,7 @@ test("a shell command that starts an engine is an offence through a shell's own 
     // The deny list names this CLI as well as the server (`src/guard.ts#denyTargets`).
     // AGENTS.md documents the server as `node src/server.ts`, and `package.json`'s `bin`
     // is the CLI's entry point, so both are launches however the path is spelled.
-    { claude: claudeLog("node /home/op/agent-team-cli/src/cli.ts init --mode solo") },
+    { claude: claudeLog("node /home/op/cross-agent-cli/src/cli.ts init --mode solo") },
     { claude: claudeLog("node src/cli.ts init --mode solo") },
     { claude: claudeLog("node ./src/server.ts") },
     { claude: claudeLog("cd x && node src/cli.ts init") },

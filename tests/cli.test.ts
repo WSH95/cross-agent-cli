@@ -1835,7 +1835,7 @@ test("init in a worktree on a branch the mode's task pattern matches is a 3 nami
 });
 
 /** A `.grok/config.toml` as the README's attach writes it, discovering the project by the working directory. */
-const shippedAttach = '[plugins]\npaths = ["/home/someone/Documents/agent-team-cli"]\nenabled = ["cross-agent"]\n\n[mcp]\nmax_output_bytes = 100000\n';
+const shippedAttach = '[plugins]\npaths = ["/home/someone/Documents/cross-agent-cli"]\nenabled = ["cross-agent"]\n\n[mcp]\nmax_output_bytes = 100000\n';
 
 // @anchor initCopiesGrokAttach
 test("init copies the source's Grok attach once, a regular file written through no link, and leaves what is there alone", async (t) => {

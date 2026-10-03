@@ -91,7 +91,7 @@ test("the Codex manifest names this plugin at package.json's version, ships the 
     name: "cross-agent",
     version: pkg.version,
     description: claude.description,
-    author: { name: "agent-team-cli" },
+    author: { name: "cross-agent-cli" },
     license: "Apache-2.0",
     // Codex finds a plugin's skills where `skills` points, relative to the plugin root.
     skills: "./skills/",
@@ -200,7 +200,7 @@ test("the Codex launcher that cannot resolve its own directory starts nothing", 
 // @anchor codexMarketplace
 test("the repository is a marketplace offering this one plugin from its own root", () => {
   const marketplace = json(".agents/plugins/marketplace.json");
-  assert.equal(marketplace.name, "agent-team-cli");
+  assert.equal(marketplace.name, "cross-agent-cli");
   const plugins = marketplace.plugins as Array<Record<string, unknown>>;
   assert.equal(plugins.length, 1);
   assert.equal(plugins[0].name, "cross-agent");
@@ -243,14 +243,14 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
   // carries does not stand in for one of Codex's.
   const section = readme.slice(start, readme.indexOf("\n## ", start + 1));
   for (const words of [
-    "codex plugin marketplace add", "codex plugin add cross-agent@agent-team-cli", "codex plugin list", "codex plugin remove",
+    "codex plugin marketplace add", "codex plugin add cross-agent@cross-agent-cli", "codex plugin list", "codex plugin remove",
     "codex plugin marketplace remove", "codex mcp add cross-agent", "assets/codex/mcp_servers.toml", "~/.codex/skills/cross-agent",
     "codex mcp remove cross-agent",
     // The plugin's one extra step, and the switch that keeps its server off until a session asks.
-    "CROSS_AGENT_PROJECT", "plugins.cross-agent@agent-team-cli.enabled=true",
+    "CROSS_AGENT_PROJECT", "plugins.cross-agent@cross-agent-cli.enabled=true",
     // The install registers a clean export, since Codex copies the whole directory it is given,
     // and the fallback's table names the variables the server needs handed on.
-    "git -C ~/Documents/agent-team-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
+    "git -C ~/Documents/cross-agent-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
   ]) {
     assert.ok(section.includes(words), `the Codex section names ${words}`);
   }
@@ -326,7 +326,7 @@ test("the README attaches Grok per project through the project's own .grok/confi
   const missing = [
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
     // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
-    "cross-agent init", "node ~/Documents/agent-team-cli/src/cli.ts init",
+    "cross-agent init", "node ~/Documents/cross-agent-cli/src/cli.ts init",
     // `.grok/` ignored beside `init`'s entries, on a line of its own even after a last line with no
     // newline, and the change committed: a loop's first step stops on a dirty tree, and a committed
     // `.grok/config.toml` would reach every task worktree, which Grok takes as a project of its own.
@@ -338,7 +338,7 @@ test("the README attaches Grok per project through the project's own .grok/confi
     "git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore cross-agent and Grok state'",
     // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
     // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
-    ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/agent-team-cli"]', 'enabled = ["cross-agent"]',
+    ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/cross-agent-cli"]', 'enabled = ["cross-agent"]',
     "[mcp]", "max_output_bytes = 100000",
     // Into a file that already has the tables, the attach is merged, never declared twice: the
     // block itself points there, and a hand merge writes the path out and notes the cap it raises.
