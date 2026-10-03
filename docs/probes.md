@@ -30,6 +30,10 @@ with the records of every run but E6 and E7 under
 `~/.cache/agent-team/cross-agent-e2e/probe-tasks/t15/` (`docs/probes.md#t15Attach` and the
 sections after it).
 
+The repository was `~/Documents/agent-team-cli` until 2026-10-03, when it was renamed
+`~/Documents/cross-agent-cli`; the records below keep the paths, the marketplace name
+`agent-team-cli` and the Codex plugin id `cross-agent@agent-team-cli` as their runs used them.
+
 A first round ran in a repository under `/tmp`; both the Codex and the Grok
 sandboxes treat `/tmp` as writable, so those write checks proved nothing
 and were rerun under `~/.cache/agent-team/probe-repo`. Rule for the

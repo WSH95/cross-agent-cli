@@ -3,6 +3,8 @@
 What `npm test` and the recorded runs showed at each milestone merge into
 `main`. Counts live here, not in the README (Decision 0008). Raw engine
 transcripts stay in `docs/probes.md`.
+The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
+on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
 ## M1 — core runtime plus the delegation tools (merged 2026-09-19)
 
