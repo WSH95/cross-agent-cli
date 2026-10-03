@@ -34,11 +34,18 @@ export interface RoleConfig {
   sandbox?: SandboxProfile;
 }
 
+/**
+ * One binding, or one per seat for a role its mode marks `seats: "many"` (design section
+ * 6). A seat is the binding's 1-based position in the list; an object is one reviewer, as
+ * every config written before seats existed binds it.
+ */
+export type RoleBinding = RoleConfig | RoleConfig[];
+
 export interface CrossAgentConfig {
   /** The active mode, one directory under the modes shelf (design, "Modes"). */
   mode: string;
   project: { defaultBranch: string; testCommand: string; setupCommand: string; mergePolicy: string };
-  roles: Record<string, RoleConfig>;
+  roles: Record<string, RoleBinding>;
   engines?: Record<string, { bin?: string }>;
   limits: {
     maxDepth: number; stallMinutes: number; waitDefaultSeconds: number; duplicateWindowMinutes: number;
@@ -94,11 +101,16 @@ const limitDefaults: CrossAgentConfig["limits"] = {
 };
 /** The built-in consultant's starting binding; every `delegate` may name another engine. */
 const consultBinding: RoleConfig = { engine: "codex", model: "gpt-6-astra" };
-const devTeamBindings: Record<string, RoleConfig> = {
+const devTeamBindings: Record<string, RoleBinding> = {
   planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
   "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
   implementer: { engine: "codex", model: "gpt-6-astra" },
-  "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+  // One seat per engine, every one of them read-only, as the mode's rule for the role is.
+  "code-reviewer": [
+    { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+    { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
+    { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
+  ],
   // The escalation takes the findings two fix rounds leave standing, on the stronger setting.
   resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
 };
@@ -108,7 +120,7 @@ const devTeamBindings: Record<string, RoleConfig> = {
  * local act (design, "Modes"), so this table is a starting point an operator edits, and a
  * mode this build ships no bindings for is refused by name rather than bound by guess.
  */
-const builtInBindings: Record<string, Record<string, RoleConfig>> = {
+const builtInBindings: Record<string, Record<string, RoleBinding>> = {
   "dev-team": { ...devTeamBindings, consult: consultBinding },
   "dev-team-engine": {
     lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamBindings, consult: consultBinding,
@@ -173,8 +185,8 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
   const project = { ...projectDefaults, ...object(document.project === undefined ? {} : document.project, "project") };
   for (const key of Object.keys(projectDefaults)) optionalString(project, key, "project");
 
-  const roles = Object.fromEntries(Object.entries(object(document.roles, "roles")).map(([name, value]) => {
-    const field = `roles.${name}`;
+  /** One binding, read whole, at `field`: `roles.<name>`, or `roles.<name>#<n>` for a seat. */
+  function binding(value: unknown, field: string): RoleConfig {
     const role = object(value, field);
     const engine = oneOf(role.engine, `${field}.engine`, engineNames);
     optionalString(role, "model", field);
@@ -201,7 +213,20 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
         invalid(`${field}.sandbox`, `one of the ${engine} profiles: ${Object.keys(profiles).join(" | ")}`);
       }
     }
-    return [name, { ...role, engine, ...(sandbox === undefined ? {} : { sandbox }) }];
+    return { ...role, engine, ...(sandbox === undefined ? {} : { sandbox }) } as RoleConfig;
+  }
+
+  // A role is one binding, or a list of them, one per seat: whether the mode lets this role
+  // sit more than once is `bindingFault`'s question, which needs the mode.
+  const roles = Object.fromEntries(Object.entries(object(document.roles, "roles")).map(([name, value]): [string, RoleBinding] => {
+    const field = `roles.${name}`;
+    const listOrOne = "a binding, or a non-empty list of bindings, one per seat";
+    if (Array.isArray(value)) {
+      if (value.length === 0) invalid(field, listOrOne);
+      return [name, value.map((entry, index) => binding(entry, `${field}#${index + 1}`))];
+    }
+    if (value === null || typeof value !== "object") invalid(field, listOrOne);
+    return [name, binding(value, field)];
   }));
 
   if (document.engines !== undefined) {
@@ -252,30 +277,45 @@ export function loadConfigWithMode(projectRoot: string, modesDir: string = built
  * a launch is a refusal to report, not an exception to raise (design section 6).
  */
 export function bindingFault(mode: Mode, config: CrossAgentConfig, file: string): string | null {
-  for (const [name, role] of Object.entries(config.roles)) {
-    const field = `roles.${name}`;
+  for (const [name, binding] of Object.entries(config.roles)) {
     const declared = findRole(mode, name);
     if (declared === undefined) {
-      return `${file}: ${field}: mode ${mode.id} declares no role ${JSON.stringify(name)}; it declares ${mode.roles.map((each) => each.key).join(", ")}`;
+      return `${file}: roles.${name}: mode ${mode.id} declares no role ${JSON.stringify(name)}; it declares ${mode.roles.map((each) => each.key).join(", ")}`;
     }
-    const profile = role.sandbox ?? declared.sandboxDefault;
-    let sandbox: ReturnType<typeof sandboxFor>;
-    try {
-      // The mode's default has to reach the engine config bound it to, exactly as an
-      // override does: a portable profile name is not every engine's name for it.
-      sandbox = sandboxFor(role.engine, profile);
-    } catch (error) {
-      return `${file}: ${field}${role.sandbox === undefined ? "" : ".sandbox"}: ${error instanceof Error ? error.message : String(error)}`;
+    // A list is for a role the mode lets sit more than once: a planner bound to three
+    // seats would be three plans nobody asked the loop to reconcile.
+    if (isSeated(binding) && declared.seats !== "many") {
+      const many = mode.roles.filter((each) => each.seats === "many").map((each) => each.key);
+      return `${file}: roles.${name}: a list of bindings is for a role the mode marks seats: "many"; mode ${mode.id} seats ${name} once (its many-seat roles: ${many.length === 0 ? "none" : many.join(", ")})`;
     }
-    if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
-      return `${file}: ${field}.sandbox: role ${JSON.stringify(name)} works at the project root, which only the server may write — the ledger, the mailbox and the journal live there; ${JSON.stringify(profile)} is ${sandbox.mode} under ${role.engine}`;
+    for (const [index, role] of (isSeated(binding) ? binding : [binding]).entries()) {
+      const field = isSeated(binding) ? `roles.${name}#${index + 1}` : `roles.${name}`;
+      const profile = role.sandbox ?? declared.sandboxDefault;
+      let sandbox: ReturnType<typeof sandboxFor>;
+      try {
+        // The mode's default has to reach the engine config bound it to, exactly as an
+        // override does: a portable profile name is not every engine's name for it.
+        sandbox = sandboxFor(role.engine, profile);
+      } catch (error) {
+        return `${file}: ${field}${role.sandbox === undefined ? "" : ".sandbox"}: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      if (declared.workspace.kind === "root" && sandbox.mode !== "read-only") {
+        return `${file}: ${field}.sandbox: role ${JSON.stringify(name)} works at the project root, which only the server may write — the ledger, the mailbox and the journal live there; ${JSON.stringify(profile)} is ${sandbox.mode} under ${role.engine}`;
+      }
+      // D-j: the seats of a read-only role review beside each other in one worktree, and a
+      // read-only task reserves nothing (`src/reservation.ts#reservesWorkspace`), so no
+      // binding of such a role — an object, or any seat of a list — takes a profile that
+      // writes. A writable many-seat role a custom mode declares reserves as any writer does.
+      if (declared.seats === "many" && declared.sandboxDefault === "read-only" && sandbox.mode !== "read-only") {
+        return `${file}: ${field}.sandbox: role ${JSON.stringify(name)} reads only — mode ${mode.id} declares it read-only and seats many, and its reviews run beside each other in one worktree; ${JSON.stringify(profile)} is ${sandbox.mode} under ${role.engine}`;
+      }
     }
   }
   // P9: a Grok child inherits the operator's own configuration and has no per-run
   // isolation of any kind, so there is no Grok lead — only a Grok specialist, which
   // ancestry holds to its row ("The lead model", item 4).
   const leadRole = engineLeadRole(mode);
-  if (leadRole !== undefined && Object.hasOwn(config.roles, leadRole) && config.roles[leadRole].engine === "grok") {
+  if (leadRole !== undefined && seatsOf(config, leadRole)?.[0]?.engine === "grok") {
     return `${file}: roles.${leadRole}.engine: mode ${mode.id} places its lead in an engine, and grok cannot carry one (P9: no per-run isolation); bind ${leadRole} to claude or codex`;
   }
   return null;
@@ -297,10 +337,27 @@ export function modeDrift(served: Mode, config: CrossAgentConfig): string | null
     : `mode ${JSON.stringify(config.mode)} in ${CONFIG_PATH}, ${JSON.stringify(served.id)} served; restart the server to change modes`;
 }
 
-/** The sandbox profile a role runs under: its mode's default unless config overrides it. */
-export function roleProfile(mode: Mode, config: CrossAgentConfig, key: string): SandboxProfile | undefined {
-  const override = Object.hasOwn(config.roles, key) ? config.roles[key].sandbox : undefined;
-  return override ?? findRole(mode, key)?.sandboxDefault;
+/** Whether a binding is a list, one binding per seat. */
+export function isSeated(binding: RoleBinding | undefined): binding is RoleConfig[] {
+  return Array.isArray(binding);
+}
+
+/**
+ * A role's bindings by seat: one for an object, one per entry for a list, and none where
+ * config binds the role nothing — the engine a `delegate` call must then name itself.
+ */
+export function seatsOf(config: CrossAgentConfig, key: string): RoleConfig[] | undefined {
+  if (!Object.hasOwn(config.roles, key)) return undefined;
+  const binding = config.roles[key];
+  return isSeated(binding) ? binding : [binding];
+}
+
+/**
+ * The sandbox profile a role runs under: its mode's default unless config overrides it,
+ * for the seat named, or the first where none is.
+ */
+export function roleProfile(mode: Mode, config: CrossAgentConfig, key: string, seat?: number): SandboxProfile | undefined {
+  return seatsOf(config, key)?.[(seat ?? 1) - 1]?.sandbox ?? findRole(mode, key)?.sandboxDefault;
 }
 
 /**

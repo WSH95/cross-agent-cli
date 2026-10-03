@@ -95,7 +95,12 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
       planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
       "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
       implementer: { engine: "codex", model: "gpt-6-astra" },
-      "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+      // One seat per engine, each reading under a read-only sandbox.
+      "code-reviewer": [
+        { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+        { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
+        { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
+      ],
       // The escalation, on a stronger setting than the implementer's.
       resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
       // The role every mode carries, bound to a starting engine any call may override.

@@ -24,7 +24,12 @@ const sectionSixDefaults = {
     planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
     "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
     implementer: { engine: "codex", model: "gpt-6-astra" },
-    "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+    // One seat per engine: a starting point the operator edits.
+    "code-reviewer": [
+      { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+      { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
+      { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
+    ],
     resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
     // The role every mode carries, bound to a starting engine this call may override.
     consult: { engine: "codex", model: "gpt-6-astra" },
@@ -399,6 +404,128 @@ test("an override may not make a root role writable, and must be a profile its e
     assert.ok(error.message.includes("grok"), error.message);
     return true;
   });
+});
+
+// @anchor seatedBinding
+test("a many-seat role binds a list, one seat each, and an empty list is refused", (t) => {
+  const root = project(t);
+  const seats = [
+    { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+    { engine: "codex", model: "gpt-6-astra", effort: "low" },
+    { engine: "grok", sandbox: "strict" },
+  ];
+  writeConfig(root, { roles: { "code-reviewer": seats, planner: { engine: "codex" } } });
+  const loaded = config.loadConfig(root);
+  assert.deepEqual(loaded.roles["code-reviewer"], seats, "a list round-trips, seat by seat");
+
+  // A list holds at least one seat, and each seat is held to a binding's own rules, by its number.
+  for (const [value, field, rule] of [
+    [[], "roles.code-reviewer", /non-empty list of bindings, one per seat/],
+    [null, "roles.code-reviewer", /non-empty list of bindings, one per seat/],
+    ["claude", "roles.code-reviewer", /non-empty list of bindings, one per seat/],
+    [[{ engine: "codex" }, { engine: "nope" }], "roles.code-reviewer#2.engine", /claude \| codex \| grok/],
+    [[{ engine: "codex", sandbox: "strict" }], "roles.code-reviewer#1.sandbox", /codex profiles/],
+  ] as Array<[unknown, string, RegExp]>) {
+    writeConfig(root, { roles: { "code-reviewer": value } });
+    assert.throws(() => config.loadConfig(root), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes(`${field}:`), error.message);
+      assert.match(error.message, rule);
+      return true;
+    }, JSON.stringify(value));
+  }
+
+  // A seat is a position: an object is one binding, a list is one per entry, and an
+  // unbound role has none.
+  assert.equal(config.isSeated(loaded.roles["code-reviewer"]), true);
+  assert.equal(config.isSeated(loaded.roles.planner), false);
+  assert.deepEqual(config.seatsOf(loaded, "code-reviewer"), seats);
+  assert.deepEqual(config.seatsOf(loaded, "planner"), [{ engine: "codex" }]);
+  assert.equal(config.seatsOf(loaded, "implementer"), undefined);
+});
+
+// @anchor listNeedsSeats
+test("a list of bindings is refused for a role its mode seats once", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  buildMode(modes, "team", [
+    { key: "planner" },
+    { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", seats: "many" },
+  ]);
+  writeConfig(root, { mode: "team", roles: { planner: [{ engine: "codex" }] } });
+  assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.includes("roles.planner:"), error.message);
+    assert.match(error.message, /seats: "many"/);
+    assert.match(error.message, /its many-seat roles: reviewer/);
+    return true;
+  });
+
+  // A legal list, each seat run under its own profile or the mode's default.
+  writeConfig(root, { mode: "team", roles: { reviewer: [{ engine: "grok", sandbox: "strict" }, { engine: "codex" }] } });
+  const bound = config.loadConfigWithMode(root, modes);
+  assert.equal(config.roleProfile(bound.mode, bound.config, "reviewer", 1), "strict");
+  assert.equal(config.roleProfile(bound.mode, bound.config, "reviewer", 2), "read-only");
+});
+
+// @anchor readOnlyReviewer
+test("a read-only many-seat role is read-only in every binding, one seat or many", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  // Seats of a read-only role review beside each other in one worktree, and a read-only
+  // task reserves nothing (`src/reservation.ts#reservesWorkspace`): no binding of it, an
+  // object included, may take a profile that writes. A writable many-seat role a custom
+  // mode declares is its own business.
+  buildMode(modes, "team", [
+    { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", seats: "many" },
+    { key: "pair", workspace: "worktree", sandboxDefault: "workspace", seats: "many" },
+  ]);
+  const refused: Array<[unknown, string, RegExp]> = [
+    [{ engine: "claude", sandbox: "workspace-write" }, "roles.reviewer.sandbox", /"workspace-write" is write under claude/],
+    [[{ engine: "grok", sandbox: "strict" }, { engine: "codex", sandbox: "workspace-write" }], "roles.reviewer#2.sandbox", /under codex/],
+    [{ engine: "grok", sandbox: "off" }, "roles.reviewer.sandbox", /"off" is off under grok/],
+  ];
+  for (const [binding, field, profile] of refused) {
+    writeConfig(root, { mode: "team", roles: { reviewer: binding } });
+    assert.throws(() => config.loadConfigWithMode(root, modes), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes(`${field}:`), error.message);
+      assert.match(error.message, /role "reviewer" reads only — mode team declares it read-only and seats many/);
+      assert.match(error.message, profile);
+      return true;
+    }, JSON.stringify(binding));
+  }
+  for (const roles of [
+    { reviewer: { engine: "grok", sandbox: "strict" } },
+    { reviewer: [{ engine: "claude", sandbox: "read-only" }, { engine: "grok" }] },
+    { pair: [{ engine: "grok", sandbox: "workspace" }, { engine: "grok" }] },
+  ]) {
+    writeConfig(root, { mode: "team", roles });
+    assert.deepEqual(config.loadConfigWithMode(root, modes).config.roles, roles);
+  }
+});
+
+// @anchor oldConfigLoads
+test("a config written before the resolver existed loads, and lists the resolver unbound", (t) => {
+  const root = project(t);
+  // The E10 sample's own shape: one code reviewer bound as an object, and no resolver.
+  writeConfig(root, {
+    mode: "dev-team-engine",
+    project: { defaultBranch: "main", testCommand: "python3 -m unittest discover -s tests -t .", setupCommand: "none", mergePolicy: "auto" },
+    roles: {
+      lead: { engine: "claude", model: "claude-sonnet-5", effort: "medium" },
+      planner: { engine: "codex", model: "gpt-6-luna", effort: "medium" },
+      "plan-reviewer": { engine: "grok", model: "grok-4.7", effort: "medium" },
+      implementer: { engine: "claude", model: "claude-sonnet-5", effort: "medium" },
+      "code-reviewer": { engine: "grok", model: "grok-4.7", effort: "medium", sandbox: "read-only" },
+      consult: { engine: "claude", model: "claude-sonnet-5", effort: "medium" },
+    },
+    limits: { maxDepth: 2 },
+  });
+  const bound = config.loadConfigWithMode(root, builtInModesDir());
+  assert.equal(config.roleProfile(bound.mode, bound.config, "resolver"), "workspace-write", "the mode's default, for the delegate that names an engine");
+  assert.equal(config.seatsOf(bound.config, "resolver"), undefined, "and no binding, which the loop's first step reads");
+  assert.deepEqual(config.seatsOf(bound.config, "code-reviewer"), [{ engine: "grok", model: "grok-4.7", effort: "medium", sandbox: "read-only" }]);
 });
 
 // @anchor grokBoundLead
