@@ -269,6 +269,7 @@ project.
 | `wait`, `cancel` | yes | own children | no |
 | `verify_worktree`, `git_mutate` | yes | yes | no |
 | `git_root`, `run_command` | yes | yes | no |
+| `waive_review` | yes | under `review.afterResolver` `lead-decides`, with a complete round at the head | no |
 | `ask` | — | yes | no |
 | `list_asks` | yes | own asks | no |
 | `answer` | yes | no | no |
@@ -496,7 +497,7 @@ A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
 carries `id`, `release`, `name`, `summary`, `lead: {placement:
 "host"|"engine", role?}`, `roles[{key, title, promptFile, workspace,
-sandboxDefault}]`, a `git` policy, and `requires{engines?}`
+sandboxDefault, seats?, gates?}]`, a `git` policy, and `requires{engines?}`
 (`src/modes.ts#Mode`). Validation refuses unknown fields, requires role keys to
 be unique, requires `id` to equal the directory name, requires every
 `promptFile` to resolve inside the mode directory, and requires `lead.role`
@@ -541,14 +542,19 @@ Three modes ship built in (`modes/dev-team/mode.json`, `modes/solo/mode.json`,
 `modes/dev-team-engine/mode.json`):
 
 - **`dev-team`**: the devpack's four roles (planner, plan reviewer,
-  implementer, code reviewer), `placement: host`, the worktree workspace
-  provider, the git policy of section 4.
+  implementer, code reviewer) and a resolver, `placement: host`, the worktree
+  workspace provider, the git policy of section 4. The code reviewer seats many
+  and gates the merge: a config binds it once per seat — `init` binds three, on
+  three engines — and every seat reviews the committed branch in parallel. The
+  resolver works in the task's worktree as the implementer does, on a stronger
+  model, and only when two fix rounds have left Critical or Important findings
+  standing (section 7).
 - **`solo`**: the built-in consultant alone, no worktree role, `placement:
   host`. It is the proof that the seam is real, the zero-ceremony one-shot
   delegation the vendor bridges offer, and the mode a project with no config
   runs as.
-- **`dev-team-engine`**: those four roles plus a `lead` at `{kind: "root"}`
-  read-only, under `placement: engine`. It is the same team with the loop moved
+- **`dev-team-engine`**: those five roles, seats included, plus a `lead` at
+  `{kind: "root"}` read-only, under `placement: engine`. It is the same team with the loop moved
   into a spawned Claude or Codex session, so it needs the four things "The lead
   model" lists and the cap of 2 that `init` writes for it — and `delegate`
   refuses to launch its lead in a project whose cap would hold the lead's server
@@ -589,7 +595,7 @@ config file, so a project stays unconfigured until someone configures it.
 
 **Workspace is policy, with two kinds.** A role declares `workspace:
 {kind:"root"}` or `workspace: {kind:"worktree", branchPattern, dir}`
-(`src/modes.ts#Workspace`). The worktree provider's four tools register under
+(`src/modes.ts#Workspace`). The worktree provider's five tools register under
 **every** mode (`src/server.ts#worktreeTools`, `#projectTools`): every mode
 carries the `consult` role, every root role can be given a worktree of its own
 by `delegate {worktree: true}` (section 1), and the branch that leaves behind
@@ -599,6 +605,20 @@ What a mode decides is the policy they act under, and `describe_mode`'s
 this build's — which is the same question as "does this mode declare a role that
 works in a worktree" (`src/modes.ts#declaresWorktreeProvider`, `#gitPolicy`).
 Arbitrary-path workspace providers are deferred (see "Not built").
+
+**A role may seat many, and may gate the merge.** `seats: "many"` lets
+`.cross-agent/config.json` bind the role to a list, one binding per seat, each
+delegated with `seat: <n>` and recorded with it, and `gates: "merge"` marks the
+role whose finished reviews `git_root merge` reads before it merges a team task's
+branch (section 4); a role that gates the merge reviews a task branch in its
+worktree, so the mark is refused on a role that works at the root, and `lead`
+and `consult` seat one in every mode (`src/modes.ts#loadMode`, `#ModeRole`). A
+many-seat role the mode declares read-only takes no writable profile in any seat,
+refused by field at load and again at launch (`src/config.ts#bindingFault`): its
+seats read beside each other in one worktree, and a read-only task reserves
+nothing (`src/reservation.ts#reservesWorkspace`), so what keeps a writer off a
+tree under review is the hold every active gating review puts on its worktree,
+not a reservation (`src/review.ts#reviewHold`).
 
 **No role may combine `{kind: "root"}` with a writable sandbox**, and mode
 validation refuses one that does. A writable root role could edit
@@ -628,9 +648,10 @@ worktree, and the mode's own containment argument (section 4) would no longer
 be about the mode.
 
 **`describe_mode` returns** `{mode: {id, release, name, summary, lead}, loop:
-string, roles: [{key, title, workspace, sandboxDefault, prompt}], git}`, where
-`loop` is `SKILL.md` verbatim, each `prompt` is that role's prompt file or the
-text a built-in role carries, and `git` is always there: the mode's own policy,
+string, roles: [{key, title, workspace, sandboxDefault, seats?, gates?, prompt}],
+git}`, where `loop` is `SKILL.md` verbatim, each `prompt` is that role's prompt
+file or the text a built-in role carries, `seats` and `gates` appear on a role
+that declares them and on no other, and `git` is always there: the mode's own policy,
 or the implicit `{worktreeDir: ".worktrees", branchPattern: "task/*", implicit:
 true}` that a mode with no worktree role creates a `worktree: true` one-shot
 under, so a launcher can always name where a task's worktree will be
@@ -648,7 +669,9 @@ from, so a config edited mid-session is answered rather than cached.
 (`src/cli.ts#runCli`, `src/config.ts#initConfig`). It loads the mode first, so
 an unknown or invalid one is refused before anything is written; it binds every
 role the mode has, the built-in consultant included, in the order they are
-listed, from a table of built-in bindings — a mode this build ships no bindings
+listed, from a table of built-in bindings — a many-seat role to a list, the
+dev-team code reviewer to three seats on three engines
+(`src/config.ts#devTeamBindings`) — and a mode this build ships no bindings
 for is refused by name rather than bound by guess, because binding is a local
 act; and it writes the
 `maxDepth` that mode needs, since the effective cap is the lower of the mode's
@@ -674,24 +697,25 @@ aborted call answers for itself, with the status it last read and
 `cancelled: true`, and its JSON-RPC reply is still written, which a client that
 has moved on may ignore (`src/wait.ts#wait`). "Registered by" says which
 part of the system offers the tool: **core** always; **worktree** the worktree
-provider's four, which every mode registers because every mode has a role that
+provider's five, which every mode registers because every mode has a role that
 can be given a worktree ("Modes"); **engine lead** only under `placement:
 engine`.
 
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
-| `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt, and its git policy | core |
-| `list_roles` | — | each role **the mode has**: the workspace and the sandbox profile it gives that role, with the engine, model and effort config binds it to, or `binding: null` where config binds none — the engine a `delegate` call must then name itself; plus a `warning` when the config now names a mode other than the one served | core |
-| `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `worktree` (a task worktree of its own, for a role that works at the root), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, workspace, reservation, running and recent duplicates, resume binding), creates the task's worktree through `git_root` when `worktree: true`, writes the ledger record as `launching`, starts the runner, returns `task_id` | core |
+| `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt — and `seats` and `gates` where a role declares them — its git policy, `projectRoot`, and `review`: the loop's two settings, `planReviewRounds` and `afterResolver` (section 6) | core |
+| `list_roles` | — | each role **the mode has**: the workspace and the sandbox profile it gives that role, with the engine, model and effort config binds it to, or `binding: null` where config binds none — the engine a `delegate` call must then name itself; a role bound to a list answers `seats`, each with its `seat`, engine, model, effort and sandbox profile; plus a `warning` when the config now names a mode other than the one served | core |
+| `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `seat` (1-based, required for a role bound to a list and refused for any other), `worktree` (a task worktree of its own, for a role that works at the root), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, seat, workspace, reservation, a gating review's hold on a writable launch, running and recent duplicates, resume binding), refuses a role that gates the merge while its worktree holds uncommitted changes, marked or not, or while a setup command runs there, records the branch head such a role reviews as `underReview`, creates the task's worktree through `git_root` when `worktree: true`, writes the ledger record as `launching`, starts the runner, returns `task_id` (section 4) | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
-| `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
+| `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines, with the task's `seat` and `underReview` where its record has them; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
 | `result` | `task_id` | the final message in full, the engine session id | core |
 | `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups, the task's descendants first, and the open asks of its lineage cancelled, as `asksCancelled` | core |
-| `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported; to a lead, its own records marked `self` and the tasks it owns marked `own` | core |
+| `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported, each task's `seat` and `underReview` where its record has them; to a lead, its own records marked `self` and the tasks it owns marked `own` | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
 | `git_mutate` | `slug`, `args[]`, optional `path`, `branch` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
 | `git_root` | `args[]`, optional `slug` | one whitelisted git verb at the project root, journaled under the slug it names, under `git.lock` (section 4) | worktree |
-| `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `slug`, `timeout_seconds` | the configured command, by selector rather than by string; a passing root test run after the merge journals `tests-passed` (section 4) | worktree |
+| `run_command` | `which: "test" \| "setup"`, `where: "root" \| <worktree path>`, optional `slug`, `timeout_seconds` | the configured command, by selector rather than by string; a passing root test run after the merge journals `tests-passed`; a worktree test run checks the branch head out detached under `.cross-agent/gate/`, runs `setupCommand` and then `testCommand` there, and journals `tested` at that head when the suite passes; a worktree setup marks its worktree for as long as its process group lives, and is refused under a gating review (section 4) | worktree |
+| `waive_review` | `slug`, `commit` | records the waiver of the merge's review guard for the branch head as a `review-waived` step, under `git.lock`, the commit naming the head as it stands; the operator's, and the lead's only under `review.afterResolver: "lead-decides"` once every seat has finished its review of that head; refused in a mode with no role that gates the merge (section 4) | worktree |
 | `ask` | `question`, or `id` to keep waiting on an earlier ask of the lead's lineage; `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered, cancelled or the timeout, which answers `open` with the id to ask again by | engine lead |
 | `list_asks` | optional `status` | the asks of the lead's own lineage; every ask for the operator | engine lead |
 | `answer` | `ask_id`, `text` | the operator's reply; the first one wins, and it is persisted, so it survives a killed lead | engine lead |
@@ -700,15 +724,18 @@ Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
 `done`, `failed`, `cancelled` (`src/ledger.ts#TaskStatus`).
 
-`projectTools` registers twelve of these under every mode
+`projectTools` registers thirteen of these under every mode
 (`src/server.ts#projectTools`): `describe_mode`, `list_roles`, `check`, `result`
 and `list_tasks` for every row, `delegate`, `wait` and `cancel` for the operator
-and lead rows, and `verify_worktree`, `git_mutate`, `git_root` and `run_command`
-for those two rows (`src/server.ts#worktreeTools`) — and under `placement:
-engine` the mailbox's three more: `ask` for the lead, `list_asks` for both rows
-and `answer` for the operator, fourteen tools for each of those rows and still
-five for a specialist (`src/server.ts#mailboxTools`). The
-four worktree tools refuse on **mode drift** as `delegate` does at the launch
+and lead rows, and `verify_worktree`, `git_mutate`, `git_root`, `run_command` and
+`waive_review` for those two rows (`src/server.ts#worktreeTools`) — and under
+`placement: engine` the mailbox's three more: `ask` for the lead, `list_asks` for
+both rows and `answer` for the operator, fifteen tools for each of those rows and
+still five for a specialist (`src/server.ts#mailboxTools`). `waive_review` is
+offered to the lead row and holds it to its own rule inside
+(`src/review.ts#waiveReview`), as `wait` and `cancel` hold the lead to its
+children. The
+five worktree tools refuse on **mode drift** as `delegate` does at the launch
 boundary: which tools exist was decided when this server loaded its mode, so a
 config since pointed at another one is answered with a restart rather than
 served under a policy this server is not serving (`src/server.ts#driftFault`,
@@ -846,6 +873,14 @@ Everything below is built, the operator CLI's listing among it
   so `find` and `read` of a task nobody created leave no directory and no
   exclusion line behind (`src/ledger.ts#initialize`, `#create`,
   `tests/ledger.test.ts#unknownReadWritesNothing`, bead `atc-s96.51`).
+- `.cross-agent/gate/` and `.cross-agent/setups/` sit beside the ledger, the
+  journal (`journal/`), the mailbox (`asks/`) and the locks (`locks/`), and like
+  them are the server's alone. `gate/`, made `0700`, holds the detached checkout
+  of a branch head a worktree test run makes and removes within that run
+  (`src/runcommand.ts#runCommand`); `setups/` holds one marker per worktree whose
+  setup command is running, naming the command's process group
+  (`src/review.ts#markSetup`). No task works under either, because no task works
+  anywhere under `.cross-agent/` (`src/worktree.ts#notProjectState`, section 4).
 - Launch protocol: `delegate` creates the record as `launching` with a
   `launchDeadline` of now + 30 s (`ledger.create`, `src/ledger.ts#create`); the
   runner, once started, writes `running` with its own identity and the engine's
@@ -857,12 +892,15 @@ Everything below is built, the operator CLI's listing among it
   because a pid and start time from another boot can collide with a live
   process, so an identity from another boot is dead rather than reused
   (`src/ledger.ts#isProcessAlive`). `startTime`, `pgid`, `sid` and `state` all
-  come from `/proc/<pid>/stat` (`src/ledger.ts#readProcessStat`). Four fields of
+  come from `/proc/<pid>/stat` (`src/ledger.ts#readProcessStat`). Six fields of
   a record are the delegation's own (`src/ledger.ts#TaskRecord`): `depth`
-  (section 5, layer 1), `parentTaskId` for cascade ownership (the lead model)
-  and `resumedFrom` for the resume chain, all three written by `delegate` where
-  the task begins, and `acknowledgedAt`, written by the acknowledgement above
-  and by nothing else (`src/runner.ts#acknowledge`), so a stall clock measures from
+  (section 5, layer 1), `parentTaskId` for cascade ownership (the lead model),
+  `resumedFrom` for the resume chain, `seat` for the seat of a many-seat role
+  ("Modes") and `underReview` for the branch head a role that gates the merge
+  was delegated to review (section 4), all five written by `delegate` where the
+  task begins — the last two by `create` alone, outside the fields an update may
+  patch (`src/ledger.ts#patchFields`) — and `acknowledgedAt`, written by the
+  acknowledgement above and by nothing else (`src/runner.ts#acknowledge`), so a stall clock measures from
   the moment the engine was answered for rather than from a launch nobody
   answered. There is **no launch token**: `create` writes none
   (`src/ledger.ts#create`), and a token on the *runner's* argv could not
@@ -2287,13 +2325,22 @@ different branches. It
    holding those records rather than in one of them — a mode nothing may read,
    a file where the directory belongs — refuses the same way and carries the
    operating system's own words: every stop a mutation can meet reaches the
-   lead as a reason, and none of them as an exception (bead `atc-s96.40`);
+   lead as a reason, and none of them as an exception (bead `atc-s96.40`). It
+   refuses as well while a review that gates the merge is active in that path —
+   `<path> is under review by task <id> (<status>) at <sha>; wait or cancel
+   first` — because the head that review covers must still be the head when it
+   ends (`src/review.ts#reviewHold`, below);
 2. verifies the worktree from the root, with the checks
    `verifyWorktree` performs (`src/worktree.ts#verifyWorktree`), the repository's
    identity taken from the call's own location of it: `realpath` of both paths, a
    relative worktree path read against the project root and never the server's own
-   directory; the worktree appears in a `git worktree list --porcelain -z` taken on
-   every call — `delegate` locates the repository before its `worktree add` and
+   directory; nothing at or under the project's own `.cross-agent/` is a workspace,
+   refused before any other check — `<workTree> lies under the project's own
+   .cross-agent/, which the server writes and no task works in.` — because the
+   gate's checkouts live there detached, and a detached checkout would otherwise
+   verify under `branch: "HEAD"` like a stopped rebase
+   (`src/worktree.ts#notProjectState`); the worktree appears in a `git worktree
+   list --porcelain -z` taken on every call — `delegate` locates the repository before its `worktree add` and
    verifies after it — as a linked worktree, which excludes the main worktree and any
    subdirectory (`#linkedWorktree`); it lies strictly under the project root
    (`#underProjectRoot`), so a sibling project's root and its tasks are not this
@@ -2568,7 +2615,8 @@ saying the command ran and its step could not be written
 (`src/gitroot.ts#execute`). Each journaled verb appends its own named step —
 section 7's table says which — and `merge --ff-only` is the one that also
 writes the journal's two merge fields, from `before` and from the branch head
-read in that same locked call. That merge is refused unless the root's own HEAD
+read once in that same locked call, which is also the commit git is given to
+merge ("The merge's two guards", below). That merge is refused unless the root's own HEAD
 is the default branch (`src/gitroot.ts#execute`): `merge` merges into HEAD,
 while both merge fields are read from the default branch, so a merge taken
 anywhere else would journal a revert range that never existed.
@@ -2601,8 +2649,9 @@ is about to arrive — which is the one path a specialist has to the root. A
 `info/exclude`, so `git add -A` there stages `.cross-agent/`, the lead's commit
 carries it, and a fast-forward lands it at the root. So `merge --ff-only`
 refuses, before git merges anything, when `git diff --name-only
-<defaultBranch>...<ref> -- .cross-agent <worktreeDir> :(icase).claude
-:(icase).codex :(icase).grok :(icase).mcp.json` names any path — the last four
+<before>...<branchHead> -- .cross-agent <worktreeDir> :(icase).claude
+:(icase).codex :(icase).grok :(icase).mcp.json` — the default branch and the
+branch head as the merge resolved them — names any path — the last four
 are a host's project configuration, the next paragraph's — and the refusal lists
 every one (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
 up: the loop's own commit step is `git_mutate ["add", "-A", "--", ".",
@@ -2632,9 +2681,9 @@ carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
 warning, where the lead can still have the file taken out:
 `git status --porcelain --untracked-files=all` over the four names anything in
 the worktree — staged, changed or untracked — and `git ls-files -v` any tracked
-one marked assume-unchanged whose working-tree bytes differ from its index
-entry, a change the mark hides from that status while a commit naming the path
-records it. The mark alone carries nothing, since git marks every tracked file
+one marked assume-unchanged or skip-worktree whose working-tree bytes differ from
+its index entry, a change either mark hides from that status while a commit naming
+the path records it. The mark alone carries nothing, since git marks every tracked file
 so under `core.ignoreStat`, and both reads are taken under `git.lock` before the
 command runs (`src/gitmutate.ts#hostConfigFault`, `#carriedUnder`,
 `#differsFromIndex`, `#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
@@ -2669,7 +2718,7 @@ The tree read lists only the four host pathspecs, never the whole tree; because
 against the empty tree to read modes under those four instead
 (`src/gitmutate.ts#hostTreeLinks`,
 `tests/gitroot.test.ts#mergeListsOnlyHostPaths`). The existing byte and
-symlink-mode checks for assume-unchanged entries remain; a link replaced while
+symlink-mode checks for marked entries remain; a link replaced while
 that check reads it differs rather than throwing, and a path that is both a change
 and a link is named once, as the link
 (`tests/gitmutate.test.ts#linkReplacedMidCheck`, `#commitMarkedSymlink`).
@@ -2683,8 +2732,8 @@ the index because `commit -a`, `commit --include` and a pathspec commit record
 what the index does not hold; the price is that an untracked regular host file
 `.gitignore` does not cover blocks a commit even unstaged, and the refusal says
 what clears it: remove the file, ignore it if it is the operator's own, or clear
-its assume-unchanged mark. Git sees no empty directory, so an empty `.claude/`
-subdirectory an engine leaves in a worktree — the T13 sample's root holds an
+its assume-unchanged or skip-worktree mark. Git sees no empty directory, so an
+empty `.claude/` subdirectory an engine leaves in a worktree — the T13 sample's root holds an
 empty `.claude/.cc-writes/` — is never refused. Both team loops name the four
 where they say what step 6 and step 9 refuse
 (`tests/skills.test.ts#loopsNameHostConfig`). A project that tracks one of the
@@ -2704,7 +2753,8 @@ worktree path>, slug?, timeout_seconds?}` as the wire spells it,
 `#RunCommandRequest`, `src/server.ts#worktreeTools`) — a **selector, never a
 command string**, so no argument the lead composes ever reaches a shell. What runs is the
 project's configured `testCommand` or `setupCommand` through `sh -c`, with
-`cwd` the project root or the verified worktree, the returned output tail capped
+`cwd` the project root, the verified worktree for a setup, or the gate's checkout
+of the branch head for a worktree test run (below), the returned output tail capped
 at 64 KB and the run at `timeout_seconds` (default 600, and no more than
 `maxTimeoutSeconds`, because a `setTimeout` delay is a 32-bit millisecond count
 and anything above it fires at once) (`src/runcommand.ts#tailBytes`,
@@ -2715,10 +2765,12 @@ is a **process-group leader** and the timeout kills the group, not the leader
 alone, because a suite that backgrounds a server would otherwise outlive the run
 that started it; a run killed that way is `ok: false` and carries no exit code
 to judge, but it still carries its `tail`: the last thing a hanging suite said
-is what a lead has to report. It takes **no lock**: `git.lock` serializes git mutations against each
-other, and holding it for a suite that may run for ten minutes would refuse
-every mutation in the project for as long as the tests took. A configured value of `"none"` is a no-op success, which is what this
-project's own `setupCommand` is, and it completes no step: `tests-passed` would
+is what a lead has to report. It holds **no lock while a command runs**: `git.lock`
+serializes git mutations against each other, and holding it for a suite that may
+run for ten minutes would refuse every mutation in the project for as long as the
+tests took. The two sections around the gate checkout's creation and removal, and a
+setup's `spawn.lock` around its marker, are the only ones (below). A configured
+value of `"none"` is a no-op success, which is what this project's own `setupCommand` is, and it completes no step: `tests-passed` would
 claim a suite passed that never ran.
 
 The child environment is the specialist's own — the host markers a nested
@@ -2744,13 +2796,179 @@ journals needs `rootWriteFault`'s `"write"` scope as well (above).
 The result is `{ok: true, exitCode, tail, journal?}` or `{ok: false, reason}`
 (`src/runcommand.ts#RunCommandResult`). **A failing suite is an answer, not a
 refusal**: it is where section 7's repair path starts, so the exit code and the
-tail come back with `ok: true` and no step. The one step this tool completes is
-`tests-passed`, and only for `which: "test"`, `where: "root"`, a `slug` whose
-journal holds `merged` and no `tests-passed` yet, and a run that exits zero. The
+tail come back with `ok: true` and no step. This tool completes two steps:
+`tests-passed`, only for `which: "test"`, `where: "root"`, a `slug` whose journal
+holds `merged` and no `tests-passed` yet, and a run that exits zero; and `tested`,
+for `which: "test"` at a worktree whose run in the gate's checkout exits zero,
+naming the head it tested (below). The
 journal is checked **before** the suite runs, because a run that could not be
 journaled is worth knowing about before it takes ten minutes; a root run with no
 slug runs and journals nothing; and a `setup` run at the root takes no slug at
 all, since nothing it does completes a step (`src/runcommand.ts#runCommand`).
+
+**The merge's two guards, and their limit.** The guards make two transitions
+impossible by construction for a lead that misreads its loop and for a server, a
+task or a command that dies at the wrong moment: a merge of a head whose committed
+tree the configured suite did not pass, and, for a team task, a merge of a head not
+every seat finished a clean review of, unless the operator waived it on the record.
+Each refusal is the server's, read from the journal, the ledger and the result
+files, never from the lead's report. What they do not promise is protection
+against the lead's own deliberate subversion of its tools — a lead or an
+operator's session racing `git_mutate`, `delegate` or a shell against the gate,
+writing into the server's own directory, or forging the inputs the server reads.
+Under host placement the lead is the operator's own session, which can do any of
+those; under engine placement the lead's reach is the tool rows the matrix gives
+it, and its row refuses what the matrix withholds. The limit is stated beside each
+guard below, and closing it is follow-up work ("Not built").
+
+**The merge acts on one resolved commit.** `merge --ff-only` reads the branch
+head and the default branch once, inside `git.lock` and the repository lock, and
+everything after uses those two SHAs: `smuggled`'s reads of the incoming tree, both
+guards, the argv git is given — its branch positional replaced by the branch head,
+as its directory positional already is by the judged path — and the `merged`
+step's two fields (`src/gitroot.ts#execute`, `#smuggled`,
+`src/gitmutate.ts#revision`). Git resolves a bare name to `refs/tags/<name>`
+before `refs/heads/<name>`, so a tag named like the task branch would otherwise be
+what `merge --ff-only task/x` merged while every check read the branch
+(`tests/gitroot.test.ts#mergeResolvesBranchOnce`); a branch that does not exist is
+refused before anything runs. The merge's checks run in this order: the whitelist
+and the request's shape, the slug and its journal, `rootWriteFault`,
+`trackedStateFault`, `journalFault`, the root's HEAD on the default branch, the two
+resolutions, `smuggled`, guard 1, guard 2, and then `git merge --ff-only
+<branchHead>`.
+
+**Guard 1: the configured suite passed on that commit, in a checkout of the
+server's own.** A worktree `run_command {which: "test"}` does not run the suite in
+the task's worktree (`src/runcommand.ts#runCommand`, `#gateRun`). It resolves the
+head of the journal's branch, makes `.cross-agent/gate/` at the project root with
+mode `0700` and a fresh `<slug>-XXXXXX` directory in it, holds that directory's
+real path to lie inside `gate/` — a link out of it is refused, naming both paths,
+with nothing checked out — and checks the head out there detached, `git worktree
+add --detach <checkout> <head>`, the explicit form `git_root` creates worktrees
+with. It runs `setupCommand`, unless that is `"none"`, and then `testCommand` in
+the checkout, and removes the checkout with `git worktree remove --force`; a zero
+exit then appends `tested`, its `before` and `after` that head and its `defaultSha`
+the default branch's. Git's two commands and the step run under `git.lock` and,
+inside it, the repository lock, which are never held while a command runs
+(`src/runcommand.ts#underGitLocks`). The checkout is the server's for the reason
+"The lead model" item 3 gives for the mailbox: `.cross-agent/` sits at the project
+root, which no writable sandbox reaches, and no task tool takes a path under it
+(`src/worktree.ts#notProjectState`, above). It is the repository's own objects
+checked out at the head, so a suite that runs git works there, and it carries none
+of the task worktree's uncommitted files, index marks, ignored files or build
+artifacts: no misreading of the loop — an implementer resumed too early, a
+`git_mutate` in the task worktree, a setup command there — reaches it. The root's
+`git status` does not see it, because `.cross-agent/` is excluded and ignored
+(`src/ledger.ts#excludeLedger`, `src/config.ts#ignoreProjectState`). A setup that
+fails is `ok: false` naming `setupCommand` and its exit, and a removal that fails is
+`ok: false` naming the checkout and the command that clears it, `git worktree
+remove --force <checkout>` at the root, with no step written whatever the suite
+said (`tests/runcommand.test.ts#testedStep`, `#testedIsolatesHead`,
+`#gateCheckoutOwned`). `merge --ff-only` then requires a `tested` step whose
+`after` is the branch head, unless `testCommand` is `"none"`, and its refusal names
+the commit the suite last passed at and the `run_command` call to make
+(`src/gitroot.ts#execute`, `tests/gitroot.test.ts#mergeNeedsTested`).
+
+Not covered: a `testCommand` of `"none"` asks for nothing; the step proves the
+configured command exited zero on that commit's tree in a fresh checkout, after
+`setupCommand`, and nothing about the suite's content or an implementer that
+weakened a test; a suite that depends on the task worktree's own path or on files
+outside the commit is not certifiable as it stands, which is the point; a gate
+costs a checkout of the tree and the setup command per round (both of this
+repository's and the sample's setup commands are `none`); a crash during a gate
+leaves `.cross-agent/gate/<slug>-*/tree` and its registration, which `git worktree
+list` and the verifier's row 1 name and `git worktree remove --force <path>` at the
+root clears, and which the loop's step 1 ignores because it lies outside
+`git.worktreeDir`; the operator's own shell, which can write anywhere the operator
+can, is the limit stated above.
+
+**Guard 2: every seat's finished review of that commit is clean, or the operator
+waived it.** A mode names the role whose reviews gate the merge with `gates:
+"merge"` ("Modes"); both callers of `gitRoot`, the tool and `cross-agent git-root`,
+pass that role as `reviewRole`, and a mode that marks none, `solo` included, is
+held to guard 1 alone (`src/gitroot.ts#GitRootOptions`,
+`src/server.ts#worktreeTools`, `src/cli.ts#gitRootVerb`). For each seat the config
+binds that role — one, unnumbered, for a single binding — `merge --ff-only` reads
+the `done` records of that role and seat whose `underReview` is the branch head,
+and the verdict each one's result file ends on: its last non-empty line, exactly
+`VERDICT: no major issues`, `VERDICT: major issues`, `VERDICT: needs rebase` or
+`VERDICT: discard` (`src/review.ts#reviewFault`, `#gatingSeats`, `#reviewsOf`,
+`#verdictOf`). A seat passes when at least one of those ends `no major issues` and
+none ends on another verdict; a record with no VERDICT line neither counts nor
+blocks, which lets a retry after an invalid review stand without letting a seat be
+re-run until it says yes. The refusal names every seat that fails and how — no
+finished review of that commit, or the adverse verdict and its task — and the two
+ways on, a waiver or another round (`tests/gitroot.test.ts#mergeNeedsReviews`).
+The result file is read rather than `result`'s answer, which is `ok: true` for a
+failed task too. **A one-shot is held to guard 1 alone, by its record**: `delegate
+{worktree: true}` writes the task's record with the slug as its `id` and a
+`worktree` naming that slug and branch, and nothing else writes a record whose
+`worktree.slug` is a journal's slug — a team task's worktree is made by `git_root
+worktree add`, with no record — so a record of that shape exempts its journal, and
+no caller's flag is involved (`src/delegate.ts#delegate`,
+`tests/gitroot.test.ts#oneShotNeedsTestsOnly`).
+
+**A gating review starts from a committed tree no setup is changing, and holds
+it.** `delegate`, for a role that gates the merge, at a launch and at a resume
+alike, refuses while a setup marker's group lives in that worktree, then while the
+worktree holds anything a commit of the whole tree would carry — what `git status
+--porcelain --untracked-files=all` names, and every tracked file marked
+assume-unchanged or skip-worktree whose bytes differ from its index entry, the same
+widened read the commit's host-configuration check makes — and only then reads the
+branch head into the record's `underReview` (`src/delegate.ts#delegate`,
+`src/gitmutate.ts#uncommitted`, `#hostConfigFault`;
+`tests/delegate.test.ts#reviewNeedsCommittedTree`, `#underReview`). While that
+review is active nothing the server runs writes the tree: `git_mutate` and
+`cross-agent git` refuse the worktree, a writable delegation into it is refused,
+and so is a worktree setup, each naming the review (`src/review.ts#reviewHold`,
+`src/gitmutate.ts#mutate`; `tests/gitmutate.test.ts#reviewFreeze`,
+`tests/runcommand.test.ts#setupRefusedUnderReview`). A worktree setup, under
+`spawn.lock`, finds neither a review nor another live marker there, writes
+`.cross-agent/setups/<hash>.json` naming its command's process group before the
+lock is let go, and clears it when the command ends (`src/runcommand.ts#runCommand`,
+`src/review.ts#markSetup`, `#setupRunning`). Both checks and the marker's write
+happen under `spawn.lock`, which `delegate` holds through its record write, so the
+two orders close with no window: a setup that checks first has its marker written
+when the delegation looks, and a delegation that records first is the active
+review the setup then sees (`tests/delegate.test.ts#setupHoldsWorktree`,
+`#reviewRefusedDuringSetup`). A server that dies mid-setup leaves the marker and
+the command's group, and the hold lasts exactly as long as anything of that group
+lives — `groupAlive` is what the reader asks — with no timer anywhere; the next
+reader clears a marker whose group is gone, and one it cannot read holds by name
+(`src/process.ts#groupAlive`, `tests/delegate.test.ts#reviewRefusedWhileSetupSurvives`,
+`tests/review.test.ts#setupMarker`).
+
+**The waiver is written under the lock.** `waive_review {slug, commit}` and
+`cross-agent waive <slug> <commit>` record a `review-waived` step whose `before` and
+`after` are the branch head and whose `args` say who recorded it — `["operator",
+"tool"]`, `["operator", "cli"]` or `["lead", <task id>]` (`src/review.ts#waiveReview`,
+`src/server.ts#worktreeTools`, `src/cli.ts#verbs`). A commit that is not hex of at
+least seven characters, a slug with no journal and a journal its merge or its
+branch's deletion closed are refused outside any lock; then, under `git.lock` —
+which `git_mutate` holds for its command and its step, so no commit lands between —
+the journal is read again and the branch head resolved, and the commit must name
+that head as it stands (`tests/review.test.ts#waiverRevalidatesUnderLock`). The lead
+row records one only under `review.afterResolver: "lead-decides"`, once every seat
+has a finished review of that head, whatever the verdicts; every other waiver is
+the operator's (`tests/server.test.ts#waiveRows`). The merge then takes that head
+without the reviews, and that head alone (`tests/gitroot.test.ts#mergeWaived`).
+
+Not covered: the guard proves each seat's task was delegated at that head against
+a committed tree no setup was changing, settled `done`, and ended on the exact
+line; it does not judge the review's quality or whether the reviewer read the
+whole diff. The freeze and the marker keep `git_mutate`, server-launched writers
+and the configured setup command off a tree under review, whatever becomes of the
+server that started them. Under host placement the session that records a waiver
+is the user's own, so a waiver there is as forgeable as any other act of that
+session; what the guard adds is that an unreviewed merge needs an explicit,
+journaled step, and `cross-agent journal <slug>` shows it. Under `lead-decides` the
+lead's waiver is the operator's configured trust. A review delegated against a red
+or stale branch is money wasted, not a merge: the loop text forbids it, the server
+does not (it would need the slug in `delegate`; deferred). A rebase that moves the
+branch makes its reviews stale by construction, so a `<default>` that moved during
+the last round costs one more review round; accepting a review by patch identity
+across a clean rebase is deferred. A lead or operator session that deliberately
+races its own tools against a review is the limit stated above.
 
 ### 5. Loop guard
 
@@ -2862,8 +3080,10 @@ each with its own unit test:
    child's received value back through `parseLineage`
    (`docs/probes.md#p9Lineage`). A `delegate` whose `(role, cwd)` is already in
    the lineage is refused (`src/guard.ts#lineageRefusal`). A request identical
-   to a running task in `(role, canonical cwd, sha256(brief))` is refused with
-   "already running, wait on <id>"; identical to a task finished within
+   to a running task in `(role, seat, canonical cwd, sha256(brief))` is refused
+   with "already running, wait on <id>" — the seat is part of the identity, so
+   the seats of one role reviewing one worktree with one brief are three tasks,
+   not one task and two duplicates ("Modes") — identical to a task finished within
    `duplicateWindowMinutes` (default 10) is refused unless `force: true`
    (`src/guard.ts#duplicateRefusal`). A `worktree: true` request is compared on
    `(role, sha256(brief))` against the tasks that were **given a worktree**
@@ -2873,9 +3093,10 @@ each with its own unit test:
    The lineage rule is unchanged and keyed by the workspace as it always was. `force` crosses the finished window and
    never a live task: two engines in one workspace is what the first half
    refuses. `resume` skips the duplicate check, is refused for active tasks, and
-   is bound to the original task's role, engine, cwd, and sandbox
+   is bound to the original task's role, seat, engine, cwd, and sandbox
    (`src/guard.ts#resumeRefusal`) — the profile read from the original's own
-   launch spec, since the record carries none. A record that carries a
+   launch spec, since the record carries none — and a seat, named or left out,
+   that differs from the original's is refused naming both. A record that carries a
    `worktree` is continued **there**: the workspace and the profile come from
    that record and its spec rather than from the role, which works at the
    project root and would otherwise put the continuation back there read-only,
@@ -2910,15 +3131,38 @@ every role key must name a role the mode declares.
     "planner":       {"engine": "codex",  "model": "gpt-6-astra", "effort": "high"},
     "plan-reviewer": {"engine": "claude", "model": "claude-opus-5"},
     "implementer":   {"engine": "codex",  "model": "gpt-6-astra"},
-    "code-reviewer": {"engine": "claude", "model": "claude-opus-5", "sandbox": "read-only"}
+    "code-reviewer": [
+      {"engine": "claude", "model": "claude-opus-5", "sandbox": "read-only"},
+      {"engine": "codex",  "model": "gpt-6-astra",   "sandbox": "read-only"},
+      {"engine": "grok",   "model": "grok-4.7",      "sandbox": "read-only"}
+    ],
+    "resolver":      {"engine": "codex",  "model": "gpt-6-astra", "effort": "high"}
   },
   "engines": {"claude": {}, "codex": {"bin": "/opt/codex/bin/codex"}, "grok": {}},
   "limits": {"maxDepth": 1, "stallMinutes": 15, "waitDefaultSeconds": 600,
              "duplicateWindowMinutes": 10, "lockWaitSeconds": 5,
-             "cancelGraceSeconds": 5},
+             "cancelGraceSeconds": 5, "planReviewRounds": 3},
+  "review": {"afterResolver": "ask"},
   "billing": "subscription"
 }
 ```
+
+A role's value is a binding, `RoleConfig`, or for a role the mode marks `seats:
+"many"` a non-empty list of them, one per seat, each judged as a binding under the
+field `roles.<name>#<n>` (`src/config.ts#RoleBinding`, `#loadConfig`, `#seatsOf`);
+`init` binds the dev-team code reviewer to the three seats above, one per engine,
+as a starting point the operator edits. Two settings drive the team loops, and
+`describe_mode` answers both as `review` (section 1): `limits.planReviewRounds`,
+default 3 and a whole number of at least 1, is how many consecutive plan reviews
+may end `VERDICT: major issues` before step 3 stops and asks; and
+`review.afterResolver` — `ask`, the default, `lead-decides` or `always-ask` — is what
+step 7 does when Critical or Important findings still stand after the resolver's
+round: stop and ask the user, let the lead rule and record the waiver, or stop and
+ask whatever stands (`src/config.ts#afterResolverOptions`, section 7). A config
+written before these existed loads as it is, with both settings at their defaults
+and the resolver bound to nothing, which `list_roles` answers `binding: null` and
+step 1 of both loops stops on; `init` leaves an existing config alone, so the
+binding is added by hand (`tests/config.test.ts#oldConfigLoads`).
 
 `cross-agent init` writes `engines` with an empty object per engine; the `bin`
 above is what an operator adds when an engine is not on `PATH` under its own
@@ -2933,9 +3177,10 @@ specialist row.
 
 The `dev-team` mode supplies the rest (`modes/dev-team/mode.json`): `planner`
 and `plan-reviewer` at `workspace: {kind: "root"}` with `sandboxDefault:
-"read-only"`, `implementer` and `code-reviewer` at `{kind: "worktree",
-branchPattern: "task/*", dir: ".worktrees"}` with the implementer defaulting to
-a writable profile. A
+"read-only"`, `implementer`, `code-reviewer` and `resolver` at `{kind: "worktree",
+branchPattern: "task/*", dir: ".worktrees"}` with the implementer and the
+resolver defaulting to a writable profile, and the code reviewer read-only,
+marked `seats: "many"` and `gates: "merge"` ("Modes"). A
 `kind: "root"` role runs at the project root; a `kind: "worktree"` role
 requires the `verify_worktree` checks of section 4 against the branch named in
 the request, and a role whose sandbox mode is anything but read-only reserves
@@ -2943,22 +3188,25 @@ the path (section 2).
 
 Every field above is validated, and the file is read by two loaders that answer
 different questions. `loadConfig` reads the bind-time layer alone — `mode`,
-`project`, each role's engine, model, effort and optional `sandbox`, `engines`,
-all six limits and `billing`, `limits.lockWaitSeconds` and
-`limits.cancelGraceSeconds` included (`src/config.ts#CrossAgentConfig`,
-`#limitDefaults`, `#loadConfig`) — and it is what a runner, a lock or a
+`project`, each role's engine, model, effort and optional `sandbox`, seat by seat
+for a list, `engines`, all seven limits, `review` and `billing`,
+`limits.lockWaitSeconds` and `limits.cancelGraceSeconds` included
+(`src/config.ts#CrossAgentConfig`, `#limitDefaults`, `#reviewDefaults`,
+`#loadConfig`) — and it is what a runner, a lock or a
 reconciliation reads, because those run where no mode has been loaded and must
 not fail for want of one. Every lock acquisition but the runner's own claim
 reads the first limit, through the caller's argument or through
 `lockWaitSeconds(projectRoot)` (`src/config.ts#lockWaitSeconds`, section 2); the
 second is how long `cancel` gives a runner to settle its own task (section 2).
 `bindingFault` is every rule that needs both files, written once and answered as
-a reason rather than a throw: every role key names a role the mode declares, the
-effective profile — the override else the mode's default — is one the bound
-engine accepts, no root role is writable, and an engine-placed mode's `lead.role`
-is not bound to `grok` (P9: no per-run isolation, "The lead model", item 4), each
-refused by field (`src/config.ts#bindingFault`). `loadConfigWithMode` raises it,
-and is what the server loads before it serves, what `list_roles` answers from,
+a reason rather than a throw: every role key names a role the mode declares, a
+list binds only a role the mode marks `seats: "many"`, the effective profile of
+each binding or seat — the override else the mode's default — is one the bound
+engine accepts, no root role is writable, a many-seat role the mode declares
+read-only is read-only in every seat, and an engine-placed mode's `lead.role` is
+not bound to `grok` (P9: no per-run isolation, "The lead model", item 4), each
+refused by field, a seat's as `roles.<name>#<n>` (`src/config.ts#bindingFault`).
+`loadConfigWithMode` raises it, and is what the server loads before it serves, what `list_roles` answers from,
 and what the entry point derives the depth cap from; `delegate` refuses with it
 at the launch boundary, because these two files can change under a running
 server and that is where an engine actually starts
@@ -3009,8 +3257,10 @@ It is short and identical on all three hosts.
 `project.mergePolicy` — nobody merges by hand under `auto`.** First it commits
 what the specialist left, with `git_mutate`, because a specialist writes no git
 metadata (section 4) and an uncommitted worktree would merge nothing. Then,
-under `auto`: `run_command {which: "test", where: <worktree>, slug}`, `git_root
-merge --ff-only task/<id>`, `run_command {which: "test", where: "root", slug}`,
+under `auto`: `run_command {which: "test", where: <worktree>, slug}`, which
+journals `tested` at the branch head it checks out on its own — the merge refuses
+a head the suite has not passed on, and a one-shot needs no review (section 4) —
+`git_root merge --ff-only task/<id>`, `run_command {which: "test", where: "root", slug}`,
 `git_root worktree remove <path>`, `git_root branch -d task/<id>`, and the
 closing report. Under `manual`, or after any failure anywhere in that order, it
 stops where it is, leaves the branch and its worktree standing, and reports the
@@ -3041,6 +3291,41 @@ became the task's closing report), plus the git ownership and ordering of
 section 4 — ten steps, from the root check to the record
 (`modes/dev-team/SKILL.md`), and:
 
+**The team loops' shape** (`modes/dev-team/SKILL.md`,
+`modes/dev-team-engine/SKILL.md`). Step 1 ends with the roster: every role the
+loop delegates must be bound, the resolver of an older config included, or the
+loop stops and names the binding to add (`tests/skills.test.ts#rosterBeforeDispatch`).
+The plan review acts on a VERDICT line. A clean one resumes the planner once, to
+verify and fold the findings that hold and optimize the plan, with no further
+review; a `major issues` one is counted and iterated up to
+`limits.planReviewRounds`, each revision opening with a table of what it folded or
+rejected and each re-review judging what was addressed and marking every major
+finding carried, introduced by the last fold or newly noticed. At the limit the
+loop stops with the findings per round, a convergence verdict — not converging
+when the major count did not fall, or most majors were introduced by the last
+fold — and four options, fold and proceed, one more round, simplify or pause,
+recommending simplify when the rounds are not converging (`#planIteration`,
+`#convergenceMarks`, `#limitDiagnosis`). Step 6 skips a commit of nothing
+(`#noChangeCommit`). Step 7 runs the gate before every round — a rebase onto the
+default branch and the worktree suite, which journals `tested` — then delegates
+every seat of the code reviewer in parallel on the commit under review; the lead
+triages the reviews into one findings table, a row per distinct finding with its
+decision, and a round with a Critical or Important row standing is a fix round for
+the implementer. After two fix rounds with such rows standing, the resolver takes
+the table once, and what still stands after its round goes where
+`review.afterResolver` says: the same stop and options as the plan's limit, the
+lead's own ruling and waiver, or the stop whatever stands. A round with only Minor
+rows standing gets one wrap-up fix and one more round, whose leftover Minor rows
+are follow-ups; anything the step does not cover — a failed seat, a review with no
+VERDICT line, a `discard`, a `needs rebase` just after the gate, a merge the server
+refused — stops and asks before anything is dispatched (`#reviewGate`). A rebase
+that moved the branch goes back through the gate, and step 9 names both guards
+(`#rebaseGate`, `#mergeGuardsNamed`). A finding outside the task's acceptance is
+out of scope wherever it is judged, a follow-up that never blocks and changes
+nothing (`#scopeRule`). These pins are instruction coverage: they hold the
+sentences a lead reads, not what it does with them, which the guards of section 4
+bound whatever the text is read as.
+
 Where that closing report goes depends on placement. Under `host` the host
 session appends one line to `.cross-agent/log.md` itself, as it appends
 anything else. Under `engine` the lead is read-only at the root and cannot
@@ -3058,15 +3343,18 @@ run's five tasks, each `passed`.
   defaultSha?, args?}` (`src/journal.ts#Journal`, `#JournalEntry`). The step
   names are the completed git steps of the loop — `worktree-created`,
   `committed`, `rebased`, `merged`, `tests-passed`, `worktree-removed`,
-  `branch-deleted` — plus `git`, which is any other `git_mutate` call and
-  records the arguments it ran instead of a name (`src/journal.ts#JournalStep`).
+  `branch-deleted` — the gate's `tested` and the waiver's `review-waived`, plus
+  `git`, which is any other `git_mutate` call and records the arguments it ran
+  instead of a name (`src/journal.ts#JournalStep`).
 
   **Each named step is written by the tool that performs it**, under the lock
   that orders the writers — `git_mutate` and `git_root` while they still hold
   the lock their command ran under, `run_command` under `git.lock` taken for the
-  re-check and the append alone, because a suite may run for ten minutes
-  (`src/runcommand.ts#runCommand`) — so nothing has to remember to journal
-  afterwards and no separate journal verb exists for the lead to forget or
+  re-check and the append alone, or for `tested` around the gate checkout's
+  removal and the append, because a suite may run for ten minutes
+  (`src/runcommand.ts#runCommand`), and `waive_review` under `git.lock` taken
+  for the head it reads and the append (`src/review.ts#waiveReview`) — so nothing
+  has to remember to journal afterwards and no separate journal verb exists for the lead to forget or
   misuse. A step is named for what it **moved**: `git commit --dry-run` and a
   rebase that replayed nothing leave the branch where it was, and a
   reconciliation pass reading `committed` would go looking for a commit that is
@@ -3079,6 +3367,8 @@ run's five tasks, each `passed`.
   | `rebased` | a `git_mutate` `rebase` that moved the branch, its own control flags apart | `src/gitmutate.ts#stepName`, `#rebaseControls` |
   | `merged` | `git_root merge --ff-only <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
   | `tests-passed` | `run_command {which: "test", where: "root", slug}` exiting zero after the merge | `src/runcommand.ts#runCommand` |
+  | `tested` | `run_command {which: "test", where: <worktree path>, slug}` exiting zero in the gate's detached checkout of the branch head — step 7's gate, before every round and on the return from step 8; `before` and `after` are that head | `src/runcommand.ts#gateRun` |
+  | `review-waived` | `waive_review {slug, commit}` or `cross-agent waive <slug> <commit>`, naming the branch head whose review was waived | `src/review.ts#waiveReview` |
   | `worktree-removed` | `git_root worktree remove <dir>` | `src/gitroot.ts#whitelist`, `#execute` |
   | `branch-deleted` | `git_root branch -d <branch>` | `src/gitroot.ts#whitelist`, `#execute` |
   | `git` | any other `git_mutate` call, with its `args` — a dry run, a rebase abort, a `git add` | `src/gitmutate.ts#mutate` |
@@ -3126,7 +3416,10 @@ run's five tasks, each `passed`.
   the pair is written once (`src/journal.ts#appendStep`). `tests-passed` is
   refused the same way and for the same kind of reason — a task's suite passes
   once, and two runs that both finished before either recorded a step would
-  otherwise both record one (`src/journal.ts#appendStep`, `#once`). Every other step
+  otherwise both record one (`src/journal.ts#appendStep`, `#once`). Neither
+  `tested` nor `review-waived` is held to that rule — a branch is tested as often
+  as the loop tests it — and neither moves the tip a journal records for its
+  branch, since neither moves the branch (`src/journal.ts#recordedTip`). Every other step
   records the default branch's SHA it observed in **its own** step, as
   `steps[].defaultSha` beside `before` and `after`
   (`src/journal.ts#JournalEntry`, `#appendStep`), and never touches the
@@ -3205,12 +3498,38 @@ host is shown and what the engine is told cannot drift
 (section 6); nothing else does.
 
 `modes/<name>/roles/*.md`. For `dev-team` they are
-`{planner,plan-reviewer,implementer,code-reviewer}.md`, written for this
+`{planner,plan-reviewer,implementer,code-reviewer,resolver}.md`, written for this
 runtime and using the devpack's role text for the review and reporting
 conventions only: planner and plan reviewer read at the root; the implementer
 edits and runs the tests in its worktree and reports a commit summary but
 never runs git write commands; the code reviewer reads the committed branch in
-the worktree; nobody delegates. `solo` has one role prompt. Acceptance is
+the worktree, one seat among several reading on its own; nobody delegates.
+`solo` has one role prompt.
+
+The resolver is delegated once two fix rounds have left Critical or Important
+findings standing: it works in the task's worktree under the implementer's
+rules, verifies each standing finding before it acts, resolves the ones that hold
+test first, reports one it cannot resolve within the plan with the mitigation it
+would propose, and closes with the summary its work is committed under
+(`modes/dev-team/roles/resolver.md`). Both reviewers report their findings by
+severity — Critical, Important, Minor — each with its evidence, the change it
+asks for and whether it is resolvable, and end on one line and nothing after it,
+which the loop acts on and, for the code reviewer, the merge reads for itself
+(section 4): `VERDICT: no major issues`, `VERDICT: major issues` or `VERDICT: human
+decision` for the plan reviewer, and `VERDICT: no major issues`, `VERDICT: major
+issues`, `VERDICT: needs rebase` or `VERDICT: discard` for the code reviewer. Four
+rules run through the prompts and the loops alike
+(`tests/skills.test.ts#scopeRule`, `#convergenceMarks`, `#limitDiagnosis`,
+`#proportion`). **Scope**: a finding outside the task's brief and acceptance is
+out of scope, listed as a follow-up, never blocks, and changes nothing in the
+implementer's or the resolver's hands. **Convergence**: a re-review judges each
+earlier finding ADDRESSED, PARTLY or NOT and marks each major finding carried,
+introduced by the last fold or fix, or newly noticed, which is what the loop's
+convergence verdict counts. **Diagnosis**: at a limit the loop stops with the
+findings per round, that verdict and its evidence, and four options, and
+recommends simplify when the rounds are not converging. **Proportion**: the
+planner plans the smallest change that meets the acceptance and lists anything
+beyond it as optional, and the plan reviewer asks for nothing beyond it. Acceptance is
 behavioural (the end-to-end runs). The devpack's text was carried over once by
 `tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
 code: it drops the sentences naming the devpack's own machinery, drops the git
@@ -3256,7 +3575,8 @@ of its text — a Grok session's inherited slash commands include one called
 reads Claude's and Grok's `tool_use` blocks against each engine's own tool
 vocabulary, the names its archived transcripts call, Grok's `use_tool` dispatcher
 in the one shape a run recorded (`tool_name` naming this server's tool, `tool_input` an
-object, nothing else), and Codex's `agent_message`,
+object, nothing else) — this server's tools one list, `waive_review` among them
+(`tools/e2e-verify.mjs#serverTools`) — and Codex's `agent_message`,
 `command_execution` and `mcp_tool_call` items, and **nothing else**: a tool outside
 its engine's list or a call with no name answers `?`
 (`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for one event it reads by its whole shape and passes as no
@@ -3553,7 +3873,11 @@ handler passes:
   record file no reader could judge named with its reason, as the `list_tasks`
   answer with `reconciled`, and always a 0. `--reconcile` runs the pass first
   and writes what `list_tasks` would: it is the one read that reconciles
-  (`tests/cli.test.ts#cliTasks`, `#cliTasksReconcileFlag`).
+  (`tests/cli.test.ts#cliTasks`, `#cliTasksReconcileFlag`). A seat of a
+  many-seat role is spelled `<role>#<seat>` — `code-reviewer#2` — in its role
+  column, as `show`'s `role:` line and `report`'s rows and headings spell it, while
+  every JSON form keeps `role` and `seat` apart (`src/cli.ts#roleCell`,
+  `tests/cli.test.ts#cliSeatSpelling`).
 - `cross-agent show <id> [--lines <n>]` reads what `check` and `result` read —
   the record, the tail of its engine stream, the outcome sidecar, its journal,
   and the final message of a record it shows settled — as `{record,
@@ -3568,7 +3892,8 @@ handler passes:
   a runner that settles between two reads never puts a message beside an
   unsettled record (`#cliShowOneRead`). A journal that does not read is named
   beside the record, on stderr and as `journalError`, rather than in its place
-  (`#cliJournal`).
+  (`#cliJournal`). A gating review's record shows the commit it covers as
+  `underReview`.
 - `cross-agent log <id> [--lines <n>]` is the tail of a task's engine stream,
   fifty lines unless asked otherwise, as `{id, logPath, lines}`; a task whose
   engine has said nothing is an empty answer and a 0, a task nobody has a 3
@@ -3598,7 +3923,8 @@ handler passes:
   code (`tests/cli.test.ts#cliGit`).
 - `cross-agent git-root [--slug <slug>] -- <args…>` is `gitRoot` with what `git_root`'s
   handler passes, so it has the tool's whitelist, journal rules, `rootWriteFault`,
-  `git.lock` and repository lock (`src/cli.ts#gitRootVerb`): the operator's
+  `git.lock` and repository lock, and the mode's review guard on a merge
+  (`src/cli.ts#gitRootVerb`, section 4): the operator's
   cooperating path for root git while a loop runs (section 4). `--slug` is required
   exactly when the verb journals. Its exits mirror `git`'s, through the same answer
   (`src/cli.ts#gitAnswer`): 0 when git ran, a 1 when git ran and failed or exited 0
@@ -3614,6 +3940,12 @@ handler passes:
   wrote, a 2 for a slug no journal file could have, and a 1 for a journal that
   does not read, a step of it included, which names its file
   (`tests/cli.test.ts#cliJournal`).
+- `cross-agent waive <slug> <commit>` is `waiveReview` for the operator, recorded
+  as `["operator", "cli"]` (`src/cli.ts#waiveVerb`, `src/review.ts#waiveReview`):
+  0 and the `review-waived` step when it is recorded; a 3 for every refusal — a
+  commit that does not name the branch head as it stands, a slug no journal names, a
+  journal its merge or its branch's deletion closed, a mode with no role that gates
+  the merge — and a 2 for a commit that is not hex (`tests/cli.test.ts#cliWaive`).
 - `cross-agent list-asks [--status <s>]` is `list_asks` for the operator row:
   every ask, in the order asked, as `{asks, invalid}` (`src/cli.ts#listAsksVerb`,
   `src/mailbox.ts#listAsks`). It is a 5 while an ask it printed is open — the
@@ -3631,7 +3963,8 @@ handler passes:
   read or locked: no lead of it can have asked
   (`tests/cli.test.ts#answerWritesNothing`).
 - `cross-agent report [--since <task id>]` renders every task of the ledger
-  newest first — role, engine, model, effort, duration, outcome, id — then each
+  newest first — role, a seat spelled as `tasks` spells it, engine, model, effort,
+  duration, outcome, id — then each
   task's final message, every line of it indented four spaces under its heading
   so that a table inside a message is never read as a row; the outcome is
   three-valued: `passed` for `done`, `failed` for `failed` and `cancelled`,
@@ -3646,7 +3979,7 @@ answer — an empty listing is a 0 — and leaves no `.cross-agent/`, no change 
 task in every status, a damaged record and a damaged ask, each read leaves every
 file under `.cross-agent/` byte for byte, a `running` task far past its stall
 threshold included (`#cliReadsLeaveSeededLedger`). The verbs that write —
-`init`, `answer`, `cancel`, `git`, `git-root` and `tasks --reconcile` — refuse with 3,
+`init`, `answer`, `cancel`, `git`, `git-root`, `waive` and `tasks --reconcile` — refuse with 3,
 naming the variable, when the CLI's own environment carries `CROSS_AGENT_TASK`,
 `CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`, the markers `childEnv` gives a
 task's process tree (`src/guard.ts#childEnv`): writing is the operator's power,
@@ -3762,6 +4095,20 @@ Four limits of worktree projects are deferred the same way, each for its reason:
   paths, ranges and options, where `src/gitroot.ts#nameFault` now refuses a name such
   as `feature+one` that a worktree project's default branch could otherwise carry.
 
+One limit of the merge's guards is deferred with them (section 4):
+
+- **The guards against a session that subverts its own tools.** A lead or an
+  operator's session racing its tools against the gate — a shell writing into
+  `.cross-agent/gate/` or a reviewed worktree, a `git_mutate` on a second slug bound
+  to the same tree, an operator CLI run between a gate's checkout and its suite — is
+  outside the guarantee. The guards refuse every such route the tools offer by
+  their own rules (`src/worktree.ts#notProjectState`, `src/review.ts#reviewHold`,
+  `#setupRunning`), and the rest is the operator's own hand. Closing it would
+  reserve the gate's checkout and a reviewed worktree as workspaces in the ledger's
+  own terms, or run the gate under a sandbox of its own, should a deployment need
+  the guarantee to hold against the operator's session too; it is follow-up work,
+  not this build's.
+
 ## Repository layout (`~/Documents/cross-agent-cli`)
 
 ```
@@ -3773,7 +4120,7 @@ src/server.ts     src/config.ts     src/ledger.ts     src/process.ts
 src/reconcile.ts  src/runner.ts     src/guard.ts      src/worktree.ts
 src/locks.ts      src/reservation.ts                  src/gitmutate.ts
 src/journal.ts    src/delegate.ts   src/tasks.ts      src/cli.ts
-src/mailbox.ts
+src/mailbox.ts    src/review.ts
 src/engines/{types,spawn,registry,binaries}.ts
 src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
@@ -3789,8 +4136,9 @@ Present today:
 `src/{server,config,ledger,process,reconcile,runner,locks,guard,worktree}.ts`,
 `src/{reservation,journal,gitmutate}.ts`, `src/{delegate,tasks}.ts` from row 7,
 `src/{modes,cli}.ts` and `modes/{dev-team,dev-team-engine,solo}/` from row 8,
-`src/mailbox.ts` and the CLI's `answer` and `report` from row 11, and all seven of
-`src/engines/`: the contract and pipeline from T4, the registry and the binary
+`src/mailbox.ts` and the CLI's `answer` and `report` from row 11, `src/review.ts` —
+the merge's review guard, the setup marker and the waiver — from `atc-s96.104`,
+and all seven of `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
 `npm test` runs), `tools/e2e-verify.mjs` (row 10's, which every end-to-end run
@@ -4245,8 +4593,9 @@ binding, and the project follows its own path (Context).
   chunk with the call it cancels (`#cancellationSharingChunk`). `check` is the other writer of the two
   transitions, and writes both (`tests/tasks.test.ts#checkWritesStall`).
 - **Modes (recorded, except the hosts).** `init --mode dev-team` writes section
-  6's config byte for byte and it loads against the built-in mode, whose four
-  roles default to read-only, read-only, `workspace-write` and read-only, with
+  6's config byte for byte and it loads against the built-in mode, whose roles
+  default to read-only, read-only, `workspace-write`, read-only, `workspace-write`
+  and read-only — the resolver beside the implementer, the consultant last — with
   the temporary-directory warning on stderr (`tests/cli.test.ts#initModeDev`); `--mode
   dev-team-engine` binds the `lead` and writes the cap of 2 the placement needs,
   and `--mode solo` binds its one role and declares no git policy (`#initModeBinds`);
@@ -4260,7 +4609,7 @@ binding, and the project follows its own path (Context).
   grok-bound lead under engine placement (`#overrideMayMake`, `#grokBoundLead`); the cap follows the
   placement and only ever falls (`#effectiveMaxDepthLower`), and `init` leaves the config directory
   holding the config alone (`#initconfigLeavesConfig`). Every mode, `solo` included, yields a
-  `tools/list` with the worktree provider's four tools for the operator and lead rows and
+  `tools/list` with the worktree provider's five tools for the operator and lead rows and
   never for the specialist (`tests/server.test.ts#worktreeProviderTools`); `git_mutate` defaults its
   workspace and branch from that mode's own policy (`#gitMutateTakes`); `describe_mode`
   returns the loop and every role prompt byte for byte with nothing written
@@ -4308,6 +4657,45 @@ binding, and the project follows its own path (Context).
   `report` indents each final message (`#reportVerb`), and the README and the
   launcher are held to the dispatcher's verbs and protocol
   (`#cliDocsNameVerbs`).
+- **Team modes (`atc-s96.104`).** Seats and the merge gate load and refuse by
+  field (`tests/modes.test.ts#roleSeats`, `#roleGates`, `#leadSeatsOne`); a config
+  binds a many-seat role as a list and no other role so, a read-only reviewer
+  stays read-only in every seat, an older config loads with the resolver unbound,
+  and the two settings load and refuse by field (`tests/config.test.ts#seatedBinding`,
+  `#listNeedsSeats`, `#readOnlyReviewer`, `#oldConfigLoads`, `#reviewSettings`).
+  `delegate` takes a seat and refuses a wrong one, keeps it across a resume and in
+  the duplicate identity, launches every seat read-only and names the binding an
+  unbound resolver needs (`tests/delegate.test.ts#delegateBySeat`, `#seatRefusals`,
+  `#resumeKeepsSeat`, `#seatsReadOnlyAtLaunch`, `#unboundResolver`,
+  `tests/guard.test.ts#duplicateSeats`); it records the head a gating review covers
+  only from a committed tree no setup is changing, holds that worktree against
+  writers, and refuses any workspace under `.cross-agent/`
+  (`tests/delegate.test.ts#underReview`, `#reviewNeedsCommittedTree`,
+  `#reviewRefusedDuringSetup`, `#reviewNeedsCommittedTreeDespiteTested`,
+  `#setupHoldsWorktree`, `#reviewRefusedWhileSetupSurvives`, `#noWorkspaceUnderState`,
+  `tests/worktree.test.ts#notProjectState`). `git_mutate` refuses a reviewed worktree
+  and a path under `.cross-agent/`, and reads the widened mark
+  (`tests/gitmutate.test.ts#reviewFreeze`, `#noMutationUnderState`,
+  `#uncommittedReadsMarks`, `#commitRefusesSkipWorktree`). The gate journals `tested`
+  at the head it checked out on its own and nothing else does, and a setup under a
+  review is refused (`tests/runcommand.test.ts#testedStep`, `#testedIsolatesHead`,
+  `#gateCheckoutOwned`, `#setupRefusedUnderReview`). The merge acts on the branch's
+  own head, needs `tested` there and, for a team task, every seat's clean review or
+  a waiver (`tests/gitroot.test.ts#mergeResolvesBranchOnce`, `#mergeNeedsTested`,
+  `#mergeNeedsReviews`, `#oneShotNeedsTestsOnly`, `#mergeWaived`); the verdict line
+  and the setup marker are read as the server reads them, and the waiver is read
+  again under the lock (`tests/review.test.ts#setupMarker`,
+  `#waiverRevalidatesUnderLock`), refused to a lead outside `lead-decides`
+  (`tests/server.test.ts#waiveRows`) and recorded from a terminal by `cross-agent
+  waive` (`tests/cli.test.ts#cliWaive`). `list_roles` answers seats, `describe_mode`
+  the two settings, `list_tasks` and `check` a record's seat and head, and the CLI
+  spells a seat `<role>#<seat>` (`tests/server.test.ts#listRolesSeats`,
+  `#describeModeReview`, `tests/tasks.test.ts#viewCarriesSeat`,
+  `tests/cli.test.ts#cliSeatSpelling`). The loops' and the prompts' rules are pinned
+  as section 7 lists, and the launcher's by `tests/skills.test.ts#launcherSeats`;
+  the end-to-end verifier reads `waive_review` as this server's tool
+  (`tests/e2e-verify.test.ts#closedToolVocabulary`). E11, three code reviewer seats
+  on three engines end to end, is still to run.
 - **Follow-ups (recorded).** A sandbox profile the engine does not declare is
   refused naming the engine once (`tests/spawn.test.ts#spawnRefusesProfileOnce`).
   The citation checker's two lexer limits are pinned as they are, so a lexer that

@@ -5,9 +5,10 @@ One MCP server plus a launcher skill that run a team of headless `claude`,
 CLI's sandbox. A host is anything that can attach an MCP server and load a
 skill: Claude Code, Codex, and Grok today. What the team does is a **mode** —
 data, not code: the roles, the loop the lead runs, and a git policy — and three
-are built in: `dev-team`, the four-role worktree team (planner, plan reviewer,
-implementer, code reviewer); `dev-team-engine`, the same team with its loop in a
-lead the server launches; and `solo`, one consultant and no team.
+are built in: `dev-team`, the worktree team (planner, plan reviewer,
+implementer, as many code reviewer seats as the config binds, and a resolver);
+`dev-team-engine`, the same team with its loop in a lead the server launches; and
+`solo`, one consultant and no team.
 Every mode carries that consultant, and a project with no config at all runs as
 `solo` at its git toplevel, so a one-off delegation to another engine — read the
 code and answer, or take one change in a worktree of its own — costs no setup.
@@ -82,6 +83,27 @@ loop's first step stops unless `git status --porcelain --untracked-files=normal`
 prints nothing at the project's root. The server discovers that project from the
 host session's working directory, so a session started anywhere inside it runs
 that project's team.
+
+In a `dev-team` project `init` binds the code reviewer to three seats — Claude,
+Codex and Grok, each read-only — which review the committed branch in parallel, and
+the resolver to a stronger model, which takes the findings two fix rounds have left
+standing; a code reviewer bound to a writable profile is refused by field, since its
+seats read beside each other in one worktree. A config written before the resolver
+existed still loads, and its team's first task stops at the roster until you add
+`roles.resolver` by hand, because `init` leaves an existing config alone.
+`limits.planReviewRounds` (default 3) is how many consecutive plan reviews may find
+major issues before the loop stops and asks you, and `review.afterResolver` — `ask`
+by default, `lead-decides` or `always-ask` — says what it does when significant
+findings outlast the resolver: ask you, let the lead rule and record the waiver, or
+ask you whatever stands. Two guards back the loop, so that no misreading of its text
+and no crash merges untested or unreviewed work; a session that races its own tools
+against them is outside what they promise. `git_root merge` refuses a branch head
+the configured suite has not passed on in a fresh checkout of that head under
+`.cross-agent/gate/`, after the setup command, and, for a team task, one every
+reviewer seat has not finished a clean review of, unless you waive it with
+`cross-agent waive <slug> <commit>`. A reviewer is refused while the worktree holds
+uncommitted changes or its setup command runs. `cross-agent journal <slug>` shows
+the `tested` and `review-waived` steps.
 
 ### Prerequisites on Linux
 
