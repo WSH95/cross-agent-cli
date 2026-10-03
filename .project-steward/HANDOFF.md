@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T11:13:53Z
+updated_at: 2026-10-03T11:30:39Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -45,21 +45,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-**`atc-s96.103`: rename the repository from `agent-team-cli` to `cross-agent-cli`** (the user's
-request, 2026-10-03). The product is already `cross-agent`. The live names change: the Codex
-marketplace name, both manifests' `author`, README paths, live docs, test pins, and `AGENTS.md`'s
-title and Codex line (the last as a diff for the user's approval). Records of past runs keep their
-paths, with one note. There is no migration or compatibility work: the tool has never been used in a
-development project (the user). The directory moves last; then `core.hooksPath` (absolute today),
-the e2e sample's Grok attach and Claude Code and Codex trust follow. The plan is
-`.superpowers/sdd/the-development-of-this-calm-planet/task-14-brief.md`, revision 3, final after
-three plan reviews; all their findings were in the move runbook and the checks, and all were folded.
-The implementation is on `task/cross-agent-cli-rename` in `.worktrees/cross-agent-cli-rename`
-(`e22958b..b2f4658`, five commits). `npm test` gives 933 / 932 / 1 skipped, and the grep gate is
-exact. The code review is next. The move is the user's, run from an ordinary terminal at `~` after
-this session ends: `task-14-move.sh`, then `task-14-smoke.sh`, both beside the brief. A temporary
-git-ignored solo config at the root (`.cross-agent/`) serves the review's Grok seat and is removed
-after it.
+**`atc-s96.103`: the repository renamed from `agent-team-cli` to `cross-agent-cli`.**
+- **Merged on 2026-10-03:** `1a17004`, with the controller's commit `6c3e5c3`. That commit carries the `AGENTS.md` change the user approved, the steward project name, and Decision 0013.
+- **The directory move:** run by the controller as the session's last step. Its results are recorded in Decision 0013 and below.
 
 **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
 A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when
@@ -150,7 +138,10 @@ None. The `AGENTS.md` diff for the worktree projects was approved and applied on
 
 - **Never push.** Checkpoints commit on `main` as Conventional Commits.
 - **`AGENTS.md` and `CLAUDE.md` are user-owned.** They change only by hunks the user approved after seeing the diff.
-- **Start host sessions with `setsid --fork`.** Anything spawned from a Claude Code shell has a `claude` ancestor, so a cross-agent server started there resolves as a specialist. Start any host session for an end-to-end run with `setsid --fork` from the target directory, with the session's markers scrubbed.
+- **Start end-to-end host sessions with `setsid --fork`**, from the target directory, with the session's markers scrubbed.
+  - A server's permission row is decided by `CROSS_AGENT_*` markers and ledger identities in its process ancestry, not by a `claude` process name.
+  - A server started inside a plain Claude Code session serves the operator row (`docs/probes.md#walk32`).
+  - One under a task's process tree does not, and `setsid --fork` keeps a host out of any such tree.
 - **Anchor `pgrep -f` and `pkill -f` patterns.** A pattern that matches your own shell's command line kills the shell. Anchor it, for example `'^node .*script\.mjs'`.
 - **The citation checker's limits.** `npm test` runs it, and it proves that a cited line or symbol exists, not that it still says what the sentence claims.
   - Cite tests by `// @anchor`, passages by `<!-- @anchor -->` and code by `#symbol`.
