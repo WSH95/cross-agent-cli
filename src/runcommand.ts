@@ -200,14 +200,14 @@ export async function runCommand(
     return { ok: false, reason: `run_command's timeout_seconds must be a positive number of seconds no greater than ${maxTimeoutSeconds}, not ${seconds}` };
   }
   const atRoot = where === "root";
-  // A run journals only the root test run after a merge, so a slug is meaningful in two
-  // places: naming the journal whose branch verifies a worktree, and naming the journal a
-  // `tests-passed` step belongs to. Anywhere else it would be silently ignored.
+  // A worktree test run journals `tested` at the branch head; the root test run after the
+  // merge journals `tests-passed`. A slug names the journal used to verify a worktree
+  // and record those steps; for a root setup run it would be silently ignored.
   if (!atRoot && slug === undefined) {
     return { ok: false, reason: `run_command verifies ${where} against the branch its journal records; name the slug whose worktree it is` };
   }
   if (atRoot && which === "setup" && slug !== undefined) {
-    return { ok: false, reason: "run_command journals nothing for a setup run; only the root test run after the merge completes a step" };
+    return { ok: false, reason: "run_command journals nothing for a setup run; a worktree test run journals tested at the branch head, and the root test run after the merge journals tests-passed" };
   }
 
   let config;

@@ -206,7 +206,8 @@ test("tests-passed is journaled for a passing root run, once, and only after the
   // A run with no slug is still a run: it just journals nothing.
   assert.equal(accepted(await runCommand(root, { which: "test", where: "root" })).journal, undefined);
   // And `setup` completes no step of the loop, so naming a journal for it says nothing.
-  assert.match(refusal(await runCommand(root, { which: "setup", where: "root", slug: "alpha" })), /journals nothing|test/);
+  assert.equal(refusal(await runCommand(root, { which: "setup", where: "root", slug: "alpha" })),
+    "run_command journals nothing for a setup run; a worktree test run journals tested at the branch head, and the root test run after the merge journals tests-passed");
 
   const committed = await gitMutate(root, { slug: "alpha", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 });
   assert.equal(committed.ok, true, JSON.stringify(committed));

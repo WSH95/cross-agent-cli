@@ -264,16 +264,18 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
 // they need, the result cap `describe_mode` needs, the checks and the way back.
 
 // @anchor describeModeSizes
-test("the README states the mode's text describe_mode answers with, without projectRoot, at its size today, which Grok's default cap cuts under both dev-team modes", () => {
+test("the README and design state the live mode text sizes without projectRoot, which exceed Grok's default cap under both dev-team modes", () => {
   // The mode's text as the server sends it (`src/server.ts`, its `text`), in bytes, as
   // Grok's `max_output_bytes` counts them, without the `projectRoot` the handler adds beside
-  // it, whose size is the root's own (`tests/server.test.ts#describeModeAnswerSize`). Task
-  // 12's review found the README's sizes a merge behind.
+  // it, whose size is the root's own (`tests/server.test.ts#describeModeAnswerSize`). Both
+  // documents must track the live payload so their figures cannot drift apart.
   const size = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replace(/\s+/g, " ");
-  const stated = /the mode's text, without `projectRoot`, is ([\d,]+) bytes under `dev-team`, ([\d,]+) under `dev-team-engine` and ([\d,]+) under `solo`/.exec(readme);
-  assert.ok(stated !== null, "the README states the three sizes");
-  assert.deepEqual(stated.slice(1).map((value) => Number(value.replace(/,/g, ""))), [size("dev-team"), size("dev-team-engine"), size("solo")]);
+  for (const file of ["README.md", "docs/design.md"]) {
+    const document = fs.readFileSync(path.join(repoRoot, file), "utf8").replace(/\s+/g, " ");
+    const stated = /the mode's text, without `projectRoot`, is ([\d,]+) bytes under `dev-team`, ([\d,]+) under `dev-team-engine` and ([\d,]+) under `solo`/.exec(document);
+    assert.ok(stated !== null, `${file} states the three sizes`);
+    assert.deepEqual(stated.slice(1).map((value) => Number(value.replace(/,/g, ""))), [size("dev-team"), size("dev-team-engine"), size("solo")], file);
+  }
   assert.ok(size("dev-team") > 20_000 && size("dev-team-engine") > 20_000, "both dev-team answers pass Grok's default cap");
   assert.ok(size("dev-team-engine") < 100_000, "and the cap the attach sets holds the larger");
 });
