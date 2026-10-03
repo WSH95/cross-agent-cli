@@ -1027,3 +1027,55 @@ Decision 0011's conditions:
 | verdict | `e2e-verify --since 9979292e… --slug t12-e9`: 8 pass, 0 fail, 0 without evidence; depth and lineage PASS |
 | deviations | host: no roster (`atc-s96.66`); no `result`, closing on `wait`'s tail (whole here) with a sentence before the report. Lead: no `list_roles`, so its report names the Codex planner `claude`/`claude-sonnet-5` (`atc-s96.95`); `result` after the planner's waits only |
 | not exercised | an ask and the headless host's resume, a resumed Claude specialist in a loop, a read-only Claude specialist under engine placement, a rebase that moved the branch |
+
+## T13 — a branch worktree as a project of its own (`atc-s96.97`), merged (2026-10-03)
+
+| what | value |
+|---|---|
+| merge | `main` at `1c75090`: `task/worktree-projects` rebased onto `main` and fast-forwarded, 45 commits over `08047f1`. They are the implementation (15), fix round 1 (13), fix round 2 (9), E10's record and its attribution (2), and the wrap-up (5), and one that names E10's build by its rebased SHA in `docs/probes.md` (`7907167` merged as `de14c23`) |
+| review | three independent reviews of the implementation, then of each fix diff with the whole range judged again. There were three rounds and no escalation pass: the third found nothing Critical or Important, and a wrap-up fixed its Minor findings |
+| `npm test` at the root | 933 tests: 932 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `1c75090` |
+| citation checker | 1458 citations in 2 files (0 by line, 1458 by symbol), 0 misses; `--since 66e8815`: 0 drifted, 0 not judged |
+| engines (E10) | Claude Code 2.1.286, node 24.11.0, git 2.43.0; every role `claude-sonnet-5` at medium |
+| records | `docs/probes.md#worktreeProjects`; raw evidence in `~/.cache/agent-team/probe-logs/t13-e10/` (352 files, `MANIFEST.sha256` verified) |
+| sample at close | `main` at `ba496c7`, 113 tests, clean, the root worktree alone; `feature/dotted` kept at `0ed8097`; the config restored `cmp`-equal; `.git/cross-agent.lock` (empty) left by the repository lock |
+| cost | E10 $2.631 on the subscription: each project's host and loop $1.25 and $1.24, the containment probe $0.14 |
+| beads | `atc-s96.97` closed. Follow-ups: `.98` (cancelling a running git child), `.99` (worktree projects inside the main checkout), `.100` (writes at a separated main or a submodule), `.101` (widen `nameFault`), `.102` (`describe_mode` warns when the server's own working directory lies in another initialized project) |
+
+Landed:
+- **A worktree as a project.** `cross-agent init` run in a linked worktree, or in a bare repository's worktree, makes it a project of its own. It gets its own `.cross-agent/`, and its default branch is the branch it has checked out.
+  - **What `init` copies:** the main checkout's config, or `--from <dir>`'s, with `defaultBranch` replaced, and the main checkout's Grok attach. The attach is copied through no link, into no existing entry, and never when it binds a project.
+  - **What `init` refuses:** a detached HEAD, a branch outside `nameFault`'s alphabet, or one matching the mode's task pattern.
+  - **An uninitialized worktree** keeps today's mapping to its main project.
+- **The repository, located from outside it** (`src/worktree.ts#locateRepository`). A root is `main`, `linked`, `bare-linked`, `unsupported` or refused.
+  - **Nesting:** decided from the candidate's ancestors, by each ancestor's own git and registry, before any config is read. A task worktree, its pointer intact, deleted or replaced, is never a project root.
+  - **Allowed layouts:** the umbrella `.bare` layout, a bare `U/.git`, and `repo.git` beside its worktrees.
+  - **`unsupported`:** a separated main, a submodule and a symlinked `.git` take no writes, and their root roles launch protected.
+- **Writes at a root that is not the main checkout** need the opt-in, through `src/worktree.ts#rootWriteFault`:
+  - every `run_command` there needs an initialized root;
+  - every write also needs the default branch checked out, and no detached HEAD.
+- **The repository lock** `<commonDir>/cross-agent.lock`. It is held by every `git_mutate`, every root verb that changes the repository, and the discard, and it is innermost in the order `spawn.lock`, `git.lock`, the repository lock. It waits at least sixty seconds. A loss is reported as `lockLost`, cleanup paths included.
+- **Protected paths per root kind.** At a non-main root, root roles get `[<root>/.git, commonDir]` and worktree roles also get the root's `.git`.
+- **Closed journals are terminal,** and `branch -d` holds the branch to the tip its open journal last recorded. A name another project reused cannot be deleted by a retried cleanup.
+- **`cross-agent git-root`,** the operator's cooperating path for root git while a loop runs.
+- **The launcher.** `describe_mode` carries `projectRoot`, and the launcher shows it with the roster and stops before dispatch when the working directory lies in another initialized project.
+- **The verifier.** Rows 1 and 2 are scoped to the project: siblings' worktrees and branches are named and ignored, and unknown ownership is `?`.
+- **Single-checkout behaviour changed only where stated:**
+  - a symlinked `.git` is `unsupported`: root roles launch protected, while worktree roles and one-shots are refused;
+  - a one-shot whose record write fails is refused, carrying the discard's account;
+  - `branch -d` refuses a branch that moved from its journal's recorded tip.
+
+### E10 — a main checkout and a branch worktree as two projects of one repository, at once
+
+| | |
+|---|---|
+| layout | the sample's main checkout on `main`, and `../slugkit-feature` on `feature/dotted`, made with `git worktree add` and initialized by `cross-agent init` (the config copied with `defaultBranch: feature/dotted`; the Grok attach copied byte for byte) |
+| hosts | two `claude -p --plugin-dir <worktree>` hosts, started 0.02 s apart, one per root, `claude-sonnet-5` medium, engine placement, every role on Claude |
+| slugs, commits | `t13-e10-main`: `main` `5f391d4` → `ba496c7` (`slug_pascal`), 109 → 113 tests. `t13-e10-feature`: `feature/dotted` `5f391d4` → `0ed8097` (`slug_constant`), 109 → 112 tests |
+| leads | main `de51b90d…`, 176 s, $0.534; branch `dbbe6608…`, 212 s, $0.547. Each ran planner, plan reviewer, implementer and code reviewer, then merged at its own root and ran the suite there |
+| verdicts | `e2e-verify --project <each> --slug <each> --since <each lead>`: 8 pass, 0 fail, 0 without evidence, in both |
+| containment | a read-only `consult` at the branch root wrote into neither the common directory, nor the branch's admin directory, nor `FEAT/.git`, nor the root, nor its `.cross-agent/`. All five writes failed in the sandbox with "Read-only file system", and `Write` was not in its tool list. The launch carried `protectedPaths` `[FEAT/.git, MAIN/.git]` |
+| cross-project facts | the registry held both roots and both task worktrees at once (22:51:55Z); each merge sits in its own root's HEAD reflog alone; the ledgers, journals and `.worktrees/` are disjoint; `info/exclude` holds each line once, unchanged; `~/.codex/config.toml` unchanged by sha256 and mtime |
+| `~/.grok` | every readable configuration, auth and trust file unchanged. The two files that changed are the log and memtrace of the operator's own `grok` process (pid 1171929). The 86 unreadable `sandbox-blocked.<pid>` files kept their mtimes. The brief's "unchanged by sha256" is met in purpose, not in letter |
+| deviations | neither host printed the full roster, and the main host's line named no path; the branch host relayed `wait`'s tail as the lead's report; the restore was a script run at the end, not a trap; the probe ran twice, to record the live argv |
+| not exercised | lock contention between the projects (no two root or mutation calls overlapped; the deterministic tests prove the serialization), `ask`, a resumed role, a rebase, a bare repository, a separated main, `--from`, `cross-agent git-root`, any engine but Claude |
