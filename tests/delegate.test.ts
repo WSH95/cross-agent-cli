@@ -18,12 +18,14 @@ import { sandboxFor } from "../src/engines/registry.ts";
 import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
-import { groupAlive, identityOf } from "../src/process.ts";
+import { groupAlive, identityOf, terminateGroupByPid } from "../src/process.ts";
 import { markSetup, setupMarkerPath } from "../src/review.ts";
+import { runCommand } from "../src/runcommand.ts";
+import { gitRoot } from "../src/gitroot.ts";
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { git, gitShim, holderOf, holdersOf } from "./helpers/git.ts";
-import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, track, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, proc, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, track, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -1895,4 +1897,87 @@ test("a gating review is refused while a live setup marker holds its worktree, a
   const launchedReview = launched(await delegate(p.root, review, options));
   assert.equal(p.record(launchedReview).underReview, head);
   assert.equal(fs.existsSync(setupMarkerPath(p.root, worktree)), false, "the delegation cleared a marker whose group is gone");
+});
+
+/** A configured project whose worktree `slug` was made through `git_root`, so its journal exists, with one commit. */
+async function journaledWorktree(p: TestProject, slug: string, project: Record<string, string>): Promise<{ worktree: string; head: string }> {
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({ ...configFor(p.bin), project }));
+  const created = await gitRoot(p.root, { args: ["worktree", "add", "-b", `task/${slug}`, path.join(p.root, ".worktrees", slug), "main"], slug }, { waitSeconds: 5 });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  const worktree = fs.realpathSync(path.join(p.root, ".worktrees", slug));
+  fs.writeFileSync(path.join(worktree, "a.txt"), "committed\n");
+  await git(worktree, "add", "a.txt");
+  await git(worktree, "commit", "-m", "the implementer's work");
+  return { worktree, head: await git(worktree, "rev-parse", "HEAD") };
+}
+
+/** A setup command that says it started, then waits for the test's word, thirty seconds at most. */
+function waitingSetup(marker: string, release: string): string {
+  return `touch ${JSON.stringify(marker)}; i=0; while [ ! -f ${JSON.stringify(release)} ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done`;
+}
+
+// @anchor reviewNeedsCommittedTreeDespiteTested
+test("a passing tested step at the head does not admit a gating review of a dirty worktree", async (t) => {
+  const p = await projectWithRoles(t);
+  const { worktree, head } = await journaledWorktree(p, "tested", { testCommand: "true" });
+  const gate = await runCommand(p.root, { which: "test", where: worktree, slug: "tested" });
+  assert.equal(gate.ok, true, JSON.stringify(gate));
+  assert.ok(readJournal(p.root, "tested")!.steps.some((step) => step.step === "tested" && step.after === head));
+  // The suite passed on the commit; the reviewer reads the tree, which is no longer it.
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/tested" }), brief: "Review round 1." };
+  fs.writeFileSync(path.join(worktree, "a.txt"), "changed since the gate\n");
+  assert.match(refusal(await delegate(p.root, review, options)), /holds uncommitted changes: a\.txt/);
+  fs.writeFileSync(path.join(worktree, "a.txt"), "committed\n");
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+});
+
+// @anchor setupHoldsWorktree
+test("a running worktree setup holds its worktree against a gating review, in both orders", async (t) => {
+  const p = await projectWithRoles(t);
+  const marker = path.join(p.root, "setup-started");
+  const release = path.join(p.root, "setup-may-end");
+  const { worktree, head } = await journaledWorktree(p, "setting", { setupCommand: waitingSetup(marker, release) });
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/setting" }), brief: "Review round 1." };
+  const stall = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+
+  // A setup first: the review waits for it.
+  const setup = runCommand(p.root, { which: "setup", where: worktree, slug: "setting" });
+  await poll(() => fs.existsSync(marker), Boolean);
+  assert.match(refusal(await delegate(p.root, review, stall)), /the setup command of task setting is running in .* \(process group \d+\); wait for it, or end that group/);
+  assert.deepEqual(p.records(), []);
+  fs.writeFileSync(release, "");
+  assert.equal((await setup).ok, true);
+
+  // A review first: the setup waits for it.
+  const id = launched(await delegate(p.root, review, stall));
+  assert.equal(p.record(id).underReview, head);
+  const refused = await runCommand(p.root, { which: "setup", where: worktree, slug: "setting" });
+  assert.equal(refused.ok, false);
+  assert.match((refused as { reason: string }).reason, new RegExp(`under review by task ${id}`));
+});
+
+// @anchor reviewRefusedWhileSetupSurvives
+test("a setup whose server was killed still holds its worktree against a gating review until its group is gone", async (t) => {
+  const p = await projectWithRoles(t);
+  const marker = path.join(p.root, "setup-started");
+  const { worktree, head } = await journaledWorktree(p, "orphaned", { setupCommand: `touch ${JSON.stringify(marker)}; sleep 120` });
+  const fixture = path.join(import.meta.dirname, "fixtures", "run-setup.mjs");
+  const server = track(t, spawn(process.execPath, [fixture, p.root, worktree, "orphaned"], { detached: true, stdio: "ignore", env: p.env }));
+  await poll(() => fs.existsSync(marker), Boolean);
+  const written = JSON.parse(fs.readFileSync(setupMarkerPath(p.root, worktree), "utf8")) as { pid: number; pgid: number; startTime: string; bootId: string };
+
+  // The server that started the setup dies; the setup's own group lives on, and so does the hold.
+  process.kill(server.pid!, "SIGKILL");
+  await poll(() => proc(server.pid!), (stat) => stat === null || stat.state === "Z");
+  assert.equal(groupAlive(written), true, "the setup's group outlived the server that started it");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/orphaned" }), brief: "Review round 1." };
+  assert.match(refusal(await delegate(p.root, review, options)), new RegExp(`\\(process group ${written.pgid}\\); wait for it, or end that group`));
+  assert.deepEqual(p.records(), []);
+
+  // The operator ends the group, and the next delegation clears the marker and launches.
+  assert.equal(await terminateGroupByPid(written.pgid), true);
+  assert.equal(p.record(launched(await delegate(p.root, review, options))).underReview, head);
+  assert.equal(fs.existsSync(setupMarkerPath(p.root, worktree)), false);
 });

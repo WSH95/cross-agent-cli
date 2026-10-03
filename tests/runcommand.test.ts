@@ -2,12 +2,16 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { gitMutate } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { readJournal } from "../src/journal.ts";
+import { create, update } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath } from "../src/locks.ts";
+import { groupAlive } from "../src/process.ts";
+import { setupMarkerPath } from "../src/review.ts";
 import { runCommand } from "../src/runcommand.ts";
 import type { RunCommandResult } from "../src/runcommand.ts";
 import { git } from "./helpers/git.ts";
@@ -44,8 +48,8 @@ function refusal(result: RunCommandResult): string {
   return reason;
 }
 
-/** A task with a worktree and a merge behind it: what a root test run is journaled after. */
-async function merged(root: string, slug: string): Promise<string> {
+/** A task with a worktree and one commit on its branch, through the loop's own tools. */
+async function committedTask(root: string, slug: string): Promise<string> {
   const directory = path.join(root, ".worktrees", slug);
   const created = await gitRoot(root, {
     args: ["worktree", "add", "-b", `task/${slug}`, directory, "main"], slug,
@@ -53,6 +57,15 @@ async function merged(root: string, slug: string): Promise<string> {
   assert.equal(created.ok, true, JSON.stringify(created));
   const committed = await gitMutate(root, { slug, args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 });
   assert.equal(committed.ok, true, JSON.stringify(committed));
+  return fs.realpathSync(directory);
+}
+
+/** A task with a worktree and a merge behind it: what a root test run is journaled after. */
+async function merged(root: string, slug: string): Promise<string> {
+  const directory = await committedTask(root, slug);
+  // The suite on the branch head, as the loop's gate runs it before a merge.
+  const tested = await runCommand(root, { which: "test", where: directory, slug });
+  assert.equal(tested.ok, true, JSON.stringify(tested));
   const done = await gitRoot(root, { args: ["merge", "--ff-only", `task/${slug}`], slug }, { waitSeconds: 5 });
   assert.equal(done.ok, true, JSON.stringify(done));
   return directory;
@@ -256,10 +269,11 @@ test("a tracked .cross-agent/ is refused, because the command it would run is co
 });
 
 test("the tests-passed step is written under git.lock, and the suite runs outside it", async (t) => {
-  const { root } = await repository(t);
+  const { root } = await repository(t, { testCommand: "true" });
+  await merged(root, "locked");
+  // Set once the merge is done, so the marker says the root run started and nothing earlier.
   const marker = path.join(root, "the-suite-ran");
   configure(root, { testCommand: `touch ${JSON.stringify(marker)}; echo the suite ran` });
-  await merged(root, "locked");
 
   // A suite may run for ten minutes; holding the git lock for it would refuse every
   // mutation in the project for that long. The lock covers the re-check and the append.
@@ -359,7 +373,195 @@ test("a worktree run at a linked root runs in the worktree it verifies, and need
   const { root } = await nonMainRoot(t, "linked", { defaultBranch: "feature", testCommand: "pwd" });
   const directory = path.join(root, ".worktrees", "x");
   assert.equal((await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })).ok, true);
-  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).tail.trim(), fs.realpathSync(directory));
+  // The worktree it verifies names the branch; the suite runs in the gate's own checkout of
+  // that branch's head, under the linked root's `.cross-agent/gate/`, gone once it ends.
+  const ran = accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).tail.trim();
+  assert.ok(ran.startsWith(path.join(root, ".cross-agent", "gate") + path.sep), ran);
+  assert.equal(fs.existsSync(ran), false);
+  assert.doesNotMatch(await git(root, "worktree", "list", "--porcelain"), /\.cross-agent/);
   fs.rmSync(path.join(root, ".cross-agent", "config.json"));
   assert.match(refusal(await runCommand(root, { which: "test", where: directory, slug: "x" })), notInitialized);
+});
+
+// The gate (design section 4): a worktree test run checks the branch head out on its own,
+// under the project's `.cross-agent/gate/`, runs the setup command and the suite there, and
+// journals `tested` against that head when the suite exits zero.
+
+/** Polls for `marker`, then lets a command waiting on `release` finish. */
+async function whileItWaits(marker: string, release: string, act: () => Promise<void> | void): Promise<void> {
+  await poll(() => fs.existsSync(marker), Boolean);
+  await act();
+  fs.writeFileSync(release, "");
+}
+
+/**
+ * A command that says it started, waits for the test's word, then does `then`. The wait is
+ * bounded at thirty seconds, so a test whose word never comes fails rather than hangs.
+ */
+function waiting(marker: string, release: string, then: string): string {
+  return `touch ${JSON.stringify(marker)}; i=0; while [ ! -f ${JSON.stringify(release)} ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done; ${then}`;
+}
+
+// @anchor testedStep
+test("a passing worktree test run journals tested at the branch head, and nothing else does", async (t) => {
+  const { root } = await repository(t, { testCommand: "echo ok", setupCommand: "pwd" });
+  const directory = await committedTask(root, "x");
+  const head = await git(root, "rev-parse", "task/x");
+  const first = accepted(await runCommand(root, { which: "test", where: directory, slug: "x" }));
+  assert.equal(first.exitCode, 0);
+  assert.equal(first.journal?.step, "tested");
+  assert.equal(first.journal?.before, head);
+  assert.equal(first.journal?.after, head);
+  assert.equal(first.journal?.defaultSha, await git(root, "rev-parse", "main"));
+  // A task is tested as often as the loop tests it.
+  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).journal?.step, "tested");
+  const steps = () => readJournal(root, "x")!.steps.map((step) => step.step);
+  assert.deepEqual(steps(), ["worktree-created", "committed", "tested", "tested"]);
+
+  configure(root, { testCommand: "exit 1", setupCommand: "pwd" });
+  const failed = accepted(await runCommand(root, { which: "test", where: directory, slug: "x" }));
+  assert.equal(failed.exitCode, 1);
+  assert.equal(failed.journal, undefined);
+  configure(root, { testCommand: "none", setupCommand: "pwd" });
+  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).journal, undefined, "a suite that never ran passed nothing");
+  // A setup runs in the worktree it verifies, as before, and completes no step.
+  const setup = accepted(await runCommand(root, { which: "setup", where: directory, slug: "x" }));
+  assert.equal(setup.tail.trim(), directory);
+  assert.equal(setup.journal, undefined);
+  configure(root, { testCommand: "echo ok" });
+  assert.equal(accepted(await runCommand(root, { which: "test", where: "root" })).journal, undefined);
+  assert.deepEqual(steps(), ["worktree-created", "committed", "tested", "tested"]);
+});
+
+// @anchor testedIsolatesHead
+test("a worktree test run tests a detached checkout of the branch head, not the worktree, runs setup there first, and removes it", async (t) => {
+  const { root } = await repository(t, { testCommand: "test -f passing" });
+  const directory = await committedTask(root, "x");
+  const run = () => runCommand(root, { which: "test", where: directory, slug: "x" });
+  const tested = () => readJournal(root, "x")!.steps.filter((step) => step.step === "tested").map((step) => step.after);
+  const commit = async (file: string, content: string, message: string): Promise<string> => {
+    fs.writeFileSync(path.join(directory, file), content);
+    for (const args of [["add", "--", file], ["commit", "-m", message]]) {
+      const ran = await gitMutate(root, { slug: "x", args }, { waitSeconds: 5 });
+      assert.equal(ran.ok, true, JSON.stringify(ran));
+    }
+    return git(root, "rev-parse", "task/x");
+  };
+
+  // (a) A file the worktree holds and the commit does not is no part of what passes.
+  fs.writeFileSync(path.join(directory, "passing"), "");
+  assert.equal(accepted(await run()).exitCode, 1);
+  assert.deepEqual(tested(), []);
+  const added = await commit("passing", "", "the file the suite looks for");
+  assert.equal(accepted(await run()).exitCode, 0);
+  assert.deepEqual(tested(), [added]);
+
+  // (b) Bytes a mark hides from git status are no part of it either, under either mark.
+  configure(root, { testCommand: "grep -q yes passing" });
+  const no = await commit("passing", "no\n", "the committed answer is no");
+  for (const [mark, clear] of [["--assume-unchanged", "--no-assume-unchanged"], ["--skip-worktree", "--no-skip-worktree"]]) {
+    await git(directory, "update-index", mark, "passing");
+    fs.writeFileSync(path.join(directory, "passing"), "yes\n");
+    assert.equal(await git(directory, "status", "--porcelain", "--untracked-files=all"), "", mark);
+    assert.equal(accepted(await run()).exitCode, 1, mark);
+    await git(directory, "update-index", clear, "passing");
+    fs.writeFileSync(path.join(directory, "passing"), "no\n");
+  }
+  assert.deepEqual(tested(), [added], `nothing passed at ${no}`);
+
+  // (c) The worktree changing while the suite runs reaches nothing it reads.
+  const marker = path.join(root, "the-suite-started");
+  const release = path.join(root, "carry-on");
+  const yes = await commit("passing", "yes\n", "the committed answer is yes");
+  configure(root, { testCommand: waiting(marker, release, "grep -q yes passing") });
+  const holding = run();
+  await whileItWaits(marker, release, () => fs.writeFileSync(path.join(directory, "passing"), "no\n"));
+  assert.equal(accepted(await holding).exitCode, 0);
+  assert.deepEqual(tested(), [added, yes]);
+  fs.writeFileSync(path.join(directory, "passing"), "yes\n");
+  for (const file of [marker, release]) fs.rmSync(file);
+  const committedNo = await commit("passing", "no\n", "back to no");
+  const swapped = run();
+  await whileItWaits(marker, release, () => fs.writeFileSync(path.join(directory, "passing"), "yes\n"));
+  assert.equal(accepted(await swapped).exitCode, 1);
+  assert.deepEqual(tested(), [added, yes], `nothing passed at ${committedNo}`);
+  fs.writeFileSync(path.join(directory, "passing"), "no\n");
+  for (const file of [marker, release]) fs.rmSync(file);
+
+  // (d) The setup command runs in the gate's checkout first, and its failure is the run's refusal.
+  configure(root, { setupCommand: "touch prepared", testCommand: "test -f prepared" });
+  assert.equal(accepted(await run()).exitCode, 0);
+  assert.equal(fs.existsSync(path.join(directory, "prepared")), false, "the setup wrote nothing into the worktree");
+  configure(root, { setupCommand: "echo not set up; exit 3", testCommand: "true" });
+  const unprepared = refusal(await run());
+  assert.match(unprepared, /setupCommand exited 3 in the gate's checkout of/);
+
+  // (e) The checkout is the server's, under `.cross-agent/gate/`, and gone once the run ends.
+  configure(root, { testCommand: "pwd" });
+  const where = accepted(await run()).tail.trim();
+  assert.ok(where.startsWith(path.join(root, ".cross-agent", "gate") + path.sep), where);
+  assert.equal(fs.existsSync(where), false);
+  assert.doesNotMatch(await git(root, "worktree", "list", "--porcelain"), /\.cross-agent/);
+
+  // (f) The branch moving during the run moves nothing the step says.
+  configure(root, { testCommand: waiting(marker, release, "true") });
+  const before = await git(root, "rev-parse", "task/x");
+  const moving = run();
+  await whileItWaits(marker, release, async () => { await git(directory, "commit", "--allow-empty", "-m", "a commit the suite never saw"); });
+  const result = accepted(await moving);
+  assert.equal(result.journal?.after, before);
+  assert.notEqual(await git(root, "rev-parse", "task/x"), before);
+});
+
+// @anchor gateCheckoutOwned
+test("the gate's checkout lives under the project's own .cross-agent/gate, and a link out of it is refused with nothing checked out", async (t) => {
+  const { root } = await repository(t, { testCommand: "pwd" });
+  const directory = await committedTask(root, "x");
+  const gate = path.join(root, ".cross-agent", "gate");
+  assert.ok(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).tail.trim().startsWith(gate + path.sep));
+  assert.equal(fs.statSync(gate).mode & 0o777, 0o700, "a directory of the server's own");
+
+  const outside = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-outside-")));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.rmSync(gate, { recursive: true, force: true });
+  fs.symlinkSync(outside, gate);
+  const registry = await git(root, "worktree", "list", "--porcelain");
+  const steps = readJournal(root, "x")!.steps.length;
+  const reason = refusal(await runCommand(root, { which: "test", where: directory, slug: "x" }));
+  assert.ok(reason.includes(gate) && reason.includes(outside), reason);
+  assert.deepEqual(fs.readdirSync(outside), [], "nothing was checked out there");
+  assert.equal(await git(root, "worktree", "list", "--porcelain"), registry);
+  assert.equal(readJournal(root, "x")!.steps.length, steps, "and nothing was journaled");
+});
+
+// @anchor setupRefusedUnderReview
+test("a worktree setup is refused while a gating review of that worktree is active, writes a marker naming its group while it runs, and clears it when it ends", async (t) => {
+  const marker = path.join(tmpdir(), `cross-agent-setup-${process.pid}-${Date.now()}`);
+  const release = `${marker}.release`;
+  t.after(() => { for (const file of [marker, release]) fs.rmSync(file, { force: true }); });
+  const { root } = await repository(t, { setupCommand: waiting(marker, release, "echo set up") });
+  const directory = await committedTask(root, "x");
+  const head = await git(root, "rev-parse", "task/x");
+  const review = create(root, { role: "code-reviewer", brief: "review", cwd: directory, engine: "codex", underReview: head });
+  await update(root, review.id, { status: "running" });
+
+  // A setup writes the tree a review is reading at a committed head.
+  const held = refusal(await runCommand(root, { which: "setup", where: directory, slug: "x" }));
+  assert.match(held, new RegExp(`under review by task ${review.id} \\(running\\)`));
+  assert.equal(fs.existsSync(marker), false, "the setup command never ran");
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent", "setups")) && fs.readdirSync(path.join(root, ".cross-agent", "setups")).length > 0, false);
+
+  await update(root, review.id, { status: "done" });
+  const running = runCommand(root, { which: "setup", where: directory, slug: "x" });
+  await poll(() => fs.existsSync(marker), Boolean);
+  const file = setupMarkerPath(root, directory);
+  const written = JSON.parse(fs.readFileSync(file, "utf8")) as { pid: number; pgid: number; startTime: string; bootId: string; slug: string };
+  assert.equal(written.pgid, written.pid, "the detached command leads its own group");
+  assert.equal(written.slug, "x");
+  assert.equal(groupAlive(written), true);
+  // One setup at a time: a second is refused naming the first's group.
+  assert.match(refusal(await runCommand(root, { which: "setup", where: directory, slug: "x" })), new RegExp(`process group ${written.pgid}`));
+  fs.writeFileSync(release, "");
+  assert.match(accepted(await running).tail, /set up/);
+  assert.equal(fs.existsSync(file), false, "the marker goes with the command");
 });

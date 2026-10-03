@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import fs from "node:fs";
 import { constants } from "node:os";
 import path from "node:path";
-import { loadConfig } from "./config.ts";
-import { revision } from "./gitmutate.ts";
+import { loadConfig, repositoryLockWait } from "./config.ts";
+import type { CrossAgentConfig } from "./config.ts";
+import { revision, run } from "./gitmutate.ts";
 import { trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
-import { gitLockName } from "./locks.ts";
+import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
+import { identityOf } from "./process.ts";
+import { clearSetup, markSetup, reviewHold, setupRunning } from "./review.ts";
 import { locateRepository, rootWriteFault, verifyWorktree } from "./worktree.ts";
+import type { Repository, VerifiedWorktree } from "./worktree.ts";
 
 export interface RunCommandRequest {
   /** Which configured command to run: a selector, never a command string. */
@@ -41,7 +45,10 @@ export type RunCommandResult =
     exitCode: number;
     /** The last 64 KB of the command's own output, both streams as it interleaved them. */
     tail: string;
-    /** The `tests-passed` step, when this run completed one. */
+    /**
+     * The step this run completed: `tested` for a passing worktree test run, at the branch
+     * head it checked out, and `tests-passed` for a passing root test run after the merge.
+     */
     journal?: JournalEntry;
   }
   | {
@@ -100,12 +107,29 @@ interface Ran {
   timedOut?: true;
 }
 
-/** Runs one configured command to completion, or kills its whole process group. */
-async function shell(command: string, cwd: string, env: NodeJS.ProcessEnv, seconds: number): Promise<Ran> {
+/**
+ * Runs one configured command to completion, or kills its whole process group. `started`
+ * is told the command's pid as soon as it exists, before this awaits anything, so a caller
+ * holding a lock can record the command before it lets the lock go; a `started` that throws
+ * kills the command it was told about, and the throw is this call's.
+ */
+async function shell(
+  command: string, cwd: string, env: NodeJS.ProcessEnv, seconds: number, started?: (pid: number) => void,
+): Promise<Ran> {
   // `detached` makes the child a process-group leader, so what the timeout kills is the
   // command and everything it started — a suite that backgrounds a server would otherwise
   // outlive the run that started it.
   const child = spawn("sh", ["-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  if (child.pid !== undefined && started !== undefined) {
+    try {
+      started(child.pid);
+    } catch (error) {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch { /* it exited first */ }
+      throw error;
+    }
+  }
   const chunks: Buffer[] = [];
   let size = 0;
   const keep = (chunk: Buffer): void => {
@@ -146,9 +170,12 @@ async function shell(command: string, cwd: string, env: NodeJS.ProcessEnv, secon
 
 /**
  * The project's configured `testCommand` or `setupCommand`, by selector (design section
- * 4). No argument the lead composes reaches a shell: what runs is what the config says,
- * in the project root or a verified worktree, and the only step it can complete is
- * `tests-passed`, which the suite passing on the default branch after the merge is.
+ * 4). No argument the lead composes reaches a shell: what runs is what the config says. A
+ * root run runs at the root, and completes `tests-passed` when the suite passes on the
+ * default branch after the merge. A worktree setup runs in the verified worktree, marking
+ * it for as long as the command's group lives (`worktreeSetup`). A worktree test run is the
+ * merge's gate: it runs in a checkout of the branch head of its own, never in the worktree,
+ * and completes `tested` at that head (`gateRun`).
  */
 export async function runCommand(
   projectRoot: string, request: RunCommandRequest, options: RunCommandOptions = {},
@@ -196,9 +223,11 @@ export async function runCommand(
   const located = await locateRepository(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
   // Every run at a root that is not its repository's main checkout needs the project to be
-  // that root's own; the run that journals writes it, on its branch.
+  // that root's own; a run that journals writes it, on its branch, and so does the gate,
+  // whose checkout is a worktree of the repository.
   const journals = atRoot && which === "test" && slug !== undefined;
-  const unwritable = rootWriteFault(located, projectRoot, config.project.defaultBranch, journals ? "write" : "initialized");
+  const gates = !atRoot && which === "test";
+  const unwritable = rootWriteFault(located, projectRoot, config.project.defaultBranch, journals || gates ? "write" : "initialized");
   if (unwritable !== null) return { ok: false, reason: unwritable };
   let tracked: string | null;
   try {
@@ -209,17 +238,19 @@ export async function runCommand(
   if (tracked !== null) return { ok: false, reason: tracked };
 
   let cwd: string;
+  let verified: VerifiedWorktree | undefined;
   if (atRoot) {
     cwd = located.workTree;
   } else {
     // Verified exactly as `git_mutate` verifies it, on the branch the journal records: the
     // lead does not get to say which branch a directory is on (design section 4).
-    const verified = await verifyWorktree(projectRoot, path.resolve(projectRoot, where), journal!.branch, located);
-    if ("reason" in verified) return { ok: false, reason: verified.reason };
-    if (journal!.worktree !== undefined && journal!.worktree !== verified.workTree) {
-      return { ok: false, reason: `slug ${slug} is journaled on worktree ${journal!.worktree}; refusing ${verified.workTree}` };
+    const checked = await verifyWorktree(projectRoot, path.resolve(projectRoot, where), journal!.branch, located);
+    if ("reason" in checked) return { ok: false, reason: checked.reason };
+    if (journal!.worktree !== undefined && journal!.worktree !== checked.workTree) {
+      return { ok: false, reason: `slug ${slug} is journaled on worktree ${journal!.worktree}; refusing ${checked.workTree}` };
     }
-    cwd = verified.workTree;
+    verified = checked;
+    cwd = checked.workTree;
   }
 
   // The one step this tool can complete, judged before the suite runs rather than after:
@@ -239,9 +270,16 @@ export async function runCommand(
   // would claim a suite passed that never ran.
   if (command === "none") return { ok: true, exitCode: 0, tail: "" };
 
+  const env = commandEnv(options.env ?? process.env, options.depth ?? 0, config.billing, projectRoot);
+  if (verified !== undefined) {
+    return gates
+      ? gateRun(projectRoot, { located, verified, journal: journal!, slug: slug!, config, env, seconds, now: options.now })
+      : worktreeSetup(projectRoot, { verified, slug: slug!, config, env, seconds });
+  }
+
   let ran: Ran;
   try {
-    ran = await shell(command, cwd, commandEnv(options.env ?? process.env, options.depth ?? 0, config.billing, projectRoot), seconds);
+    ran = await shell(command, cwd, env, seconds);
   } catch (error) {
     return { ok: false, reason: `${which}Command could not run in ${cwd}: ${message(error)}` };
   }
@@ -282,6 +320,198 @@ export async function runCommand(
     return unwritten(message(error));
   } finally {
     await lock.release();
+  }
+}
+
+interface GateRun {
+  located: Repository;
+  verified: VerifiedWorktree;
+  journal: Journal;
+  slug: string;
+  config: CrossAgentConfig;
+  env: NodeJS.ProcessEnv;
+  seconds: number;
+  now?: number;
+}
+
+/**
+ * `body` under `git.lock` with the repository lock inside it, the standing order, for git's
+ * own commands and the step they complete; the reason a lock could not be had otherwise.
+ */
+async function underGitLocks<T>(
+  projectRoot: string, commonDir: string, waitSeconds: number, operation: string, body: () => Promise<T>,
+): Promise<{ value: T } | { reason: string }> {
+  let lock: Lock;
+  try {
+    lock = await projectLock(projectRoot, gitLockName(), { waitSeconds, operation });
+  } catch (error) {
+    return { reason: message(error) };
+  }
+  try {
+    let shared: Lock;
+    try {
+      shared = await acquire(repositoryLockPath(commonDir), { waitSeconds: repositoryLockWait(waitSeconds), operation });
+    } catch (error) {
+      return { reason: message(error) };
+    }
+    try {
+      return { value: await body() };
+    } finally {
+      await shared.release();
+    }
+  } finally {
+    await lock.release();
+  }
+}
+
+/**
+ * The merge's first guard, from the side that feeds it (design section 4): the configured
+ * suite on the branch head, in a checkout of the server's own. The head is resolved once
+ * and is what everything below acts on; the checkout is the repository's own objects
+ * checked out detached at it under `<root>/.cross-agent/gate/`, which no writable sandbox
+ * reaches and `verifyWorktree` gives no task, so nothing uncommitted in the worktree — a
+ * file, a marked file's bytes, an artifact — and nothing written there while the suite runs
+ * reaches what it tests. The setup command runs there first. Both of git's own commands, the
+ * `worktree add` and the `worktree remove --force`, run under `git.lock` and the repository
+ * lock, which are never held while a command runs; `tested` is written under that same
+ * `git.lock` once the checkout is gone, naming the head it ran on.
+ */
+async function gateRun(projectRoot: string, { located, verified, journal, slug, config, env, seconds, now }: GateRun): Promise<RunCommandResult> {
+  const head = await revision(verified.gitDir, verified.workTree, journal.branch);
+  if (head === undefined) return { ok: false, reason: `slug ${slug}: branch ${journal.branch} has no commit to test` };
+  const defaultSha = await revision(located.gitDir, located.workTree, config.project.defaultBranch);
+  // The checkout is the server's: made in the project's own state directory, which this
+  // call holds to being a directory of the project's rather than a link out of it.
+  const gateRoot = path.join(located.workTree, ".cross-agent", "gate");
+  let tmp: string;
+  try {
+    fs.mkdirSync(gateRoot, { recursive: true, mode: 0o700 });
+    tmp = fs.mkdtempSync(path.join(gateRoot, `${slug}-`));
+  } catch (error) {
+    return { ok: false, reason: `the gate could not make its checkout's directory under ${gateRoot}: ${message(error)}` };
+  }
+  const canonical = fs.realpathSync(tmp);
+  if (!canonical.startsWith(gateRoot + path.sep)) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return { ok: false, reason: `the gate's checkout at ${tmp} resolves to ${canonical}, outside ${gateRoot}; .cross-agent/gate must be a directory of the project's own` };
+  }
+  const checkout = path.join(tmp, "tree");
+  const waitSeconds = config.limits.lockWaitSeconds;
+  const operation = `run_command test ${slug}`;
+  // The explicit form `git_root` creates worktrees with, on the commit resolved above.
+  const added = await underGitLocks(projectRoot, located.commonDir, waitSeconds, operation,
+    () => run(located.gitDir, located.workTree, ["worktree", "add", "--detach", checkout, head]));
+  if ("reason" in added || added.value.exitCode !== 0) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return { ok: false, reason: `the gate could not check out ${head}: ${"reason" in added ? added.reason : added.value.stderr.trim()}` };
+  }
+
+  // The setup command, then the suite, in the checkout; no lock is held while either runs.
+  let ran: Ran | undefined;
+  let refusal: { ok: false; reason: string; tail?: string } | undefined;
+  try {
+    if (config.project.setupCommand !== "none") {
+      const setup = await shell(config.project.setupCommand, checkout, env, seconds);
+      if (setup.timedOut === true) {
+        refusal = { ok: false, reason: `setupCommand ran longer than ${seconds}s in the gate's checkout of ${head}; its process group was killed`, tail: setup.tail };
+      } else if (setup.exitCode !== 0) {
+        refusal = { ok: false, reason: `setupCommand exited ${setup.exitCode} in the gate's checkout of ${head}`, tail: setup.tail };
+      }
+    }
+    if (refusal === undefined) ran = await shell(config.project.testCommand, checkout, env, seconds);
+  } catch (error) {
+    refusal = { ok: false, reason: `the gate could not run its commands in ${checkout}: ${message(error)}` };
+  }
+
+  // The checkout goes, and then the step, both under `git.lock`: a step is written only
+  // once nothing of the run is left behind.
+  const tail = ran?.tail ?? refusal?.tail;
+  const ranWhat = ran === undefined ? `the gate checked ${head} out in ${checkout}` : `the suite ran on ${head} in ${checkout}`;
+  const settled = await underGitLocks(projectRoot, located.commonDir, waitSeconds, operation, async (): Promise<RunCommandResult> => {
+    const removed = await run(located.gitDir, located.workTree, ["worktree", "remove", "--force", checkout]);
+    if (removed.exitCode !== 0) {
+      return {
+        ok: false, ...(tail === undefined ? {} : { tail }),
+        reason: `${ranWhat}, but the gate's checkout could not be removed: ${removed.stderr.trim() || `git worktree remove exited ${removed.exitCode}`}; git worktree remove --force ${checkout} at the root, then run again`,
+      };
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    if (refusal !== undefined) return refusal;
+    if (ran!.timedOut === true) {
+      return { ok: false, reason: `testCommand ran longer than ${seconds}s in the gate's checkout of ${head}; its process group was killed, so there is no exit code to judge`, tail: ran!.tail };
+    }
+    // A failing suite is an answer, as at the root, and passes nothing.
+    if (ran!.exitCode !== 0) return { ok: true, exitCode: ran!.exitCode, tail: ran!.tail };
+    try {
+      const appended = appendStep(projectRoot, slug, "tested", {
+        at: now ?? Date.now(), before: head, after: head, ...(defaultSha === undefined ? {} : { defaultSha }),
+      });
+      return { ok: true, exitCode: 0, tail: ran!.tail, journal: appended.steps[appended.steps.length - 1] };
+    } catch (error) {
+      return { ok: false, reason: `the suite passed on ${head}, but its journal step could not be written: ${message(error)}`, tail: ran!.tail };
+    }
+  });
+  if ("reason" in settled) {
+    return {
+      ok: false, ...(tail === undefined ? {} : { tail }),
+      reason: `${ranWhat}, but the gate's checkout could not be removed: ${settled.reason}; git worktree remove --force ${checkout} at the root, then run again`,
+    };
+  }
+  return settled.value;
+}
+
+interface WorktreeSetup {
+  verified: VerifiedWorktree;
+  slug: string;
+  config: CrossAgentConfig;
+  env: NodeJS.ProcessEnv;
+  seconds: number;
+}
+
+/**
+ * The setup command in a verified worktree, as it always ran, with the marker that holds the
+ * worktree against a review for as long as the command's group lives (design section 4).
+ * Under `spawn.lock`, the one `delegate` validates a review under, it is refused while a
+ * review that gates the merge reads the worktree or another setup's marker holds it, and its
+ * own marker is written before the lock is let go: whichever of a setup and a review takes
+ * the lock first, the other sees it. The marker names the command's own group, so a server
+ * that dies mid-setup leaves a hold that lasts exactly as long as that group, with no timer;
+ * this call clears its marker when the command ends.
+ */
+async function worktreeSetup(projectRoot: string, { verified, slug, config, env, seconds }: WorktreeSetup): Promise<RunCommandResult> {
+  let claim: Lock;
+  try {
+    claim = await projectLock(projectRoot, spawnLockName(), { waitSeconds: config.limits.lockWaitSeconds, operation: `run_command setup ${slug}` });
+  } catch (error) {
+    return { ok: false, reason: message(error) };
+  }
+  let marked: number | undefined;
+  let pending: Promise<Ran>;
+  try {
+    const held = reviewHold(projectRoot, verified.workTree) ?? setupRunning(projectRoot, verified.workTree);
+    if (held !== null) return { ok: false, reason: held };
+    pending = shell(config.project.setupCommand, verified.workTree, env, seconds, (pid) => {
+      const identity = identityOf(pid);
+      if (identity === null) return;
+      markSetup(projectRoot, verified.workTree, slug, identity);
+      marked = pid;
+    });
+  } finally {
+    await claim.release();
+  }
+  try {
+    const ran = await pending;
+    if (ran.timedOut === true) {
+      return {
+        ok: false, tail: ran.tail,
+        reason: `setupCommand ran longer than ${seconds}s in ${verified.workTree}; its process group was killed, so there is no exit code to judge`,
+      };
+    }
+    return { ok: true, exitCode: ran.exitCode, tail: ran.tail };
+  } catch (error) {
+    return { ok: false, reason: `setupCommand could not run in ${verified.workTree}: ${message(error)}` };
+  } finally {
+    clearSetup(projectRoot, verified.workTree, marked);
   }
 }
 
