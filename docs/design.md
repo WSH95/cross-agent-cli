@@ -31,7 +31,7 @@ Decisions taken with the user:
   delegates back) must be impossible in code and tested.
 - The user's `agent-plugins` marketplace and the `agent-artifact-maintainer`
   skill are unrelated to this project.
-- New repository `~/Documents/agent-team-cli`, plugin name **`cross-agent`**.
+- New repository `~/Documents/cross-agent-cli`, plugin name **`cross-agent`**.
   Its first feature tasks (T1 to T5) were M7's "first real repository" for the
   OpenMausBot pack, sent to Sudo one at a time. This repo is not bound by the
   devpack's AGENTS.md (no 500-line ceiling).
@@ -3394,7 +3394,7 @@ launcher skill.** Everything else is per-host manifest detail, and the three
 manifests below are examples of satisfying that contract, not the contract
 itself. Repo root is the plugin root for all three hosts:
 `.claude-plugin/plugin.json` (manifest and `mcpServers` in one) + `skills/` for Claude Code
-(`claude --plugin-dir ~/Documents/agent-team-cli` in development);
+(`claude --plugin-dir ~/Documents/cross-agent-cli` in development);
 `.codex-plugin/plugin.json` with `skills: "./skills/"` and the server inline under
 `mcpServers` for Codex, and `.agents/plugins/marketplace.json` making the repository a
 marketplace whose one plugin's `source.path` is `"./"`, the repository's own root.
@@ -3762,7 +3762,7 @@ Four limits of worktree projects are deferred the same way, each for its reason:
   paths, ranges and options, where `src/gitroot.ts#nameFault` now refuses a name such
   as `feature+one` that a worktree project's default branch could otherwise carry.
 
-## Repository layout (`~/Documents/agent-team-cli`)
+## Repository layout (`~/Documents/cross-agent-cli`)
 
 ```
 .claude-plugin/plugin.json   .codex-plugin/plugin.json   .codex-plugin/serve
