@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T16:58:20Z — claude
+[auto-checkpoint] atc-s96.104 reset: six non-converging plan rounds → a smaller plan with two server-side merge guards (passing tests and a complete clean review at the branch head, or a waiver); the user added convergence rules to the built-in team loop and confirmed the re-review after a wrap-up fix and the lead's waiver under lead-decides; review of the reset plan running.
+
 ### 2026-10-03T15:49:23Z — claude
 [auto-checkpoint] atc-s96.104: plan reviews 4 and 5 found new edge routes in step 7; the user chose to restructure step 7 as an explicit state table (one classifier entry, complete-round precondition, rebase-and-gate before every review round, every answer mapped); revision 5 being written, then review round 6.
 

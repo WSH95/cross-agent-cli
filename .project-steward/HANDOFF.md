@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T15:49:23Z
+updated_at: 2026-10-03T16:58:20Z
 updated_by: claude
 session_status: active
 branch: main
@@ -60,16 +60,19 @@ The plan is `.superpowers/sdd/the-development-of-this-calm-planet/task-15-brief.
 - the settings are `limits.planReviewRounds` and `review.afterResolver`, both read through `describe_mode`;
 - E11 is engine-placed, on cost-effective models.
 
-Three plan reviews each found major issues. All were folded, the last ones being the gates on
-every route to the merge, how fix rounds are counted, and two test pins. After the third round the
-user chose a fourth, then a fifth. Rounds 4 and 5 kept finding edge routes in step 7's prose. The
-user chose to restructure step 7 as an explicit state table:
-- one classifier that every review round enters;
-- a round counts only when every seat returned a valid verdict;
-- the lead rebases and gates before every review round;
-- every user answer is mapped.
+Six plan reviews of a large plan did not converge: it tried to encode the loop as an exhaustive prose state machine, and every fold opened new routes. The user chose a reset to a smaller plan (`task-15-reset-brief.md`, `task-15-reset-plan.md`).
 
-Revision 5 is being written, and a sixth review follows it. Earlier revisions are kept as `-r1` to `-r4`.
+**The reset plan:**
+- short loop text, with a "stop and ask the user" fallback;
+- two server-side merge guards. `git_root merge` refuses unless the branch head has a recorded passing test run, and either every seat's review of that head ends `no major issues` or a waiver names it. The verdict is read from the result file by the server;
+- the four decisions kept.
+
+**The user's additions and confirmations:**
+- The user added convergence rules to the built-in team loop itself: scope discipline, carried / introduced / newly-noticed tracking, a diagnosis with four options at the round limit, and proportion.
+- The user confirmed that a wrap-up fix gets one short re-review.
+- The user confirmed that `lead-decides` lets the lead record a waiver.
+
+The reset plan's first review is running. The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.
