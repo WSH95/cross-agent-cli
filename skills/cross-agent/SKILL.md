@@ -15,9 +15,11 @@ and none of its tasks can be waited on, cancelled or reported.
 
 Call `describe_mode`. It answers with the active mode — its `lead` among the
 rest — the mode's `loop`, its `roles` — each with its workspace, sandbox default
-and prompt — its `git` policy: `worktreeDir`, `branchPattern`, and `implicit:
-true` where those two are this build's defaults rather than the mode's own — and
-`projectRoot`, the canonical root of the project this server serves.
+and prompt, and `seats: "many"` or `gates: "merge"` where the mode declares them —
+its `git` policy: `worktreeDir`, `branchPattern`, and `implicit: true` where those
+two are this build's defaults rather than the mode's own — and `projectRoot`, the
+canonical root of the project this server serves, and `review`, the loop's two
+settings: `planReviewRounds` and `afterResolver`.
 
 `mode.lead.placement` decides who runs that loop. Under `host` — `dev-team`,
 `solo` — **the `loop` it returns is your instructions for this project.** It is
@@ -48,11 +50,16 @@ README's install section for your host gives the steps.
 
 Then call `list_roles` and show the roster before you dispatch anything: its
 first line is `projectRoot`, then one line per role with its engine, model,
-effort, workspace and sandbox. A role whose `binding` is `null` is bound to no
-engine; it is still a role you can delegate, but your call has to name the
-`engine`. A `warning` in the answer means `.cross-agent/config.json` was pointed
-at another mode after this server started: which tools exist was settled when it
-loaded, so report the drift and ask for a restart instead of working around it.
+effort, workspace and sandbox — and for a role bound to a list of seats, one line
+per seat, `<role>#<seat>`, each with its own engine, model, effort and sandbox. A
+role whose `binding` is `null` is bound to no engine; it is still a role you can
+delegate, but your call has to name the `engine`. A team loop's own role
+answering so — the resolver, in a config written before it existed — is bound in
+`.cross-agent/config.json` before the loop starts, as its step 1 says;
+`cross-agent init` leaves an existing config alone and does not add it. A
+`warning` in the answer means `.cross-agent/config.json` was pointed at another
+mode after this server started: which tools exist was settled when it loaded, so
+report the drift and ask for a restart instead of working around it.
 
 Judge `projectRoot` against the project the user works in before anything is
 dispatched. It is not always the directory you were started in: a worktree nobody
@@ -92,8 +99,11 @@ to override the binding for this call alone. Naming another `engine` drops the
 binding's `model` and `effort` rather than carrying them across: they belong to
 the engine that was bound, and `grok --model claude-sonnet-5` is an unknown
 model id. So name the model you want with the engine, or get that engine's own
-default. `worktree: true` gives a
-role that works at the project root a writable task worktree of its own instead;
+default. Add `seat`, 1-based, for a role `.cross-agent/config.json` binds to a
+list: required for such a role, refused for one bound to a single binding, and
+recorded on the task, which every listing then spells `<role>#<seat>`.
+`worktree: true` gives a role that works at the project root a writable task
+worktree of its own instead;
 the record then carries `worktree: {path, branch, slug}` and the slug is the
 task id.
 
@@ -107,12 +117,14 @@ serves you under `roles[].prompt`, or with the `prompt` bound in
 write the brief: what the role is already told is what your brief need not
 repeat, and what it does not cover is what your brief has to.
 
-Narrate every dispatch in one line before you wait on it: *delegating `<role>`
-to `<engine>`/`<model>` at `<effort>` in `<cwd>`*. The user is paying for these
+Narrate every dispatch in one line before you wait on it: *delegating `<role>` —
+`<role>#<seat>` for a seated role — to `<engine>`/`<model>` at `<effort>` in
+`<cwd>`*. The user is paying for these
 engines and cannot see them; a task nobody announced is a task nobody can stop.
 
 A refusal is an answer, not an error to retry: a request identical to a live
-task is refused with the id to wait on instead, one identical to a task that
+task — the same role, seat, cwd and brief — is refused with the id to wait on
+instead, one identical to a task that
 finished inside the duplicate window needs `force: true`, a workspace another
 task reserved is named with that task's id and status, and a `(role, cwd)` pair
 already in this session's lineage is a loop the server will not close. Read the
@@ -174,18 +186,18 @@ is `limits.stallMinutes`.
 ## A needs-work round
 
 A second round on the same task — a specialist's under `host` placement, a failed
-lead's under `engine` — is `delegate` with `resume: <task id>` and an amended brief:
-the findings verbatim and what to do about them. The call still
-carries every key a first call does: the same `role` and `cwd` as the original,
-and `branch` for a role that works in a worktree. They are not optional and they
-are not defaults — the schema requires `role`, `brief` and `cwd`, and the resume
-binding compares the role, the engine, the cwd and the sandbox with the original
-and refuses any difference. The engine and the sandbox are the original's; the
-model is not — it is resolved again on every call, from the `model` the call
-names, the one config binds now for that engine, and failing both the one the
-record already ran on, so a chain does not change model halfway through for
-want of being named. A task that was given a worktree is continued
-in that worktree, so a review round reaches the same branch.
+lead's under `engine` — is `delegate` with `resume: <task id>` and an amended
+brief: the findings verbatim and what to do about them. The call still carries
+every key a first call does: the same `role` and `cwd` as the original, its `seat`
+where it had one, and `branch` for a role that works in a worktree. They are not
+optional and they are not defaults — the schema requires `role`, `brief` and `cwd`,
+and the resume binding compares the role, the engine, the cwd and the sandbox with
+the original and refuses any difference. The engine and the sandbox are the
+original's; the model is not — it is resolved again on every call, from the `model`
+the call names, the one config binds now for that engine, and failing both the one
+the record already ran on, so a chain does not change model halfway through for
+want of being named. A task that was given a worktree is continued in that
+worktree, so a review round reaches the same branch.
 
 Resume the **latest** id of the chain: an id that already has a successor is
 refused with `resume the latest: <id>`, and a chain with an active member is
@@ -268,8 +280,10 @@ below is yours there.
 2. Then apply the project's `project.mergePolicy`. You apply it; nobody merges
    by hand under `auto`.
 
-   **`auto`** — the `host` session runs `run_command {which: "test", where: <worktree path>, slug}`;
-   `git_root {args: ["merge", "--ff-only", <branch>], slug}`; `run_command
+   **`auto`** — the `host` session runs `run_command {which: "test", where: <worktree path>, slug}`,
+   which journals `tested` at the branch head it checks out on its own, since
+   `git_root merge` refuses a head the suite has not passed on and a one-shot needs
+   no review; `git_root {args: ["merge", "--ff-only", <branch>], slug}`; `run_command
    {which: "test", where: "root", slug}`; `git_root {args: ["worktree",
    "remove", <worktree path>], slug}`; `git_root {args: ["branch", "-d",
    <branch>], slug}`; then the report. `<branch>` is the one the record and the
@@ -313,7 +327,8 @@ not yours: the lead's loop orders its own reviews, and you delegate no specialis
 ## Reporting
 
 Under `host` placement, append one line per task to `.cross-agent/log.md` as it
-settles: role, engine, model, effort, duration, outcome, the task id. That file is
+settles: role — a seated one as `<role>#<seat>` — engine, model, effort, duration,
+outcome, the task id. That file is
 the project's own record of what the team did: `cross-agent init` puts
 `.cross-agent/` in `.gitignore`, and both root tools refuse to run in a project
 that tracks it, so the line costs no commit and reaches no task branch.
@@ -391,7 +406,9 @@ wins: a second is refused, naming when the first landed.
 A host nobody attends — `claude -p`, `codex exec`, `grok -p` — has no user to put the
 question to. There, when `list_asks` shows an open ask, print the ask's id and its
 question verbatim, say how it is answered — `cross-agent answer <ask-id> <text>` from
-any terminal, then this session continued — and end your turn. Do not answer it
+any terminal, and `cross-agent waive <slug> <commit>` where the question asks for a
+waiver, which exits 0 when it is recorded and 3 when the commit is not the branch
+head, then this session continued — and end your turn. Do not answer it
 yourself, do not cancel the lead, and do not keep waiting on it: the lead asks again by
 that id every `timeout_seconds`, one call per interval, until an answer or a cancel
 reaches it, so nothing is lost while your turn is over. The operator answers, then
@@ -418,16 +435,18 @@ task of the run from the ledger.
 
 Your own calls under this placement are the launcher's setup, monitoring and
 answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of the
-lead, `wait`, `check`, `result`, `list_asks`, `answer` and `cancel` — and never a
-loop step: while a lead is live you never call `git_root`, `git_mutate`,
-`run_command` or `verify_worktree`, and you never delegate a specialist at all. You
-run no `git` and no test command of your own on the project either, not even to
-look: the root check is the lead's step 1, and what it found is in its report.
-`cross-agent report` and `cross-agent answer` are the only commands of yours this
-placement needs, with one exception: where your host offers this skill as a file to
-read rather than loading it, as a Codex host has, reading this skill's own
-`SKILL.md` is yours too, and it is the one file you read. The steps are the lead's,
-and a step the lead did not take is one its journal and its report do not have.
+lead, `wait`, `check`, `result`, `list_asks`, `answer`, `cancel` and
+`waive_review`, the last on the user's explicit word alone, when the lead's
+question asks for a waiver — and never a loop step: while a lead is live you never
+call `git_root`, `git_mutate`, `run_command` or `verify_worktree`, and you never
+delegate a specialist at all. You run no `git` and no test command of your own on
+the project either, not even to look: the root check is the lead's step 1, and what
+it found is in its report. `cross-agent report` and `cross-agent answer` are the
+only commands of yours this placement needs, with one exception: where your host
+offers this skill as a file to read rather than loading it, as a Codex host has,
+reading this skill's own `SKILL.md` is yours too, and it is the one file you read.
+The steps are the lead's, and a step the lead did not take is one its journal and
+its report do not have.
 
 Who reconciles follows from who is live. At the start of a session you delegate the
 lead and touch nothing at the root, and while a lead is live — any status short of

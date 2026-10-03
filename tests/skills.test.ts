@@ -1052,3 +1052,15 @@ test("the planner plans the smallest change that meets the acceptance, and the p
   assert.match(reviewer, /Do not ask for additions beyond the acceptance/);
   assert.match(reviewer, /optional follow-ups/);
 });
+
+// @anchor launcherSeats
+test("the launcher spells a seat, has a team loop's resolver bound first, and says what the merge's guards ask of a one-shot", () => {
+  const text = flat(launcher());
+  for (const pin of [/one line per seat, `<role>#<seat>`/, /Add `seat`, 1-based/, /the same role, seat, cwd and brief/,
+    /`review`, the loop's two settings/, /journals `tested`/, /checks out on its own/, /a one-shot needs no review/, /waive_review/,
+    /does not add it/]) {
+    assert.match(text, pin, `the launcher says ${pin}`);
+  }
+  // None of it orders a loop step outside `host` placement.
+  assert.deepEqual(unconditionedSteps(engineSection().rest), []);
+});
