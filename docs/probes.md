@@ -3193,8 +3193,8 @@ the case the feature exists for: the sample's main checkout, `slugkit`, and a br
 same repository, `slugkit-feature` on `feature/dotted`, each a project, each given one
 `dev-team-engine` task at the same moment by its own Claude Code host, and then a read-only role at
 the branch project's root asked to write into the repository's shared git directory and the root's
-own `.git` file. The build under test was `task/worktree-projects` at `7907167`, served to both
-hosts as the plugin directory. Every engine was Claude Code 2.1.286 on node v24.11.0, git 2.43.0 and
+own `.git` file. The build under test was `task/worktree-projects` at `7907167`, merged as
+`de14c23` (the archive names the branch's SHA), served to both hosts as the plugin directory. Every engine was Claude Code 2.1.286 on node v24.11.0, git 2.43.0 and
 python 3.12.3, and every role, both leads included, was `claude-sonnet-5` at medium, so no Codex or
 Grok process was started. Three roles of the sample's config were bound to Codex and Grok; the
 config was switched for the run to the all-Claude binding and restored `cmp`-equal at the end. The
