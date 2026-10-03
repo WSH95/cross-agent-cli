@@ -1,6 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,10 +18,12 @@ import { sandboxFor } from "../src/engines/registry.ts";
 import { engineNames } from "../src/engines/types.ts";
 import type { LaunchSpec, TaskRecord } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
+import { groupAlive, identityOf } from "../src/process.ts";
+import { markSetup, setupMarkerPath } from "../src/review.ts";
 import { buildMode } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { git, gitShim, holderOf, holdersOf } from "./helpers/git.ts";
-import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
+import { alive, bareDotGitProject, bareProject, engineEnv, environOf, killLockHolder, linkedProject, poll, reserve, rootInsideCommonDir, separatedMainProject, symlinkedGitProject, track, waitForRecord, pollDeadlineMs, project } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -36,7 +39,12 @@ function lead(taskId: string, depth = 1): Authority {
 const modeRoles: RoleSpec[] = [
   { key: "planner" },
   { key: "implementer", workspace: "worktree", sandboxDefault: "workspace" },
-  { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only" },
+  // The role whose finished reviews the merge is held to: it reads a committed head.
+  { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", gates: "merge" },
+  // A role config binds to a list, one binding per seat, every seat read-only.
+  { key: "critic", workspace: "worktree", sandboxDefault: "read-only", seats: "many" },
+  // A role of the mode the config leaves unbound, as one written before it existed does.
+  { key: "resolver", workspace: "worktree", sandboxDefault: "workspace" },
   { key: "lead" },
   { key: "claudish" },
 ];
@@ -48,6 +56,11 @@ function configFor(bin: string, limits: Record<string, number> = {}): Record<str
       planner: { engine: "grok", prompt: "You are the planner. Report a plan." },
       implementer: { engine: "grok" },
       reviewer: { engine: "grok" },
+      // Two seats, each its own engine, model, effort, prompt and read-only profile.
+      critic: [
+        { engine: "grok", model: "grok-4.7", effort: "high", prompt: "You are seat one.", sandbox: "strict" },
+        { engine: "codex", model: "gpt-6-luna", effort: "low", sandbox: "read-only" },
+      ],
       // The mode places its lead in an engine, and grok cannot carry one (P9), so the
       // fixture binds it to codex — whose sandbox check is its binary resolving, which
       // keeps this suite off the host's bwrap and socat.
@@ -1272,7 +1285,7 @@ test("the profile a specialist runs under is the mode's default unless config ov
   fs.writeFileSync(configFile, JSON.stringify(base));
   assert.equal(
     refusal(await delegate(p.root, request({ role: "claudish", cwd: p.root }), options)),
-    `refused delegation: role "claudish" is bound to no engine in ${CONFIG_PATH}: name engine in this call, or run "cross-agent init --mode dev-team"`,
+    `refused delegation: role "claudish" is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — "cross-agent init --mode dev-team" writes every binding for a new project and leaves an existing config alone`,
   );
   // And a role neither declares is the mode's refusal, because the mode is what says
   // where a role works.
@@ -1698,4 +1711,188 @@ test("a consult at a main checkout whose .git links to its git directory launche
   await git(linkedGit.main, "worktree", "add", "-b", "task/w", worktree);
   refusal(await delegate(linkedGit.main, request({ role: "implementer", cwd: worktree, branch: "task/w" }), options));
   assert.equal(await git(linkedGit.main, "branch", "--list", "--format=%(refname:short)", "task/*"), "task/w", "and nothing of a one-shot was made");
+});
+
+// ---- Seats, the head under review, and the holds a gating review keeps -----------------
+
+/** A task worktree with one committed, tracked file, as an implementer's commit leaves one. */
+async function committedWorktree(p: TestProject, branch: string): Promise<{ worktree: string; head: string }> {
+  const worktree = fs.realpathSync(await p.worktree(branch));
+  fs.writeFileSync(path.join(worktree, "a.txt"), "committed\n");
+  await git(worktree, "add", "a.txt");
+  await git(worktree, "commit", "-m", "the implementer's work");
+  return { worktree, head: await git(worktree, "rev-parse", "HEAD") };
+}
+
+// @anchor delegateBySeat
+test("a seated role is delegated by seat: each seat runs on its own engine, model, effort, prompt and profile, and two seats of one brief run beside each other", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = fs.realpathSync(await p.worktree("task/seats"));
+  const call = (seat: number) => ({ ...request({ role: "critic", cwd: worktree, branch: "task/seats" }), brief: "Review round 1.", seat });
+  const one = launched(await delegate(p.root, call(1), { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) }));
+  const two = launched(await delegate(p.root, call(2), {
+    authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "codex", FAKE_ENGINE_SCRIPT: "stall" }),
+  }));
+  const first = p.record(one);
+  const second = p.record(two);
+  assert.deepEqual([first.seat, first.engine, first.model, first.effort], [1, "grok", "grok-4.7", "high"]);
+  assert.deepEqual([second.seat, second.engine, second.model, second.effort], [2, "codex", "gpt-6-luna", "low"]);
+  assert.equal(readSpec(p.root, one).rolePrompt, "You are seat one.", "seat one's own prompt");
+  assert.equal(readSpec(p.root, two).rolePrompt, fs.readFileSync(path.join(p.mode.dir, "roles", "critic.md"), "utf8"), "seat two takes the mode's");
+  assert.deepEqual(readSpec(p.root, one).sandbox, { mode: "read-only", profile: "strict" });
+  assert.deepEqual(readSpec(p.root, two).sandbox, { mode: "read-only", profile: "read-only" });
+  assert.equal(reservedBy(p.root, worktree), null, "read-only seats reserve nothing, so they run side by side");
+  await waitForRecord(p, one, (value) => value.status === "running");
+  await waitForRecord(p, two, (value) => value.status === "running");
+});
+
+// @anchor seatRefusals
+test("a seat is refused where it does not fit: none for a list, one for a single binding, one past the list, one that is not a whole number", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/refused");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const critic = (seat?: number) => ({ ...request({ role: "critic", cwd: worktree, branch: "task/refused" }), ...(seat === undefined ? {} : { seat }) });
+  assert.equal(refusal(await delegate(p.root, critic(), options)),
+    `refused delegation: role "critic" is bound to 2 seats in ${CONFIG_PATH}: name seat, 1 to 2`);
+  assert.equal(refusal(await delegate(p.root, critic(3), options)), `refused delegation: role "critic" has 2 seats, not seat 3`);
+  for (const seat of [0, 1.5, -1]) {
+    assert.equal(refusal(await delegate(p.root, critic(seat), options)), `refused delegation: seat must be a whole number from 1, not ${seat}`);
+  }
+  assert.equal(refusal(await delegate(p.root, { ...request({ role: "reviewer", cwd: worktree, branch: "task/refused" }), seat: 1 }, options)),
+    `refused delegation: role "reviewer" is bound to one seat; seat is for a role bound to a list of bindings in ${CONFIG_PATH}`);
+  assert.deepEqual(p.records(), [], "no refusal leaves a record");
+});
+
+// @anchor resumeKeepsSeat
+test("a resume keeps its seat's binding, and refuses another seat", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/resumed");
+  const first = { ...request({ role: "critic", cwd: worktree, branch: "task/resumed" }), seat: 2 };
+  const codex = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_FORMAT: "codex" }) };
+  const id = launched(await delegate(p.root, first, codex));
+  await waitForRecord(p, id, (value) => value.status === "done");
+
+  assert.match(refusal(await delegate(p.root, { ...first, brief: "Round 2.", resume: id, seat: 1 }, codex)), /seat 1 differs from the original 2/);
+  assert.match(refusal(await delegate(p.root, { ...first, brief: "Round 2.", resume: id, seat: undefined }, codex)), /name seat, 1 to 2/);
+  const resumed = launched(await delegate(p.root, { ...first, brief: "Round 2.", resume: id }, codex));
+  // No model in the call: the seat's own binding, not another seat's.
+  assert.deepEqual([p.record(resumed).seat, p.record(resumed).model, p.record(resumed).effort], [2, "gpt-6-luna", "low"]);
+  assert.equal(p.record(resumed).resumedFrom, id);
+});
+
+// @anchor seatsReadOnlyAtLaunch
+test("a writable binding edited into a read-only many-seat role after the server read it is refused at the launch boundary, one seat or many", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/writable");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const configFile = path.join(p.root, ".cross-agent", "config.json");
+  const base = configFor(p.bin);
+  const roles = base.roles as Record<string, unknown>;
+  // Codex's own writable name, which `loadConfig` accepts for a codex binding.
+  fs.writeFileSync(configFile, JSON.stringify({
+    ...base, roles: { ...roles, critic: [(roles.critic as unknown[])[0], { engine: "codex", sandbox: "workspace-write" }] },
+  }));
+  const seat = refusal(await delegate(p.root, { ...request({ role: "critic", cwd: worktree, branch: "task/writable" }), seat: 1 }, options));
+  assert.match(seat, /roles\.critic#2\.sandbox/);
+  assert.match(seat, /reads only/);
+  fs.writeFileSync(configFile, JSON.stringify({ ...base, roles: { ...roles, critic: { engine: "grok", sandbox: "workspace" } } }));
+  const object = refusal(await delegate(p.root, request({ role: "critic", cwd: worktree, branch: "task/writable" }), options));
+  assert.match(object, /roles\.critic\.sandbox/);
+  assert.match(object, /reads only/);
+  assert.deepEqual(p.records(), []);
+});
+
+// @anchor unboundResolver
+test("an unbound role of the mode is refused by name until it is bound, and the refusal says init adds nothing to an existing config", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/resolve");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const reason = refusal(await delegate(p.root, request({ role: "resolver", cwd: worktree, branch: "task/resolve" }), options));
+  assert.match(reason, /role "resolver" is bound to no engine/);
+  assert.match(reason, /leaves an existing config alone/);
+  const base = configFor(p.bin);
+  fs.writeFileSync(path.join(p.root, ".cross-agent", "config.json"), JSON.stringify({
+    ...base, roles: { ...(base.roles as Record<string, unknown>), resolver: { engine: "grok" } },
+  }));
+  assert.ok(launched(await delegate(p.root, request({ role: "resolver", cwd: worktree, branch: "task/resolve" }), options)));
+});
+
+// @anchor underReview
+test("a gating role's record carries the branch head under review, at a launch and at a resume, and a writer is refused in a worktree under review", async (t) => {
+  const p = await projectWithRoles(t);
+  const { worktree, head } = await committedWorktree(p, "task/reviewed");
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/reviewed" }), brief: "Review round 1." };
+  const first = launched(await delegate(p.root, review, { authority: operator, mode: p.mode, env: engineEnv(p) }));
+  assert.equal(p.record(first).underReview, head, "the head the review was delegated at");
+  await waitForRecord(p, first, (value) => value.status === "done");
+
+  const stall = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }) };
+  const resumed = launched(await delegate(p.root, { ...review, brief: "Review round 2.", resume: first }, stall));
+  assert.equal(p.record(resumed).underReview, head, "a resume reads the head again");
+
+  // A read-only review reserves nothing, so the hold is its own rule: no writer starts in a
+  // tree whose committed head is being reviewed.
+  const writer = request({ role: "implementer", cwd: worktree, branch: "task/reviewed" });
+  assert.match(refusal(await delegate(p.root, writer, stall)),
+    new RegExp(`${worktree} is under review by task ${resumed} \\((launching|running)\\) at ${head}; wait or cancel first`));
+  await settle(p, resumed);
+  assert.ok(launched(await delegate(p.root, writer, stall)), "a settled review releases it");
+});
+
+// @anchor reviewNeedsCommittedTree
+test("a gating review is refused while the worktree holds uncommitted changes, marked or not", async (t) => {
+  const p = await projectWithRoles(t);
+  const { worktree, head } = await committedWorktree(p, "task/dirty");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/dirty" }), brief: "Review round 1." };
+  const marked = /a\.txt \(marked assume-unchanged or skip-worktree, which hides its changes from git status\)/;
+
+  /** Every way the tree can differ from its head, each refused, then the clean tree. */
+  async function refusedUntilClean(call: DelegateRequest): Promise<string> {
+    fs.writeFileSync(path.join(worktree, "notes.md"), "uncommitted\n");
+    const untracked = refusal(await delegate(p.root, call, options));
+    assert.match(untracked, /reviews the committed tree, and .* holds uncommitted changes: notes\.md; commit them through git_mutate/);
+    fs.rmSync(path.join(worktree, "notes.md"));
+    for (const [mark, clear] of [["--assume-unchanged", "--no-assume-unchanged"], ["--skip-worktree", "--no-skip-worktree"]]) {
+      await git(worktree, "update-index", mark, "a.txt");
+      fs.writeFileSync(path.join(worktree, "a.txt"), "changed\n");
+      assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all"), "", mark);
+      assert.match(refusal(await delegate(p.root, call, options)), marked, mark);
+      fs.writeFileSync(path.join(worktree, "a.txt"), "committed\n");
+      await git(worktree, "update-index", clear, "a.txt");
+    }
+    return launched(await delegate(p.root, call, options));
+  }
+
+  const first = await refusedUntilClean(review);
+  assert.equal(p.records().length, 1, "no refusal left a record");
+  assert.equal(p.record(first).underReview, head);
+  await waitForRecord(p, first, (value) => value.status === "done");
+  const resumed = await refusedUntilClean({ ...review, brief: "Review round 2.", resume: first });
+  assert.equal(p.record(resumed).underReview, head, "the same at a resume");
+});
+
+// @anchor reviewRefusedDuringSetup
+test("a gating review is refused while a live setup marker holds its worktree, and launches once the marker is cleared", async (t) => {
+  const p = await projectWithRoles(t);
+  const { worktree, head } = await committedWorktree(p, "task/setting-up");
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  // The marker a worktree setup leaves for as long as its process group lives.
+  const setup = track(t, spawn("sleep", ["60"], { detached: true, stdio: "ignore" }));
+  const identity = identityOf(setup.pid!)!;
+  markSetup(p.root, worktree, "setting-up", identity);
+
+  const review = { ...request({ role: "reviewer", cwd: worktree, branch: "task/setting-up" }), brief: "Review round 1." };
+  assert.equal(refusal(await delegate(p.root, review, options)),
+    `refused delegation: role "reviewer" reviews a committed tree, and the setup command of task setting-up is running in ${worktree} (process group ${identity.pid}); wait for it, or end that group`);
+  assert.deepEqual(p.records(), []);
+  // The marker is about what a review reads; a writer is not held by it.
+  const writer = launched(await delegate(p.root, request({ role: "implementer", cwd: worktree, branch: "task/setting-up" }), options));
+  await waitForRecord(p, writer, (value) => value.status === "done");
+
+  process.kill(-setup.pid!, "SIGKILL");
+  await poll(() => groupAlive({ ...identity, pgid: identity.pid }), (living) => !living);
+  const launchedReview = launched(await delegate(p.root, review, options));
+  assert.equal(p.record(launchedReview).underReview, head);
+  assert.equal(fs.existsSync(setupMarkerPath(p.root, worktree)), false, "the delegation cleared a marker whose group is gone");
 });

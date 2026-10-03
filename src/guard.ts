@@ -111,14 +111,15 @@ export function resumeRefusal(request: ResumeRequest, record: ResumeRecord): str
   if (record.sandbox === undefined) {
     return `refused resume of task ${record.id}: original sandbox metadata is missing`;
   }
+  // The seat first: it decides the binding, so another seat is another engine, model and
+  // profile, and the field that differs is the seat a call named.
+  if (request.seat !== record.seat) {
+    return `refused resume of task ${record.id}: seat ${request.seat ?? "none"} differs from the original ${record.seat ?? "none"}`;
+  }
   for (const field of ["role", "engine", "cwd", "sandbox"] as const) {
     if (request[field] !== record[field]) {
       return `refused resume of task ${record.id}: ${field} ${JSON.stringify(request[field])} differs from the original ${JSON.stringify(record[field])}`;
     }
-  }
-  // A seat reads under its own binding, so a continuation in another seat is another task.
-  if (request.seat !== record.seat) {
-    return `refused resume of task ${record.id}: seat ${request.seat ?? "none"} differs from the original ${record.seat ?? "none"}`;
   }
   return null;
 }

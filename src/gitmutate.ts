@@ -253,10 +253,11 @@ async function differsFromIndex(gitDir: string, workTree: string, file: string):
  * The worktree is read, not the index alone, because `commit -a`, `commit --include` and
  * `commit -- <path>` record what the index does not hold: one `status` names what is staged,
  * changed or untracked there, and nothing `.gitignore` covers. A tracked file marked
- * assume-unchanged is one `status` takes at its word while a commit naming it records its
- * bytes anyway, so `ls-files -v`, which tags such a file in lowercase, is read beside it, and
- * a marked file is carried when its bytes differ from its index entry: the mark alone carries
- * nothing, since git marks every tracked file so under `core.ignoreStat`.
+ * assume-unchanged or skip-worktree is one `status` takes at its word while a commit naming
+ * it records its bytes anyway, so `ls-files -v`, which tags the first in lowercase and the
+ * second `S`, is read beside it, and a marked file is carried when its bytes differ from its
+ * index entry: the mark alone carries nothing, since git marks every tracked file
+ * assume-unchanged under `core.ignoreStat`.
  */
 async function carriedUnder(
   gitDir: string, workTree: string, specs: readonly string[],
@@ -273,7 +274,7 @@ async function carriedUnder(
   const carried = status.stdout.split("\n").filter(Boolean).map((line) => line.slice(3));
   const marked: string[] = [];
   for (const entry of listed.stdout.split("\0")) {
-    if (!/^[a-z] /.test(entry)) continue;
+    if (!/^([a-z]|S) /.test(entry)) continue;
     const file = entry.slice(2);
     if (!carried.includes(file) && await differsFromIndex(gitDir, workTree, file)) marked.push(file);
   }
@@ -306,7 +307,20 @@ function hostDiskLinks(workTree: string): string[] {
   return links;
 }
 
-const hiddenByMark = "marked assume-unchanged, which hides its changes from git status";
+const hiddenByMark = "marked assume-unchanged or skip-worktree, which hides its changes from git status";
+
+/**
+ * Everything a commit of the whole tree would carry beyond HEAD, or why it could not be read:
+ * what `git status --porcelain --untracked-files=all` names, and every tracked file marked
+ * assume-unchanged or skip-worktree whose bytes differ from its index entry. A review that
+ * gates the merge is delegated against a tree this answers empty for, so the head it is
+ * credited with is the tree it read (`src/delegate.ts#delegate`).
+ */
+export async function uncommitted(gitDir: string, workTree: string): Promise<string[] | { unread: string }> {
+  const read = await carriedUnder(gitDir, workTree, ["."]);
+  if ("unread" in read) return read;
+  return [...read.carried, ...read.marked.map((file) => `${file} (${hiddenByMark})`)];
+}
 
 /**
  * Why a commit in this worktree may not run, or null: changes under the four host paths,
@@ -339,8 +353,8 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
     + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case — "
     + "loads hooks, MCP servers or plugins in the operator's own host session and is never committed through a task; remove changes from the worktree, "
-    + "or ignore regular files if they are the operator's own, clear any assume-unchanged mark "
-    + "(update-index --no-assume-unchanged), and commit again. "
+    + "or ignore regular files if they are the operator's own, clear any assume-unchanged or skip-worktree mark "
+    + "(update-index --no-assume-unchanged or --no-skip-worktree), and commit again. "
     + "Host configuration must be regular files: replace symbolic links with regular files, at the root by hand for tracked links, before retrying";
 }
 

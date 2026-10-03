@@ -700,6 +700,9 @@ test("the delegation tools answer a refusal as an error result, and their argume
   for (const [name, args] of [
     ["delegate", {}], ["delegate", { role: "planner", brief: "b", cwd: 5 }], ["delegate", { role: "planner", brief: "b", cwd: root, force: "yes" }],
     ["delegate", { role: "planner", brief: "b", cwd: root, worktree: "yes" }],
+    // A seat is a 1-based whole number, on the wire as everywhere.
+    ["delegate", { role: "planner", brief: "b", cwd: root, seat: "1" }], ["delegate", { role: "planner", brief: "b", cwd: root, seat: 0 }],
+    ["delegate", { role: "planner", brief: "b", cwd: root, seat: 1.5 }],
     ["check", { task_id: "" }], ["check", { task_id: "t", lines: "ten" }], ["result", {}], ["cancel", { task_id: null }],
     ["check", { task_id: "t", lines: 0 }], ["check", { task_id: "t", lines: -1 }], ["check", { task_id: "t", lines: 1.5 }],
     ["wait", { task_id: "" }], ["wait", { task_id: "t", timeout_seconds: "soon" }], ["wait", { task_id: "t", timeout_seconds: -1 }],

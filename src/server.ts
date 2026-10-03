@@ -265,6 +265,12 @@ function delegateRequest(args: Json): DelegateRequest {
     const value = optional(args, key, "boolean", "delegate");
     if (value !== undefined) request[key] = value as boolean;
   }
+  if (args.seat !== undefined) {
+    if (typeof args.seat !== "number" || !Number.isSafeInteger(args.seat) || args.seat < 1) {
+      throw new RpcError(-32602, "delegate's seat must be a whole number from 1");
+    }
+    request.seat = args.seat;
+  }
   return request;
 }
 
@@ -549,14 +555,14 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "delegate",
-      description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first. A role with no binding takes its engine in the call; worktree: true gives a role that works at the project root a writable task worktree of its own instead.",
+      description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first. A role with no binding takes its engine in the call; worktree: true gives a role that works at the project root a writable task worktree of its own instead. A role bound to a list of bindings is delegated by seat, 1-based.",
       inputSchema: {
         type: "object",
         properties: {
           role: { type: "string" }, brief: { type: "string" }, cwd: { type: "string" },
           engine: { type: "string" }, model: { type: "string" }, effort: { type: "string" },
           branch: { type: "string" }, resume: { type: "string" }, force: { type: "boolean" },
-          worktree: { type: "boolean" },
+          worktree: { type: "boolean" }, seat: { type: "integer", minimum: 1 },
         },
         required: ["role", "brief", "cwd"],
       },

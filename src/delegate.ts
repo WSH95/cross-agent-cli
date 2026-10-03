@@ -4,11 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Authority } from "./authority.ts";
-import { bindingFault, CONFIG_PATH, effectiveMaxDepth, engineLeadRole, loadConfig, lockWaitSeconds, modeDrift, repositoryLockWait } from "./config.ts";
+import { bindingFault, CONFIG_PATH, effectiveMaxDepth, engineLeadRole, isSeated, loadConfig, lockWaitSeconds, modeDrift, repositoryLockWait, seatsOf } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
 import { childEnv, childLineage, denyTargets, duplicateRefusal, lineageRefusal, parseLineage, resumeRefusal } from "./guard.ts";
 import type { LineageEntry } from "./guard.ts";
-import { revision, run } from "./gitmutate.ts";
+import { revision, run, uncommitted } from "./gitmutate.ts";
 import { gitRoot, trackedStateFault } from "./gitroot.ts";
 import { readJournal, removeJournal } from "./journal.ts";
 import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
@@ -19,6 +19,7 @@ import { asksSection, lineageAsks } from "./mailbox.ts";
 import { findRole, gitPolicy, rolePrompt } from "./modes.ts";
 import type { Mode, Workspace } from "./modes.ts";
 import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
+import { reviewHold, setupRunning } from "./review.ts";
 import { lineageIds, ownedBy } from "./tasks.ts";
 import { adapterFor, sandboxFor } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
@@ -54,8 +55,10 @@ export interface DelegateRequest {
    * workspace is root, which is the only kind that has no worktree already.
    */
   worktree?: boolean;
-  /** The task to continue. Bound to the original's role, engine, cwd and sandbox profile. */
+  /** The task to continue. Bound to the original's role, engine, cwd, sandbox profile and seat. */
   resume?: string;
+  /** The seat, 1-based, of a role config binds to a list of bindings; refused for any other role. */
+  seat?: number;
   /** Delegate again although an identical task finished inside the duplicate window. */
   force?: boolean;
 }
@@ -211,7 +214,7 @@ function resumeChain(records: readonly TaskRecord[], id: string): Set<string> {
  */
 function resumeFault(
   projectRoot: string, records: readonly TaskRecord[], id: string,
-  request: { role: string; engine: EngineName; cwd: string; sandbox: SandboxProfile },
+  request: { role: string; engine: EngineName; cwd: string; sandbox: SandboxProfile; seat?: number },
 ): string | null {
   const original = records.find((record) => record.id === id);
   if (!original) return `no task ${id}`;
@@ -324,11 +327,24 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (declared === undefined) return refuse(`no role ${JSON.stringify(request.role)} in mode ${options.mode.id}`);
     // A role with no binding is still a role of this mode — the built-in consultant is
     // bound by nothing in a project with no config at all — so the engine may come from
-    // the call instead. Nothing else a binding carries is required (design, "Modes").
-    const bound = Object.hasOwn(config.roles, request.role) ? config.roles[request.role] : undefined;
-    if (bound === undefined && request.engine === undefined) {
-      return refuse(`role ${JSON.stringify(request.role)} is bound to no engine in ${CONFIG_PATH}: name engine in this call, or run "cross-agent init --mode ${config.mode}"`);
+    // the call instead. Nothing else a binding carries is required (design, "Modes"). A
+    // role config binds to a list is delegated by seat, and that seat's binding is the one.
+    const seats = seatsOf(config, request.role);
+    if (seats === undefined && request.engine === undefined) {
+      return refuse(`role ${JSON.stringify(request.role)} is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — "cross-agent init --mode ${config.mode}" writes every binding for a new project and leaves an existing config alone`);
     }
+    if (request.seat !== undefined && (!Number.isSafeInteger(request.seat) || request.seat < 1)) {
+      return refuse(`seat must be a whole number from 1, not ${request.seat}`);
+    }
+    if (isSeated(config.roles[request.role])) {
+      if (request.seat === undefined) {
+        return refuse(`role ${JSON.stringify(request.role)} is bound to ${seats!.length} seats in ${CONFIG_PATH}: name seat, 1 to ${seats!.length}`);
+      }
+      if (request.seat > seats!.length) return refuse(`role ${JSON.stringify(request.role)} has ${seats!.length} seats, not seat ${request.seat}`);
+    } else if (request.seat !== undefined) {
+      return refuse(`role ${JSON.stringify(request.role)} is bound to one seat; seat is for a role bound to a list of bindings in ${CONFIG_PATH}`);
+    }
+    const bound = seats?.[(request.seat ?? 1) - 1];
     const engine = (request.engine ?? bound?.engine) as EngineName;
     if (!engineNames.includes(engine)) {
       return refuse(`no engine ${JSON.stringify(request.engine)}; this build has ${engineNames.join(", ")}`);
@@ -445,10 +461,41 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       verifiedWorktree = checked.verified;
     }
 
+    // 2b. A role whose reviews gate the merge reviews a committed tree no setup command is
+    // changing, and its record names the head it was delegated at: the merge credits its
+    // verdict to that commit and no other (design section 4). A worktree role has no
+    // one-shot to continue, so step 2 has verified it at a launch and at a resume alike.
+    let underReview: string | undefined;
+    if (declared.gates === "merge") {
+      if (verifiedWorktree === undefined) return refuse(`role ${JSON.stringify(request.role)} gates the merge, and ${workspace} is no verified worktree`);
+      const reviewed = verifiedWorktree;
+      const running = setupRunning(projectRoot, reviewed.workTree);
+      if (running !== null) return refuse(`role ${JSON.stringify(request.role)} reviews a committed tree, and ${running}`);
+      let changes: Awaited<ReturnType<typeof uncommitted>>;
+      try {
+        changes = await uncommitted(reviewed.gitDir, reviewed.workTree);
+      } catch (error) {
+        return refuse(message(error));
+      }
+      if ("unread" in changes) return refuse(changes.unread);
+      if (changes.length > 0) {
+        const named = `${changes.slice(0, 5).join(", ")}${changes.length > 5 ? `, and ${changes.length - 5} more` : ""}`;
+        return refuse(`role ${JSON.stringify(request.role)} reviews the committed tree, and ${reviewed.workTree} holds uncommitted changes: ${named}; commit them through git_mutate, or clear the marks with update-index --no-assume-unchanged or --no-skip-worktree, first`);
+      }
+      underReview = await revision(reviewed.gitDir, reviewed.workTree, reviewed.branch);
+      if (underReview === undefined) return refuse(`role ${JSON.stringify(request.role)} reviews a committed head, and branch ${reviewed.branch} has none`);
+    }
+
     // 3. The workspace reservation, and the records nobody can read (design section 2, E2).
     const known = reservations(projectRoot);
     const holder = reservedBy(projectRoot, workspace, known);
     if (holder !== null) return refuse(`${workspace} is reserved by task ${holder.id} (${holder.status}); wait or cancel first`);
+    // A review that gates the merge reads without reserving, so a writer is held off the
+    // tree it reads by this rule of its own until it settles (`src/review.ts#reviewHold`).
+    if (sandbox.mode !== "read-only") {
+      const hold = reviewHold(projectRoot, canonicalPath(workspace));
+      if (hold !== null) return refuse(hold);
+    }
     if (sandbox.mode !== "read-only" && known.unknown.length > 0) {
       const files = known.unknown.map((entry) => `${entry.file} (${entry.reason})`).join(", ");
       return refuse(`no workspace can be cleared while a task record cannot be read: ${files}; repair or remove it first`);
@@ -462,6 +509,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (request.resume === undefined) {
       const duplicate = duplicateRefusal({
         role: request.role, cwd: workspace, brief: request.brief, force: request.force,
+        ...(request.seat === undefined ? {} : { seat: request.seat }),
         ...(oneShot === undefined ? {} : { worktree: true }),
       }, records, now, config.limits.duplicateWindowMinutes);
       if (duplicate !== null) return { ok: false, reason: duplicate };
@@ -474,6 +522,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       }
       const chain = resumeFault(projectRoot, records, request.resume, {
         role: request.role, engine, cwd: workspace, sandbox: sandbox.profile as SandboxProfile,
+        ...(request.seat === undefined ? {} : { seat: request.seat }),
       });
       if (chain !== null) return { ok: false, reason: chain };
       // The worktree the original ran in has to still be that worktree: a lead that has
@@ -570,6 +619,8 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
         ...(continued === undefined ? {} : { worktree: continued }),
         ...(parentTaskId === undefined ? {} : { parentTaskId }),
         ...(request.resume === undefined ? {} : { resumedFrom: request.resume }),
+        ...(request.seat === undefined ? {} : { seat: request.seat }),
+        ...(underReview === undefined ? {} : { underReview }),
       }, now);
       // The task's own directory, which nothing else shares: an adapter writes a role file
       // and a lead's mount config here, never into a workspace the role may edit.

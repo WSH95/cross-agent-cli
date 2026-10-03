@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { initConfig } from "../src/config.ts";
-import { gitMutate, hostConfigPaths } from "../src/gitmutate.ts";
+import { gitMutate, hostConfigPaths, uncommitted } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
@@ -660,6 +660,54 @@ test("a tracked host file marked assume-unchanged is refused at the commit, thou
   assert.match(reason, /^git_mutate refuses to commit/);
   assert.match(reason, /\.mcp\.json \(marked assume-unchanged/);
   assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+});
+
+// @anchor commitRefusesSkipWorktree
+test("a tracked host file marked skip-worktree is refused at the commit, as an assume-unchanged one is", async (t) => {
+  const { root, add } = await repository(t);
+  await writeFile(path.join(root, ".mcp.json"), '{"mcpServers": {}}\n');
+  await git(root, "add", ".mcp.json");
+  await git(root, "commit", "-m", "the project's own servers");
+  const worktree = await add("skipped");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  // `ls-files -v` tags such a file `S`, and `git status` shows nothing of its bytes either.
+  await git(worktree, "update-index", "--skip-worktree", ".mcp.json");
+  await writeFile(path.join(worktree, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all"), "");
+  const reason = refusal(await gitMutate(root, { slug: "skipped", args: ["commit", "-m", "x", "--", ".mcp.json"] }, { waitSeconds: 5 }));
+  assert.match(reason, /\.mcp\.json \(marked assume-unchanged or skip-worktree, which hides its changes from git status\)/);
+  assert.match(reason, /--no-skip-worktree/);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
+});
+
+// @anchor uncommittedReadsMarks
+test("uncommitted names what status shows and every marked file whose bytes differ, assume-unchanged and skip-worktree alike, and nothing in a clean tree", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await realpath(await add("tree"));
+  await writeFile(path.join(worktree, "a.txt"), "committed\n");
+  await git(worktree, "add", "a.txt");
+  await git(worktree, "commit", "-m", "a tracked file");
+  const gitDir = await realpath(path.join(root, ".git", "worktrees", "tree"));
+  assert.deepEqual(await uncommitted(gitDir, worktree), [], "a clean tree carries nothing beyond HEAD");
+
+  // What `git status` shows: a change to a tracked file, and an untracked one.
+  await writeFile(path.join(worktree, "a.txt"), "changed\n");
+  await writeFile(path.join(worktree, "new.txt"), "untracked\n");
+  assert.deepEqual((await uncommitted(gitDir, worktree) as string[]).sort(), ["a.txt", "new.txt"]);
+  await rm(path.join(worktree, "new.txt"));
+
+  // What it does not: a marked file whose bytes differ, under either mark, and never a
+  // marked file whose bytes are what the index holds.
+  const marked = "a.txt (marked assume-unchanged or skip-worktree, which hides its changes from git status)";
+  for (const [mark, clear] of [["--assume-unchanged", "--no-assume-unchanged"], ["--skip-worktree", "--no-skip-worktree"]]) {
+    await git(worktree, "update-index", mark, "a.txt");
+    assert.equal(await git(worktree, "status", "--porcelain", "--untracked-files=all"), "", mark);
+    assert.deepEqual(await uncommitted(gitDir, worktree), [marked], mark);
+    await writeFile(path.join(worktree, "a.txt"), "committed\n");
+    assert.deepEqual(await uncommitted(gitDir, worktree), [], `${mark}, bytes unchanged`);
+    await git(worktree, "update-index", clear, "a.txt");
+    await writeFile(path.join(worktree, "a.txt"), "changed\n");
+  }
 });
 
 // @anchor commitUnderIgnoreStat
