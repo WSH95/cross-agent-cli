@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T09:11:11Z
+updated_at: 2026-10-03T09:56:51Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -51,8 +51,10 @@ marketplace name, both manifests' `author`, README paths, live docs, test pins, 
 title and Codex line (the last as a diff for the user's approval). Records of past runs keep their
 paths, with one note. There is no migration or compatibility work: the tool has never been used in a
 development project (the user). The directory moves last; then `core.hooksPath` (absolute today),
-the e2e sample's Grok attach and Claude Code and Codex trust follow. Planning is running
-(`.superpowers/sdd/the-development-of-this-calm-planet/task-14-planning-brief.md`).
+the e2e sample's Grok attach and Claude Code and Codex trust follow. The plan is
+`.superpowers/sdd/the-development-of-this-calm-planet/task-14-brief.md` (revision 1; plan review
+round 1 found five Important issues in the move runbook and the checks, all folded; round 2 is
+running). The move is the user's: a script, run from `~` after this session ends.
 
 **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
 A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when

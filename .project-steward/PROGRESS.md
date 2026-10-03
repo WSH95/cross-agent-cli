@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T09:56:51Z — claude
+[auto-checkpoint] atc-s96.103: rename plan written (task-14-brief.md), plan review round 1 (five Important, runbook and checks) folded; round 2 running.
+
 ### 2026-10-03T09:11:11Z — claude
 [auto-checkpoint] AGENTS.md update for worktree projects approved and applied (ff49d5d, Decision 0012); atc-s96.103 opened: rename the repository to cross-agent-cli, planning running.
 
