@@ -38,7 +38,9 @@
       "title": "Code reviewer",
       "promptFile": "roles/code-reviewer.md",
       "workspace": { "kind": "worktree", "branchPattern": "task/*", "dir": ".worktrees" },
-      "sandboxDefault": "read-only"
+      "sandboxDefault": "read-only",
+      "seats": "many",
+      "gates": "merge"
     }
   ],
   "git": { "worktreeDir": ".worktrees", "branchPattern": "task/*" },

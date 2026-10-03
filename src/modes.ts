@@ -35,6 +35,16 @@ interface RoleFields {
   workspace: Workspace;
   /** The profile this role runs under unless config overrides it (design section 6). */
   sandboxDefault: SandboxProfile;
+  /**
+   * Present on a role config may bind to a list, one binding per seat (design, "Modes"):
+   * how many of a role may sit is the mode's fact, as where it works is. Absent is one.
+   */
+  seats?: "many";
+  /**
+   * Present on the role whose finished reviews of a branch head the merge is held to
+   * (`src/review.ts#reviewFault`). Only a worktree role reviews a task branch.
+   */
+  gates?: "merge";
 }
 
 /**
@@ -83,7 +93,10 @@ export interface ModeDescription {
   mode: { id: string; release: string; name: string; summary: string; lead: ModeLead };
   /** `SKILL.md` verbatim: the mode's loop, served rather than copied (design section 7). */
   loop: string;
-  roles: Array<{ key: string; title: string; workspace: Workspace; sandboxDefault: SandboxProfile; prompt: string }>;
+  /** Each role, `seats` and `gates` carried only where the mode declares them. */
+  roles: Array<{
+    key: string; title: string; workspace: Workspace; sandboxDefault: SandboxProfile; seats?: "many"; gates?: "merge"; prompt: string;
+  }>;
   /** Always present: the mode's own policy, or the implicit one its one-shots use. */
   git: EffectiveGitPolicy;
 }
@@ -258,7 +271,7 @@ export function loadMode(modesDir: string, name: string): Mode {
     const at = `roles[${index}]`;
     const record = object(value, at);
     const field = typeof record.key === "string" && record.key !== "" ? `roles.${record.key}` : at;
-    only(record, field, ["key", "title", "promptFile", "workspace", "sandboxDefault"]);
+    only(record, field, ["key", "title", "promptFile", "workspace", "sandboxDefault", "seats", "gates"]);
     const key = text(record.key, `${field}.key`, caps.key);
     // A role key names a config entry, a prompt file and a task record's role, so it is
     // one path segment of a small alphabet and never a traversal.
@@ -283,6 +296,8 @@ export function loadMode(modesDir: string, name: string): Mode {
     }
 
     const sandboxDefault = oneOf(record.sandboxDefault, `${field}.sandboxDefault`, sandboxProfiles);
+    const seats = record.seats === undefined ? undefined : oneOf(record.seats, `${field}.seats`, ["many"] as const);
+    const gates = record.gates === undefined ? undefined : oneOf(record.gates, `${field}.gates`, ["merge"] as const);
     // A mode may give the built-in consultant its own title and its own prompt file, and
     // nothing else: it is the one role every mode has, and a launcher that delegates it
     // against a mode it has never read is relying on it being read-only at the root
@@ -291,6 +306,12 @@ export function loadMode(modesDir: string, name: string): Mode {
       const rule = `mode ${JSON.stringify(name)} may give the built-in ${CONSULT_ROLE} role its own title and prompt file and nothing else`;
       if (workspace.kind !== "root") reject(`${field}.workspace`, `${CONSULT_ROLE} works at the project root in every mode; ${rule}`);
       if (sandboxDefault !== "read-only") reject(`${field}.sandboxDefault`, `${CONSULT_ROLE} is read-only in every mode; ${rule}`);
+      if (seats !== undefined) reject(`${field}.seats`, `${CONSULT_ROLE} seats one in every mode; ${rule}`);
+    }
+    // The merge reads reviews of a task branch's head, and only a role that works in a
+    // worktree reviews one: a root role reads the project as it stands.
+    if (gates !== undefined && workspace.kind !== "worktree") {
+      reject(`${field}.gates`, `a role that gates the merge reviews a task branch in its worktree; ${key} works at the root`);
     }
     // No role may combine `{kind: "root"}` with a writable sandbox (design, "Modes"): a
     // writable root role could edit `.cross-agent/` itself. The rule is stated portably —
@@ -314,7 +335,10 @@ export function loadMode(modesDir: string, name: string): Mode {
       reject(`${field}.promptFile`, `${promptFile} resolves to ${resolved}, outside the mode directory ${canonicalDir}`);
     }
     if (!statSync(resolved).isFile()) reject(`${field}.promptFile`, `${promptFile} is not a file`);
-    return { key, title, promptFile, workspace, sandboxDefault };
+    return {
+      key, title, promptFile, workspace, sandboxDefault,
+      ...(seats === undefined ? {} : { seats }), ...(gates === undefined ? {} : { gates }),
+    };
   });
   for (const [index, role] of roles.entries()) {
     if (roles.findIndex((other) => other.key === role.key) !== index) {
@@ -349,6 +373,9 @@ export function loadMode(modesDir: string, name: string): Mode {
     // project root ("The lead model"). A lead inside one task's worktree could not.
     if (declared.workspace.kind !== "root") {
       reject("lead.role", `${JSON.stringify(role)} works in a ${declared.workspace.kind}; an engine-placed lead is read-only at the project root`);
+    }
+    if (declared.seats !== undefined) {
+      reject("lead.role", `${JSON.stringify(role)} seats many; an engine-placed lead is one session running one loop`);
     }
     lead = { placement, role };
   } else {
@@ -430,6 +457,7 @@ export function describeMode(modesDir: string, name: string): ModeDescription | 
     const loop = readFileSync(mode.loopFile, "utf8");
     const roles = mode.roles.map((role) => ({
       key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault,
+      ...(role.seats === undefined ? {} : { seats: role.seats }), ...(role.gates === undefined ? {} : { gates: role.gates }),
       prompt: rolePrompt(mode, role),
     }));
     return {

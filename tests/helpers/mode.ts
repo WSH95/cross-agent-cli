@@ -17,6 +17,10 @@ export interface RoleSpec {
   title?: string;
   /** The paragraph written to `roles/<key>.md`, which `describeMode` returns verbatim. */
   prompt?: string;
+  /** Written only when given: a role the config may bind to a list of seats. */
+  seats?: "many";
+  /** Written only when given: a role whose finished reviews gate the merge. */
+  gates?: "merge";
 }
 
 const worktreeWorkspace = { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" };
@@ -29,6 +33,8 @@ export function modeDocument(id: string, roles: RoleSpec[], patch: Record<string
     promptFile: `roles/${role.key}.md`,
     workspace: role.workspace === "worktree" ? worktreeWorkspace : { kind: "root" },
     sandboxDefault: role.sandboxDefault ?? (role.workspace === "worktree" ? "workspace-write" : "read-only"),
+    ...(role.seats === undefined ? {} : { seats: role.seats }),
+    ...(role.gates === undefined ? {} : { gates: role.gates }),
   }));
   const document: Record<string, unknown> = {
     id,

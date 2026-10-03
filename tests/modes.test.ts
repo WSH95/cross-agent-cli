@@ -314,6 +314,87 @@ test("a declared consult role that is not read-only at the project root is refus
   assert.match(refusal(modes, "n"), /roles\.consult\.sandboxDefault: .*title and prompt/);
 });
 
+/** A worktree role's own document, with `extra` fields over it: a shape `modeDocument` would not write. */
+function worktreeRole(key: string, extra: Record<string, unknown>): Record<string, unknown> {
+  return {
+    key, title: key, promptFile: `roles/${key}.md`,
+    workspace: { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" }, sandboxDefault: "read-only", ...extra,
+  };
+}
+
+// @anchor roleSeats
+test("loadMode reads a role's seats: many where declared, nothing where not, and refuses any other value", (t) => {
+  const modes = modesRoot(t);
+  writeMode(modes, "m", modeDocument("m", [
+    { key: "planner" }, { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", seats: "many" },
+  ]));
+  const mode = loadMode(modes, "m");
+  // How many of a role may sit is the mode's fact, as where it works is: config binds a
+  // list of seats only to a role marked so.
+  assert.equal(findRole(mode, "reviewer")?.seats, "many");
+  assert.equal(Object.hasOwn(findRole(mode, "planner")!, "seats"), false, "an unmarked role seats one and carries no key");
+
+  for (const seats of ["one", 2, true]) {
+    writeMode(modes, "n", modeDocument("n", [{ key: "planner" }], { roles: [worktreeRole("reviewer", { seats })], git: { worktreeDir: ".worktrees", branchPattern: "task/*" } }));
+    assert.match(refusal(modes, "n"), /roles\.reviewer\.seats/, JSON.stringify(seats));
+    fs.rmSync(path.join(modes, "n"), { recursive: true, force: true });
+  }
+});
+
+// @anchor leadSeatsOne
+test("an engine-placed lead seats one, and so does the built-in consult", (t) => {
+  const modes = modesRoot(t);
+  // One lead runs one loop: a lead role bound to a list would be several sessions each
+  // believing it owns the run.
+  writeMode(modes, "led", modeDocument("led", [{ key: "lead" }, { key: "planner" }], {
+    lead: { placement: "engine", role: "lead" },
+    roles: [
+      { key: "lead", title: "Lead", promptFile: "roles/lead.md", workspace: { kind: "root" }, sandboxDefault: "read-only", seats: "many" },
+      { key: "planner", title: "Planner", promptFile: "roles/planner.md", workspace: { kind: "root" }, sandboxDefault: "read-only" },
+    ],
+  }));
+  const lead = refusal(modes, "led");
+  assert.match(lead, /lead\.role/);
+  assert.match(lead, /one session running one loop/);
+
+  // The consultant is the one role every mode carries, and a mode may retitle it alone.
+  writeMode(modes, "consulting", modeDocument("consulting", [{ key: "planner" }], {
+    roles: [{ key: "consult", title: "Consultant", promptFile: "roles/consult.md", workspace: { kind: "root" }, sandboxDefault: "read-only", seats: "many" }],
+  }));
+  assert.match(refusal(modes, "consulting"), /roles\.consult\.seats: .*seats one.*title and prompt/);
+});
+
+// @anchor roleGates
+test("a role gates the merge only from a worktree, and gates nothing else", (t) => {
+  const modes = modesRoot(t);
+  const gitPolicy = { git: { worktreeDir: ".worktrees", branchPattern: "task/*" } };
+  writeMode(modes, "m", modeDocument("m", [{ key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", gates: "merge" }]));
+  // The role whose finished reviews of a branch head the merge reads (`src/review.ts`).
+  assert.equal(findRole(loadMode(modes, "m"), "reviewer")?.gates, "merge");
+  assert.equal(Object.hasOwn(findRole(loadMode(modes, "m"), "consult")!, "gates"), false);
+
+  const cases: Array<[Record<string, unknown>, RegExp]> = [
+    // A root role reads the whole project, and the merge is held to reviews of a branch.
+    [modeDocument("n", [{ key: "planner" }], {
+      roles: [{ key: "planner", title: "P", promptFile: "roles/planner.md", workspace: { kind: "root" }, sandboxDefault: "read-only", gates: "merge" }],
+    }), /roles\.planner\.gates: a role that gates the merge reviews a task branch in its worktree; planner works at the root/],
+    // An engine-placed lead works at the root, so the same rule holds it.
+    [modeDocument("n", [{ key: "lead" }], {
+      lead: { placement: "engine", role: "lead" },
+      roles: [{ key: "lead", title: "L", promptFile: "roles/lead.md", workspace: { kind: "root" }, sandboxDefault: "read-only", gates: "merge" }],
+    }), /roles\.lead\.gates/],
+    [modeDocument("n", [{ key: "consult" }], {
+      roles: [{ key: "consult", title: "C", promptFile: "roles/consult.md", workspace: { kind: "root" }, sandboxDefault: "read-only", gates: "merge" }],
+    }), /roles\.consult\.gates/],
+    [modeDocument("n", [{ key: "reviewer" }], { roles: [worktreeRole("reviewer", { gates: "x" })], ...gitPolicy }), /roles\.reviewer\.gates/],
+  ];
+  for (const [document, expected] of cases) {
+    writeMode(modes, "n", document);
+    assert.match(refusal(modes, "n"), expected, JSON.stringify(document.roles));
+    fs.rmSync(path.join(modes, "n"), { recursive: true, force: true });
+  }
+});
+
 test("a mode with no worktree role still has the git policy its one-shots use, marked implicit", (t) => {
   const modes = modesRoot(t);
   writeMode(modes, "rootish", modeDocument("rootish", [{ key: "solo" }]));
@@ -368,6 +449,13 @@ test("the three built-in modes validate, and each declares what its loop needs",
   assert.deepEqual(engine.roles.map((role) => role.key), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "consult"]);
   assert.deepEqual(findRole(engine, "lead")?.workspace, { kind: "root" }, "an engine lead is read-only at the root");
   assert.equal(findRole(engine, "lead")?.sandboxDefault, "read-only");
+
+  // Both team modes seat the code reviewer many times, and its reviews gate the merge.
+  for (const team of [devTeam, engine]) {
+    assert.equal(findRole(team, "code-reviewer")?.seats, "many", team.id);
+    assert.equal(findRole(team, "code-reviewer")?.gates, "merge", team.id);
+    assert.deepEqual(team.roles.filter((role) => role.seats !== undefined || role.gates !== undefined).map((role) => role.key), ["code-reviewer"], team.id);
+  }
 });
 
 // @anchor describemodeReturnsLoop
@@ -375,7 +463,10 @@ test("describeMode returns the loop and every role prompt verbatim, with no file
   const modes = modesRoot(t);
   const loop = "# The loop\n\nWhat this mode's lead does, in its own words.\n";
   const prompt = "You are the planner.\n\nRead at the root and report a plan.\n";
-  writeMode(modes, "m", modeDocument("m", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]), {
+  writeMode(modes, "m", modeDocument("m", [
+    { key: "planner" }, { key: "implementer", workspace: "worktree" },
+    { key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", seats: "many", gates: "merge" },
+  ]), {
     loop, prompts: { planner: prompt },
   });
 
@@ -392,6 +483,13 @@ test("describeMode returns the loop and every role prompt verbatim, with no file
     key: "planner", title: "planner", workspace: { kind: "root" }, sandboxDefault: "read-only", prompt,
   });
   assert.equal(described.roles[1].prompt, fs.readFileSync(path.join(modes, "m", "roles", "implementer.md"), "utf8"));
+  // `seats` and `gates` reach a launcher only where the mode declares them.
+  for (const key of ["seats", "gates"]) assert.equal(Object.hasOwn(described.roles[1], key), false, key);
+  assert.deepEqual(described.roles[2], {
+    key: "reviewer", title: "reviewer", workspace: { kind: "worktree", branchPattern: "task/*", dir: ".worktrees" },
+    sandboxDefault: "read-only", seats: "many", gates: "merge",
+    prompt: fs.readFileSync(path.join(modes, "m", "roles", "reviewer.md"), "utf8"),
+  });
   assert.deepEqual(described.git, { worktreeDir: ".worktrees", branchPattern: "task/*" });
   // Nothing is written anywhere: the mode directory holds what it held.
   assert.deepEqual(fs.readdirSync(path.join(modes, "m")).sort(), ["SKILL.md", "mode.json", "roles"]);
