@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T18:42:07Z
+updated_at: 2026-10-03T21:39:14Z
 updated_by: claude
 session_status: active
 branch: main
@@ -81,7 +81,9 @@ The reset plan went through four reviews: 5, 3, 2 and 2 majors. At the plateau t
 - the merge acts on one resolved head;
 - a `waive_review` tool and a `cross-agent waive` verb record waivers.
 
-Implementation is running in `.worktrees/team-modes` (`task/team-modes`). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
+It is implemented in `.worktrees/team-modes` (`task/team-modes`): 13 commits, `92b35be..c3bae4c`, with 991 tests (990 pass, 1 skipped) and 0 citation misses. The code review is next.
+
+A stray empty `/tmp/.git`, made by an unknown process, broke plain `npm test`; it was removed. It exposed a robustness bug in worktree projects: an invalid `.git` in an ancestor makes every project below it refuse. That is filed as `atc-s96.106` (P2). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.

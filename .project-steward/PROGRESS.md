@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T21:39:14Z — claude
+[auto-checkpoint] atc-s96.104 implemented (92b35be..c3bae4c, 13 commits; 991/990/1 skipped); code review next. atc-s96.106 filed: a stray invalid .git in an ancestor refuses every project below it.
+
 ### 2026-10-03T18:42:07Z — claude
 [auto-checkpoint] atc-s96.104: reset plan final after four reviews (5→3→2→2; the user chose simplify at the plateau; guarantee re-anchored to misreadings and accidents, self-subversion a documented limit, atc-s96.105); implementation started in .worktrees/team-modes.
 
