@@ -1533,14 +1533,19 @@ test("git-root runs one whitelisted verb at the project root as git_root does: a
   const made = await layoutRoot(t, "linked");
   const root = made.root;
   fs.mkdirSync(path.join(root, ".cross-agent"), { recursive: true });
-  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify({ mode: "dev-team", roles: {}, project: { defaultBranch: "feature", testCommand: "true" } }));
+  // `solo`: this is the CLI's root verb, not the review guard a team mode adds to its merge.
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify({ mode: "solo", roles: {}, project: { defaultBranch: "feature", testCommand: "true" } }));
   const { gitRoot } = await import("../src/gitroot.ts");
   const { gitMutate } = await import("../src/gitmutate.ts");
+  const { runCommand } = await import("../src/runcommand.ts");
   const directory = path.join(root, ".worktrees", "x");
   const created = await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 });
   assert.equal(created.ok, true, JSON.stringify(created));
   const committed = await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 });
   assert.equal(committed.ok, true, JSON.stringify(committed));
+  // The suite on the branch head, which the merge is held to.
+  const tested = await runCommand(root, { which: "test", where: directory, slug: "x" });
+  assert.equal(tested.ok, true, JSON.stringify(tested));
 
   const read = await run(["git-root", "--", "rev-parse", "--abbrev-ref", "HEAD"], root);
   assert.equal(read.code, 0, read.stderr);

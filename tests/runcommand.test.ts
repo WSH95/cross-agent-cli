@@ -210,6 +210,8 @@ test("tests-passed is journaled for a passing root run, once, and only after the
 
   const committed = await gitMutate(root, { slug: "alpha", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 });
   assert.equal(committed.ok, true, JSON.stringify(committed));
+  // The gate on the branch head, which the merge is held to.
+  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "alpha" })).journal?.step, "tested");
   const done = await gitRoot(root, { args: ["merge", "--ff-only", "task/alpha"], slug: "alpha" }, { waitSeconds: 5 });
   assert.equal(done.ok, true, JSON.stringify(done));
 
@@ -228,7 +230,7 @@ test("tests-passed is journaled for a passing root run, once, and only after the
   // What the suite ran on, read before it started: the journal says which commit passed.
   assert.equal(passed.journal!.defaultSha, await git(root, "rev-parse", "main"));
   assert.deepEqual(readJournal(root, "alpha")!.steps.map((step) => step.step),
-    ["worktree-created", "committed", "merged", "tests-passed"]);
+    ["worktree-created", "committed", "tested", "merged", "tests-passed"]);
   // Once: the journal is a record of what happened, not a counter of runs.
   assert.match(refusal(await runCommand(root, { which: "test", where: "root", slug: "alpha" })), /tests-passed/);
 });
@@ -335,6 +337,7 @@ test("an initialized linked root runs its suite in itself, and journals the run 
   const directory = path.join(root, ".worktrees", "x");
   assert.equal((await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 })).ok, true);
   assert.equal((await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 })).ok, true);
+  assert.equal(accepted(await runCommand(root, { which: "test", where: directory, slug: "x" })).journal?.step, "tested");
   assert.equal((await gitRoot(root, { args: ["merge", "--ff-only", "task/x"], slug: "x" }, { waitSeconds: 5 })).ok, true);
   const journaled = accepted(await runCommand(root, { which: "test", where: "root", slug: "x" }));
   assert.equal(journaled.tail.trim(), root);
@@ -510,7 +513,12 @@ test("a worktree test run tests a detached checkout of the branch head, not the 
   await whileItWaits(marker, release, async () => { await git(directory, "commit", "--allow-empty", "-m", "a commit the suite never saw"); });
   const result = accepted(await moving);
   assert.equal(result.journal?.after, before);
-  assert.notEqual(await git(root, "rev-parse", "task/x"), before);
+  const moved = await git(root, "rev-parse", "task/x");
+  assert.notEqual(moved, before);
+  // The merge is held to the head the suite passed on, and the branch is not there now.
+  const merge = await gitRoot(root, { args: ["merge", "--ff-only", "task/x"], slug: "x" }, { waitSeconds: 5 });
+  assert.equal(merge.ok, false);
+  assert.match((merge as { reason: string }).reason, new RegExp(`at ${moved}: journal x records no tested step at that commit`));
 });
 
 // @anchor gateCheckoutOwned

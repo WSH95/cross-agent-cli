@@ -4,12 +4,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { tmpdir } from "node:os";
 import { gitMutate } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { runCommand } from "../src/runcommand.ts";
 import type { GitRootResult } from "../src/gitroot.ts";
-import { readJournal } from "../src/journal.ts";
-import { update } from "../src/ledger.ts";
+import { appendStep, readJournal } from "../src/journal.ts";
+import { create, update } from "../src/ledger.ts";
+import { waiveReview } from "../src/review.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { git, gitShim, holderOf } from "./helpers/git.ts";
 import { layoutRoot, layouts, poll, project, reserve } from "./helpers/project.ts";
@@ -20,9 +22,13 @@ import type { LayoutName, LayoutRoot, TestProject } from "./helpers/project.ts";
 // test here runs real git against a real repository, because the whitelist exists to keep
 // a lead away from a repository it could otherwise reach in full.
 
-/** A project whose repository can commit: `git_root` and `git_mutate` both refuse `-c`. */
+/**
+ * A project whose repository can commit: `git_root` and `git_mutate` both refuse `-c`. Its
+ * suite is `none`, so the tests below stay about the verbs they name; the merge's own
+ * guards have their tests of their own.
+ */
 async function repository(t: TestContext): Promise<TestProject> {
-  const created = await project(t, { roles: {} }, [{ key: "implementer", workspace: "worktree" }]);
+  const created = await project(t, { roles: {}, project: { testCommand: "none" } }, [{ key: "implementer", workspace: "worktree" }]);
   await git(created.root, "config", "user.name", "Cross Agent Test");
   await git(created.root, "config", "user.email", "test@example.invalid");
   await git(created.root, "config", "commit.gpgSign", "false");
@@ -864,6 +870,8 @@ for (const layout of layouts) {
     assert.equal(accepted(await gitRoot(root, { args: ["rev-parse", "--abbrev-ref", "HEAD"] }, { waitSeconds: 5 })).stdout.trim(), "feature");
     accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "feature"], slug: "x" }, { waitSeconds: 5 }));
     accepted(await gitMutate(root, { slug: "x", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
+    const gate = await runCommand(root, { which: "test", where: directory, slug: "x" });
+    assert.equal(gate.ok, true, JSON.stringify(gate));
     const merge = accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/x"], slug: "x" }, { waitSeconds: 5 }));
     assert.equal(merge.after, await git(commonDir, "rev-parse", "task/x"));
     assert.equal(await git(commonDir, "rev-parse", "feature"), merge.after, "the merge landed on the root's own branch");
@@ -873,7 +881,7 @@ for (const layout of layouts) {
     accepted(await gitRoot(root, { args: ["worktree", "remove", directory], slug: "x" }, { waitSeconds: 5 }));
     accepted(await gitRoot(root, { args: ["branch", "-d", "task/x"], slug: "x" }, { waitSeconds: 5 }));
     assert.deepEqual(readJournal(root, "x")!.steps.map((step) => step.step),
-      ["worktree-created", "committed", "merged", "tests-passed", "worktree-removed", "branch-deleted"]);
+      ["worktree-created", "committed", "tested", "merged", "tests-passed", "worktree-removed", "branch-deleted"]);
     assert.equal(readJournal(root, "x")!.defaultBranch, "feature");
     assert.equal(await git(commonDir, "branch", "--list", "task/*"), "");
   });
@@ -1070,4 +1078,205 @@ test("worktree remove runs once per journal: a worktree at that path again is no
   assert.match(reason, /slug x/);
   assert.match(reason, /worktree-removed/);
   assert.equal(fs.existsSync(directory), true);
+});
+
+// The merge's two guards (design section 4): the configured suite passed on the branch head
+// in the gate's checkout, and, for a team task in a mode with a role that gates the merge,
+// every seat's finished review of that head ended clean, or a waiver names it.
+
+/** The config's `project` and `roles`, rewritten as an operator would edit them. */
+function configure(root: string, project: Record<string, string>, roles: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): void {
+  fs.writeFileSync(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles, project, ...extra }));
+}
+
+/** A task branch from the default branch's head as it stands, with one commit, through the loop's tools. */
+async function task(root: string, slug: string): Promise<{ directory: string; head: string }> {
+  const directory = path.join(root, ".worktrees", slug);
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", `task/${slug}`, directory, "main"], slug }, { waitSeconds: 5 }));
+  await commit(root, slug, `${slug}'s work`);
+  return { directory: fs.realpathSync(directory), head: await git(root, "rev-parse", `task/${slug}`) };
+}
+
+/** One more commit on a task's branch, through `git_mutate`. */
+async function commit(root: string, slug: string, message: string): Promise<void> {
+  const ran = await gitMutate(root, { slug, args: ["commit", "--allow-empty", "-m", message] }, { waitSeconds: 5 });
+  assert.equal(ran.ok, true, JSON.stringify(ran));
+}
+
+/** The gate on a task's branch head, as the loop's step 7 runs it. */
+async function gate(root: string, slug: string, directory: string): Promise<void> {
+  const ran = await runCommand(root, { which: "test", where: directory, slug });
+  assert.equal(ran.ok, true, JSON.stringify(ran));
+}
+
+const merge = (root: string, slug: string, options: { reviewRole?: string } = {}) =>
+  gitRoot(root, { args: ["merge", "--ff-only", `task/${slug}`], slug }, { waitSeconds: 5, ...options });
+
+// @anchor mergeNeedsTested
+test("a merge is refused without a tested step at the branch head, and accepted after one", async (t) => {
+  const { root } = await repository(t);
+  configure(root, { testCommand: "true" });
+  const first = await task(root, "a");
+  const untested = refusal(await merge(root, "a"));
+  assert.match(untested, new RegExp(`^git_root refuses to merge task/a at ${first.head}: journal a records no tested step at that commit`));
+  assert.match(untested, /run_command \{which: "test"/);
+  await gate(root, "a", first.directory);
+  assert.equal(accepted(await merge(root, "a")).after, first.head);
+
+  // A commit after the suite passed is a head the suite never saw.
+  const second = await task(root, "b");
+  await gate(root, "b", second.directory);
+  await commit(root, "b", "after the gate");
+  const moved = await git(root, "rev-parse", "task/b");
+  const stale = refusal(await merge(root, "b"));
+  assert.ok(stale.includes(moved) && stale.includes(`the suite last passed at ${second.head}`), stale);
+  // A suite that fails passes nothing.
+  configure(root, { testCommand: "false" });
+  const failed = await runCommand(root, { which: "test", where: second.directory, slug: "b" });
+  assert.equal(failed.ok && failed.exitCode, 1);
+  assert.match(refusal(await merge(root, "b")), /records no tested step at that commit/);
+  // No configured suite asks for nothing.
+  configure(root, { testCommand: "none" });
+  accepted(await merge(root, "b"));
+  assert.equal(readJournal(root, "b")!.steps.some((step) => step.step === "tested" && step.after === moved), false);
+});
+
+// @anchor mergeResolvesBranchOnce
+test("the merge, the incoming-tree check and the journal act on the branch's own head, whatever a same-named tag points at", async (t) => {
+  const { root } = await repository(t);
+  configure(root, { testCommand: "true" });
+  const { directory, head } = await task(root, "x");
+  await gate(root, "x", directory);
+  // A tag named like the task branch, on a commit that carries a host's configuration: git
+  // reads `refs/tags/<name>` before `refs/heads/<name>` wherever a bare name is given.
+  const side = path.join(fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-tagged-"))), "side");
+  t.after(() => fs.rmSync(path.dirname(side), { recursive: true, force: true }));
+  await git(root, "worktree", "add", "-b", "side", side, "main");
+  fs.writeFileSync(path.join(side, ".mcp.json"), '{"mcpServers": {"elsewhere": {"command": "/tmp/not-a-server"}}}\n');
+  await git(side, "add", ".mcp.json");
+  await git(side, "commit", "-m", "a host's configuration");
+  await git(root, "tag", "task/x", "side");
+  await git(root, "worktree", "remove", "--force", side);
+
+  const merged = accepted(await merge(root, "x"));
+  assert.equal(await git(root, "rev-parse", "main"), head, "the default branch moved to the branch's own head");
+  assert.equal(merged.after, head);
+  const journal = readJournal(root, "x")!;
+  assert.equal(journal.branchHead, head);
+  assert.equal(journal.steps.find((step) => step.step === "merged")!.after, head);
+  assert.equal(await git(root, "ls-tree", "--name-only", "main", "--", ".mcp.json"), "", "and nothing of the tag's tree came with it");
+});
+
+/** A project whose mode's `reviewer` gates the merge, read-only and seated many, bound to two seats. */
+async function gatedProject(t: TestContext): Promise<TestProject> {
+  const created = await project(t, {
+    roles: { reviewer: [{ engine: "grok" }, { engine: "codex" }] }, project: { testCommand: "true" },
+  }, [{ key: "reviewer", workspace: "worktree", sandboxDefault: "read-only", seats: "many", gates: "merge" }]);
+  for (const [key, value] of [["user.name", "Cross Agent Test"], ["user.email", "test@example.invalid"], ["commit.gpgSign", "false"]]) {
+    await git(created.root, "config", key, value);
+  }
+  return created;
+}
+
+/** A settled review of `head` in `cwd`, its result file ending on `text`. */
+async function review(root: string, cwd: string, head: string, seat: number | undefined, text: string, status: "done" | "failed" = "done"): Promise<string> {
+  const record = create(root, { role: "reviewer", brief: `review ${head} ${seat ?? "-"} ${text}`, cwd, engine: "grok", ...(seat === undefined ? {} : { seat }), underReview: head });
+  await update(root, record.id, { status: "running" });
+  await update(root, record.id, { status });
+  fs.writeFileSync(record.resultPath, text);
+  return record.id;
+}
+
+/** No review recorded at all, as at a task's first round. */
+function forgetReviews(root: string): void {
+  fs.rmSync(path.join(root, ".cross-agent", "tasks"), { recursive: true, force: true });
+}
+
+// @anchor mergeNeedsReviews
+test("a merge in a mode with a gating role is refused until every seat's finished review of the head ends no major issues", async (t) => {
+  const { root } = await gatedProject(t);
+  const base = await git(root, "rev-parse", "main");
+  const { directory, head } = await task(root, "r");
+  await gate(root, "r", directory);
+  const options = { reviewRole: "reviewer" };
+  const clean = "Nothing blocks this.\nVERDICT: no major issues\n";
+
+  const none = refusal(await merge(root, "r", options));
+  assert.equal(none, `git_root refuses to merge task/r at ${head}: reviewer#1 has no finished review of that commit; reviewer#2 has no finished review of that commit; record the user's waiver with waive_review or cross-agent waive r ${head}, or review again`);
+
+  await review(root, directory, head, 1, clean);
+  const adverse = await review(root, directory, head, 2, "One finding holds.\nVERDICT: major issues\n");
+  const blocked = refusal(await merge(root, "r", options));
+  assert.match(blocked, new RegExp(`reviewer#2 ended VERDICT: major issues \\(task ${adverse}\\)`));
+  assert.doesNotMatch(blocked, /reviewer#1/);
+
+  // A review of another commit, one that ends on no VERDICT line, and one that failed count
+  // for nothing; an adverse verdict at the head blocks it whatever else that seat said.
+  for (const second of [
+    () => review(root, directory, base, 2, clean),
+    () => review(root, directory, head, 2, "Looks fine to me."),
+    () => review(root, directory, head, 2, clean, "failed"),
+    async () => { await review(root, directory, head, 2, "VERDICT: major issues"); return review(root, directory, head, 2, clean); },
+  ]) {
+    forgetReviews(root);
+    await review(root, directory, head, 1, clean);
+    await second();
+    assert.match(refusal(await merge(root, "r", options)), /reviewer#2 /);
+  }
+  assert.match(refusal(await merge(root, "r", options)), /reviewer#2 ended VERDICT: major issues/);
+
+  forgetReviews(root);
+  await review(root, directory, head, 1, clean);
+  await review(root, directory, head, 2, clean);
+  accepted(await merge(root, "r", options));
+
+  // A role bound to one binding has one reviewer, with no seat.
+  configure(root, { testCommand: "true" }, { reviewer: { engine: "grok" } });
+  const single = await task(root, "s");
+  await gate(root, "s", single.directory);
+  await review(root, single.directory, single.head, 1, clean);
+  assert.match(refusal(await merge(root, "s", options)), /: reviewer has no finished review of that commit;/);
+  await review(root, single.directory, single.head, undefined, clean);
+  accepted(await merge(root, "s", options));
+});
+
+// @anchor oneShotNeedsTestsOnly
+test("in a gating mode a one-shot's branch merges on its tested step alone, and a team task's still needs every seat", async (t) => {
+  const { root } = await gatedProject(t);
+  const options = { reviewRole: "reviewer" };
+  // A one-shot's record is the one `delegate {worktree: true}` writes: its id is the slug,
+  // and it names the worktree, the branch and the slug it owns.
+  const siblingTask = await task(root, "teamtask");
+  const strayTask = await task(root, "stray");
+  const shot = await task(root, "oneshot");
+  create(root, { id: "oneshot", role: "consult", brief: "one change", cwd: shot.directory, engine: "codex",
+    worktree: { path: shot.directory, branch: "task/oneshot", slug: "oneshot" } });
+  create(root, { id: "stray", role: "consult", brief: "another", cwd: strayTask.directory, engine: "codex",
+    worktree: { path: strayTask.directory, branch: "task/elsewhere", slug: "stray" } });
+  for (const [slug, directory] of [["teamtask", siblingTask.directory], ["stray", strayTask.directory], ["oneshot", shot.directory]]) {
+    await gate(root, slug, directory);
+  }
+  for (const slug of ["teamtask", "stray"]) {
+    assert.match(refusal(await merge(root, slug, options)), /reviewer#1 has no finished review of that commit; reviewer#2/, slug);
+  }
+  accepted(await merge(root, "oneshot", options));
+});
+
+// @anchor mergeWaived
+test("a review-waived step at the branch head stands in for the reviews, and for that head alone", async (t) => {
+  const { root } = await gatedProject(t);
+  const options = { reviewRole: "reviewer" };
+  const first = await task(root, "w");
+  await gate(root, "w", first.directory);
+  const waived = await waiveReview(root, { slug: "w", commit: first.head, by: ["operator", "cli"] }, { waitSeconds: 5 });
+  assert.equal(waived.ok, true, JSON.stringify(waived));
+  accepted(await merge(root, "w", options));
+  assert.deepEqual(readJournal(root, "w")!.steps.map((step) => step.step), ["worktree-created", "committed", "tested", "review-waived", "merged"]);
+
+  // A waiver names one commit: a head the branch moved to since is not it.
+  const second = await task(root, "v");
+  assert.equal((await waiveReview(root, { slug: "v", commit: second.head, by: ["operator", "cli"] }, { waitSeconds: 5 })).ok, true);
+  await commit(root, "v", "after the waiver");
+  await gate(root, "v", second.directory);
+  assert.match(refusal(await merge(root, "v", options)), /reviewer#1 has no finished review of that commit/);
 });

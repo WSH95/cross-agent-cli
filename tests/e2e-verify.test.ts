@@ -145,6 +145,9 @@ interface RecordSpec {
    * given neither gets one holding the commands its own log ran, as Codex writes both.
    */
   rollout?: string | null;
+  /** A seated role's seat, and the head a review that gates the merge was delegated at. */
+  seat?: number;
+  underReview?: string;
 }
 
 /**
@@ -204,6 +207,8 @@ async function project(
     await writeFile(path.join(root, ".cross-agent", "tasks", `${id}.json`), JSON.stringify({
       id, role: spec.role ?? "implementer", engine, status: "done", depth: spec.depth ?? 1,
       ...(spec.parentTaskId === undefined ? {} : { parentTaskId: spec.parentTaskId }),
+      ...(spec.seat === undefined ? {} : { seat: spec.seat }),
+      ...(spec.underReview === undefined ? {} : { underReview: spec.underReview }),
       ...(sessionId === undefined ? {} : { sessionId }),
       createdAt: n, updatedAt: n + 1,
       logPath, resultPath: path.join(root, ".cross-agent", "tasks", `${id}.out`),
@@ -234,6 +239,22 @@ function row(out: string, name: string): string {
 
 const scan = "no delegate call and no engine launch in any specialist transcript";
 const journal = "the journal shows every git step";
+
+// Compatibility: the guards' journal steps and the seated reviewers' records are read as the
+// verifier already reads steps between the loop's own and records of any role.
+test("the journal row tolerates tested and review-waived steps, and seated reviewer records read as records like any other", async (t) => {
+  const steps = ["worktree-created", "git", "committed", "tested", "review-waived", "tested", "merged", "tests-passed", "worktree-removed", "branch-deleted"]
+    .map((step) => ({ step }));
+  const head = "0123456789abcdef0123456789abcdef01234567";
+  const root = await project(t, {
+    impl: { engine: "claude", body: claudeLog("true") },
+    r1: { engine: "claude", role: "code-reviewer", seat: 1, underReview: head, body: claudeLog("git diff main...HEAD") },
+    r2: { engine: "grok", role: "code-reviewer", seat: 2, underReview: head, body: grokBash("git log") },
+  }, { steps });
+  const { out } = await run(root);
+  assert.equal(verdict(out, "one record per delegation, each with its native log"), "pass", out);
+  assert.equal(verdict(out, journal), "pass", out);
+});
 
 test("a clean transcript in each engine's own shape passes the scan", async (t) => {
   const root = await project(t, {

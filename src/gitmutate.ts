@@ -10,8 +10,9 @@ import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
 import { projectLock } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
-import { reservations, reservedBy } from "./reservation.ts";
+import { canonicalPath, reservations, reservedBy } from "./reservation.ts";
 import type { Reservations } from "./reservation.ts";
+import { reviewHold } from "./review.ts";
 import { gitEnvironment, locateRepository, rootWriteFault, verifyWorktree } from "./worktree.ts";
 import type { Repository } from "./worktree.ts";
 
@@ -460,6 +461,11 @@ async function mutate(
   if (holder !== null) {
     return { ok: false, reason: `${target} is reserved by task ${holder.id} (${holder.status}); wait or cancel first` };
   }
+  // A review that gates the merge reads this tree at the head it was delegated at, and
+  // reserves nothing: until it settles, no mutation here moves that head or the tree under
+  // it (`src/review.ts#reviewHold`).
+  const reviewing = reviewHold(projectRoot, canonicalPath(target));
+  if (reviewing !== null) return { ok: false, reason: reviewing };
   if (known.unknown.length > 0) {
     const files = known.unknown.map((entry) => `${entry.file} (${entry.reason})`).join(", ");
     return {

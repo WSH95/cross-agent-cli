@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, repositoryLockWait } from "./config.ts";
+import type { CrossAgentConfig } from "./config.ts";
 import { GitRunError, globalOptions, hostConfigPathspecs, hostTreeLinks, revision, run } from "./gitmutate.ts";
 import { appendStep, readJournal, recordedTip } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
@@ -8,6 +9,7 @@ import { projectLock } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { reservations, reservedBy } from "./reservation.ts";
+import { reviewFault } from "./review.ts";
 import { locateRepository, rootWriteFault } from "./worktree.ts";
 
 export interface GitRootRequest {
@@ -30,6 +32,12 @@ export interface GitRootOptions {
   dir?: string;
   /** The active mode's `git.branchPattern`, which a new task branch must match. */
   branchPattern?: string;
+  /**
+   * The mode's role whose finished reviews gate the merge, if it declares one
+   * (`src/review.ts#reviewFault`). A caller with no mode passes none, and its merges are
+   * held to the suite alone.
+   */
+  reviewRole?: string;
   now?: number;
 }
 
@@ -227,6 +235,8 @@ async function within(
 interface Parts {
   branch?: string;
   ref?: string;
+  /** Where the branch a merge names sat in `args`, so what merges is the commit that was judged. */
+  refAt?: number;
   dir?: string;
   /** Where the directory sat in `args`, so what runs is the path that was judged. */
   dirAt?: number;
@@ -270,6 +280,7 @@ async function judge(
         return { reason: `git_root acts on branches matching this mode's branch pattern ${JSON.stringify(pattern)}; ${JSON.stringify(value)} does not` };
       }
       parts.ref = value;
+      parts.refAt = call.at[index];
     }
     if ((kind === "read-ref" || kind === "list-pattern") && !matchesPattern(value, pattern) && value !== defaultBranch) {
       return { reason: `git_root reads a branch matching this mode's branch pattern ${JSON.stringify(pattern)} or the default branch ${defaultBranch}; ${JSON.stringify(value)} is neither` };
@@ -392,12 +403,13 @@ export async function gitRoot(
     }
   }
 
-  let defaultBranch: string;
+  let config: CrossAgentConfig;
   try {
-    defaultBranch = loadConfig(projectRoot).project.defaultBranch;
+    config = loadConfig(projectRoot);
   } catch (error) {
     return { ok: false, reason: message(error) };
   }
+  const defaultBranch = config.project.defaultBranch;
   const located = await locateRepository(projectRoot);
   if ("reason" in located) return { ok: false, reason: located.reason };
   // A verb that journals a step writes the root; a read and `rebase --abort`, which undoes
@@ -454,7 +466,7 @@ export async function gitRoot(
         }
       }
       try {
-        return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim, shared });
+        return await execute(projectRoot, request, options, { parsed, parts, gitDir, workTree, config, defaultBranch, slug, lock, claim, shared });
       } finally {
         await shared?.release();
       }
@@ -474,6 +486,8 @@ interface Held {
   parts: Parts;
   gitDir: string;
   workTree: string;
+  /** The config this call loaded once: the default branch, and the suite the merge is held to. */
+  config: CrossAgentConfig;
   defaultBranch: string;
   slug?: string;
   lock: Lock;
@@ -497,13 +511,14 @@ interface Held {
  * refusal of a commit only the early warning. Any symbolic link among the four or below
  * them in the incoming tree is refused, even unchanged: host configuration must be regular
  * files. Only the four pathspecs are listed for links (`src/gitmutate.ts#hostTreeLinks`).
- * Every path is named, so the repair is whole.
+ * Every path is named, so the repair is whole. Both sides are the commits the merge resolved
+ * once, `before` and `branchHead`, never a name git would resolve again.
  */
 async function smuggled(
-  gitDir: string, workTree: string, defaultBranch: string, ref: string, dir: string,
+  gitDir: string, workTree: string, before: string, branchHead: string, ref: string, dir: string,
 ): Promise<string | null> {
-  const links = await hostTreeLinks(gitDir, workTree, ref);
-  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${defaultBranch}...${ref}`, "--", ".cross-agent", dir, ...hostConfigPathspecs]);
+  const links = await hostTreeLinks(gitDir, workTree, branchHead);
+  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${before}...${branchHead}`, "--", ".cross-agent", dir, ...hostConfigPathspecs]);
   if (ran.exitCode !== 0) return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
   // A path that is both a change and a link is named once, as the link.
   const linkNames = new Set(links);
@@ -521,7 +536,7 @@ async function smuggled(
 /** The journal's checks, the command and its step, with `git.lock` held for all of them. */
 async function execute(
   projectRoot: string, request: GitRootRequest, options: GitRootOptions,
-  { parsed, parts, gitDir, workTree, defaultBranch, slug, lock, claim, shared }: Held,
+  { parsed, parts, gitDir, workTree, config, defaultBranch, slug, lock, claim, shared }: Held,
 ): Promise<GitRootResult> {
   const { verb } = parsed;
   // Read under the lock, because two first calls on one slug would otherwise both find no
@@ -561,17 +576,40 @@ async function execute(
     if (head.exitCode !== 0 || on !== defaultBranch) {
       return { ok: false, reason: `git_root merges into the root's HEAD, which is on ${on || "no branch"}; check out ${defaultBranch} there first` };
     }
-    const carried = await smuggled(gitDir, workTree, defaultBranch, parts.ref!, options.dir ?? ".worktrees");
-    if (carried !== null) return { ok: false, reason: carried };
-    // The head this call is about to merge, read inside the same lock as the merge itself.
+    // The two commits this merge acts on, resolved once, inside the same locks as the merge
+    // itself, and what every check below, the merge and its step all read: git resolves a
+    // bare name to `refs/tags/<name>` before `refs/heads/<name>`, so a tag named like the
+    // task branch would otherwise be what merged while the checks read the branch.
     branchHead = await revision(gitDir, workTree, parts.ref!);
+    if (branchHead === undefined) return { ok: false, reason: `git_root refuses to merge ${parts.ref}: there is no branch ${parts.ref}` };
+    if (before === undefined) return { ok: false, reason: `git_root refuses to merge ${parts.ref}: the default branch ${defaultBranch} has no commit` };
+    const carried = await smuggled(gitDir, workTree, before, branchHead, parts.ref!, options.dir ?? ".worktrees");
+    if (carried !== null) return { ok: false, reason: carried };
+    // The first guard: the configured suite passed on this exact commit, in the gate's own
+    // checkout of it (`src/runcommand.ts#runCommand`), read from the journal the server wrote.
+    if (config.project.testCommand !== "none" && !journal!.steps.some((step) => step.step === "tested" && step.after === branchHead)) {
+      const last = journal!.steps.filter((step) => step.step === "tested").at(-1)?.after;
+      return {
+        ok: false,
+        reason: `git_root refuses to merge ${parts.ref} at ${branchHead}: journal ${slug} records no tested step at that commit (${last === undefined ? "the suite has never passed on this branch" : `the suite last passed at ${last}`}); run run_command {which: "test", where: ${JSON.stringify(journal!.worktree ?? "<worktree path>")}, slug: ${JSON.stringify(slug)}} on the branch head first`,
+      };
+    }
+    // The second guard, for a team task in a mode with a role that gates the merge: every
+    // seat's finished review of this commit ends clean, or a waiver names it.
+    if (options.reviewRole !== undefined) {
+      const unreviewed = reviewFault(projectRoot, config, options.reviewRole, slug!, journal!, branchHead);
+      if (unreviewed !== null) return { ok: false, reason: unreviewed };
+    }
   }
 
   // What the arguments were judged as is what git is given: the directory positional is
-  // the resolved path, not the token the caller wrote (design section 4).
-  const argv = parts.dir === undefined || parts.dirAt === undefined
-    ? request.args
-    : request.args.map((argument, index) => (index === parts.dirAt ? parts.dir! : argument));
+  // the resolved path, not the token the caller wrote, and the branch a merge names is the
+  // commit every check above read (design section 4).
+  const argv = request.args.map((argument, index) => {
+    if (parts.dir !== undefined && index === parts.dirAt) return parts.dir;
+    if (verb.step === "merged" && index === parts.refAt) return branchHead!;
+    return argument;
+  });
   const ran = await run(gitDir, workTree, argv);
   if (ran.exitCode !== 0) {
     return {

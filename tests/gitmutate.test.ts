@@ -14,7 +14,7 @@ import { gitMutate, hostConfigPaths, uncommitted } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
-import { update } from "../src/ledger.ts";
+import { create, update, writeSpec } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { gitShim, holderOf } from "./helpers/git.ts";
@@ -239,6 +239,28 @@ test("git_mutate refuses a workspace an unsettled writable task is holding", asy
   assert.equal((await update(root, record.id, { status: "done" })).applied, true);
   accepted(await gitMutate(root, { slug: "held", args: ["commit", "--allow-empty", "-m", "after it settled"] }, { waitSeconds: 5 }));
   assert.equal(await git(root, "rev-list", "--count", "task/held"), "2");
+});
+
+// @anchor reviewFreeze
+test("git_mutate refuses a worktree while a gating review is active in it", async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await realpath(await add("frozen"));
+  const head = await git(worktree, "rev-parse", "HEAD");
+  // A review reserves nothing, so the hold on what it reads is a rule of its own: the head it
+  // was delegated at stays the head until it settles.
+  const review = create(root, { role: "code-reviewer", brief: "review", cwd: worktree, engine: "codex", seat: 1, underReview: head });
+  // Read-only by its spec, as every seat of a review is, so the reservation passes it by.
+  writeSpec(root, review.id, {
+    role: "code-reviewer", brief: "review", rolePrompt: "prompt", cwd: worktree, sandbox: { mode: "read-only", profile: "read-only" },
+    sessionId: "session", denyTargets: [], env: {}, scratchDir: worktree, engine: "codex", adapterModule: "/adapters/codex.ts",
+  });
+  assert.equal((await update(root, review.id, { status: "running" })).applied, true);
+  const reason = refusal(await gitMutate(root, { slug: "frozen", args: ["commit", "--allow-empty", "-m", "during the review"] }, { waitSeconds: 5 }));
+  assert.equal(reason, `${worktree} is under review by task ${review.id} (running) at ${head}; wait or cancel first`);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing ran");
+  assert.equal(readJournal(root, "frozen"), null);
+  assert.equal((await update(root, review.id, { status: "done" })).applied, true);
+  accepted(await gitMutate(root, { slug: "frozen", args: ["commit", "--allow-empty", "-m", "after the review"] }, { waitSeconds: 5 }));
 });
 
 // @anchor recordCannotBeRead
