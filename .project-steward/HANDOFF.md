@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T22:08:37Z
+updated_at: 2026-10-03T23:26:41Z
 updated_by: claude
 session_status: active
 branch: main
@@ -83,15 +83,21 @@ The reset plan went through four reviews: 5, 3, 2 and 2 majors. At the plateau t
 
 It is implemented in `.worktrees/team-modes` (`task/team-modes`): 13 commits, `92b35be..c3bae4c`, with 991 tests (990 pass, 1 skipped) and 0 citation misses.
 
-Code review round 1 (`task-15-findings-round-1.md`) found:
-- **3 Critical, all in the setup marker:**
-  - it is cleared when the shell exits while its group still lives;
-  - a setup runs unmarked if the server dies before the marker is written, or if the process identity cannot be read;
-  - a late cleanup can delete another setup's marker.
-- **1 Important:** `always-ask` is skipped when only Minor rows remain after the resolver.
-- **3 Minor.**
+**Code review** (`task-15-findings-round-{1,2}.md`):
+- **Round 1** found 3 Critical (the setup marker), 1 Important (`always-ask` after the resolver) and 3 Minor. Fix round 1 fixed all seven.
+- **Round 2** found nothing Critical or Important: the majors went from 4 to 0. A wrap-up fixed its two Minor findings, and there was no escalation.
 
-Fix round 1 is running. Next: the controller's gates and commit, round 2's review, then E11 and the merge.
+**Merged:** `task/team-modes` was rebased onto `main` and fast-forwarded to `7de15c0`: 15 commits, 1006 tests (1005 pass, 1 skipped), 1608 citations with 0 misses.
+
+The stray empty `/tmp/.git` comes from Codex's own Linux sandbox; the cause is on bead `atc-s96.106`. Remove it before running the suite: while it exists, the suite fails or hangs.
+
+**Next:**
+1. the root suite's rerun;
+2. E11 on cost-effective models only (`task-15-e11-brief.md`);
+3. the `VERIFY.md` section;
+4. the `AGENTS.md` diff, for the user's approval;
+5. close `.104`;
+6. remove the task worktree.
 
 A stray empty `/tmp/.git`, made by an unknown process, broke plain `npm test`; it was removed. It exposed a robustness bug in worktree projects: an invalid `.git` in an ancestor makes every project below it refuse. That is filed as `atc-s96.106` (P2). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
 

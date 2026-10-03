@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T23:26:41Z — claude
+[auto-checkpoint] atc-s96.104 merged: review round 2 clean (majors 4 → 0), wrap-up done, main fast-forwarded to 7de15c0 (15 commits; 1006/1005/1 skipped; 1608 citations). Stray /tmp/.git traced to Codex's sandbox (atc-s96.106). Next: root suite rerun, E11, VERIFY.md.
+
 ### 2026-10-03T22:08:37Z — claude
 [auto-checkpoint] atc-s96.104 code review round 1: 3 Critical (setup marker), 1 Important (always-ask after the resolver), 3 Minor, all in scope (task-15-findings-round-1.md); fix round 1 running.
 
