@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T00:06:53Z — claude
+atc-s96.97 merged (fb0d050): a branch worktree, or a bare repository's worktree, as a project of its own; three review rounds and a wrap-up; E10 8 pass in both projects; npm test 933/932/1 skipped, citations 1458; bead closed; worktree archived and removed; the AGENTS.md diff awaits the user.
+
 ### 2026-10-02T23:45:19Z — claude
 [auto-checkpoint] atc-s96.97: code review round 3 found no Critical or Important issue, so the review loop ends; a wrap-up of its Minor findings is running, then the merge. Follow-up `.102` filed.
 

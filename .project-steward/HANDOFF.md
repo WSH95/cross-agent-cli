@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-02T23:45:19Z
+updated_at: 2026-10-03T00:06:53Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -45,58 +45,58 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-**`atc-s96.97`: a linked worktree, or a bare repository's worktree, as a cross-agent project of
-its own,** so the user can develop several branches of one repository at once.
+None. **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
+A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when
+`cross-agent init` is run in it, so several branches of one repository can each run their own
+loop at once (README, "Several branches at once").
 
-The user's decisions:
-- a worktree opts in by running `cross-agent init` in it;
-- bare repositories are supported;
-- `init` copies the main project's setup, and the main checkout's Grok attach file;
-- a new `cross-agent git-root` verb.
+What it does:
+- `init` copies the main checkout's config, or `--from <dir>`'s, onto the worktree's own branch,
+  and copies the Grok attach;
+- the repository is located from outside the candidate, so a task worktree is never a project root;
+- writes at a root that is not the main checkout need the opt-in;
+- `<commonDir>/cross-agent.lock` serializes the projects' git;
+- protected paths are set per root kind;
+- closed journals are terminal, and `branch -d` holds a branch to its recorded tip;
+- a new `cross-agent git-root` verb;
+- `describe_mode` carries `projectRoot`;
+- verifier rows 1 and 2 are scoped to the project.
 
-The plan was reviewed in five rounds and approved; every issue's resolvability is stated in it. It is
-`.superpowers/sdd/the-development-of-this-calm-planet/task-13-brief.md`.
+How it was checked:
+- **Review:** three review rounds and a wrap-up, with no escalation.
+- **E10:** the sample's main checkout and a `feature/dotted` worktree each ran one
+  `dev-team-engine` task at the same time, every engine `claude-sonnet-5`. Both verdicts read
+  8 pass, and the containment probe was refused by the sandbox (`docs/probes.md#worktreeProjects`,
+  `VERIFY.md` "T13").
+- **The suite:** `npm test` at the root ran 933 tests: 932 pass, 1 skipped.
+- **Citations:** 1458, none by line.
 
-The implementation landed in `.worktrees/worktree-projects` on `task/worktree-projects`, from `main`
-at `66e8815`:
-- 15 commits (`98b0b4f..3760c38`);
-- `npm test` 911 / 910 / 0 fail / 1 skipped;
-- 1424 citations, none by line.
-
-The follow-ups the plan names are filed as `.98`–`.101`.
-
-Code review round 1 found no Critical findings: two Important and eleven Minor, all resolvable. Fix
-round 1 landed (`3760c38..2276ff4`, 923 / 922 / 1 skipped; 1440 citations). It restores single-checkout
-behaviour where the first pass had changed it. Round 2 found no Critical: four Important (lock loss
-on cleanup paths, `spawn.lock` re-read before the record, the verifier beside a separated main, a
-reused branch name after a failed closing-journal append) and five Minor. Fix round 2 landed
-(`2276ff4..7907167`, 932 / 931 / 1 skipped; 1450 citations). E10 passed: the sample's main
-checkout and a `feature/dotted` worktree initialized as its own project each ran one
-`dev-team-engine` task at the same time, every engine `claude-sonnet-5`. Both verdicts read 8 pass,
-each merge landed on its own branch, and a read-only role at the branch root could write neither
-the shared git directory nor its `.git` (`docs/probes.md#worktreeProjects` on the task branch;
-evidence `~/.cache/agent-team/probe-logs/t13-e10/`). The sample ends on `main` at `ba496c7`, with
-`feature/dotted` kept at `0ed8097`. The round-3 re-review found no Critical or Important issue, which
-ends the review loop. A wrap-up of its Minor findings (wording, two numbers in the record, the verifier
-answering `?` for an unreadable sibling) is running, then the merge. `.102` was filed: `describe_mode`
-should warn when the server's own working directory lies in another initialized project.
+The task worktree is removed, and its ignored files are archived in
+`~/.cache/agent-team/probe-logs/t13-worktree-state/`.
 
 ## Next steps
 
 1. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
-   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read), `.97` (below);
+   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-2. **A linked worktree as its own project** (`atc-s96.97`, P3): the user's need to develop several branches of one repository at once, a worktree per branch. Today every worktree of a repository is one project anchored at the main checkout, and the workaround is a clone per branch.
+2. **The worktree-project follow-ups:**
+   - `.98`: cancelling a running git child;
+   - `.99`: worktree projects inside the main checkout;
+   - `.100`: writes at a separated main or a submodule;
+   - `.101`: widen `nameFault`;
+   - `.102`: `describe_mode` warns when the server's own working directory lies in another initialized project.
 
 ## Blockers
 
-None. The `AGENTS.md` diff was approved and applied on 2026-10-02.
+The `AGENTS.md` diff for the worktree projects (its Layout and Run lines) waits for the user's
+approval. It is `.superpowers/sdd/the-development-of-this-calm-planet/task-13-agents-md.diff`, which
+`git apply --check` accepts on `main`.
 
 ## Key files
 
 - `docs/design.md`: the authority — "The lead model", sections 1 to 10, the work plan with what landed per row, and Verification.
-- `docs/probes.md`: every probe and end-to-end run with its transcripts. It covers P1–P10, I1, I2 and E1–E9; T12's fix rounds are `#t12Fix1`, `#t12Fix2` and `#t12Fix3`.
+- `docs/probes.md`: every probe and end-to-end run with its transcripts. It covers P1–P10, I1, I2 and E1–E10; T12's fix rounds are `#t12Fix1`, `#t12Fix2` and `#t12Fix3`, and E10 is `#worktreeProjects`.
 - `src/`:
   - the top level: `server.ts`, `authority.ts`, `project.ts`, `delegate.ts`, `tasks.ts`, `wait.ts`, `mailbox.ts`, `modes.ts`, `cli.ts`, `gitroot.ts`, `runcommand.ts`, `config.ts`, `ledger.ts`, `locks.ts`, `process.ts`, `reconcile.ts`, `worktree.ts`, `reservation.ts`, `gitmutate.ts`, `journal.ts`, `runner.ts`, `guard.ts`;
   - `engines/`: `types.ts`, `spawn.ts`, `registry.ts`, `binaries.ts`, `text.ts`, `claude.ts`, `codex.ts`, `grok.ts`;
@@ -116,7 +116,7 @@ None. The `AGENTS.md` diff was approved and applied on 2026-10-02.
   - `.project-steward/DECISIONS.md`: 0010, the rulings of M1–M3, and 0011, the go or no-go with its conditions, limitations and deferred beads;
   - the plan, `~/.claude/plans/the-development-of-this-calm-planet.md`.
 - The close's raw evidence: `~/.cache/agent-team/probe-logs/close-2026-10-02/` (`fix1/`, `fix2/`, `wrapup/`, `e9/`, `worktree-state/`).
-- The sample, `~/.cache/agent-team/cross-agent-e2e/slugkit`: `main` at `5f391d4`, 109 tests, 51 records, in `dev-team-engine` as E7 and E9 left it. Its `.grok/config.toml` names this checkout.
+- The sample, `~/.cache/agent-team/cross-agent-e2e/slugkit`: `main` at `ba496c7`, 113 tests, in `dev-team-engine` as E7 and E9 left it (E10 switched it to all-Claude and restored it `cmp`-equal), and `feature/dotted` kept at `0ed8097`. Its `.grok/config.toml` names this checkout.
 
 ## Tried and rejected
 
