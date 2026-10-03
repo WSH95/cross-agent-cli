@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T17:47:55Z — claude
+[auto-checkpoint] atc-s96.104 reset plan converging (majors 5 → 3, none introduced); revision 2: guard 1 tests a detached checkout of the branch head; gating reviews refuse a dirty worktree; round 3 running.
+
 ### 2026-10-03T16:58:20Z — claude
 [auto-checkpoint] atc-s96.104 reset: six non-converging plan rounds → a smaller plan with two server-side merge guards (passing tests and a complete clean review at the branch head, or a waiver); the user added convergence rules to the built-in team loop and confirmed the re-review after a wrap-up fix and the lead's waiver under lead-decides; review of the reset plan running.
 
