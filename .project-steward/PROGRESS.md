@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T22:08:37Z — claude
+[auto-checkpoint] atc-s96.104 code review round 1: 3 Critical (setup marker), 1 Important (always-ask after the resolver), 3 Minor, all in scope (task-15-findings-round-1.md); fix round 1 running.
+
 ### 2026-10-03T21:39:14Z — claude
 [auto-checkpoint] atc-s96.104 implemented (92b35be..c3bae4c, 13 commits; 991/990/1 skipped); code review next. atc-s96.106 filed: a stray invalid .git in an ancestor refuses every project below it.
 
