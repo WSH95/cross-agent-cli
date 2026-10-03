@@ -5,8 +5,9 @@ skill — that runs headless `claude`, `codex`, and `grok` processes as a team
 from any host that can attach an MCP server and a skill (Claude Code, Codex,
 and Grok today). A team is a *mode*: roles, a lead loop, and a git policy,
 kept as data under `modes/`; `dev-team` (planner, plan reviewer,
-implementer, code reviewer, in git worktrees), `dev-team-engine` (the same
-team with its loop in a lead the server launches) and `solo` are built in.
+implementer, as many code reviewer seats as the config binds, and a resolver,
+in git worktrees), `dev-team-engine` (the same team with its loop in a lead
+the server launches) and `solo` are built in.
 The design in `docs/design.md` is authoritative; `docs/probes.md` records what
 each engine CLI was observed to do.
 
@@ -40,8 +41,8 @@ Shipped:
 - `src/modes.ts`: the mode loader, `describe_mode`'s payload, the built-in
   `consult` role, and `builtInModesDir`.
 - `src/cli.ts`: the operator CLI — `init`, `modes`, `tasks`, `show`, `log`,
-  `cancel`, `verify-worktree`, `git`, `git-root`, `journal`, `list-asks`, `answer`
-  and `report` on one verb table, each calling the function its tool calls, with
+  `cancel`, `verify-worktree`, `git`, `git-root`, `journal`, `waive`, `list-asks`,
+  `answer` and `report` on one verb table, each calling the function its tool calls, with
   `--project`, `--json` and `--help` on every verb and one exit protocol (0 ok,
   1 error, 2 usage, 3 precondition, 4 still running, 5 needs the operator, 6
   stalled); its reads write nothing, and a verb that writes refuses inside a
@@ -59,7 +60,11 @@ Shipped:
   lock), `src/gitroot.ts` (`git_root`: one whitelisted verb at the project root
   under `git.lock`, and the repository lock for a verb that changes it),
   `src/runcommand.ts` (`run_command`: the configured test or setup
-  command by selector), `src/journal.ts` (the per-task git journal),
+  command by selector; a worktree test run tests a detached checkout of the
+  branch head under `.cross-agent/gate/` and journals `tested`),
+  `src/journal.ts` (the per-task git journal), `src/review.ts` (the merge's
+  review guard: the verdict a review's result ends on, the head a review
+  covered, the hold on a reviewed worktree, the setup marker, the waiver),
   `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,
   lineage, duplicates, deny targets, child env): one file per concern, as
   in the design.
