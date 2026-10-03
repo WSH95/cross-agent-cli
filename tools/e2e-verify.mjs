@@ -302,7 +302,7 @@ const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id"
 // shape are evidence this build cannot read, whatever their input says (task 12, fix round 1).
 const contentBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
 const serverTools = new Set(["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel",
-  "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "list_asks", "answer", "ask"]);
+  "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review", "list_asks", "answer", "ask"]);
 const engineTools = new Map([
   ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup"])],
   ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool"])],

@@ -17,6 +17,7 @@ import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
 import type { EffectiveGitPolicy, Mode, ModeLead, Workspace } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule, parseFlags } from "./project.ts";
+import { waiveReview } from "./review.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
 import { enclosingWorktree, locateRepository, nestedReason, ownGit, verifyWorktree } from "./worktree.ts";
@@ -791,15 +792,19 @@ const gitRootVerb: Verb = {
   async run(parsed, context) {
     const found = await project(parsed, context);
     if ("reason" in found) return refused(found.reason);
-    let policy: EffectiveGitPolicy;
+    let mode: Mode;
     try {
-      policy = gitPolicy(loadConfigWithMode(found.root).mode);
+      mode = loadConfigWithMode(found.root).mode;
     } catch (error) {
       return refused(message(error));
     }
+    const policy = gitPolicy(mode);
+    // Held to the mode's review guard as the tool is: the operator's merge is the same merge.
+    const reviewRole = mode.roles.find((role) => role.gates === "merge")?.key;
     const slug = parsed.values["--slug"];
     return gitAnswer(await gitRoot(found.root, { args: parsed.rest, ...(slug === undefined ? {} : { slug }) }, {
       waitSeconds: lockWaitSeconds(found.root), dir: policy.worktreeDir, branchPattern: policy.branchPattern,
+      ...(reviewRole === undefined ? {} : { reviewRole }),
     }));
   },
 };
@@ -838,6 +843,39 @@ const journalVerb: Verb = {
       ...(journal.branchHead === undefined ? [] : [`branchHead: ${journal.branchHead}\n`]),
     ];
     return { code: EXIT.ok, document: journal, text: `${fields.join("")}steps:\n${journalSteps(journal).map((line) => `  ${line}\n`).join("")}` };
+  },
+};
+
+const waiveVerb: Verb = {
+  usage: "cross-agent waive <slug> <commit> [--project <root>]",
+  summary: "record your waiver of the merge's review guard for a task's branch head, as waive_review does",
+  positionals: ["slug", "commit"],
+  flags: {},
+  // A commit is hex, the head's own SHA or an abbreviation of it; anything else is a line
+  // this build cannot read, and whether hex names the head is the waiver's to say.
+  check: (parsed) => (/^[0-9a-f]+$/.test(parsed.positionals[1]) ? null
+    : `the commit is the branch head's SHA, or an abbreviation of it, in hex, not ${JSON.stringify(parsed.positionals[1])}`),
+  writes: true,
+  async run(parsed, context) {
+    const found = await project(parsed, context);
+    if ("reason" in found) return refused(found.reason);
+    let mode: Mode;
+    try {
+      mode = loadConfigWithMode(found.root).mode;
+    } catch (error) {
+      return refused(message(error));
+    }
+    if (!mode.roles.some((role) => role.gates === "merge")) {
+      return refused(`mode ${mode.id} has no role that gates the merge, so nothing is gated and there is no review to waive`);
+    }
+    const [slug, commit] = parsed.positionals;
+    const waived = await waiveReview(found.root, { slug, commit, by: ["operator", "cli"] }, { waitSeconds: lockWaitSeconds(found.root) });
+    if (!waived.ok) return refused(waived.reason, waived);
+    const branch = readJournal(found.root, slug)?.branch ?? slug;
+    return {
+      code: EXIT.ok, document: waived.journal,
+      text: `cross-agent: waived the review of ${branch} at ${waived.journal.after} for slug ${slug}\n`,
+    };
   },
 };
 
@@ -993,6 +1031,7 @@ const verbs: Record<string, Verb> = {
   git: gitVerb,
   "git-root": gitRootVerb,
   journal: journalVerb,
+  waive: waiveVerb,
   "list-asks": listAsksVerb,
   answer: answerVerb,
   report: reportVerb,

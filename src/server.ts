@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { resolveAuthority } from "./authority.ts";
 import type { Authority, Row } from "./authority.ts";
-import { effectiveMaxDepth, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, roleProfile } from "./config.ts";
+import { effectiveMaxDepth, isSeated, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, roleProfile, seatsOf } from "./config.ts";
 import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
 import { gitMutate } from "./gitmutate.ts";
@@ -12,6 +12,7 @@ import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
+import { waiveReview } from "./review.ts";
 import { answerAsk, ask, askStatuses, lineageAsks, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
@@ -307,6 +308,8 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
   // The mode's own policy, or the implicit one its one-shots use: what `git_mutate` and
   // `git_root` judge a path and a branch against, and never undefined.
   const policy = gitPolicy(mode);
+  // The role whose finished reviews the merge is held to, where the mode declares one.
+  const reviewRole = mode.roles.find((role) => role.gates === "merge")?.key;
   return [
     {
       name: "verify_worktree",
@@ -376,6 +379,7 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
         return answer(await gitRoot(projectRoot, request, {
           waitSeconds: lockWaitSeconds(projectRoot),
           dir: policy.worktreeDir, branchPattern: policy.branchPattern,
+          ...(reviewRole === undefined ? {} : { reviewRole }),
         }));
       },
     },
@@ -412,6 +416,43 @@ function worktreeTools(projectRoot: string, mode: Mode): ToolDefinition[] {
         // The command runs one step below the caller in the delegation chain, so a server
         // it starts is a specialist and never the operator (design section 5, layer 2).
         return answer(await runCommand(projectRoot, request, { depth: context.authority.depth }));
+      },
+    },
+    {
+      name: "waive_review",
+      description: "Record the waiver of the merge's review guard for a task's branch head, as a review-waived step in its journal: git_root merge then takes that head without every seat's clean review. The commit must name the branch head as it stands. The operator's, and a lead's only under review.afterResolver lead-decides once every seat has finished its review of that head.",
+      inputSchema: {
+        type: "object",
+        properties: { slug: { type: "string" }, commit: { type: "string" } },
+        required: ["slug", "commit"],
+      },
+      // The lead row is offered it, and `waiveReview` holds that row to its own rule.
+      rows: ["operator", "lead"],
+      handler: async (args, context) => {
+        const values = fields(args, "waive_review");
+        const slug = requiredString(values, "slug", "waive_review");
+        const commit = requiredString(values, "commit", "waive_review");
+        if (reviewRole === undefined) {
+          return answer({ ok: false, reason: `mode ${mode.id} has no role that gates the merge, so nothing is gated and there is no review to waive` });
+        }
+        const drift = driftFault(projectRoot, mode);
+        if (drift !== null) return answer({ ok: false, reason: drift });
+        // A lead waives as the task it runs as, and is held to its row's rule; the operator's waiver is the tool's.
+        let by = ["operator", "tool"];
+        if (context.authority.row === "lead") {
+          const taskId = context.authority.taskId;
+          if (taskId === undefined) return answer({ ok: false, reason: "waive_review needs the task this lead runs as, and this call resolved none" });
+          by = ["lead", taskId];
+        }
+        let config;
+        try {
+          config = loadConfig(projectRoot);
+        } catch (error) {
+          return answer({ ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+        return answer(await waiveReview(projectRoot, { slug, commit, by }, {
+          waitSeconds: config.limits.lockWaitSeconds, ...(by[0] === "lead" ? { lead: { config, role: reviewRole } } : {}),
+        }));
       },
     },
   ];
@@ -510,19 +551,22 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
   return [
     {
       name: "describe_mode",
-      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, and projectRoot, the root of the project this server serves. Call this first: it is how a launcher learns the loop, which is served rather than copied.",
+      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, and projectRoot, the root of the project this server serves. Call this first: it is how a launcher learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver.",
       inputSchema: { type: "object", properties: {} },
       rows: ["operator", "lead", "specialist"],
       handler: () => {
-        const described = describeMode(modesDir, loadConfig(projectRoot).mode);
+        const config = loadConfig(projectRoot);
+        const described = describeMode(modesDir, config.mode);
         // The project beside the mode's own text: what a launcher shows with the roster and
-        // judges against the project its user works in (design section 7).
-        return "reason" in described ? { ...text(described), isError: true } : text({ ...described, projectRoot });
+        // judges against the project its user works in (design section 7). The loop's two
+        // settings are the config's, read where an engine lead that runs no shell reads them.
+        const review = { planReviewRounds: config.limits.planReviewRounds, afterResolver: config.review.afterResolver };
+        return "reason" in described ? { ...text(described), isError: true } : text({ ...described, projectRoot, review });
       },
     },
     {
       name: "list_roles",
-      description: "The roles the active mode has: each one's workspace and the sandbox profile it will run under, with the engine, model and effort .cross-agent/config.json binds it to — or binding: null where it binds none, which is the engine a delegate call must name itself.",
+      description: "The roles the active mode has: each one's workspace and the sandbox profile it will run under, with the engine, model and effort .cross-agent/config.json binds it to — or binding: null where it binds none, which is the engine a delegate call must name itself. A role bound to a list is answered as seats, each with its own engine, model, effort and sandbox.",
       inputSchema: { type: "object", properties: {} },
       rows: ["operator", "lead", "specialist"],
       handler: () => {
@@ -539,6 +583,18 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         return text({
           roles: Object.fromEntries(bound.mode.roles.map((role) => {
             const binding = Object.hasOwn(bound.config.roles, role.key) ? bound.config.roles[role.key] : undefined;
+            // A role bound to a list is its seats, 1-based, each a binding and a profile.
+            if (isSeated(binding)) {
+              return [role.key, {
+                workspace: role.workspace,
+                seats: seatsOf(bound.config, role.key)!.map((seat, index) => ({
+                  seat: index + 1, engine: seat.engine,
+                  ...(seat.model === undefined ? {} : { model: seat.model }),
+                  ...(seat.effort === undefined ? {} : { effort: seat.effort }),
+                  sandbox: roleProfile(bound.mode, bound.config, role.key, index + 1),
+                })),
+              }];
+            }
             return [role.key, {
               ...(binding === undefined ? { binding: null } : {
                 engine: binding.engine,

@@ -132,7 +132,7 @@ test("initialize identifies the cross-agent server over stdio", async (t) => {
 test("tools/list offers each row of the permission matrix exactly its tools", async (t) => {
   const root = await projectWithConfig(t, { roles: {} });
   const delegation = ["delegate", "wait", "check", "result", "cancel", "list_tasks"];
-  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command"];
+  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command", "waive_review"];
   for (const [row, expected] of [
     ["operator", ["describe_mode", "list_roles", ...delegation, ...provider]],
     ["lead", ["describe_mode", "list_roles", ...delegation, ...provider]],
@@ -721,7 +721,7 @@ test("the worktree provider's tools are registered for the operator and the lead
     // The specialist row is the four read tools plus describe_mode, whatever the mode is.
     specialist: ["describe_mode", "list_roles", "check", "result", "list_tasks"],
   };
-  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command"];
+  const provider = ["verify_worktree", "git_mutate", "git_root", "run_command", "waive_review"];
 
   const team = buildMode(modesRoot(t), "dev-team", [{ key: "planner" }, { key: "implementer", workspace: "worktree" }]);
   const solo = buildMode(modesRoot(t), "solo", [{ key: "solo" }]);
@@ -750,9 +750,9 @@ test("the worktree provider's tools are registered for the operator and the lead
 
 // The built-in engine-placed mode, whose server carries the mailbox.
 const devTeamEngine: Mode = loadMode(builtInModesDir(), "dev-team-engine");
-const twelve = [
+const thirteen = [
   "describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks",
-  "verify_worktree", "git_mutate", "git_root", "run_command",
+  "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review",
 ];
 
 /** The JSON a tool answered with, and whether it answered as a refusal. */
@@ -770,13 +770,13 @@ test("under engine placement the mailbox is three more tools, each offered to it
     return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
   };
   // The operator answers and lists; the lead asks and lists its own; a specialist does neither.
-  assert.deepEqual(await names(devTeamEngine, "operator"), [...twelve, "list_asks", "answer"]);
-  assert.deepEqual(await names(devTeamEngine, "lead"), [...twelve, "ask", "list_asks"]);
+  assert.deepEqual(await names(devTeamEngine, "operator"), [...thirteen, "list_asks", "answer"]);
+  assert.deepEqual(await names(devTeamEngine, "lead"), [...thirteen, "ask", "list_asks"]);
   assert.deepEqual(await names(devTeamEngine, "specialist"), ["describe_mode", "list_roles", "check", "result", "list_tasks"]);
   // A host-placed mode has no lead to ask anything, and so no mailbox at all.
   for (const id of ["dev-team", "solo"]) {
     const mode = loadMode(builtInModesDir(), id);
-    for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(mode, row), twelve, `${id} ${row}`);
+    for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(mode, row), thirteen, `${id} ${row}`);
   }
 
   // Outside its rows a mailbox tool is refused by this server's own name, with the evidence.
@@ -1248,25 +1248,118 @@ test("describe_mode answers with projectRoot, the root this server serves, besid
     const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
     const answer = JSON.parse((((reply.result as Json).content as Json[])[0].text as string)) as Json;
     assert.equal(answer.projectRoot, root, mode);
-    // The mode's text is `describeMode`'s, unchanged: the handler adds the root beside it.
-    const { projectRoot: _, ...text } = answer;
+    // The mode's text is `describeMode`'s, unchanged: the handler adds the root and the
+    // loop's two settings beside it.
+    const { projectRoot: _, review: __, ...text } = answer;
     assert.deepEqual(text, JSON.parse(JSON.stringify(describeMode(builtInModesDir(), mode))), mode);
   }
 });
 
 // @anchor describeModeAnswerSize
-test("describe_mode's whole answer is the mode's text, 19 bytes more, and projectRoot's own JSON", async (t) => {
+test("describe_mode's whole answer is the mode's text, 19 bytes more, projectRoot's own JSON and the review settings", async (t) => {
   const answered = async (root: string, mode: string) => {
     const request = inProcess({ tools: projectTools(root, { mode: loadMode(builtInModesDir(), mode) }), authority: () => operator });
     const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
     return Buffer.byteLength((((reply.result as Json).content as Json[])[0].text as string));
   };
   const textOf = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
+  // The settings as the answer nests them, one level in, after `projectRoot`.
+  const review = { planReviewRounds: 3, afterResolver: "ask" };
+  const reviewBytes = Buffer.byteLength(',\n  "review": ' + JSON.stringify(review, null, 2).replace(/\n/g, "\n  "));
   for (const mode of ["dev-team", "dev-team-engine", "solo"]) {
     const root = await realpath(await projectWithConfig(t, { mode, roles: {} }));
-    assert.equal(await answered(root, mode), textOf(mode) + 19 + Buffer.byteLength(JSON.stringify(root)), mode);
+    assert.equal(await answered(root, mode), textOf(mode) + 19 + Buffer.byteLength(JSON.stringify(root)) + reviewBytes, mode);
   }
   // A known root: a directory holding no config answers solo's defaults, and `"projectRoot":
   // "/x"` adds 23 bytes to them.
-  assert.equal(await answered("/x", "solo"), textOf("solo") + 23);
+  assert.equal(await answered("/x", "solo"), textOf("solo") + 23 + reviewBytes);
+});
+
+// @anchor describeModeReview
+test("describe_mode carries the loop's review settings and marks the roles that seat many and gate the merge", async (t) => {
+  const settings = async (config: Json) => {
+    const root = await projectWithConfig(t, config);
+    const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+    const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
+    return JSON.parse((((reply.result as Json).content as Json[])[0].text as string)) as Json;
+  };
+  const defaults = await settings({ roles: {} });
+  assert.deepEqual(defaults.review, { planReviewRounds: 3, afterResolver: "ask" });
+  const roles = defaults.roles as Json[];
+  const reviewer = roles.find((role) => role.key === "code-reviewer")!;
+  assert.equal(reviewer.seats, "many");
+  assert.equal(reviewer.gates, "merge");
+  const planner = roles.find((role) => role.key === "planner")!;
+  assert.equal(Object.hasOwn(planner, "seats") || Object.hasOwn(planner, "gates"), false);
+  assert.deepEqual((await settings({ roles: {}, limits: { planReviewRounds: 5 }, review: { afterResolver: "always-ask" } })).review,
+    { planReviewRounds: 5, afterResolver: "always-ask" });
+});
+
+// @anchor listRolesSeats
+test("list_roles answers a seated role as its seats, each with its own binding and profile", async (t) => {
+  const root = await projectWithConfig(t, {
+    roles: { "code-reviewer": [{ engine: "claude", model: "claude-opus-5" }, { engine: "grok", sandbox: "strict" }], planner: { engine: "codex" } },
+  });
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+  const reply = await request("tools/call", { name: "list_roles", arguments: {} });
+  const roles = (JSON.parse((((reply.result as Json).content as Json[])[0].text as string)) as { roles: Json }).roles;
+  assert.deepEqual(roles["code-reviewer"], {
+    workspace: worktreeWorkspace,
+    seats: [
+      { seat: 1, engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+      { seat: 2, engine: "grok", sandbox: "strict" },
+    ],
+  });
+  // An object, or no binding, answers as it always has.
+  assert.deepEqual(roles.planner, { engine: "codex", workspace: rootWorkspace, sandbox: "read-only" });
+  assert.deepEqual(roles.resolver, { binding: null, workspace: worktreeWorkspace, sandbox: "workspace-write" });
+});
+
+// @anchor waiveRows
+test("waive_review is the operator's, and the lead's only under lead-decides with a complete round at the head", async (t) => {
+  const exec = promisify(execFile);
+  const roles = { "code-reviewer": [{ engine: "claude", sandbox: "read-only" }, { engine: "codex", sandbox: "read-only" }] };
+  const root = await realpath(await projectWithConfig(t, { roles, review: { afterResolver: "ask" } }));
+  const git = async (...args: string[]) => (await exec("git", ["-C", root, "-c", "user.name=Cross Agent Test",
+    "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", ...args], { encoding: "utf8" })).stdout.trim();
+  await git("init", "-b", "main");
+  await git("commit", "--allow-empty", "-m", "initial");
+  const worktree = path.join(root, ".worktrees", "x");
+  await git("worktree", "add", "-b", "task/x", worktree);
+  const head = await git("rev-parse", "task/x");
+  const { appendStep } = await import("../src/journal.ts");
+  const { update } = await import("../src/ledger.ts");
+  appendStep(root, "x", "worktree-created", { before: head, after: head, branch: "task/x", worktree, defaultBranch: "main" });
+  const call = async (row: Authority["row"], taskId?: string) => {
+    const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => ({ row, reason: "test", depth: row === "lead" ? 1 : 0, ...(taskId === undefined ? {} : { taskId }) }) });
+    return payload(await request("tools/call", { name: "waive_review", arguments: { slug: "x", commit: head } }));
+  };
+
+  const operatorWaiver = await call("operator");
+  assert.equal(operatorWaiver.isError, false, JSON.stringify(operatorWaiver.body));
+  assert.deepEqual((operatorWaiver.body.journal as Json).args, ["operator", "tool"]);
+  // The lead row, under the default `ask`: the waiver is the operator's.
+  const underAsk = await call("lead", "L");
+  assert.equal(underAsk.isError, true);
+  assert.match(underAsk.body.reason as string, /waive_review is the operator's unless review\.afterResolver is lead-decides/);
+  // Under `lead-decides`, only once every seat has finished its review of that head, whatever it said.
+  await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles, review: { afterResolver: "lead-decides" } }));
+  const seated = async (seat: number) => {
+    const record = create(root, { role: "code-reviewer", brief: `review ${seat}`, cwd: worktree, engine: "codex", seat, underReview: head });
+    await update(root, record.id, { status: "running" });
+    await update(root, record.id, { status: "done" });
+    await writeFile(record.resultPath, "VERDICT: major issues\n");
+  };
+  await seated(1);
+  assert.equal((await call("lead", "L")).isError, true, "seat 2 has not finished");
+  await seated(2);
+  const leadWaiver = await call("lead", "L");
+  assert.equal(leadWaiver.isError, false, JSON.stringify(leadWaiver.body));
+  assert.deepEqual((leadWaiver.body.journal as Json).args, ["lead", "L"]);
+
+  // A mode whose roles gate nothing has nothing to waive.
+  const solo = inProcess({ tools: projectTools(root, { mode: loadMode(builtInModesDir(), "solo") }), authority: () => operator });
+  const nothing = payload(await solo("tools/call", { name: "waive_review", arguments: { slug: "x", commit: head } }));
+  assert.equal(nothing.isError, true);
+  assert.match(nothing.body.reason as string, /nothing is gated/);
 });

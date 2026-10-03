@@ -26,10 +26,10 @@ those, runs the citation checker over the docs, and is green at every commit
 on `main`; one test needs a real `codex` binary and an account, so it runs only
 under `CROSS_AGENT_REAL_CODEX=1` and is skipped otherwise. On top
 of it: the mode loader and the three built-in modes, the authority model and
-the twelve tools it gates under every mode — `delegate`, `wait`, `check`,
+the thirteen tools it gates under every mode — `delegate`, `wait`, `check`,
 `result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles` and the worktree
-provider's four — with the mailbox's `ask`, `list_asks` and `answer` beside them
-under `dev-team-engine`, fourteen for the operator and for the lead; engine
+provider's five — with the mailbox's `ask`, `list_asks` and `answer` beside them
+under `dev-team-engine`, fifteen for the operator and for the lead; engine
 placement, which launches the loop in a Claude or Codex lead of its own; the
 operator CLI; the launcher skill with each mode's own loop; the packaging for Claude
 Code, Codex and Grok; and branch worktrees as projects of their own, each running its
@@ -51,10 +51,10 @@ claude --plugin-dir ~/Documents/cross-agent-cli
 ```
 
 The session should report the server as `plugin:cross-agent:cross-agent`,
-connected, and offer twelve tools spelled
+connected, and offer thirteen tools spelled
 `mcp__plugin_cross-agent_cross-agent__<tool>` — `delegate`, `wait`, `check`,
 `result`, `cancel`, `list_tasks`, `describe_mode`, `list_roles`,
-`verify_worktree`, `git_mutate`, `git_root`, `run_command` — and, in a project
+`verify_worktree`, `git_mutate`, `git_root`, `run_command`, `waive_review` — and, in a project
 whose mode places its lead in an engine, `list_asks` and `answer` too. Fewer
 means the server resolved a row below the operator's, and it says which on its
 own stderr the first time a request asks it to resolve one. To undo the install,
@@ -389,7 +389,7 @@ scope `config` at the checkout, the skill `cross-agent` whose source is that plu
 the server `cross-agent` from the same plugin. `grok mcp doctor cross-agent` lists `plugin:
 cross-agent` among its config sources and reports `cross-agent (stdio: node
 <checkout>/src/server.ts)` started, its handshake OK, and the operator row's tools
-discovered: twelve in a project bound to `dev-team` or `solo`, fourteen under
+discovered: thirteen in a project bound to `dev-team` or `solo`, fifteen under
 `dev-team-engine`. `grok mcp list` and `grok plugin list` show neither, because they list
 configured servers and installed plugins only. In a session the tools are spelled
 `cross-agent__<tool>`, the server's name and the tool's, and Grok reaches them through its
@@ -472,6 +472,7 @@ and a verb that reads writes nothing: not a record, not a lock, not a stall read
 | `git <slug> [--path <dir>] [--branch <name>] -- <args…>` | runs one git subcommand in a verified worktree, under the project's locks and journaled, as `git_mutate` does; 1 when git itself ran and failed, with its own output | 0, 1, 3 |
 | `git-root [--slug <slug>] -- <args…>` | runs one whitelisted git verb at the project root, under the project's locks and the repository lock, and journals the step it completes, as `git_root` does; 1 when git itself ran and failed, or ran and its step could not be journaled | 0, 1, 3 |
 | `journal [<slug>]` | one task's git journal, step by step, or every journal's slug; 1 when the journal file does not read, naming it | 0, 1, 3 |
+| `waive <slug> <commit>` | records your waiver of the review guard for the branch head of a task, as `waive_review` does; 3 when the commit is not that head or the task is merged or closed | 0, 3 |
 | `list-asks [--status <status>]` | every question an engine-placed lead has put to you, in the order asked; 5 while one it printed is open, and a damaged ask file is named rather than hiding the rest | 0, 5 |
 | `answer <ask-id> <text>` | answers an engine-placed lead's open question from a terminal; the first answer stands, and a second is refused naming when the first landed | 0, 3 |
 | `report [--since <task id>]` | every task, newest first — role, engine, model, effort, duration, outcome, id — then each task's final message, indented under its heading; the outcome is `passed` (done), `failed` (failed or cancelled) or `unknown` (not settled, or no result file) | 0, 3 |
@@ -493,7 +494,7 @@ anticipated and 2 for a command line it cannot read, and every verb but `init`
 exits 3 when no project resolves. 4, 5 and 6 are verdicts and print on stdout:
 `show` exits 4 for a task still running and 6 for a stalled one, `cancel` 4
 for a cascade that left a task active, and `list-asks` 5 for an open ask. A verb
-that writes — `init`, `answer`, `cancel`, `git`, `git-root` and `tasks --reconcile` — exits
+that writes — `init`, `answer`, `cancel`, `git`, `git-root`, `waive` and `tasks --reconcile` — exits
 3 when its own environment carries `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or
 `CROSS_AGENT_LINEAGE`, the markers of a task's process tree: writing is the
 operator's, and an engine reaches the project through the server.

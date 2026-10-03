@@ -348,7 +348,7 @@ test("the README attaches Grok per project through the project's own .grok/confi
     // A project file counts only in a trusted folder.
     "--trust",
     // The checks, the host spelling, and the operator row's count under the engine-placed mode.
-    "grok inspect --json", "grok mcp doctor cross-agent", "cross-agent__", "fourteen",
+    "grok inspect --json", "grok mcp doctor cross-agent", "cross-agent__", "fifteen",
     // The way back takes out only what the attach added, entry by entry, and the file only when
     // nothing else was in it; the attach never touches ~/.grok/.
     "To remove it", "only what the attach added", "the checkout's path from `paths`", '`"cross-agent"` from `enabled`',

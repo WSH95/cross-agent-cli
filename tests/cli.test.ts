@@ -64,7 +64,7 @@ async function runEach(lines: string[][], cwd: string, env: NodeJS.ProcessEnv = 
 }
 
 /** Every verb, in the order usage lists them. */
-const usageOrder = ["init", "modes", "tasks", "show", "log", "cancel", "verify-worktree", "git", "git-root", "journal", "list-asks", "answer", "report"];
+const usageOrder = ["init", "modes", "tasks", "show", "log", "cancel", "verify-worktree", "git", "git-root", "journal", "waive", "list-asks", "answer", "report"];
 
 function scratch(t: TestContext): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-")));
@@ -1230,6 +1230,7 @@ test("a verb that writes refuses inside a task's environment, naming the marker,
     { args: ["cancel", byStatus.running.id], cwd: root },
     { args: ["git", slug, "--", "status"], cwd: root },
     { args: ["tasks", "--reconcile"], cwd: root },
+    { args: ["waive", slug, seeded.journal.steps.at(-1)!.after!], cwd: root },
   ];
   for (const [variable, value] of [["CROSS_AGENT_TASK", lead.id], ["CROSS_AGENT_DEPTH", "2"], ["CROSS_AGENT_LINEAGE", `lead:${root}`]]) {
     const before = snapshot(state);
@@ -1287,6 +1288,32 @@ function documentAt(file: string): string {
 function statedCodes(paragraph: string): number[][] {
   return [...paragraph.replace(/\s+/g, " ").matchAll(/\bexits?\b([^.;]*)/g)].map((clause) => [...clause[1].matchAll(/\b\d+\b/g)].map(Number));
 }
+
+// @anchor cliWaive
+test("waive records the review waiver for the branch head, refuses a stale or unknown commit, and is an operator's command", async (t) => {
+  const seeded = await seededProject(t);
+  const { root, slug, branch } = seeded;
+  const head = await git(root, "rev-parse", branch);
+  const base = await git(root, "rev-parse", "main");
+  const recorded = await run(["waive", slug, head, "--json"], root);
+  assert.equal(recorded.code, 0, recorded.stderr);
+  const step = JSON.parse(recorded.stdout) as { step: string; before: string; after: string; args: string[] };
+  assert.deepEqual([step.step, step.before, step.after, step.args], ["review-waived", head, head, ["operator", "cli"]]);
+  assert.match((await run(["waive", slug, head.slice(0, 10)], root)).stdout, new RegExp(`waived the review of ${branch} at ${head}`));
+
+  // A commit that is not the branch head, a task no journal names, and a commit that is not hex.
+  const stale = await run(["waive", slug, base], root);
+  assert.equal(stale.code, 3, stale.stderr);
+  assert.match(stale.stderr, new RegExp(`the branch ${branch} is at ${head}, which ${base} does not name`));
+  assert.equal((await run(["waive", "no-such-task", head], root)).code, 3);
+  assert.equal((await run(["waive", slug, "zz"], root)).code, 2);
+  // A merged task takes no waiver.
+  const { appendStep } = await import("../src/journal.ts");
+  appendStep(root, slug, "merged", { before: head, after: head });
+  const closed = await run(["waive", slug, head], root);
+  assert.equal(closed.code, 3);
+  assert.match(closed.stderr, /closed by its merged step/);
+});
 
 // @anchor cliDocsNameVerbs
 test("the README and the launcher name only the dispatcher's verbs, and state their exits from its protocol", async () => {

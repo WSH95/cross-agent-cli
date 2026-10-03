@@ -59,7 +59,7 @@ function parameters(tools: Map<string, Tool>): Set<string> {
 // A backticked span is a call when it starts with an identifier: `list_tasks`,
 // `run_command {which: "test", …}`, `git_root merge --ff-only <branch>`. Only the names
 // carrying an underscore are judged — every prose word in a backtick would otherwise be a
-// tool — which is seven of the twelve registered names and any name a typo invents in
+// tool — which is eight of the thirteen registered names and any name a typo invents in
 // their shape. The other five (`delegate`, `wait`, `check`, `result`, `cancel`) are bare
 // words, and the test below names them one by one instead.
 const CALL_SHAPED = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;

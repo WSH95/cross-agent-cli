@@ -359,10 +359,10 @@ test("a lead holds its row exactly while its record is running or stalled, re-re
 
 // ---- A mounted lead's server, through a real engine --------------------------------------
 
-/** The twelve tools every mode registers for the operator and the lead. */
-const twelve = [
+/** The thirteen tools every mode registers for the operator and the lead. */
+const thirteen = [
   "describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel", "list_tasks",
-  "verify_worktree", "git_mutate", "git_root", "run_command",
+  "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review",
 ];
 
 /**
@@ -454,7 +454,7 @@ async function delegated(p: TestProject, reply: NonNullable<Served["replies"]>[n
 }
 
 // @anchor mountedLeadRow
-test("a mounted lead's server holds the lead row by ancestry: fourteen tools, the mailbox's lead half, and depth 1", { timeout: 60_000 }, async (t) => {
+test("a mounted lead's server holds the lead row by ancestry: fifteen tools, the mailbox's lead half, and depth 1", { timeout: 60_000 }, async (t) => {
   const p = await engineProject(t);
   const lead = leadOf(p);
   const served = await mounted(t, p, lead.record, lead.env, [
@@ -463,7 +463,7 @@ test("a mounted lead's server holds the lead row by ancestry: fourteen tools, th
     ["delegate", { role: "planner", cwd: p.root, brief: "A6 (i): plan nothing, answer OK." }],
   ], "everything");
   // P9's clause: a mounted lead resolves to the lead row, which is authority, not mounting.
-  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  assert.deepEqual(served.tools, [...thirteen, "ask", "list_asks"]);
   const [listed, answered, delegation] = served.replies!;
   assert.deepEqual(body(listed), { ok: true, asks: [], invalid: [] });
   assert.deepEqual(answered.error, {
@@ -497,7 +497,7 @@ test("a lead's server handed only the four markers, as a whitelisting host hands
     ["delegate", { role: "planner", cwd: p.root, brief: "A6 (ii): plan nothing, answer OK." }],
   ], "markers");
   assert.deepEqual(served.serverEnvironment, ["CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE", "CROSS_AGENT_PROJECT", "CROSS_AGENT_TASK", "HOME", "PATH"]);
-  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  assert.deepEqual(served.tools, [...thirteen, "ask", "list_asks"]);
   assert.match(served.stderr ?? "", new RegExp(`serving the lead row: lead by ancestry: task ${lead.record.id} \\(lead, running\\)`));
   // What path (a) relies on: depth and lineage arrive with the markers, so the child is
   // the lead's, one below it.
@@ -523,7 +523,7 @@ test("a lead's server handed none of the markers holds the lead row by ancestry 
     ["delegate", { role: "planner", cwd: p.root, brief: "A6 (iii): plan nothing, answer OK." }],
   ], "none");
   assert.deepEqual(served.serverEnvironment, ["HOME", "PATH"]);
-  assert.deepEqual(served.tools, [...twelve, "ask", "list_asks"]);
+  assert.deepEqual(served.tools, [...thirteen, "ask", "list_asks"]);
   // So the child is the lead's by `parentTaskId`, one below a depth of 0, and its lineage
   // starts with itself: what the ledger's depth-and-lineage reading of a run would fail.
   const child = await delegated(p, served.replies![0]);

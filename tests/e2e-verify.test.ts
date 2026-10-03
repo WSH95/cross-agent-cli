@@ -356,6 +356,9 @@ test("a Claude or Grok tool call is read only when the archived runs show that e
     ["grok", [toolCall("search_tool", { query: "cross-agent", limit: 5 })], "pass"],
     ["grok", [toolCall("run_terminal_command", { command: "python3 -m unittest", description: "suite" })], "pass"],
     ["grok", [toolCall("use_tool", { tool_name: "cross-agent__list_roles", tool_input: {} })], "pass"],
+    // The waiver tool a lead under `lead-decides` calls, as each engine spells this server's tools.
+    ["claude", [toolCall("mcp__cross-agent__waive_review", { slug: "x", commit: "0123abc" })], "pass"],
+    ["grok", [toolCall("use_tool", { tool_name: "cross-agent__waive_review", tool_input: { slug: "x", commit: "0123abc" } })], "pass"],
     // The review's fixtures, each of which passed: tools no archived run called, a block
     // with no name, another server's tool, one engine's tool in the other's transcript,
     // and `use_tool` in another shape or naming another server's tool.
