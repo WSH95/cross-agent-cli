@@ -25,6 +25,7 @@ const sectionSixDefaults = {
     "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
     implementer: { engine: "codex", model: "gpt-6-astra" },
     "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+    resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
     // The role every mode carries, bound to a starting engine this call may override.
     consult: { engine: "codex", model: "gpt-6-astra" },
   },
@@ -460,7 +461,7 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
   assert.equal(config.initConfig(engineRoot, { mode: "dev-team-engine" }).wrote, true);
   const led = config.loadConfigWithMode(engineRoot, builtInModesDir());
   assert.deepEqual(led.config.roles.lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
-  assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "consult"]);
+  assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "resolver", "consult"]);
   // The cap the mode needs is written, because the derived cap is the lower of the two.
   assert.equal(led.config.limits.maxDepth, 2);
   assert.equal(config.effectiveMaxDepth(led.mode, led.config), 2);

@@ -99,6 +99,8 @@ const devTeamBindings: Record<string, RoleConfig> = {
   "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
   implementer: { engine: "codex", model: "gpt-6-astra" },
   "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+  // The escalation takes the findings two fix rounds leave standing, on the stronger setting.
+  resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
 };
 
 /**

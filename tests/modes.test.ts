@@ -414,7 +414,7 @@ test("a mode with no worktree role still has the git policy its one-shots use, m
 // @anchor devTeamModes
 test("the two dev-team modes carry the same role prompts, byte for byte", () => {
   const modes = builtInModesDir();
-  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
+  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]) {
     assert.equal(
       fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
       fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
@@ -435,6 +435,7 @@ test("the three built-in modes validate, and each declares what its loop needs",
     ["plan-reviewer", "root", "read-only"],
     ["implementer", "worktree", "workspace-write"],
     ["code-reviewer", "worktree", "read-only"],
+    ["resolver", "worktree", "workspace-write"],
     ["consult", "root", "read-only"],
   ]);
   assert.deepEqual(devTeam.git, { worktreeDir: ".worktrees", branchPattern: "task/*" });
@@ -446,7 +447,7 @@ test("the three built-in modes validate, and each declares what its loop needs",
 
   const engine = loadMode(modes, "dev-team-engine");
   assert.deepEqual(engine.lead, { placement: "engine", role: "lead" });
-  assert.deepEqual(engine.roles.map((role) => role.key), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "consult"]);
+  assert.deepEqual(engine.roles.map((role) => role.key), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "resolver", "consult"]);
   assert.deepEqual(findRole(engine, "lead")?.workspace, { kind: "root" }, "an engine lead is read-only at the root");
   assert.equal(findRole(engine, "lead")?.sandboxDefault, "read-only");
 

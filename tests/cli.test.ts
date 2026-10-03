@@ -96,6 +96,8 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
       "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
       implementer: { engine: "codex", model: "gpt-6-astra" },
       "code-reviewer": { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
+      // The escalation, on a stronger setting than the implementer's.
+      resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
       // The role every mode carries, bound to a starting engine any call may override.
       consult: { engine: "codex", model: "gpt-6-astra" },
     },
@@ -106,10 +108,11 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
     },
     billing: "subscription",
   });
-  // What it wrote loads, against the mode it named: the four roles run under the profiles
-  // the mode defaults them to.
+  // What it wrote loads, against the mode it named: every role runs under the profile the
+  // mode defaults it to.
   const bound = loadConfigWithMode(root, builtInModesDir());
-  assert.deepEqual(bound.mode.roles.map((role) => role.sandboxDefault), ["read-only", "read-only", "workspace-write", "read-only", "read-only"]);
+  assert.deepEqual(bound.mode.roles.map((role) => role.sandboxDefault),
+    ["read-only", "read-only", "workspace-write", "read-only", "workspace-write", "read-only"]);
   assert.equal(effectiveMaxDepth(bound.mode, bound.config), 1);
 
   // Every project in this suite is under the system temporary directory, which Codex and
@@ -133,6 +136,7 @@ test("init --mode binds each built-in mode's own roles, and an engine-placed lea
   assert.equal((await run(["init", "--mode", "dev-team-engine"], engineRoot)).code, 0);
   const led = written(engineRoot);
   assert.deepEqual((led.roles as Record<string, unknown>).lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
+  assert.deepEqual((led.roles as Record<string, unknown>).resolver, { engine: "codex", model: "gpt-6-astra", effort: "high" });
   // A lead runs at depth 1 and its specialists at 2, and the documented default of 1
   // would hold them at the lead: the mode's cap is written, not left to be derived.
   assert.equal((led.limits as Record<string, number>).maxDepth, 2);

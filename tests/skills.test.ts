@@ -707,7 +707,7 @@ test("a delegate literal's keys are read at its top level, never inside a value"
 
 test("the two dev-team modes carry the same role prompts, byte for byte", () => {
   const modes = builtInModesDir();
-  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer"]) {
+  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]) {
     assert.equal(
       fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
       fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
@@ -852,6 +852,8 @@ test("every committed dev-team role prompt came through the converter and was ed
     ["plan-reviewer", "You write no files and you delegate nothing; your final message is the review."],
     ["implementer", "You run no git command that writes: the session that delegated you commits what you leave. You delegate nothing; your final message is the report that commit is made from."],
     ["code-reviewer", "You write no files and you delegate nothing; your final message is the review, verdict first."],
+    // The resolver writes in the worktree as the implementer does, and commits as little.
+    ["resolver", "You run no git command that writes: the session that delegated you commits what you leave. You delegate nothing; your final message is the report that commit is made from."],
   ]);
   for (const [key, coda] of codas) {
     const prompt = fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8");

@@ -41,6 +41,13 @@
       "sandboxDefault": "read-only",
       "seats": "many",
       "gates": "merge"
+    },
+    {
+      "key": "resolver",
+      "title": "Resolver",
+      "promptFile": "roles/resolver.md",
+      "workspace": { "kind": "worktree", "branchPattern": "task/*", "dir": ".worktrees" },
+      "sandboxDefault": "workspace-write"
     }
   ],
   "git": { "worktreeDir": ".worktrees", "branchPattern": "task/*" },

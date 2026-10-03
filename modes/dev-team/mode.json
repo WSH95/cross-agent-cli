@@ -2,7 +2,7 @@
   "id": "dev-team",
   "release": "0.1.0",
   "name": "Dev team",
-  "summary": "A planner and a plan reviewer read at the project root; an implementer works in a linked worktree on its own task branch and a code reviewer reads that branch. The loop runs in your own host session, which owns every root git operation.",
+  "summary": "A planner and a plan reviewer read at the project root; an implementer works in a linked worktree on its own task branch, as many code reviewers as the config seats read that branch in parallel, and a resolver on a stronger model takes the findings two fix rounds leave standing. The loop runs in your own host session, which owns every root git operation.",
   "lead": { "placement": "host" },
   "roles": [
     {
@@ -34,6 +34,13 @@
       "sandboxDefault": "read-only",
       "seats": "many",
       "gates": "merge"
+    },
+    {
+      "key": "resolver",
+      "title": "Resolver",
+      "promptFile": "roles/resolver.md",
+      "workspace": { "kind": "worktree", "branchPattern": "task/*", "dir": ".worktrees" },
+      "sandboxDefault": "workspace-write"
     }
   ],
   "git": { "worktreeDir": ".worktrees", "branchPattern": "task/*" },

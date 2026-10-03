@@ -89,6 +89,7 @@ const unbound = {
   "plan-reviewer": { binding: null, workspace: rootWorkspace, sandbox: "read-only" },
   implementer: { binding: null, workspace: worktreeWorkspace, sandbox: "workspace-write" },
   "code-reviewer": { binding: null, workspace: worktreeWorkspace, sandbox: "read-only" },
+  resolver: { binding: null, workspace: worktreeWorkspace, sandbox: "workspace-write" },
   consult: { binding: null, workspace: rootWorkspace, sandbox: "read-only" },
 };
 // The mode a server loads once at start and hands its tools. These servers bind the
