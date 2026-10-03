@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T09:56:51Z
+updated_at: 2026-10-03T10:43:47Z
 updated_by: claude
 session_status: closed
 branch: main
@@ -52,9 +52,14 @@ title and Codex line (the last as a diff for the user's approval). Records of pa
 paths, with one note. There is no migration or compatibility work: the tool has never been used in a
 development project (the user). The directory moves last; then `core.hooksPath` (absolute today),
 the e2e sample's Grok attach and Claude Code and Codex trust follow. The plan is
-`.superpowers/sdd/the-development-of-this-calm-planet/task-14-brief.md` (revision 1; plan review
-round 1 found five Important issues in the move runbook and the checks, all folded; round 2 is
-running). The move is the user's: a script, run from `~` after this session ends.
+`.superpowers/sdd/the-development-of-this-calm-planet/task-14-brief.md`, revision 3, final after
+three plan reviews; all their findings were in the move runbook and the checks, and all were folded.
+The implementation is on `task/cross-agent-cli-rename` in `.worktrees/cross-agent-cli-rename`
+(`e22958b..b2f4658`, five commits). `npm test` gives 933 / 932 / 1 skipped, and the grep gate is
+exact. The code review is next. The move is the user's, run from an ordinary terminal at `~` after
+this session ends: `task-14-move.sh`, then `task-14-smoke.sh`, both beside the brief. A temporary
+git-ignored solo config at the root (`.cross-agent/`) serves the review's Grok seat and is removed
+after it.
 
 **`atc-s96.97` merged on 2026-10-03** (`fb0d050`; the feature's 45 commits end at `1c75090`).
 A linked worktree, or a bare repository's worktree, becomes a cross-agent project of its own when

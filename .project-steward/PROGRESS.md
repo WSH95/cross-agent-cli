@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T10:43:47Z — claude
+[auto-checkpoint] atc-s96.103: plan final (revision 3, three reviews); implemented on task/cross-agent-cli-rename (e22958b..b2f4658; 933/932/1 skipped; grep gate exact); code review next.
+
 ### 2026-10-03T09:56:51Z — claude
 [auto-checkpoint] atc-s96.103: rename plan written (task-14-brief.md), plan review round 1 (five Important, runbook and checks) folded; round 2 running.
 
