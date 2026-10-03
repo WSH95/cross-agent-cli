@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T17:47:55Z
+updated_at: 2026-10-03T18:42:07Z
 updated_by: claude
 session_status: active
 branch: main
@@ -72,16 +72,16 @@ Six plan reviews of a large plan did not converge: it tried to encode the loop a
 - The user confirmed that a wrap-up fix gets one short re-review.
 - The user confirmed that `lead-decides` lets the lead record a waiver.
 
-Reviews of the reset plan are converging: 5 majors, then 3 with none introduced by the folds.
+The reset plan went through four reviews: 5, 3, 2 and 2 majors. At the plateau the user chose **simplify**. The guards' guarantee was re-anchored to "no misreading and no accident merges untested or unreviewed work", and deliberate self-subversion by a lead is a documented limit (`atc-s96.105`).
 
-**Revision 2** (`task-15-reset-plan.md`):
-- Guard 1 certifies a passing suite run in a detached checkout of the exact branch head.
-- A gating review is refused against a dirty worktree.
-- The branch head is resolved once, so a same-named tag cannot redirect the merge.
-- The waiver is revalidated under its lock.
-- One-shots need guard 1 only.
+**The final plan** (`task-15-brief-final.md`, 13 commits):
+- guard 1 tests a detached checkout of the branch head under `.cross-agent/gate/`;
+- gating reviews require a committed tree and no live setup marker;
+- `verifyWorktree` refuses paths under `.cross-agent/`;
+- the merge acts on one resolved head;
+- a `waive_review` tool and a `cross-agent waive` verb record waivers.
 
-Review round 3 is running. The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
+Implementation is running in `.worktrees/team-modes` (`task/team-modes`). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.

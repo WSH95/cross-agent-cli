@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-03T18:42:07Z — claude
+[auto-checkpoint] atc-s96.104: reset plan final after four reviews (5→3→2→2; the user chose simplify at the plateau; guarantee re-anchored to misreadings and accidents, self-subversion a documented limit, atc-s96.105); implementation started in .worktrees/team-modes.
+
 ### 2026-10-03T17:47:55Z — claude
 [auto-checkpoint] atc-s96.104 reset plan converging (majors 5 → 3, none introduced); revision 2: guard 1 tests a detached checkout of the branch head; gating reviews refuse a dirty worktree; round 3 running.
 
