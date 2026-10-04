@@ -2214,17 +2214,26 @@ which a listing from a linked worktree does not read (`tests/worktree.test.ts#lo
 `#locateRepositorySeparatedMainWorktreeMainNull`).
 
 `enclosingWorktree` walks a canonical candidate's strict ancestors outside-in
-(`src/worktree.ts#enclosingWorktree`). An ancestor without a `.git` entry is skipped.
-For one with it, the ancestor's own git decides whether it is a work tree:
+(`src/worktree.ts#enclosingWorktree`). An ancestor without a `.git` entry is skipped,
+as is one whose `.git` is an actual directory that can be read and is empty: it holds
+no registry (`tests/worktree.test.ts#locateRepositoryEmptyAncestorAllowed`,
+`#locateRepositoryEmptyAncestorConfigOnly`). The walk continues through the remaining
+ancestors, so a registered task worktree still refuses, even with its pointer removed
+(`#locateRepositoryEmptyAncestorStillNested`). This exception does not apply to the
+candidate's own `.git` (`#locateRepositoryEmptyRootRefused`).
+For every other entry, the ancestor's own git decides whether it is a work tree:
 `--is-inside-work-tree` must print `true` and `--show-toplevel` name the ancestor
 itself, which a bare repository at `A/.git` and the umbrella's pointer to a bare
 directory never do, and which a separated main does. Only then is its registry read,
-from its own `.git` (`#worktreeStanzas`), and the ancestor encloses the candidate when
+from its own `.git` (`src/worktree.ts#worktreeStanzas`), and the ancestor encloses the candidate when
 a stanza strictly under it is or holds the candidate, the innermost one named. Every
 registration whose directory exists counts, whatever its pointer or its annotation:
 git marks one `prunable` only when its pointer fails `lstat`, and never marks a
-`locked` one. An ancestor whose git fails refuses, naming it and git's own words
-(`tests/worktree.test.ts#locateRepositoryUnreadableAncestorRefused`). The umbrella and
+`locked` one. A directory read failure refuses; so does a git failure, naming the ancestor
+and git's own words. Git's "not a git repository" error is not grounds for a skip:
+unreadable real repositories can produce it too
+(`tests/worktree.test.ts#locateRepositoryPermissionDeniedAncestorRefused`,
+`#locateRepositoryUnreadableAncestorRefused`). The umbrella and
 a bare repository beside or holding its worktrees pass, and a root under an unrelated
 work tree that does not register it passes (`#locateRepositoryUmbrellaAllowed`,
 `#locateRepositorySiblingBareAllowed`, `#locateRepositoryUnrelatedAncestor`); a linked
@@ -2237,9 +2246,10 @@ is self-consistent, which a forged registry inside the candidate also is
 (`#locateRepositoryRefusesForgedRegistry`, and Grok's sandbox, which leaves the
 pointer writable, `src/engines/grok.ts`, section 3). A registration pruned from the
 common directory is outside the rule; there the specialist row's tool set is the
-backstop, as for every task. The cost is one `lstat` per ancestor and up to three git
-reads per ancestor holding a `.git`, and one or two more for a linked root's first
-stanza, once per call and with nothing cached across calls.
+backstop, as for every task. The cost is one `lstat` per ancestor, a directory listing
+for a `.git` directory, up to three git reads per remaining ancestor holding a `.git`,
+and one or two more for a linked root's first stanza, once per call and with nothing
+cached across calls.
 
 **Writes at a root that is not the main checkout are opt-in**
 (`src/worktree.ts#rootWriteFault`). A main checkout takes them as it always has.

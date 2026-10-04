@@ -2,7 +2,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -472,6 +472,71 @@ test("a root inside its own common directory is refused, naming the fix", async 
   assert.ok(reason.includes(commonDir), reason);
   assert.match(reason, /beside the git directory/);
 });
+
+// @anchor locateRepositoryEmptyAncestorAllowed
+test("a readable empty ancestor .git does not prevent locating main and linked roots", async (t) => {
+  const temporary = await scratch(t);
+  const emptyGit = path.join(temporary, ".git");
+  await mkdir(emptyGit);
+  const main = await mainCheckout(temporary, "M");
+  const linked = path.join(temporary, "L");
+  await git(main, "worktree", "add", "-b", "feature", linked);
+
+  const own = repositoryOf(await locateRepository(main));
+  assert.equal(own.kind, "main");
+  assert.equal(own.workTree, main);
+  const beside = repositoryOf(await locateRepository(linked));
+  assert.equal(beside.kind, "linked");
+  assert.equal(beside.workTree, linked);
+  assert.equal(beside.main, main);
+  assert.deepEqual(await readdir(emptyGit), [], "the ancestor's empty .git is left alone");
+});
+
+// @anchor locateRepositoryEmptyAncestorConfigOnly
+test("a config-only root beneath an empty ancestor .git still has no repository", async (t) => {
+  const temporary = await scratch(t);
+  await mkdir(path.join(temporary, ".git"));
+  const root = path.join(temporary, "project");
+  await mkdir(path.join(root, ".cross-agent"), { recursive: true });
+  await writeFile(path.join(root, ".cross-agent", "config.json"), "{}\n");
+  assert.match(refused(await locateRepository(root), "none"), /holds no \.git/);
+});
+
+// @anchor locateRepositoryEmptyAncestorStillNested
+test("skipping an empty ancestor .git still finds the repository that registers a task worktree", async (t) => {
+  const { main, task } = await mainWithTask(t);
+  await mkdir(path.join(path.dirname(main), ".git"));
+  nestedIn(refused(await locateRepository(task)), task, main);
+  await rm(path.join(task, ".git"));
+  nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+// @anchor locateRepositoryEmptyRootRefused
+test("an empty .git at the candidate root is still refused", async (t) => {
+  const root = await scratch(t);
+  await mkdir(path.join(root, ".git"));
+  const reason = refused(await locateRepository(root));
+  assert.ok(reason.startsWith(`cannot verify the repository at ${root}:`), reason);
+});
+
+// @anchor locateRepositoryPermissionDeniedAncestorRefused
+for (const relative of [".git", ".git/HEAD", ".git/objects", ".git/refs"]) {
+  test(`an ancestor with unreadable ${relative} still refuses its registered task worktree`, {
+    skip: process.getuid?.() === 0 ? "root bypasses filesystem permissions" : false,
+  }, async (t) => {
+    const { main, task } = await mainWithTask(t);
+    const unreadable = path.join(main, relative);
+    const original = await stat(unreadable);
+    await chmod(unreadable, 0o000);
+    try {
+      const reason = refused(await locateRepository(task));
+      assert.ok(reason.startsWith(`cannot read ${path.join(main, ".git")}:`)
+        || reason.startsWith(`cannot tell whether ${main} registers `), reason);
+    } finally {
+      await chmod(unreadable, original.mode);
+    }
+  });
+}
 
 // @anchor locateRepositoryUnreadableAncestorRefused
 test("an ancestor holding a .git its own git cannot read refuses, naming it and git's words", async (t) => {

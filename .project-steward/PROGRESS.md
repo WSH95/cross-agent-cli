@@ -3,6 +3,22 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T01:09:07Z — codex
+atc-s96.106 closed: readable empty ancestor .git directories are skipped; unreadable
+metadata and task nesting still refuse. Eight regression cases added, independent
+review clean, 1636 citations with no misses. The unchanged npm test command passed
+in a temporary user service: 1014 tests, 1013 pass, 0 fail, 1 skipped, with /tmp/.git
+present. Earlier AppArmor ping cleanup failures are tracked as atc-s96.107; the four
+probe processes were stopped and ten abandoned generated fixtures archived. Code,
+tests, design and verification/handoff records remain uncommitted; no Git operations.
+
+### 2026-10-04T00:52:02Z — codex
+atc-s96.106 implemented with the approved empty-directory-only scope. Eight new
+regression cases failed before the fix and pass after it; focused worktree/project
+files pass; 1636 citations, no misses; independent review has no findings. The full
+suite is rerunning outside the sandbox after a minimal probe confirmed that the
+sandbox loses asynchronous Node child output. Shared /tmp/.git is left in place.
+
 ### 2026-10-04T00:09:25Z — claude
 atc-s96.104 closed: merged at 7de15c0; E11 8 pass with three seats in parallel (c4ca8e5); AGENTS.md approved and applied (c05671e); VERIFY.md section and Decision 0014 (3da75ad); worktree removed, branch deleted; this session's Codex brokers stopped.
 

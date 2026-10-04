@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-04T00:09:25Z
-updated_by: claude
-session_status: active
+updated_at: 2026-10-04T01:09:07Z
+updated_by: codex
+session_status: closed
 branch: main
 ---
 # Handoff
@@ -45,7 +45,31 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Nothing. `atc-s96.104` is merged and closed.
+`atc-s96.106` is closed after verification. Its changes remain uncommitted on
+`main` at `9f766aa`: `src/worktree.ts`, `tests/worktree.test.ts`, `docs/design.md`,
+`VERIFY.md`, `.project-steward/HANDOFF.md`, and `.project-steward/PROGRESS.md`.
+The user approved skipping only readable, empty ancestor `.git` directories.
+Nonempty entries, files and symlinks retain Git verification; unreadable entries
+refuse, and the ancestor walk still detects registered task worktrees.
+
+Validation on 2026-10-03: eight new regression cases went from failing to passing;
+the focused worktree and project-discovery files pass; the full suite has 1014
+tests, 1013 pass, 0 fail, 1 skipped (the guarded real Codex I2); 1636 citations,
+no misses; one independent read-only review found no findings. The shared
+`/tmp/.git` remained present and empty.
+
+The passing `npm test` ran unchanged through a temporary user service. This app's
+sandbox loses asynchronous Node child stdout/stderr, and its direct outside-sandbox
+context cannot signal AppArmor-confined `ping` probes. That earlier full run had
+four runner cleanup failures, tracked as `atc-s96.107`. All four probes were
+terminated; ten generated fixture files left by failed or interrupted runs were
+archived out of `tests/fixtures`. No generated runner fixture remains there.
+Evidence and original-file review snapshots are in
+`/tmp/cross-agent-atc106-review-ZRRfyD/`; the passing log is
+`full-suite-user-service.log`. No Git operations were performed under this
+session's workflow authority.
+
+`atc-s96.104` is merged and closed.
 
 **`atc-s96.104` merged on 2026-10-03** (`7de15c0`, 15 commits; Decision 0014). The built-in team modes now run the plan iteration and the review and fix rounds as short procedures, with N code reviewers and a `resolver` role. This was the user's request, with the user's decisions D1–D4.
 
@@ -66,7 +90,10 @@ How it was checked:
 
 The task worktree is removed, and its ignored files are archived in `~/.cache/agent-team/probe-logs/t15-worktree-state/`.
 
-**The stray empty `/tmp/.git`** is left by Codex's Linux sandbox. Every Codex command recreates it, the user's own sessions included, along with `/tmp/.agents`, `/tmp/.codex` and `/tmp/.aws`. While it exists, this repository's suite fails or hangs. Remove it before running the suite. The fix is `atc-s96.106`.
+**The stray empty `/tmp/.git`** is left by Codex's Linux sandbox, along with
+`/tmp/.agents`, `/tmp/.codex` and `/tmp/.aws`. With the verified `atc-s96.106`
+working-tree fix, readable empty ancestor `.git` directories are skipped; leave
+this shared directory in place. Nonempty or unreadable metadata still refuses.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.
@@ -114,15 +141,19 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. **The team-mode follow-ups:**
-   - `.106` (P2): an invalid `.git` in an ancestor refuses every project below it. Codex's sandbox makes `/tmp/.git` routinely, so this repository's suite breaks until it lands; the controller suggested raising it to P1, which is the user's call;
+1. Review the six uncommitted `atc-s96.106` files listed above and include the project
+   records in the next authorized commit. Suggested message:
+   `fix(worktree): ignore empty ancestor git directories`.
+2. Inspect `bd show atc-s96.107` for the runner test helper's AppArmor cleanup failure.
+   The accepted fix for `.106` does not change that helper or host security policy.
+3. **The team-mode follow-ups:**
    - `.105` (P4): deliberate self-subversion of the merge guards;
    - optional, the user's call: trim the loops' text, which grew with `atc-s96.104` (`modes/dev-team/SKILL.md` 13,065 → 20,684 bytes).
-2. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
+4. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
    - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-3. **The worktree-project follow-ups:**
+5. **The worktree-project follow-ups:**
    - `.98`: cancelling a running git child;
    - `.99`: worktree projects inside the main checkout;
    - `.100`: writes at a separated main or a submodule;

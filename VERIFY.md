@@ -1,7 +1,8 @@
 # Verification record
 
 What `npm test` and the recorded runs showed at each milestone merge into
-`main`. Counts live here, not in the README (Decision 0008). Raw engine
+`main` and at follow-up verification. Counts live here, not in the README
+(Decision 0008). Raw engine
 transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
@@ -1136,3 +1137,39 @@ Landed:
 | host config | `~/.codex/config.toml` is unchanged by sha256 and mtime. In `~/.grok`, the config, auth and trust files are unchanged; the engines' session files and logs were added |
 | deviations | **116 tests, not the brief's 117:** the host's brief to the lead named three test cases; all four acceptance examples hold. **The host:** its roster was a prose paragraph, and it relayed the lead's report with the last paragraph reworded. **The lead:** it read the seats' reviews from `wait`'s tail rather than calling `result`, and the merge guard reads the result files itself |
 | unproven | the refusals (the deterministic tests prove them), the waiver and `afterResolver`, the resolver (bound, never delegated), D2's limit, the wrap-up, a `needs rebase` verdict, consolidation across seats (there was no finding), the setup marker and the hold (no setup command, and no writer during a review), and the host loop's text |
+
+
+## atc-s96.106 — empty ancestor git directories (verified 2026-10-03)
+
+| what | value |
+|---|---|
+| state | working-tree changes on `main` at `9f766aa`, uncommitted |
+| regression cycle | eight new cases failed before the fix and passed after it |
+| focused tests | `node --test tests/worktree.test.ts tests/project.test.ts`: both files pass |
+| full suite | unchanged `npm test`: 1014 tests, 1013 pass, 0 fail, 1 skipped (guarded real Codex I2), 187.4 seconds |
+| citation checker | 1636 citations in 2 files, all by symbol, 0 misses |
+| review | one independent read-only review; no findings |
+
+The user approved a narrow exception in `enclosingWorktree`: skip an actual,
+readable, empty ancestor `.git` directory. Continue checking deeper ancestors;
+keep Git verification for other entries, refusal on read failures, and the
+candidate root's own validation. Regression coverage includes main and linked
+roots, a config-only root, a nested task with its pointer intact or deleted, an
+empty candidate `.git`, and unreadable `.git`, `HEAD`, `objects`, and `refs`.
+The existing malformed-gitfile coverage remains.
+
+The passing full run used a temporary user service with the same Node 24 runtime
+and no test filtering. The shared `/tmp/.git` stayed present and empty. Earlier
+runs exposed two validation-environment problems: the app sandbox lost asynchronous
+Node child stdout/stderr, and the direct app context's AppArmor label could not
+signal the runner tests' confined `ping` probes. That outside-sandbox run had 1009
+passes, four cleanup failures and one skip. The four failed cases were
+`cancelDuringRescan`, `settledDuringRescan`, `lockLostDuringRescan`, and
+`clearedDuringRescan`; `atc-s96.107` tracks the helper follow-up. The probes were
+terminated through a temporary user service, and generated fixtures left by the
+failed or interrupted runs were archived. No workaround was added to product or
+test code.
+
+Raw evidence: `/tmp/cross-agent-atc106-review-ZRRfyD/`, including `red.log`,
+`green.log`, `focused.log`, `full-suite-unsandboxed.log`, and the passing
+`full-suite-user-service.log`. `atc-s96.106` is closed; the changes are uncommitted.

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { statSync } from "node:fs";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { CONFIG_PATH } from "./config.ts";
@@ -150,7 +150,9 @@ export interface Enclosure {
  * its own git and its own registry lists a worktree strictly under it that is or holds the
  * candidate. Nothing of the candidate's own `.git` is read, so ownership is proven by
  * registries a specialist confined to the candidate cannot write, whatever it did to its
- * pointer. An ancestor whose git fails is a refusal, never a skip.
+ * pointer. A readable, empty `.git` directory holds no registry and is skipped. Other
+ * entries still go through git, and any read or git failure refuses: even an unreadable
+ * real repository can make git report "not a git repository".
  */
 export async function enclosingWorktree(candidate: string): Promise<Enclosure | { reason: string } | null> {
   const ancestors: string[] = [];
@@ -159,13 +161,22 @@ export async function enclosingWorktree(candidate: string): Promise<Enclosure | 
     ancestors.unshift(dir);
   }
   for (const ancestor of ancestors) {
+    const pointer = path.join(ancestor, ".git");
+    let entry: Awaited<ReturnType<typeof lstat>>;
     try {
-      await lstat(path.join(ancestor, ".git"));
+      entry = await lstat(pointer);
     } catch (error) {
       // A path mapped out of a task worktree is lexical, so an ancestor of it may run through
       // a file or round a symlink loop on the root's branch: no directory, so no work tree.
       if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) continue;
-      return { reason: `cannot read ${path.join(ancestor, ".git")}: ${message(error)}` };
+      return { reason: `cannot read ${pointer}: ${message(error)}` };
+    }
+    if (entry.isDirectory()) {
+      try {
+        if ((await readdir(pointer)).length === 0) continue;
+      } catch (error) {
+        return { reason: `cannot read ${pointer}: ${message(error)}` };
+      }
     }
     let stanzas: Stanza[];
     try {
