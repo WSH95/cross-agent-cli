@@ -66,7 +66,8 @@ function git(cwd, ...args) {
 
 function isUnder(child, parent) {
   const relative = path.relative(parent, child);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  // A name that only starts with two dots, such as `..payload`, is still inside `parent`.
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
 /** The real path of `target`, through its deepest existing ancestor when it does not exist yet. */
@@ -164,25 +165,46 @@ function isSymlink(file) {
   }
 }
 
-/** `git archive <sha> -- <paths>` unpacked into `dir`. */
+/** `git archive <sha> -- <paths>` unpacked into `dir`; settles once both children have, started or not. */
 function extract(source, sha, paths, dir) {
   fs.mkdirSync(dir, { recursive: true });
   return new Promise((resolve, reject) => {
     const archive = spawn("git", ["archive", "--format=tar", sha, "--", ...paths], { cwd: source, stdio: ["ignore", "pipe", "pipe"] });
     const tar = spawn("tar", ["-x", "-f", "-", "-C", dir], { stdio: ["pipe", "ignore", "pipe"] });
-    archive.stdout.pipe(tar.stdin);
     let errors = "";
-    archive.stderr.on("data", (chunk) => { errors += chunk; });
-    tar.stderr.on("data", (chunk) => { errors += chunk; });
     let pending = 2;
     let failed = false;
-    const settle = (name) => (code) => {
-      if (code !== 0) failed = true;
-      if (code !== 0) errors += `${name} exited ${code}\n`;
-      if (--pending === 0) failed ? reject(new Error(`extracting ${sha}: ${errors.trim()}`)) : resolve();
+    const settle = (name, child) => {
+      let settled = false;
+      const end = (code, error) => {
+        if (settled) return;
+        settled = true;
+        if (error !== undefined || code !== 0) {
+          failed = true;
+          errors += error !== undefined ? `${name} could not start: ${error.message}\n` : `${name} exited ${code}\n`;
+        }
+        if (--pending === 0) failed ? reject(new Error(`extracting ${sha}: ${errors.trim()}`)) : resolve();
+      };
+      child.stderr.on("data", (chunk) => { errors += chunk; });
+      child.on("error", (error) => end(null, error));
+      child.on("close", (code) => end(code));
     };
-    archive.on("close", settle("git archive"));
-    tar.on("close", settle("tar"));
+    settle("git archive", archive);
+    settle("tar", tar);
+    // Each side releases the other when it fails: a tar that never started, or quit early,
+    // leaves git archive blocked on a full pipe, so its output is drained and it is stopped;
+    // a git archive that never started leaves tar waiting for input, so that input ends.
+    const releaseArchive = () => {
+      archive.stdout.unpipe(tar.stdin);
+      archive.stdout.resume();
+      archive.kill();
+    };
+    tar.on("error", releaseArchive);
+    tar.on("close", (code) => { if (code !== 0) releaseArchive(); });
+    archive.on("error", () => tar.stdin.end());
+    tar.stdin.on("error", () => {});
+    archive.stdout.on("error", () => {});
+    archive.stdout.pipe(tar.stdin);
   });
 }
 
@@ -228,7 +250,10 @@ async function build({ source, ref, out }) {
 
   const gitDirs = [...new Set(["--absolute-git-dir", "--git-common-dir"].map((flag) => fs.realpathSync(path.resolve(source, git(source, "rev-parse", flag)))))];
   const topEntries = git(source, "ls-tree", "--name-only", sha).split("\n").filter(Boolean);
-  const target = validateOutput(out ?? path.join(source, "dist", PLUGIN), source, gitDirs, topEntries, manifests.claude);
+  const requested = out ?? path.join(source, "dist", PLUGIN);
+  const check = () => validateOutput(requested, source, gitDirs, topEntries, manifests.claude);
+  const target = check();
+  const warnings = [];
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staging = fs.mkdtempSync(path.join(path.dirname(target), `.${path.basename(target)}.staging-`));
@@ -254,21 +279,40 @@ async function build({ source, ref, out }) {
       interface: { displayName: PLUGIN },
       plugins: [{ name: PLUGIN, source: { source: "local", path: `./plugins/${PLUGIN}` }, policy: listing.policy, category: listing.category }],
     });
-    // The swap: the old output moves aside, the staging takes its name, and only then is the
-    // old one removed; a failed rename puts the old output back.
-    const aside = fs.existsSync(target) ? `${staging}.previous` : null;
-    if (aside !== null) fs.renameSync(target, aside);
+    // The swap. The output is checked again first, because another process may have made or
+    // changed it while the payloads were extracted, and only the directory that check saw —
+    // the same device and inode — is moved aside; anything else goes back where it was. The
+    // staging then takes the output's name, a failed rename putting the old output back, and
+    // only then is the old one removed.
+    check();
+    const seen = fs.existsSync(target) ? fs.lstatSync(target) : null;
+    const aside = seen === null ? null : `${staging}.previous`;
+    if (aside !== null) {
+      fs.renameSync(target, aside);
+      const moved = fs.lstatSync(aside);
+      if (moved.dev !== seen.dev || moved.ino !== seen.ino) {
+        fs.renameSync(aside, target);
+        throw new Refusal(`refusing ${requested}: it changed while the build ran`);
+      }
+    }
     try {
       fs.renameSync(staging, target);
     } catch (error) {
       if (aside !== null) fs.renameSync(aside, target);
       throw error;
     }
-    if (aside !== null) fs.rmSync(aside, { recursive: true, force: true });
+    // The new payload is in place: failing to remove the old one is a warning, not a failure.
+    if (aside !== null) {
+      try {
+        fs.rmSync(aside, { recursive: true, force: true });
+      } catch (error) {
+        warnings.push(`could not remove the previous output at ${aside}: ${error instanceof Error ? error.message : String(error)}; remove it by hand`);
+      }
+    }
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
   }
-  return { target, sha, version: pkg.version };
+  return { target, sha, version: pkg.version, warnings };
 }
 
 const parsed = parse(process.argv.slice(2));
@@ -279,7 +323,8 @@ if (parsed.help) {
   process.exitCode = 2;
 } else {
   try {
-    const { target, sha, version } = await build(parsed.values);
+    const { target, sha, version, warnings } = await build(parsed.values);
+    for (const warning of warnings) process.stderr.write(`build-dist: warning: ${warning}\n`);
     process.stdout.write(`build-dist: built ${PLUGIN} ${version} from ${sha} in ${target}\n`);
   } catch (error) {
     process.stderr.write(`build-dist: ${error instanceof Error ? error.message : String(error)}\n`);

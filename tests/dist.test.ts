@@ -158,11 +158,12 @@ test("the builder refuses an output it must not replace, and writes nothing ther
     const nonempty = path.join(scratch, "nonempty");
     fs.mkdirSync(nonempty);
     fs.writeFileSync(path.join(nonempty, "keep.txt"), "mine\n");
-    const nested = path.join(scratch, "nested");
-    assert.equal(build(source, nested).status, 0);
-    fs.mkdirSync(path.join(nested, "claude", ".git"));
-    const linked = path.join(scratch, "nested", "codex", "plugins", "cross-agent", "skills", "linked");
-    fs.symlinkSync(scratch, linked);
+    const nestedGit = path.join(scratch, "nested-git");
+    assert.equal(build(source, nestedGit).status, 0);
+    fs.mkdirSync(path.join(nestedGit, "claude", ".git"));
+    const nestedLink = path.join(scratch, "nested-link");
+    assert.equal(build(source, nestedLink).status, 0);
+    fs.symlinkSync(scratch, path.join(nestedLink, "codex", "plugins", "cross-agent", "skills", "linked"));
     const viaLink = path.join(scratch, "link");
     fs.symlinkSync(scratch, viaLink);
     const home = path.join(scratch, "home");
@@ -171,10 +172,12 @@ test("the builder refuses an output it must not replace, and writes nothing ther
       ["the source itself", source],
       ["an ancestor of the source", path.dirname(source)],
       ["a tracked source entry", path.join(source, "src", "dist")],
+      ["a child of a tracked entry whose name starts with two dots", path.join(source, "src", "..payload")],
       ["Git metadata", path.join(source, ".git", "dist")],
       ["a path through a symlink", path.join(viaLink, "out")],
       ["an unrecognized nonempty directory", nonempty],
-      ["a payload holding Git metadata and a symlink", nested],
+      ["a payload holding Git metadata", nestedGit],
+      ["a payload holding a symlink", nestedLink],
       ["the home directory", home, { HOME: home }],
       ["the filesystem root", path.parse(scratch).root],
     ];
@@ -185,9 +188,12 @@ test("the builder refuses an output it must not replace, and writes nothing ther
     }
     assert.deepEqual(fs.readdirSync(nonempty), ["keep.txt"]);
     assert.equal(fs.existsSync(path.join(source, "src", "dist")), false);
+    assert.equal(fs.existsSync(path.join(source, "src", "..payload")), false);
+    assert.ok(fs.existsSync(path.join(nestedGit, "claude", ".git")), "the refused payload is left as it was");
+    assert.ok(fs.lstatSync(path.join(nestedLink, "codex", "plugins", "cross-agent", "skills", "linked")).isSymbolicLink());
     assert.equal(fs.existsSync(path.join(scratch, "out")), false);
     assert.deepEqual(fs.readdirSync(home), []);
-    assert.deepEqual(fs.readdirSync(scratch).sort(), ["home", "link", "nested", "nonempty"], "no staging directory was left behind");
+    assert.deepEqual(fs.readdirSync(scratch).sort(), ["home", "link", "nested-git", "nested-link", "nonempty"], "no staging directory was left behind");
   } finally {
     fs.rmSync(source, { recursive: true, force: true });
     fs.rmSync(scratch, { recursive: true, force: true });
@@ -252,6 +258,80 @@ test("the builder refuses a commit whose package.json and manifests disagree on 
     assert.equal(fs.existsSync(out), false);
     assert.equal(spawnSync(process.execPath, [builder, "--bogus"], { encoding: "utf8" }).status, 2);
     assert.equal(spawnSync(process.execPath, [builder, "--help"], { encoding: "utf8" }).status, 0);
+  } finally {
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+/** A directory holding `tar` as `script` and `git` as the real one, for a PATH the builder runs under. */
+function toolDir(scratch: string, script: string | null): string {
+  const dir = path.join(scratch, "bin");
+  fs.mkdirSync(dir);
+  fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(dir, "git"));
+  if (script !== null) fs.writeFileSync(path.join(dir, "tar"), script, { mode: 0o755 });
+  return dir;
+}
+
+// @anchor distRevalidates
+test("an output that changes while the build runs is checked again before the swap, and left alone", () => {
+  // Another process fills the output after the first check: here a `tar` first on PATH, which
+  // plants a directory there and then unpacks as the real one does.
+  const source = fixture();
+  const { out, scratch } = outDir();
+  try {
+    // The script names its tools by absolute path: the PATH it runs under holds only git and it.
+    const [realTar, mkdir] = ["tar", "mkdir"].map((tool) => execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim());
+    const bin = toolDir(scratch, `#!/bin/sh\n'${mkdir}' -p '${out}' && echo theirs > '${out}/keep.txt' || exit 1\nexec '${realTar}' "$@"\n`);
+    const raced = spawnSync(process.execPath, [builder, "--source", source, "--out", out], { encoding: "utf8", env: { ...process.env, PATH: bin } });
+    assert.equal(raced.status, 1, raced.stderr);
+    assert.match(raced.stderr, /refusing/);
+    assert.deepEqual(fs.readdirSync(out), ["keep.txt"]);
+    assert.equal(fs.readFileSync(path.join(out, "keep.txt"), "utf8"), "theirs\n");
+    assert.deepEqual(fs.readdirSync(scratch).sort(), ["bin", "cross-agent"], "no staging directory was left behind");
+  } finally {
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// @anchor distCleanupAfterSwap
+test("a build that is in place reports success when the old payload cannot be removed, naming where it was set aside", () => {
+  const source = fixture();
+  const { out, scratch } = outDir();
+  const stuck = path.join(out, "claude", "plugins", "cross-agent", "skills");
+  let aside: string | undefined;
+  try {
+    assert.equal(build(source, out).status, 0);
+    fs.chmodSync(stuck, 0o555);
+    const built = build(source, out);
+    assert.equal(built.status, 0, built.stderr);
+    assert.match(built.stderr, /could not remove the previous output at (\S+)/);
+    aside = /could not remove the previous output at (\S+)/.exec(built.stderr)![1].replace(/[.,;:]$/, "");
+    assert.ok(fs.existsSync(aside), "the previous output is where the warning says");
+    assert.ok(fs.statSync(path.join(out, "claude", "plugins", "cross-agent", "skills", "cross-agent", "SKILL.md")).isFile(), "the new payload is in place");
+  } finally {
+    for (const dir of [stuck, aside === undefined ? undefined : path.join(aside, "claude", "plugins", "cross-agent", "skills")]) {
+      if (dir !== undefined && fs.existsSync(dir)) fs.chmodSync(dir, 0o755);
+    }
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// @anchor distSpawnFailure
+test("a build whose tar cannot start fails, leaving no staging directory and the previous output whole", () => {
+  const source = fixture();
+  const { out, scratch } = outDir();
+  try {
+    assert.equal(build(source, out).status, 0);
+    const before = fs.readFileSync(path.join(out, "claude", ".claude-plugin", "marketplace.json"), "utf8");
+    const bin = toolDir(scratch, null);
+    const failed = spawnSync(process.execPath, [builder, "--source", source, "--out", out], { encoding: "utf8", env: { ...process.env, PATH: bin } });
+    assert.equal(failed.status, 1, failed.stderr);
+    assert.match(failed.stderr, /tar/);
+    assert.equal(fs.readFileSync(path.join(out, "claude", ".claude-plugin", "marketplace.json"), "utf8"), before);
+    assert.deepEqual(fs.readdirSync(scratch).sort(), ["bin", "cross-agent"], "no staging directory was left behind");
   } finally {
     fs.rmSync(source, { recursive: true, force: true });
     fs.rmSync(scratch, { recursive: true, force: true });
