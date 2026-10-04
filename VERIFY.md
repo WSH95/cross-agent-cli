@@ -17,6 +17,24 @@ and real Codex 0.160.0 setup, policy preservation, removal and four per-chat roo
 The preceding implementation's full suite passed 1045 with two guarded skips;
 publication changes only version metadata and project records in the source tree.
 
+The frozen source release is `4738b3d592849bbd25a25d153a6033811b2448a9`, pushed to
+`main`. Existing agent-plugins PR #16 was updated on its original branch to
+`37e4ee63ea66d8bb373e873268635870101d2730`; its head, title and full body were verified
+through GitHub. It remains open and mergeable, with no status checks configured.
+No new PR, force-push, merge or Dolt remote sync was performed.
+
+The publisher's dry run passed against the existing PR branch. Its guarded copy
+helpers then replaced only `cross-agent/`, after verifying the target checkout was
+clean. All payload bytes and modes match the frozen dist; the marketplace README
+was updated separately. Claude marketplace and strict plugin validation pass.
+A fresh isolated Codex home installed enabled version 0.1.1 from the exact target
+checkout; its cached payload also matches byte for byte and mode for mode. The
+cached helper's install/check/remove pass, `codex mcp get` shows no fixed cwd and a
+3600-second timeout, and the stable launcher in a fresh project without config
+answers MCP `initialize` with version 0.1.1. Real user configuration was untouched.
+Evidence: `/tmp/cross-agent-release-0.1.1-KbXLn0/` and
+`/tmp/cross-agent-release-0.1.1-checks.log`. The target checkout is clean.
+
 ## Codex one-time MCP setup — `atc-s96.73` (2026-10-04)
 
 | Check | Result |

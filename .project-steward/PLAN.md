@@ -2,10 +2,10 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Release 0.1.1 (publication in progress 2026-10-04)
+## Release 0.1.1 (published to existing PR 2026-10-04)
 
-`atc-s96.111`: user-authorized source push and update to existing agent-plugins PR #16.
-Version fields and release checks are complete; Beads holds the publication record.
+`atc-s96.111` is closed: source `4738b3d` pushed, existing agent-plugins PR #16 updated
+at `37e4ee6` and left open. Release checks pass; Beads holds the publication record.
 
 ## Codex one-time MCP setup (done 2026-10-04)
 

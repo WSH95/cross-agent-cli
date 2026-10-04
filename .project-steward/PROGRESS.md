@@ -3,6 +3,15 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T12:04:17Z — codex
+atc-s96.111 closed: source 0.1.1 pushed at 4738b3d; existing agent-plugins PR #16
+updated at 37e4ee6 without rewriting history. PR title/body and remote heads verified;
+open and mergeable. Frozen payload comparison, Claude marketplace/strict plugin
+validation and isolated Codex install/setup/check/remove/MCP handshake pass, in
+addition to the 33 release checks. Root marketplace README explains the one-time
+setup. Real user Codex config stayed unchanged; no PR merge or Dolt remote sync occurred.
+The unrelated Beads interaction log remains uncommitted.
+
 ### 2026-10-04T11:56:18Z — codex
 atc-s96.111: user authorized source push and direct update of open agent-plugins
 PR #16. Version 0.1.1 prepared in package.json and both manifests; 33 packaging,

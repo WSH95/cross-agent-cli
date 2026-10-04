@@ -1,19 +1,21 @@
 ---
-updated_at: 2026-10-04T11:56:18Z
+updated_at: 2026-10-04T12:04:17Z
 updated_by: codex
-session_status: active
+session_status: complete
 branch: main
 ---
 # Handoff
 
 ## Now
 
-`atc-s96.111` is publishing the completed Codex setup change. The user explicitly
-authorized pushing source `main` and updating the existing, still-open agent-plugins
-PR #16 directly. The version is bumped to 0.1.1 in the package and both manifests;
-33 packaging, dist, publisher and native Codex checks pass with no skips. The target
-branch is `publish/cross-agent-0.1.0`; keep its history and leave the PR open. The
-generated payload and PR description will refer to the frozen release commit.
+`atc-s96.111` is complete and closed. With the user's explicit approval, source
+`main` was pushed at release commit `4738b3d` (0.1.1), and the existing agent-plugins
+PR #16 was updated on `publish/cross-agent-0.1.0` to `37e4ee6`. The PR is open and
+mergeable, with its title and description verified. The generated payload matches
+the frozen source commit; 33 release checks pass, Claude validation passes, and an
+isolated Codex install passes setup/check/remove and the 0.1.1 MCP handshake. The
+marketplace README now explains the one-time setup. No force-push, PR merge or Dolt
+remote sync was performed. Marketplace availability still awaits the user's merge.
 
 ## Completed implementation
 
@@ -27,7 +29,7 @@ review found no actionable findings, including the three skill-routing scenarios
 Final `npm test`: 1047 tests, 1045 pass, 0 fail, 2 guarded skips. One earlier full run
 hit an existing reconciliation deadline; the unchanged server file passed 46/46 in
 isolation and the unchanged full-suite rerun passed. Citations: 1643, no misses or
-drift. Nothing was pushed or published; installed users need a later release.
+drift. This implementation is now included in the 0.1.1 publication above.
 
 ## Previous release context
 
@@ -89,9 +91,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-s96.111`: commit/push 0.1.1, build and validate payloads, update PR #16, verify
-  remote heads, and record completion. Its temporary target checkout is
-  `/tmp/cross-agent-release-0.1.1-KbXLn0/agent-plugins`.
+- No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
+  Its clean temporary target checkout and publication evidence remain under
+  `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
 - No implementation remains in flight for `atc-s96.73`. The local commit includes the
   launcher skill/reference/helpers, bundled-mount diagnostic, installation/design/probe
   docs, setup/native/packaging/skill tests, and Project Steward records.
@@ -215,8 +217,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Finish the authorized publication in `atc-s96.111`: source main and the existing
-   PR branch only; no force-push or PR merge. No Dolt remote sync is authorized.
+1. The user can review and merge https://github.com/WSH95/agent-plugins/pull/16.
+   Future pushes, PR merges and Dolt remote sync require separate authorization.
 2. For an isolated native regression check, run
    `CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.
    It creates its own temporary Codex home and makes no model turn. `VERIFY.md` records
