@@ -1,19 +1,26 @@
 ---
-updated_at: 2026-10-04T06:59:00Z
+updated_at: 2026-10-04T07:20:00Z
 updated_by: claude
-session_status: active
+session_status: closed
 branch: main
 ---
 # Handoff
 
 ## Now
 
-**Release 0.1.0 is in progress (`atc-s96.109`, Claude, 2026-10-04).** The user asked for a
-public MIT repo `WSH95/cross-agent-cli`, version 0.1.0, a dist of the plugin published to
-`WSH95/agent-plugins` by PR with that README updated, a concise README, a `bin/cross-agent`
-launcher, and no Claude attribution in commits or PRs. The user pre-approved the README and
-AGENTS.md review gates and the pushes on 2026-10-04. The plan, reviewed five rounds by
-gpt-6-astra (the last "ready"), is `~/.claude/plans/use-project-steward-agent-artifact-maint-nifty-flamingo.md`.
+**Release 0.1.0 is published (`atc-s96.109`, closed 2026-10-04).** The project is public at
+https://github.com/WSH95/cross-agent-cli under the MIT license, `main` at the release commit
+`f996a46` and the closing records after it. The plugin's payloads are in
+https://github.com/WSH95/agent-plugins/pull/16, open and mergeable, **not merged**: the
+marketplace install (`cross-agent@agent-plugins`) works once the user merges it. The
+release brought:
+- `bin/cross-agent`, the CLI's launcher on Claude Code's Bash tool PATH, denied to
+  specialists;
+- `tools/build-dist.mjs`, the payloads from a commit, and `tools/publish_agent_artifact_pr.py`
+  with `agent-artifacts.json`;
+- a 150-line README, with the reference material in `docs/install.md` and
+  `docs/operator-guide.md`;
+- the release review's fixes. Decision 0016 and `VERIFY.md` ("atc-s96.109") have the record.
 
 The follow-ups `.106` (`c492021`), `.108` (`5b0e529`), and `.107` are complete.
 This checkpoint records `.107`'s cleanup-compatible runner probes. The final
@@ -57,13 +64,8 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-s96.109`: `.1`–`.6` are committed and closed (`3ddcbb4`, `974a630`, `b94cb69`,
-  `25f3789`, `c2d120c`), with the release review's fixes (`bc33a8a`, `208c651`,
-  `8099eca`). Full suite 1036 of 1037, 1 guarded skip. `VERIFY.md` has the release
-  section.
-- `.109.7`, publication, is in flight: freeze the release SHA, rebuild and revalidate,
-  `gh repo create WSH95/cross-agent-cli`, push `main`, open the agent-plugins pull
-  request (two commits: `cross-agent/`, then the root marketplace entries and README).
+- Nothing of the release is in flight. Only `.beads/interactions.jsonl` stays modified and
+  uncommitted, as before.
 
 The requested prerequisite commits are complete: `.106` is `c492021`, and `.108`
 is `5b0e529`. Both commits were reviewed for task separation; neither includes
@@ -182,10 +184,14 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Release `atc-s96.109`, in order: commit the dist builder (`.3`); the publish tooling
-   (`.4`); isolated install checks with the mixed-host matrix (`.5`); the concise README,
-   `docs/install.md`, `docs/operator-guide.md` and the retargeted tests (`.6`); then the
-   frozen-SHA rebuild, `gh repo create`, push `main`, and the agent-plugins PR (`.7`).
+1. **The user:** review and merge https://github.com/WSH95/agent-plugins/pull/16. After the
+   merge, `/plugin marketplace update agent-plugins` (or a fresh `marketplace add`) offers
+   `cross-agent@agent-plugins`.
+2. `atc-s96.110` (P3): settle how a Claude Code install of cross-agent reaches Grok
+   sessions, and whether a marketplace install can stay per project. This needs a
+   signed-in isolated Grok home, since a fresh signed-out one keeps path plugins off.
+3. Later releases follow the README's "Development": bump the version in all three files,
+   commit, push `main`, then run the publisher.
 1. Run `bd ready` before choosing the next task. `.106`, `.108`, and `.107` are
    closed; no push or remote sync is authorized.
 2. **The team-mode follow-ups:**

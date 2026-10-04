@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T07:20:00Z — claude
+Release 0.1.0 published: public MIT repo https://github.com/WSH95/cross-agent-cli at f996a46 (ls-remote --refs: main only); agent-plugins PR #16 open and mergeable, not merged; frozen-build installs identical in isolated Claude and Codex homes; atc-s96.109 closed, atc-s96.110 follows.
+
 ### 2026-10-04T06:59:00Z — claude
 Release 0.1.0 (atc-s96.109): MIT, 0.1.0, bin/cross-agent, tools/build-dist.mjs, the publisher, the concise README with docs/install.md and docs/operator-guide.md, and the release review's fixes are committed; full suite 1036/1037, 1 guarded skip; isolated Claude and Codex installs pass; the Grok mixed-host matrix is inconclusive (atc-s96.110). Next: publication.
 

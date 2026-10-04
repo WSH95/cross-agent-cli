@@ -1225,6 +1225,9 @@ Evidence: `/tmp/cross-agent-atc107-4i7vMg/`, including `107-red-all.log`,
 | plan review | five gpt-6-astra (max) rounds, from the second through cross-agent's own `delegate`, a Fable 5.1 subagent judging rounds 3 and 4; the fifth "ready" |
 | release review | gpt-6.1-sol (max) and grok-4.7 (xhigh) through cross-agent, in parallel: R1 (high, a stale output check before the swap), R2, R3, R5, R6 and R7, M1, L2 and R4 fixed with regressions; B1 already in the plan (the root marketplace entries come with the first publication); L1 declined, since the agent-artifact-maintainer skill keeps a non-final system alias under `/` |
 | attribution | no `Co-Authored-By: Claude` and no `Claude-Session` trailer in `2415b73..HEAD` |
+| release SHA | `f996a46`, rebuilt into a fresh dist and a preview marketplace rebuilt from it; `claude plugin validate` passes; fresh isolated Claude and Codex installs equal the build byte for byte, exec bits kept, the cached Codex launcher answers 0.1.0 with 13 tools |
+| publication | `gh repo create WSH95/cross-agent-cli --public`; `git push -u origin main`; `git ls-remote --refs origin` is `refs/heads/main` at `f996a46` alone; GitHub reports PUBLIC, license MIT |
+| agent-plugins | https://github.com/WSH95/agent-plugins/pull/16: `5f5d1c5` (`cross-agent/`, 111 files, identical to the frozen build) and `b6cc463` (the two root marketplace entries and README); `claude plugin validate` passes; open and mergeable, not merged; no attribution in either commit |
 
 The release review's race regression was checked by mutation: with the second output check
 removed it fails, with it restored it passes. Evidence: this session's scratchpad logs
