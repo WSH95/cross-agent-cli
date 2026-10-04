@@ -996,3 +996,35 @@ PRIME override replaces Beads' generated context, resume uses
 `bd prime --export --memories-only` to recover current memories. No AGENTS.md or
 CLAUDE.md edits were needed. The earlier prohibition already injected into this
 chat remains a session restriction until a fresh context loads the corrected hook.
+
+## 0016 — 2026-10-04 — Release 0.1.0: public MIT repository, generated dist, agent-plugins distribution, a concise README (`atc-s96.109`); AGENTS.md (user-approved)
+
+Context: The user asked to build the plugin's dist with the agent-artifact-maintainer
+skill, publish it to WSH95/agent-plugins by pull request with that README updated,
+make this README concise, create a public MIT repository WSH95/cross-agent-cli and push
+this project, set the version to 0.1.0, ship a `bin/cross-agent` launcher, and add no
+Claude attribution to commits or pull requests. The plan went through five gpt-6-astra
+(max) review rounds, run through cross-agent's own `delegate` from round 2, with a Fable
+5.1 subagent judging rounds 3 and 4; the fifth was "ready". On 2026-10-04 the user
+approved the plan and pre-approved the README and AGENTS.md review gates and the pushes.
+
+Decision: The repository root stays the canonical source. `tools/build-dist.mjs` builds
+the Claude and Codex payloads from a commit, in agent-plugins' layout (Grok reuses the
+Claude one), and `tools/publish_agent_artifact_pr.py`, kept verbatim from
+WSH95/project-steward, publishes them by pull request at `cross-agent/`. The license
+becomes MIT (`Copyright (c) 2026 WSH95`; no OpenMausBot code ships, and the devpack the
+role text came from declares MIT). The README is cut to what a user needs to understand,
+install and use the tool; the reference material moves nearly verbatim to
+`docs/install.md` and `docs/operator-guide.md`, and the tests that pinned it follow it
+there. Grok stays attached per project through a clone; a user-scope `grok plugin
+install` is not offered. AGENTS.md takes the launcher, the distribution tools, the two
+guides and the release line, with its README references retargeted.
+
+Consequences: Every later publication bumps the version in `package.json` and both
+manifests, commits, and pushes `main` before the publisher runs, because Claude Code keeps
+users on the cached copy of a version and the pull request links the source commit. The
+install checks in isolated homes passed for Claude Code and Codex. The mixed-host matrix
+(a Claude Code install seen by Grok) stayed inconclusive, because a fresh signed-out Grok
+home keeps even an explicitly enabled path plugin off; `docs/install.md` therefore states
+only what was observed, that Grok loads Claude Code plugins' MCP servers, and Grok's
+documented switch, and `atc-s96.110` holds the rest.

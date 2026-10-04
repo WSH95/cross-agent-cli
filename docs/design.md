@@ -1888,8 +1888,8 @@ which is a property of the line, not of the pipeline.
   inside the specialist's worktree, which the role may edit
   (`src/engines/claude.ts#claude`, the `plan` member's role-prompt block). Prerequisites on Linux are three, all
   from P1: `bwrap`, `socat`, and on Ubuntu 24.04 or later an AppArmor profile
-  for `/usr/bin/bwrap` with `flags=(unconfined)` and `userns` — the README's
-  "Prerequisites on Linux" says how to set them up, beside Grok's own. The adapter
+  for `/usr/bin/bwrap` with `flags=(unconfined)` and `userns` — `docs/install.md`'s
+  "Linux prerequisites" says how to set them up, beside Grok's own. The adapter
   answers the two failure modes in the two places each can be seen:
   `sandboxSupport()` names whichever of `bwrap` and `socat` is missing from
   `PATH` before the spawn (`src/engines/claude.ts#claudeSandboxSupport`), and
@@ -2468,7 +2468,7 @@ except the `worktree add` `delegate` runs for a one-shot, inside its own `spawn.
 where `cancel` waits too — and still does not end that git child, which nothing but
 the call owns; a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout
 hook in the new worktree.
-The README gives the operator's recovery: find the hung git by its command line —
+`docs/operator-guide.md` gives the operator's recovery: find the hung git by its command line —
 `--work-tree=<the task's worktree>` for a `git_mutate` step,
 `--work-tree=<the project root>` for a `git_root` step — since no `CROSS_AGENT_*`
 variable reaches git; end that process tree, hooks included; then
@@ -2679,7 +2679,7 @@ where Claude Code reads a project's settings, hooks and MCP servers, `.codex/`
 where Codex reads a project's configuration, `.grok/config.toml` where Grok
 reads a project's plugins and servers (section 9), and each host reads them in
 the operator's own session, outside any sandbox. A writable specialist can add
-one in its worktree, or un-ignore `.grok/` where the README's recipe ignores it,
+one in its worktree, or un-ignore `.grok/` where the install guide's recipe ignores it,
 and the loop's step 6 stages it; until this build the diff a code reviewer read
 was the only thing that would catch it. So the four paths are one list
 (`src/gitmutate.ts#hostConfigPaths`), matched in any case — a host on a
@@ -3787,7 +3787,7 @@ install <path> --trust`, the documented one: it installs at user scope, which wo
 server in every Grok session on the machine, Grok specialists in linked worktrees among them,
 where a project's file does not reach while git ignores `.grok/`: Grok takes a linked worktree
 as a project of its own, so a committed file would be read in every one, which is why the
-README's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
+install guide's recipe ignores it (`docs/probes.md#grokWorktreeMount`). The plugin's
 server carries no `--project`; Grok starts it in the session's working directory, where
 discovery finds the project's config (`src/project.ts#discoverProject`). A branch worktree
 made a project of its own needs the attach in its own directory, which git does not
@@ -3808,6 +3808,21 @@ session runs `cross-agent <verb>` from the plugin's own copy, and a link to the 
 from a shell's PATH works the same way, because it finds the plugin root from its own real
 path (`tests/packaging.test.ts#cliLauncherRunsCli`). Specialists are denied it as they are
 the CLI itself (section 3).
+
+**Distribution.** The repository is the plugin's source; installs come from payloads built
+from a commit. `tools/build-dist.mjs` writes WSH95/agent-plugins' layout, one marketplace
+directory per host — `claude/`, which Grok reads too, and `codex/` — each holding `bin/`,
+`src/`, `modes/`, `skills/`, `LICENSE` and a trimmed `package.json` beside that host's
+manifest, taken by `git archive` from the ref (`tests/dist.test.ts#distPayloads`), and
+`tools/publish_agent_artifact_pr.py` carries them to `cross-agent/` there by pull request,
+as `agent-artifacts.json` says (`tests/publish.test.ts#publishDryRun`). Claude Code serves a
+marketplace plugin from a cache keyed by the manifest's version and keeps that copy until
+the version changes, so every publication bumps the version in `package.json` and both
+manifests, and the source commit is pushed before its payload is published. Grok stays
+attached per project, through a clone: a user-scope `grok plugin install` from the
+marketplace would reach every Grok session. Grok also reads the plugins Claude Code
+installs, through its `.claude/plugins/` compatibility, which `docs/install.md` tells a
+Claude Code user who also runs Grok.
 
 Why an MCP core is the portable choice, and not a subagent as the vendor
 bridges use: **neither `codex-plugin-cc` 1.0.6 nor `grok-build-plugin-cc`
@@ -4127,7 +4142,7 @@ Four limits of worktree projects are deferred the same way, each for its reason:
   path to it, which is why `init` there asks for `--from`.
 - **Cancelling a hung git child.** `gitMutate` holds `spawn.lock` for the whole call
   and `cancel` needs that lock, so cancelling one needs subprocess ownership that does
-  not first take it; the README gives the operator's recovery by hand (section 4).
+  not first take it; `docs/operator-guide.md` gives the operator's recovery by hand (section 4).
 - **A wider branch alphabet**, what `git check-ref-format --branch` accepts less
   paths, ranges and options, where `src/gitroot.ts#nameFault` now refuses a name such
   as `feature+one` that a worktree project's default branch could otherwise carry.
@@ -4162,10 +4177,12 @@ src/engines/{types,spawn,registry,binaries}.ts
 src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
 tests/fixtures/fake-engine.mjs
+bin/cross-agent
 tools/probe.mjs   tools/check-citations.mjs   tools/from-openmaus.mjs
-tools/e2e-verify.mjs
-docs/design.md    docs/probes.md
+tools/e2e-verify.mjs   tools/build-dist.mjs   tools/publish_agent_artifact_pr.py
+docs/design.md    docs/probes.md    docs/install.md   docs/operator-guide.md
 AGENTS.md         README.md         package.json      .gitignore
+agent-artifacts.json
 LICENSE (MIT)
 ```
 
@@ -4691,8 +4708,8 @@ binding, and the project follows its own path (Context).
   environment by the variable that marks it (`#cliRefusesInsideEngine`), the
   rule failing closed (`#cliWritesFailsClosed`), every misuse of a command line
   is a 2 and help names every verb and code (`#cliUsage`),
-  `report` indents each final message (`#reportVerb`), and the README and the
-  launcher are held to the dispatcher's verbs and protocol
+  `report` indents each final message (`#reportVerb`), and the README, the operator
+  guide and the launcher are held to the dispatcher's verbs and protocol
   (`#cliDocsNameVerbs`).
 - **Team modes (`atc-s96.104`).** Seats and the merge gate load and refuse by
   field (`tests/modes.test.ts#roleSeats`, `#roleGates`, `#leadSeatsOne`); a config

@@ -282,7 +282,7 @@ test("the project is MIT licensed, and package.json names the repository the man
 });
 
 // @anchor codexFallbackSnippet
-test("the Codex fallback is the table codex mcp add writes plus the plugin mount's four keys, and the README installs, checks and removes both attaches", () => {
+test("the Codex fallback is the table codex mcp add writes plus the plugin mount's four keys, and the install guide installs, checks and removes both attaches", () => {
   const file = path.join(repoRoot, "assets", "codex", "mcp_servers.toml");
   assert.ok(fs.existsSync(file), "assets/codex/mcp_servers.toml is missing");
   // `codex mcp add cross-agent -- node <repo>/src/server.ts` writes the first three lines; the
@@ -300,23 +300,26 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
     'default_tools_approval_mode = "approve"',
     "startup_timeout_sec = 30",
   ]);
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const claude = readme.indexOf("## Install it in Claude Code");
-  const start = readme.indexOf("## Install it in Codex");
-  const end = readme.indexOf("## Run the tests");
-  assert.ok(claude >= 0 && start > claude && end > start, "the Codex section follows Claude Code's and precedes the tests");
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "install.md"), "utf8");
+  const claude = guide.indexOf("## Install it in Claude Code");
+  const start = guide.indexOf("## Install it in Codex");
+  const grok = guide.indexOf("## Install it in Grok");
+  assert.ok(claude >= 0 && start > claude && grok > start, "the Codex section follows Claude Code's and precedes Grok's");
   // The section runs to the next heading of its own level, so a word another host's section
   // carries does not stand in for one of Codex's.
-  const section = readme.slice(start, readme.indexOf("\n## ", start + 1));
+  const section = guide.slice(start, guide.indexOf("\n## ", start + 1));
   for (const words of [
+    // The marketplace install, and the init its project needs before Codex serves it, solo included.
+    "codex plugin add cross-agent@agent-plugins", "bin/cross-agent init",
+    // The install from a clone, under that marketplace's own id, and the configured-server fallback.
     "codex plugin marketplace add", "codex plugin add cross-agent@cross-agent-cli", "codex plugin list", "codex plugin remove",
     "codex plugin marketplace remove", "codex mcp add cross-agent", "assets/codex/mcp_servers.toml", "~/.codex/skills/cross-agent",
     "codex mcp remove cross-agent",
     // The plugin's one extra step, and the switch that keeps its server off until a session asks.
-    "CROSS_AGENT_PROJECT", "plugins.cross-agent@cross-agent-cli.enabled=true",
+    "CROSS_AGENT_PROJECT", "plugins.cross-agent@agent-plugins.enabled=true",
     // The install registers a clean export, since Codex copies the whole directory it is given,
     // and the fallback's table names the variables the server needs handed on.
-    "git -C ~/Documents/cross-agent-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
+    "git -C ~/src/cross-agent-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',
   ]) {
     assert.ok(section.includes(words), `the Codex section names ${words}`);
   }
@@ -330,13 +333,13 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
 // they need, the result cap `describe_mode` needs, the checks and the way back.
 
 // @anchor describeModeSizes
-test("the README and design state the live mode text sizes without projectRoot, which exceed Grok's default cap under both dev-team modes", () => {
+test("the install guide and design state the live mode text sizes without projectRoot, which exceed Grok's default cap under both dev-team modes", () => {
   // The mode's text as the server sends it (`src/server.ts`, its `text`), in bytes, as
   // Grok's `max_output_bytes` counts them, without the `projectRoot` the handler adds beside
   // it, whose size is the root's own (`tests/server.test.ts#describeModeAnswerSize`). Both
   // documents must track the live payload so their figures cannot drift apart.
   const size = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
-  for (const file of ["README.md", "docs/design.md"]) {
+  for (const file of ["docs/install.md", "docs/design.md"]) {
     const document = fs.readFileSync(path.join(repoRoot, file), "utf8").replace(/\s+/g, " ");
     const stated = /the mode's text, without `projectRoot`, is ([\d,]+) bytes under `dev-team`, ([\d,]+) under `dev-team-engine` and ([\d,]+) under `solo`/.exec(document);
     assert.ok(stated !== null, `${file} states the three sizes`);
@@ -347,12 +350,12 @@ test("the README and design state the live mode text sizes without projectRoot, 
 });
 
 // @anchor readmeSeveralBranches
-test("the README has a worktree project's .gitignore change committed first, and finds a hung git by either tool's command line", () => {
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const start = readme.indexOf("## Several branches at once");
-  const end = readme.indexOf("\n## ", start + 1);
-  assert.ok(start >= 0 && end > start, "the README has the section");
-  const section = readme.slice(start, end).replace(/\s+/g, " ");
+test("the operator guide has a worktree project's .gitignore change committed first, and finds a hung git by either tool's command line", () => {
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "operator-guide.md"), "utf8");
+  const start = guide.indexOf("## Several branches at once");
+  const end = guide.indexOf("\n## ", start + 1);
+  assert.ok(start >= 0 && end > start, "the operator guide has the section");
+  const section = guide.slice(start, end).replace(/\s+/g, " ");
   // A loop's first step stops on a dirty root, and init's change to `.gitignore` is one.
   assert.match(section, /[Cc]ommit the `\.gitignore` change `init` makes there on the worktree's branch before its first task/);
   // A hung `git_mutate` step runs in the task's worktree, and a hung `git_root` step's hooks
@@ -364,11 +367,11 @@ test("the README has a worktree project's .gitignore change committed first, and
 
 // @anchor hooksAndUnsupportedWording
 test("the docs put each hook where git runs it, keep spawn.lock out of git_root's steps, and give the unsupported class's reason at a symlinked .git", () => {
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replace(/\s+/g, " ");
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "operator-guide.md"), "utf8").replace(/\s+/g, " ");
   const design = fs.readFileSync(path.join(repoRoot, "docs", "design.md"), "utf8").replace(/\s+/g, " ");
   // A merge's hooks run at the root and a worktree add's post-checkout hook in the new
   // worktree, both under a git whose command line names the project root.
-  for (const [name, text] of [["README", readme], ["design", design]]) {
+  for (const [name, text] of [["operator guide", guide], ["design", design]]) {
     assert.match(text, /a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree/, name);
     assert.doesNotMatch(text, /`worktree add` and `merge` run the repository's hooks at the root/, name);
   }
@@ -390,18 +393,19 @@ test("the run_command design distinguishes the verified task worktree from the g
 });
 
 // @anchor grokReadmeInstall
-test("the README attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
-  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const codex = readme.indexOf("## Install it in Codex");
-  const start = readme.indexOf("## Install it in Grok");
-  const end = readme.indexOf("## Run the tests");
-  assert.ok(codex >= 0 && start > codex && end > start, "the Grok section follows Codex's and precedes the tests");
-  // What the section says, rather than where its lines wrapped.
-  const section = readme.slice(start, end).replace(/\s+/g, " ");
+test("the install guide attaches Grok per project through the project's own .grok/config.toml, and checks and removes it", () => {
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "install.md"), "utf8");
+  const codex = guide.indexOf("## Install it in Codex");
+  const start = guide.indexOf("## Install it in Grok");
+  assert.ok(codex >= 0 && start > codex, "the Grok section follows Codex's");
+  // The section runs to the next heading of its own level, or to the guide's end; what it
+  // says, rather than where its lines wrapped.
+  const next = guide.indexOf("\n## ", start + 1);
+  const section = guide.slice(start, next < 0 ? guide.length : next).replace(/\s+/g, " ");
   const missing = [
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
     // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
-    "cross-agent init", "node ~/Documents/cross-agent-cli/src/cli.ts init",
+    "cross-agent init", "~/src/cross-agent-cli/bin/cross-agent init",
     // `.grok/` ignored beside `init`'s entries, on a line of its own even after a last line with no
     // newline, and the change committed: a loop's first step stops on a dirty tree, and a committed
     // `.grok/config.toml` would reach every task worktree, which Grok takes as a project of its own.
@@ -413,7 +417,7 @@ test("the README attaches Grok per project through the project's own .grok/confi
     "git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore cross-agent and Grok state'",
     // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
     // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
-    ".grok/config.toml", "[plugins]", 'paths = ["$HOME/Documents/cross-agent-cli"]', 'enabled = ["cross-agent"]',
+    ".grok/config.toml", "[plugins]", 'paths = ["$HOME/src/cross-agent-cli"]', 'enabled = ["cross-agent"]',
     "[mcp]", "max_output_bytes = 100000",
     // Into a file that already has the tables, the attach is merged, never declared twice: the
     // block itself points there, and a hand merge writes the path out and notes the cap it raises.
@@ -445,9 +449,9 @@ test("the README has the operator commit init's .gitignore change before a team'
   // A loop's first step stops unless the root's `git status --porcelain --untracked-files=normal`
   // prints nothing, and `init` itself leaves `.gitignore` modified or new.
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
-  const start = readme.indexOf("## Install it in Claude Code");
-  assert.ok(start >= 0, "the README has a Claude Code section");
+  const start = readme.indexOf("## Quick start");
+  assert.ok(start >= 0, "the README has a quick start");
   const section = readme.slice(start, readme.indexOf("\n## ", start + 1)).replace(/\s+/g, " ");
-  assert.ok(section.includes("Commit that `.gitignore` change"), "the Claude Code section says to commit init's .gitignore change");
+  assert.ok(section.includes("Commit that `.gitignore` change"), "the quick start says to commit init's .gitignore change");
   assert.ok(section.includes("git status --porcelain --untracked-files=normal"), "and says why: the first step's clean-tree check");
 });

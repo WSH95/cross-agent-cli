@@ -100,23 +100,32 @@ Shipped:
 - `.claude-plugin/plugin.json`: the Claude Code plugin manifest, which declares
   the MCP server inline under `mcpServers` (a repository-root `.mcp.json`
   would double as this repository's own project config); `tests/packaging.test.ts`
-  pins it. A Claude Code host attaches with `claude --plugin-dir <this
-  repository>`; a Grok host reads the same manifest as a plugin in place, named
-  under `[plugins]` in the project's own `.grok/config.toml`, so no Grok
-  manifest exists.
+  pins it. A Claude Code host installs it from WSH95/agent-plugins or attaches a
+  clone with `claude --plugin-dir <this repository>`; a Grok host reads the same
+  manifest as a plugin in place, named under `[plugins]` in the project's own
+  `.grok/config.toml`, so no Grok manifest exists.
 - `.codex-plugin/plugin.json`, its launcher `.codex-plugin/serve`, and
   `.agents/plugins/marketplace.json`: the Codex plugin, offered from this
   repository as a one-plugin marketplace. Codex runs it from a copy in its
   cache and starts the server there through the launcher, so a Codex host
   names its project in `CROSS_AGENT_PROJECT`; `assets/codex/mcp_servers.toml`
   is the configured-server fallback. `tests/packaging.test.ts` pins them too.
+- `bin/cross-agent`: the operator CLI's launcher, which Claude Code puts on its
+  Bash tool's PATH; it runs the `src/cli.ts` beside it, and specialists are denied
+  it as they are the CLI.
+- `tools/build-dist.mjs`, `tools/publish_agent_artifact_pr.py` and
+  `agent-artifacts.json`: the install payloads, built from a commit into
+  `dist/cross-agent/` (ignored) in WSH95/agent-plugins' layout, and published there
+  by pull request; the publisher is WSH95/project-steward's, kept verbatim.
+  `tests/dist.test.ts` and `tests/publish.test.ts` pin them.
 - `tools/probe.mjs`: a standalone harness for observing a real engine CLI
   (`--track` spawns the real runner from a delegate-shaped spec).
   `tools/e2e-verify.mjs` judges an end-to-end run by the design's eight
   conditions. `tools/from-openmaus.mjs` is the one-off that carried the
   devpack's dev-team text into `modes/`, run once, kept as history. None of
   `tools/` is product code.
-- `docs/design.md`, `docs/probes.md`.
+- `docs/design.md`, `docs/probes.md`, and the user's guides the README links,
+  `docs/install.md` and `docs/operator-guide.md`.
 
 Planned, in the design's work plan: the backlog (row 14).
 
@@ -151,20 +160,25 @@ Planned, in the design's work plan: the backlog (row 14).
 - A project's config: `node src/cli.ts init --mode dev-team` (or `solo`, or
   `dev-team-engine`) in the project root; in a branch worktree beside it, `node
   src/cli.ts init` copies the main checkout's config onto the worktree's own branch
-  (README, "Several branches at once").
+  (docs/operator-guide.md, "Several branches at once").
 - A project's tasks from a terminal, without writing anything: `node src/cli.ts
   tasks`, `node src/cli.ts show <id>`, `node src/cli.ts report` (each takes
   `--json`).
-- A Codex host: export `HEAD` into a directory of its own (`git archive HEAD |
+- A Codex host: `codex plugin add cross-agent@agent-plugins` from WSH95/agent-plugins,
+  or from a clone, export `HEAD` into a directory of its own (`git archive HEAD |
   tar -x -C <dir>`), `codex plugin marketplace add <dir>`, `codex plugin add
-  cross-agent@cross-agent-cli`, then `CROSS_AGENT_PROJECT=<project root> codex`
-  (README, "Install it in Codex").
+  cross-agent@cross-agent-cli`; then `init` the project and start
+  `CROSS_AGENT_PROJECT=<project root> codex` (docs/install.md, "Install it in Codex").
 - A Grok host: in the project, after `init`, `.grok/` added to `.gitignore` and
   that change committed, then `[plugins]` with `paths = ["<this repository's
   absolute path>"]` and `enabled = ["cross-agent"]`, and `[mcp]` with
   `max_output_bytes = 100000`, in `.grok/config.toml`, the folder trusted
-  (README, "Install it in Grok").
+  (docs/install.md, "Install it in Grok").
 - An engine probe: `node tools/probe.mjs --engine claude --cwd <dir> --sandbox read-only --prompt "…"`.
+- A release: bump the version in `package.json` and both manifests, commit, push
+  `main`, then `python3 tools/publish_agent_artifact_pr.py --build …`, which runs
+  `node tools/build-dist.mjs` and opens the agent-plugins pull request (README,
+  "Development").
 
 <!-- PROJECT-STEWARD:BEGIN commands -->
 ## Commands

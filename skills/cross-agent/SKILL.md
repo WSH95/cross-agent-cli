@@ -44,9 +44,11 @@ Grok lists an MCP server's tools behind its own `search_tool`, so search it for
 missing, this server did not start for your session, and nothing below can run
 without it: tell the user the server did not start, and stop rather than do the
 team's work yourself. Under Codex the plugin starts it only when `CROSS_AGENT_PROJECT`
-names the project before `codex` starts, and says nothing when it does not; under
-Grok, only in a trusted project whose `.grok/config.toml` names this checkout. The
-README's install section for your host gives the steps.
+names, before `codex` starts, a project holding `.cross-agent/config.json`, which
+`cross-agent init` writes, and says nothing when it does not; under Grok, only in a
+trusted project whose `.grok/config.toml` names this checkout. `docs/install.md` in the
+cross-agent repository (https://github.com/WSH95/cross-agent-cli) gives the steps for each
+host.
 
 Then call `list_roles` and show the roster before you dispatch anything: its
 first line is `projectRoot`, then one line per role with its engine, model,
@@ -337,8 +339,8 @@ Under `engine` placement the lead is read-only at the root and appends nothing:
 its closing report is its own final message, which you read with `result {task_id:
 <lead id>}`, and `cross-agent report` renders the same per-task line for every task
 of the run from the ledger, then each task's final message; it exits 0, or 3 for an
-unknown `--since`, by the protocol in the README's table (`README.md`, "The
-operator CLI").
+unknown `--since`, by the protocol in the operator guide's table
+(`docs/operator-guide.md`, "The operator CLI", in the cross-agent repository).
 
 Under `host` placement, close the session with the same per-task list to the user,
 plus what was not verified: a suite nobody ran, a review nobody asked for, a branch

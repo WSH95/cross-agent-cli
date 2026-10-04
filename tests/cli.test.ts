@@ -1364,22 +1364,23 @@ test("waive records the review waiver for the branch head, refuses a stale or un
 });
 
 // @anchor cliDocsNameVerbs
-test("the README and the launcher name only the dispatcher's verbs, and state their exits from its protocol", async () => {
+test("the README, the operator guide and the launcher name only the dispatcher's verbs, and state their exits from its protocol", async () => {
   const { EXIT, VERB_NAMES } = await import("../src/cli.ts");
   const protocol = Object.values(EXIT) as number[];
   const readme = documentAt("README.md");
+  const guide = documentAt("docs/operator-guide.md");
   const launcher = documentAt("skills/cross-agent/SKILL.md");
   // Every `cross-agent <verb>` either document spells is a verb this build has.
   const spelled = (text: string) => [...text.matchAll(/`cross-agent ([a-z][a-z-]*)/g)].map((match) => match[1]);
-  for (const [name, text] of [["README.md", readme], ["skills/cross-agent/SKILL.md", launcher]]) {
+  for (const [name, text] of [["README.md", readme], ["docs/operator-guide.md", guide], ["skills/cross-agent/SKILL.md", launcher]]) {
     assert.ok(spelled(text).length > 0, `${name} names a verb`);
     for (const verb of spelled(text)) assert.ok(VERB_NAMES.includes(verb), `${name} names cross-agent ${verb}, which is no verb`);
   }
 
-  // The README's section has one row per verb, in the usage order, and the whole protocol.
-  const start = readme.indexOf("## The operator CLI");
-  assert.ok(start >= 0, "the README has its operator CLI section");
-  const section = readme.slice(start, readme.indexOf("\n## ", start + 1));
+  // The operator guide's section has one row per verb, in the usage order, and the whole protocol.
+  const start = guide.indexOf("## The operator CLI");
+  assert.ok(start >= 0, "the operator guide has its operator CLI section");
+  const section = guide.slice(start, guide.indexOf("\n## ", start + 1));
   const verbRows = section.split("\n").filter((line) => /^\| `[a-z]/.test(line));
   assert.deepEqual(verbRows.map((line) => /^\| `([a-z-]+)/.exec(line)![1]), [...VERB_NAMES]);
   for (const row of verbRows) {
@@ -1925,7 +1926,7 @@ test("init in a worktree on a branch the mode's task pattern matches is a 3 nami
   assert.match(reason, /task\/\*/);
 });
 
-/** A `.grok/config.toml` as the README's attach writes it, discovering the project by the working directory. */
+/** A `.grok/config.toml` as the install guide's attach writes it, discovering the project by the working directory. */
 const shippedAttach = '[plugins]\npaths = ["/home/someone/Documents/cross-agent-cli"]\nenabled = ["cross-agent"]\n\n[mcp]\nmax_output_bytes = 100000\n';
 
 // @anchor initCopiesGrokAttach
