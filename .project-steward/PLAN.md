@@ -2,6 +2,12 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Codex one-time MCP setup (done 2026-10-04)
+
+`atc-s96.73`: existing launcher skill, installed-version resolver and native Codex
+configuration helper implemented; focused, native and full-suite checks pass. Beads holds
+the acceptance and execution record; Decision 0017 records the integration choice.
+
 ## M0: scaffold and engine probes (done 2026-09-07; P8–P10 added 2026-09-09)
 
 Server skeleton, config loader, fake engine, probe harness (cef9aa5);

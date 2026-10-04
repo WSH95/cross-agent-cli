@@ -1028,3 +1028,29 @@ install checks in isolated homes passed for Claude Code and Codex. The mixed-hos
 home keeps even an explicitly enabled path plugin off; `docs/install.md` therefore states
 only what was observed, that Grok loads Claude Code plugins' MCP servers, and Grok's
 documented switch, and `atc-s96.110` holds the rest.
+
+## 0017 — 2026-10-04 — One-time Codex MCP setup through the existing launcher skill (`atc-s96.73`)
+
+Context: The user asked to remove per-session `CROSS_AGENT_PROJECT` and manual
+versioned cache paths while keeping normal marketplace install and update behavior,
+including local desktop Codex. They approved a one-time setup helper that configures MCP.
+
+Decision: Keep the server's single-project contract and the one launcher skill. The
+skill offers setup/check/removal before its normal `describe_mode` prerequisite.
+Setup uses Codex's native config API and the user layer's version to write only
+`mcp_servers.cross-agent`, without `cwd` or a saved project binding. A stable launcher
+under `CODEX_HOME/cross-agent/` resolves the selected enabled installed plugin through
+`codex plugin list --json` and execs its server with cwd, markers, stdio and ancestry
+intact. The configured entry shadows the bundled mount; the plugin supplies its skill
+and installed updates. The legacy explicit-project mount remains available.
+
+Consequences: Ordinary delegation with missing tools does not authorize setup.
+Custom registrations and other config layers defining this server are refused. Repairs
+preserve the owned entry's policy; explicit removal deletes that whole entry, including
+its per-server policy, because leaving policy alone creates an invalid commandless MCP
+table. An OS-held lock serializes helper writes. Config version conflicts preserve the
+other writer; uncertain writes retain owned runtime state, with both attempted and
+previous connection descriptions, so a retry can recover. Native tests cover the
+desktop backend, not GUI restart controls. Linux and Node 24 remain requirements.
+Publication and changes to the user's real Codex installation are separate from this
+local implementation; no push or remote sync was authorized.

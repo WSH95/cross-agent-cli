@@ -4086,3 +4086,30 @@ streaming formats give line events instead, and P8 records both.
   }
 }
 ```
+
+<!-- @anchor codexOneTimeSetup -->
+## Codex one-time MCP setup (2026-10-04)
+
+Codex CLI 0.160.0, Node 24.11.0, Linux. The reproducible probe is
+`tests/codex-native.test.ts#codexNativeSetup`, enabled with
+`CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.
+It uses a temporary Codex home and a local fixture marketplace; it makes no model
+turn and does not touch the user's Codex config.
+
+Observed: marketplace install, helper `install` twice, `check`, repair after adding
+a disabled-tool rule, and `remove` all passed through the native config API.
+The configured mount had no cwd, kept the 3600-second tool timeout, preserved the
+disabled tool, and removal restored the original unrelated TOML and comment.
+One app-server then hosted four ephemeral chats: an uninitialized solo repository,
+a configured team, its uninitialized branch worktree and an initialized sibling
+worktree. Each called `describe_mode` and `list_roles`; the returned project roots
+were respectively the solo checkout, team checkout, team checkout and sibling.
+The solo checkout still had no config afterwards. This verifies the desktop
+backend's per-chat MCP behavior, not a click-through test of desktop UI controls.
+
+`tests/codex-setup.test.ts#codexSetupMcp` separately runs the real server through the
+stable launcher, delegates to the fixture engine, waits for completion and reads
+its result. A second connection carrying a depth marker has no `delegate` tool.
+The lifecycle tests cover installed updates, stale caches, disable/uninstall,
+custom Codex homes, config conflicts and recovery. Earlier probes of the legacy
+bundled mount remain historical evidence; one-time setup intentionally shadows it.

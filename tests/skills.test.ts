@@ -292,15 +292,19 @@ test("under engine placement the host runs no command on the project and shows t
 test("a host offered none of this server's tools tells the user the server did not start, and why under Codex and Grok", () => {
   // T14's probe (c): a Codex session started without `CROSS_AGENT_PROJECT` was offered the
   // plugin's skill while the plugin's server never started, and nothing said so (atc-s96.71).
-  const before = flat(sectionOf(launcher(), "Before anything"));
+  const before = flat(sectionOf(launcher(), "Before delegating"));
   // What a host that is offered the tools reads first: which project this server serves.
   assert.match(before, /`projectRoot`, the canonical root of the project this server serves/);
   assert.match(before, /no `describe_mode` is offered to you/);
   assert.match(before, /server did not start/);
   assert.match(before, /tell the user[^.]*stop/);
-  assert.match(before, /Codex[^.]*`CROSS_AGENT_PROJECT`[^.]*before `codex` starts/);
+  assert.match(before, /Codex, suggest asking for the one-time setup/);
+  assert.match(before, /legacy bundled mount requires `CROSS_AGENT_PROJECT`[^.]*before Codex starts/);
+  const setup = flat(sectionOf(launcher(), "Codex host setup"));
+  assert.match(setup, /before\*\* calling `describe_mode`/);
+  assert.match(setup, /ordinary delegation with missing tools does not authorize/);
   // Grok's half: the attach is a trusted project's own file naming this checkout.
-  assert.match(before, /Grok, only in a trusted project whose `\.grok\/config\.toml` names this checkout/);
+  assert.match(before, /Grok it starts only in a trusted project whose `\.grok\/config\.toml` names this checkout/);
   // And Grok lists an MCP server's tools behind its own search: a Grok host that sees none in
   // its tool list has not yet looked (T15: nine of ten Grok hosts' first lines listed none). The
   // search comes before the instruction to stop, which a host reading in order would follow first.
@@ -309,7 +313,7 @@ test("a host offered none of this server's tools tells the user the server did n
 
 // @anchor engineHostShowsRoster
 test("under engine placement the host shows the roster before it starts the lead", () => {
-  // S11's E2c host delegated the lead without first showing the roster `## Before anything`
+  // S11's E2c host delegated the lead without first showing the roster `## Before delegating`
   // asks for (atc-s96.66): the section that starts the lead asks for it in its own words.
   const section = flat(engineSection().section);
   const roster = section.search(/`list_roles`[^.]*roster|roster[^.]*`list_roles`/);
@@ -880,7 +884,7 @@ test("every committed dev-team role prompt came through the converter and was ed
 
 // @anchor rosterProjectRootCases
 test("the roster's first line is projectRoot, judged against the project the user is in: stop, proceed, proceed as asked, or confirm", () => {
-  const before = flat(sectionOf(launcher(), "Before anything"));
+  const before = flat(sectionOf(launcher(), "Before delegating"));
   assert.match(before, /first line is `projectRoot`/);
   // An initialized sibling — a worktree or checkout with its own config — served by M stops.
   assert.match(before, /\*\*[Ss]top\*\*[^.]*initialized project other than `projectRoot`[^.]*\.cross-agent\/config\.json/);
@@ -891,8 +895,8 @@ test("the roster's first line is projectRoot, judged against the project the use
   assert.match(before, /\*\*[Pp]roceed\*\*[^.]*uninitialized worktree/);
   assert.match(before, /`projectRoot` is not the nearest directory at or above the working directory that holds a `\.git`, say so on the roster's first line: served by the main project at <projectRoot>; run `cross-agent init` here for a project of its own/);
   // A root the user named or confirmed in this session proceeds as asked, wherever the host
-  // sits; a binding the environment alone holds confirms nothing, since a Codex host always
-  // has one, and beside another initialized project it is the stale case that stops.
+  // sits; a binding the environment alone holds confirms nothing and beside another
+  // initialized project it is the stale case that stops.
   assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*named or confirmed `projectRoot` in this session[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
   assert.match(before, /config\.json` — and the user has not named or confirmed `projectRoot` in this session, or when the user named a project and `projectRoot` is another/);
   assert.match(before, /`CROSS_AGENT_PROJECT` found only in the environment[^.]*confirms nothing/);

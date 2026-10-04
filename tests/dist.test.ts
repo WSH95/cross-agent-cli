@@ -99,7 +99,10 @@ test("the builder writes the Claude and Codex payloads from a commit, each with 
     const hosts = [["claude", ".claude-plugin/plugin.json", ".codex-plugin"], ["codex", ".codex-plugin/plugin.json", ".claude-plugin"]] as const;
     for (const [host, own, other] of hosts) {
       const plugin = path.join(out, host, "plugins", "cross-agent");
-      for (const file of ["bin/cross-agent", "src/server.ts", "src/cli.ts", "src/runner.ts", "skills/cross-agent/SKILL.md", "modes/solo/mode.json", "LICENSE", "package.json", own]) {
+      for (const file of ["bin/cross-agent", "src/server.ts", "src/cli.ts", "src/runner.ts", "skills/cross-agent/SKILL.md",
+        "skills/cross-agent/references/codex-setup.md", "skills/cross-agent/scripts/codex-setup.mjs",
+        "skills/cross-agent/scripts/codex-config.mjs", "skills/cross-agent/scripts/codex-serve.mjs",
+        "modes/solo/mode.json", "LICENSE", "package.json", own]) {
         assert.ok(fs.statSync(path.join(plugin, file)).isFile(), `${host}: ${file}`);
       }
       assert.deepEqual(json(path.join(plugin, own)), json(path.join(source, own)), `${host}: the manifest is the commit's`);

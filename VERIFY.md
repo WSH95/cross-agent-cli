@@ -7,6 +7,27 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Codex one-time MCP setup — `atc-s96.73` (2026-10-04)
+
+| Check | Result |
+| --- | --- |
+| Baseline `npm test` at d2064f5 | 1037 tests, 1036 pass, 0 fail, 1 guarded skip |
+| Final `npm test` | 1047 tests, 1045 pass, 0 fail, 2 guarded skips; no core runtime changes |
+| Earlier full run | One existing `tests/server.test.ts` reconciliation deadline expired after 8 seconds; unchanged file passed 46/46 alone, unchanged full rerun passed |
+| Focused setup and skill checks | 66/66 pass; install/reinstall/check/remove, update selection, disable/uninstall, policy repair, custom conflicts, concurrent config edits, task markers, real-server fixture delegation/wait/result |
+| Native Codex | `CODEX_SETUP_PROBE=/home/wsh/.local/bin/codex node --test tests/codex-native.test.ts`: pass on 0.160.0, Node 24.11.0, Linux; isolated local marketplace and home, no model turns |
+| Per-chat discovery | One app-server, four ephemeral chats: no-config solo, team, uninitialized worktree served by team, initialized sibling served independently; `describe_mode` and `list_roles` pass |
+| Native config | Repeated setup, repair preserving a disabled-tool rule, and removal; unrelated TOML and its comment restored exactly |
+| Packaging | Full suite includes both generated payloads containing the helpers and reference; Claude and Grok attach contracts remain unchanged |
+| Citations and skill format | 1643 citations, 0 misses, 0 drifted since d2064f5; skill-creator's `quick_validate.py` passes |
+| Review | One fresh-context gpt-6-astra reviewer: no actionable findings; explicit setup, ordinary solo, and missing-tools/no-setup instruction scenarios all route correctly |
+
+Native evidence covers the desktop backend, not clicking its restart control. The
+native setup test is opt-in in ordinary suite runs; it was run separately above.
+Linux/Node requirements remain. User Codex configuration and installed plugins were
+not changed, and no publication or push was performed. Decision 0017 records the
+integration and removal semantics; `docs/probes.md#codexOneTimeSetup` records the probe.
+
 ## M1 — core runtime plus the delegation tools (merged 2026-09-19)
 
 | what | value |

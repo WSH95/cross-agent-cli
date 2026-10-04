@@ -309,14 +309,15 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
   // carries does not stand in for one of Codex's.
   const section = guide.slice(start, guide.indexOf("\n## ", start + 1));
   for (const words of [
-    // The marketplace install, and the init its project needs before Codex serves it, solo included.
-    "codex plugin add cross-agent@agent-plugins", "bin/cross-agent init",
+    // Marketplace setup uses the skill and keeps solo free of project initialization.
+    "codex plugin add cross-agent@agent-plugins", "scripts/codex-setup.mjs install",
+    "solo` defaults", "installed version", "local desktop Codex",
     // The install from a clone, under that marketplace's own id, and the configured-server fallback.
     "codex plugin marketplace add", "codex plugin add cross-agent@cross-agent-cli", "codex plugin list", "codex plugin remove",
     "codex plugin marketplace remove", "codex mcp add cross-agent", "assets/codex/mcp_servers.toml", "~/.codex/skills/cross-agent",
     "codex mcp remove cross-agent",
-    // The plugin's one extra step, and the switch that keeps its server off until a session asks.
-    "CROSS_AGENT_PROJECT", "plugins.cross-agent@agent-plugins.enabled=true",
+    // The old explicit-project attach remains available, alongside one-time setup.
+    "CROSS_AGENT_PROJECT", "Legacy explicit-project mount",
     // The install registers a clean export, since Codex copies the whole directory it is given,
     // and the fallback's table names the variables the server needs handed on.
     "git -C ~/src/cross-agent-cli archive HEAD", 'env_vars = ["CROSS_AGENT_PROJECT",',

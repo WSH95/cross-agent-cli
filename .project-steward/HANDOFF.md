@@ -1,12 +1,26 @@
 ---
-updated_at: 2026-10-04T07:20:00Z
-updated_by: claude
+updated_at: 2026-10-04T11:36:26Z
+updated_by: codex
 session_status: closed
 branch: main
 ---
 # Handoff
 
 ## Now
+
+`atc-s96.73` is complete and closed, with local integration under the repository's
+automatic commit and merge policies.
+The existing skill offers install/check/remove, and a stable launcher follows the
+enabled installed marketplace version while inheriting each chat's project. No real
+user Codex config changed. The 66 focused checks and native Codex 0.160.0 probe pass;
+the latter covers solo, team, uninitialized and initialized worktree chats. Independent
+review found no actionable findings, including the three skill-routing scenarios.
+Final `npm test`: 1047 tests, 1045 pass, 0 fail, 2 guarded skips. One earlier full run
+hit an existing reconciliation deadline; the unchanged server file passed 46/46 in
+isolation and the unchanged full-suite rerun passed. Citations: 1643, no misses or
+drift. Nothing was pushed or published; installed users need a later release.
+
+## Previous release context
 
 **Release 0.1.0 is published (`atc-s96.109`, closed 2026-10-04).** The project is public at
 https://github.com/WSH95/cross-agent-cli under the MIT license, `main` at the release commit
@@ -59,13 +73,18 @@ What stands is the project's own record. The operator conditions a release names
 
 **Attaching each host:**
 - **Claude Code:** `claude --plugin-dir <this repository>`.
-- **Codex:** an exported `HEAD` added as a local marketplace (`codex plugin marketplace add`, `codex plugin add cross-agent@cross-agent-cli`), then started as `CROSS_AGENT_PROJECT="$PWD" codex`.
+- **Codex:** install through the marketplace, then ask the existing cross-agent skill
+  for one-time MCP setup. Reconnect and verify `describe_mode.projectRoot`. The legacy
+  bundled mount still requires `CROSS_AGENT_PROJECT`; `docs/install.md` covers both.
 - **Grok:** the project's own `.grok/config.toml`, with `[plugins] paths` naming this repository, `enabled = ["cross-agent"]` and `[mcp] max_output_bytes = 100000`, in a trusted folder.
 
 ## In flight
 
-- Nothing of the release is in flight. Only `.beads/interactions.jsonl` stays modified and
-  uncommitted, as before.
+- No implementation remains in flight for `atc-s96.73`. The local commit includes the
+  launcher skill/reference/helpers, bundled-mount diagnostic, installation/design/probe
+  docs, setup/native/packaging/skill tests, and Project Steward records.
+- The main checkout's `.beads/interactions.jsonl` is unrelated mutable history and stays
+  uncommitted. Test-generated runner fixtures cleaned up before staging.
 
 The requested prerequisite commits are complete: `.106` is `c492021`, and `.108`
 is `5b0e529`. Both commits were reviewed for task separation; neither includes
@@ -184,6 +203,17 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
+1. A later release must bump all three version fields and publish updated payloads before
+   marketplace users receive this feature. This change does not alter existing installed
+   copies or perform their one-time setup. No push, marketplace publication, or remote
+   Dolt sync is authorized.
+2. For an isolated native regression check, run
+   `CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.
+   It creates its own temporary Codex home and makes no model turn. `VERIFY.md` records
+   the suite, focused checks, review and initial timeout.
+
+Previous release and backlog pointers:
+
 1. **The user:** review and merge https://github.com/WSH95/agent-plugins/pull/16. After the
    merge, `/plugin marketplace update agent-plugins` (or a fresh `marketplace add`) offers
    `cross-agent@agent-plugins`.
@@ -222,6 +252,8 @@ None. The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10
   - `tests/` mirrors it, with `tests/fixtures/fake-engine.mjs` and `tests/helpers/`.
 - The skill, the modes and the packaging:
   - `skills/cross-agent/SKILL.md`, the launcher;
+  - `skills/cross-agent/references/codex-setup.md` and `scripts/codex-{setup,config,serve}.mjs`,
+    one-time native Codex configuration and installed-version resolution;
   - `modes/{dev-team,dev-team-engine,solo}/`;
   - `.claude-plugin/plugin.json`, with inline `mcpServers`;
   - `.codex-plugin/` with `.agents/plugins/marketplace.json`, and `assets/codex/mcp_servers.toml`, the configured-server fallback.

@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T11:36:26Z — codex
+atc-s96.73 implemented in the managed codex-mcp-setup worktree: the existing launcher
+skill now offers one-time Codex MCP install/check/remove, with a stable installed-version
+resolver and native config compare-and-swap. Focused setup/skill checks pass (66), and
+the opt-in Codex 0.160.0 probe passes for solo, team and two worktree chats. Fixture
+delegation/wait/result and specialist marker restrictions pass. Final full suite:
+1047 tests, 1045 pass, 0 fail, 2 guarded skips. One earlier reconciliation timeout
+passed unchanged in isolation and on the full rerun. Fresh-context review found no
+actionable findings; 1643 citations have no misses or drift. Bead closed; local
+commit/integration only. No real user config changed and nothing pushed or published.
+
 ### 2026-10-04T07:20:00Z — claude
 Release 0.1.0 published: public MIT repo https://github.com/WSH95/cross-agent-cli at f996a46 (ls-remote --refs: main only); agent-plugins PR #16 open and mergeable, not merged; frozen-build installs identical in isolated Claude and Codex homes; atc-s96.109 closed, atc-s96.110 follows.
 

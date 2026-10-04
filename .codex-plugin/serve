@@ -10,7 +10,7 @@
 # pointer leads to, for any other linked worktree. So the server serves the project the
 # operator names in CROSS_AGENT_PROJECT, and without one it does not start.
 if [ -z "${CROSS_AGENT_PROJECT:-}" ]; then
-  echo "cross-agent: not started: under Codex this server runs in its plugin's directory and serves only the project CROSS_AGENT_PROJECT names; export CROSS_AGENT_PROJECT=<project root> before starting codex" >&2
+  echo "cross-agent: bundled mount not started; ask the cross-agent skill to set up its Codex MCP connection once, or export CROSS_AGENT_PROJECT=<configured project root> before starting codex" >&2
   exit 1
 fi
 # A root that cannot be resolved stops here, rather than handing node `/src/server.ts`.

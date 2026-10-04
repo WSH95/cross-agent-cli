@@ -1,6 +1,6 @@
 ---
 name: cross-agent
-description: Run a task through a team of headless agent CLIs instead of doing it yourself. Use when the user asks to run something through the team, to delegate work to another harness, to hand a bead or a TODO item to an agent, or says "ask codex to …", "ask grok to …", "ask claude to …". Delegates each role to its engine, watches every task to settlement, merges what a task wrote under the project's own policy, and reports what each one did.
+description: Use when the user asks to run work through a team, delegate to another harness, hand a bead or TODO to an agent, or says "ask codex to …", "ask grok to …", "ask claude to …". Also use to set up, check, repair, or remove cross-agent's one-time Codex MCP connection, including desktop Codex without a per-session CROSS_AGENT_PROJECT.
 ---
 
 # cross-agent
@@ -11,7 +11,19 @@ work, and you never start an engine CLI yourself — a `claude`, `codex` or `gro
 the server did not launch carries none of the guard the server puts around one,
 and none of its tasks can be waited on, cancelled or reported.
 
-## Before anything
+## Codex host setup
+
+When the user asks to set up, check, repair, or remove this plugin's Codex connection,
+follow [Codex setup](references/codex-setup.md) **before** calling `describe_mode`.
+Setup works while the MCP tools are missing. Run the bundled helper relative to this
+skill's actual installed directory; do not ask the user to find a versioned cache path.
+It configures MCP once for this Codex host, including local desktop chats, and keeps
+the marketplace plugin responsible for updates and skill discovery.
+
+This route is for a requested host-configuration change or diagnosis. An ordinary
+delegation with missing tools does not authorize installing or repairing the connection.
+
+## Before delegating
 
 Call `describe_mode`. It answers with the active mode — its `lead` among the
 rest — the mode's `loop`, its `roles` — each with its workspace, sandbox default
@@ -43,9 +55,10 @@ Grok lists an MCP server's tools behind its own `search_tool`, so search it for
 `cross-agent` before you conclude they are missing. With `describe_mode` still
 missing, this server did not start for your session, and nothing below can run
 without it: tell the user the server did not start, and stop rather than do the
-team's work yourself. Under Codex the plugin starts it only when `CROSS_AGENT_PROJECT`
-names, before `codex` starts, a project holding `.cross-agent/config.json`, which
-`cross-agent init` writes, and says nothing when it does not; under Grok, only in a
+team's work yourself. Under Codex, suggest asking for the one-time setup above, or a
+connection check if it was already set up. The legacy bundled mount requires
+`CROSS_AGENT_PROJECT` to name a configured project before Codex starts; the one-time
+setup uses each chat's directory and needs no config for `solo`. Under Grok it starts only in a
 trusted project whose `.grok/config.toml` names this checkout. `docs/install.md` in the
 cross-agent repository (https://github.com/WSH95/cross-agent-cli) gives the steps for each
 host.
@@ -74,7 +87,7 @@ run in it makes it a project of its own.
   in this session, or when the user named a project and `projectRoot` is another. A
   Grok attach copied with a binding in it, or a `CROSS_AGENT_PROJECT` left from
   another session, serves the wrong project this way. A `CROSS_AGENT_PROJECT` found
-  only in the environment confirms nothing, since a Codex host always has one set.
+  only in the environment confirms nothing: it may be left from another session.
 - **Proceed** when the working directory is in an uninitialized worktree of
   `projectRoot`'s repository, or anywhere in it that no config claims. Where
   `projectRoot` is not the nearest directory at or above the working directory that
@@ -387,7 +400,7 @@ Under a mode whose `lead.placement` is `engine` the loop runs in a spawned Claud
 or Codex session, not in yours, and your session stays free while it works. Your
 part is setup, monitoring and answering.
 
-Show the roster first, as `## Before anything` asks: `projectRoot` on its first
+Show the roster first, as `## Before delegating` asks: `projectRoot` on its first
 line, judged as that section says, then `list_roles`, one line per role, the lead's
 among them, with its engine, model, effort, workspace and sandbox, so the user sees
 what this run will start, and where, before it starts. Then start the lead with

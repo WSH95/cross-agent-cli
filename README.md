@@ -62,16 +62,18 @@ codex plugin marketplace add https://github.com/WSH95/agent-plugins
 codex plugin add cross-agent@agent-plugins
 ```
 
-Under Codex the server serves only the project you name, and only once that project has a
-config, even for `solo`: run `init` there (below), then start Codex from the project with
-`CROSS_AGENT_PROJECT="$PWD" codex`.
+Then ask Codex: *"Use cross-agent to set up its MCP connection once for this host."*
+The skill configures MCP for the CLI and local Linux desktop Codex. Restart MCP or open
+a new session afterwards. Each chat uses its own project; no per-session
+`CROSS_AGENT_PROJECT` or versioned cache path is needed. Install and update the plugin
+through the marketplace as usual; the connection follows the installed version.
 
 **Grok:** clone this repository and name it in the project's own `.grok/config.toml`:
 [Install it in Grok](docs/install.md#install-it-in-grok).
 
 ## Quick start
 
-**Ask another engine, with no setup.** In any git repository, under Claude Code or Grok,
+**Ask another engine, with no project setup.** In any git repository, after attaching the plugin,
 ask your session, for example: *"Use cross-agent to have Codex review src/parser.ts and
 tell me what it finds."*
 
@@ -104,12 +106,14 @@ plugin does not put a `cross-agent` command on your shell's `PATH`:
 
 - **In Claude Code** the plugin's `bin/cross-agent` is on the session's Bash tool `PATH`:
   ask Claude to run `cross-agent init --mode dev-team`.
+- **In Codex** ask the cross-agent skill to initialize the project; it finds the bundled
+  CLI relative to its installed skill directory.
 - **From a terminal** run the installed copy's launcher, for example
   `~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent`, or link a
   clone's `bin/cross-agent` onto your `PATH`.
 
-You need it for `init` once per project — for the team modes, and under the Codex plugin
-for `solo` too. The rest is optional, since your session reaches the same operations
+You need `init` once per project for the team modes. `solo` works without a config
+after the one-time Codex setup. The rest is optional, since your session reaches the same operations
 through the plugin's tools:
 
 | Command | What it does |

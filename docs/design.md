@@ -247,7 +247,7 @@ with `U/main` and `U/feature` its worktrees — and a bare repository beside its
 worktrees, `repo.git`, are fine, because neither `U` nor `repo.git` is a work tree by
 its own git; and a submodule checkout, a separated main's own checkout and a main
 checkout whose `.git` links to its git directory, once initialized, are projects whose
-root roles launch and which take no writes (section 4). A Codex host's plugin server
+root roles launch and which take no writes (section 4). Codex's legacy bundled mount
 is the exception: Codex starts it in its cache copy of the plugin, where
 discovery finds no project the operator meant — nothing from an export's copy, and
 from a checkout's, whose `.git` came along, a repository the operator did not name:
@@ -255,6 +255,8 @@ the copy itself, for a main checkout or a worktree initialized as a project of i
 own, and the main checkout its pointer leads to, for any other linked worktree. So
 the operator names the project in `CROSS_AGENT_PROJECT`, and the plugin's launcher
 will not start the server without it (section 9, `docs/probes.md#codexPluginMount`).
+The one-time setup in the launcher skill registers a configured server with no `cwd`,
+so it discovers the project from each chat's directory just as other hosts do.
 A root a caller **names** — `--project` or `CROSS_AGENT_PROJECT` — must hold a config
 even so: naming one is a claim about a project, and a typo in that claim is not a new
 project.
@@ -3768,7 +3770,25 @@ its row (`docs/probes.md#codexMarkers`, `tests/authority.test.ts#operatorNamesPr
 mount also carries `tool_timeout_sec: 3600`, `default_tools_approval_mode: "approve"` and
 `startup_timeout_sec: 30`, and no `enabled`: whether the server runs is the operator's
 configuration's to say, through the plugin-level key (`docs/probes.md#codexPluginMount`).
-The documented fallback is a configured server — `codex mcp add cross-agent -- node
+The recommended Codex route is the launcher's one-time setup, before `describe_mode`:
+`skills/cross-agent/scripts/codex-setup.mjs install` uses Codex's versioned native
+config API to register `mcp_servers.cross-agent`. It preserves unrelated configuration
+and existing policy, refuses custom connections and other config layers defining this
+server, and compares the user layer's version when writing. `check` diagnoses without
+editing setup; `remove` removes the owned entry, its per-server policy and its launcher.
+An OS-held lock serializes helper mutations; task markers refuse setup writes.
+
+The registration has no `cwd` or static environment binding. Its stable launcher under
+`CODEX_HOME/cross-agent/` asks `codex plugin list --json` for the chosen installed,
+enabled plugin on each start, validates its identity and manifest, and execs that
+copy's server without changing cwd, markers, stdio or ancestry. The configured server
+intentionally shadows the bundled mount; the installed plugin still supplies the one
+skill. Marketplace catalog refreshes alone do not move the server, installed updates
+do, and disabling or removing the plugin refuses new connections. Existing connections
+need a restart. Default marker forwarding, approval mode and timeouts match the bundled
+mount; explicit policy remains the user's (`tests/codex-setup.test.ts#codexSetupLifecycle`).
+
+The manual checkout fallback is a configured server — `codex mcp add cross-agent -- node
 <repo>/src/server.ts` plus the four keys it does not write, the same `env_vars`, the call
 budget, the approval mode and the start-up budget, `assets/codex/mcp_servers.toml` giving the
 whole table, and a copy into `~/.codex/skills/cross-agent/`, a copy that takes

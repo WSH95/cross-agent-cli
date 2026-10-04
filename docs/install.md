@@ -145,81 +145,82 @@ codex plugin marketplace add https://github.com/WSH95/agent-plugins
 codex plugin add cross-agent@agent-plugins
 ```
 
-Codex runs the plugin from the copy it takes at install time,
-`~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/`, and starts the plugin's
-server in that copy, not where the session runs. So the server serves only the project you
-name in `CROSS_AGENT_PROJECT`, and that project must hold `.cross-agent/config.json`,
-whatever its mode, `solo` included. Initialize the project with the copy's own launcher,
-then start Codex from it:
+Then ask Codex: **“Use cross-agent to set up its MCP connection once for this host.”**
+The installed skill can do this even when its MCP tools are not connected yet. It runs
+its bundled `scripts/codex-setup.mjs install`; you do not need to locate the cache's
+version directory or export a project variable. Restart MCP using Codex's restart
+control, or open a new session. Ask it to call `describe_mode` and confirm `projectRoot`
+and then `list_roles`.
+
+This works for the CLI and local desktop Codex on a Linux host with Node 24+, Git,
+util-linux `flock`, and the Codex CLI on its PATH. The helper also accepts an absolute
+Codex executable via `--codex`. A remote host needs setup there, with the same Codex
+home that runs the chat. Cross-agent requires Linux; attaching a skill does not make
+its `/proc` process guards run on native macOS, Windows, or cloud ChatGPT.
+
+Each chat's MCP process starts in that chat's project directory. A Git repository
+without `.cross-agent/config.json` uses `solo` defaults. For a team, ask the skill to
+run the bundled CLI's `init --mode dev-team` or `init --mode dev-team-engine` in the
+project, then reconnect. The skill resolves the CLI relative to its own installed
+location. Worktrees keep the ordinary project rules: an uninitialized worktree belongs
+to its main project; running `init` in a branch worktree makes it a separate project.
+
+### What setup changes
+
+The helper writes one configured MCP entry, `mcp_servers.cross-agent`, in
+`$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), and an owned launcher and
+state in `$CODEX_HOME/cross-agent/`. A persistent OS lock file serializes setup changes.
+There is no project path or MCP `cwd` in that registration. It intentionally shadows
+the plugin's bundled server; keep the plugin installed and enabled for its skill and
+updates. Codex's native config API checks the config version when writing, preserving
+unrelated settings and comments instead of replacing the whole file.
+
+Setup forwards `CROSS_AGENT_PROJECT` and the three task markers (`CROSS_AGENT_TASK`,
+`CROSS_AGENT_DEPTH`, `CROSS_AGENT_LINEAGE`) if they exist. You normally leave
+`CROSS_AGENT_PROJECT` unset; an explicit value still selects a configured project.
+Default startup and tool timeouts are 30 and 3600 seconds, and tool approval mode is
+`approve`, matching the plugin mount. On repair, existing approval rules, disabled
+tools and server-disable settings on its connection are preserved. A custom registration or another config layer
+defining cross-agent is reported for you to resolve, never overwritten. Setup writes
+are refused inside a cross-agent task.
+
+Ask the skill to **check the Codex connection** for a read-only diagnostic, or to
+**remove the Codex MCP setup** to undo it. `check` validates configuration and the
+installed server, while `describe_mode` verifies the live connection and its project.
+Removal deletes the owned connection, including its per-server policy, and leaves the
+marketplace plugin and unrelated settings alone. Run it before `codex plugin remove cross-agent@agent-plugins` when
+uninstalling. If you already removed the plugin, remove the leftover registration with
+`codex mcp remove cross-agent`; the inert `$CODEX_HOME/cross-agent/` files can then be
+removed. Keep the marketplace registered if you use its other plugins.
+
+### Marketplace updates
+
+Install and update through Codex's marketplace normally. On each new MCP connection,
+the launcher reads Codex's installed-plugin inventory and runs that installed version,
+including after the old cache copy has been deleted. A catalog refresh alone does not
+install an update; once Codex installs it, reconnect to use it. You do not need to
+repeat setup for each plugin version. Disabled or uninstalled plugins refuse new
+connections, even if an old cache directory remains. Running tasks and existing MCP
+processes are not replaced mid-session by a marketplace update.
+
+`codex plugin list --json` shows the installed identity, version and enabled state;
+`codex mcp get cross-agent` shows the stable configured launcher and no working-directory
+binding. Tool names may carry the prefix `mcp__cross_agent__` (Codex folds the hyphen).
+
+### Legacy explicit-project mount
+
+Without the one-time setup, the bundled mount still runs in Codex's cached plugin
+folder. It requires `CROSS_AGENT_PROJECT` to name a directory already initialized with
+`cross-agent init`, even for `solo`:
 
 ```
 cd ~/code/my-project
-~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent init --mode solo
 CROSS_AGENT_PROJECT="$PWD" codex
 ```
 
-`--mode dev-team` or `--mode dev-team-engine` binds a team instead (README, "Quick start").
-
-The reason: codex-cli
-0.159.3 resolves a plugin server's working directory against the plugin, and it
-substituted no `${PLUGIN_ROOT}` in the inline `command`, `args` and `cwd` it was given.
-From the copy the server cannot find your project. A copy of an export holds no
-project, and a copy of a checkout carries the checkout's `.git`, which leads discovery
-to a repository you did not name: the copy itself, for a main checkout or a worktree
-initialized as a project of its own, or, for any other linked worktree, the main
-checkout its pointer leads to. So name the project, as the absolute path of a directory
-holding `.cross-agent/config.json`, before Codex starts, as above.
-
-A resumed session is a process of its own and reads the variable again, so start
-`codex resume` or `codex exec resume` the same way, from the project with
-`CROSS_AGENT_PROJECT` set.
-Without `CROSS_AGENT_PROJECT` the plugin's launcher exits before any server starts,
-and Codex does not say so: under `codex exec` nothing reached its stderr, its `--json`
-events or the session's rollout, and the session simply had none of the server's
-tools (`docs/probes.md`, "The task's markers through the plugin's whitelist"). The
-plugin also hands its server a task's markers, `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH`
-and `CROSS_AGENT_LINEAGE`, whenever the session has them, so a Codex session started
-inside a task — from a test suite the lead runs, say — gets a specialist's tools, never
-the operator's; from a clean shell there are none to hand on.
-
-To check the install, `codex plugin list --json` lists `cross-agent@agent-plugins`
-with `"installed": true` and `"enabled": true`, `codex mcp list` shows a server
-`cross-agent` whose command is `./.codex-plugin/serve`, and a session started as
-above answers `list_roles` with the project's roles. Its tools are the ones Claude
-Code offers, spelled `mcp__cross_agent__<tool>`: Codex folds the hyphen. The manifest
-gives the server `tool_timeout_sec: 3600` where Codex's own default is 60 seconds, so
-a `wait` of 600 seconds returns with room: one did, at 600.004 s by Codex's own
-record, while a copy declaring 60 cut the same call at 60 s
-(`docs/probes.md`, "B3: a ten-minute wait under a Codex host").
-
-An installed plugin is enabled, and every Codex session on the machine then runs its
-launcher; each one started with `CROSS_AGENT_PROJECT` set gets the server. To have it
-only when you ask for it, turn it off in `~/.codex/config.toml`:
-
-```
-[plugins."cross-agent@agent-plugins"]
-enabled = false
-```
-
-and on for one session with `codex -c plugins.cross-agent@agent-plugins.enabled=true`.
-The key is unquoted on the command line; quoted, it names nothing. `codex plugin add`
-writes `enabled = true` again, so turn it off again after every reinstall. Do not write
-`enabled = false` under `[mcp_servers.cross-agent]` while the plugin is installed:
-that declares a server with no command, and Codex then refuses to load its
-configuration at all.
-
-Codex writes to that file on its own as well: a session in a project with no trust
-entry adds `[projects."<path>"] trust_level = "trusted"` for it, with no prompt. A host
-session started as above did (`docs/probes.md`, "B3: a ten-minute wait under a Codex
-host"), and so does every Codex specialist the team runs in that project,
-`--ignore-user-config` notwithstanding (`docs/probes.md`, "I2 under a Codex host
-(B6)"). So a project the team has worked in is one Codex trusts afterwards, the
-entries outlive the repositories they name, and they are yours to delete.
-
-To remove it, `codex plugin remove cross-agent@agent-plugins`, which deletes the
-`[plugins."cross-agent@agent-plugins"]` table, whatever it says, and the cached copy. That
-leaves the agent-plugins marketplace registered for its other plugins; `codex plugin
-marketplace remove agent-plugins` removes it too, only if you use none of them.
+The setup helper removes the need for this launch convention. The legacy limitation
+was observed with Codex 0.159.3 and remains in its inline manifest on 0.160.0;
+`docs/probes.md#codexPluginMount` records why the relative launcher exists.
 
 ### From a clone
 
@@ -260,7 +261,7 @@ the directory — the `.git` directory, `.worktrees/` with each worktree's
 Everything above holds for this install under its own id, `cross-agent@cross-agent-cli`,
 in place of `cross-agent@agent-plugins`.
 
-To remove it:
+Remove the one-time MCP setup through the skill first, if configured, then:
 
 ```
 codex plugin remove cross-agent@cross-agent-cli
@@ -304,9 +305,11 @@ failed with "MCP tool call requires approval, but approval policy is never"
 server. The skill is a copy of `skills/` alone; each mode's own loop
 reaches the session through `describe_mode`. `codex mcp get cross-agent` shows the table
 as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
-~/.codex/skills/cross-agent` undoes it. Install one attach or the other, not both: a
-`[mcp_servers.cross-agent]` table shadows the plugin's server of the same name, budget
-and all.
+~/.codex/skills/cross-agent` undoes it. This manual checkout route is separate from
+the marketplace setup above: do not combine the two configurations. Both use a
+`[mcp_servers.cross-agent]` table, which shadows the plugin's bundled server, budget
+and all. A copied standalone skill has no installed plugin for its Codex setup helper
+to resolve; keep using this checkout recipe or install through a marketplace.
 
 ## Install it in Grok
 
