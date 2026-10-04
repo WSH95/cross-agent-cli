@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T06:59:00Z — claude
+Release 0.1.0 (atc-s96.109): MIT, 0.1.0, bin/cross-agent, tools/build-dist.mjs, the publisher, the concise README with docs/install.md and docs/operator-guide.md, and the release review's fixes are committed; full suite 1036/1037, 1 guarded skip; isolated Claude and Codex installs pass; the Grok mixed-host matrix is inconclusive (atc-s96.110). Next: publication.
+
+### 2026-10-04T05:43:59Z — claude
+[auto-checkpoint] atc-s96.109 release 0.1.0 in progress: 3ddcbb4 (MIT, 0.1.0) and 974a630 (bin/cross-agent) committed, suite 1025/1026 with 1 guarded skip; dist builder tested 6/6, publish tooling drafted; nothing pushed.
+
 ### 2026-10-04T01:54:48Z — codex
 atc-s96.107 closed: unchanged npm test passed 1021 of 1022 tests, with 0 failures
 and 1 guarded Codex I2 skip, in the direct desktop AppArmor context. All four

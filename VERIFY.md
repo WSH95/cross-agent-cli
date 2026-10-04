@@ -1208,3 +1208,24 @@ persistent signal-denial case separately proves retirement through command EOF.
 Evidence: `/tmp/cross-agent-atc107-4i7vMg/`, including `107-red-all.log`,
 `107-review-red.log`, `107-review-green.log`, `107-runner.log`,
 `107-full-suite.log`, and `107-leak-audit.json`. `atc-s96.107` is closed.
+
+## atc-s96.109 — release 0.1.0: MIT, the launcher, the dist, the concise README (verified 2026-10-04)
+
+| what | value |
+|---|---|
+| commits | `3ddcbb4` MIT and 0.1.0; `974a630` `bin/cross-agent` and its deny target; `b94cb69` `tools/build-dist.mjs`; `25f3789` the publisher and `agent-artifacts.json`; `c2d120c` the README, `docs/install.md`, `docs/operator-guide.md`; review fixes `bc33a8a`, `208c651`, `8099eca` |
+| full suite | `npm test` after the review fixes: 1037 tests, 1036 pass, 0 fail, 1 skipped (guarded real Codex I2) |
+| citation checker | 1639 citations in 4 files, 0 misses |
+| dist | built from HEAD twice, the second over the first; `claude plugin validate` (and `--strict`) passes for the plugin and for a preview marketplace with the root entries; 111 files, about 870 KB per host |
+| Claude Code, isolated home | marketplace add and install at user scope, one registry record (`user`, 0.1.0); the cache equals the dist byte for byte, exec bits kept; its server answers `initialize` 0.1.0 and 13 operator tools |
+| Claude Code, real session | `claude -p --plugin-dir <installed copy>` ($0.087): `command -v cross-agent` names the plugin's `bin/cross-agent`, and `cross-agent modes` runs |
+| Codex, isolated home | marketplace add and plugin add, installed and enabled at 0.1.0; the cache equals the dist; the cached `bin/cross-agent init --mode solo` works; `codex mcp list` shows `./.codex-plugin/serve`; the cached launcher with `CROSS_AGENT_PROJECT` answers `initialize`, 13 tools, and `list_roles` of the named project |
+| Grok | a fresh signed-out home lists the per-project `paths` plugin but keeps it `enabled: false`, folders trusted or not, so the mixed-host matrix is inconclusive (`atc-s96.110`); on the real home the documented attach works (e2e sample: plugin enabled, `grok mcp doctor` started it, handshake OK, 15 tools), and the doctor also lists `plugin: context7`, a Claude Code user-scope plugin |
+| isolation | the real host configs unchanged after the isolated installs, but for `~/.claude.json`, which the live session rewrites; no `cross-agent@agent-plugins` in any of them |
+| plan review | five gpt-6-astra (max) rounds, from the second through cross-agent's own `delegate`, a Fable 5.1 subagent judging rounds 3 and 4; the fifth "ready" |
+| release review | gpt-6.1-sol (max) and grok-4.7 (xhigh) through cross-agent, in parallel: R1 (high, a stale output check before the swap), R2, R3, R5, R6 and R7, M1, L2 and R4 fixed with regressions; B1 already in the plan (the root marketplace entries come with the first publication); L1 declined, since the agent-artifact-maintainer skill keeps a non-final system alias under `/` |
+| attribution | no `Co-Authored-By: Claude` and no `Claude-Session` trailer in `2415b73..HEAD` |
+
+The release review's race regression was checked by mutation: with the second output check
+removed it fails, with it restored it passes. Evidence: this session's scratchpad logs
+(`step*-npm-test.log`, `review-fix-npm-test.log`, `claude-probe.json`, `real-configs.*`).
