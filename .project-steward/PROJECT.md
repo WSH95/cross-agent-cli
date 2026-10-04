@@ -17,7 +17,7 @@ CLI's sandbox, in git worktrees the lead owns.
   design reviewed twice by Codex gpt-6-astra on 2026-09-07. Since 2026-10-02
   the project follows its own path and is not the pack's second binding
   (Decision 0011, the user's word)
-- License: Apache-2.0
+- License: MIT
 
 ## Goals
 

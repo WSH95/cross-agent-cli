@@ -1,9 +1,11 @@
 {
   "name": "cross-agent",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Run headless claude, codex, and grok processes as a team: one MCP server plus a launcher skill, with the roles, the lead loop and the git policy kept as modes",
   "author": { "name": "cross-agent-cli" },
-  "license": "Apache-2.0",
+  "license": "MIT",
+  "homepage": "https://github.com/WSH95/cross-agent-cli",
+  "repository": "https://github.com/WSH95/cross-agent-cli",
   "mcpServers": {
     "cross-agent": {
       "command": "node",

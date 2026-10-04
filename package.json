@@ -1,10 +1,12 @@
 {
   "name": "cross-agent",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "A multi-engine cross-agent orchestrator (planner, plan reviewer, implementer, code reviewer seats, resolver) as an MCP server and skill for Claude Code, Codex, and Grok",
   "type": "module",
-  "license": "Apache-2.0",
+  "license": "MIT",
+  "homepage": "https://github.com/WSH95/cross-agent-cli",
+  "repository": { "type": "git", "url": "git+https://github.com/WSH95/cross-agent-cli.git" },
   "engines": { "node": ">=24" },
   "bin": { "cross-agent": "src/cli.ts" },
   "scripts": {

@@ -92,12 +92,14 @@ test("the Codex manifest names this plugin at package.json's version, ships the 
     version: pkg.version,
     description: claude.description,
     author: { name: "cross-agent-cli" },
-    license: "Apache-2.0",
+    license: "MIT",
+    homepage: "https://github.com/WSH95/cross-agent-cli",
+    repository: "https://github.com/WSH95/cross-agent-cli",
     // Codex finds a plugin's skills where `skills` points, relative to the plugin root.
     skills: "./skills/",
   });
   assert.equal(pkg.name, "cross-agent");
-  assert.equal(pkg.license, "Apache-2.0");
+  assert.equal(pkg.license, "MIT");
   assert.equal(typeof manifest.description, "string");
   assert.notEqual(manifest.description, "");
   const skill = path.join(repoRoot, "skills", "cross-agent", "SKILL.md");
@@ -209,10 +211,20 @@ test("the repository is a marketplace offering this one plugin from its own root
   assert.equal((plugins[0].policy as Record<string, unknown>).installation, "AVAILABLE");
 });
 
-test("the Claude and Codex manifests agree on the plugin's name, version, description, author and license", () => {
+test("the Claude and Codex manifests agree on the plugin's name, version, description, author, license and links", () => {
   const codex = json(".codex-plugin/plugin.json");
   const claude = json(".claude-plugin/plugin.json");
-  for (const key of ["name", "version", "description", "author", "license"]) assert.deepEqual(codex[key], claude[key], key);
+  for (const key of ["name", "version", "description", "author", "license", "homepage", "repository"]) assert.deepEqual(codex[key], claude[key], key);
+});
+
+// @anchor licenseMit
+test("the project is MIT licensed, and package.json names the repository the manifests link", () => {
+  const pkg = json("package.json");
+  const claude = json(".claude-plugin/plugin.json");
+  assert.equal(pkg.license, "MIT");
+  assert.match(fs.readFileSync(path.join(repoRoot, "LICENSE"), "utf8"), /^MIT License\n\nCopyright \(c\) \d{4} WSH95\n/);
+  assert.equal(pkg.homepage, claude.homepage);
+  assert.deepEqual(pkg.repository, { type: "git", url: `git+${claude.repository}.git` });
 });
 
 // @anchor codexFallbackSnippet

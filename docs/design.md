@@ -4156,7 +4156,7 @@ tools/probe.mjs   tools/check-citations.mjs   tools/from-openmaus.mjs
 tools/e2e-verify.mjs
 docs/design.md    docs/probes.md
 AGENTS.md         README.md         package.json      .gitignore
-LICENSE (Apache-2.0)
+LICENSE (MIT)
 ```
 
 Present today:

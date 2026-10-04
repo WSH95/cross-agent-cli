@@ -633,4 +633,4 @@ that defeats its own CLI's permission rules is outside the guarantee.
 
 ## License
 
-Apache-2.0.
+MIT. See [LICENSE](LICENSE).
