@@ -3,6 +3,13 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T11:56:18Z — codex
+atc-s96.111: user authorized source push and direct update of open agent-plugins
+PR #16. Version 0.1.1 prepared in package.json and both manifests; 33 packaging,
+dist, publisher and real Codex setup checks pass, none skipped. Source implementation
+is e3b4f85, with its prior full-suite result unchanged. Existing PR history and root
+marketplace entries will be preserved; no merge, force-push or Dolt sync requested.
+
 ### 2026-10-04T11:36:26Z — codex
 atc-s96.73 implemented in the managed codex-mcp-setup worktree: the existing launcher
 skill now offers one-time Codex MCP install/check/remove, with a stable installed-version

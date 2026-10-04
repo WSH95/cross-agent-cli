@@ -1,12 +1,21 @@
 ---
-updated_at: 2026-10-04T11:36:26Z
+updated_at: 2026-10-04T11:56:18Z
 updated_by: codex
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
 
 ## Now
+
+`atc-s96.111` is publishing the completed Codex setup change. The user explicitly
+authorized pushing source `main` and updating the existing, still-open agent-plugins
+PR #16 directly. The version is bumped to 0.1.1 in the package and both manifests;
+33 packaging, dist, publisher and native Codex checks pass with no skips. The target
+branch is `publish/cross-agent-0.1.0`; keep its history and leave the PR open. The
+generated payload and PR description will refer to the frozen release commit.
+
+## Completed implementation
 
 `atc-s96.73` is complete and closed, with local integration under the repository's
 automatic commit and merge policies.
@@ -80,6 +89,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
+- `atc-s96.111`: commit/push 0.1.1, build and validate payloads, update PR #16, verify
+  remote heads, and record completion. Its temporary target checkout is
+  `/tmp/cross-agent-release-0.1.1-KbXLn0/agent-plugins`.
 - No implementation remains in flight for `atc-s96.73`. The local commit includes the
   launcher skill/reference/helpers, bundled-mount diagnostic, installation/design/probe
   docs, setup/native/packaging/skill tests, and Project Steward records.
@@ -203,10 +215,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. A later release must bump all three version fields and publish updated payloads before
-   marketplace users receive this feature. This change does not alter existing installed
-   copies or perform their one-time setup. No push, marketplace publication, or remote
-   Dolt sync is authorized.
+1. Finish the authorized publication in `atc-s96.111`: source main and the existing
+   PR branch only; no force-push or PR merge. No Dolt remote sync is authorized.
 2. For an isolated native regression check, run
    `CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.
    It creates its own temporary Codex home and makes no model turn. `VERIFY.md` records
@@ -284,7 +294,8 @@ None. The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10
 
 ## Warnings
 
-- **Never push.** Checkpoints commit on `main` as Conventional Commits.
+- **Push only with explicit approval.** The user authorized this 0.1.1 source push
+  and update to PR #16; future pushes still need approval. Checkpoints use Conventional Commits.
 - **`AGENTS.md` and `CLAUDE.md` are user-owned.** They change only by hunks the user approved after seeing the diff.
 - **Start end-to-end host sessions with `setsid --fork`**, from the target directory, with the session's markers scrubbed.
   - A server's permission row is decided by `CROSS_AGENT_*` markers and ledger identities in its process ancestry, not by a `claude` process name.

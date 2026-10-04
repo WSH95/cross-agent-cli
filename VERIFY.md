@@ -7,6 +7,16 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.1 — `atc-s96.111` (2026-10-04)
+
+The package and both manifests are 0.1.1, with the implementation from e3b4f85.
+`CODEX_SETUP_PROBE=/home/wsh/.local/bin/codex node --test tests/packaging.test.ts
+tests/dist.test.ts tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests,
+none skipped. This includes both generated payloads, publisher preview behavior,
+and real Codex 0.160.0 setup, policy preservation, removal and four per-chat roots.
+The preceding implementation's full suite passed 1045 with two guarded skips;
+publication changes only version metadata and project records in the source tree.
+
 ## Codex one-time MCP setup — `atc-s96.73` (2026-10-04)
 
 | Check | Result |
