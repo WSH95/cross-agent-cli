@@ -1,5 +1,6 @@
 .cross-agent/
 .worktrees/
+dist/
 node_modules/
 
 # PROJECT-STEWARD:BEGIN runtime-state
