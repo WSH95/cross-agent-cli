@@ -1,0 +1,13 @@
+{
+  "artifacts": [
+    {
+      "name": "cross-agent-plugin",
+      "kind": "plugin",
+      "build_command": "node tools/build-dist.mjs --out dist/cross-agent",
+      "source_path": "dist/cross-agent",
+      "target_repo": "git@github.com:WSH95/agent-plugins.git",
+      "target_path": "cross-agent",
+      "base_branch": "main"
+    }
+  ]
+}
