@@ -3517,6 +3517,332 @@ specialists $0.843 and the two probe consults $0.138 (`costs-exact.txt`, every `
 result line, summed). The sample is left as the run left it, with 392 entries in its tasks directory
 (357 before).
 
+<!-- @anchor e11Seats -->
+## E11: three code reviewer seats on three engines under a Claude lead (2026-10-03)
+
+E11 is the end-to-end run of the feature that seats many code reviewers and gates the merge on them
+(`atc-s96.104`): a mode marks a role as seated and as gating the merge, the config binds that role to a
+list of seats, `delegate` takes the seat, a resolver role joins both team modes, and `git_root merge
+--ff-only` refuses a head with no passing `tested` step and, for a team task, a head that not every seat
+has reviewed cleanly (`src/delegate.ts#delegate`, `src/config.ts#seatsOf`, `src/runcommand.ts#runCommand`,
+`src/review.ts#reviewFault`, `src/gitroot.ts#execute`; `docs/design.md`, "Git ownership"). It runs the
+clean path once: one `dev-team-engine` task in the sample, `slugkit`, under a Claude Code host, with the
+code reviewer bound to three seats on three engines. The build under test was `main` at `13058ed`, the
+merged feature (`7de15c0`) and one steward checkpoint commit, served to the host as the plugin directory.
+`main` moved to `c05671e` at 23:43:52Z, about 13 s after the host exited; that commit changes `AGENTS.md` alone
+(`git diff --name-status 13058ed c05671e`), so the code the run used is `13058ed`'s. Every engine was a
+cost-effective model at medium effort: Claude Code 2.1.288 with `claude-sonnet-5` (the host, the lead, the
+implementer and seat 1), Codex CLI 0.160.0 with `gpt-6-luna` (the planner and seat 2) and Grok 1.0.46
+(`2765805b9442`) with `grok-4.7` (the plan reviewer and seat 3), on node v24.11.0, git 2.43.0, python
+3.12.3 and jq 1.7. The `grok` the adapter finds is the first one on `PATH`, `~/.grok/bin/grok`, which
+resolves to `~/.grok/downloads/grok-1.0.46-linux-x86_64`; the config sets no `engines.grok.bin`. The raw
+evidence is in `~/.cache/agent-team/probe-logs/t15-e11/`, with every change to the sample and every
+launch, exit and check in `timeline.txt`, the commands and outputs of the checks in `checks.txt`, the
+scripts in `tools/` and every file hashed in `MANIFEST.sha256`; `before/` and `after/` hold the preflight
+and the host-configuration checksums, and `run/` the run.
+
+**The configuration.** The sample began at `main` `ba496c7` (`S0`): 113 tests, `git status` clean, the root
+worktree alone, no `task/*` branch, `feature/dotted` kept from E10, 392 entries in its tasks directory
+and no `slug_final_letters` (`before/sample-state.txt`, `before/suite.txt`). Its config bound
+`dev-team-engine` with one Grok code reviewer and no resolver. The run's config differs from it by four
+changes and nothing else (`config.diff`, a `jq -S` comparison): `roles["code-reviewer"]` is a list of
+three seats, in this order, each at medium effort and `"sandbox": "read-only"` (claude
+`claude-sonnet-5`, codex `gpt-6-luna`, grok `grok-4.7`); `roles.resolver` is codex `gpt-6-luna` at
+medium; `limits.planReviewRounds` is 3; and a top-level `review` is `{ "afterResolver": "ask" }`. The
+lead, implementer and consult stayed claude `claude-sonnet-5`, the planner codex `gpt-6-luna` and the
+plan reviewer grok `grok-4.7`, all at medium. `node src/cli.ts modes --project <slugkit>` and `tasks`
+both exited 0 with an empty stderr (`before/modes.out`, `before/tasks.out`). The config stays as the run
+left it, as the brief asks: sha256 `8e66fa9a…` against `287dae6b…` before (`before/config.json`,
+`after/config.json`).
+
+**The host.** E10's `tools/claude-host.sh` with one edit, `plugin_dir` naming this repository
+(`tools/claude-host.sh.diff`), started with `setsid --fork` and 17 session markers removed from its
+environment, with its cwd at the sample's root, at 23:35:58.166Z (`run/command.txt`,
+`run/launched-at.txt`):
+
+```
+claude -p --plugin-dir <cross-agent-cli> --model claude-sonnet-5 --effort medium \
+  --permission-mode bypassPermissions --output-format stream-json --verbose < prompt.md
+```
+
+The prompt (`run/prompt.md`) was: "E11 — three code reviewer seats on three engines. Run this task
+through the `cross-agent` skill (`/cross-agent`): add `slug_final_letters(text) -> str` — the last
+character of each word `slug_words(text)` returns, joined with nothing, "" for an empty slug — beside
+`slug_initials` in `slugkit/__init__.py`, with tests in `tests/test_slugkit.py`; use the slug
+`e11-seats`." The host's init line named the plugin's server connected with fifteen tools (`answer`,
+`cancel`, `check`, `delegate`, `describe_mode`, `git_mutate`, `git_root`, `list_asks`, `list_roles`,
+`list_tasks`, `result`, `run_command`, `verify_worktree`, `wait` and `waive_review`). `describe_mode`
+answered 40,962 characters, carrying `review: { planReviewRounds: 3, afterResolver: "ask" }` and, for
+`code-reviewer`, `seats: "many"` and `gates: "merge"`; `list_roles` answered the code reviewer as three
+seats and the resolver as one binding (`run/lead-list-roles.json`):
+
+```
+code-reviewer: seats [ {1, claude, claude-sonnet-5, medium, read-only},
+                       {2, codex,  gpt-6-luna,       medium, read-only},
+                       {3, grok,   grok-4.7,         medium, read-only} ]
+resolver:      codex, gpt-6-luna, medium, a worktree role, workspace-write
+```
+
+The lead's own `describe_mode` and `list_roles` answers equal the host's as parsed JSON. The host's
+roster was one paragraph of 430 characters: "Roster confirmed: this project runs `dev-team-engine`
+mode at `<slugkit>`. Lead: claude/claude-sonnet-5. Planner: codex/gpt-6-luna. Plan-reviewer:
+grok/grok-4.7. Implementer: claude/claude-sonnet-5. Code-reviewer has three seats — claude, codex, grok —
+matching the three-engine review request. Resolver: codex/gpt-6-luna." So the seats were read as three.
+These are all the host's calls (`run/host-calls.txt`):
+
+```
+ToolSearch → Skill(cross-agent:cross-agent) → ToolSearch → describe_mode → list_roles
+delegate lead (claude claude-sonnet-5, the project root)   → 9c141b35…
+wait {timeout_seconds: 600}                                 → done after 411.5 s, elapsedSeconds 414
+result                                                      → ok, done
+```
+
+It ran 10 turns, 457.1 s by its result line, $0.343, ran no shell command and delegated no specialist;
+its one `wait` did not time out, so it called no `list_asks`.
+
+**The lead.** Its live argv, read from `/proc/<pid>/cmdline` while it ran (`run/lead-argv.txt`,
+NUL-separated), was the shipped line for an engine-placed Claude lead: `claude -p --output-format
+stream-json --verbose --permission-mode dontAsk --tools Bash,Read,ToolSearch --setting-sources project
+--strict-mcp-config --mcp-config <slugkit>/.cross-agent/tasks/9c141b35….scratch/mcp-config.json --model
+claude-sonnet-5 --effort medium --session-id … --append-system-prompt-file <scratch>/role.md --settings
+{…} --disallowedTools …`, its `--settings` sandbox denying writes to the project root. Its mount ran
+`node <cross-agent-cli>/src/server.ts --project <slugkit>`, and its init line named that server
+connected with fifteen tools, `ask` among them in place of `answer`. It made 37 calls in 38 turns,
+411.0 s by its result line and 414 s by the ledger, $0.815 (`run/lead-calls.txt`):
+
+```
+list_tasks; git_root status / rev-parse --abbrev-ref HEAD; list_roles; describe_mode;
+git_root worktree list / branch --list task/*              → clean, main, the root alone, none
+delegate planner (codex)                                    → wait 36.1 s   d1f11d3a  38 s; result
+delegate plan-reviewer (grok)                               → wait 87.1 s   93a0c5ac  89 s, no major issues
+delegate planner, resume d1f11d3a                           → wait 25.0 s   a0b85bb8  27 s
+git_root worktree add -b task/e11-seats <slugkit>/.worktrees/e11-seats main
+run_command setup where=<that worktree>                     → ok, empty tail (setupCommand is none)
+delegate implementer (claude)                               → wait 30.1 s   dded6b4a  31 s, 116 tests
+git_mutate add -A … / diff --cached --name-only / commit    → f9eaf26
+git_mutate rebase main                                      → up to date
+run_command test where=<that worktree>                      → 116 tests, OK; journal: tested f9eaf26
+delegate code-reviewer seat 1, seat 2, seat 3               → three records, round 1
+wait ×3                                                     → done after 22 s, 31 s and 102 s
+git_mutate rebase main                                      → up to date
+git_root merge --ff-only task/e11-seats                     → ba496c7 → f9eaf26
+run_command test where=root                                 → 116 tests, OK; journal: tests-passed
+git_root worktree remove …; git_root branch -d task/e11-seats
+```
+
+**The plan.** The planner (codex, 38 s) wrote a three-test plan. The plan reviewer (grok, 89 s) ended on
+`VERDICT: no major issues` with two optional follow-ups, a docstring in `slug_initials`'s style and a
+punctuation-only test. The lead resumed the planner once (27 s); its Folds table folded the docstring and
+left the punctuation-only test out, because `SlugInitialsTests` has none. That was one plan-review round:
+the limit `limits.planReviewRounds` sets, 3, was never reached.
+
+**Round 1.** The implementer (claude, 31 s) added `slug_final_letters` after `slug_initials` and a
+`SlugFinalLettersTests` class of three tests, `test_multi_word`, `test_single_word` and
+`test_empty_input`: 2 files, 22 lines added, 116 tests. The lead committed it through `git_mutate`
+(`f9eaf26e13d8096c0dca6f6bcc6d778fdf134b8c`, journaled `committed` at 23:40:45.715Z), rebased on `main`
+("Current branch task/e11-seats is up to date.") and ran the gate, `run_command {which: "test", where:
+<worktree>, slug}`: 116 tests, OK, answered in 0.237 s with the journal's `tested` step, `before` and
+`after` both `f9eaf26e…`, `defaultSha` `ba496c7…`, at 23:40:51.269Z (`src/runcommand.ts#runCommand`). It
+then delegated the three seats, one `delegate` call after another, 4.2 s and 4.0 s apart (23:40:58.657Z,
+23:41:02.815Z, 23:41:06.855Z), each with `seat`, the worktree as `cwd`, `branch` `task/e11-seats` and the
+same 1,357-character brief, which names the round, the task, the plan, the branch, the default branch and
+the commit under review, `f9eaf26e13d8…`. The three records share one `briefHash`, one role and one
+`cwd`; the duplicate check accepted them because their seats differ (`src/guard.ts#duplicateRefusal`,
+`tests/guard.test.ts#duplicateSeats`). The lead opened three `wait` calls within 0.9 s of each other
+(23:41:09.272Z, 23:41:09.723Z, 23:41:10.174Z), which answered `done` after 22 s, 31 s and 102 s.
+
+Each seat ran read-only, as its spec and its live argv show: every spec's `sandbox` is `{ mode:
+"read-only", profile: "read-only" }`, with `protectedPaths` the worktree's `.git` and the common `.git`
+(`run/tasks/<id>.spec.json`, `run/seat-argv-reading.txt`). Seat 1 ran `claude -p … --permission-mode
+dontAsk --tools Bash,Read,ToolSearch --setting-sources project --model claude-sonnet-5 --effort medium`,
+its `--settings` sandbox denying writes to the worktree, its `.git` and the common `.git`. Seat 2 ran
+`codex exec --json -o <result> -C <worktree> --sandbox read-only --ignore-user-config
+--skip-git-repo-check -m gpt-6-luna -c model_reasoning_effort="medium" -c
+model_instructions_file=<role.md> -`. Seat 3 ran `grok -p … --cwd <worktree> --sandbox read-only
+--permission-mode bypassPermissions --model grok-4.7 --reasoning-effort medium --deny Bash(claude *) …`
+under `bwrap`, which was the record's engine process.
+
+| seat | record | engine, model | ledger | turns | cost | last line of its result |
+|---|---|---|---|---|---|---|
+| 1 | `c18a3867` | claude, `claude-sonnet-5` | 22 s | 5 | $0.117 | `VERDICT: no major issues` |
+| 2 | `fc83deaa` | codex, `gpt-6-luna` | 31 s | | 71,911 tokens in, 378 out | `VERDICT: no major issues` |
+| 3 | `d1561d97` | grok, `grok-4.7` | 102 s | 6 | $0.056 | `VERDICT: no major issues` |
+
+Each seat says it compared the diff with the plan and ran the suite itself in the worktree at
+`f9eaf26`, 116 tests, OK, and found nothing: seat 1, "No departures from the plan found. No
+out-of-scope issues noticed."; seat 2, "No findings."; seat 3, "No Critical, Important, or Minor
+findings." Each result file's last non-empty line is exactly `VERDICT: no major issues`, which
+`src/review.ts#verdictOf` reads the same way (`checks.txt`, 4.3). The lead then rebased again ("up to
+date": the head the seats had reviewed was the head it merged), merged, ran the suite at the root,
+removed the worktree and deleted the branch; it settled at 23:43:20Z and the host exited at
+23:43:39.572Z.
+
+**Parallelism.** The watcher (`tools/watch.py`: every second it read the tasks' records and tested each
+code-reviewer record's `engineIdentity.pid` against field 22 of `/proc/<pid>/stat`;
+`run/reviewers-alive.log`, 492 one-second samples) saw seat 1 alive from 23:40:59.222Z to 23:41:20.224Z
+(22 samples), seat 2 from 23:41:03.222Z to 23:41:33.225Z (31) and seat 3 from 23:41:07.223Z to
+23:42:48.235Z (102): all three at once in 14 samples, from 23:41:07.223Z to 23:41:20.224Z. The overlap
+is short because the third seat started 8 s after the first, which settled 22 s after it started, and
+the Grok seat ran 102 s. There was one round, so this is its one instant.
+
+| record | role | ledger | turns | cost |
+|---|---|---|---|---|
+| host | | 457.1 s (result line) | 10 | $0.343 |
+| `9c141b35` | lead | 414 s | 38 | $0.815 |
+| `d1f11d3a` | planner (codex) | 38 s | | 46,905 tokens in, 821 out |
+| `93a0c5ac` | plan reviewer (grok) | 89 s | 5 | $0.060 |
+| `a0b85bb8` | planner, resumed (codex) | 27 s | | 95,257 tokens in, 1,407 out |
+| `dded6b4a` | implementer (claude) | 31 s | 10 | $0.164 |
+| `c18a3867` | code reviewer #1 (claude) | 22 s | 5 | $0.117 |
+| `fc83deaa` | code reviewer #2 (codex) | 31 s | | 71,911 tokens in, 378 out |
+| `d1561d97` | code reviewer #3 (grok) | 102 s | 6 | $0.056 |
+
+**The verdict.** `node tools/e2e-verify.mjs --project <slugkit> --slug e11-seats --since 9c141b35…`, run
+in this repository with `CODEX_HOME` unset (`checks.txt`, 4.1):
+
+```
+pass  only the root worktree: /home/wsh/.cache/agent-team/cross-agent-e2e/slugkit
+pass  no task/* branch remains
+pass  the working tree is clean
+pass  the suite on main: python3 -m unittest discover -s tests -t .
+pass  one record per delegation, each with its native log: 8 records
+pass  every record at depth <= 2: 8 records; cap 2 = min(dev-team-engine's engine placement 2, limits.maxDepth 2)
+pass  the journal shows every git step: e11-seats: worktree-created, git, git, committed, git, tested, git, merged, tests-passed, worktree-removed, branch-deleted | not judged: t13-e10-main, t12-e9, t12-e8, t15-e7, t15-e6, t14-e5, t14-e4, s11-e2, s11-e3, t10-slug-words
+pass  no delegate call and no engine launch in any specialist transcript: 8 transcripts; judged by the lead row: 9c141b35 (lead, depth 1)
+
+8 pass, 0 fail, 0 without evidence
+exit 0
+```
+
+No row failed or answered `?`, so there was nothing to read. Row 7's list holds the gate's `tested`
+step between the two `git` steps.
+
+**The checks** (`checks.txt`, each with its command and output):
+
+1. *The journal.* `node src/cli.ts journal --project <slugkit> e11-seats` lists `worktree-created`
+   (23:39:50.523Z), `git` (`add -A -- . :(exclude).cross-agent :(exclude).worktrees`), `git`
+   (`diff --cached --name-only`), `committed` (23:40:45.715Z, `ba496c7` → `f9eaf26e…`), `git`
+   (`rebase main`), `tested` (23:40:51.269Z, `f9eaf26e…` → `f9eaf26e…`, `defaultSha` `ba496c7…`), `git`
+   (`rebase main`, 23:42:52.946Z), `merged` (23:42:55.574Z, `ba496c7…` → `f9eaf26e…`), `tests-passed`
+   (23:42:58.319Z), `worktree-removed` (23:43:01.195Z) and `branch-deleted` (23:43:03.672Z). The one
+   `tested` step precedes the round's first reviewer record (created 23:40:58.669Z) and `merged`; there
+   is no `review-waived` step, and no waiver was recorded; the journal's `branchHead`,
+   `f9eaf26e13d8096c0dca6f6bcc6d778fdf134b8c`, equals that step's `after`.
+2. *Per round.* One round, at commit `f9eaf26e13d8…`. Exactly three accepted `code-reviewer` records,
+   seat 1 claude, seat 2 codex, seat 3 grok, each `status: done`, `depth` 2, `parentTaskId` the lead's,
+   `env.CROSS_AGENT_LINEAGE` of two entries (the lead, then the reviewer), and `underReview`
+   `f9eaf26e13d8…`, the commit its brief names; each result file ends on `VERDICT: no major issues`. No
+   attempt failed and none was retried, so there is no attempt to count apart. E10's depth and lineage
+   reading passes for all 8 records: the lead at depth 1 alone in its lineage, every other record at
+   depth 2 with the lead first in its lineage.
+3. *Parallelism.* Yes, all three seats alive at once in 14 one-second samples (above).
+4. *The lead's report* (`run/tasks/9c141b35….out`, 2,692 bytes). For round 1 it states the commit,
+   `f9eaf26`, "no findings", and the decisions "No fix rounds, no resolver, no waivers needed". It holds
+   no findings table, because no seat found anything, and no out-of-scope follow-up for the code review;
+   its plan-review paragraph names the plan reviewer's two optional follow-ups, one folded and one
+   rejected with its reason. It ends "Questions asked: none" and "Not independently verified by me: I did
+   not read the diff myself (triage reviewed the specialists' reports only, per the loop's rules)".
+   There was no finding for two seats to share.
+5. *`cross-agent report --since` the lead* printed eight rows, newest first; the three reviewer rows
+   read `code-reviewer#3 | grok | grok-4.7 | medium | 102s | passed | d1561d97…`, `code-reviewer#2 |
+   codex | gpt-6-luna | medium | 31s | passed | fc83deaa…` and `code-reviewer#1 | claude |
+   claude-sonnet-5 | medium | 22s | passed | c18a3867…`, then a section per record
+   (`src/cli.ts#reportVerb`, `src/cli.ts#roleCell`; `tests/cli.test.ts#cliSeatSpelling`).
+6. *The end state.* The suite at the sample passes: 116 tests, OK, three more than the 113 before and
+   one fewer than the brief expects, "at least 117" (see the deviations). `python3 -c` on the four
+   acceptance examples: `slug_final_letters("Hello, World!") == "od"`, `("Hello") == "o"`, `("") == ""`
+   and `("  Trailing spaces  ") == "gs"` all hold. `git worktree list` holds the root alone;
+   `.cross-agent/gate/` exists and is empty (mode 0700, made by the gate at 23:40Z) and
+   `.cross-agent/setups/` does not exist, because the setup command is `none` and no marker was ever
+   written; `git branch --list 'task/*'` prints nothing; `git status --short` is empty. `git log
+   --oneline S0..main` is one commit, `f9eaf26 Add slug_final_letters(text) for joining each slug
+   word's last letter, with tests` (2 files, 22 insertions). The sample's HEAD reflog reads `merge
+   f9eaf26e13d8096c0dca6f6bcc6d778fdf134b8c: Fast-forward` at 19:42:55 -0400, the commit and not the
+   branch name, where E10's read `merge task/t13-e10-main`, which is what a merge that acts on the head
+   it resolved leaves (`src/gitroot.ts#execute`, `tests/gitroot.test.ts#mergeResolvesBranchOnce`).
+7. *Host configuration* (`before/`, `after/`, `run/host-config-trace.txt`, the monitor's look every 30 s,
+   changes only). `~/.codex/config.toml` hashed `58a5a680…` before the run, at every look during it and
+   after it, its mtime unchanged (2026-10-03T22:07:53Z): Codex ran three times, the planner twice and
+   seat 2, and added no trust entry; the file already held one for the sample's root, and none names the
+   task worktree. `/tmp/.git` did not exist before the run, at the monitor's looks during it (the last
+   at 23:43:47Z) or at the after-check (23:46:01Z). It was born at 23:49:55.693Z, eight minutes after the
+   last Codex process of this run had exited (seat 2 settled at 23:41:34Z), when no engine of this run
+   was alive and nothing in the archive, the sample's `.cross-agent` or this repository was touched; what
+   made it is not established, older Codex processes being alive on the machine. It is empty, and nothing
+   was removed (`after/tmp-mountpoints-later.txt`). `/tmp/.agents`, `/tmp/.codex` and `/tmp/.aws`, the
+   other names bead `atc-s96.106` records, were there before the run, empty, from 21:10Z, and have the
+   same inode, birth and mtime after it; no such directory exists under the sample (`find`, depth 3).
+   Under `~/.grok`, hashed at 23:31:22Z before the run and at 23:46:01Z after it,
+   5,490 files were listed before (5,400 hashed, 90 unreadable `sandbox-blocked.<pid>`) and 5,533 after
+   (5,441 hashed, 92 unreadable); none was removed, and 43 were added, all from the two Grok engine
+   runs: 39 files under `sessions/`, for two sessions, the plan reviewer's (`748a619a…`, under the
+   sample's root) and seat 3's (`43b13c21…`, under the task worktree's), two `memtrace` files named for
+   the Grok processes 1333119 and 1339392, and two `sandbox-blocked.<pid>` files, 1333088 and 1339361,
+   which are the `bwrap` processes. Eight files' bytes changed: `logs/mcp/cross-agent.stderr.log`,
+   `logs/unified.jsonl`, `memtrace/1790834134-1171929.jsonl` (the memtrace of the user's own Grok
+   process, 1171929, begun 2026-10-01 05:55:33Z, which writes it every 30 s), `models_cache.json`,
+   `settings_cache.json`, `sessions/sandbox-events.jsonl`, `sessions/session_search.sqlite` and the
+   sample's `prompt_history.jsonl` under `sessions/`. 27 files under `docs/user-guide/` were rewritten
+   with the same bytes when a Grok run started (their mtime moved to 23:41:07Z, seat 3's start).
+   `config.toml`, `auth.json`, `trusted_folders.toml`, `sandbox.toml`, `agent_id`, `active_sessions.json`
+   and `campaigns_state.json` kept their bytes and their mtimes. So the condition that `~/.grok` is
+   unchanged does not hold, as in E10's Fact 6, and here because the run started two Grok engines; no
+   configuration, auth or trust file changed (`after/host-config-compare.txt`).
+
+**Deviations.** The host's roster was one prose paragraph, not the launcher's: `projectRoot` is in its
+first sentence rather than alone on its first line, each role has its engine and model but no effort,
+workspace or sandbox, and the three seats are named "claude, codex, grok" rather than one line each,
+`<role>#<seat>`, with their own engine, model, effort and sandbox (`tests/skills.test.ts#engineHostShowsRoster`
+and `tests/skills.test.ts#launcherSeats` pin that text). The host relayed the lead's report verbatim
+except its last paragraph, turned from the first person to the third and cut of ", per the loop's
+rules" (`tests/skills.test.ts#resultIsReport`; E10's main host did the same with one sentence,
+`docs/probes.md#worktreeProjects`). The lead called `result` once, for the first plan; for every other
+settled task, the plan review, the revised plan, the implementer and the three seats, it had `wait`'s
+`resultTail` and made no `result` call, where the loop says `wait`, then `result`. Each seat's review,
+529 to 1,571 characters, fits that tail, and the merge's guard reads the result files itself, so the
+omission does not reach it. The suite ends at 116 tests, not "at least 117": the host's brief to the
+lead, 856 characters, asked for tests "(e.g. normal multi-word input, single word, empty input)" and did
+not carry the four acceptance examples the brief lists, so the lead's brief, the plan and the
+implementer's work held three tests, and all four examples hold regardless; this is the run's, not the
+build's. The open asks were watched by `monitor.py`, which read `.cross-agent/asks/` every 2 s, not by
+repeated `list-asks` calls, which ran once, after the run (`checks.txt`); none was ever open, so nothing
+was answered and no waiver was recorded. `monitor.py` named processes by their basename and so missed
+Grok's engine process, `bwrap`, and its child `grok-1.0.46-linux-x86_64`; `argv2.py` was started at
+23:38:54Z, while the plan reviewer was running, and saved that run's argv and seat 3's; the lead's, the
+Claude and the Codex argv were saved by `monitor.py` as they ran. The first comparison of `~/.grok` (a
+`sort` and `join` on paths) printed "join: input is not in sorted order" for its file-by-file sections;
+it is kept as `after/host-config-compare.first-run.txt` and superseded by `tools/grok-compare.py`, which
+keys the two listings by path. `before/tasks-listing.txt` was taken at about 23:38Z, after the launch,
+and is moved to `run/`; `before/log.md`, `before/refs.txt` and `before/for-each-ref.txt` were taken at
+the same time, and the files they describe had not changed then. `main` of this repository moved from
+`13058ed` to `c05671e` about 13 s after the host exited, as the introduction says; the coordinator's
+notice is in the timeline.
+
+**Not exercised.** No ask was opened, so `ask`, `answer`, the waiver (`waive_review`, `cross-agent
+waive`) and the settings of `review.afterResolver` did not run: `afterResolver: "ask"` reached the lead
+and the host through `describe_mode` and nothing used it, and the headless host's sentence for an open
+ask did not run. One plan-review round ran, so the limit of 3 rounds in `limits.planReviewRounds` was
+never reached. Every seat ended `no major issues` at the first round, so no fix round, no resolver, no
+wrap-up re-review, no `needs rebase` or `discard` verdict, no seat that failed or ended without a
+VERDICT line and no retry ran, and the resolver, though bound, was never delegated. With no finding
+there was no table with one finding from two seats: consolidation across seats is unproven. The merge's
+refusals, a missing `tested` step and a seat's missing or adverse review, and the waiver are proved by
+the deterministic tests (`tests/gitroot.test.ts#mergeNeedsTested`, `tests/gitroot.test.ts#mergeNeedsReviews`,
+`tests/gitroot.test.ts#mergeWaived`, `tests/review.test.ts#waiverRevalidatesUnderLock`), not by this run,
+which saw only the merge the guards allowed. No setup command ran (`setupCommand` is `none`), so no setup
+marker was written, and nothing tried to write the worktree while a seat reviewed it, so the hold on a
+tree under review (`src/review.ts#reviewHold`) was not met. The host loop of `dev-team` did not
+run: this run is engine-placed, and no host but Claude Code ran.
+
+The run cost $1.555 on the subscriptions: the host $0.343, the Claude lead $0.815, the implementer
+$0.164, the Claude seat $0.117 and the two Grok records $0.060 (plan review) and $0.056 (seat 3)
+(`run/costs-exact.txt`, every `total_cost_usd` of a result line, summed: 1.5553936). The three Codex
+records report tokens and no dollars: the first plan 46,905 in (33,024 cached) and 821 out, its revision
+95,257 in (75,520 cached) and 1,407 out, and seat 2 71,911 in (64,000 cached) and 378 out. Nothing was
+restored or cleaned up: the sample is left as the run left it, on `main` at `f9eaf26`, 116 tests green,
+`git status` clean, the root worktree alone, no `task/*` branch, `feature/dotted` at `0ed8097`, the
+run's config in place and 448 entries in its tasks directory (392 before).
+
 <!-- @anchor cliFacts -->
 ## CLI flag facts (`--help`, 2026-09-09)
 
