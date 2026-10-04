@@ -3,6 +3,25 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T01:54:48Z — codex
+atc-s96.107 closed: unchanged npm test passed 1021 of 1022 tests, with 0 failures
+and 1 guarded Codex I2 skip, in the direct desktop AppArmor context. All four
+rescans ran and passed. The final focused run passes 12 cases; eight regression
+cases went red to green across implementation and the review fix. The host audit
+found no live probes, runner-marked processes or generated fixtures. Citations:
+1636, no misses or drift. One independent review's Important finding was fixed;
+there were no Critical or Minor findings. Local commit includes tests and these
+verification/handoff records; the Beads interaction log is excluded. No push.
+
+### 2026-10-04T01:51:00Z — codex
+atc-s96.107: seven regressions went red to green; the complete runner file passed
+83 tests. The independent review found one Important missing-identity retirement
+case. A real-agent regression reproduced it, and recovery by the unique socket
+argv fixed it. All 12 final focused cases pass with no skips, including the four
+original rescans and persistent signal denial. Full npm test is running in the
+direct desktop context. Only test helpers changed; production guards and host
+policy are unchanged. Evidence: /tmp/cross-agent-atc107-4i7vMg/.
+
 ### 2026-10-04T01:33:18Z — codex
 Committed atc-s96.106 as c492021 after 66 focused tests passed and 1636 citations
 had no misses or drift. The six-file commit excludes the unfinished runner tests

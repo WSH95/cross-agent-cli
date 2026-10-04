@@ -89,7 +89,11 @@ function harness(options: {
   const token = randomUUID();
   const adapterModule = path.join(fixtures, `runner-${token}.mjs`);
   const engineModule = path.join(fixtures, `runner-engine-${token}.mjs`);
-  const children: { child: ChildProcess; closed: boolean; code: number | null; signal: NodeJS.Signals | null }[] = [];
+  const children: {
+    child: ChildProcess; identity: Inspected | null; closed: boolean;
+    code: number | null; signal: NodeJS.Signals | null; error: Error | null;
+  }[] = [];
+  const cleanups = new Set<() => Promise<void>>();
   const record = ledger.create(root, { role: "implementer", brief: "finish T5", cwd: root, engine: "claude" });
   if (options.leadingHyphen) {
     const originalFile = path.join(root, ".cross-agent", "tasks", `${record.id}.json`);
@@ -294,15 +298,22 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     return track(child);
   }
   function track(child: ChildProcess) {
-    const tracked = { child, closed: false, code: null as number | null, signal: null as NodeJS.Signals | null };
+    const tracked = {
+      child, identity: child.pid ? proc(child.pid) : null, closed: false,
+      code: null as number | null, signal: null as NodeJS.Signals | null, error: null as Error | null,
+    };
     children.push(tracked);
-    child.once("error", () => {});
+    child.once("error", (error) => { tracked.error = error; });
     child.once("close", (code, signal) => { Object.assign(tracked, { closed: true, code, signal }); });
     return tracked;
   }
   return {
     root, record, spec, recordFile, auditFile, release, importReady, importRelease, planReady, planRelease, invocation, invocations,
     adapterModule, markers, start, track,
+    onCleanup(cleanup: () => Promise<void>) {
+      cleanups.add(cleanup);
+      return () => { cleanups.delete(cleanup); };
+    },
     engineLaunches: () => (fs.existsSync(invocations) ? fs.readFileSync(invocations, "utf8").trim().split("\n").filter(Boolean) : []),
     read: () => ledger.read(root, record.id),
     audit: () => fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { at: number; record: TaskRecord }) : [],
@@ -324,33 +335,72 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     },
     runnerLog: () => fs.readFileSync(path.join(path.dirname(recordFile), `${record.id}.runner.log`), "utf8"),
     async cleanup() {
-      const tracked = new Map<number, Inspected>();
-      for (const entry of children) {
-        if (entry.child.pid && !entry.closed) {
-          const identity = proc(entry.child.pid);
-          if (identity) tracked.set(identity.pid, identity);
+      const errors: unknown[] = [];
+      try {
+        // Unreadable probes need their own retirement path: an environ scan cannot find them.
+        for (const cleanup of cleanups) {
+          try { await cleanup(); } catch (error) { errors.push(error); }
+        }
+        const tracked = new Map<number, Inspected>();
+        for (const entry of children) {
+          if (entry.identity && !entry.closed) tracked.set(entry.identity.pid, entry.identity);
+        }
+        const signalErrors = new Set<string>();
+        const deadline = Date.now() + pollDeadlineMs;
+        while (true) {
+          // The inherited marker also finds engines and descendants after their parent exits.
+          for (const identity of ownedProcesses(root)) tracked.set(identity.pid, identity);
+          const live = [...tracked.values()].filter(living);
+          for (const identity of live) {
+            try { process.kill(identity.pgid === identity.pid ? -identity.pgid : identity.pid, "SIGKILL"); }
+            catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code === "ESRCH") continue;
+              const key = `${identity.pid}:${code}`;
+              if (!signalErrors.has(key)) { signalErrors.add(key); errors.push(error); }
+            }
+          }
+          if (live.length === 0 && children.every((entry) => entry.closed)) break;
+          assert.ok(Date.now() < deadline, `cleanup left processes: ${live.map((identity) => identity.pid)}`);
+          await delay(10);
+        }
+      } catch (error) {
+        errors.push(error);
+      } finally {
+        for (const file of [adapterModule, engineModule, root]) {
+          try { fs.rmSync(file, { recursive: true, force: true }); }
+          catch (error) { errors.push(error); }
         }
       }
-      const deadline = Date.now() + pollDeadlineMs;
-      while (true) {
-        // The inherited marker finds engines even if the runner died before writing identities,
-        // and descendants whose parent was reaped before this finally block.
-        for (const identity of ownedProcesses(root)) tracked.set(identity.pid, identity);
-        const live = [...tracked.values()].filter(living);
-        for (const identity of live) {
-          try { process.kill(identity.pgid === identity.pid ? -identity.pgid : identity.pid, "SIGKILL"); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
-        }
-        if (live.length === 0 && children.every((entry) => entry.closed)) break;
-        assert.ok(Date.now() < deadline, `cleanup left processes: ${live.map((identity) => identity.pid)}`);
-        await delay(10);
-      }
-      fs.rmSync(adapterModule, { force: true });
-      fs.rmSync(engineModule, { force: true });
-      fs.rmSync(root, { recursive: true, force: true });
+      if (errors.length) throw new AggregateError(errors, "runner cleanup failed");
     },
   };
 }
+
+// @anchor runnerCleanupAfterSignalError
+test("runner cleanup continues after a signal error and removes every fixture", async (t) => {
+  const h = harness();
+  const first = h.track(spawn(process.execPath, ["-e", "setTimeout(() => {}, 2000)"], { detached: true, stdio: "ignore" }));
+  const second = h.track(spawn(process.execPath, ["-e", "setTimeout(() => {}, 2000)"], { detached: true, stdio: "ignore" }));
+  const denied = Object.assign(new Error("fixture signal denied"), { code: "EACCES" });
+  const kill = process.kill.bind(process);
+  let refuse = true;
+  const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    if (refuse && pid === -first.child.pid!) { refuse = false; throw denied; }
+    return kill(pid, signal);
+  });
+  try {
+    await assert.rejects(h.cleanup(), (error: unknown) => error instanceof AggregateError && error.errors.includes(denied));
+    assert.equal(first.closed, true);
+    assert.equal(second.closed, true, "one denial did not prevent the other child being reaped");
+    assert.equal(fs.existsSync(h.root), false);
+    assert.equal(fs.existsSync(h.adapterModule), false);
+    assert.equal(fs.existsSync(h.adapterModule.replace("runner-", "runner-engine-")), false);
+  } finally {
+    mocked.mock.restore();
+    await h.cleanup();
+  }
+});
 
 // @anchor launchSpecsRound
 test("launch specs round-trip atomically and remain separate from task records", async (t) => {
@@ -1702,35 +1752,310 @@ test("a completion over a record another writer orphaned settles nothing", async
 });
 
 /**
- * A process of this user's whose environment no read may open: a session-and-group leader
- * started after the record from a binary carrying a file capability (`ping`) or a setgid
- * bit (`ssh-agent`), which the kernel makes non-dumpable. The runner's pre-spawn scan
- * counts it as a candidate that could be the engine for as long as it lives, which is what
- * holds the re-scan window open (atc-s96.49). Its denial is read here first, so a machine
- * that offers neither binary skips the test by name; the harness kills it however the
- * test ends.
+ * A same-user, unreadable session leader holds the runner's re-scan open (atc-s96.49).
+ * ssh-agent owns a bounded command, so even a denied signal can retire it by closing
+ * that command's stdin. A sacrificial agent proves SIGKILL works before a test uses one.
+ * ping is unsuitable: AppArmor can allow it to start but deny every cleanup signal.
  */
-async function unreadableCandidate(h: ReturnType<typeof harness>): Promise<{ pid: number; clear(): void } | { skip: string }> {
-  const offers: Array<[string, string[]]> = [["ping", ["-i", "1", "127.0.0.1"]], ["ssh-agent", ["-D", "-a", path.join(h.root, "agent.sock")]]];
-  for (const [bin, args] of offers) {
-    const tracked = h.track(spawn(bin, args, { detached: true, stdio: "ignore" }));
-    const pid = tracked.child.pid;
-    if (pid === undefined) continue;
-    // Past execve, or gone: only then is a denial the binary's own and not the exec window.
-    await poll(() => {
-      const stat = ledger.readProcessStat(pid);
-      if (stat === null || stat.state === "Z") return true;
-      try { return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8") !== ""; } catch { return true; }
-    }, Boolean);
-    const stat = ledger.readProcessStat(pid);
-    let denied = false;
-    try { fs.readFileSync(`/proc/${pid}/environ`); } catch (error) { denied = ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code!); }
-    const clear = () => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } };
-    if (denied && stat !== null && stat.state !== "Z" && stat.pgid === pid && stat.sid === pid
-      && fs.statSync(`/proc/${pid}`).uid === process.getuid!()) return { pid, clear };
-    clear();
+async function unreadableCandidate(h: ReturnType<typeof harness>): Promise<{ pid: number; clear(): Promise<void> } | { skip: string }> {
+  const describe = (error: unknown) => {
+    const value = error as NodeJS.ErrnoException;
+    return `${value.code ? `${value.code}: ` : ""}${value.message ?? error}`;
+  };
+  for (const preflight of [true, false]) {
+    const ready = path.join(h.root, `agent-${randomUUID()}`);
+    // In command mode the spawned pid becomes this command; SSH_AGENT_PID names the
+    // actual agent. Publish its start time too, so retirement never trusts a reused pid.
+    const command = `
+      const fs = require("node:fs");
+      setTimeout(() => process.exit(0), 60_000);
+      process.stdin.on("end", () => process.exit(0));
+      process.stdin.resume();
+      const pid = Number(process.env.SSH_AGENT_PID);
+      const raw = fs.readFileSync("/proc/" + pid + "/stat", "utf8");
+      const startTime = raw.slice(raw.lastIndexOf(")") + 1).trim().split(/\\s+/)[19];
+      fs.writeFileSync(${JSON.stringify(`${ready}.tmp`)}, JSON.stringify({ pid, startTime }));
+      fs.renameSync(${JSON.stringify(`${ready}.tmp`)}, ${JSON.stringify(ready)});
+    `;
+    const tracked = h.track(spawn("ssh-agent", ["-a", `${ready}.sock`, process.execPath, "-e", command], {
+      detached: true, stdio: ["pipe", "ignore", "ignore"],
+      env: { ...process.env, RUNNER_TEST_ROOT: h.root },
+    }));
+    let identity: { pid: number; startTime: string } | null = null;
+    let retired = false;
+    let clearing: Promise<void> | undefined;
+    const recoverIdentity = () => {
+      if (identity || tracked.child.pid === undefined) return;
+      // A command may die before publishing ready. The daemon keeps its argv, including
+      // this probe's unique socket path, even after reparenting. Locate it without environ.
+      for (const entry of fs.readdirSync("/proc")) {
+        if (!/^\d+$/.test(entry) || Number(entry) === tracked.child.pid) continue;
+        const stat = ledger.readProcessStat(Number(entry));
+        if (!stat || stat.pgid !== Number(entry) || stat.sid !== Number(entry) || ["Z", "X"].includes(stat.state)) continue;
+        if (tracked.identity && BigInt(stat.startTime) < BigInt(tracked.identity.startTime)) continue;
+        try {
+          if (fs.statSync(`/proc/${entry}`).uid !== process.getuid!()) continue;
+          const argv = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0");
+          if (path.basename(argv[0]) === "ssh-agent" && argv[1] === "-a" && argv[2] === `${ready}.sock`) {
+            identity = { pid: Number(entry), startTime: stat.startTime };
+            return;
+          }
+        } catch (error) {
+          if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code!)) throw error;
+        }
+      }
+    };
+    const signal = () => {
+      if (!identity) return false;
+      const current = proc(identity.pid);
+      if (!current || current.startTime !== identity.startTime || ["Z", "X"].includes(current.state)) return false;
+      process.kill(current.pgid === current.pid ? -current.pid : current.pid, "SIGKILL");
+      return true;
+    };
+    const clear = (): Promise<void> => {
+      if (retired) return Promise.resolve();
+      return clearing ??= (async () => {
+        let signalError: unknown;
+        const stop = () => {
+          recoverIdentity();
+          try { signal(); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") signalError = error; }
+        };
+        try { stop(); } finally { tracked.child.stdin?.end(); }
+        await poll(() => {
+          if (!identity) stop(); // Also catch a fork between the initial scan and stdin closure.
+          return { commandClosed: tracked.closed, agentAlive: identity !== null && living(identity) };
+        }, (state) => state.commandClosed && !state.agentAlive);
+        retired = true;
+        unregister();
+        if (signalError) throw new Error(`ssh-agent SIGKILL failed: ${describe(signalError)}`, { cause: signalError });
+      })().finally(() => { clearing = undefined; });
+    };
+    const unregister = h.onCleanup(clear);
+    const skip = async (reason: string) => {
+      try { await clear(); }
+      catch (error) {
+        if (!retired) throw error; // A live probe is a cleanup failure, never a successful skip.
+        reason += `; ${describe(error)}`;
+      }
+      return { skip: reason };
+    };
+    try {
+      try {
+        await poll(() => tracked.error !== null || tracked.closed || fs.existsSync(ready), Boolean);
+      } catch {
+        return await skip("ssh-agent timed out before publishing its identity");
+      }
+      if (tracked.error) return await skip(`ssh-agent spawn failed: ${describe(tracked.error)}`);
+      if (!fs.existsSync(ready)) return await skip(`ssh-agent exited before ready (code ${tracked.code}, signal ${tracked.signal})`);
+      identity = JSON.parse(fs.readFileSync(ready, "utf8"));
+      const { pid, startTime } = identity!;
+      const stat = await poll(() => ledger.readProcessStat(pid),
+        (value) => !value || value.startTime !== startTime || ["Z", "X"].includes(value.state)
+          || (value.pgid === pid && value.sid === pid));
+      if (!stat || stat.startTime !== startTime || ["Z", "X"].includes(stat.state)) {
+        return await skip("ssh-agent exited before its environment could be checked");
+      }
+      if (fs.statSync(`/proc/${pid}`).uid !== process.getuid!()) return await skip("ssh-agent is not owned by this user");
+      let denied = false;
+      try { fs.readFileSync(`/proc/${pid}/environ`); }
+      catch (error) {
+        if (!["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code!)) {
+          return await skip(`ssh-agent environ check failed: ${describe(error)}`);
+        }
+        denied = true;
+      }
+      if (!denied) return await skip("ssh-agent environ is readable in this environment");
+      if (!preflight) return { pid, clear };
+      try {
+        if (!signal()) return await skip("ssh-agent exited before its SIGKILL preflight");
+      } catch (error) {
+        return await skip(`ssh-agent SIGKILL preflight failed: ${describe(error)}`);
+      }
+      await clear();
+    } catch (error) {
+      return await skip(`ssh-agent probe failed: ${describe(error)}`);
+    }
   }
-  return { skip: "no binary here starts a same-user process whose environ cannot be read (neither ping with a file capability nor setgid ssh-agent)" };
+  throw new Error("ssh-agent probe did not produce a candidate");
+}
+
+// @anchor missingUnreadableProbe
+test("an unavailable unreadable probe names ssh-agent and its spawn error", async () => {
+  const h = harness();
+  const previousPath = process.env.PATH;
+  // No privileged binary can be spawned by either the old or new helper in this case.
+  process.env.PATH = h.root;
+  try {
+    const candidate = await unreadableCandidate(h);
+    assert.ok("skip" in candidate);
+    assert.match(candidate.skip, /ssh-agent.*ENOENT/);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    await h.cleanup();
+  }
+});
+
+// @anchor unusableUnreadableProbe
+for (const [label, source, reason] of [
+  ["exits before becoming ready", "process.exit(23);", /ssh-agent.*exited.*23/],
+  ["has a readable environment", `
+    const { spawn } = require("node:child_process");
+    setTimeout(() => process.exit(0), 2000);
+    if (process.argv[4] === process.execPath) {
+      const command = spawn(process.argv[4], process.argv.slice(5), {
+        env: { ...process.env, SSH_AGENT_PID: String(process.pid) }, stdio: "inherit",
+      });
+      command.on("exit", () => process.exit(0));
+    }
+  `, /ssh-agent.*environ.*readable/],
+] as const) {
+  test(`an unreadable probe that ${label} skips with the actual reason and retires`, async () => {
+    const h = harness();
+    const previousPath = process.env.PATH;
+    // Only this bounded, unprivileged stand-in is on PATH; the old helper cannot run ping.
+    fs.writeFileSync(path.join(h.root, "ssh-agent"), `#!${process.execPath}\n${source}`, { mode: 0o755 });
+    process.env.PATH = h.root;
+    try {
+      const candidate = await unreadableCandidate(h);
+      assert.ok("skip" in candidate);
+      assert.match(candidate.skip, reason);
+      assert.deepEqual(ownedProcesses(h.root), [], "a rejected probe has already retired");
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      await h.cleanup();
+    }
+  });
+}
+
+/** Keep ping off PATH even when these regressions are run against the old helper. */
+function onlySshAgent(h: ReturnType<typeof harness>): (() => void) | null {
+  const previous = process.env.PATH;
+  const binary = (previous ?? "").split(path.delimiter).map((dir) => path.resolve(dir, "ssh-agent"))
+    .find((file) => { try { fs.accessSync(file, fs.constants.X_OK); return true; } catch { return false; } });
+  if (!binary) return null;
+  fs.symlinkSync(binary, path.join(h.root, "ssh-agent"));
+  process.env.PATH = h.root;
+  return () => { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; };
+}
+
+// @anchor unreadableProbeUnpublished
+test("an unreadable probe that fails to publish its identity retires its actual agent before skipping", async (t) => {
+  const h = harness();
+  const restorePath = onlySshAgent(h);
+  const witness = path.join(h.root, "unpublished-agent.json");
+  let identity: Inspected | null = null;
+  try {
+    if (!restorePath) return t.skip("ssh-agent is unavailable");
+    const shim = path.join(h.root, "ssh-agent");
+    const binary = fs.realpathSync(shim);
+    fs.unlinkSync(shim);
+    // The real agent starts, but its command fails before the helper's readiness write.
+    const failure = `
+      const fs = require("node:fs");
+      const pid = Number(process.env.SSH_AGENT_PID);
+      const raw = fs.readFileSync("/proc/" + pid + "/stat", "utf8");
+      const fields = raw.slice(raw.lastIndexOf(")") + 1).trim().split(/\\s+/);
+      fs.writeFileSync(${JSON.stringify(witness)}, JSON.stringify({ pid, startTime: fields[19], pgid: Number(fields[2]), state: fields[0] }));
+      process.exit(23);
+    `;
+    fs.writeFileSync(shim, `#!${process.execPath}
+      const { spawn } = require("node:child_process");
+      const args = process.argv.slice(2);
+      args[args.length - 1] = ${JSON.stringify(failure)};
+      const child = spawn(${JSON.stringify(binary)}, args, { stdio: "inherit" });
+      child.on("error", () => process.exit(24));
+      child.on("exit", (code) => process.exit(code ?? 1));
+      setTimeout(() => process.exit(0), 60_000);
+    `, { mode: 0o755 });
+    const candidate = await unreadableCandidate(h);
+    identity = JSON.parse(fs.readFileSync(witness, "utf8"));
+    assert.ok("skip" in candidate);
+    assert.match(candidate.skip, /ssh-agent.*exited.*23/);
+    assert.equal(living(identity!), false, "the agent outlives its failed command until explicitly retired");
+  } finally {
+    // Also makes the regression safe against the implementation that returns too soon.
+    if (!identity && fs.existsSync(witness)) identity = JSON.parse(fs.readFileSync(witness, "utf8"));
+    if (identity && living(identity)) {
+      process.kill(identity.pgid === identity.pid ? -identity.pid : identity.pid, "SIGKILL");
+      await poll(() => living(identity!), (alive) => !alive);
+    }
+    restorePath?.();
+    await h.cleanup();
+  }
+});
+
+// @anchor unreadableProbePreflightDenied
+test("an unreadable probe whose SIGKILL preflight is denied retires and names the denial", async (t) => {
+  const h = harness();
+  const restorePath = onlySshAgent(h);
+  const kill = process.kill.bind(process);
+  let denied: Inspected | null = null;
+  const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+    if (pid < 0 && signal === "SIGKILL" && (!denied || pid === -denied.pid)) {
+      denied ??= proc(-pid);
+      throw Object.assign(new Error("probe signal denied"), { code: "EACCES" });
+    }
+    return kill(pid, signal);
+  });
+  try {
+    if (!restorePath) return t.skip("ssh-agent is unavailable");
+    const candidate = await unreadableCandidate(h);
+    if (!denied && "skip" in candidate) return t.skip(candidate.skip);
+    assert.ok("skip" in candidate, "a candidate must pass an actual SIGKILL preflight");
+    assert.match(candidate.skip, /ssh-agent.*SIGKILL.*EACCES/);
+    assert.ok(denied && !living(denied), "closing the command retired the agent despite every signal being denied");
+    assert.deepEqual(ownedProcesses(h.root), []);
+  } finally {
+    mocked.mock.restore();
+    restorePath?.();
+    await h.cleanup();
+  }
+});
+
+// @anchor unreadableProbeRetirement
+for (const dispose of ["clear", "assertion failure"] as const) {
+  test(`an unreadable probe passes a real kill preflight and retires after ${dispose}`, async (t) => {
+    const h = harness();
+    const restorePath = onlySshAgent(h);
+    const kill = process.kill.bind(process);
+    const killed: Inspected[] = [];
+    const mocked = t.mock.method(process, "kill", (pid: number, signal?: string | number) => {
+      if (pid < 0 && signal === "SIGKILL") {
+        const identity = proc(-pid);
+        if (identity) killed.push(identity);
+      }
+      return kill(pid, signal);
+    });
+    try {
+      if (!restorePath) return t.skip("ssh-agent is unavailable");
+      const candidate = await unreadableCandidate(h);
+      if ("skip" in candidate) return t.skip(candidate.skip);
+      const identity = proc(candidate.pid)!;
+      assert.ok(killed.length > 0, "a sacrificial candidate was actually killed before this one was offered");
+      assert.ok(killed.every((entry) => !living(entry)));
+      if (dispose === "clear") {
+        await candidate.clear();
+        assert.equal(living(identity), false, "clear waits until the candidate is gone");
+        await candidate.clear();
+      } else {
+        const failure = new Error("test assertion failed");
+        await assert.rejects(async () => {
+          try { throw failure; } finally { await h.cleanup(); }
+        }, (error) => error === failure);
+        assert.equal(living(identity), false, "finally cleanup retired the unreadable agent");
+        assert.equal(fs.existsSync(h.adapterModule), false);
+        assert.equal(fs.existsSync(h.root), false);
+      }
+      assert.deepEqual(ownedProcesses(h.root), []);
+    } finally {
+      mocked.mock.restore();
+      restorePath?.();
+      await h.cleanup();
+    }
+  });
 }
 
 /** The runner's diagnostic so far, empty before its first line. */
@@ -1770,7 +2095,7 @@ test("a cancel during the pre-spawn re-scan settles cancelled and launches no en
     child.child.kill("SIGTERM");
     await poll(() => fs.existsSync(h.markers.cancelled), Boolean);
     await poll(() => lockChildren(file).length, (count) => count === 2);
-    candidate.clear();
+    await candidate.clear();
     await poll(() => diagnostics(h), (text) => /re-scan clean/.test(text));
     await held.release();
     await poll(() => child.closed, Boolean);
@@ -1792,7 +2117,7 @@ test("a settlement another writer makes during the pre-spawn re-scan is left as 
     await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
     // Durable before the candidate goes: the retry that comes back clean reads it.
     const external = await writeAs(h.root, h.record.id, "failed", { reason: "external settlement" });
-    candidate.clear();
+    await candidate.clear();
     await poll(() => child.closed, Boolean);
     assert.equal(child.code, 0);
     assert.deepEqual(h.read(), external);
@@ -1819,7 +2144,7 @@ test("a runner lock lost during the pre-spawn re-scan settles failed and launche
     process.kill(holder!, "SIGKILL");
     await poll(() => diagnostics(h), (text) => /runner lock lost/.test(text));
     await poll(() => lockChildren(file).length, (count) => count === 2);
-    candidate.clear();
+    await candidate.clear();
     await poll(() => diagnostics(h), (text) => /re-scan clean/.test(text));
     await held.release();
     await poll(() => child.closed, Boolean);
@@ -1839,7 +2164,7 @@ test("a candidate that clears during the pre-spawn re-scan is followed by the la
     if ("skip" in candidate) return t.skip(candidate.skip);
     const child = h.start({ env: { ...h.spec.env, INVOCATIONS: h.invocations } });
     await poll(() => diagnostics(h), (text) => /re-scanning: environ unreadable/.test(text));
-    candidate.clear();
+    await candidate.clear();
     const done = await poll(h.read, terminal);
     assert.equal(done.status, "done", diagnostics(h));
     // One visible stand-down used to be the price of a process that was unreadable for a

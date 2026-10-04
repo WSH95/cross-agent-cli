@@ -1,12 +1,17 @@
 ---
-updated_at: 2026-10-04T01:33:18Z
+updated_at: 2026-10-04T01:54:48Z
 updated_by: codex
-session_status: active
+session_status: closed
 branch: main
 ---
 # Handoff
 
 ## Now
+
+The follow-ups `.106` (`c492021`), `.108` (`5b0e529`), and `.107` are complete.
+This checkpoint records `.107`'s cleanup-compatible runner probes. The final
+suite passed 1021 tests with 0 failures and 1 guarded skip; the host cleanup audit
+was empty. No next implementation task is selected, and nothing was pushed.
 
 The plan is closed. `main` (`128df05` and the wrap commit above it) holds every milestone, M0 to M4.
 
@@ -45,24 +50,25 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-`atc-s96.108` corrected the commit policy at the user's request: automatically
-commit completed work after successful validation, including Project Steward
-records; pushes and remote sync still require explicit approval. The supported
-`.beads/PRIME.md` override carries this policy, and `no-push` is true. Plain and
-native-hook output and current-memory recovery were checked; Decision 0015 has
-the rationale. Resume with `bd prime --export --memories-only` for current memories.
-The fresh context carries the corrected policy. Plain output, native-hook JSON,
-and the saved override match; `.108` is ready for its separate local commit.
+The requested prerequisite commits are complete: `.106` is `c492021`, and `.108`
+is `5b0e529`. Both commits were reviewed for task separation; neither includes
+the unfinished runner fix. Plain Beads output, native-hook JSON and the saved
+PRIME override match. Local commits after validation are authorized; pushes and
+remote sync still need approval. Resume memories with `bd prime --export --memories-only`.
 
-The user's required order is to commit `atc-s96.106` and `atc-s96.108` before
-implementing `atc-s96.107`. The latter is claimed but paused: two safe regression tests have
-been added to `tests/runner.test.ts`, and both fail for the expected cleanup/skip
-reasons; the helper has not been changed. Do not include those unfinished tests
-in the prior fix's commit. Evidence, the pre-107 runner snapshot, and a separate
-patch preserving the six-file 106 change are in
-`/tmp/cross-agent-atc107-review-1zfvn3uk/` (`red.log` and
-`atc-s96.106.pending.patch`). Policy files and Decision 0015 belong to 108;
-Steward records currently include updates from both tasks.
+`atc-s96.107` is complete and closed. It uses command-mode ssh-agent, a stdin-controlled command with a
+60-second lifetime, an actual SIGKILL preflight, and awaited identity-checked
+retirement. Harness cleanup continues after signal errors and removes fixtures
+before reporting accumulated failures. Seven regressions went red to green; the
+complete runner file then passed 83 tests. An independent review found one
+Important missing-identity cleanup case. A real-agent regression reproduced it;
+recovery by the unique socket argv fixed it. The final focused run passes all 12
+cases with no skips. Final `npm test` in the direct desktop context passed 1021
+of 1022 tests, with 0 failures and the guarded real Codex I2 skipped. The host
+audit found no live probes, runner-marked processes, or generated fixtures.
+No production code or host security policy changed. Evidence is in
+`/tmp/cross-agent-atc107-4i7vMg/`. This checkpoint includes the runner change and
+verification records. Only the expected Beads interaction log remains unstaged.
 
 `atc-s96.106` is closed and committed on `main` as `c492021`. Before committing,
 all 66 focused worktree/project tests passed again, and the citation checker
@@ -86,8 +92,8 @@ terminated; ten generated fixture files left by failed or interrupted runs were
 archived out of `tests/fixtures`. No generated runner fixture remains there.
 Evidence and original-file review snapshots are in
 `/tmp/cross-agent-atc106-review-ZRRfyD/`; the passing log is
-`full-suite-user-service.log`. No Git operations were performed under this
-session's workflow authority.
+`full-suite-user-service.log`. That earlier validation session did not commit;
+the separate prerequisite commits above are now complete.
 
 `atc-s96.104` is merged and closed.
 
@@ -161,18 +167,16 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Commit the verified `.108` policy and its Project Steward records separately.
-2. Resume the approved `.107` ssh-agent-only probe fix, preserving the two failing
-   regressions. Evidence for this session is `/tmp/cross-agent-atc107-4i7vMg/`.
-   Keep production process guards and host security policy unchanged.
-3. **The team-mode follow-ups:**
+1. Run `bd ready` before choosing the next task. `.106`, `.108`, and `.107` are
+   closed; no push or remote sync is authorized.
+2. **The team-mode follow-ups:**
    - `.105` (P4): deliberate self-subversion of the merge guards;
    - optional, the user's call: trim the loops' text, which grew with `atc-s96.104` (`modes/dev-team/SKILL.md` 13,065 → 20,684 bytes).
-4. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
+3. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
    - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-5. **The worktree-project follow-ups:**
+4. **The worktree-project follow-ups:**
    - `.98`: cancelling a running git child;
    - `.99`: worktree projects inside the main checkout;
    - `.100`: writes at a separated main or a submodule;

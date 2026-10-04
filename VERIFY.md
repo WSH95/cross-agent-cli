@@ -1144,6 +1144,7 @@ Landed:
 | what | value |
 |---|---|
 | state | working-tree changes on `main` at `9f766aa`, uncommitted |
+| subsequent commit | `c492021`, after a fresh focused run passed all 66 worktree/project tests and citations had no misses or drift |
 | regression cycle | eight new cases failed before the fix and passed after it |
 | focused tests | `node --test tests/worktree.test.ts tests/project.test.ts`: both files pass |
 | full suite | unchanged `npm test`: 1014 tests, 1013 pass, 0 fail, 1 skipped (guarded real Codex I2), 187.4 seconds |
@@ -1172,4 +1173,38 @@ test code.
 
 Raw evidence: `/tmp/cross-agent-atc106-review-ZRRfyD/`, including `red.log`,
 `green.log`, `focused.log`, `full-suite-unsandboxed.log`, and the passing
-`full-suite-user-service.log`. `atc-s96.106` is closed; the changes are uncommitted.
+`full-suite-user-service.log`. `atc-s96.106` is closed; the changes were committed
+as `c492021` before work resumed on `.107`.
+
+## atc-s96.107 — cleanup-compatible runner probes (verified 2026-10-03)
+
+| what | value |
+|---|---|
+| scope | runner test helpers and regression coverage; no production or host security changes |
+| prerequisites | `.106` committed as `c492021`, then `.108` as `5b0e529`; runner changes excluded from both |
+| regression cycle | seven cases failed before implementation and passed after it; one review regression also went red to green |
+| focused tests | 12 pass, 0 fail, 0 skipped, including all four original rescan cases |
+| full suite | unchanged `npm test`: 1022 tests, 1021 pass, 0 fail, 1 skipped (guarded real Codex I2), 189.1 seconds |
+| execution context | direct desktop context, AppArmor label `chatgpt (unconfined)`, outside the filesystem sandbox to preserve child output |
+| citation checker | 1636 citations, 0 misses or drift |
+| review | one independent read-only review; one Important finding reproduced and fixed; no Critical or Minor findings |
+| cleanup audit | no live probe agents, no live runner-marked processes, no generated runner fixtures |
+
+`unreadableCandidate` uses command-mode ssh-agent with a stdin-controlled command
+that exits after at most 60 seconds. An actual SIGKILL of a sacrificial agent
+proves cleanup compatibility before the test receives a fresh candidate. The
+helper checks ownership, session/group leadership and unreadable environ, reports
+specific environment skips, and awaits identity-checked retirement. Every rescan
+caller awaits `clear`; the harness also retires probes when an assertion fails.
+Cleanup continues after individual signal errors, removes all generated files,
+and then reports accumulated errors.
+
+The review found that a command failing before its readiness write could leave
+the forked agent alive while reporting a skip. A regression with a real agent
+proved it. Cleanup now recovers that agent by its unique socket argument, with
+ownership and process-identity checks, before it can claim retirement. The
+persistent signal-denial case separately proves retirement through command EOF.
+
+Evidence: `/tmp/cross-agent-atc107-4i7vMg/`, including `107-red-all.log`,
+`107-review-red.log`, `107-review-green.log`, `107-runner.log`,
+`107-full-suite.log`, and `107-leak-audit.json`. `atc-s96.107` is closed.
