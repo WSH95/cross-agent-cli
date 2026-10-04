@@ -925,3 +925,54 @@ The results:
 - the record is `~/.cache/agent-team/probe-logs/rename-20261003T113212Z/`.
 
 The smoke test ran from this session, not from a separate terminal. The session carries no `CROSS_AGENT_*` marker, and in that case the resolver grants the operator row (`docs/probes.md#walk32`). A temporary symlink at the old path kept the session's tools working for these last steps, and it was removed as the session's final action.
+
+## 0014 — 2026-10-03 — The team modes: code reviewer seats, a resolver, the plan and fix rounds, two merge guards (`atc-s96.104`); AGENTS.md (user-approved)
+
+Context: On 2026-10-03 the user asked for two things:
+- the built-in team modes' plan iteration and review and fix rounds should follow the procedure this project's own development uses;
+- the user should set the number of code reviewers.
+
+The user decided:
+- **D1:** `roles.code-reviewer` may be a list of bindings, one reviewer each; an object stays one reviewer.
+- **D2:** after N consecutive plan reviews with major issues, the loop asks the user. N is a config limit, default 3.
+- **D3:** what happens when significant findings still stand after the resolver is a config option, default "stop and ask the user".
+- **D4:** a new `resolver` role.
+
+The user also asked that the team loop itself guard against endless iteration, lost focus and overthinking.
+
+Planning did not converge at first. Six plan reviews of a large plan, which wrote the loop as an exhaustive prose state machine, did not settle it. The user chose to reset to a smaller plan:
+- short loop text, with a "stop and ask the user" fallback;
+- server-side guards that make an untested or unreviewed merge impossible by construction.
+
+The reset plan's four reviews found 5, 3, 2 and 2 majors. At that plateau the user chose to simplify.
+
+Decision: What was built:
+- **Code reviewer seats,** as a mode fact (`"seats": "many"`). `delegate` takes a `seat`, and listings spell it `code-reviewer#2`.
+- **The `resolver` role.**
+- **`limits.planReviewRounds` and `review.afterResolver`,** read through `describe_mode`.
+- **The short loop text,** with the convergence rules:
+  - scope;
+  - carried, introduced and newly noticed marks;
+  - a diagnosis with four options at a limit;
+  - proportion.
+- **Guard 1:** a `tested` step for the exact head being merged, made by a suite run in a detached checkout under `.cross-agent/gate/`.
+- **Guard 2:** under a mode with a gating role, every seat's finished review of that head ends `VERDICT: no major issues`, or a waiver names that head. The server reads the verdict itself, and waivers come from `waive_review` or `cross-agent waive`.
+
+The guarantee: no misreading of the loop text and no accident (a crash, a stale process) merges untested or unreviewed work. A lead, or the operator's own session, deliberately racing its own tools against the gate is outside it. That is a documented limit, with follow-up `atc-s96.105`.
+
+Verification:
+- **Review:** two rounds and no escalation. Round 1 found 3 Critical findings, all in the setup marker, and 1 Important. Round 2 found nothing Critical or Important, and a wrap-up fixed its two Minor findings.
+- **Merge:** at `7de15c0`. `npm test` at the root gives 1006 tests: 1005 pass, 1 skipped.
+- **E11:** three seats on three engines reviewed in parallel. The verifier gave 8 pass, and the merge passed both guards with no waiver (`VERIFY.md`, `docs/probes.md#e11Seats`).
+
+The user approved the `AGENTS.md` change on 2026-10-03 ("approve it"):
+- the overview names the reviewer seats and the resolver;
+- the layout names `waive`, the gate's checkout and `src/review.ts`.
+
+`CLAUDE.md`, which includes `AGENTS.md` by reference, is unchanged.
+
+Consequences:
+- **Existing configs:** a config keeps one reviewer and has no resolver until the user adds `roles.resolver`. `init` leaves an existing config alone, and the loop shows such a roster without dispatching.
+- **Cost:** every review round costs a gate: a checkout of the head, the setup command and the suite.
+- **Text size:** the loop text grew. `modes/dev-team/SKILL.md` went from 13,065 to 20,684 bytes, and `describe_mode` under `dev-team` from 21,156 to 35,474. Trimming it is the user's optional follow-up.
+- **The suite and Codex:** Codex's Linux sandbox leaves an empty `/tmp/.git` behind, and this repository's suite fails or hangs while it exists until `atc-s96.106` lands.

@@ -1081,3 +1081,58 @@ Landed:
 | `~/.grok` | every readable configuration, auth and trust file unchanged. The two files that changed are the log and memtrace of the operator's own `grok` process (pid 1171929). The 86 unreadable `sandbox-blocked.<pid>` files kept their mtimes. The brief's "unchanged by sha256" is met in purpose, not in letter |
 | deviations | neither host printed the full roster, and the main host's line named no path; the branch host relayed `wait`'s tail as the lead's report; the restore was a script run at the end, not a trap; the probe ran twice, to record the live argv |
 | not exercised | lock contention between the projects (no two root or mutation calls overlapped; the deterministic tests prove the serialization), `ask`, a resumed role, a rebase, a bare repository, a separated main, `--from`, `cross-agent git-root`, any engine but Claude |
+
+## `atc-s96.104` — N code reviewers by seat, the resolver, the two merge guards (merged 2026-10-03)
+
+| what | value |
+|---|---|
+| merge | `main` at `7de15c0`: `task/team-modes` rebased onto `main` and fast-forwarded, 15 commits over `823c884`: the implementation (13), fix round 1 (1) and the wrap-up (1) |
+| review | two independent reviews of the implementation, then of the fix diff with the whole range judged again. Two rounds and no escalation pass: round 1 found 3 Critical, 1 Important and 3 Minor; round 2 found nothing Critical or Important, and a wrap-up fixed its two Minor findings |
+| `npm test` at the root | 1006 tests: 1005 pass, 0 fail, 1 skipped (`#codexI2Real`), on `main` at `7de15c0`. The first root run hung in `tests/server.test.ts` while an empty `/tmp/.git` existed, left by a Codex sandbox (`atc-s96.106`); it was stopped and rerun with `/tmp/.git` absent throughout |
+| citation checker | 1608 citations in 2 files (0 by line, 1608 by symbol), 0 misses, at `7de15c0`; `--since 92b35be`: 0 drifted, 0 not judged. 1631, 0 misses, with E11's record (`c4ca8e5`) |
+| engines (E11) | Claude Code 2.1.288, codex-cli 0.160.0, grok 1.0.46, node 24.11.0, git 2.43.0; every role on a cost-effective model at medium |
+| records | `docs/probes.md#e11Seats`; raw evidence in `~/.cache/agent-team/probe-logs/t15-e11/` (188 files, `MANIFEST.sha256` verified) |
+| sample at close | `main` at `f9eaf26`, 116 tests, clean, the root worktree alone, no `task/*` branch; the run's config kept (three code reviewer seats and the resolver); `feature/dotted` kept at `0ed8097` |
+| cost | E11 $1.555 on the subscription by its result lines; the three Codex records report tokens only (214,073 in, 2,606 out) |
+| beads | `atc-s96.104` closed. Follow-ups: `.105` (deliberate self-subversion of the guards, a documented limit), `.106` (an invalid `.git` in an ancestor refuses every project below it; the stray `/tmp/.git` is made by Codex's Linux sandbox) |
+
+Landed:
+- **Code reviewer seats.** `roles.code-reviewer` may be a list of bindings, one seat each, and an object stays one reviewer.
+  - Seats are a mode fact: `"seats": "many"` in `mode.json`.
+  - `delegate` takes `seat`, and the duplicate and resume identities include it.
+  - Listings spell `code-reviewer#2`.
+  - `cross-agent init` binds three read-only seats.
+- **The resolver role.** It is delegated once two fix rounds leave Critical or Important findings standing. It is writable in the task worktree and writes no git metadata.
+- **Two settings, both read through `describe_mode`'s `review`:**
+  - `limits.planReviewRounds`, default 3: after that many consecutive major plan reviews, the loop asks;
+  - `review.afterResolver`: `ask` (the default), `lead-decides` or `always-ask`.
+- **The loop text.** The plan iteration and the review and fix rounds are short procedures with a "stop and ask the user" fallback. The convergence rules:
+  - findings outside the brief and acceptance are follow-ups;
+  - re-review findings are marked carried, introduced or newly noticed;
+  - a stop at a limit shows the findings per round, a convergence verdict and four options (fold and proceed, one more round, simplify, pause);
+  - the planner plans the smallest change that meets the acceptance.
+- **Guard 1, the test gate.** `git_root merge` acts on one resolved head and refuses it without a `tested` step for that exact head. A worktree test run tests a detached checkout of the branch head under `.cross-agent/gate/`, after the setup command, and journals `tested`.
+- **Guard 2, the review gate.** Under a mode with a gating role, every seat's finished review of that head must end `VERDICT: no major issues`. The server reads the verdict from the result file itself. Otherwise a `review-waived` step must name that head. Waivers come from `waive_review` or `cross-agent waive`, revalidated under `git.lock`; the lead may waive only under `lead-decides`, after a complete round.
+- **What the guards rest on:**
+  - a gating review launches only on a committed tree, with no live setup marker;
+  - a reviewed worktree is held against writers;
+  - the setup marker is published before the command runs, holds until its process group is gone, and is cleared only under `spawn.lock`, by its full identity;
+  - `verifyWorktree` refuses paths under `.cross-agent/`;
+  - a one-shot needs guard 1 alone.
+- **The stated limit.** The guarantee is that no misreading and no accident merges untested or unreviewed work. A lead, or the operator's own session, deliberately racing its tools against the gate is outside it (`atc-s96.105`).
+
+### E11 — three code reviewer seats on three engines under a Claude lead
+
+| | |
+|---|---|
+| layout | the sample's main checkout under `dev-team-engine`, with three code reviewer seats on `claude-sonnet-5`, `gpt-6-luna` and `grok-4.7`, each at medium effort and read-only. The resolver is bound to `gpt-6-luna` at medium. `planReviewRounds` is 3 and `afterResolver` is `ask`, and every other role is as before |
+| host | one `claude -p --plugin-dir <main checkout>` host on `claude-sonnet-5` at medium, with engine placement, built at `13058ed` |
+| slug, commit | `e11-seats`: `main` `ba496c7` → `f9eaf26` (`slug_final_letters`), 113 → 116 tests |
+| lead | `9c141b35…`, 411 s, $0.815. It ran the planner twice, the plan reviewer once (`no major issues`), the implementer, one review round of three seats at `f9eaf26`, and the merge |
+| verdict | `e2e-verify --project <sample> --slug e11-seats --since <lead>`: 8 pass, 0 fail, 0 without evidence |
+| seats | seat 1 on claude, seat 2 on codex and seat 3 on grok. Each is `done` at depth 2 with `underReview` `f9eaf26`, and each result ends `VERDICT: no major issues`. All three were alive together for 14 s |
+| guards | `tested` at `f9eaf26` came before the seats' records and before `merged`; `merged.branchHead` equals the last `tested.after`; no `review-waived` |
+| `cross-agent report` | `code-reviewer#1 \| claude …`, `#2 \| codex …`, `#3 \| grok …` |
+| host config | `~/.codex/config.toml` is unchanged by sha256 and mtime. In `~/.grok`, the config, auth and trust files are unchanged; the engines' session files and logs were added |
+| deviations | **116 tests, not the brief's 117:** the host's brief to the lead named three test cases; all four acceptance examples hold. **The host:** its roster was a prose paragraph, and it relayed the lead's report with the last paragraph reworded. **The lead:** it read the seats' reviews from `wait`'s tail rather than calling `result`, and the merge guard reads the result files itself |
+| unproven | the refusals (the deterministic tests prove them), the waiver and `afterResolver`, the resolver (bound, never delegated), D2's limit, the wrap-up, a `needs rebase` verdict, consolidation across seats (there was no finding), the setup marker and the hold (no setup command, and no writer during a review), and the host loop's text |
