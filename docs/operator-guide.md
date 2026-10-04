@@ -22,7 +22,9 @@ team's first task (`git add .gitignore && git commit -m '…' -- .gitignore`): a
 loop's first step stops unless `git status --porcelain --untracked-files=normal`
 prints nothing at the project's root. The server discovers that project from the
 host session's working directory, so a session started anywhere inside it runs
-that project's team.
+that project's team. It reads the mode once, when it starts: after `init`, or after you
+change `mode`, start a new session, since a running server refuses a delegation under a
+mode it is not serving and says to restart it.
 
 In a `dev-team` project `init` binds the code reviewer to three seats — Claude,
 Codex and Grok, each read-only — which review the committed branch in parallel, and

@@ -9,7 +9,7 @@ and its git policy.
 | Mode | The team | The loop runs in |
 | --- | --- | --- |
 | `solo` | one consultant: another engine reads and answers, or takes one change in a worktree of its own | your session |
-| `dev-team` | planner, plan reviewer, implementer, as many code reviewer seats as you bind, and a resolver; each task in its own git worktree | your session |
+| `dev-team` | planner, plan reviewer, implementer, as many code reviewer seats as you bind, and a resolver; the planners read the project, and each task's change is made and reviewed in a git worktree of its own | your session |
 | `dev-team-engine` | the same team | a Claude or Codex lead the server launches, so your session stays free |
 
 A git repository with no cross-agent config runs as `solo`, so a one-off delegation needs
@@ -76,7 +76,9 @@ ask your session, for example: *"Use cross-agent to have Codex review src/parser
 tell me what it finds."*
 
 **Run a team.** Once per project, write its config — the mode, and the engine, model and
-effort of each role:
+effort of each role. In Claude Code, ask your session to run `cross-agent init --mode
+dev-team` in the project; from a terminal, run the installed copy's launcher
+([The operator CLI](#the-operator-cli)):
 
 ```
 cd ~/code/my-project
@@ -86,9 +88,9 @@ cross-agent init --mode dev-team
 Edit `.cross-agent/config.json` to bind the roles as you like. Commit that `.gitignore`
 change `init` made before the team's first task (`git add .gitignore && git commit -m '…'
 -- .gitignore`): a loop's first step stops unless `git status --porcelain
---untracked-files=normal` prints nothing at the project's root. Then ask your session for
-the work, for example: *"Use the cross-agent dev team to add a --json flag to the export
-command."* Under `dev-team` your session runs the loop — plan, plan review, implementation
+--untracked-files=normal` prints nothing at the project's root. Start a new session in the
+project — the server reads the mode once, when it starts — and ask it for the work, for
+example: *"Use the cross-agent dev team to add a --json flag to the export command."* Under `dev-team` your session runs the loop — plan, plan review, implementation
 in a worktree, parallel code review, fixes, a tested merge. Under `dev-team-engine` a lead
 runs it and puts its questions to you, which you answer with `cross-agent answer`.
 
@@ -139,7 +141,9 @@ python3 tools/publish_agent_artifact_pr.py --dry-run  # preview the agent-plugin
 A release bumps the version in `package.json` and both plugin manifests (Claude Code keeps
 users on their cached copy until it changes), commits, and pushes `main`. Then
 `python3 tools/publish_agent_artifact_pr.py --build --commit-message "…" --pr-title "…"
---pr-body "…" --keep-temp` builds the payloads from that commit and opens the pull request.
+--pr-body "…" --keep-temp` builds the payloads from that commit and opens the pull request,
+which replaces `cross-agent/` alone: the marketplace's root entries for cross-agent came with
+its first publication.
 
 ## License
 
