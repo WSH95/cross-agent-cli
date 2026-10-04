@@ -17,7 +17,8 @@ import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines
 const fake = fileURLToPath(new URL("../fixtures/fake-engine.mjs", import.meta.url));
 
 const targets = Object.freeze([
-  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
+  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts",
+  "/projects/team/bin/cross-agent", "cross-agent",
 ]);
 
 // The id the ledger holds for the task. Codex never receives it: `codex exec` mints its

@@ -20,7 +20,8 @@ const fake = fileURLToPath(new URL("../fixtures/fake-engine.mjs", import.meta.ur
 // The deny list design section 3 builds at spawn: the three CLIs, a configured binary,
 // this server, this CLI, and the operator command.
 const targets = Object.freeze([
-  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
+  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts",
+  "/projects/team/bin/cross-agent", "cross-agent",
 ]);
 
 // A representative slice of it for the argv cases that are not about the list itself: an
@@ -153,7 +154,8 @@ test("claude's denyArgs is one appendable --disallowedTools array carrying both 
     "--disallowedTools", "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
     "Bash(node /projects/team/src/server.ts *)", "Bash(node /projects/team/src/server.ts)",
-    "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)", "Bash(cross-agent *)", "Bash(cross-agent)",
+    "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)",
+    "Bash(/projects/team/bin/cross-agent *)", "Bash(/projects/team/bin/cross-agent)", "Bash(cross-agent *)", "Bash(cross-agent)",
   ]);
 });
 
@@ -272,6 +274,7 @@ test("a write role's argv carries the worktree as the only writable root, and th
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
     "Bash(node /projects/team/src/server.ts *)", "Bash(node /projects/team/src/server.ts)",
     "Bash(node /projects/team/src/cli.ts *)", "Bash(node /projects/team/src/cli.ts)",
+    "Bash(/projects/team/bin/cross-agent *)", "Bash(/projects/team/bin/cross-agent)",
     "Bash(cross-agent *)", "Bash(cross-agent)",
   ]);
   // A writable role keeps the editing tools; only a read-only one loses them.

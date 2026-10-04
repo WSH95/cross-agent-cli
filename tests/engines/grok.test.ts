@@ -14,7 +14,8 @@ import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines
 const fake = fileURLToPath(new URL("../fixtures/fake-engine.mjs", import.meta.url));
 
 const targets = Object.freeze([
-  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
+  "claude", "codex", "grok", "/opt/custom codex", "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts",
+  "/projects/team/bin/cross-agent", "cross-agent",
 ]);
 
 // A representative slice of it for the argv cases that are not about the list itself: an
@@ -108,7 +109,8 @@ test("grok declares four profile names, two of which cannot write", () => {
 test("grok's denyArgs is one --deny per target, in the enforced form (P3)", () => {
   assert.deepEqual(grok.denyArgs(targets), [
     "--deny", "Bash(claude *)", "--deny", "Bash(codex *)", "--deny", "Bash(grok *)", "--deny", "Bash(/opt/custom codex *)",
-    "--deny", "Bash(node /projects/team/src/server.ts *)", "--deny", "Bash(node /projects/team/src/cli.ts *)", "--deny", "Bash(cross-agent *)",
+    "--deny", "Bash(node /projects/team/src/server.ts *)", "--deny", "Bash(node /projects/team/src/cli.ts *)",
+    "--deny", "Bash(/projects/team/bin/cross-agent *)", "--deny", "Bash(cross-agent *)",
   ]);
   assert.deepEqual(grok.denyArgs([]), []);
 });

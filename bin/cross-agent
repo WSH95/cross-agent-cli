@@ -1,0 +1,8 @@
+#!/bin/sh
+# The operator CLI, run from this plugin's own copy: `cross-agent <verb>`. Claude Code puts a
+# plugin's `bin/` on its Bash tool's PATH, and a link to this file from any directory on a
+# shell's PATH works the same way, because the plugin root is found from this file's real path.
+# A path that cannot be resolved stops here, rather than handing node `/src/cli.ts`.
+self=$(readlink -f -- "$0") || exit 1
+root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd) || exit 1
+exec node "$root/src/cli.ts" "$@"

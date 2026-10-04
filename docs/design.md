@@ -2065,9 +2065,10 @@ which is a property of the line, not of the pipeline.
 Deny list for Claude and Grok, rebuilt from config at spawn
 (`src/guard.ts#denyTargets`): the commands `claude`, `codex`, `grok`, each
 configured `engines.<e>.bin` path, `node <absolute path of src/server.ts>`,
-`node <absolute path of src/cli.ts>` — **this repository's**, the same base
-`adapterModule` is built from and never the project's, which has neither file
-(`src/delegate.ts#repositoryRoot`, I1) — and `cross-agent`. Those two are
+`node <absolute path of src/cli.ts>` and `<absolute path of bin/cross-agent>`, the
+CLI's launcher, which Claude Code puts on its Bash tool's PATH — **this repository's**,
+the same base `adapterModule` is built from and never the project's, which has none of
+these files (`src/delegate.ts#repositoryRoot`, I1) — and `cross-agent`. Those three are
 best-effort by construction: the path is this module's realpath, so a checkout
 reached through a symlink is denied under the real name and not the link's, and
 a rule is a string the engine matches against a command line. The layer that
@@ -2086,7 +2087,9 @@ own test file. P3 ran four targets — `claude`, `codex`, `grok` and `node
 the rest on both engines: `cross-agent`, `node <repo>/src/cli.ts` and a configured
 bin, beside `node <repo>/src/server.ts` and `claude`, in a fresh session, then
 `cross-agent`, `node <repo>/src/cli.ts`, the bin and `grok` in that session resumed;
-the engine's own permission layer refused every one (`docs/probes.md#t12Fix1`).
+the engine's own permission layer refused every one (`docs/probes.md#t12Fix1`). The
+launcher's path, added with the launcher in 0.1.0, takes the same forms; no engine run
+has probed it yet, and the by-name `cross-agent` rule covers it as a PATH entry offers it.
 
 Sandbox facts from the probes that the adapters must respect: Codex and Grok
 treat `/tmp` and `$TMPDIR` as writable, so a project there is not isolated
@@ -3798,6 +3801,13 @@ raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP to
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
 600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
+
+The plugin root also carries `bin/cross-agent`, the operator CLI's launcher. Claude Code
+puts a plugin's `bin/` on its Bash tool's PATH while the plugin is enabled, so a host
+session runs `cross-agent <verb>` from the plugin's own copy, and a link to the launcher
+from a shell's PATH works the same way, because it finds the plugin root from its own real
+path (`tests/packaging.test.ts#cliLauncherRunsCli`). Specialists are denied it as they are
+the CLI itself (section 3).
 
 Why an MCP core is the portable choice, and not a subagent as the vendor
 bridges use: **neither `codex-plugin-cc` 1.0.6 nor `grok-build-plugin-cc`

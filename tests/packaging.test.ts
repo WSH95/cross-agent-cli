@@ -199,6 +199,60 @@ test("the Codex launcher that cannot resolve its own directory starts nothing", 
   }
 });
 
+// The operator CLI's launcher (design section 9). Claude Code puts a plugin's `bin/` on its
+// Bash tool's PATH, so a host session runs `cross-agent <verb>` from the plugin's own copy;
+// a link to the launcher from a shell's PATH works the same way, because the launcher finds
+// the plugin root from its own real path.
+
+// @anchor cliLauncherRunsCli
+test("the CLI launcher runs the src/cli.ts beside it, directly and through a link, and hands on its arguments", () => {
+  const launcher = path.join(repoRoot, "bin", "cross-agent");
+  assert.notEqual(fs.statSync(launcher).mode & 0o111, 0, `${launcher} is not executable`);
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "cli-launcher-"));
+  const linked = fs.mkdtempSync(path.join(os.tmpdir(), "cli-launcher-link-"));
+  try {
+    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+    fs.symlinkSync(launcher, path.join(linked, "cross-agent"));
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const cli = fs.realpathSync(path.join(repoRoot, "src", "cli.ts"));
+    for (const command of [launcher, path.join(linked, "cross-agent")]) {
+      const printed = execFileSync(command, ["tasks", "--json", "a b"], { cwd: linked, env, encoding: "utf8" }).trimEnd().split("\n");
+      assert.deepEqual(printed, [cli, "tasks", "--json", "a b"], command);
+    }
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(linked, { recursive: true, force: true });
+  }
+});
+
+// @anchor cliLauncherExits
+test("the CLI launcher answers as the CLI does, its exit codes included", () => {
+  const launcher = path.join(repoRoot, "bin", "cross-agent");
+  const help = spawnSync(launcher, ["--help"], { cwd: os.tmpdir(), encoding: "utf8" });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /cross-agent init/);
+  const unread = spawnSync(launcher, ["no-such-verb"], { cwd: os.tmpdir(), encoding: "utf8" });
+  assert.equal(unread.status, 2, "a command line the CLI cannot read exits with its usage code");
+});
+
+// @anchor cliLauncherRootUnresolved
+test("the CLI launcher that cannot resolve its own path starts nothing", () => {
+  // The launcher's text read by a shell whose `$0` names a path that does not exist, so the
+  // `readlink -f` that finds the plugin root fails: it must stop there rather than hand node
+  // a path built from nothing.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "cli-launcher-"));
+  try {
+    fs.writeFileSync(path.join(bin, "node"), '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const launcher = path.join(repoRoot, "bin", "cross-agent");
+    const stranded = spawnSync("sh", ["-c", '. "$1"', "/nonexistent/bin/cross-agent", launcher], { cwd: bin, env, encoding: "utf8" });
+    assert.notEqual(stranded.status, 0, "the launcher went on without its root");
+    assert.equal(stranded.stdout, "", `node was run: ${stranded.stdout}`);
+  } finally {
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
 // @anchor codexMarketplace
 test("the repository is a marketplace offering this one plugin from its own root", () => {
   const marketplace = json(".agents/plugins/marketplace.json");

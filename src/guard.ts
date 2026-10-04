@@ -129,7 +129,8 @@ export function denyTargets(config: CrossAgentConfig, repoRoot: string): string[
   const binaries = Object.values(config.engines ?? {}).flatMap((engine) => engine.bin === undefined ? [] : [engine.bin]);
   return [
     "claude", "codex", "grok", ...binaries,
-    `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent",
+    `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`,
+    path.join(repoRoot, "bin", "cross-agent"), "cross-agent",
   ];
 }
 

@@ -221,16 +221,17 @@ test("resumeRefusal accepts matching terminal records and refuses missing sandbo
   }
 });
 
-test("denyTargets includes configured binaries and both entrypoints", () => {
+test("denyTargets includes configured binaries, both entrypoints and the CLI launcher", () => {
   const before = structuredClone(config);
   assert.deepEqual(denyTargets(config, "/projects/team"), [
     "claude", "codex", "grok", "/opt/engines/claude", "/opt/custom codex", "/opt/engines/grok", "/opt/wrapper",
-    "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "cross-agent",
+    "node /projects/team/src/server.ts", "node /projects/team/src/cli.ts", "/projects/team/bin/cross-agent", "cross-agent",
   ]);
   const { engines, ...withoutEngines } = config;
   for (const plain of [withoutEngines, { ...config, engines: {} }]) {
     assert.deepEqual(denyTargets(plain, "/projects/space team/"), [
-      "claude", "codex", "grok", "node /projects/space team/src/server.ts", "node /projects/space team/src/cli.ts", "cross-agent",
+      "claude", "codex", "grok", "node /projects/space team/src/server.ts", "node /projects/space team/src/cli.ts",
+      "/projects/space team/bin/cross-agent", "cross-agent",
     ]);
   }
   assert.deepEqual(config, before);
