@@ -49,9 +49,12 @@ const prompt = args["prompt-file"] ? readFileSync(args["prompt-file"], "utf8") :
 const role = args["role-file"] ? readFileSync(args["role-file"], "utf8") : "";
 const model = args.model;
 const effort = args.effort;
-// Deny list (design section 3): the three CLIs, this server, this CLI, cross-agent. The
-// adapter's own `denyArgs` turns it into that engine's flags.
-const denyTargets = ["claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`, "cross-agent"];
+// Deny list (design section 3): the three CLIs, this server, this CLI, its launcher,
+// cross-agent. The adapter's own `denyArgs` turns it into that engine's flags.
+const denyTargets = [
+  "claude", "codex", "grok", `node ${path.join(repoRoot, "src", "server.ts")}`, `node ${path.join(repoRoot, "src", "cli.ts")}`,
+  path.join(repoRoot, "bin", "cross-agent"), "cross-agent",
+];
 
 // What `delegate` puts in the spec of a task that runs in a worktree
 // (`src/delegate.ts#delegate`): the workspace's own `.git` pointer file and the
