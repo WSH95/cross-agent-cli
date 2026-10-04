@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-04T01:09:07Z
+updated_at: 2026-10-04T01:33:18Z
 updated_by: codex
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
@@ -45,9 +45,29 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-`atc-s96.106` is closed after verification. Its changes remain uncommitted on
-`main` at `9f766aa`: `src/worktree.ts`, `tests/worktree.test.ts`, `docs/design.md`,
-`VERIFY.md`, `.project-steward/HANDOFF.md`, and `.project-steward/PROGRESS.md`.
+`atc-s96.108` corrected the commit policy at the user's request: automatically
+commit completed work after successful validation, including Project Steward
+records; pushes and remote sync still require explicit approval. The supported
+`.beads/PRIME.md` override carries this policy, and `no-push` is true. Plain and
+native-hook output and current-memory recovery were checked; Decision 0015 has
+the rationale. Resume with `bd prime --export --memories-only` for current memories.
+The fresh context carries the corrected policy. Plain output, native-hook JSON,
+and the saved override match; `.108` is ready for its separate local commit.
+
+The user's required order is to commit `atc-s96.106` and `atc-s96.108` before
+implementing `atc-s96.107`. The latter is claimed but paused: two safe regression tests have
+been added to `tests/runner.test.ts`, and both fail for the expected cleanup/skip
+reasons; the helper has not been changed. Do not include those unfinished tests
+in the prior fix's commit. Evidence, the pre-107 runner snapshot, and a separate
+patch preserving the six-file 106 change are in
+`/tmp/cross-agent-atc107-review-1zfvn3uk/` (`red.log` and
+`atc-s96.106.pending.patch`). Policy files and Decision 0015 belong to 108;
+Steward records currently include updates from both tasks.
+
+`atc-s96.106` is closed and committed on `main` as `c492021`. Before committing,
+all 66 focused worktree/project tests passed again, and the citation checker
+reported 1636 citations, no misses or drift. The six-file commit includes its
+Project Steward records and excludes `.107` and `.108` changes.
 The user approved skipping only readable, empty ancestor `.git` directories.
 Nonempty entries, files and symlinks retain Git verification; unreadable entries
 refuse, and the ancestor walk still detects registered task worktrees.
@@ -141,11 +161,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Review the six uncommitted `atc-s96.106` files listed above and include the project
-   records in the next authorized commit. Suggested message:
-   `fix(worktree): ignore empty ancestor git directories`.
-2. Inspect `bd show atc-s96.107` for the runner test helper's AppArmor cleanup failure.
-   The accepted fix for `.106` does not change that helper or host security policy.
+1. Commit the verified `.108` policy and its Project Steward records separately.
+2. Resume the approved `.107` ssh-agent-only probe fix, preserving the two failing
+   regressions. Evidence for this session is `/tmp/cross-agent-atc107-4i7vMg/`.
+   Keep production process guards and host security policy unchanged.
 3. **The team-mode follow-ups:**
    - `.105` (P4): deliberate self-subversion of the merge guards;
    - optional, the user's call: trim the loops' text, which grew with `atc-s96.104` (`modes/dev-team/SKILL.md` 13,065 → 20,684 bytes).

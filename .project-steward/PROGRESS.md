@@ -3,6 +3,23 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-04T01:33:18Z — codex
+Committed atc-s96.106 as c492021 after 66 focused tests passed and 1636 citations
+had no misses or drift. The six-file commit excludes the unfinished runner tests
+and the policy change. Reverified atc-s96.108: plain output, native-hook JSON and
+the saved PRIME override match; no-push=true. Its separate local commit follows.
+atc-s96.107 implementation remains paused until both prerequisite commits exist.
+
+### 2026-10-04T01:25:32Z — codex
+atc-s96.108 corrected the Beads hook policy: automatic local commits after
+validation are authorized; pushes and remote sync require explicit approval.
+Added .beads/PRIME.md, set no-push=true, and verified plain output, native-hook
+JSON and live memory recovery. Decision 0015 records the user's instruction.
+The atc-s96.106 commit remains pending under the earlier hook already injected
+into this chat. atc-s96.107 is paused at the user's commit-first instruction;
+two new safe regressions in tests/runner.test.ts fail as expected, and no helper
+implementation was made. No Git operations, commits or pushes were performed.
+
 ### 2026-10-04T01:09:07Z — codex
 atc-s96.106 closed: readable empty ancestor .git directories are skipped; unreadable
 metadata and task nesting still refuse. Eight regression cases added, independent

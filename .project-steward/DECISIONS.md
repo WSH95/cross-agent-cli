@@ -976,3 +976,23 @@ Consequences:
 - **Cost:** every review round costs a gate: a checkout of the head, the setup command and the suite.
 - **Text size:** the loop text grew. `modes/dev-team/SKILL.md` went from 13,065 to 20,684 bytes, and `describe_mode` under `dev-team` from 21,156 to 35,474. Trimming it is the user's optional follow-up.
 - **The suite and Codex:** Codex's Linux sandbox leaves an empty `/tmp/.git` behind, and this repository's suite fails or hangs while it exists until `atc-s96.106` lands.
+
+
+## 0015 — 2026-10-03 — Automatic local commits, explicit approval for pushes (`atc-s96.108`)
+
+Context: The user instructed agents to always commit completed, validated work.
+Beads 1.2.2 generated a blanket Git prohibition when its remote detection returned
+no remote, even though `no-git-ops` was unset. That hook wording blocked the
+requested local commit of `atc-s96.106`.
+
+Decision: Use the supported `.beads/PRIME.md` project override to authorize local
+auto-commits after validation, including Project Steward records. Keep separate
+tasks in separate commits. Pushes, published-history rewrites and Dolt remote sync
+still require explicit approval; Beads `no-push` is set to `true`. The user
+clarified that the intended restriction was no automatic push, not no local commit.
+
+Consequences: The plain and native-hook outputs carry the same policy. Because a
+PRIME override replaces Beads' generated context, resume uses
+`bd prime --export --memories-only` to recover current memories. No AGENTS.md or
+CLAUDE.md edits were needed. The earlier prohibition already injected into this
+chat remains a session restriction until a fresh context loads the corrected hook.
