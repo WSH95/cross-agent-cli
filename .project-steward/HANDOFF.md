@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-03T23:26:41Z
+updated_at: 2026-10-04T00:09:25Z
 updated_by: claude
 session_status: active
 branch: main
@@ -45,61 +45,28 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-**`atc-s96.104`: the built-in team modes adopt this session's plan iteration and fix rounds,
-with N code reviewers and a `resolver` role** (the user's request, 2026-10-03).
+Nothing. `atc-s96.104` is merged and closed.
 
-The user's decisions:
-- `roles.code-reviewer` may be a list of bindings, one reviewer each;
-- after N consecutive plan-review rounds with major issues the loop asks the user, N a config limit defaulting to 3;
-- a new `resolver` role on a stronger model resolves the significant findings two fix rounds leave standing;
-- what happens to significant findings still standing after the resolver is a config option, defaulting to stop and ask the user.
+**`atc-s96.104` merged on 2026-10-03** (`7de15c0`, 15 commits; Decision 0014). The built-in team modes now run the plan iteration and the review and fix rounds as short procedures, with N code reviewers and a `resolver` role. This was the user's request, with the user's decisions D1–D4.
 
-The plan is `.superpowers/sdd/the-development-of-this-calm-planet/task-15-brief.md`. In it:
-- several seats are a mode fact, `"seats": "many"`;
-- `delegate` gains a `seat`, written `code-reviewer#2`;
-- the settings are `limits.planReviewRounds` and `review.afterResolver`, both read through `describe_mode`;
-- E11 is engine-placed, on cost-effective models.
+What it does:
+- **Code reviewer seats:** `roles.code-reviewer` may be a list of bindings, one seat each. Seats are a mode fact (`"seats": "many"`); `delegate` takes `seat`, and listings write `code-reviewer#2`. `init` binds three read-only seats and the resolver.
+- **Two settings,** both read through `describe_mode`: `limits.planReviewRounds` (default 3) and `review.afterResolver` (`ask` by default, or `lead-decides` or `always-ask`).
+- **The loop text:** short, with a "stop and ask the user" fallback and the user's convergence rules (scope; carried, introduced or newly noticed; a diagnosis with four options at a limit; proportion).
+- **Guard 1:** `git_root merge` acts on one resolved head and needs a `tested` step for it. The step comes from a suite run in a detached checkout under `.cross-agent/gate/`.
+- **Guard 2:** under a mode with a gating role, the merge also needs every seat's clean review of that head, read by the server from the result files, or a waiver (`waive_review`, `cross-agent waive`).
+- **The limit:** deliberate self-subversion by a lead is outside the guarantee (`atc-s96.105`).
 
-Six plan reviews of a large plan did not converge: it tried to encode the loop as an exhaustive prose state machine, and every fold opened new routes. The user chose a reset to a smaller plan (`task-15-reset-brief.md`, `task-15-reset-plan.md`).
+How it was checked:
+- **Planning:** six reviews of a large plan did not converge. The user reset it to a smaller plan, then chose to simplify at the plateau.
+- **Review:** two rounds. Round 1 found 3 Critical (all in the setup marker), 1 Important and 3 Minor. Round 2 found nothing Critical or Important, and a wrap-up fixed its two Minor findings. No escalation was needed.
+- **The suite:** `npm test` at the root ran 1006 tests: 1005 pass, 1 skipped. Citations: 1608, then 1631 with E11's record.
+- **E11:** three seats on three engines (claude, codex, grok) reviewed `f9eaf26` in parallel. The verifier gave 8 pass, and the merge passed both guards with no waiver (`docs/probes.md#e11Seats`, `VERIFY.md`). The run cost $1.555.
+- **`AGENTS.md`:** updated with the user's approval (`c05671e`).
 
-**The reset plan:**
-- short loop text, with a "stop and ask the user" fallback;
-- two server-side merge guards. `git_root merge` refuses unless the branch head has a recorded passing test run, and either every seat's review of that head ends `no major issues` or a waiver names it. The verdict is read from the result file by the server;
-- the four decisions kept.
+The task worktree is removed, and its ignored files are archived in `~/.cache/agent-team/probe-logs/t15-worktree-state/`.
 
-**The user's additions and confirmations:**
-- The user added convergence rules to the built-in team loop itself: scope discipline, carried / introduced / newly-noticed tracking, a diagnosis with four options at the round limit, and proportion.
-- The user confirmed that a wrap-up fix gets one short re-review.
-- The user confirmed that `lead-decides` lets the lead record a waiver.
-
-The reset plan went through four reviews: 5, 3, 2 and 2 majors. At the plateau the user chose **simplify**. The guards' guarantee was re-anchored to "no misreading and no accident merges untested or unreviewed work", and deliberate self-subversion by a lead is a documented limit (`atc-s96.105`).
-
-**The final plan** (`task-15-brief-final.md`, 13 commits):
-- guard 1 tests a detached checkout of the branch head under `.cross-agent/gate/`;
-- gating reviews require a committed tree and no live setup marker;
-- `verifyWorktree` refuses paths under `.cross-agent/`;
-- the merge acts on one resolved head;
-- a `waive_review` tool and a `cross-agent waive` verb record waivers.
-
-It is implemented in `.worktrees/team-modes` (`task/team-modes`): 13 commits, `92b35be..c3bae4c`, with 991 tests (990 pass, 1 skipped) and 0 citation misses.
-
-**Code review** (`task-15-findings-round-{1,2}.md`):
-- **Round 1** found 3 Critical (the setup marker), 1 Important (`always-ask` after the resolver) and 3 Minor. Fix round 1 fixed all seven.
-- **Round 2** found nothing Critical or Important: the majors went from 4 to 0. A wrap-up fixed its two Minor findings, and there was no escalation.
-
-**Merged:** `task/team-modes` was rebased onto `main` and fast-forwarded to `7de15c0`: 15 commits, 1006 tests (1005 pass, 1 skipped), 1608 citations with 0 misses.
-
-The stray empty `/tmp/.git` comes from Codex's own Linux sandbox; the cause is on bead `atc-s96.106`. Remove it before running the suite: while it exists, the suite fails or hangs.
-
-**Next:**
-1. the root suite's rerun;
-2. E11 on cost-effective models only (`task-15-e11-brief.md`);
-3. the `VERIFY.md` section;
-4. the `AGENTS.md` diff, for the user's approval;
-5. close `.104`;
-6. remove the task worktree.
-
-A stray empty `/tmp/.git`, made by an unknown process, broke plain `npm test`; it was removed. It exposed a robustness bug in worktree projects: an invalid `.git` in an ancestor makes every project below it refuse. That is filed as `atc-s96.106` (P2). The large plan's revisions (`-r1` to `-r5`) and six reviews are kept as history.
+**The stray empty `/tmp/.git`** is left by Codex's Linux sandbox. Every Codex command recreates it, the user's own sessions included, along with `/tmp/.agents`, `/tmp/.codex` and `/tmp/.aws`. While it exists, this repository's suite fails or hangs. Remove it before running the suite. The fix is `atc-s96.106`.
 
 **`atc-s96.103` is done (2026-10-03).** The repository is now `~/Documents/cross-agent-cli`, renamed from `~/Documents/agent-team-cli`.
 - **What changed:** its live names (the Codex marketplace and install id `cross-agent@cross-agent-cli`, both manifests' `author`, the README, the design, `AGENTS.md`, the steward project name) were merged at `1a17004` and `6c3e5c3`.
@@ -147,11 +114,15 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
+1. **The team-mode follow-ups:**
+   - `.106` (P2): an invalid `.git` in an ancestor refuses every project below it. Codex's sandbox makes `/tmp/.git` routinely, so this repository's suite breaks until it lands; the controller suggested raising it to P1, which is the user's call;
+   - `.105` (P4): deliberate self-subversion of the merge guards;
+   - optional, the user's call: trim the loops' text, which grew with `atc-s96.104` (`modes/dev-team/SKILL.md` 13,065 → 20,684 bytes).
+2. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
    - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
-2. **The worktree-project follow-ups:**
+3. **The worktree-project follow-ups:**
    - `.98`: cancelling a running git child;
    - `.99`: worktree projects inside the main checkout;
    - `.100`: writes at a separated main or a submodule;
@@ -160,15 +131,14 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Blockers
 
-None. The `AGENTS.md` diff for the worktree projects was approved and applied on 2026-10-03
-(Decision 0012).
+None. The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10-03 (`c05671e`, Decision 0014).
 
 ## Key files
 
 - `docs/design.md`: the authority — "The lead model", sections 1 to 10, the work plan with what landed per row, and Verification.
-- `docs/probes.md`: every probe and end-to-end run with its transcripts. It covers P1–P10, I1, I2 and E1–E10; T12's fix rounds are `#t12Fix1`, `#t12Fix2` and `#t12Fix3`, and E10 is `#worktreeProjects`.
+- `docs/probes.md`: every probe and end-to-end run with its transcripts. It covers P1–P10, I1, I2 and E1–E11; T12's fix rounds are `#t12Fix1`, `#t12Fix2` and `#t12Fix3`, E10 is `#worktreeProjects` and E11 is `#e11Seats`.
 - `src/`:
-  - the top level: `server.ts`, `authority.ts`, `project.ts`, `delegate.ts`, `tasks.ts`, `wait.ts`, `mailbox.ts`, `modes.ts`, `cli.ts`, `gitroot.ts`, `runcommand.ts`, `config.ts`, `ledger.ts`, `locks.ts`, `process.ts`, `reconcile.ts`, `worktree.ts`, `reservation.ts`, `gitmutate.ts`, `journal.ts`, `runner.ts`, `guard.ts`;
+  - the top level: `server.ts`, `authority.ts`, `project.ts`, `delegate.ts`, `tasks.ts`, `wait.ts`, `mailbox.ts`, `modes.ts`, `cli.ts`, `gitroot.ts`, `runcommand.ts`, `config.ts`, `ledger.ts`, `locks.ts`, `process.ts`, `reconcile.ts`, `worktree.ts`, `reservation.ts`, `gitmutate.ts`, `journal.ts`, `review.ts`, `runner.ts`, `guard.ts`;
   - `engines/`: `types.ts`, `spawn.ts`, `registry.ts`, `binaries.ts`, `text.ts`, `claude.ts`, `codex.ts`, `grok.ts`;
   - `tests/` mirrors it, with `tests/fixtures/fake-engine.mjs` and `tests/helpers/`.
 - The skill, the modes and the packaging:
@@ -182,11 +152,11 @@ None. The `AGENTS.md` diff for the worktree projects was approved and applied on
   - `check-citations.mjs`;
   - `from-openmaus.mjs`: a one-off, kept as history.
 - The records:
-  - `VERIFY.md`: counts and runs per merge, ending with "T12" and "Close of the plan";
-  - `.project-steward/DECISIONS.md`: 0010, the rulings of M1–M3, and 0011, the go or no-go with its conditions, limitations and deferred beads;
+  - `VERIFY.md`: counts and runs per merge, ending with "T13" and `atc-s96.104`;
+  - `.project-steward/DECISIONS.md`: 0010, the rulings of M1–M3; 0011, the go or no-go with its conditions, limitations and deferred beads; 0012–0014, the worktree projects, the rename and the team modes;
   - the plan, `~/.claude/plans/the-development-of-this-calm-planet.md`.
 - The close's raw evidence: `~/.cache/agent-team/probe-logs/close-2026-10-02/` (`fix1/`, `fix2/`, `wrapup/`, `e9/`, `worktree-state/`).
-- The sample, `~/.cache/agent-team/cross-agent-e2e/slugkit`: `main` at `ba496c7`, 113 tests, in `dev-team-engine` as E7 and E9 left it (E10 switched it to all-Claude and restored it `cmp`-equal), and `feature/dotted` kept at `0ed8097`. Its `.grok/config.toml` names this checkout.
+- The sample, `~/.cache/agent-team/cross-agent-e2e/slugkit`: `main` at `f9eaf26` (E11's `slug_final_letters`), 116 tests, in `dev-team-engine` with E11's config kept (three code reviewer seats on claude, codex and grok, and the resolver), and `feature/dotted` kept at `0ed8097`. Its `.grok/config.toml` names this checkout.
 
 ## Tried and rejected
 
