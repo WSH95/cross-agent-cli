@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-12T22:43:35Z
+updated_at: 2026-10-12T22:45:20Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -8,10 +8,12 @@ branch: main
 
 ## Now
 
-**Release 0.1.2 is in progress (`atc-s96.114`, 2026-10-12).** The user authorized pushing
-`main` and opening a new agent-plugins pull request (PR #16, 0.1.1, was merged on
-2026-10-04). Version fields are 0.1.2; release checks pass 33/33 and `npm test` 1046 pass,
-0 fail, 2 guarded skips. Next: push `main`, run the publisher's dry run, then publish.
+**Release 0.1.2 is published to a pull request (`atc-s96.114`, closed 2026-10-12).** With
+the user's authorization, `main` was pushed at `0ebbac2` (the web tools, `209b512`, and the
+version bump), and https://github.com/WSH95/agent-plugins/pull/17 was opened on
+`publish/cross-agent-0.1.2` at `ab7bedb`: open and mergeable, seven files under
+`cross-agent/`, identical to the frozen dist, `claude plugin validate` passing. It awaits
+the user's merge. Release checks 33/33; `npm test` 1046 pass, 0 fail, 2 guarded skips.
 
 **`atc-s96.112` is complete and closed (2026-10-12).** Claude specialists now hold
 `WebSearch` and `WebFetch`: every role lists both in `--tools` and pre-approves both in
@@ -233,7 +235,7 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. The user can review and merge https://github.com/WSH95/agent-plugins/pull/16.
+1. The user can review and merge https://github.com/WSH95/agent-plugins/pull/17 (0.1.2).
    Future pushes, PR merges and Dolt remote sync require separate authorization.
 2. For an isolated native regression check, run
    `CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.

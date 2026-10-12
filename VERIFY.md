@@ -16,8 +16,20 @@ tests/codex-native.test.ts` passed 33 tests, none skipped. After the bump, `npm 
 ran 1048 tests: 1046 pass, 0 fail, 2 guarded skips (real Codex I2 and the opt-in
 native setup probe). Citations: 1648, 0 misses, 0 drifted since `640763f`. The
 implementation's two real Claude probes are `docs/probes.md#claudeWebTools`.
-PR #16 (0.1.1) was merged on 2026-10-04, so this release opens a new agent-plugins
-pull request; the publication record follows below once it exists.
+PR #16 (0.1.1) was merged on 2026-10-04, so this release opened a new agent-plugins
+pull request.
+
+The frozen source release is `0ebbac245227be4621bae51d9537edb73ce08463`, pushed to
+`main` as a fast-forward from `640763f`. The publisher's dry run proposed seven files under
+`cross-agent/`: the version in both payloads' manifests and `package.json`, the Claude
+marketplace metadata, and `src/engines/claude.ts` in both payloads; the root marketplace
+entries pin no version and were left alone. The publish opened
+https://github.com/WSH95/agent-plugins/pull/17 on `publish/cross-agent-0.1.2`, head
+`ab7bedb4b9fd26590ddb8705d3e25d63164ceb3f`: open and mergeable, those seven files, no
+attribution trailer. The target's `cross-agent/` equals the frozen dist (`diff -r`), and
+`claude plugin validate` passes for the marketplace and, `--strict`, for the plugin. No
+merge, force-push or Dolt remote sync was performed. The target checkout is kept at
+`/tmp/agent-artifact-pr-5tcm77bx/target`.
 
 ## Release 0.1.1 — `atc-s96.111` (2026-10-04)
 
