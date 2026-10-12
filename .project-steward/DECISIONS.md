@@ -1054,3 +1054,26 @@ previous connection descriptions, so a retry can recover. Native tests cover the
 desktop backend, not GUI restart controls. Linux and Node 24 remain requirements.
 Publication and changes to the user's real Codex installation are separate from this
 local implementation; no push or remote sync was authorized.
+
+## 0018 — 2026-10-12 — Specialists may search and fetch the web (`atc-s96.112`)
+
+Context: Codex and Grok specialists already search the web with their engines' own hosted
+tools, which their sandboxes do not reach. A Claude specialist could not: the `--tools`
+allowlist from T12 (360a6cb, `docs/probes.md#t12Fix1`) withheld `WebSearch` and `WebFetch`
+in its "act beyond this machine" group, and `dontAsk` refuses what nothing pre-approves.
+The user asked to add both to the allowlist.
+
+Decision: Every Claude role, whatever its profile, the engine-placed lead included, lists
+`WebSearch` and `WebFetch` in `--tools` and pre-approves both in `permissions.allow`
+(`src/engines/claude.ts#claudeTools`, `#fileToolRules`,
+`tests/engines/claude.test.ts#claudeWebTools`). The rest of the withheld set stays withheld,
+and the shell's sandbox is unchanged. The end-to-end verifier reads both tools as `pass`.
+
+Consequences: Both tools run in the engine's process, outside bubblewrap, so a sandboxed
+role reaches the web through them while its shell still reaches no host
+(`docs/probes.md#claudeWebTools`). Web content can now reach every specialist on every
+engine, and anything a specialist reads can leave in a fetched URL. That exposure is the one
+Codex and Grok specialists already had, now uniform across engines. `WebFetch` is approved
+for every domain. `atc-s96.92`'s scope for Grok drops its web tools. The probe also found a
+compound shell command carrying `$?` refused under `dontAsk` with or without the web tools
+(`atc-s96.113`).

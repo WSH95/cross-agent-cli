@@ -51,12 +51,15 @@ information, the tracked `.claude/settings.json` also brings a specialist its
 `env` (probed), while its `apiKeyHelper` reaching a specialist remains unprobed,
 and its `sandbox.network.allowedDomains` does not reach a sandboxed one.
 
-**Inside its sandbox a Claude specialist reaches no network host**, and inside its
-own workspace its file tools are refused Claude Code's sensitive paths —
+**Inside its sandbox a Claude specialist's shell reaches no network host**, and
+inside its own workspace its file tools are refused Claude Code's sensitive paths —
 `.vscode/`, `.idea/`, `.husky/`, `.npmrc`, `.gitmodules` and more. Put a
 dependency install in the project's `setupCommand`, which the lead runs outside
 any sandbox with `run_command`, and change a sensitive file by hand
-(`docs/probes.md`, "T12 fix round 2").
+(`docs/probes.md`, "T12 fix round 2"). Its `WebSearch` and `WebFetch` tools run
+outside the sandbox and do reach the web, as a Codex or Grok specialist's own web
+search does, so web content can reach any specialist and anything a specialist
+reads can leave in a fetched URL (`docs/probes.md`, "Claude specialists' web tools").
 
 **Grok's sandbox** resolves its own list of runtime sockets it must deny —
 Docker's, containerd's, D-Bus's, systemd's and podman's among them — path by

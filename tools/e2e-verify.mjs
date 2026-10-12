@@ -294,17 +294,18 @@ const knownEvents = new Set([
 // seen, and answers `?` as any unknown event does.
 const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "type", "uuid"];
 // The tools each engine's archived transcripts call — every Claude and Grok record E1 to E7,
-// the integration probes and t12Fix1's rerun left (`docs/probes.md#t12Fix1`) — and the one
-// shape Grok's dispatcher was recorded in: `use_tool` as exactly `{tool_name, tool_input}`,
-// naming one of this server's tools, with or without the `cross-agent__` prefix Grok gives
-// them. A tool call outside its own engine's list, one with no name, a shell call with no
-// command, a content block of a type no archived turn holds and `use_tool` in any other
-// shape are evidence this build cannot read, whatever their input says (task 12, fix round 1).
+// the integration probes, t12Fix1's rerun (`docs/probes.md#t12Fix1`) and the web tools' two
+// runs (`docs/probes.md#claudeWebTools`) left — and the one shape Grok's dispatcher was
+// recorded in: `use_tool` as exactly `{tool_name, tool_input}`, naming one of this server's
+// tools, with or without the `cross-agent__` prefix Grok gives them. A tool call outside its
+// own engine's list, one with no name, a shell call with no command, a content block of a
+// type no archived turn holds and `use_tool` in any other shape are evidence this build
+// cannot read, whatever their input says (task 12, fix round 1).
 const contentBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
 const serverTools = new Set(["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel",
   "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review", "list_asks", "answer", "ask"]);
 const engineTools = new Map([
-  ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup"])],
+  ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup", "WebSearch", "WebFetch"])],
   ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool"])],
 ]);
 const shellTools = new Map([["claude", "Bash"], ["grok", "run_terminal_command"]]);

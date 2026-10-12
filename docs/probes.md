@@ -4113,3 +4113,49 @@ its result. A second connection carrying a depth marker has no `delegate` tool.
 The lifecycle tests cover installed updates, stale caches, disable/uninstall,
 custom Codex homes, config conflicts and recovery. Earlier probes of the legacy
 bundled mount remain historical evidence; one-time setup intentionally shadows it.
+
+<!-- @anchor claudeWebTools -->
+## Claude specialists' web tools (2026-10-12)
+
+Claude Code 2.1.296, Codex CLI 0.162.1, Grok 1.0.52, Node 24.11.0, Linux. The question
+was whether a specialist can search the web. Every run used its adapter's own line, read-only
+unless stated, with an empty scratch directory as its cwd, and asked for the latest Node.js
+release.
+
+**Before the change (640763f).** Claude, through `tools/probe.mjs`: the init line's `tools`
+were `["Bash","Read","ToolSearch"]`, the model's fallback `curl` was refused by the sandbox
+proxy ("deny network-outbound nodejs.org:443 (user denied)", exit 56), and it answered
+`NO_WEB_TOOL` ($0.073). Codex, `codex exec --json -o <out> -C <dir> --sandbox read-only
+--ignore-user-config --skip-git-repo-check -c model_reasoning_effort="low" -`, with no
+`--search` flag and no user config: a `web_search` item whose action searched
+`site:nodejs.org latest Node.js release October 2026`, then v26.11.1, citing
+nodejs.org/en/blog/release. Whether that came from a cached index or a live search, the
+output does not say; the search is a hosted tool, which the sandbox's network denial
+does not reach. Grok, `grok -p <brief> --cwd <dir> --sandbox read-only --permission-mode
+bypassPermissions --output-format streaming-messages-json`: `web_search` and `web_fetch` are
+among its built-ins, the adapter passes no `--disable-web-search`, and the run made one
+search (`server_tool_use.web_search_requests: 1`) and answered 26.11.1 ($0.025).
+
+**After it.** The adapter's line lists `WebSearch` and `WebFetch` in `--tools` and pre-approves
+both in `permissions.allow` (`src/engines/claude.ts#claudeTools`, `#fileToolRules`). Two runs
+through `tools/probe.mjs`, read-only and workspace-write, each asked for one `WebSearch`, one
+`WebFetch` of `https://nodejs.org/dist/index.json` and one shell `curl` of the same URL.
+Their init lines listed `["Bash","Read","ToolSearch","WebFetch","WebSearch"]` and the
+writable set plus `Edit`, `NotebookEdit` and `Write`. Both loaded the two tools with
+`ToolSearch` (`select:WebSearch,WebFetch`), since Claude Code defers them. `WebSearch`
+returned a page of links and `WebFetch` answered v26.11.1, dated 2026-10-07, with no refusal
+from `dontAsk` for either ($0.136 and $0.107). The outer `server_tool_use` counted
+`web_search_requests: 0` and `web_fetch_requests: 0` all the same: Claude Code makes the
+search in a call of its own, so that counter does not record it, and the tool result is the
+evidence.
+
+**The shell, unchanged.** Both runs sent the shell `curl … ; echo " exit=$?"`, which was
+refused by the permission layer, "Permission to use Bash has been denied because Claude Code
+is running in don't ask mode". So the same read-only line, built by `tools/probe.mjs
+--dry-run`, ran twice from one brief: as built, and with the two web tools taken out of
+`--tools` and `permissions.allow`. `echo hello` and `ls -a` ran in both, and a plain `curl`
+was refused by the proxy in both, exit 56 with the same `deny network-outbound` line
+($0.059 and $0.055). The compound command alone, in both, was refused by the permission
+layer with the same words ($0.055 and $0.053). The web tools change neither: a sandboxed
+role's shell still reaches no host, and a compound command carrying `$?` is refused under
+`dontAsk` with or without them.

@@ -13,18 +13,21 @@ import type { EngineAdapter, EngineEvent, LeadMount, LeadMountSpec, SpawnPlan, S
 const sandboxFailure = /Sandbox disabled|apply-seccomp/;
 
 /**
- * The built-in tools a role keeps, as `--tools` names them: the shell and the file reader
- * for every role, the editing tools for one that may edit, and `ToolSearch`, which loads a
- * deferred tool's definition — an engine-placed lead's mount tools arrive deferred. Nothing
- * else Claude Code ships is offered. Probe t12Fix1 (b) watched a read-only consult load
- * `EnterWorktree` and create a worktree and a branch under the project's `.git`, outside any
- * sandbox; the rest of the default set (`Task`, `Workflow`, `RemoteTrigger`, `SendMessage`,
- * the `Cron` tools, `ScheduleWakeup` and their kin) start work no record holds or act
- * beyond this machine.
+ * The built-in tools a role keeps, as `--tools` names them: the shell, the file reader and
+ * the two web tools for every role, the editing tools for one that may edit, and
+ * `ToolSearch`, which loads a deferred tool's definition — an engine-placed lead's mount
+ * tools arrive deferred. Nothing else Claude Code ships is offered. Probe t12Fix1 (b)
+ * watched a read-only consult load `EnterWorktree` and create a worktree and a branch under
+ * the project's `.git`, outside any sandbox; the rest of the default set (`Task`,
+ * `Workflow`, `RemoteTrigger`, `SendMessage`, the `Cron` tools, `ScheduleWakeup` and their
+ * kin) start work no record holds or act beyond this machine. `WebSearch` and `WebFetch`
+ * read beyond it and start nothing, which a Codex or Grok specialist's own search already
+ * does (`docs/probes.md#claudeWebTools`). Both run in the engine's process, not in the
+ * sandbox, so they reach the web while the shell still reaches no host.
  */
 // @anchor claudeTools
-const readTools = ["Bash", "Read", "ToolSearch"];
-const editTools = ["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch"];
+const readTools = ["Bash", "Read", "WebSearch", "WebFetch", "ToolSearch"];
+const editTools = ["Bash", "Read", "Edit", "Write", "NotebookEdit", "WebSearch", "WebFetch", "ToolSearch"];
 
 /** The name `leadMount` gives this server, and so the prefix of every tool it brings. */
 const mountServer = "cross-agent";
@@ -146,13 +149,16 @@ const claude = {
     // `.git`, `.cross-agent/`, `$HOME` and its own pointer file (probe t12Fix1 (a)). Under
     // `dontAsk` a call nothing pre-approves is denied, headless, without a prompt, so these
     // rules say what each role may do beyond reading inside its workspace and running its
-    // sandboxed shell, which need no approval: read anywhere, as the shell can; edit its own
-    // workspace if it may edit at all; run its shell when no sandbox approves it (`off`);
-    // call its lead mount's tools. The protected paths are denied by name in this layer too,
-    // and a deny rule holds in every mode and wins over an allow rule.
+    // sandboxed shell, which need no approval: read anywhere, as the shell can; search and
+    // fetch the web, the two tools `--tools` lists for it; edit its own workspace if it may
+    // edit at all; run its shell when no sandbox approves it (`off`); call its lead mount's
+    // tools. The protected paths are denied by name in this layer too, and a deny rule holds
+    // in every mode and wins over an allow rule.
     settings.permissions = {
       allow: [
         "Read",
+        "WebSearch",
+        "WebFetch",
         ...(editable ? [`Edit(${pathRule(request.cwd)}/**)`] : []),
         ...(mode === "off" ? ["Bash"] : []),
         ...(request.lead === undefined ? [] : [`mcp__${mountServer}`]),

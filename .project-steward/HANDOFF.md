@@ -1,12 +1,23 @@
 ---
-updated_at: 2026-10-04T12:04:17Z
-updated_by: codex
+updated_at: 2026-10-12T22:35:35Z
+updated_by: claude
 session_status: complete
 branch: main
 ---
 # Handoff
 
 ## Now
+
+**`atc-s96.112` is complete and closed (2026-10-12).** Claude specialists now hold
+`WebSearch` and `WebFetch`: every role lists both in `--tools` and pre-approves both in
+`permissions.allow`, so Claude matches Codex and Grok, whose specialists already searched
+the web. The shell's sandbox is unchanged and still reaches no host. Decision 0018 records
+the exposure (web content reaches every specialist; data can leave in a fetched URL).
+`npm test`: 1048 tests, 1046 pass, 0 fail, 2 guarded skips. Citations: 1648, 0 misses,
+0 drift since `640763f`. Two real probes plus a with/without comparison are in
+`docs/probes.md#claudeWebTools`. Follow-up `atc-s96.113` (P3): a compound shell command
+carrying `$?` is refused under `dontAsk`, independent of this change. `atc-s96.92`'s
+Grok scope no longer includes the web tools. Committed locally, not pushed.
 
 `atc-s96.111` is complete and closed. With the user's explicit approval, source
 `main` was pushed at release commit `4738b3d` (0.1.1), and the existing agent-plugins
@@ -240,7 +251,7 @@ Previous release and backlog pointers:
    - `.105` (P4): deliberate self-subversion of the merge guards;
    - optional, the user's call: trim the loops' text, which grew with `atc-s96.104` (`modes/dev-team/SKILL.md` 13,065 → 20,684 bytes).
 3. **The deferred beads** (`bd ready`; each carries its class and reason from Decision 0011):
-   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools), `.95` (a lead's report names bindings it never read);
+   - P3: `.60`, `.76`, `.92` (Grok specialists' extra tools, web tools now excluded), `.95` (a lead's report names bindings it never read), `.113` (compound shell commands refused under `dontAsk`);
    - P4: the rest, `.96` included (team and workflow configuration import and export, in this project's own format);
    - the backlog, `.25`, `.26` and `.28`, and `prune`, `.48`.
 4. **The worktree-project follow-ups:**

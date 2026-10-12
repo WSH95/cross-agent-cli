@@ -557,9 +557,10 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
     mcpServers: { "cross-agent": { command: process.execPath, args: [repositoryServer, "--project", p.root] } },
   });
   // Under `dontAsk` an MCP call nothing approved is denied, so the lead's settings approve
-  // its mount's server by name, and its read-only file tools approve no edit (t12Fix1).
+  // its mount's server by name, its read-only file tools approve no edit (t12Fix1), and its
+  // web tools are approved as every role's are (`tests/engines/claude.test.ts#claudeWebTools`).
   const leadSettings = JSON.parse(claude.argv[claude.argv.indexOf("--settings") + 1]) as { permissions: { allow: string[] } };
-  assert.deepEqual(leadSettings.permissions.allow, ["Read", "mcp__cross-agent"]);
+  assert.deepEqual(leadSettings.permissions.allow, ["Read", "WebSearch", "WebFetch", "mcp__cross-agent"]);
   assert.equal(claude.argv[claude.argv.indexOf("--permission-mode") + 1], "dontAsk");
 
   // Codex: the five `-c` settings, under the flag that removes the operator's own servers.

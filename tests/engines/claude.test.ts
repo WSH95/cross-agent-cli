@@ -34,18 +34,19 @@ const someDeny = [
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
-// The built-in tools a role keeps (`--tools`): the shell and the reader for every role, the
-// editing tools for one that may edit, and `ToolSearch`, which loads a deferred tool's
-// definition. Probe t12Fix1 (b) watched a read-only consult load `EnterWorktree` that way
-// and create a worktree and a branch under the project's `.git`.
-const readTools = "Bash,Read,ToolSearch";
-const editTools = "Bash,Read,Edit,Write,NotebookEdit,ToolSearch";
+// The built-in tools a role keeps (`--tools`): the shell, the reader and the two web tools
+// for every role, the editing tools for one that may edit, and `ToolSearch`, which loads a
+// deferred tool's definition. Probe t12Fix1 (b) watched a read-only consult load
+// `EnterWorktree` that way and create a worktree and a branch under the project's `.git`.
+const readTools = "Bash,Read,WebSearch,WebFetch,ToolSearch";
+const editTools = "Bash,Read,Edit,Write,NotebookEdit,WebSearch,WebFetch,ToolSearch";
 // What no role may hold, whatever its profile: tools that make git metadata, start work no
-// record holds, or act beyond this machine (the init lines of probe t12Fix1).
+// record holds, or act beyond this machine (the init lines of probe t12Fix1). The web tools
+// read beyond it and start nothing, and every role holds them (`claudeWebTools`).
 const withheld = [
   "Agent", "Task", "EnterWorktree", "ExitWorktree", "Workflow", "RemoteTrigger", "SendMessage",
   "CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "Monitor", "TaskStop", "ListAgents",
-  "PushNotification", "DesignSync", "ReportFindings", "Skill", "WebFetch", "WebSearch",
+  "PushNotification", "DesignSync", "ReportFindings", "Skill",
 ];
 
 /** A path as a permission rule names it: `//` and the absolute path (probe t12Fix1). */
@@ -247,7 +248,7 @@ test("a read-only role's argv is P1's spawn line with no writable root and no ed
     "--model", "claude-opus-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read"]}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read","WebSearch","WebFetch"]}}`,
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // The prompt is stdin's, so no positional argument follows the variadic flag.
@@ -268,7 +269,7 @@ test("a write role's argv carries the worktree as the only writable root, and th
     "--effort", "high",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read","WebSearch","WebFetch",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools",
     "Bash(claude *)", "Bash(claude)", "Bash(codex *)", "Bash(codex)",
     "Bash(grok *)", "Bash(grok)", "Bash(/opt/custom codex *)", "Bash(/opt/custom codex)",
@@ -299,7 +300,7 @@ test("a writable role's protected paths are deny-listed beside the writable root
         filesystem: { allowWrite: [dirs.worktree], denyWrite: protectedPaths },
       },
       permissions: {
-        allow: ["Read", `Edit(${rule(dirs.worktree)}/**)`],
+        allow: ["Read", "WebSearch", "WebFetch", `Edit(${rule(dirs.worktree)}/**)`],
         deny: protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
       },
     },
@@ -333,7 +334,7 @@ test("a read-only role's file tools approve no edit at all", (t) => {
   const protectedPaths = [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")];
   const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "read-only"), protectedPaths }));
   assert.deepEqual(settingsOf(argv).permissions, {
-    allow: ["Read"],
+    allow: ["Read", "WebSearch", "WebFetch"],
     deny: protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
   });
   assert.equal(argv[argv.indexOf("--tools") + 1], readTools);
@@ -347,7 +348,7 @@ test("a rule names its path literally, whatever gitignore characters the path ho
   const { argv } = claude.plan(requestFor(dirs, { cwd, protectedPaths: [path.join(cwd, ".git")] }));
   const escaped = rule(cwd).replace(/[\\*?[\]]/g, "\\$&");
   assert.deepEqual(settingsOf(argv).permissions, {
-    allow: ["Read", `Edit(${escaped}/**)`],
+    allow: ["Read", "WebSearch", "WebFetch", `Edit(${escaped}/**)`],
     deny: [`Edit(${escaped}/.git)`, `Edit(${escaped}/.git/**)`],
   });
   assert.ok(escaped.includes("\\[x\\]\\*\\?\\\\name"), escaped);
@@ -374,13 +375,37 @@ test("every role holds an explicit list of built-in tools, and none that starts 
   }
 });
 
+// @anchor claudeWebTools
+test("every role may search and fetch the web, whatever its profile", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const cases: Array<[string, Partial<SpawnRequest>]> = [
+    ["read-only", { sandbox: sandboxFor("claude", "read-only") }],
+    ["workspace-write", {}],
+    ["off", { sandbox: sandboxFor("claude", "off") }],
+    ["a read-only lead", { role: "lead", sandbox: sandboxFor("claude", "read-only"), lead }],
+  ];
+  // A Codex or Grok specialist searches the web with its engine's own tool, and a Claude one
+  // held neither of its two (`docs/probes.md#claudeWebTools`). Listing a tool is not enough:
+  // `dontAsk` refuses every call nothing pre-approves, so each is approved by rule as well.
+  for (const [name, patch] of cases) {
+    const { argv } = claude.plan(requestFor(dirs, patch));
+    const listed = argv[argv.indexOf("--tools") + 1].split(",");
+    const { allow } = settingsOf(argv).permissions;
+    for (const tool of ["WebSearch", "WebFetch"]) {
+      assert.ok(listed.includes(tool), `${name}: --tools lists ${tool}`);
+      assert.ok(allow.includes(tool), `${name}: ${tool} is pre-approved`);
+    }
+  }
+});
+
 test("an engine-placed lead's mount tools are pre-approved, and only that server's", (t) => {
   const dirs = layout(t);
   const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
   const plan = claude.plan(requestFor(dirs, { role: "lead", cwd: dirs.root, sandbox: sandboxFor("claude", "read-only"), lead }));
   // `dontAsk` denies an MCP call nothing approved, so the mount's server is named; the
   // lead loads its deferred tools through `ToolSearch` (probe t12Fix1, the lead row).
-  assert.deepEqual(settingsOf(plan.argv).permissions, { allow: ["Read", "mcp__cross-agent"] });
+  assert.deepEqual(settingsOf(plan.argv).permissions, { allow: ["Read", "WebSearch", "WebFetch", "mcp__cross-agent"] });
   assert.deepEqual(Object.keys(JSON.parse(plan.files![0].contents).mcpServers), ["cross-agent"]);
 });
 
@@ -389,7 +414,7 @@ test("an off-profile role's shell is approved by rule, since no sandbox approves
   const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
   // With the sandbox off, `autoAllowBashIfSandboxed` approves nothing, and `dontAsk` would
   // deny every command the profile asked to run unsandboxed. The file tools stay fenced.
-  assert.deepEqual(settingsOf(argv).permissions, { allow: ["Read", `Edit(${rule(dirs.worktree)}/**)`, "Bash"] });
+  assert.deepEqual(settingsOf(argv).permissions, { allow: ["Read", "WebSearch", "WebFetch", `Edit(${rule(dirs.worktree)}/**)`, "Bash"] });
 });
 
 test("a read-only role's own workspace is deny-listed, because the sandbox grants it by default", (t) => {
@@ -413,7 +438,7 @@ test("a read-only role's own workspace is deny-listed, because the sandbox grant
         filesystem: { denyWrite: [dirs.root, path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")] },
       },
       permissions: {
-        allow: ["Read"],
+        allow: ["Read", "WebSearch", "WebFetch"],
         deny: [path.join(dirs.worktree, ".git"), path.join(dirs.root, ".git")].flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]),
       },
     },
@@ -436,7 +461,7 @@ test("a read-only role at a linked root is denied the root's pointer and the sha
   const settings = settingsOf(plan.argv);
   assert.deepEqual(settings.sandbox.filesystem, { denyWrite: [made.root, ...protectedPaths] });
   assert.deepEqual(settings.permissions.deny, protectedPaths.flatMap((target) => [`Edit(${rule(target)})`, `Edit(${rule(target)}/**)`]));
-  assert.deepEqual(settings.permissions.allow, ["Read"], "and no edit is approved anywhere");
+  assert.deepEqual(settings.permissions.allow, ["Read", "WebSearch", "WebFetch"], "and no edit is approved anywhere");
 });
 
 test("an off-profile role gets no filesystem rules at all", (t) => {
@@ -473,7 +498,7 @@ test("a resumed run carries --resume and never a --session-id beside it", (t) =>
     "--setting-sources", "project", "--strict-mcp-config",
     "--resume", "138a9c9e-f573-45c5-80fc-fda76dddc834",
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read","WebSearch","WebFetch",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools", ...someDeny,
   ]);
   assert.equal(plan.argv.includes("--session-id"), false);
@@ -499,7 +524,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
     "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read","mcp__cross-agent"]}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"denyWrite":[${JSON.stringify(dirs.root)}]}},"permissions":{"allow":["Read","WebSearch","WebFetch","mcp__cross-agent"]}}`,
     "--disallowedTools", ...someDeny, "Edit", "Write", "MultiEdit", "NotebookEdit",
   ]);
   // `--mcp-config` is variadic, so what follows it has to be a flag, and the argv may end
@@ -522,7 +547,7 @@ test("the sandbox settings say disabled for the one profile that means it", (t) 
   const dirs = layout(t);
   const plan = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", "off") }));
   assert.equal(plan.argv[plan.argv.indexOf("--settings") + 1],
-    `{"disableAllHooks":true,"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true},"permissions":{"allow":["Read",${editRule(dirs.worktree)},"Bash"]}}`);
+    `{"disableAllHooks":true,"sandbox":{"enabled":false,"autoAllowBashIfSandboxed":true},"permissions":{"allow":["Read","WebSearch","WebFetch",${editRule(dirs.worktree)},"Bash"]}}`);
   // `off` is not read-only: an unsandboxed role still edits.
   for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) assert.equal(plan.argv.includes(tool), false);
 });
@@ -703,7 +728,7 @@ test("a fake claude run through the pipeline yields the session, the activity an
     "--model", "claude-sonnet-5",
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,
-    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read",${editRule(dirs.worktree)}]}}`,
+    "--settings", `{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true,"filesystem":{"allowWrite":[${JSON.stringify(dirs.worktree)}]}},"permissions":{"allow":["Read","WebSearch","WebFetch",${editRule(dirs.worktree)}]}}`,
     "--disallowedTools", ...someDeny,
   ];
   // The role prompt is a file the child is pointed at, so it has to be on disk already.

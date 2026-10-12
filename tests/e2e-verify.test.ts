@@ -338,15 +338,18 @@ test("a Claude or Grok tool call is read only when the archived runs show that e
   // Task 12's review: condition 8 counted any `tool_use` not spelled `delegate` as read,
   // reduced `use_tool` to its name and passed a block with none. Each engine's vocabulary
   // is the tools its archived transcripts call (Claude: the shell, the file tools,
-  // `ToolSearch`, `ScheduleWakeup`, this server's tools; Grok: its shell, its readers,
-  // `search_tool` and `use_tool` as `{tool_name, tool_input}` naming this server's tools),
-  // and anything else is a question. Write and NotebookEdit are t12Fix1's rerun.
+  // `ToolSearch`, `ScheduleWakeup`, the two web tools, this server's tools; Grok: its shell,
+  // its readers, `search_tool` and `use_tool` as `{tool_name, tool_input}` naming this
+  // server's tools), and anything else is a question. Write and NotebookEdit are t12Fix1's
+  // rerun; WebSearch and WebFetch are `docs/probes.md#claudeWebTools`'s two runs.
   const rows: Array<[string, unknown[], "pass" | "?" | "FAIL"]> = [
     ["claude", [toolCall("Read", { file_path: "/w/a.py", limit: 10, offset: 1 })], "pass"],
     ["claude", [toolCall("Edit", { file_path: "/w/a.py", old_string: "a", new_string: "b", replace_all: false })], "pass"],
     ["claude", [toolCall("Write", { file_path: "/w/a.py", content: "x" })], "pass"],
     ["claude", [toolCall("NotebookEdit", { notebook_path: "/w/n.ipynb", new_source: "x", cell_type: "code", edit_mode: "insert" })], "pass"],
     ["claude", [toolCall("ToolSearch", { query: "select:NotebookEdit", max_results: 1 })], "pass"],
+    ["claude", [toolCall("WebSearch", { query: "latest Node.js release October 2026", mode: "standard" })], "pass"],
+    ["claude", [toolCall("WebFetch", { url: "https://nodejs.org/dist/index.json", prompt: "The first entry's version?" })], "pass"],
     ["claude", [toolCall("ScheduleWakeup", { delaySeconds: 105, reason: "fallback", noop: true })], "pass"],
     ["claude", [toolCall("mcp__cross-agent__list_roles", {})], "pass"],
     ["claude", [toolCall("Bash", { command: "python3 -m unittest discover -s tests -t .", description: "suite" })], "pass"],

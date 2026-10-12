@@ -1790,16 +1790,22 @@ which is a property of the line, not of the pipeline.
   (`docs/probes.md#t12Fix1`). So the line runs in `dontAsk`, which denies,
   headless, every call nothing pre-approves, and the settings say what each
   role may do beyond reading inside its workspace and running its sandboxed
-  shell: read anywhere, as the shell can; edit its own workspace, for a role
-  that may edit; run its shell when no sandbox approves it (`off`); call its
+  shell: read anywhere, as the shell can; search and fetch the web; edit its
+  own workspace, for a role that may edit; run its shell when no sandbox approves it (`off`); call its
   lead mount's tools (`src/engines/claude.ts#fileToolRules`). The protected
   paths are denied by name in this layer as in the sandbox, and a deny rule
   holds in every mode. `--tools` names the built-in tools a role keeps — the
-  shell, the reader and `ToolSearch`, and the editing tools for a role that
-  may edit — so `EnterWorktree`, `Agent`, `Workflow`, `RemoteTrigger`,
-  `SendMessage`, the `Cron` tools, `ScheduleWakeup` and the rest of the default
-  set are offered to no role (`src/engines/claude.ts#claudeTools`,
+  shell, the reader, `WebSearch`, `WebFetch` and `ToolSearch`, and the editing
+  tools for a role that may edit — so `EnterWorktree`, `Agent`, `Workflow`,
+  `RemoteTrigger`, `SendMessage`, the `Cron` tools, `ScheduleWakeup` and the
+  rest of the default set are offered to no role
+  (`src/engines/claude.ts#claudeTools`,
   `tests/engines/claude.test.ts#fileToolsConfined`, `#claudeToolAllowlist`).
+  The two web tools are listed and pre-approved for every role, as a Codex or
+  Grok specialist's own search already reaches the web: they run in the
+  engine's process rather than the sandbox, read beyond this machine and start
+  nothing (`tests/engines/claude.test.ts#claudeWebTools`,
+  `docs/probes.md#claudeWebTools`).
   `--setting-sources project` keeps the operator's user and local settings
   out — their allow rules would pre-approve what `dontAsk` denies — and keeps
   the project's own settings and instruction files, which an empty list and
@@ -1826,13 +1832,15 @@ which is a property of the line, not of the pipeline.
   workspace a role's file tools are refused Claude Code's sensitive paths:
   `.vscode/`, `.idea/`, `.husky/`, `.npmrc` and `.gitmodules` were refused
   where a file beside them was written, and the CLI's own list names more, so
-  a task that has to change one is finished by hand. And a sandboxed role
-  reaches no network host: the sandbox's request for a domain is refused where
+  a task that has to change one is finished by hand. And a sandboxed role's
+  shell reaches no network host: the sandbox's request for a domain is refused where
   `bypassPermissions` approved it, a project's `sandbox.network.allowedDomains`
   does not change that because Claude Code ignores a project's sandbox grants
   once the run's settings set `allowUnsandboxedCommands: false`, and a
   dependency install belongs to the configured setup command, which
-  `run_command` runs outside any sandbox (`docs/probes.md#t12Fix2`).
+  `run_command` runs outside any sandbox (`docs/probes.md#t12Fix2`). The role's
+  `WebSearch` and `WebFetch` run outside the sandbox and still reach the web
+  (`docs/probes.md#claudeWebTools`).
   Sandbox through the settings JSON (`sandbox.enabled`,
   `filesystem.allowWrite`, `filesystem.denyWrite`, `autoAllowBashIfSandboxed`,
   `allowUnsandboxedCommands`, `failIfUnavailable`;

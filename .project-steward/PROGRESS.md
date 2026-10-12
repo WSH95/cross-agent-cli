@@ -417,3 +417,4 @@ Set up Project Steward in this repository.
 - 2026-09-19T16:12:09Z — claude — [auto-checkpoint] T13 round 5 landed (cbb412d; 616 pass; both --since 0/0; sample 8/8); two closing reviews running.
 - 2026-09-19T16:25:29Z — claude — [auto-checkpoint] T13 round 5: Opus seat approved; Grok seat holds the launcher regex and one cite → micro-round 6 running; bead .56 filed.
 - 2026-09-19T16:57:19Z — claude — [auto-checkpoint] T13: Grok confirmed round 6 but one regex over-match → micro-round 7 running (passes the controller's probe); QUESTIONS.md/RISKS.md record what is left for the user.
+- 2026-10-12T22:35:28Z — claude — atc-s96.112: Claude specialists get WebSearch and WebFetch (listed and pre-approved for every role); the shell stays offline. npm test 1048: 1046 pass, 0 fail, 2 guarded skips; citations 1648, 0 misses, 0 drift; two real probes recorded (docs/probes.md#claudeWebTools). Decision 0018; follow-up atc-s96.113.
