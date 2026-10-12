@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-12T22:35:35Z
+updated_at: 2026-10-12T22:43:35Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,11 @@ branch: main
 # Handoff
 
 ## Now
+
+**Release 0.1.2 is in progress (`atc-s96.114`, 2026-10-12).** The user authorized pushing
+`main` and opening a new agent-plugins pull request (PR #16, 0.1.1, was merged on
+2026-10-04). Version fields are 0.1.2; release checks pass 33/33 and `npm test` 1046 pass,
+0 fail, 2 guarded skips. Next: push `main`, run the publisher's dry run, then publish.
 
 **`atc-s96.112` is complete and closed (2026-10-12).** Claude specialists now hold
 `WebSearch` and `WebFetch`: every role lists both in `--tools` and pre-approves both in

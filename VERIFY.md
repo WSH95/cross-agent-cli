@@ -7,6 +7,18 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.2 — `atc-s96.114` (2026-10-12)
+
+The package and both manifests are 0.1.2, with Claude specialists' web tools from
+`209b512` (`atc-s96.112`, Decision 0018). `CODEX_SETUP_PROBE=/home/wsh/.local/bin/codex
+node --test tests/packaging.test.ts tests/dist.test.ts tests/publish.test.ts
+tests/codex-native.test.ts` passed 33 tests, none skipped. After the bump, `npm test`
+ran 1048 tests: 1046 pass, 0 fail, 2 guarded skips (real Codex I2 and the opt-in
+native setup probe). Citations: 1648, 0 misses, 0 drifted since `640763f`. The
+implementation's two real Claude probes are `docs/probes.md#claudeWebTools`.
+PR #16 (0.1.1) was merged on 2026-10-04, so this release opens a new agent-plugins
+pull request; the publication record follows below once it exists.
+
 ## Release 0.1.1 — `atc-s96.111` (2026-10-04)
 
 The package and both manifests are 0.1.1, with the implementation from e3b4f85.

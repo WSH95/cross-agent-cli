@@ -2,6 +2,12 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Release 0.1.2 (publication in progress 2026-10-12)
+
+`atc-s96.114`: user-authorized push of `main` and a new agent-plugins pull request for
+Claude specialists' web tools (`atc-s96.112`). Version fields and release checks are
+complete; Beads holds the publication record.
+
 ## Release 0.1.1 (published to existing PR 2026-10-04)
 
 `atc-s96.111` is closed: source `4738b3d` pushed, existing agent-plugins PR #16 updated
