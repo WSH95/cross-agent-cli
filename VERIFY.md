@@ -31,6 +31,11 @@ attribution trailer. The target's `cross-agent/` equals the frozen dist (`diff -
 merge, force-push or Dolt remote sync was performed. The target checkout is kept at
 `/tmp/agent-artifact-pr-5tcm77bx/target`.
 
+The user merged PR #17 on 2026-10-12 at 22:46:42Z (merge commit
+`e2b0cba07c6af7d488e065ee719824cc12860df5`). On agent-plugins `main` afterwards, both
+payloads' plugin manifests and the Claude marketplace metadata read 0.1.2, and the Claude
+payload's `src/engines/claude.ts` lists `WebSearch` and `WebFetch` in both tool lists.
+
 ## Release 0.1.1 — `atc-s96.111` (2026-10-04)
 
 The package and both manifests are 0.1.1, with the implementation from e3b4f85.
