@@ -22,7 +22,7 @@ file. It keeps the task markers and default timeouts (30-second startup, 3600-se
 calls), preserves tool restrictions when repairing its connection, and refuses custom registrations or
 conflicting config layers. It stores neither a project path nor an MCP working
 directory. The configured connection intentionally shadows the plugin's bundled
-mount; leave the marketplace plugin enabled so its skill and updates remain available.
+mount; leave the marketplace plugin enabled so its skills and updates remain available.
 
 After a successful install, restart Codex's MCP servers using the host's restart
 control, or open a new session. If no restart control is available to you, report

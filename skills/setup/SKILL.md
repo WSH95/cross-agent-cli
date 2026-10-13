@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Use when the user asks to set up cross-agent, configure the team, change a role's model or engine, change the test command or the setup command, change the mode or the merge policy, or wants a team in a project with no `.cross-agent/config.json`. Guides a first setup or a change in a few short questions; nothing is written until the user confirms.
+description: Use when the user asks, about cross-agent, to set up cross-agent, configure the team, change a role's model or engine, change the test command or the setup command, change the mode or the merge policy, or wants a cross-agent team in a project with no `.cross-agent/config.json`. Guides a first setup or a change in a few short questions; nothing is written until the user confirms.
 user-invocable: true
 ---
 
@@ -45,8 +45,8 @@ The meaning each role shows in a table:
 
 1. **What this is.** Say, in two sentences: cross-agent lets this chat hand work to other
    AI coding agents (Claude, Codex, Grok) and review their results. Setup writes one
-   settings file, `.cross-agent/config.json`, adds two lines to `.gitignore`, and nothing
-   else.
+   settings file, `.cross-agent/config.json`, and adds two lines to `.gitignore` and to
+   git's local exclude file.
 2. **Look.** Run `"<skill-dir>/../../bin/cross-agent" init --propose --json`, then route in
    this order:
    - `ok:false` → `## Refusals`;
@@ -72,8 +72,10 @@ The meaning each role shows in a table:
      test command, setup command and merge policy: "auto: merge when tests and reviews
      pass" or "manual: you merge".
    - List the substitutions in plain words:
-     - a single role: "plan reviewer: Codex not found, using Claude", with "unbound" in
-       place of "Codex not found" when `from` is null;
+     - a single role: "plan reviewer: Codex not found, using Claude" when
+       `engines.<from>.found` is false; "implementer: Grok replaced by Claude, since Grok
+       does not write while Claude or Codex is installed" when it is true; "unbound, using
+       Claude" when `from` is null;
      - a seat with `to` null: "drops the <From> seat (not found)";
      - a seat with `from` null: "adds a <To> seat";
      - then the seats the document holds. Never show a substitution's seat number.
@@ -82,7 +84,8 @@ The meaning each role shows in a table:
 
    Ask: "Does this look right?" — options: *Looks right* / *Change something*
 
-   A change goes through `## Applying a change`; then show the table again and ask again.
+   On *Change something*, ask in plain words what to change, apply it through
+   `## Applying a change`, then show the table again and ask again.
 5. **Write,** only after *Looks right*:
 
    ```
@@ -100,10 +103,12 @@ The meaning each role shows in a table:
   default, and say so.
 - **Grok.** An `implementer` or `resolver` moved to Grok gets `"sandbox": "workspace"` and
   the note that Grok's sandbox cannot protect the repository's git files, so cross-agent
-  checks them after each step instead. The `lead` is never Grok.
+  checks them after each step instead; a role moved off Grok drops its `sandbox`, shown
+  before → after. The `lead` is never Grok.
 - **Other changes.** Seats can be added or removed. The test and setup commands are
   strings. The merge policy is `auto` or `manual`.
-- **New mode.** Take the new mode's proposal `mode` and `roles`. Keep the current
+- **New mode.** Use the new mode's proposal only when it is `available`; otherwise show its
+  `reason` and follow `## Refusals`. Take its `mode` and `roles`. Keep the current
   `project`, `limits`, `review`, `billing` and `engines`. One exception: when the current
   `limits.maxDepth` (1 when the config sets none) is below the proposal's, raise it to the
   proposal's value. Show the raise as its own before → after line: "depth limit 1 → 2: the
@@ -113,7 +118,7 @@ The meaning each role shows in a table:
 
 - Show the current setup from `existing.config` as the same table.
 - A role the mode declares but the config leaves unbound shows as unbound. Offer the
-  proposal's binding for it as a change.
+  proposal's binding for it as a change when that proposal is `available`.
 - Ask in plain words what to change, apply it through `## Applying a change`, and show
   each change as before → after. Then:
 
@@ -128,19 +133,27 @@ The meaning each role shows in a table:
 `existing.fault` is set, and `existing.config` is null when the file is not JSON.
 
 - Say the `fault` in plain words. There is no current table to show.
-- Offer a replacement through First setup steps 3 and 4, with the table titled "replaces
-  the config the server refuses" and this question in place of step 4's:
+- With no proposal `available`, follow `## Refusals`. Otherwise offer a replacement
+  through First setup steps 3 and 4, with the table titled "replaces the config the server
+  refuses" and this question in place of step 4's:
 
   Ask: "Replace the refused config with this?" — options: *Replace it* / *Change something* / *Cancel*
+
+  *Change something* goes as in step 4; *Cancel* stops without writing.
 - Write as in First setup step 5, adding `--replace --expect <existing.sha256>`. The old
   file is kept as `config.json.prev`. Then `## After a write`.
 
 ## After a write
 
-Every write ends here.
+Every write ends here once it exits 0. A write that exits otherwise follows `## Refusals` or
+`## When a step fails`, never this section.
 
 1. Report `file`, and `previous` for a replacement. Show any `warning`.
-2. When `ignored` is not empty, show those lines, then:
+2. When `ignored` is not empty, show everything the commit will hold: in `root`, run
+   `git diff HEAD -- .gitignore`; when it fails because there is no commit yet, or prints
+   nothing because git does not track `.gitignore` yet, the commit holds the whole file,
+   so show that. Mark the `ignored` lines as setup's; if anything else is there, say
+   plainly that the commit holds it too. Then:
 
    Ask: "Commit this .gitignore change now?" — options: *Yes, commit it* / *No*
 
@@ -197,8 +210,8 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
 - **No engine found:** install one, sign in, and ask again. Claude Code:
   https://claude.com/claude-code. Codex: https://github.com/openai/codex. Grok Build:
   https://x.ai/cli.
-- **Every proposal unavailable while engines were found:** show each `reason` and the
-  branch rule.
+- **Every proposal unavailable, or the one a change needs, while engines were found:** show
+  each `reason`, and the branch rule when a reason names the branch.
 - **The branch rule:** a default branch whose name starts with a letter or digit, uses
   only letters, digits, `.`, `_`, `/` and `-`, has no `..`, does not end in `/` or
   `.lock`, and does not match `task/*`. A branch worktree's default branch is its own
@@ -209,22 +222,26 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
 - **When:** after every first setup, whatever `reconnect` says, because a Codex server
   bound by `CROSS_AGENT_PROJECT` starts only once a config exists. Also after any
   reconnect.
-- **Reconnect first** when `reconnect` is true: give the host's reconnect step and wait for
-  the user.
+- **Reconnect first** when `reconnect` is true, or when this setup ran `git init`: give the
+  host's reconnect step and wait for the user.
 - **Check:** call `describe_mode` and `list_roles`. It is connected when both answer
   without error, `projectRoot` is `root`, the mode is the one written, and `list_roles`
   has no `warning`. A `warning` means the server still serves its old mode: give the
   reconnect step and check again.
+- **Another project or mode** answering with no `warning`: say in plain words which
+  `projectRoot` and mode answered, and that the connection is not verified. Under Codex,
+  offer the hand-off below.
 - **New session needed** (Grok, or Codex without a restart): the check cannot finish here.
   Say the connection is not yet verified, and give the request to start the new session
   with; the launcher checks the connection first there.
 - **Missing tools:**
   - under Grok, search `search_tool` for `cross-agent` first;
-  - under Codex:
-
-    Ask: "Connect cross-agent to Codex now?" — options: *Yes* / *Not now*
-
-    On yes, follow `<skill-dir>/../cross-agent/references/codex-setup.md`;
+  - under Codex, offer the hand-off below;
   - under Claude Code, the server did not start, and `/mcp` shows why.
-- **End** with one example request: *"Use the cross-agent dev team to …"*, or *"Use
-  cross-agent to have Codex review …"* for `solo`.
+- **The Codex hand-off:**
+
+  Ask: "Connect cross-agent to Codex now?" — options: *Yes* / *Not now*
+
+  On yes, follow `<skill-dir>/../cross-agent/references/codex-setup.md`.
+- **End**, once connected, with one example request: *"Use the cross-agent dev team to …"*,
+  or *"Use cross-agent to have Codex review …"* for `solo`.

@@ -1,7 +1,7 @@
 import "./child-check.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,9 +11,10 @@ import { runCli } from "../src/cli.ts";
 import { hostConfigPaths } from "../src/gitmutate.ts";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
 import { projectTools } from "../src/server.ts";
+import { git } from "./helpers/git.ts";
 
 // The text every host loads and the loop every mode serves. `skills/cross-agent/SKILL.md`
-// is the launcher — the one skill a host discovers, identical on all three — and
+// is the launcher — one of the two skills a host discovers, identical on all three — and
 // `modes/<name>/SKILL.md` is that mode's loop, served by `describe_mode` rather than
 // copied into a host's skill directory (design section 7). Nothing here reads the prose
 // for style; what it checks is what a machine can: the name a host matches, the tools a
@@ -1195,6 +1196,9 @@ test("the setup skill's frontmatter names it setup, user-invocable, and its desc
   for (const trigger of ["set up cross-agent", "configure the team", "change a role's model or engine", "change the test command"]) {
     assert.ok(description.includes(trigger), `the description names "${trigger}", or a host never loads the skill for it`);
   }
+  // A plugin installed at user scope offers the skill in every project, where "change the test
+  // command" is an ordinary request: every trigger is one about cross-agent.
+  assert.match(description, /^Use when the user asks, about cross-agent, to /);
   assert.equal(fields.has("allowed-tools"), false, "the skill names no tool list");
 });
 
@@ -1284,8 +1288,69 @@ test("the setup skill asks before every write and before its one commit, and eve
   assertInOrder(sectionOf(text, "After a write"),
     ["`file`", "`warning`", "`ignored`", "Commit this .gitignore change now?", "`git add -- .gitignore`", "`" + commit + "`"], "After a write");
   assertInOrder(text, ["Make this folder a git repository now?", "`git init`"], "the skill");
+  // The three it writes with, and the one read that shows what the commit will hold.
   const git = new Set(codeSpans(text).filter((span) => /^git(\s|$)/.test(span)));
-  assert.deepEqual([...git].sort(), ["git add -- .gitignore", commit, "git init"].sort(), "the only git the skill runs");
+  assert.deepEqual([...git].sort(), ["git add -- .gitignore", commit, "git diff HEAD -- .gitignore", "git init"].sort(), "the only git the skill runs");
+  // A refused write has no `file` to report: only an exit 0 reaches After a write.
+  const after = flat(sectionOf(text, "After a write"));
+  assert.match(after, /once it exits 0/);
+  assert.match(after, /exits otherwise follows `## Refusals` or `## When a step fails`, never this section/);
+  // Each answer that changes a proposal asks what to change, and each Cancel stops without writing.
+  assert.match(flat(sectionOf(text, "First setup")), /On \*Change something\*, ask in plain words what to change/);
+  assert.match(flat(sectionOf(text, "A config the server refuses")), /\*Change something\* goes as in step 4; \*Cancel\* stops without writing/);
+});
+
+test("before the commit question the setup skill shows everything the commit will hold, setup's lines marked and anything else named", async (t) => {
+  // `git add -- .gitignore` and the commit that follows take the whole file, edits the user
+  // made before setup included, so the message shows the file's change since the last commit,
+  // or the whole file where git has none: the user consents to what is committed.
+  const text = setupSkill();
+  const asked = questions(text).find((each) => each.question === "Commit this .gitignore change now?");
+  assert.ok(asked !== undefined && sectionOf(text, "After a write").includes(asked.unit), "After a write asks to commit");
+  const step = flat(asked.unit);
+  assertInOrder(step, ["`ignored`", "`git diff HEAD -- .gitignore`", "whole file"], "the commit question's message");
+  for (const pin of [/no commit yet/, /git does not track `\.gitignore` yet/, /[Mm]ark the `ignored` lines as setup's/,
+    /anything else[^.]*say plainly that the commit holds it too/]) {
+    assert.match(step, pin, `the commit question's message: ${pin}`);
+  }
+  assert.doesNotMatch(step, /git add|git commit/, "nothing is staged or committed before the answer");
+
+  // And git answers as the step says, in each state a setup meets.
+  const read = codeSpans(text).filter((span) => /^git diff /.test(span));
+  assert.deepEqual(read, ["git diff HEAD -- .gitignore"]);
+  const [command, ...args] = read[0].split(" ");
+  const repo = fs.mkdtempSync(path.join(tmpdir(), "setup-gitignore-"));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
+  const reads = () => spawnSync(command, args, { cwd: repo, encoding: "utf8", env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } });
+  const gitignore = path.join(repo, ".gitignore");
+  await git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
+  assert.notEqual(reads().status, 0, "no commit yet: the read fails, and the commit holds the whole file");
+  await git(repo, "commit", "-q", "--allow-empty", "-m", "first");
+  const untracked = reads();
+  assert.deepEqual([untracked.status, untracked.stdout], [0, ""], "an untracked .gitignore: the read prints nothing, and the commit holds the whole file");
+  fs.writeFileSync(gitignore, "dist/\nbuild/\n");
+  await git(repo, "add", "--", ".gitignore");
+  await git(repo, "commit", "-q", "-m", "ignore");
+  // The user dropped `build/` before setup, and setup appended its two lines.
+  fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
+  const tracked = reads();
+  assert.equal(tracked.status, 0, tracked.stderr);
+  for (const line of [/^-build\/$/m, /^\+\.cross-agent\/$/m, /^\+\.worktrees\/$/m]) assert.match(tracked.stdout, line);
+});
+
+test("a step that needs a proposal checks it is available first, and otherwise shows its reason and follows Refusals", () => {
+  // With every proposal unavailable — no engine found, or a default branch no mode accepts —
+  // each `document` is null and step 3 has no mode to offer.
+  const text = setupSkill();
+  assertInOrder(flat(sectionOf(text, "A config the server refuses")), ["no proposal `available`", "`## Refusals`", "First setup steps 3 and 4"],
+    "a refused config's replacement");
+  const mode = /\*\*New mode\.\*\*[^*]*/.exec(flat(sectionOf(text, "Applying a change")));
+  assert.ok(mode !== null, "Applying a change says how the mode changes");
+  assert.match(mode[0], /only when it is `available`; otherwise show its `reason` and follow `## Refusals`/);
+  assert.match(flat(sectionOf(text, "Later changes")), /proposal's binding for it[^.]*when that proposal is `available`/);
+  assert.match(flat(sectionOf(text, "Refusals")), /Every proposal unavailable, or the one a change needs, while engines were found/);
 });
 
 test("the setup skill's options carry only what their message shows", () => {
@@ -1350,6 +1415,10 @@ test("the setup skill says what to do with each finding that blocks or changes a
     assert.match(refusals, rule, `the branch rule: ${rule}`);
   }
   assert.match(text, /`notes` verbatim/);
+  // A role's engine may be found and still replaced: the team rule keeps a Grok writer out
+  // while Claude or Codex is installed (`src/setup.ts#proposeMode`).
+  assert.match(text, /not found, using Claude" when `engines\.<from>\.found` is false/);
+  assert.match(text, /replaced by Claude, since Grok does not write while Claude or Codex is installed/);
   assert.match(text, /drops the <From> seat/);
   assert.match(text, /adds a <To> seat/);
   assert.match(text, /[Nn]ever show a substitution's seat number/);
@@ -1381,13 +1450,23 @@ test("after a first setup or a reconnect the setup skill checks describe_mode an
   }
   assert.ok(section.includes("`<skill-dir>/../cross-agent/references/codex-setup.md`"), "the Codex connection setup, beside this skill");
   assert.ok(fs.statSync(path.resolve(setupDir, "../cross-agent/references/codex-setup.md")).isFile());
+  // A folder outside git started no server, and `reconnect` cannot know it: after the skill's
+  // own `git init`, the host reconnects first.
+  assert.match(section, /when `reconnect` is true, or when this setup ran `git init`: give the host's reconnect step/);
+  // A server that answers for another project or mode, with no warning, is not connected.
+  for (const pin of [/\*\*Another project or mode\*\* answering with no `warning`/, /which `projectRoot` and mode answered[^.]*not verified/,
+    /Under Codex, offer the hand-off below/, /\*\*End\*\*, once connected,/]) {
+    assert.match(section, pin, `a server for another project or mode: ${pin}`);
+  }
 });
 
 test("a change keeps what the user did not ask to change, and a mode change raises limits.maxDepth to the new mode's need, shown before → after", () => {
   const section = flat(sectionOf(setupSkill(), "Applying a change"));
   for (const pin of [/[Kk]eep the current `project`, `limits`, `review`, `billing` and `engines`/, /`limits\.maxDepth`/,
     /\(1 when the config sets none\)/, /raise it to the proposal's value/, /before → after/, /[Nn]ever lower `maxDepth`/,
-    /takes the model and effort another role on that engine has/, /"sandbox": "workspace"/, /`lead` is never Grok/]) {
+    /takes the model and effort another role on that engine has/, /"sandbox": "workspace"/, /`lead` is never Grok/,
+    // Claude and Codex have no `workspace` profile, so `--config` refuses a role that kept it.
+    /role moved off Grok drops its `sandbox`, shown before → after/]) {
     assert.match(section, pin, `applying a change: ${pin}`);
   }
 });
@@ -1416,4 +1495,8 @@ test("a permission failure may be the sandbox, gets one approved retry of that c
     assert.match(section, pin, `a failed step: ${pin}`);
   }
   assert.doesNotMatch(flat(setupSkill()), /nothing was written/i, "a refused write may still have touched git's info/exclude");
+  // What setup says it writes is all it writes: `init --config` adds the same two entries to
+  // git's local exclude file.
+  assert.doesNotMatch(flat(setupSkill()), /nothing else/);
+  assert.match(flat(sectionOf(setupSkill(), "First setup")), /two lines to `\.gitignore` and to git's local exclude file/);
 });

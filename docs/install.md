@@ -333,7 +333,7 @@ git clone https://github.com/WSH95/cross-agent-cli ~/src/cross-agent-cli
 
 Grok reads this repository as a plugin in place, per project: the project's own
 `.grok/config.toml` names the checkout under `[plugins]`, and grok 1.0.46 then takes the
-launcher skill from `skills/` and this server from `.claude-plugin/plugin.json`'s
+launcher and setup skills from `skills/` and this server from `.claude-plugin/plugin.json`'s
 `mcpServers`, expanding `${CLAUDE_PLUGIN_ROOT}` to the checkout. Nothing is installed
 or copied. The headless `grok` has no `--plugin-dir` (only `grok agent`, which an ACP
 client drives, takes one), and `grok plugin install` would put this server in every Grok
@@ -377,8 +377,8 @@ the root for tracked configuration. This refuses every link a task's branch or w
 carries; it does not police a link you keep at the root yourself, outside git, that
 points into the tree — so keep the root's own host configuration as regular files too,
 the same way you keep the servers and hooks they name as tracked files.
-The `printf` that appends `.grok/` puts it on a line of its own: `init` leaves a last line
-with no newline alone when it has nothing to add, and `echo` would join `.grok/` onto it.
+The `printf` that appends `.grok/` puts it on a line of its own: where `.gitignore`'s last
+line has no newline, `echo` would join `.grok/` onto it.
 Commit that `.gitignore` change before the team's first task: a loop's first step stops on anything `git status --porcelain
 --untracked-files=normal` prints. `paths` takes an absolute path, which is why the lines
 are written through the shell: Grok expands no `~` there, and a `~/Documents/…` entry
