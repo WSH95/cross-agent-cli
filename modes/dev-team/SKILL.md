@@ -57,7 +57,7 @@ the implementer, every seat of the code reviewer, and the resolver — must be b
 A `binding: null` is a config written before that role existed, which
 `cross-agent init` leaves alone: show the user the role and a binding to add under
 `roles` in `.cross-agent/config.json` — for the resolver, a stronger model, for
-example `{"engine": "codex", "model": "gpt-6-astra", "effort": "high"}` — and
+example `{"engine": "codex", "model": "gpt-6-astra", "effort": "max"}` — and
 stop; a `list_roles` that refuses names a binding the config cannot hold, and stops
 the same way.
 

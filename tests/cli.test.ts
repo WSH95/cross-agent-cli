@@ -76,6 +76,23 @@ function written(root: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(path.join(root, CONFIG_PATH), "utf8")) as Record<string, unknown>;
 }
 
+/** The roles `init` binds a `dev-team` project to, which `dev-team-engine` shares beside its lead. */
+const devTeamRoles = {
+  planner: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
+  "plan-reviewer": { engine: "codex", model: "gpt-6-astra", effort: "xhigh" },
+  implementer: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
+  // One seat per engine, each reading under a read-only sandbox.
+  "code-reviewer": [
+    { engine: "claude", model: "claude-opus-5-5", effort: "xhigh", sandbox: "read-only" },
+    { engine: "codex", model: "gpt-6.1-sol", effort: "xhigh", sandbox: "read-only" },
+    { engine: "grok", model: "grok-4.7", effort: "xhigh", sandbox: "read-only" },
+  ],
+  // The escalation, on a stronger setting than the implementer's.
+  resolver: { engine: "codex", model: "gpt-6-astra", effort: "max" },
+  // The role every mode carries, bound to a starting engine any call may override.
+  consult: { engine: "codex", model: "gpt-6-astra" },
+};
+
 // @anchor initModeDev
 test("init --mode dev-team writes the section 6 config, bound to the built-in mode", async (t) => {
   const root = scratch(t);
@@ -91,21 +108,7 @@ test("init --mode dev-team writes the section 6 config, bound to the built-in mo
   assert.deepEqual(written(root), {
     mode: "dev-team",
     project: { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" },
-    roles: {
-      planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
-      "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
-      implementer: { engine: "codex", model: "gpt-6-astra" },
-      // One seat per engine, each reading under a read-only sandbox.
-      "code-reviewer": [
-        { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
-        { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
-        { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
-      ],
-      // The escalation, on a stronger setting than the implementer's.
-      resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
-      // The role every mode carries, bound to a starting engine any call may override.
-      consult: { engine: "codex", model: "gpt-6-astra" },
-    },
+    roles: devTeamRoles,
     engines: { claude: {}, codex: {}, grok: {} },
     limits: {
       maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5,
@@ -142,8 +145,8 @@ test("init --mode binds each built-in mode's own roles, and an engine-placed lea
   const engineRoot = scratch(t);
   assert.equal((await run(["init", "--mode", "dev-team-engine"], engineRoot)).code, 0);
   const led = written(engineRoot);
-  assert.deepEqual((led.roles as Record<string, unknown>).lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
-  assert.deepEqual((led.roles as Record<string, unknown>).resolver, { engine: "codex", model: "gpt-6-astra", effort: "high" });
+  // The lead keeps its own binding; every role it shares with dev-team is bound as dev-team's is.
+  assert.deepEqual(led.roles, { lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamRoles });
   // A lead runs at depth 1 and its specialists at 2, and the documented default of 1
   // would hold them at the lead: the mode's cap is written, not left to be derived.
   assert.equal((led.limits as Record<string, number>).maxDepth, 2);

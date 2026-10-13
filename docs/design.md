@@ -3168,15 +3168,15 @@ every role key must name a role the mode declares.
   "project": {"defaultBranch": "main", "testCommand": "npm test",
               "setupCommand": "none", "mergePolicy": "auto"},
   "roles": {
-    "planner":       {"engine": "codex",  "model": "gpt-6-astra", "effort": "high"},
-    "plan-reviewer": {"engine": "claude", "model": "claude-opus-5"},
-    "implementer":   {"engine": "codex",  "model": "gpt-6-astra"},
+    "planner":       {"engine": "claude", "model": "claude-opus-5-5", "effort": "xhigh"},
+    "plan-reviewer": {"engine": "codex",  "model": "gpt-6-astra",     "effort": "xhigh"},
+    "implementer":   {"engine": "claude", "model": "claude-opus-5-5", "effort": "xhigh"},
     "code-reviewer": [
-      {"engine": "claude", "model": "claude-opus-5", "sandbox": "read-only"},
-      {"engine": "codex",  "model": "gpt-6-astra",   "sandbox": "read-only"},
-      {"engine": "grok",   "model": "grok-4.7",      "sandbox": "read-only"}
+      {"engine": "claude", "model": "claude-opus-5-5", "effort": "xhigh", "sandbox": "read-only"},
+      {"engine": "codex",  "model": "gpt-6.1-sol",     "effort": "xhigh", "sandbox": "read-only"},
+      {"engine": "grok",   "model": "grok-4.7",        "effort": "xhigh", "sandbox": "read-only"}
     ],
-    "resolver":      {"engine": "codex",  "model": "gpt-6-astra", "effort": "high"}
+    "resolver":      {"engine": "codex",  "model": "gpt-6-astra",     "effort": "max"}
   },
   "engines": {"claude": {}, "codex": {"bin": "/opt/codex/bin/codex"}, "grok": {}},
   "limits": {"maxDepth": 1, "stallMinutes": 15, "waitDefaultSeconds": 600,
@@ -3823,8 +3823,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 35,474 bytes under
-`dev-team`, 40,997 under `dev-team-engine` and 3,463 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 35,473 bytes under
+`dev-team`, 40,996 under `dev-team-engine` and 3,463 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

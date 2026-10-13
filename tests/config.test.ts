@@ -22,16 +22,16 @@ const sectionSixDefaults = {
   mode: "dev-team",
   project: projectDefaults,
   roles: {
-    planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
-    "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
-    implementer: { engine: "codex", model: "gpt-6-astra" },
+    planner: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
+    "plan-reviewer": { engine: "codex", model: "gpt-6-astra", effort: "xhigh" },
+    implementer: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
     // One seat per engine: a starting point the operator edits.
     "code-reviewer": [
-      { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
-      { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
-      { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
+      { engine: "claude", model: "claude-opus-5-5", effort: "xhigh", sandbox: "read-only" },
+      { engine: "codex", model: "gpt-6.1-sol", effort: "xhigh", sandbox: "read-only" },
+      { engine: "grok", model: "grok-4.7", effort: "xhigh", sandbox: "read-only" },
     ],
-    resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
+    resolver: { engine: "codex", model: "gpt-6-astra", effort: "max" },
     // The role every mode carries, bound to a starting engine this call may override.
     consult: { engine: "codex", model: "gpt-6-astra" },
   },

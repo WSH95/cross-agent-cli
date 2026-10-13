@@ -68,7 +68,7 @@ A `binding: null` is a config written before that role existed, which
 `cross-agent init` leaves alone: `ask {question}` the operator with the role and a
 binding to add under `roles` in `.cross-agent/config.json` — for the resolver, a
 stronger model, for example `{"engine": "codex", "model": "gpt-6-astra", "effort":
-"high"}` — and go on only when the answer says it is bound; a `list_roles` that
+"max"}` — and go on only when the answer says it is bound; a `list_roles` that
 refuses names a binding the config cannot hold, and is asked the same way.
 
 ## 2. Plan

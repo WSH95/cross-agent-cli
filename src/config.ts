@@ -114,17 +114,17 @@ const reviewDefaults: CrossAgentConfig["review"] = { afterResolver: "ask" };
 /** The built-in consultant's starting binding; every `delegate` may name another engine. */
 const consultBinding: RoleConfig = { engine: "codex", model: "gpt-6-astra" };
 const devTeamBindings: Record<string, RoleBinding> = {
-  planner: { engine: "codex", model: "gpt-6-astra", effort: "high" },
-  "plan-reviewer": { engine: "claude", model: "claude-opus-5" },
-  implementer: { engine: "codex", model: "gpt-6-astra" },
+  planner: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
+  "plan-reviewer": { engine: "codex", model: "gpt-6-astra", effort: "xhigh" },
+  implementer: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" },
   // One seat per engine, every one of them read-only, as the mode's rule for the role is.
   "code-reviewer": [
-    { engine: "claude", model: "claude-opus-5", sandbox: "read-only" },
-    { engine: "codex", model: "gpt-6-astra", sandbox: "read-only" },
-    { engine: "grok", model: "grok-4.7", sandbox: "read-only" },
+    { engine: "claude", model: "claude-opus-5-5", effort: "xhigh", sandbox: "read-only" },
+    { engine: "codex", model: "gpt-6.1-sol", effort: "xhigh", sandbox: "read-only" },
+    { engine: "grok", model: "grok-4.7", effort: "xhigh", sandbox: "read-only" },
   ],
   // The escalation takes the findings two fix rounds leave standing, on the stronger setting.
-  resolver: { engine: "codex", model: "gpt-6-astra", effort: "high" },
+  resolver: { engine: "codex", model: "gpt-6-astra", effort: "max" },
 };
 
 /**
