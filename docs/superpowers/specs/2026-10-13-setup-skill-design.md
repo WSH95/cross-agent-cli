@@ -94,7 +94,9 @@ refuses only a mode it is not serving.
 ### Refusals
 
 Each refusal is said in plain words, with the next step:
-- the folder is not a git repository;
+- the folder is not a git repository. Setup says in one line that cross-agent needs git
+  for its branches and merges, and asks *"Make this folder a git repository now?"* On
+  yes, it runs `git init` and continues; on no, it stops (decision of 2026-10-13);
 - the folder is inside a task's worktree;
 - `.cross-agent/` is committed to the repository, which blocks every git step;
 - no engine is installed (with where to get Claude Code, Codex or Grok).
@@ -109,9 +111,10 @@ gains options rather than a new verb, so one code path still writes the config.
 
 It returns one JSON document:
 
-- **`root`**, or a plain-words **refusal** when the folder cannot be a project. The checks
-  are the ones `init` already makes: no git repository, a task worktree, an unsupported
-  layout.
+- **`root`**, or a plain-words **refusal** when the folder cannot be a project: a task
+  worktree, or an unsupported layout (the checks `init` already makes). There is also a
+  new check: a folder with no `.git`, which `init --mode` still accepts unchanged. Its
+  refusal carries a code the skill can recognise, so it can offer `git init`.
 - **`engines`**: for `claude`, `codex` and `grok`, whether each is found, and its path. The
   lookup is the one the server uses when it starts an engine: an existing config's
   `engines.<e>.bin`, else the name on `PATH`.
@@ -141,14 +144,17 @@ It returns one JSON document:
    default model and effort for the role:
    - roles that write (implementer, resolver) and the engine-placed lead: Claude, then
      Codex;
-   - the consultant: Claude, then Codex, then Grok, whose `worktree: true` one-shots
-     cannot write (rule 4);
-   - read-only roles (planner, plan reviewer): Claude, Codex, then Grok.
+   - every other role, the consultant included: Claude, Codex, then Grok.
 3. Code reviewer seats: the built-in seats whose engine is found, in their order, at least
    one. With only one engine found, there is one seat.
-4. Without Claude or Codex, `dev-team` and `dev-team-engine` are unavailable ("the team
-   needs Claude or Codex to write code"). `solo` binds its consultant to a found engine;
-   with only Grok, its one-shots stay read-only, and the proposal says so.
+4. With only Grok found, `dev-team` puts every role on Grok, its writing roles with
+   Grok's `workspace` sandbox profile, and the proposal carries a one-line note: Grok's
+   sandbox cannot protect the repository's git files, so cross-agent checks them after
+   each step instead. `dev-team-engine` is unavailable ("the background team's lead must
+   be Claude or Codex"). `solo` binds its consultant to Grok. With Claude or Codex found,
+   Grok never takes a writing role or the lead, as in `init`'s defaults. (Decision of
+   2026-10-13. Grok declares a `workspace` write profile, `src/engines/grok.ts:42`. An
+   earlier draft of this spec wrongly said Grok was read-only.)
 
 Each engine's default model and effort for substitutions sits next to the built-in
 bindings in the code. These are Claude `claude-opus-5-5` `xhigh`; Codex `gpt-6-astra`
@@ -159,9 +165,12 @@ bindings in the code. These are Claude `claude-opus-5-5` `xhigh`; Codex `gpt-6-a
 - It reads the confirmed config document on standard input and checks all of it before
   writing anything:
   - the checks the server applies when it loads a config, against its mode;
-  - each role's engine has a sandbox profile for what the role needs (Grok has
-    `read-only` only);
+  - each role's engine has a sandbox profile for what the role needs (the server's own
+    check, so a Grok writer needs an explicit `workspace` profile);
   - the engine-placed lead is not Grok.
+
+  A merge policy other than `auto` or `manual` is refused too, at write time only; the
+  server's load is unchanged.
 
   A failure names the field and the rule, and nothing is written.
 - With no config, it creates one exclusively, as `init` does today.
@@ -211,15 +220,17 @@ for the user.
 - **Detection:** each project type, and none. The branch: remote default, current branch,
   empty repository. Engines on a fake `PATH`, and a configured `bin`.
 - **The team rule:** all three engines; Claude only; Codex only; Claude and Grok; Codex
-  and Grok; Grok only (no team, with the reason). A lead and a writing role are never
-  Grok. Every available proposal passes the server's own config check
-  (`loadConfigWithMode`).
+  and Grok; Grok only (a Grok team with the note, and no background team). With Claude
+  or Codex found, a lead and a writing role are never Grok. Every available proposal
+  passes the server's own config check (`loadConfigWithMode`).
 - **CLI:**
   - `--propose` writes nothing (the repository and `.cross-agent/` are byte-identical
     afterwards);
   - `--config` writes a valid config and adds the `.gitignore` entries;
-  - it refuses an invalid one, naming the field: a Grok implementer, a Grok lead, an
-    unknown role, a bad merge policy;
+  - it refuses an invalid one, naming the field: a Grok implementer without the
+    `workspace` profile, a Grok lead, an unknown role, a bad merge policy;
+  - both new options refuse a folder with no `.git`, with the code the skill
+    recognises;
   - it never overwrites without `--replace` and the matching `--expect`;
   - `reconnect` is right for first setup and for a mode change versus a binding change.
 - **Skill text:**
