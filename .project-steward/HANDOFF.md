@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-12T22:48:27Z
+updated_at: 2026-10-13T01:43:30Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,20 @@ branch: main
 # Handoff
 
 ## Now
+
+**The repository is ready for its own dev team (`atc-s96.115`, `atc-s96.116`, closed
+2026-10-13).** The user wants cross-agent developed by its `dev-team` mode. Two fixes:
+- `tests/codex-setup.test.ts#codexSetupMcp` now skips below a task (an implementer's own
+  `npm test`, or any suite under an engine-placed lead), where no server the suite starts
+  is the operator's. Before the fix it failed 1 of 1048 under a simulated task.
+- `AGENTS.md` gained "If cross-agent launched you" (delegated sessions leave `bd`,
+  `project-steward`, `.project-steward/` and `.beads/` to the operator) and a Run bullet
+  (attach a released build, never this checkout; host configuration stays with the
+  operator). The user approved it (Decision 0019).
+
+`npm test`: clean 1046 pass, 0 fail, 2 guarded skips; under a simulated task 1045 pass,
+0 fail, 3 skipped (`VERIFY.md`). The plan was reviewed by `gpt-6-astra` at `xhigh` effort:
+no major issues, four Minor findings folded. Two local commits, not pushed.
 
 **Release 0.1.2 is merged (`atc-s96.114`, closed 2026-10-12).** With the user's
 authorization, `main` was pushed at `0ebbac2` (the web tools, `209b512`, and the version
@@ -235,9 +249,15 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
+1. **The pilot, `atc-s96.118` (P2).** The user installs `cross-agent@agent-plugins`
+   (0.1.2) at user scope with `/plugin install`; project scope would write the tracked
+   `.claude/settings.json`. Then run `cross-agent init --mode dev-team` here, bind every
+   role, and take one small bead through the loop. Record how `npm test` behaves inside
+   the real Claude and Codex sandboxes, which is still unverified. `atc-s96.117` (P3)
+   takes the specialist section's rule to the role prompts for every project.
+2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
-2. For an isolated native regression check, run
+3. For an isolated native regression check, run
    `CODEX_SETUP_PROBE=/absolute/path/to/codex node --test tests/codex-native.test.ts`.
    It creates its own temporary Codex home and makes no model turn. `VERIFY.md` records
    the suite, focused checks, review and initial timeout.

@@ -11,6 +11,18 @@ the server launches) and `solo` are built in.
 The design in `docs/design.md` is authoritative; `docs/probes.md` records what
 each engine CLI was observed to do.
 
+## If cross-agent launched you
+
+When `CROSS_AGENT_TASK` is set in your environment and a role prompt named you this task's
+planner, plan reviewer, implementer, code reviewer, resolver, consultant or lead, a
+cross-agent session delegated you: your role prompt, its loop and your brief are your
+instructions. Project facts, Layout, Conventions, Run and Commands describe the code you
+work on. The sections from `## Task backend` to the end, and the Beads text in `CLAUDE.md`,
+are the operator session's workflow and not yours: run no `bd` and no `project-steward`,
+and write nothing under `.project-steward/` or `.beads/`. Git stays where your role prompt
+puts it. The session that delegated you tracks the task, records it, and commits and merges
+what you leave.
+
 ## Project facts
 
 - Default branch: `main`.
@@ -179,6 +191,14 @@ Planned, in the design's work plan: the backlog (row 14).
   `main`, then `python3 tools/publish_agent_artifact_pr.py --build …`, which runs
   `node tools/build-dist.mjs` and opens the agent-plugins pull request (README,
   "Development").
+- The dev team on this repository: attach a released build to the host, never this
+  checkout, whose merges would change the runner and adapters the next task loads while
+  the server keeps the code it started with. That build is `cross-agent@agent-plugins`, or
+  `--plugin-dir` at an export (`git archive <commit> | tar -x -C <dir>`) of the frozen
+  source commit `VERIFY.md` records for each release. `init --mode dev-team` here writes
+  `.cross-agent/config.json`, which `.gitignore` already ignores. A change to host
+  configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, in any case) stays with the
+  operator: a task's commit refuses it, and so does the merge.
 
 <!-- PROJECT-STEWARD:BEGIN commands -->
 ## Commands

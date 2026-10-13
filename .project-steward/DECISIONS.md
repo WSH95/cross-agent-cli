@@ -1077,3 +1077,35 @@ Codex and Grok specialists already had, now uniform across engines. `WebFetch` i
 for every domain. `atc-s96.92`'s scope for Grok drops its web tools. The probe also found a
 compound shell command carrying `$?` refused under `dontAsk` with or without the web tools
 (`atc-s96.113`).
+
+## 0019 — 2026-10-13 — AGENTS.md: what a cross-agent specialist follows, and the dev team on this repository (`atc-s96.115`, `atc-s96.116`); user-approved
+
+Context: The user wants this repository developed by its own `dev-team` mode, which had
+run end to end only on the e2e sample. A feasibility check found three obstacles. First,
+`tests/codex-setup.test.ts#codexSetupMcp` spawned a real server and assumed the operator
+row; below a task, an ancestor carrying `CROSS_AGENT_TASK` makes every server the suite
+starts a specialist's (`src/authority.ts#unmatched`). Under a simulated ancestor the suite
+failed 1 of 1048, while the clean run passed. Second, `AGENTS.md`'s Beads and Project
+Steward sections, and `CLAUDE.md`'s Beads block, address every agent, specialists included.
+Third, a host attached to this checkout would load each merge's runner and adapters while
+its server kept its old code. The user approved the fixes and the `AGENTS.md` change. The
+plan was reviewed by `gpt-6-astra` at `xhigh` effort with the dev-team plan-reviewer
+prompt: no major issues, four Minor findings, all verified and folded.
+
+Decision: The launcher test resolves the suite's own authority first and skips, naming the
+reason, when it is not the operator's (`atc-s96.115`; tests only, no `src/` change). The
+whole test is skipped below a task, so an implementer's own run and any suite under an
+engine-placed lead do not cover it; every clean run and the `dev-team` gate still do.
+`AGENTS.md` gains "If cross-agent launched you" before Project facts: a delegated session
+follows its role prompt, loop and brief, and leaves `bd`, `project-steward`,
+`.project-steward/` and `.beads/` to the operator session. A Run bullet says the dev team
+here attaches a released build (`cross-agent@agent-plugins`, or an export of the frozen
+source commit `VERIFY.md` records), that `init` writes an ignored config, and that host
+configuration stays with the operator (`atc-s96.116`). Both additions are user-owned
+text outside the managed blocks, and no operator instruction changed.
+
+Consequences: The fix holds only for this repository; the same problem applies to any
+project whose instructions address every agent, and `atc-s96.117` takes it to the role
+prompts. How the suite behaves inside the real Claude and Codex sandboxes is still
+unverified. The pilot `atc-s96.118` runs the first real task and records it. Installing
+the released plugin is the user's step.
