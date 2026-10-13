@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T04:17:40Z
+updated_at: 2026-10-13T07:57:34Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,17 @@ branch: main
 # Handoff
 
 ## Now
+
+**`npm test` inside a specialist's sandbox (`atc-s96.124`, `atc-s96.129`, closed
+2026-10-13).** One dev-team task merged both as `6b3913d`.
+- Under Codex's workspace-write sandbox, `npm test` now stops in under a second with the
+  cause and what still runs. It used to fail and stall, because the sandbox's network
+  filter denies the `getsockopt` Node needs for a piped stdout. `network_access` stays off.
+- Claude-sandbox-only failures now skip with a reason.
+- An interrupted suite leaves nothing a task commit stages.
+
+Gate and root suite: 1056 tests, 1054 pass, 0 fail, 2 guarded skips. Two review rounds,
+all three seats `no major issues` in each (`VERIFY.md`). Follow-ups `.130`–`.132`.
 
 **The repository is ready for its own dev team (`atc-s96.115`, `atc-s96.116`, closed
 2026-10-13).** The user wants cross-agent developed by its `dev-team` mode. Two fixes:
@@ -259,20 +270,26 @@ The task worktree is removed, and its ignored files are archived in
    `main` is ahead of 0.1.2.
 
    Findings to pick from with `bd ready`: `.122` (Claude Code backgrounds MCP calls after
-   120 s), `.123` (self-hosting CLI guard), `.124` (suite in the Claude sandbox), `.125`
-   (`/reload-plugins` does not restart the server), and `.117` (the specialist rule in
-   the role prompts). Review follow-ups: `.120`, `.121`, `.126`, `.127`.
+   120 s), `.123` (self-hosting CLI guard), `.125` (`/reload-plugins` does not restart the
+   server), `.131` (a direct `node --test` under Codex skips the preflight), and `.117`
+   (the specialist rule in the role prompts). Review follow-ups: `.120`, `.121`, `.126`,
+   `.127`, `.130`, `.132`.
 
    Before a team task's step 1, commit `.beads/interactions.jsonl` if it is dirty.
 
-   **`atc-s96.128` is done.** The user moved the `dev-team-engine` lead's default to
-   claude-opus-5-5 at xhigh. A consult one-shot merged it as `8f27449` and the cleanup is
-   finished. Findings filed: `.124` (now also covers the suite stalling in Codex's sandbox)
-   and `.129` (interrupted suites leave `tests/fixtures/runner-*.mjs`, which a task commit
-   stages; check the staged names until it is fixed).
+   **`atc-s96.124` and `atc-s96.129` are done.** They ran as one dev-team task and merged
+   as `6b3913d`; the worktree and branch are cleaned up. `npm test` now stops in under a
+   second, naming the cause, inside Codex's workspace-write sandbox, where it used to
+   stall. The Claude-sandbox failures skip with a reason, and an interrupted suite no
+   longer leaves files a task commit stages (`VERIFY.md`). A Codex specialist still must
+   not run `node --test` directly with process isolation (`.131`). Follow-ups:
+   `.130`, `.131`, `.132`.
 
-   `main` is ahead of the installed 0.1.2 by the EPIPE fix, the new `init` defaults and
-   this change. A release needs the user's authorization to push and publish.
+   **`atc-s96.128` is done.** The user moved the `dev-team-engine` lead's default to
+   claude-opus-5-5 at xhigh. A consult one-shot merged it as `8f27449`.
+
+   `main` is ahead of the installed 0.1.2 by the EPIPE fix, the new `init` defaults, the
+   lead default and the sandbox-suite fix. A release needs the user's authorization to push and publish.
 2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
 3. For an isolated native regression check, run

@@ -7,6 +7,48 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The suite inside a specialist's sandbox — `atc-s96.124` + `atc-s96.129` (2026-10-13)
+
+The two beads ran as one task through all ten steps of the `dev-team` loop and merged as
+`6b3913d` (slug `s96-124-sandbox-suite`, two commits: `f9d5ea5` and the wrap-up `6b3913d`).
+- **The Codex cause.** Codex's workspace-write sandbox applies a network seccomp filter
+  that denies `getsockopt`. Node calls it to identify a piped stdout, so a Node child
+  discards everything it writes, and `spawnSync` reports `EPERM`. `node --test` reads each
+  file's results over such a pipe, so the suite failed (253 fail, 48 cancelled) and
+  stalled. The user chose to detect it and stop, not to enable `network_access`.
+- **What changed.** `npm test` now runs `tests/preflight.mjs` before `node --test`. Where
+  piped output is lost it stops with exit 1 and three lines: the cause, and what still runs
+  (`node --test --test-isolation=none` on one file). The Claude-sandbox-only failures now
+  skip with a reason: the `/tmp` config test, the `.mcp.json` placeholder, and the
+  unpublished-identity probe, which now skips only where ssh-agent never ran its command.
+  The runner harness writes its generated modules under its own temporary root, and
+  `.gitignore` ignores `/tests/cross-agent-config-*/`, so an interrupted suite leaves
+  nothing in `tests/` for a task commit to stage (`atc-s96.129`).
+- **Plan review:** two rounds by codex/gpt-6-astra/xhigh, the second `no major issues`,
+  folded once.
+- **Implementer's own runs,** inside its Claude sandbox at `6b3913d`: 1056 tests, 1044
+  pass, 0 fail, 12 skipped. Before the change the same sandbox gave 3 failures.
+- **Review round 1** (`f9d5ea5`): all three seats `no major issues`. Two Minor rows were
+  fixed in the wrap-up:
+  - M1: the unpublished-identity skip had also covered the probe's own timeout.
+  - M3: no test reached the preflight's spawn-error branch; it now has one, through a
+    second preload (`tests/fixtures/spawn-eperm.mjs`).
+
+  M2 (split the `/tmp` test) was not taken.
+- **Review round 2** (`6b3913d`): all three seats `no major issues`. A Minor row, N1, is a
+  follow-up (`atc-s96.130`), because the loop allows one wrap-up. The fixture returns
+  `stdout: ""`, while Node 24.11.0 returns `stdout: undefined` and `output: null` on a
+  failed spawn, so no test checks the `?.` in `probe.stdout?.includes`. Out-of-scope
+  follow-ups: `atc-s96.131` (a direct `node --test` under Codex skips the preflight) and
+  `.132` (AGENTS.md Layout lines).
+- **Gate** on a detached checkout of `6b3913d`, and the root suite after the merge
+  (`tests-passed`): each 1056 tests, 1054 pass, 0 fail, 2 guarded skips, with the
+  preflight silent.
+- **Codex check,** `codex sandbox -c 'sandbox_mode="workspace-write"' -- npm test` on an
+  export of the merged `6b3913d`: exit 1 in 0.27 s, the first line ending `(stdout empty,
+  error EPERM).` The same check on `f9d5ea5` took 0.46 s.
+- **Cost:** 13 engine tasks, 4,636 s of engine time in all (`.cross-agent/log.md`).
+
 ## The engine lead's default, as a one-shot — `atc-s96.128` (2026-10-13)
 
 The user moved the `dev-team-engine` lead's default to claude/claude-opus-5-5/xhigh. It
