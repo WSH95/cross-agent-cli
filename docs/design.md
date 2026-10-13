@@ -4232,8 +4232,10 @@ From row 10: `.claude-plugin/plugin.json`, which carries the server as well. Fro
 `.agents/plugins/marketplace.json` and `assets/codex/mcp_servers.toml`. From row 12, T15:
 no file, because Grok reads `.claude-plugin/plugin.json` as a plugin in place.
 
-`package.json`: no dependencies, `"test": "node --test 'tests/**/*.test.ts'"`,
-and `"bin": {"cross-agent": "src/cli.ts"}`.
+`package.json`: no dependencies, `"test": "node tests/preflight.mjs && node --test
+'tests/**/*.test.ts'"`, whose check stops the suite within seconds where a Node child's
+piped output never arrives, as under Codex's workspace-write sandbox, and `"bin":
+{"cross-agent": "src/cli.ts"}`.
 AGENTS.md carries the Project facts (default branch `main`, test command `npm
 test`, setup command `none`, merge policy `auto`), the layout, the conventions
 (one file per concern, tests next to behaviour, no dependency without a

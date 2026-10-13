@@ -87,8 +87,8 @@ function harness(options: {
 } = {}) {
   const root = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-runner-"));
   const token = randomUUID();
-  const adapterModule = path.join(fixtures, `runner-${token}.mjs`);
-  const engineModule = path.join(fixtures, `runner-engine-${token}.mjs`);
+  const adapterModule = path.join(root, `runner-${token}.mjs`);
+  const engineModule = path.join(root, `runner-engine-${token}.mjs`);
   const children: {
     child: ChildProcess; identity: Inspected | null; closed: boolean;
     code: number | null; signal: NodeJS.Signals | null; error: Error | null;
@@ -309,7 +309,7 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
   }
   return {
     root, record, spec, recordFile, auditFile, release, importReady, importRelease, planReady, planRelease, invocation, invocations,
-    adapterModule, markers, start, track,
+    adapterModule, engineModule, markers, start, track,
     onCleanup(cleanup: () => Promise<void>) {
       cleanups.add(cleanup);
       return () => { cleanups.delete(cleanup); };
@@ -395,9 +395,26 @@ test("runner cleanup continues after a signal error and removes every fixture", 
     assert.equal(second.closed, true, "one denial did not prevent the other child being reaped");
     assert.equal(fs.existsSync(h.root), false);
     assert.equal(fs.existsSync(h.adapterModule), false);
-    assert.equal(fs.existsSync(h.adapterModule.replace("runner-", "runner-engine-")), false);
+    assert.equal(fs.existsSync(h.engineModule), false);
   } finally {
     mocked.mock.restore();
+    await h.cleanup();
+  }
+});
+
+test("the runner harness writes its generated modules under its own temporary root, never into the repository", async () => {
+  // A suite interrupted while a harness is live never reaches cleanup, and whatever it left
+  // inside the repository is what a task commit's `git add -A` would stage (atc-s96.129).
+  const before = fs.readdirSync(fixtures).sort();
+  const h = harness();
+  try {
+    for (const module of [h.adapterModule, h.engineModule]) {
+      assert.ok(fs.existsSync(module), `${module} was not written`);
+      assert.equal(path.dirname(module), h.root);
+    }
+    assert.ok(path.relative(worktree, h.root).startsWith(".."), `${h.root} is inside the repository`);
+    assert.deepEqual(fs.readdirSync(fixtures).sort(), before, "the live harness wrote into tests/fixtures/");
+  } finally {
     await h.cleanup();
   }
 });
@@ -1971,6 +1988,9 @@ test("an unreadable probe that fails to publish its identity retires its actual 
       setTimeout(() => process.exit(0), 60_000);
     `, { mode: 0o755 });
     const candidate = await unreadableCandidate(h);
+    // The agent's own command writes the witness before it exits 23, so without one no agent
+    // ever ran it, as where a task's sandbox keeps ssh-agent from starting.
+    if (!fs.existsSync(witness) && "skip" in candidate) return t.skip(`ssh-agent never ran the failing command, so there is no agent to retire: ${candidate.skip}`);
     identity = JSON.parse(fs.readFileSync(witness, "utf8"));
     assert.ok("skip" in candidate);
     assert.match(candidate.skip, /ssh-agent.*exited.*23/);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -644,7 +645,15 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
 });
 
 test("initConfig warns under /tmp and TMPDIR, including symlink aliases", (t) => {
-  const temporary = project(t, "/tmp");
+  let temporary: string;
+  try {
+    temporary = project(t, "/tmp");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!["EROFS", "EACCES", "EPERM"].includes(code!)) throw error;
+    t.skip(`/tmp is not writable here (${code}): a task's sandbox gives its specialist only TMPDIR (${tmpdir()}) to write, so no project can be made under /tmp`);
+    return;
+  }
   assertWarning(config.initConfig(temporary).warning);
   assertWarning(config.initConfig(temporary).warning);
 
@@ -674,4 +683,23 @@ test("initConfig respects temporary directory boundaries", (t) => {
   setTmpdir(t, designated);
   assert.deepEqual(config.initConfig(sibling), { wrote: true, ignored: [".cross-agent/", ".worktrees/"] });
   assert.deepEqual(config.initConfig(sibling), { wrote: false, ignored: [] });
+});
+
+test("a directory the config tests make inside the repository is ignored, so an interrupted run leaves nothing a task commit stages", (t) => {
+  // The two tests above need a project under neither /tmp nor TMPDIR, so theirs sit in
+  // tests/, and only their own cleanup removes them (atc-s96.129). Neither git command
+  // here writes git metadata, which `git status` could by refreshing the index.
+  const repository = path.dirname(here);
+  const inside = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: repository, encoding: "utf8" });
+  if (inside.stdout?.trim() !== "true") {
+    t.skip(`${repository} is not a git work tree here, so there are no ignore rules to check`);
+    return;
+  }
+  const leftover = project(t, here);
+  config.initConfig(leftover);
+  for (const file of [path.join(leftover, ".gitignore"), path.join(leftover, config.CONFIG_PATH)]) {
+    const relative = path.relative(repository, file);
+    const checked = spawnSync("git", ["check-ignore", "--no-index", "--quiet", relative], { cwd: repository });
+    assert.equal(checked.status, 0, `${relative} is not ignored`);
+  }
 });

@@ -10,7 +10,7 @@
   "engines": { "node": ">=24" },
   "bin": { "cross-agent": "src/cli.ts" },
   "scripts": {
-    "test": "node --test 'tests/**/*.test.ts'",
+    "test": "node tests/preflight.mjs && node --test 'tests/**/*.test.ts'",
     "start": "node src/server.ts"
   }
 }

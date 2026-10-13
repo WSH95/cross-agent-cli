@@ -2,6 +2,8 @@
 .worktrees/
 dist/
 node_modules/
+# What the config tests make under tests/, left behind only by an interrupted run.
+/tests/cross-agent-config-*/
 
 # PROJECT-STEWARD:BEGIN runtime-state
 .project-steward/runtime/

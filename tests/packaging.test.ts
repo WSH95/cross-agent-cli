@@ -52,8 +52,11 @@ test("no .mcp.json sits at the repository root, where it would be this project's
   // A repository-root `.mcp.json` is Claude Code's **project-scoped** MCP config: every
   // session opened in this repository is prompted to enable what it declares, and there
   // `${CLAUDE_PLUGIN_ROOT}` expands to nothing, so the offer is a server that cannot
-  // start. The plugin's own manifest is the only place this server is declared.
-  assert.equal(fs.existsSync(path.join(repoRoot, ".mcp.json")), false);
+  // start. The plugin's own manifest is the only place this server is declared. A task's
+  // sandbox mounts /dev/null there, which is no config, so only a regular file fails; stat
+  // follows a symlink to one.
+  const found = fs.statSync(path.join(repoRoot, ".mcp.json"), { throwIfNoEntry: false });
+  assert.ok(found === undefined || !found.isFile(), ".mcp.json is a file at the repository root");
 });
 
 test("the skills directory the plugin ships by convention holds the launcher skill", () => {
