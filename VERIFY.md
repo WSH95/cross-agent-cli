@@ -7,6 +7,67 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The setup skill — `atc-s96.134.2` (2026-10-13)
+
+The second of the setup skill's two tasks. It ran through all ten steps of the `dev-team`
+loop and merged as a fast-forward from `43ac55d` to `62f5aad` (slug `s96-134-setup-skill`).
+Decision 0021 covers it, along with the user-approved `AGENTS.md` edits.
+
+- **What changed** (11 files):
+  - `skills/setup/SKILL.md`, new, `name: setup`, `user-invocable: true`. It covers first
+    setup, later changes, a refused config, after-a-write, failures, refusals and the
+    connection check. It drives `init --propose --json` and `init --config - --json`
+    through the plugin's own `bin/cross-agent`, and asks with each host's question tool.
+  - The launcher and `references/codex-setup.md` route setup and team changes to it.
+  - The README, the install guide, the design, the operator guide's `init` row and
+    `AGENTS.md` (two approved edits) changed to match.
+  - 16 new tests in `tests/skills.test.ts`; packaging and dist pins now cover both payloads.
+- **Plan review** (codex/gpt-6-astra/xhigh):
+  - Round 1 ended `major issues`: eight Important findings, all folded. One was rejected
+    with evidence: the Claude implementer's sandbox runs the suite.
+  - Round 2 ended `no major issues`. Its two Minors were folded into the approved plan
+    (r3, SHA-256 `b173d369…`).
+  - The planner corrected two lines of the spec, both checked by the operator. The skill
+    runs the launcher directly, because `node` cannot run a `sh` script. It stages
+    `.gitignore` before the exact commit, because `git commit -- <path>` refuses an
+    untracked file.
+- **Code review**, three seats: claude/claude-opus-5-5, codex/gpt-6.1-sol and
+  grok/grok-4.7, all at xhigh.
+  - **Round 1** (`3aee45a`): code-reviewer#2 found two Important issues. The `.gitignore`
+    commit could carry edits the user was not shown, and the refused-config replacement
+    skipped the unavailable-proposal stop. There were nine Minors. All were fixed in
+    `39d6e74`, with two new tests.
+  - **Round 2:** all seats `no major issues`. Four Minors were fixed in the wrap-up
+    `62f5aad`:
+    - the empty-diff case for a tracked, unchanged `.gitignore`;
+    - after setup's own `git init`, the project's files need a first commit before a team
+      task (the operator reproduced it: `?? app.py`);
+    - two single-skill phrases;
+    - what *Not now* does.
+  - **Round 3:** all seats `no major issues`. One Minor is follow-up `atc-s96.138`.
+- **Gate:** the gate on `3aee45a` ran 1115 tests (1113 pass); on `39d6e74` and `62f5aad`
+  it ran 1117 (1115 pass, 0 fail, 2 guarded skips).
+- **Root suite after the merge:**
+  - The first run failed one test, `tests/runner.test.ts:911`. Its harness parsed a
+    half-written descendant file. That is a test-only race, filed as `atc-s96.139`; the
+    merge touched no `src/`, runner test or helper.
+  - The second run on the same tree passed: 1117 tests, 1115 pass, 0 fail, 2 skipped,
+    with `tests-passed` journaled.
+  - Citations: 1692, 0 misses.
+- **Operator checks:** these ran in scratch repositories, using the skill's exact CLI path
+  from the task worktree.
+  - `--propose` detected Node (`npm test`, `npm ci`), Python (`pytest`, `uv sync`) and none
+    (`none`).
+  - `--config` wrote a dev-team config with `reconnect: true`, and the `/tmp` warning.
+  - `git add -- .gitignore`, then the exact commit, left status clean, including in a
+    repository with no commit.
+  - After `git init`, a solo write answered `reconnect: false`, which the skill now
+    overrides.
+- **Not yet verified:** the live per-host checks wait for release 0.1.4: discovery of
+  `/cross-agent:setup`, Grok `/setup` and Codex `$`, each host's approval for a `.git`
+  write, and an end-to-end setup in Claude Code.
+- **Cost:** 17 engine tasks, 9,074 s of engine time (`.cross-agent/log.md`).
+
 ## The setup skill's CLI: `init --propose` and `init --config` — `atc-s96.134.1` (2026-10-13)
 
 The first of the setup skill's two tasks, built under the approved spec

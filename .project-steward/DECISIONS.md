@@ -1144,3 +1144,36 @@ working-child test failing at the gate. Missing a broken child shows as its brok
 test failing, or only in the operator's run inside the sandbox. The role prompts under
 `modes/` still say nothing about the Codex sandbox. They were out of scope: they are not
 specific to this repository, and they reach a team only through a release.
+
+## 0021 — 2026-10-13 — Project setup through a skill in the plugin, driving the plugin's own CLI (`atc-s96.134`); user-approved AGENTS.md edits
+
+Context: A plugin user had to type `cross-agent init --mode …` in a terminal before a team
+could run, and nothing told a newcomer which mode, which engines, or that `.gitignore` must
+be committed. The user asked for setup as a skill inside the plugin: interactive, concise,
+confirmed before anything is written, assuming no prior knowledge. The spec
+(`docs/superpowers/specs/2026-10-13-setup-skill-design.md`) was approved section by
+section; the user chose first setup and later changes in one skill, a team adapted to the
+engines found, an offer to commit `.gitignore`, a guided reconnect, approach A (a skill
+plus the bundled CLI), a Grok-only team, an offer of `git init`, and a locked replacement
+that keeps `config.json.prev`.
+
+Decision: The CLI gains `init --propose --json` (detects engines, branch, test and setup
+commands, and proposes each built-in mode under the team rule; writes nothing) and
+`init --config - --json [--replace --expect <sha256>]` (validates as the server does,
+creates exclusively or replaces under `config.lock` with the expected hash, answers
+`served` and `reconnect` from discovery; coded refusals). `init --mode` is unchanged for
+terminal users. A second skill, `skills/setup/SKILL.md` (`name: setup`,
+`user-invocable: true`), drives those two calls through `"<skill-dir>/../../bin/cross-agent"`
+(run directly: the launcher is `sh`), asks with each host's question tool, stages
+`.gitignore` before the exact commit (git refuses an untracked pathspec), and checks the
+connection with `describe_mode` and `list_roles`. The launcher and the Codex setup guide
+route setup and team changes to it. The user approved three `AGENTS.md` edits: Layout lines
+for `src/setup.ts` and `skills/setup/SKILL.md`, and the launcher entry's "the one skill a
+host discovers" becoming "one of the two skills a host discovers".
+
+Consequences: Two dev-team tasks delivered it (`atc-s96.134.1` merged as `e3ff61c`,
+`atc-s96.134.2` as `62f5aad`). Users get it with release 0.1.4. Host behaviour the
+repository cannot test — each host's discovery of the skill, `<skill-dir>` exposure, and
+its approval for a `.git` write under a sandbox — is the operator's live check after the
+release. Follow-ups: `atc-s96.136`, `.137` (remaining `cross-agent init` advice, a refused
+main-checkout config), `.138` (an overclaiming sentence), and the flaky tests `.135`, `.139`.

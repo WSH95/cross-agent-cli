@@ -2,6 +2,13 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## The setup skill (merged 2026-10-13; ships with 0.1.4)
+
+`atc-s96.134`: a plugin user sets a project up, or changes its team, through the `setup` skill and
+the CLI's `init --propose` / `init --config`, with no terminal step. Parts merged as `e3ff61c` and
+`62f5aad` through the dev-team loop (Decision 0021). Open until release 0.1.4 and the per-host live
+checks.
+
 ## Release 0.1.3 (merged 2026-10-13)
 
 `atc-s96.133` is closed: source `6f9f2c4` pushed, agent-plugins PR #18 (`1d4c974`) merged

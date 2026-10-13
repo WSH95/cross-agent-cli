@@ -1,37 +1,30 @@
 ---
-updated_at: 2026-10-13T19:22:54Z
+updated_at: 2026-10-13T21:46:59Z
 updated_by: claude
-session_status: in-progress
+session_status: complete
 branch: main
 ---
 # Handoff
 
 ## Now
 
-**In flight: the setup skill (`atc-s96.134`, spec approved 2026-10-13).** The spec is
-`docs/superpowers/specs/2026-10-13-setup-skill-design.md`, approved by the user, who chose
-the dev-team loop. There are two tasks, in order:
-- `atc-s96.134.1`: the CLI, `init --propose` and `init --config`. Its slug will be
-  `s96-134-setup-cli`.
-- `atc-s96.134.2`: the skill, launcher routing, docs and packaging. It depends on .1.
+**The setup skill is merged (`atc-s96.134`; parts `.1` and `.2` closed 2026-10-13).** A plugin user now
+sets a project up, or changes its team, by asking the host (`/cross-agent:setup`, Codex `$`, Grok `/setup`,
+or in words); no terminal step. The spec is `docs/superpowers/specs/2026-10-13-setup-skill-design.md`;
+Decision 0021 records it and the user-approved `AGENTS.md` edits.
+- Part 1, `init --propose` and `init --config`, merged as `e3ff61c`.
+- Part 2, `skills/setup/SKILL.md` with routing, docs and tests, merged as `62f5aad`. The root suite
+  passed (1117 tests, 0 fail) on a re-run; the first run hit a test-only race (`atc-s96.139`).
+- Both went through the dev-team loop; `VERIFY.md` has a section for each.
 
-AGENTS.md: Layout lines only (user-approved). If this session ended, reconcile from
-`list_tasks` and the slug's journal.
-
-User decisions since the spec, folded into it (242d2fa, 8059c33):
-- with only Grok installed, offer a Grok team with a note;
-- in a non-git folder, offer `git init`;
-- config replacement is locked, and the old config is kept as `config.json.prev`;
-- branch worktrees are supported.
-
-**Task .1 is merged (`atc-s96.134.1`, closed): `main` fast-forwarded `8059c33` → `e3ff61c`.**
-`init --propose` and `init --config` (`src/setup.ts`, `src/cli.ts`, `src/config.ts`, `src/locks.ts`). Five
-review rounds; round 5 clean on all three seats; the root suite after the merge ran 1101/1099,
-0 fail, 2 skipped. Worktree and branch removed. `VERIFY.md` has the section. Follow-up
-`atc-s96.136` (two Minors). Task .1's out-of-scope items (F1–F4) are in `atc-s96.134.2`'s notes.
-
-**Next: task .2 (`atc-s96.134.2`)**, the skill itself, through the dev-team loop. Then the
-flaky test `atc-s96.135`, `atc-s96.136`, and release 0.1.4 (push and publish need the user).
+**Next steps:**
+1. Release 0.1.4 to deliver the skill: bump the version, push `main`, publish the agent-plugins
+   PR. Pushing and publishing need the user's approval.
+2. After the user installs 0.1.4, the per-host live checks (spec section 3): discovery in Claude
+   Code, Grok and Codex; each host's approval for a `.git` write; one end-to-end setup in Claude
+   Code. Then close `atc-s96.134`.
+3. Follow-ups: `atc-s96.135` and `.139` (flaky tests), `.136` (lock-failure wording), `.137`
+   (remaining `cross-agent init` advice), `.138` (an overclaiming setup sentence).
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
