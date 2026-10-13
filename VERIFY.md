@@ -7,6 +7,24 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The suite below a task — `atc-s96.115` (2026-10-13)
+
+A suite started below a cross-agent task, as an implementer's own `npm test` is, now runs
+clean. The simulation runs the suite under a parent carrying the task marker, then removes
+the marker from the suite's own environment: `CROSS_AGENT_TASK=simulated-implementer sh -c
+'env -u CROSS_AGENT_TASK npm test'`. Before the fix it ran 1048 tests: 1045 pass, 1 fail,
+2 skipped. The failure was `tests/codex-setup.test.ts#codexSetupMcp`, whose real server
+resolved as a specialist's and hid `delegate`. The same test alone: 1 fail under the
+simulation, 1 pass without it. After the fix the test alone is skipped under the
+simulation, naming the ancestor that carries the marker, and passes without it.
+
+Full suite after the fix, clean: 1048 tests, 1046 pass, 0 fail, 2 guarded skips (real
+Codex I2 and the opt-in native setup probe), 176 s. Under the simulation: 1048 tests,
+1045 pass, 0 fail, 3 skipped (the two guarded skips and the launcher test), 182 s. The
+plan was reviewed by `gpt-6-astra` at `xhigh` effort with the dev-team plan-reviewer
+prompt (no major issues; four Minor findings folded). The real Claude and Codex sandboxes
+around the suite are not covered here; that is the pilot, `atc-s96.118`.
+
 ## Release 0.1.2 — `atc-s96.114` (2026-10-12)
 
 The package and both manifests are 0.1.2, with Claude specialists' web tools from

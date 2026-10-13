@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { resolveAuthority } from "../src/authority.ts";
 import { engineEnv, project } from "./helpers/project.ts";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -216,6 +217,16 @@ test("setup refuses missing, disabled, ambiguous, or malformed installed plugin 
 test("the configured launcher serves the real MCP protocol, fixture delegation, and specialist restrictions", async (t) => {
   const f = fixture(t);
   const p = await project(t, { mode: "solo" }, [{ key: "worker" }]);
+  // Which row a server is started into is its ancestry's to decide
+  // (`src/authority.ts#resolveAuthority`), and this test's server inherits this suite's.
+  // Below a task (an implementer running the suite in its worktree, or any suite under an
+  // engine-placed lead) no server it starts is the operator's, so this test has nothing
+  // to run against there.
+  const suite = resolveAuthority(p.root, {}, { maxDepth: 1 });
+  if (suite.row !== "operator") {
+    t.skip(`a server this suite starts is not the operator's (${suite.reason}), so the configured launcher cannot be exercised here`);
+    return;
+  }
   fs.writeFileSync(path.join(p.root, ".cross-agent/config.json"), JSON.stringify({ mode: "solo", roles: {}, engines: { grok: { bin: p.bin } } }));
   for (const name of ["src", "modes"]) fs.cpSync(path.join(repo, name), path.join(f.root, name), { recursive: true });
   fs.copyFileSync(path.join(repo, "package.json"), path.join(f.root, "package.json"));
