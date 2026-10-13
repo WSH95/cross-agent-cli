@@ -13,6 +13,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const preflight = path.join(repoRoot, "tests", "preflight.mjs");
 const discardStdout = pathToFileURL(path.join(repoRoot, "tests", "fixtures", "discard-stdout.mjs")).href;
+const spawnEperm = pathToFileURL(path.join(repoRoot, "tests", "fixtures", "spawn-eperm.mjs")).href;
+// What every stop names: the cause and what still runs.
+const stopMessage = [
+  /stopped before the suite/, /piped output/, /Codex's workspace-write sandbox/,
+  /node --test --test-isolation=none tests\/<concern>\.test\.ts/, /gate/,
+];
 
 function run(env: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [preflight], { env, encoding: "utf8", timeout: 30_000 });
@@ -36,8 +42,16 @@ test("the preflight stops at once, naming the cause and what still runs, where a
   assert.equal(result.error, undefined, `the preflight did not stop within 30 s: ${result.error}`);
   assert.equal(result.status, 1, result.stderr);
   assert.equal(result.stdout, "");
-  for (const pattern of [
-    /stopped before the suite/, /piped output/, /Codex's workspace-write sandbox/,
-    /node --test --test-isolation=none tests\/<concern>\.test\.ts/, /gate/,
-  ]) assert.match(result.stderr, pattern);
+  for (const pattern of stopMessage) assert.match(result.stderr, pattern);
+});
+
+test("the preflight stops on the error its probe's spawn fails with, naming that error", () => {
+  // Under Codex's sandbox the probe's spawnSync itself fails, with EPERM. The preload makes
+  // the preflight's own spawnSync fail that way, so no child starts.
+  const result = run({ ...process.env, NODE_OPTIONS: `--import=${spawnEperm}` });
+  assert.equal(result.error, undefined, `the preflight did not stop within 30 s: ${result.error}`);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stdout, "");
+  assert.ok(result.stderr.includes("(stdout empty, error EPERM)."), result.stderr);
+  for (const pattern of stopMessage) assert.match(result.stderr, pattern);
 });

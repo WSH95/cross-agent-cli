@@ -1768,6 +1768,8 @@ test("a completion over a record another writer orphaned settles nothing", async
   } finally { await h.cleanup(); }
 });
 
+const probeTimedOut = "ssh-agent timed out before publishing its identity";
+
 /**
  * A same-user, unreadable session leader holds the runner's re-scan open (atc-s96.49).
  * ssh-agent owns a bounded command, so even a denied signal can retire it by closing
@@ -1861,7 +1863,7 @@ async function unreadableCandidate(h: ReturnType<typeof harness>): Promise<{ pid
       try {
         await poll(() => tracked.error !== null || tracked.closed || fs.existsSync(ready), Boolean);
       } catch {
-        return await skip("ssh-agent timed out before publishing its identity");
+        return await skip(probeTimedOut);
       }
       if (tracked.error) return await skip(`ssh-agent spawn failed: ${describe(tracked.error)}`);
       if (!fs.existsSync(ready)) return await skip(`ssh-agent exited before ready (code ${tracked.code}, signal ${tracked.signal})`);
@@ -1958,6 +1960,19 @@ function onlySshAgent(h: ReturnType<typeof harness>): (() => void) | null {
   return () => { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; };
 }
 
+/**
+ * The reason the unpublished-identity test skips with, or undefined where it goes on to read
+ * its witness. The agent's own command writes the witness before it exits 23, so without one
+ * no agent ever ran it, as where a task's sandbox keeps ssh-agent from starting; but only the
+ * helper's spawn failure and its exit before ready say so. Its timeout does not: an agent may
+ * still be running its command then.
+ */
+function unpublishedSkip(candidate: Awaited<ReturnType<typeof unreadableCandidate>>, witness: string): string | undefined {
+  if (fs.existsSync(witness) || !("skip" in candidate)) return undefined;
+  if (!/^ssh-agent (spawn failed: |exited before ready \(code )/.test(candidate.skip)) return undefined;
+  return `ssh-agent never ran the failing command, so there is no agent to retire: ${candidate.skip}`;
+}
+
 // @anchor unreadableProbeUnpublished
 test("an unreadable probe that fails to publish its identity retires its actual agent before skipping", async (t) => {
   const h = harness();
@@ -1988,9 +2003,8 @@ test("an unreadable probe that fails to publish its identity retires its actual 
       setTimeout(() => process.exit(0), 60_000);
     `, { mode: 0o755 });
     const candidate = await unreadableCandidate(h);
-    // The agent's own command writes the witness before it exits 23, so without one no agent
-    // ever ran it, as where a task's sandbox keeps ssh-agent from starting.
-    if (!fs.existsSync(witness) && "skip" in candidate) return t.skip(`ssh-agent never ran the failing command, so there is no agent to retire: ${candidate.skip}`);
+    const skipped = unpublishedSkip(candidate, witness);
+    if (skipped) return t.skip(skipped);
     identity = JSON.parse(fs.readFileSync(witness, "utf8"));
     assert.ok("skip" in candidate);
     assert.match(candidate.skip, /ssh-agent.*exited.*23/);
@@ -2003,6 +2017,35 @@ test("an unreadable probe that fails to publish its identity retires its actual 
       await poll(() => living(identity!), (alive) => !alive);
     }
     restorePath?.();
+    await h.cleanup();
+  }
+});
+
+test("the unpublished-identity test skips only where no agent ran its command, never on the probe's own timeout", async () => {
+  const h = harness();
+  const previousPath = process.env.PATH;
+  const witness = path.join(h.root, "unpublished-agent.json");
+  try {
+    // The reasons the helper itself gives where ssh-agent cannot be spawned, and where it
+    // exits before running its command.
+    process.env.PATH = h.root;
+    const unspawned = await unreadableCandidate(h);
+    fs.writeFileSync(path.join(h.root, "ssh-agent"), `#!${process.execPath}\nprocess.exit(1);`, { mode: 0o755 });
+    const exited = await unreadableCandidate(h);
+    assert.ok("skip" in unspawned && "skip" in exited);
+    assert.match(unspawned.skip, /^ssh-agent spawn failed: ENOENT/);
+    assert.match(exited.skip, /^ssh-agent exited before ready \(code 1,/);
+    for (const candidate of [unspawned, exited]) {
+      assert.equal(unpublishedSkip(candidate, witness), `ssh-agent never ran the failing command, so there is no agent to retire: ${candidate.skip}`);
+    }
+    // A probe that timed out may have an agent still running its command, so the test goes
+    // on to its witness read and fails there rather than skipping.
+    assert.equal(unpublishedSkip({ skip: probeTimedOut }, witness), undefined);
+    fs.writeFileSync(witness, "{}");
+    assert.equal(unpublishedSkip(exited, witness), undefined, "an agent that wrote its witness ran its command");
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
     await h.cleanup();
   }
 });
