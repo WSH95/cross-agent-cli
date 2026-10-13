@@ -7,6 +7,60 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The setup skill's CLI: `init --propose` and `init --config` — `atc-s96.134.1` (2026-10-13)
+
+The first of the setup skill's two tasks, built under the approved spec
+(`docs/superpowers/specs/2026-10-13-setup-skill-design.md`, section 2). It ran through all
+ten steps of the `dev-team` loop and merged as a fast-forward from `8059c33` to `e3ff61c`
+(slug `s96-134-setup-cli`). The `AGENTS.md` change is the one Layout line for
+`src/setup.ts` that the user approved.
+
+- **What changed:**
+  - `init --propose --json` writes nothing. It returns:
+    - the engines found;
+    - the detected default branch, test command, setup command and merge policy;
+    - the existing config with its SHA-256 and `.gitignore` state;
+    - one proposal per built-in mode, with the substitutions the team rule made.
+  - `init --config - --json [--replace --expect <sha256>]` validates the document as the
+    server would. It creates the config, or replaces it under `config.lock` and keeps
+    `.cross-agent/config.json.prev`. It answers `served` and `reconnect` from the server's
+    own discovery.
+  - Refusals exit 3 with a `code`: `not-a-git-repository`, `not-the-repository-root`,
+    `unsupported`, `task-worktree`, `no-such-directory`, `detached-head`, `branch-name`,
+    `inside-a-task`, `invalid-config`, `config-exists`, `config-changed`, `config-busy` and
+    `config-lock-failed`.
+  - `src/locks.ts#acquire` runs `flock -E 99`, so only a wait that ran out is
+    `LockHeldError`.
+- **Plan review:** codex/gpt-6-astra/xhigh.
+  - Rounds 1–3 ended `major issues`, each folded. Round 1 was about concurrency and branch
+    worktrees.
+  - The user's decisions at those stops are in the spec (`242d2fa`, `8059c33`): a Grok-only
+    team, the offer of `git init`, the lock and `.prev`.
+  - At the limit the user chose one more round, and round 4 ended `no major issues`
+    (plan r4, SHA-256 `162742b0…e315`).
+- **Code review:** three seats: claude/claude-opus-5-5, codex/gpt-6.1-sol and grok/grok-4.7,
+  all at xhigh.
+  - **Round 1** (`0bfc8aa`): Important. `served` and `reconnect` read the config rather
+    than discovery, and a subdirectory was accepted as a root. Fixed in `7b01a8d`.
+  - **Round 2:** Important. A configured ancestor was not what a server there would serve.
+    Fixed in `da58ece`.
+  - **Round 3:** Important R3-I1. The writer went ahead after its lock was lost during
+    discovery. After two fix rounds the resolver (codex/gpt-6-astra/max) took the table and
+    fixed it with four Minors in `9f262fb`.
+  - **Round 4:** all seats `no major issues`. One Minor was fixed in the wrap-up `e3ff61c`:
+    a `config-lock-failed` reason names `config.lock`.
+  - **Round 5** (`e3ff61c`): all seats `no major issues`. Its two Minors are follow-up
+    `atc-s96.136`.
+  - Out of scope for task 2:
+    - the operator guide's `init` row;
+    - proposals when the default branch fails its gate;
+    - the per-host live check;
+    - the codes the skill must recognise.
+- **Gate and root suite:** the gate on `9f262fb` and on `e3ff61c`, and the root suite after
+  the merge (`tests-passed`), each ran 1101 tests: 1099 pass, 0 fail, 2 guarded skips.
+  Citations: 1691, 0 misses.
+- **Cost:** 29 engine tasks, 15,186 s of engine time in all (`.cross-agent/log.md`).
+
 ## Release 0.1.3 — `atc-s96.133` (2026-10-13)
 
 The package and both manifests are 0.1.3. The user authorized pushing `main` and an

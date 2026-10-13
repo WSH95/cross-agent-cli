@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-13T14:07:30Z
+updated_at: 2026-10-13T19:22:54Z
 updated_by: claude
-session_status: complete
+session_status: in-progress
 branch: main
 ---
 # Handoff
@@ -17,6 +17,21 @@ the dev-team loop. There are two tasks, in order:
 
 AGENTS.md: Layout lines only (user-approved). If this session ended, reconcile from
 `list_tasks` and the slug's journal.
+
+User decisions since the spec, folded into it (242d2fa, 8059c33):
+- with only Grok installed, offer a Grok team with a note;
+- in a non-git folder, offer `git init`;
+- config replacement is locked, and the old config is kept as `config.json.prev`;
+- branch worktrees are supported.
+
+**Task .1 is merged (`atc-s96.134.1`, closed): `main` fast-forwarded `8059c33` → `e3ff61c`.**
+`init --propose` and `init --config` (`src/setup.ts`, `src/cli.ts`, `src/config.ts`, `src/locks.ts`). Five
+review rounds; round 5 clean on all three seats; the root suite after the merge ran 1101/1099,
+0 fail, 2 skipped. Worktree and branch removed. `VERIFY.md` has the section. Follow-up
+`atc-s96.136` (two Minors). Task .1's out-of-scope items (F1–F4) are in `atc-s96.134.2`'s notes.
+
+**Next: task .2 (`atc-s96.134.2`)**, the skill itself, through the dev-team loop. Then the
+flaky test `atc-s96.135`, `atc-s96.136`, and release 0.1.4 (push and publish need the user).
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
