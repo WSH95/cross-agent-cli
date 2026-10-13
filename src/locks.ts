@@ -25,9 +25,17 @@ export interface AcquireOptions {
 /**
  * `acquire`'s refusal when the wait ran out with the lock still another's: the one failure
  * a caller answers as "busy". Anything else `acquire` throws — a lock directory it cannot
- * make, a `flock` it cannot start — is a failure to lock, not a holder.
+ * make, a `flock` it cannot start, a lock file `flock` cannot open — is a failure to lock,
+ * not a holder.
  */
 export class LockHeldError extends Error {}
+
+/**
+ * The status `flock` is told to exit with when its wait runs out (`-E`), and so the one exit
+ * that means another holds the lock: `flock`'s own failures exit with sysexits codes
+ * (64–78), and the command it runs exits 0–2, 126, 127 or 128 and a signal's number.
+ */
+const HELD_EXIT = 99;
 
 export function lockPath(projectRoot: string, name: string): string {
   return path.resolve(projectRoot, ".cross-agent", "locks", name);
@@ -92,11 +100,16 @@ export function repositoryLockPath(commonDir: string): string {
 export async function acquire(file: string, options: AcquireOptions): Promise<Lock> {
   const waitSeconds = options.waitSeconds ?? 5;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const child = spawn("flock", ["-w", String(waitSeconds), file, "sh", "-c", "echo held; read _"], {
-    stdio: ["pipe", "pipe", "ignore"],
+  const child = spawn("flock", ["-E", String(HELD_EXIT), "-w", String(waitSeconds), file, "sh", "-c", "echo held; read _"], {
+    stdio: ["pipe", "pipe", "pipe"],
   });
   child.stdin.on("error", () => { /* The holder exits on its own; a broken pipe says so. */ });
-  const exit = new Promise<void>((resolve) => { child.once("close", () => resolve()); });
+  // What `flock` says when it cannot even try for the lock, kept for the refusal.
+  let said = "";
+  child.stderr.on("data", (chunk: Buffer) => { if (said.length < 4096) said += chunk.toString("utf8"); });
+  const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  });
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -109,10 +122,11 @@ export async function acquire(file: string, options: AcquireOptions): Promise<Lo
       };
       child.stdout.on("data", held);
       child.once("error", reject);
-      // An exit before `held` is flock's refusal: it waited and never got the lock.
-      void exit.then(() => reject(new LockHeldError(
-        `${options.operation}: lock ${file} is held by another process (waited ${waitSeconds}s)`,
-      )));
+      // An exit before `held` is flock's refusal. With the status it was told to use, it
+      // waited and never got the lock; with any other, it could not try for it at all.
+      void exit.then(({ code, signal }) => reject(code === HELD_EXIT
+        ? new LockHeldError(`${options.operation}: lock ${file} is held by another process (waited ${waitSeconds}s)`)
+        : new Error(`${options.operation}: lock ${file} could not be taken: flock exited ${code ?? `on ${signal}`}${said.trim() === "" ? "" : `: ${said.trim()}`}`)));
     });
   } catch (error) {
     child.stdin.destroy();

@@ -1029,9 +1029,11 @@ test("a delegation whose spawn lock was lost before the record is written launch
         // The race was lost the other way: the record exists, so it is settled and the
         // round retried.
         assert.equal((await update(p.root, result.taskId, { status: "failed", reason: "test" })).applied, true);
-      } else if (/held by another process/.test(result.reason)) {
-        // The killer landed before the helper printed `held`, so this delegation never
-        // took the lock at all — a lost round, not the window under test.
+      } else if (/held by another process|could not be taken: flock exited on SIGKILL/.test(result.reason)) {
+        // The killer landed before the helper printed `held` — on a `flock` still waiting,
+        // or one killed before its command ran, which `acquire` reports as a lock it could
+        // not take rather than another's hold — so this delegation never took the lock at
+        // all: a lost round, not the window under test.
         assert.match(result.reason, /spawn\.lock/);
       } else {
         reason = result.reason;

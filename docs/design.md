@@ -1330,11 +1330,15 @@ Everything below is built, the operator CLI's listing among it
   `tests/cli.test.ts#cliTasks`).
 - **Locks** are OS-held and never reclaimed (`src/locks.ts#acquire`). A lock is
   `flock(2)` on a file under `.cross-agent/locks/`, taken by a helper that keeps
-  a util-linux `flock` child alive on a pipe (`flock <file> sh -c 'echo held;
-  read _'`, `src/locks.ts#acquire`): the helper knows it holds the lock when the
+  a util-linux `flock` child alive on a pipe (`flock -E 99 -w <wait> <file> sh -c
+  'echo held; read _'`, `src/locks.ts#acquire`): the helper knows it holds the lock when the
   child prints, releases it by closing the pipe, and the kernel releases it when
   the holder dies, so a dead holder needs no TTL, no stale detection, and no
-  rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
+  rename. A child that exits before it prints is a refusal: with the status `-E` names,
+  which `flock` uses for nothing else, the wait ran out with the lock another's
+  (`src/locks.ts#LockHeldError`); with any other, `flock` could not try for the lock — a
+  lock file it cannot open — and the refusal carries that status and `flock`'s own words
+  (`tests/locks.test.ts#lockFailureNotHeld`). (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
   reclaim, was refuted in T5's plan review: a reclaim by pathname can rename the
   winner's fresh lock, so two reclaimers could both succeed.) Six locks, all
   six named in one place and resolved through `lockPath`
@@ -3953,10 +3957,12 @@ handler passes:
   the code the skill recognises: `no-such-directory`; `not-a-git-repository` for a folder
   with no `.git` that lies in no repository, which `--mode` still writes and the skill
   answers by offering `git init`; `not-the-repository-root` for a folder with no `.git` that
-  lies inside a work tree, whose toplevel, the project a server started there serves, the
-  reason names with `--project <toplevel>` — git at the folder is asked, as discovery asks it
-  (`src/cli.ts#enclosingToplevel`, `src/project.ts#discoverProject`); `task-worktree`;
-  `unsupported`; `detached-head` and `branch-name` at a branch worktree,
+  lies inside a work tree, whose toplevel the reason names with `--project <toplevel>`;
+  `unsupported` for one inside a repository that has no work tree there — an umbrella's
+  bare repository, or a git directory — where `git init` would nest a repository, the
+  reason naming its git directory (git at the folder is asked for its toplevel, then for
+  its git directory: `src/cli.ts#enclosingRepository`); `task-worktree`; `unsupported`
+  for the roots `init` refuses; `detached-head` and `branch-name` at a branch worktree,
   `initWorktree`'s checks under their own names (`src/cli.ts#worktreeBranchRefusal`); and,
   inside a task's environment, `inside-a-task` with the marker refusal's text
   (`tests/cli.test.ts#initProposeRefused`, `#initTaskRefusalCoded`). `--propose` looks and
@@ -3990,8 +3996,9 @@ handler passes:
   checked once before the lock, writing nothing (`config-changed`), then under `config.lock`
   (`src/locks.ts#configLockName`; `config-busy` past `limits.lockWaitSeconds`, the one
   refusal `acquire` marks as another's hold, `src/locks.ts#LockHeldError`, and
-  `config-lock-failed`, carrying the error, for a lock that could not be prepared at all —
-  the shared `info/exclude` unwritable, say; `tests/cli.test.ts#initConfigLockFailed`), where
+  `config-lock-failed`, carrying the error, for a lock that could not be prepared or tried
+  for at all — the shared `info/exclude` unwritable, or a lock file `flock` cannot open;
+  `tests/cli.test.ts#initConfigLockFailed`), where
   `src/config.ts#replaceConfig` checks again by content — the stored bytes, then the bytes of
   the very file `config.json` names, hard-linked aside — and by pathname — that
   `config.json` is still that file once the link is renamed to `config.json.prev` — before
@@ -4004,16 +4011,18 @@ handler passes:
   spec accepts (decision of 2026-10-13). A refusal after the lock is prepared may leave what
   `src/ledger.ts#projectLock` writes — the shared `info/exclude` entries and the lock file —
   and never changes `config.json` or `.gitignore`. Its document is `{ok, wrote, replaced,
-  file, previous, mode, served, reconnect, ignored, warning?}`. `served` is the mode a server
-  started at the root serves until it reconnects, as `loadConfigWithMode` reads it at start:
-  the root's own config's, `solo` with none, and null where the server refuses to start on
-  it. A branch worktree with no config of its own is served as its main checkout
-  (`src/project.ts#discoverProject`), so its first setup reports the main checkout's mode —
-  `solo` with no config there, null where it does not load — and reconnects whatever mode it
-  writes, because the root the server serves changes; one with no main checkout, a bare
-  repository's, is served as itself. `reconnect` is otherwise whether the mode written is
-  another than `served` (`tests/cli.test.ts#initConfigWrite`, `#initConfigReconnect`,
-  `#initProposeFromMain`).
+  file, previous, mode, served, reconnect, ignored, warning?}`. `served` is what a server
+  started at the root serves until it reconnects, read under the lock before the write: the
+  project the server's own discovery finds from the root, `src/project.ts#discoverProject`
+  run as the server runs it, and the mode `loadConfigWithMode` reads there at start — `solo`
+  with no config, null where discovery or the config refuses, since no server runs on
+  either. That project is the root itself once it holds a config, and before then the
+  nearest configured directory above it, the main checkout a branch worktree is read at, or
+  its git toplevel: a repository nested in a configured directory, a submodule of a
+  configured superproject and a first setup in a branch worktree with a main checkout each
+  report the outer project's mode. `reconnect` is whether that project is another than the
+  root or its mode another than the mode written (`tests/cli.test.ts#initConfigWrite`,
+  `#initConfigReconnect`, `#initProposeFromMain`).
   It writes the `.gitignore` entries `init` writes, and copies no Grok attach.
 - `cross-agent modes` lists every built-in mode as the loader reads it, with its
   roles, and marks the one the config names — the read `describe_mode` makes

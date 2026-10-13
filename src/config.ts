@@ -293,9 +293,8 @@ export function parseConfig(raw: string, file: string): CrossAgentConfig {
     if (typeof value !== "number" || !Number.isFinite(value)) invalid(`limits.${key}`, "a finite number");
   }
   // Every lock waits this long and then refuses (design section 2). `flock -w -1` sets no
-  // timer at all and exits 71 before it ever looks at the file, which this helper would
-  // read as "held by another process": a negative wait would refuse every lock in the
-  // project and blame a holder that does not exist.
+  // timer at all and exits 71 before it ever looks at the file: a negative wait would
+  // refuse every lock in the project.
   if (limits.lockWaitSeconds < 0) invalid("limits.lockWaitSeconds", "a finite number of seconds, not negative");
   // A cap is a whole number of hops: every depth it is compared against is one, and a
   // negative cap would refuse a row to the operator at depth 0. Zero is legal — it is the

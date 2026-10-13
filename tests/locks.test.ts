@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { acquire, gitLockName, lockPath, recordLockName, runnerLockName, spawnLockName } from "../src/locks.ts";
+import { acquire, gitLockName, LockHeldError, lockPath, recordLockName, runnerLockName, spawnLockName } from "../src/locks.ts";
 
 const worktree = fileURLToPath(new URL("../", import.meta.url));
 const locksModule = pathToFileURL(path.join(worktree, "src", "locks.ts")).href;
@@ -116,6 +116,33 @@ test("a waiter refuses after its wait, naming the operation and the file", async
   } finally {
     await holder.release();
   }
+});
+
+// @anchor lockFailureNotHeld
+test("only a wait that ran out is LockHeldError; a lock flock cannot open is a failure naming its status", async (t) => {
+  const root = project(t);
+  const file = lockPath(root, recordLockName("busy"));
+  const holder = await acquire(file, { operation: "holder", waitSeconds: 5 });
+  try {
+    await assert.rejects(acquire(file, { operation: "waiter", waitSeconds: 0 }), (error: Error) => error instanceof LockHeldError);
+  } finally {
+    await holder.release();
+  }
+  if (process.getuid!() === 0) {
+    t.skip("root opens a file whatever its mode says, so an unopenable lock file cannot be staged");
+    return;
+  }
+  const closed = lockPath(root, recordLockName("closed"));
+  fs.writeFileSync(closed, "");
+  t.after(() => { try { fs.chmodSync(closed, 0o644); } catch { /* gone */ } });
+  fs.chmodSync(closed, 0o000);
+  await assert.rejects(acquire(closed, { operation: "reader", waitSeconds: 5 }), (error: Error) => {
+    assert.equal(error instanceof LockHeldError, false, error.message);
+    assert.ok(error.message.startsWith(`reader: lock ${closed} could not be taken: flock exited `), error.message);
+    // flock's own words, which name the file it could not open.
+    assert.match(error.message, /flock: /);
+    return true;
+  });
 });
 
 /** The util-linux child that actually holds a lock, found by the file on its command line. */

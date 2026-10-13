@@ -2293,10 +2293,19 @@ test("init --propose and --config refuse a folder that is no project, with a cod
   const branchNested = path.join(branch, "guide");
   fs.mkdirSync(branchNested);
   const atToplevel = (top: string) => new RegExp(`${literally(top)}[\\s\\S]*--project ${literally(top)}`);
+  // A folder inside a repository that has no work tree there — an umbrella's, or a git
+  // directory — is no place for git init either.
+  const umbrellaFolder = path.join(umbrella.umbrella, "notes");
+  fs.mkdirSync(umbrellaFolder);
+  const gitDirFolder = path.join(detachedMain, ".git", "scratch");
+  fs.mkdirSync(gitDirFolder);
+  const noWorkTree = (gitDir: string) => new RegExp(`${literally(gitDir)}[\\s\\S]*no work tree`);
   const cases: Array<[string, string, string, RegExp]> = [
     [plain, plain, "not-a-git-repository", /is not a git repository[\s\S]*git init/],
     [nested, detachedMain, "not-the-repository-root", atToplevel(detachedMain)],
     [branchNested, branch, "not-the-repository-root", atToplevel(branch)],
+    [gitDirFolder, detachedMain, "unsupported", noWorkTree(path.join(detachedMain, ".git"))],
+    [umbrellaFolder, umbrella.umbrella, "unsupported", noWorkTree(umbrella.commonDir)],
     [task, main, "task-worktree", /is a worktree of the repository/],
     [umbrella.umbrella, umbrella.umbrella, "unsupported", /no work tree/],
     [bareDotGit.bare, bareDotGit.bare, "unsupported", /unsupported/],
@@ -2463,6 +2472,18 @@ test("reconnect follows the served mode", async (t) => {
   const bareLinked = await layoutRoot(t, "bare-linked");
   const itself = await configure(bareLinked.root, initDocument("solo", "feature"));
   assert.deepEqual([itself.code, itself.answer.served, itself.answer.reconnect], [0, "solo", false]);
+
+  // Discovery takes the nearest configured directory above a root with no config of its own:
+  // a repository nested in a configured directory, and a submodule of a configured
+  // superproject, are served as the outer project until their first setup.
+  const { superproject, submodule } = await submoduleProject(t);
+  assert.equal((await run(["init", "--mode", "dev-team-engine"], superproject)).code, 0);
+  const inSuperproject = await configure(submodule, initDocument("solo"));
+  assert.deepEqual([inSuperproject.code, inSuperproject.answer.served, inSuperproject.answer.reconnect], [0, "dev-team-engine", true]);
+  const outer = scratch(t);
+  assert.equal((await run(["init", "--mode", "dev-team"], outer)).code, 0);
+  const nestedRepository = await configure(await mainCheckout(outer, "inner"), initDocument("solo"));
+  assert.deepEqual([nestedRepository.code, nestedRepository.answer.served, nestedRepository.answer.reconnect], [0, "dev-team", true]);
 });
 
 test("conflicting init options are usage errors, and --help documents them", async (t) => {
@@ -2734,6 +2755,20 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   assert.match(denied.answer.reason as string, /EACCES/);
   assert.equal(fs.existsSync(path.join(readOnly, CONFIG_PATH)), false);
   assert.equal(fs.existsSync(path.join(readOnly, ".gitignore")), false);
+
+  // The exclusions already written and the lock file there, but one flock cannot open: no
+  // holder waited on, so a failure to lock rather than a busy one.
+  const unopenable = await mainCheckout(scratch(t), "U");
+  assert.equal((await configure(unopenable, initDocument("dev-team"))).code, 0);
+  const lockFile = path.join(unopenable, ".cross-agent", "locks", "config.lock");
+  t.after(() => { try { fs.chmodSync(lockFile, 0o644); } catch { /* gone */ } });
+  fs.chmodSync(lockFile, 0o000);
+  const stored = fs.readFileSync(path.join(unopenable, CONFIG_PATH));
+  const closed = await configure(unopenable, initDocument("solo"), ["--replace", "--expect", sha256(stored)]);
+  fs.chmodSync(lockFile, 0o644);
+  assert.deepEqual([closed.code, closed.answer.code], [3, "config-lock-failed"], closed.answer.reason as string);
+  assert.match(closed.answer.reason as string, /flock exited \d+/);
+  assert.deepEqual(fs.readFileSync(path.join(unopenable, CONFIG_PATH)), stored);
 });
 
 // @anchor initTaskRefusalCoded

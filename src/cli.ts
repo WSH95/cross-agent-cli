@@ -335,34 +335,48 @@ function worktreeBranchRefusal(root: string, located: Repository): { code: strin
 }
 
 /**
- * The work tree a folder with no `.git` of its own lies inside, as git at that folder names
- * it, or null where it lies in none: a read, the one discovery makes for a server started
- * there (`src/project.ts#discoverProject`).
+ * The repository a folder with no `.git` of its own lies inside, as git at that folder reads
+ * it, or null where it lies in none, by reads alone: the work tree whose toplevel it is
+ * under, which discovery asks for too (`src/project.ts#discoverProject`), or else the git
+ * directory of a repository that has no work tree there — an umbrella's bare repository, or
+ * a git directory itself.
  */
-async function enclosingToplevel(root: string): Promise<string | null> {
-  try {
-    const { stdout } = await exec("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", env: gitEnvironment() });
-    const top = fs.realpathSync(path.resolve(root, stdout.replace(/\n$/, "")));
-    return top === root ? null : top;
-  } catch {
-    return null;
-  }
+async function enclosingRepository(root: string): Promise<{ toplevel: string } | { gitDir: string } | null> {
+  const ask = async (flag: string): Promise<string | null> => {
+    try {
+      const { stdout } = await exec("git", ["-C", root, "rev-parse", flag], { encoding: "utf8", env: gitEnvironment() });
+      return fs.realpathSync(path.resolve(root, stdout.replace(/\n$/, "")));
+    } catch {
+      return null;
+    }
+  };
+  const toplevel = await ask("--show-toplevel");
+  if (toplevel !== null && toplevel !== root) return { toplevel };
+  const gitDir = await ask("--absolute-git-dir");
+  return gitDir === null ? null : { gitDir };
 }
 
 /**
  * The repository `init --propose` looks at and `init --config` writes for, or the coded
  * refusal: a folder with no `.git` is no project of theirs — the skill offers `git init` in
- * one that lies in no repository, and setup at the toplevel for one that lies inside a work
- * tree, which is what a server started there serves — though `init --mode` still writes
- * either; a linked worktree is a branch project, on its own branch, as `init` makes it.
+ * one that lies in no repository, setup at the toplevel for one that lies inside a work
+ * tree, and neither inside a repository with no work tree there — though `init --mode`
+ * still writes each; a linked worktree is a branch project, on its own branch, as `init`
+ * makes it.
  */
 async function projectRepository(root: string, located: Located | null): Promise<ProjectRepository | { code: string; reason: string }> {
   if (located === null) {
-    const top = await enclosingToplevel(root);
-    if (top !== null) {
+    const enclosing = await enclosingRepository(root);
+    if (enclosing !== null && "toplevel" in enclosing) {
       return {
         code: "not-the-repository-root",
-        reason: `${root} lies inside the git repository whose work tree is ${top}, not at its root, and a project is a repository's root: set up there instead, with --project ${top}`,
+        reason: `${root} lies inside the git repository whose work tree is ${enclosing.toplevel}, not at its root, and a project is a repository's root: set up there instead, with --project ${enclosing.toplevel}`,
+      };
+    }
+    if (enclosing !== null) {
+      return {
+        code: "unsupported",
+        reason: `${root} lies inside the git repository at ${enclosing.gitDir}, which has no work tree there, so it is no project's root, and git init there would nest a repository inside it: set up in a worktree of that repository`,
       };
     }
     return {
@@ -480,19 +494,22 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
     if (error instanceof LockHeldError) return coded({ code: "config-busy", reason: message(error) });
     return coded({ code: "config-lock-failed", reason: `${configLockName()} could not be taken: ${message(error)}` });
   }
-  // What a server started here serves until it reconnects (src/project.ts#discoverProject):
-  // this root, or — at a branch worktree with no config of its own yet — the main checkout
-  // discovery reads it at, so a first setup there moves the server to another root whatever
-  // the mode. The mode is the one the server loaded at start, solo with no config
-  // (`src/config.ts#defaultConfig`), and none where it refused to start.
-  const main = repository.worktree?.main ?? null;
-  let servedRoot = root;
-  let served: string | null;
+  // What a server started here serves until it reconnects, read before this write: the
+  // project its own discovery finds from here (`src/project.ts#discoverProject`) — this root,
+  // a configured directory above it, or the main checkout a branch worktree with no config of
+  // its own is read at — and the mode it loads there at start, solo with no config
+  // (`src/config.ts#defaultConfig`). A discovery that refuses, or a config the server
+  // refuses, is a server that cannot be running: null.
+  let servedRoot: string | null = null;
+  let served: string | null = null;
   let result: InitConfigResult;
   try {
-    if (main !== null && !holdsConfig(root)) servedRoot = main;
     try {
-      served = loadConfigWithMode(servedRoot).mode.id;
+      const found = await discoverProject([], {}, root);
+      if ("root" in found) {
+        servedRoot = found.root;
+        served = loadConfigWithMode(found.root).mode.id;
+      }
     } catch {
       served = null;
     }
@@ -503,14 +520,15 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   if (result.stale === true) return coded(changed("another write replaced it, or it was edited, while this one waited or wrote"));
   if (!result.wrote) return coded(exists);
   const mode = checked.config.mode;
-  const moves = servedRoot !== root;
-  const reconnect = moves || served !== mode;
+  const reconnect = servedRoot !== root || served !== mode;
   const lines = [result.replaced === true
     ? `cross-agent: replaced ${file} for mode ${mode}; the previous config is ${result.previous}`
     : `cross-agent: wrote ${file} for mode ${mode}`];
   if (result.ignored.length > 0) lines.push(`cross-agent: added ${result.ignored.join(", ")} to ${path.join(root, ".gitignore")}`);
-  if (moves) {
-    lines.push(`cross-agent: a server started here serves the main checkout ${servedRoot}${served === null ? ", whose config it cannot load" : ` as ${served}`}; reconnect it to serve ${root} as ${mode}`);
+  if (servedRoot === null) {
+    lines.push(`cross-agent: a server started here found no project before this write; reconnect it to serve ${root} as ${mode}`);
+  } else if (servedRoot !== root) {
+    lines.push(`cross-agent: a server started here serves ${servedRoot}${served === null ? ", whose config it cannot start on" : ` as ${served}`}; reconnect it to serve ${root} as ${mode}`);
   } else if (reconnect) {
     lines.push(`cross-agent: ${served === null ? "the server cannot start on the config this replaced" : `the server serves ${served}`}; reconnect it to serve ${mode}`);
   }
