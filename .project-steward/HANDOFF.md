@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T07:57:34Z
+updated_at: 2026-10-13T12:15:09Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,18 @@ branch: main
 # Handoff
 
 ## Now
+
+**A direct `node --test` inside Codex's sandbox (`atc-s96.130`, `.131`, `.132`, closed
+2026-10-13).** One dev-team task merged all three as `5b9919b`.
+- Every test file now opens with `tests/child-check.mjs`. Inside Codex's sandbox, a direct
+  `node --test` of any file stops in under a second with the cause, instead of stalling.
+  Everywhere else the check does nothing.
+- The EPERM fixture matches Node's real result.
+- `AGENTS.md` (user-approved, Decision 0020) tells delegated sessions how to run tests and
+  names the new files.
+
+Gate and root suite: 1061 tests, 1059 pass, 0 fail, 2 guarded skips. Two review rounds,
+all seats `no major issues`, and no follow-ups were left (`VERIFY.md`).
 
 **`npm test` inside a specialist's sandbox (`atc-s96.124`, `atc-s96.129`, closed
 2026-10-13).** One dev-team task merged both as `6b3913d`.
@@ -271,11 +283,16 @@ The task worktree is removed, and its ignored files are archived in
 
    Findings to pick from with `bd ready`: `.122` (Claude Code backgrounds MCP calls after
    120 s), `.123` (self-hosting CLI guard), `.125` (`/reload-plugins` does not restart the
-   server), `.131` (a direct `node --test` under Codex skips the preflight), and `.117`
-   (the specialist rule in the role prompts). Review follow-ups: `.120`, `.121`, `.126`,
-   `.127`, `.130`, `.132`.
+   server), and `.117` (the specialist rule in the role prompts). Review follow-ups:
+   `.120`, `.121`, `.126`, `.127`.
 
    Before a team task's step 1, commit `.beads/interactions.jsonl` if it is dirty.
+
+   **`atc-s96.130`, `.131` and `.132` are done.** One dev-team task merged them as
+   `5b9919b`, and the worktree and branch are cleaned up. A direct `node --test` inside
+   Codex's sandbox now stops at once with its reason. The review rounds left no
+   follow-ups. The user authorized pushing and publishing a release after this work; they
+   merge the agent-plugins pull request and update the plugin.
 
    **`atc-s96.124` and `atc-s96.129` are done.** They ran as one dev-team task and merged
    as `6b3913d`; the worktree and branch are cleaned up. `npm test` now stops in under a

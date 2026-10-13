@@ -1109,3 +1109,38 @@ project whose instructions address every agent, and `atc-s96.117` takes it to th
 prompts. How the suite behaves inside the real Claude and Codex sandboxes is still
 unverified. The pilot `atc-s96.118` runs the first real task and records it. Installing
 the released plugin is the user's step.
+
+## 0020 — 2026-10-13 — Every test file stops itself where its results are lost, and AGENTS.md says how to run tests here (`atc-s96.130`, `atc-s96.131`, `atc-s96.132`); user-approved
+
+Context: After `atc-s96.124`, `npm test` stops at once inside Codex's workspace-write
+sandbox, where Node's children cannot report their output. A direct `node --test` of one
+file still ran with no preflight: it failed after 49 s (`tests/cli.test.ts`) or stalled
+past 130 s (`tests/server.test.ts`), with a bare `'test failed'` and no reason. Codex
+specialists, the resolver and consult one-shots run tests in that sandbox. Measured there:
+a `node --test` child sees fd 1 as a socket while its `process.stdout` is Node's black-hole
+`Writable` rather than a `net.Socket`, and a raw `fs.writeSync(2, …)` still reaches the
+user. Node 24 runs nothing in each test child without a flag. The EPERM fixture also
+returned `stdout: ""` where Node returns `undefined`, so no test pinned the preflight's
+`?.`. The user approved the `AGENTS.md` changes.
+
+Decision: Every `tests/**/*.test.ts` opens with `import "./child-check.mjs"` (all 38 files;
+`tests/child-check.test.ts` pins that every file does, `engines/` included). The check
+stops a file at once, with the cause and what still runs, only when `NODE_TEST_CONTEXT` is
+set, fd 1 is a socket, and `process.stdout` is not a `net.Socket`. It costs no spawn and
+does nothing elsewhere. It shares its text with the preflight through
+`tests/lost-output.mjs`, and the preflight's output stays byte-identical. The EPERM fixture
+returns Node's real no-child result. `AGENTS.md` gains one paragraph in "If cross-agent
+launched you": run the suite only through `npm test`; under a sandbox that filters socket
+calls, one file runs only as `node --test --test-isolation=none tests/<concern>.test.ts`;
+the gate decides the suite. Its Layout names the preflight, the check and their fixtures.
+Both are user-owned text outside the managed blocks; no operator instruction changed, and
+`network_access` stays off.
+
+Consequences: Under Codex's sandbox, a direct `node --test` now stops in under a second per
+file, with its reason. A run over many files prints the message once per file. The check
+depends on how Node marks a test child and builds an untyped stdout, so a Node upgrade can
+break it either way. Stopping a working child shows as `child-check.test.ts`'s
+working-child test failing at the gate. Missing a broken child shows as its broken-child
+test failing, or only in the operator's run inside the sandbox. The role prompts under
+`modes/` still say nothing about the Codex sandbox. They were out of scope: they are not
+specific to this repository, and they reach a team only through a release.

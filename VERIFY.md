@@ -7,6 +7,65 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## A direct `node --test` inside Codex's sandbox — `atc-s96.130`, `.131`, `.132` (2026-10-13)
+
+The three beads ran as one task through all ten steps of the `dev-team` loop and merged as
+`5b9919b`, in two commits: `b83b1b5` and the wrap-up `5b9919b` (slug
+`s96-131-codex-test-guard`). The `AGENTS.md` change is user-approved (Decision 0020).
+
+- **Before the change,** measured under `codex sandbox -c 'sandbox_mode="workspace-write"'`
+  on `c640e50`:
+  - A direct `node --test tests/cli.test.ts` failed after 49 s with a bare
+    `'test failed'`.
+  - `tests/server.test.ts` was still running when a 130 s timeout killed it.
+  - In a test child, `process.stdout` was a plain `Writable`, not a `net.Socket`, while
+    fd 1 was a socket. A raw `fs.writeSync(2, …)` still reached the terminal.
+- **What changed:**
+  - Every `tests/**/*.test.ts` (39 files) opens with `tests/child-check.mjs`. It stops a
+    `node --test` child at once, with the cause and what still runs, when all three
+    hold: `NODE_TEST_CONTEXT` is set, fd 1 is a socket, and `process.stdout` is not a
+    `net.Socket`.
+  - The check shares its text with the preflight through `tests/lost-output.mjs`, and
+    the preflight's stderr is byte-identical (783 and 781 bytes).
+  - The EPERM fixture returns Node's real no-child result, so the preflight's `?.` is
+    now pinned (`.130`).
+  - `AGENTS.md` tells a delegated session how to run tests here and names the new files
+    in Layout (`.131`, `.132`).
+- **Tests.** `tests/child-check.test.ts` adds five tests:
+  - T1, a broken child, stops, and its message's first line is asserted whole;
+  - T2, a working child, runs;
+  - T3, an in-process run, runs, which pins the `NODE_TEST_CONTEXT` condition;
+  - T4 checks that every file `npm test` runs has the import, expanding `npm test`'s own
+    pattern with Node's `node_modules` exclusion;
+  - T5, a child whose fd 1 is a file, runs, which pins the socket condition.
+
+  The implementer showed a red for each pin by mutation. None was committed.
+- **Plan review:** codex/gpt-6-astra/xhigh, `no major issues`. Its three Minor findings
+  were folded once: T5 was added, two issue descriptions were corrected, and the diff
+  hand-off was added.
+- **Review round 1** (`b83b1b5`): all three seats `no major issues`. The four Minor
+  rows were fixed in the wrap-up:
+  - the design clause now names the import;
+  - "could not open" became "whose type Node could not identify";
+  - AGENTS.md says "fail or time out";
+  - T4 uses `fs.globSync` with the runner's options instead of a directory walk.
+
+  Two out-of-scope rows were the operator's records: a stale line citation in this file,
+  now cited by test name, and Decision 0020.
+- **Review round 2** (`5b9919b`): all three seats marked every row ADDRESSED, with no
+  findings in scope. code-reviewer#2 also ran the check first-hand in its Codex sandbox:
+  `tests/guard.test.ts` stopped in 0.15–0.19 s.
+- **Gate and root suite:** the gate on `b83b1b5` and on `5b9919b`, and the root suite
+  after the merge (`tests-passed`), each ran 1061 tests: 1059 pass, 0 fail, 2 guarded
+  skips. Citations: 1649, 0 misses.
+- **Codex check** on an export of `5b9919b`, under the same sandbox:
+  - `tests/server.test.ts` exits 1 in 0.98 s and `tests/cli.test.ts` in 0.84 s. Each
+    first line names its file, the cause, and the forms that still run.
+  - `npm test` stops once, at the preflight.
+  - `--test-isolation=none tests/guard.test.ts` passes 13/13.
+  - A direct run of all 39 files stops each one, in 5.7 s in total.
+- **Cost:** 11 engine tasks, 4,594 s of engine time in all (`.cross-agent/log.md`).
+
 ## The suite inside a specialist's sandbox — `atc-s96.124` + `atc-s96.129` (2026-10-13)
 
 The two beads ran as one task through all ten steps of the `dev-team` loop and merged as
@@ -343,7 +402,8 @@ below quote what those files say.
   reaches no server — `./.grok/config.toml` is per-directory — and would need a
   user-scope mount, which is the operator's decision. The refusal that names the
   matched task id is unreachable from any engine that honours `tools/list` and
-  is pinned by `tests/authority.test.ts:209` instead.
+  is pinned by `tests/authority.test.ts`'s "a specialist's own server refuses
+  delegate by name, with the task its ancestry matched" instead.
 - **I2**: Claude and Grok rows pass, and the Claude row was rerun under the
   containment fix through the product pipeline — spec `protectedPaths`, the
   engine's own `--settings`, nine steps including `<root>/.git/hooks/pre-commit`,
