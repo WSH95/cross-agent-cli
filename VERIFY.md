@@ -23,6 +23,21 @@ tests/dist.test.ts tests/publish.test.ts tests/codex-native.test.ts` passed 33 t
 skipped. After the bump, `npm test` at the root ran 1061 tests: 1059 pass, 0 fail, 2
 guarded skips.
 
+The frozen source release is `6f9f2c4ecd093cc69304b1dc05f53514a1256b8e`, pushed to `main`
+as a fast-forward from `c4140c1`. The publisher's dry run proposed 13 files under
+`cross-agent/`:
+- the Claude marketplace metadata's version;
+- in both payloads, the plugin manifest, `package.json`, `src/cli.ts`, `src/config.ts`
+  and the two loops' `SKILL.md`.
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/18 on
+`publish/cross-agent-plugin/20261013122052`, head
+`1d4c9749890e298fc3f892f9937204f399133653`. It is open and mergeable, with those 13 files
+and no attribution trailer. The target's `cross-agent/` equals the frozen dist
+(`diff -r`). `claude plugin validate` passes for the marketplace and, with `--strict`, for
+the plugin. No merge or Dolt remote sync was performed. The target checkout is kept at
+`/tmp/agent-artifact-pr-zpwhkib_/target`.
+
 ## A direct `node --test` inside Codex's sandbox — `atc-s96.130`, `.131`, `.132` (2026-10-13)
 
 The three beads ran as one task through all ten steps of the `dev-team` loop and merged as
