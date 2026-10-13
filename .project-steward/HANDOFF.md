@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T03:02:23Z
+updated_at: 2026-10-13T03:46:49Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -249,23 +249,23 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. **The pilot, `atc-s96.118` (P2, in flight, claimed).** The setup is done:
-   - `cross-agent@agent-plugins` 0.1.2 is installed, and `init --mode dev-team` ran here.
-   - `.cross-agent/config.json` (ignored) holds the user's bindings: planner and
-     implementer claude/claude-opus-5-5 xhigh; plan reviewer codex/gpt-6-astra xhigh;
-     reviewer seats claude-opus-5-5, codex/gpt-6.1-sol and grok-4.7, all xhigh; resolver
-     codex/gpt-6-astra max.
-   - The server was restarted with `/mcp` → Reconnect. `/reload-plugins` was not enough
-     (`atc-s96.125`).
+1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
+   `dev-team` loop on this repository under the user's bindings, both with no fix round:
+   - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
+   - `atc-s96.119` (`init`'s defaults are now the user's team) merged as `7f5969b`.
 
-   **Task 1 is done.** `atc-s96.80` merged as `50fe5ba` through the full loop, with no fix
-   round (VERIFY.md). Findings filed: `.122` (Claude Code backgrounds MCP calls after
-   120 s), `.123` (self-hosting CLI guard), `.124` (suite in the Claude sandbox), `.125`, and
-   a comment on `.113`. Review follow-ups: `.120`, `.121`.
+   `.cross-agent/config.json` (ignored) keeps those bindings. The team runs from the
+   installed 0.1.2 build, so neither change reaches it until a release; this repository's
+   `main` is ahead of 0.1.2.
 
-   **Task 2 is next: `atc-s96.119`**, which makes the user's bindings `init`'s defaults.
-   Before step 1, commit `.beads/interactions.jsonl` if it is dirty. `atc-s96.117` (P3)
-   takes the specialist section's rule to the role prompts.
+   Findings to pick from with `bd ready`: `.122` (Claude Code backgrounds MCP calls after
+   120 s), `.123` (self-hosting CLI guard), `.124` (suite in the Claude sandbox), `.125`
+   (`/reload-plugins` does not restart the server), and `.117` (the specialist rule in
+   the role prompts). Review follow-ups: `.120`, `.121`, `.126`, `.127`.
+
+   Before a team task's step 1, commit `.beads/interactions.jsonl` if it is dirty. Open
+   question for the user: whether the `dev-team-engine` lead's default should also move to
+   claude-opus-5-5 (it stays claude-opus-5/high).
 2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
 3. For an isolated native regression check, run

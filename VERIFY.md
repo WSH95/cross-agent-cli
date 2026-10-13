@@ -7,6 +7,28 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The second dev-team task: `init`'s default bindings — `atc-s96.119` (2026-10-13)
+
+Bead `atc-s96.119` went through all ten steps of the `dev-team` loop and merged as
+`7f5969b` (slug `s96-119-init-defaults`).
+- What changed: `init --mode dev-team`, and `dev-team-engine` for the roles it shares, now
+  writes the user's bindings (`src/config.ts#devTeamBindings`). The `lead` and `consult`
+  bindings are unchanged.
+- Docs updated: section 6 of `docs/design.md`, both loops' resolver example, and the
+  `describe_mode` sizes (35,473 / 40,996 / 3,463).
+- Plan review: `no major issues`, with two Minor findings folded.
+- Implementer's red runs: the three binding tests and `#describeModeSizes` failed on the
+  old values, then passed. Its own suite inside its Claude sandbox gave 1036 pass, 3 fail
+  and 10 skips. All the failures and seven of the skips are sandbox-only (`atc-s96.124`).
+- Gate, on a detached checkout of `7f5969b`: 1049 tests, 1047 pass, 0 fail, 2 guarded skips.
+- Review round 1: all three seats `no major issues`. Two out-of-scope Minor follow-ups
+  were filed (`atc-s96.126`, `.127`).
+- Root suite after the merge: 1049, 1047 pass, 0 fail, 2 guarded skips (`tests-passed`).
+
+The pilot (`atc-s96.118`) is closed. In both tasks the specialists kept to `AGENTS.md`'s
+specialist section: they ran no `bd`, wrote nothing under `.project-steward/`, and changed
+only the planned files.
+
 ## The first dev-team task on this repository — `atc-s96.80` (2026-10-13)
 
 The pilot (`atc-s96.118`) ran under the installed 0.1.2 build with the user's bindings.
