@@ -38,6 +38,13 @@ and no attribution trailer. The target's `cross-agent/` equals the frozen dist
 the plugin. No merge or Dolt remote sync was performed. The target checkout is kept at
 `/tmp/agent-artifact-pr-zpwhkib_/target`.
 
+The user merged PR #18 on 2026-10-13 at 12:38:32Z, as merge commit
+`f5ca5423f074746f39b199219b7e15fcc270d5f3`. Afterwards:
+- on agent-plugins `main`, both payloads' versions read 0.1.3;
+- the user updated the plugin and reconnected the server, and the session's server now
+  runs `~/.claude/plugins/cache/agent-plugins/cross-agent/0.1.3/src/server.ts`;
+- its `list_roles` answers with the user's team, unchanged.
+
 ## A direct `node --test` inside Codex's sandbox — `atc-s96.130`, `.131`, `.132` (2026-10-13)
 
 The three beads ran as one task through all ten steps of the `dev-team` loop and merged as

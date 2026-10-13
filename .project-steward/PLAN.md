@@ -2,10 +2,10 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Release 0.1.3 (published 2026-10-13, awaiting the user's merge)
+## Release 0.1.3 (merged 2026-10-13)
 
-`atc-s96.133`: source `6f9f2c4` pushed; agent-plugins PR #18 (`1d4c974`) is open for the
-user to merge. The release ships the CLI EPIPE fix (`atc-s96.80`), `init`'s dev-team defaults set to the
+`atc-s96.133` is closed: source `6f9f2c4` pushed, agent-plugins PR #18 (`1d4c974`) merged
+by the user as `f5ca542`, and the installed plugin updated to 0.1.3. The release ships the CLI EPIPE fix (`atc-s96.80`), `init`'s dev-team defaults set to the
 user's team (`atc-s96.119`) and the engine lead's default (`atc-s96.128`). All three were
 developed by the repository's own dev team. Beads holds the publication record.
 

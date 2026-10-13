@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T12:21:30Z
+updated_at: 2026-10-13T12:41:19Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -8,15 +8,13 @@ branch: main
 
 ## Now
 
-**Release 0.1.3 is published and awaits the user's merge (`atc-s96.133`, 2026-10-13).**
+**Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
-- https://github.com/WSH95/agent-plugins/pull/18 (head `1d4c974`, 13 files) is open and
-  mergeable, and its `cross-agent/` equals the built payload.
-- It carries the EPIPE fix, `init`'s team defaults and the engine lead default.
-
-**The user:** merge PR #18, then update the plugin (`/plugin marketplace update
-agent-plugins` and reinstall or update `cross-agent`), and reconnect the server with
-`/mcp`. After the merge, record it in `VERIFY.md` and close `atc-s96.133`.
+- The user merged https://github.com/WSH95/agent-plugins/pull/18 as `f5ca542`, updated the
+  plugin and reconnected.
+- This session's server runs from the 0.1.3 cache and serves the user's team.
+- 0.1.3 carries the EPIPE fix, `init`'s team defaults and the engine lead default.
+- The dev team on this repository now runs 0.1.3.
 
 **A direct `node --test` inside Codex's sandbox (`atc-s96.130`, `.131`, `.132`, closed
 2026-10-13).** One dev-team task merged all three as `5b9919b`.
