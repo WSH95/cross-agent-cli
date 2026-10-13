@@ -7,6 +7,24 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The first dev-team task on this repository — `atc-s96.80` (2026-10-13)
+
+The pilot (`atc-s96.118`) ran under the installed 0.1.2 build with the user's bindings.
+Bead `atc-s96.80` (`cross-agent report | head` died on EPIPE) went through all ten steps of
+the `dev-team` loop and merged as `50fe5ba` (slug `s96-80-epipe`).
+- Plan review: one round, `no major issues`, one Minor finding folded. The test moved from
+  a Node-spawned socket to a real shell pipe into `head -n 1`.
+- Implementer's red run, before the fix: both legs exited 1 with `Error: write EPIPE`.
+  After the fix, `tests/cli.test.ts#cliClosedStdout` passes.
+- Gate, on a detached checkout of `50fe5ba`: 1049 tests, 1047 pass, 0 fail, 2 guarded skips.
+- Review round 1: all three seats `no major issues` (claude-opus-5-5, gpt-6.1-sol,
+  grok-4.7). Two out-of-scope Minor follow-ups were filed (`atc-s96.120`, `.121`).
+- Root suite after the merge: 1049, 1047 pass, 0 fail, 2 guarded skips (`tests-passed`).
+
+The implementer's own `npm test` inside its Claude sandbox gave 3 failures that the gate's
+operator run did not reproduce (`atc-s96.124`). Per-task lines are in
+`.cross-agent/log.md`.
+
 ## The suite below a task — `atc-s96.115` (2026-10-13)
 
 A suite started below a cross-agent task, as an implementer's own `npm test` is, now runs

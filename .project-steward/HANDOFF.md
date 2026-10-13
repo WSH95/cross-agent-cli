@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T01:43:30Z
+updated_at: 2026-10-13T03:02:23Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -249,18 +249,23 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. **The pilot, `atc-s96.118` (P2, in flight, claimed).** Done so far:
+1. **The pilot, `atc-s96.118` (P2, in flight, claimed).** The setup is done:
    - `cross-agent@agent-plugins` 0.1.2 is installed, and `init --mode dev-team` ran here.
    - `.cross-agent/config.json` (ignored) holds the user's bindings: planner and
      implementer claude/claude-opus-5-5 xhigh; plan reviewer codex/gpt-6-astra xhigh;
      reviewer seats claude-opus-5-5, codex/gpt-6.1-sol and grok-4.7, all xhigh; resolver
      codex/gpt-6-astra max.
-   - The log was committed to make the root clean (`852f442`).
+   - The server was restarted with `/mcp` → Reconnect. `/reload-plugins` was not enough
+     (`atc-s96.125`).
 
-   The server still serves `solo` and needs `/reload-plugins` before the loop's step 1.
-   Task 1 is `atc-s96.80` (EPIPE, claimed). Task 2 is `atc-s96.119`, which makes these
-   bindings `init`'s defaults. Record how `npm test` behaves inside the real sandboxes.
-   `atc-s96.117` (P3) takes the specialist section's rule to the role prompts.
+   **Task 1 is done.** `atc-s96.80` merged as `50fe5ba` through the full loop, with no fix
+   round (VERIFY.md). Findings filed: `.122` (Claude Code backgrounds MCP calls after
+   120 s), `.123` (self-hosting CLI guard), `.124` (suite in the Claude sandbox), `.125`, and
+   a comment on `.113`. Review follow-ups: `.120`, `.121`.
+
+   **Task 2 is next: `atc-s96.119`**, which makes the user's bindings `init`'s defaults.
+   Before step 1, commit `.beads/interactions.jsonl` if it is dirty. `atc-s96.117` (P3)
+   takes the specialist section's rule to the role prompts.
 2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
 3. For an isolated native regression check, run
