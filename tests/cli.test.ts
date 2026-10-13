@@ -545,6 +545,45 @@ test("report over an empty or absent ledger is 0, says nothing, and creates noth
   assert.equal(fs.existsSync(path.join(root, ".cross-agent", "tasks")), false);
 });
 
+/**
+ * The CLI as an operator pipes it, `cross-agent <args> | head -n 1`: its stdout a kernel pipe
+ * whose reader leaves after one line. The pipeline's status is head's, so the CLI's own exit
+ * code and stderr are kept in files; the shell waits for both sides of the pipeline, so both
+ * are written by the time this resolves.
+ */
+async function intoHead(t: TestContext, args: string[], cwd: string): Promise<Ran> {
+  const kept = scratch(t);
+  const stderr = path.join(kept, "stderr");
+  const code = path.join(kept, "code");
+  const { stdout } = await exec("sh", ["-c", '{ "$@" 2>"$CLI_STDERR"; echo "$?" >"$CLI_CODE"; } | head -n 1', "sh", process.execPath, cli, ...args],
+    { cwd, env: { ...suiteEnv, CLI_STDERR: stderr, CLI_CODE: code }, encoding: "utf8" });
+  return { code: Number(fs.readFileSync(code, "utf8")), stdout, stderr: fs.readFileSync(stderr, "utf8") };
+}
+
+// @anchor cliClosedStdout
+test("a reader that closes stdout early ends the command quietly with the verb's own exit code: report 0, list-asks 5", { timeout: 30_000 }, async (t) => {
+  const root = await engineProject(t);
+  const { create } = await import("../src/ledger.ts");
+  const { createAsk } = await import("../src/mailbox.ts");
+  // About 4 MB, more than a kernel pipe holds by default, so the CLI is still writing when
+  // head leaves and its next write finds no reader.
+  const text = Array.from({ length: 50_000 }, (_, index) => `line ${index}`.padEnd(80, "x")).join("\n") + "\n";
+  const record = create(root, { role: "planner", brief: "plan", cwd: root, engine: "claude", depth: 2 });
+  fs.writeFileSync(record.resultPath, text);
+  createAsk(root, { taskId: record.id, question: text });
+
+  const report = await intoHead(t, ["report", "--project", root], root);
+  assert.match(report.stdout, /^planner \| claude \| /, "head read the first row before it left");
+  assert.equal(report.stderr, "", "no stack, and nothing else");
+  assert.equal(report.code, 0);
+
+  // The code is the verb's verdict, never a forced 0: the open ask keeps list-asks a 5.
+  const asks = await intoHead(t, ["list-asks", "--json", "--project", root], root);
+  assert.equal(asks.stdout, "{\n");
+  assert.equal(asks.stderr, "");
+  assert.equal(asks.code, 5);
+});
+
 // @anchor cliSeatSpelling
 test("a seated record is spelled role#seat by tasks, show and report, and keeps role and seat apart in their JSON", async (t) => {
   const root = await engineProject(t);

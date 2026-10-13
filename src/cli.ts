@@ -1237,6 +1237,10 @@ export async function runCli(
 }
 
 if (isMainModule(import.meta.url)) {
+  // A reader that leaves early (`cross-agent report | head`) fails the next write with
+  // EPIPE. The answer is settled by then, so the rest of the output is dropped and the exit
+  // code stays the verb's, set below; any other error on stdout still throws.
+  process.stdout.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") throw error; });
   void runCli(process.argv.slice(2), process.cwd(), {
     out: (text) => process.stdout.write(text),
     err: (text) => process.stderr.write(text),
