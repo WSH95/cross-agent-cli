@@ -486,13 +486,20 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   if (expect !== undefined && stored === null) return coded(changed("there is no config there now"));
   if (expect !== undefined && stored!.sha256 !== expect) return coded(changed(`its SHA-256 is ${stored!.sha256}`));
   let lock: Lock;
+  const operation = "init --config";
   try {
-    lock = await projectLock(root, configLockName(), { waitSeconds: lockWaitSeconds(root), operation: "init --config" });
+    lock = await projectLock(root, configLockName(), { waitSeconds: lockWaitSeconds(root), operation });
   } catch (error) {
     // Busy only where another writer held the lock past the wait; a lock that could not be
     // prepared at all — the shared exclusions unwritable, no lock directory — says why.
     if (error instanceof LockHeldError) return coded({ code: "config-busy", reason: message(error) });
-    return coded({ code: "config-lock-failed", reason: message(error) });
+    // `acquire`'s own refusal names the operation and the lock already; an error from before
+    // it — the lock directory, the shared exclusions — is bare errno text, given the lock here.
+    const reason = message(error);
+    return coded({
+      code: "config-lock-failed",
+      reason: reason.startsWith(`${operation}: lock `) ? reason : `${configLockName()} could not be prepared: ${reason}`,
+    });
   }
   // What a server started here serves until it reconnects, read before this write: the
   // project its own discovery finds from here (`src/project.ts#discoverProject`) — this root,

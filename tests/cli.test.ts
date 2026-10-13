@@ -2806,6 +2806,11 @@ for (const replace of [false, true]) {
 
 // @anchor initConfigLockFailed
 test("a config lock that cannot be prepared is config-lock-failed, carrying the error, and never config-busy", async (t) => {
+  /** The reason names the lock it could not prepare, once, before the error it carries. */
+  const namesTheLock = (reason: string) => {
+    assert.match(reason, /^config\.lock could not be prepared: /, reason);
+    assert.equal(reason.match(/config\.lock/g)?.length, 1, reason);
+  };
   // The lock directory is a file, so the lock's own directory cannot be made.
   const root = await mainCheckout(scratch(t), "P");
   fs.mkdirSync(path.join(root, ".cross-agent"));
@@ -2813,6 +2818,7 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   const failed = await configureInProcess(t, root, initDocument("dev-team"));
   assert.deepEqual([failed.code, failed.answer.code], [3, "config-lock-failed"]);
   assert.match(failed.answer.reason as string, /EEXIST|ENOTDIR/);
+  namesTheLock(failed.answer.reason as string);
   assert.equal(fs.existsSync(path.join(root, CONFIG_PATH)), false);
 
   // The repository's shared exclusions cannot be written, as under a host sandbox that keeps .git read-only.
@@ -2828,6 +2834,7 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   fs.chmodSync(info, 0o755);
   assert.deepEqual([denied.code, denied.answer.code], [3, "config-lock-failed"]);
   assert.match(denied.answer.reason as string, /EACCES/);
+  namesTheLock(denied.answer.reason as string);
   assert.equal(fs.existsSync(path.join(readOnly, CONFIG_PATH)), false);
   assert.equal(fs.existsSync(path.join(readOnly, ".gitignore")), false);
 
@@ -2844,6 +2851,11 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   assert.deepEqual([closed.code, closed.answer.code], [3, "config-lock-failed"], closed.answer.reason as string);
   assert.equal((closed.answer.reason as string).match(/could not be taken/g)?.length, 1, closed.answer.reason as string);
   assert.match(closed.answer.reason as string, /flock exited \d+/);
+  // `acquire`'s own refusal already names the operation and the lock, and is passed through as it is.
+  assert.match(closed.answer.reason as string, /^init --config: lock \S*\/config\.lock could not be taken: /, closed.answer.reason as string);
+  assert.doesNotMatch(closed.answer.reason as string, /could not be prepared/);
+  // Named once as what could not be had; flock's own words, quoted after it, give the path again.
+  assert.equal((closed.answer.reason as string).match(/config\.lock could not be/g)?.length, 1, closed.answer.reason as string);
   assert.deepEqual(fs.readFileSync(path.join(unopenable, CONFIG_PATH)), stored);
 });
 
