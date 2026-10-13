@@ -7,6 +7,22 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.3 — `atc-s96.133` (2026-10-13)
+
+The package and both manifests are 0.1.3. The user authorized pushing `main` and an
+agent-plugins pull request. The payload's changes since 0.1.2 (`0ebbac2`):
+- `src/cli.ts`: a closed stdout ends the CLI quietly (`atc-s96.80`);
+- `src/config.ts`: `init --mode dev-team` binds the user's team (`atc-s96.119`), and the
+  `dev-team-engine` lead defaults to claude/claude-opus-5-5/xhigh (`atc-s96.128`);
+- both loops' resolver example (`modes/*/SKILL.md`).
+
+The repository's own dev team developed all three. The other commits since 0.1.2 change
+tests, docs and `AGENTS.md`, none of which the payload carries.
+`CODEX_SETUP_PROBE=/home/wsh/.local/bin/codex node --test tests/packaging.test.ts
+tests/dist.test.ts tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none
+skipped. After the bump, `npm test` at the root ran 1061 tests: 1059 pass, 0 fail, 2
+guarded skips.
+
 ## A direct `node --test` inside Codex's sandbox — `atc-s96.130`, `.131`, `.132` (2026-10-13)
 
 The three beads ran as one task through all ten steps of the `dev-team` loop and merged as

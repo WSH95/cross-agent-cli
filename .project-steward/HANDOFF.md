@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T12:15:09Z
+updated_at: 2026-10-13T12:20:06Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,11 @@ branch: main
 # Handoff
 
 ## Now
+
+**Release 0.1.3 is in progress (`atc-s96.133`, 2026-10-13).** The user authorized pushing
+`main` and publishing, and will merge the agent-plugins pull request and update the plugin.
+The version fields are 0.1.3. Release checks pass 33/33, and `npm test` gives 1059 pass,
+0 fail, 2 guarded skips. Next: push `main`, run the publisher's dry run, then publish.
 
 **A direct `node --test` inside Codex's sandbox (`atc-s96.130`, `.131`, `.132`, closed
 2026-10-13).** One dev-team task merged all three as `5b9919b`.
