@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   checkConfigDocument, CONFIG_PATH, configBytes, DEFAULT_MODE, ignoreEntries, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds,
 } from "./config.ts";
@@ -14,7 +16,7 @@ import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
 import { find, isProcessAlive, isTaskId, isTerminal, projectLock, readOutcome, runnerLogPath, scan, tailLines, taskStatuses } from "./ledger.ts";
 import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
-import { configLockName } from "./locks.ts";
+import { configLockName, LockHeldError } from "./locks.ts";
 import type { Lock } from "./locks.ts";
 import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
@@ -26,7 +28,7 @@ import { defaultBranchFault, propose } from "./setup.ts";
 import type { ProjectRepository, SetupProposal } from "./setup.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
-import { enclosingWorktree, locateRepository, nestedReason, ownGit, verifyWorktree } from "./worktree.ts";
+import { enclosingWorktree, gitEnvironment, locateRepository, nestedReason, ownGit, verifyWorktree } from "./worktree.ts";
 import type { Located, Repository } from "./worktree.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
@@ -38,6 +40,8 @@ import type { Located, Repository } from "./worktree.ts";
 // without a host session; `report` renders the per-task log from the ledger, which is where
 // that log comes from under engine placement. Every verb that writes is the operator's, and
 // is refused inside a task's environment (`taskMarker`).
+
+const exec = promisify(execFile);
 
 /** The exit protocol, one for every verb. */
 export const EXIT = { ok: 0, error: 1, usage: 2, precondition: 3, running: 4, needsOperator: 5, stalled: 6 } as const;
@@ -331,13 +335,36 @@ function worktreeBranchRefusal(root: string, located: Repository): { code: strin
 }
 
 /**
- * The repository `init --propose` looks at and `init --config` writes for, or the coded
- * refusal: a folder with no `.git` is no project of theirs — the skill offers `git init` —
- * though `init --mode` still writes one; a linked worktree is a branch project, on its own
- * branch, as `init` makes it.
+ * The work tree a folder with no `.git` of its own lies inside, as git at that folder names
+ * it, or null where it lies in none: a read, the one discovery makes for a server started
+ * there (`src/project.ts#discoverProject`).
  */
-function projectRepository(root: string, located: Located | null): ProjectRepository | { code: string; reason: string } {
+async function enclosingToplevel(root: string): Promise<string | null> {
+  try {
+    const { stdout } = await exec("git", ["-C", root, "rev-parse", "--show-toplevel"], { encoding: "utf8", env: gitEnvironment() });
+    const top = fs.realpathSync(path.resolve(root, stdout.replace(/\n$/, "")));
+    return top === root ? null : top;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The repository `init --propose` looks at and `init --config` writes for, or the coded
+ * refusal: a folder with no `.git` is no project of theirs — the skill offers `git init` in
+ * one that lies in no repository, and setup at the toplevel for one that lies inside a work
+ * tree, which is what a server started there serves — though `init --mode` still writes
+ * either; a linked worktree is a branch project, on its own branch, as `init` makes it.
+ */
+async function projectRepository(root: string, located: Located | null): Promise<ProjectRepository | { code: string; reason: string }> {
   if (located === null) {
+    const top = await enclosingToplevel(root);
+    if (top !== null) {
+      return {
+        code: "not-the-repository-root",
+        reason: `${root} lies inside the git repository whose work tree is ${top}, not at its root, and a project is a repository's root: set up there instead, with --project ${top}`,
+      };
+    }
     return {
       code: "not-a-git-repository",
       reason: `${root} is not a git repository, and cross-agent needs git for its branches and merges: run git init there, then set up again`,
@@ -448,15 +475,24 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   try {
     lock = await projectLock(root, configLockName(), { waitSeconds: lockWaitSeconds(root), operation: "init --config" });
   } catch (error) {
-    return coded({ code: "config-busy", reason: message(error) });
+    // Busy only where another writer held the lock past the wait; a lock that could not be
+    // prepared at all — the shared exclusions unwritable, no lock directory — says why.
+    if (error instanceof LockHeldError) return coded({ code: "config-busy", reason: message(error) });
+    return coded({ code: "config-lock-failed", reason: `${configLockName()} could not be taken: ${message(error)}` });
   }
+  // What a server started here serves until it reconnects (src/project.ts#discoverProject):
+  // this root, or — at a branch worktree with no config of its own yet — the main checkout
+  // discovery reads it at, so a first setup there moves the server to another root whatever
+  // the mode. The mode is the one the server loaded at start, solo with no config
+  // (`src/config.ts#defaultConfig`), and none where it refused to start.
+  const main = repository.worktree?.main ?? null;
+  let servedRoot = root;
   let served: string | null;
   let result: InitConfigResult;
   try {
-    // The mode the server serves is the one it read at start from the config this replaces,
-    // or solo with none (`src/config.ts#defaultConfig`).
+    if (main !== null && !holdsConfig(root)) servedRoot = main;
     try {
-      served = loadConfig(root).mode;
+      served = loadConfigWithMode(servedRoot).mode.id;
     } catch {
       served = null;
     }
@@ -467,12 +503,17 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   if (result.stale === true) return coded(changed("another write replaced it, or it was edited, while this one waited or wrote"));
   if (!result.wrote) return coded(exists);
   const mode = checked.config.mode;
-  const reconnect = served !== mode;
+  const moves = servedRoot !== root;
+  const reconnect = moves || served !== mode;
   const lines = [result.replaced === true
     ? `cross-agent: replaced ${file} for mode ${mode}; the previous config is ${result.previous}`
     : `cross-agent: wrote ${file} for mode ${mode}`];
   if (result.ignored.length > 0) lines.push(`cross-agent: added ${result.ignored.join(", ")} to ${path.join(root, ".gitignore")}`);
-  if (reconnect) lines.push(`cross-agent: the server serves ${served ?? "no mode it can load"}; reconnect it to serve ${mode}`);
+  if (moves) {
+    lines.push(`cross-agent: a server started here serves the main checkout ${servedRoot}${served === null ? ", whose config it cannot load" : ` as ${served}`}; reconnect it to serve ${root} as ${mode}`);
+  } else if (reconnect) {
+    lines.push(`cross-agent: ${served === null ? "the server cannot start on the config this replaced" : `the server serves ${served}`}; reconnect it to serve ${mode}`);
+  }
   return {
     code: EXIT.ok,
     document: {
@@ -502,7 +543,7 @@ const initVerb: Verb = {
     const target = await initTarget(parsed, context);
     if (initVerb.codes!(parsed)) {
       if ("refusal" in target) return coded(target.refusal);
-      const repository = projectRepository(target.root, target.located);
+      const repository = await projectRepository(target.root, target.located);
       if ("code" in repository) return coded(repository);
       if (parsed.booleans.has("--propose")) {
         const proposal = await propose(target.root, repository, { env: context.env });

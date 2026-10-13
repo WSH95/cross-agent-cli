@@ -2286,8 +2286,17 @@ test("init --propose and --config refuse a folder that is no project, with a cod
   const detached = await linkedProject(t, detachedMain, "feature");
   await git(detached, "checkout", "--detach");
   const misnamed = await linkedProject(t, detachedMain, "feature+one");
+  // A folder inside a repository is no root of one, and git init there would nest a repository in it.
+  const nested = path.join(detachedMain, "packages", "web");
+  fs.mkdirSync(nested, { recursive: true });
+  const branch = await linkedProject(t, detachedMain, "docs");
+  const branchNested = path.join(branch, "guide");
+  fs.mkdirSync(branchNested);
+  const atToplevel = (top: string) => new RegExp(`${literally(top)}[\\s\\S]*--project ${literally(top)}`);
   const cases: Array<[string, string, string, RegExp]> = [
     [plain, plain, "not-a-git-repository", /is not a git repository[\s\S]*git init/],
+    [nested, detachedMain, "not-the-repository-root", atToplevel(detachedMain)],
+    [branchNested, branch, "not-the-repository-root", atToplevel(branch)],
     [task, main, "task-worktree", /is a worktree of the repository/],
     [umbrella.umbrella, umbrella.umbrella, "unsupported", /no work tree/],
     [bareDotGit.bare, bareDotGit.bare, "unsupported", /unsupported/],
@@ -2315,11 +2324,13 @@ test("init --propose and --config refuse a folder that is no project, with a cod
   }
   assert.equal(fs.existsSync(path.join(plain, "absent")), false);
 
-  // init --mode keeps writing a folder with no .git, and answers as it always has.
-  const legacy = await run(["init", "--mode", "solo", "--json"], plain);
-  assert.equal(legacy.code, 0, legacy.stderr);
-  const legacyAnswer = JSON.parse(legacy.stdout) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(legacyAnswer).sort(), ["file", "ignored", "mode", "warning", "wrote"]);
+  // init --mode keeps writing a folder with no .git, in a repository or not, and answers as it always has.
+  for (const folder of [plain, nested]) {
+    const legacy = await run(["init", "--mode", "solo", "--json"], folder);
+    assert.equal(legacy.code, 0, legacy.stderr);
+    const legacyAnswer = JSON.parse(legacy.stdout) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(legacyAnswer).sort(), ["file", "ignored", "mode", "warning", "wrote"], folder);
+  }
   // What the skill offers on that refusal: once the folder is a repository, the look answers.
   await git(plain, "init", "-b", "trunk");
   const answer = await proposeAt(plain, suiteEnv);
@@ -2427,6 +2438,31 @@ test("reconnect follows the served mode", async (t) => {
   assert.deepEqual([binding.code, binding.answer.served, binding.answer.reconnect], [0, "dev-team", false]);
   const modeChange = await configure(root, initDocument("dev-team-engine"), ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))]);
   assert.deepEqual([modeChange.code, modeChange.answer.served, modeChange.answer.mode, modeChange.answer.reconnect], [0, "dev-team", "dev-team-engine", true]);
+  // A config the server refuses to start with is served by nothing, so even a repair in its own mode reconnects.
+  const refusedConfig = '{"mode":"dev-team-engine","roles":{"critic":{"engine":"claude"}}}';
+  fs.writeFileSync(path.join(root, CONFIG_PATH), refusedConfig);
+  const repair = await configure(root, initDocument("dev-team-engine"), ["--replace", "--expect", sha256(refusedConfig)]);
+  assert.deepEqual([repair.code, repair.answer.served, repair.answer.reconnect], [0, null, true]);
+
+  // A branch worktree with no config of its own is served as its main checkout
+  // (src/project.ts#discoverProject): its first setup moves the server to the worktree, in
+  // whatever mode, and what is served until then is the main checkout's mode.
+  const main = await initializedMain(t);
+  const soloBranch = await configure(await linkedProject(t, main, "solo-branch"), initDocument("solo", "solo-branch"));
+  assert.deepEqual([soloBranch.code, soloBranch.answer.served, soloBranch.answer.reconnect], [0, "dev-team", true]);
+  const teamBranch = await configure(await linkedProject(t, main, "team-branch"), initDocument("dev-team", "team-branch"));
+  assert.deepEqual([teamBranch.code, teamBranch.answer.served, teamBranch.answer.reconnect], [0, "dev-team", true]);
+  const unconfigured = await mainCheckout(scratch(t), "N");
+  const fromSolo = await configure(await linkedProject(t, unconfigured, "feature"), initDocument("solo", "feature"));
+  assert.deepEqual([fromSolo.code, fromSolo.answer.served, fromSolo.answer.reconnect], [0, "solo", true]);
+  fs.mkdirSync(path.join(unconfigured, ".cross-agent"));
+  fs.writeFileSync(path.join(unconfigured, CONFIG_PATH), refusedConfig);
+  const fromNothing = await configure(await linkedProject(t, unconfigured, "other"), initDocument("solo", "other"));
+  assert.deepEqual([fromNothing.code, fromNothing.answer.served, fromNothing.answer.reconnect], [0, null, true]);
+  // With no main checkout to read it at, a bare repository's worktree is served as itself, solo.
+  const bareLinked = await layoutRoot(t, "bare-linked");
+  const itself = await configure(bareLinked.root, initDocument("solo", "feature"));
+  assert.deepEqual([itself.code, itself.answer.served, itself.answer.reconnect], [0, "solo", false]);
 });
 
 test("conflicting init options are usage errors, and --help documents them", async (t) => {
@@ -2563,6 +2599,8 @@ test("a first setup in a branch worktree builds on its main checkout's config, t
   assert.equal(excludeOf(commonDir)!.split("\n").includes(".cross-agent/"), false, "nothing has reached the lock yet");
   const write = await configure(linked, copied.document);
   assert.equal(write.code, 0, JSON.stringify(write.answer));
+  // Until now a server here served the main checkout; from now on it serves this worktree.
+  assert.deepEqual([write.answer.served, write.answer.reconnect], ["dev-team", true]);
   const twinMain = await initializedMain(t);
   const twin = await linkedProject(t, twinMain, "feature/one");
   assert.equal((await run(["init"], twin)).code, 0);
@@ -2647,6 +2685,55 @@ test("overlapping --config writers: exactly one replaces, the other gets config-
   assert.deepEqual([refused.code, refused.answer.code], [3, "config-busy"]);
   assert.match(refused.answer.reason as string, /config\.lock is held by another process/);
   assert.deepEqual([file, `${file}.prev`, path.join(root, ".gitignore")].map((each) => fs.readFileSync(each)), kept);
+});
+
+// @anchor initConfigCreateRace
+test("overlapping first --config writers: exactly one creates, the other gets config-exists", async (t) => {
+  const { acquire, configLockName, lockPath } = await import("../src/locks.ts");
+  const root = await mainCheckout(scratch(t), "P");
+  const lockFile = lockPath(root, configLockName());
+  const held = await acquire(lockFile, { operation: "a test holding the config lock", waitSeconds: 0 });
+  t.after(() => held.release());
+  const writers = [initDocument("dev-team"), initDocument("solo")];
+  // Neither finds a config before the lock, and both wait for it beside the holder.
+  const pending = writers.map((document) => configure(root, document));
+  await poll(() => holdersOf(lockFile).length, (count) => count >= 3);
+  await held.release();
+  const settled = await Promise.all(pending);
+  const winner = settled.findIndex((each) => each.code === 0);
+  assert.ok(winner >= 0, JSON.stringify(settled));
+  assert.deepEqual([settled[winner].answer.wrote, settled[winner].answer.replaced], [true, false]);
+  const loser = settled[1 - winner];
+  assert.deepEqual([loser.code, loser.answer.code], [3, "config-exists"]);
+  assert.deepEqual(written(root), writers[winner]);
+});
+
+// @anchor initConfigLockFailed
+test("a config lock that cannot be prepared is config-lock-failed, carrying the error, and never config-busy", async (t) => {
+  // The lock directory is a file, so the lock's own directory cannot be made.
+  const root = await mainCheckout(scratch(t), "P");
+  fs.mkdirSync(path.join(root, ".cross-agent"));
+  fs.writeFileSync(path.join(root, ".cross-agent", "locks"), "");
+  const failed = await configure(root, initDocument("dev-team"));
+  assert.deepEqual([failed.code, failed.answer.code], [3, "config-lock-failed"]);
+  assert.match(failed.answer.reason as string, /EEXIST|ENOTDIR/);
+  assert.equal(fs.existsSync(path.join(root, CONFIG_PATH)), false);
+
+  // The repository's shared exclusions cannot be written, as under a host sandbox that keeps .git read-only.
+  if (process.getuid!() === 0) {
+    t.skip("root writes a directory whatever its mode says, so an unwritable info/ cannot be staged");
+    return;
+  }
+  const readOnly = await mainCheckout(scratch(t), "R");
+  const info = path.join(readOnly, ".git", "info");
+  t.after(() => { try { fs.chmodSync(info, 0o755); } catch { /* gone */ } });
+  fs.chmodSync(info, 0o555);
+  const denied = await configure(readOnly, initDocument("dev-team"));
+  fs.chmodSync(info, 0o755);
+  assert.deepEqual([denied.code, denied.answer.code], [3, "config-lock-failed"]);
+  assert.match(denied.answer.reason as string, /EACCES/);
+  assert.equal(fs.existsSync(path.join(readOnly, CONFIG_PATH)), false);
+  assert.equal(fs.existsSync(path.join(readOnly, ".gitignore")), false);
 });
 
 // @anchor initTaskRefusalCoded

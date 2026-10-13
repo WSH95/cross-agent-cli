@@ -882,6 +882,65 @@ test("the replacement catches an edit by content and by pathname, and the edit i
   assert.equal(readFileSync(prev, "utf8"), matched(), ".prev holds the version the check matched");
 });
 
+// @anchor replaceConfigBeforeLink
+test("the replacement refuses a save renamed in before the link, and a config.json gone before the link or the identity check", (t) => {
+  const root = project(t);
+  const directory = path.join(root, ".cross-agent");
+  const file = path.join(root, config.CONFIG_PATH);
+  const prev = `${file}.prev`;
+  const save = '{ "mode": "solo", "roles": {}, "saved": "by an editor" }\n';
+  const solo = structuredClone(soloDocument) as unknown as config.CrossAgentConfig;
+  const temporaries = () => readdirSync(directory).filter((name) => name.endsWith(".tmp"));
+  /** A fresh config.json and an older .prev, and the hash a replacement of it would name. */
+  const fresh = (): string => {
+    rmSync(directory, { recursive: true, force: true });
+    config.initConfig(root, { document: structuredClone(sectionSixDefaults) as unknown as config.CrossAgentConfig });
+    writeFileSync(prev, "an older previous config\n");
+    return config.configBytes(root)!.sha256;
+  };
+  /** `fs[method]` running `before` once, the first time it is handed `target`, then itself. */
+  const once = <K extends "linkSync" | "lstatSync">(method: K, target: string, before: () => void) => {
+    const original = fs[method] as (...args: unknown[]) => unknown;
+    let ran = false;
+    return t.mock.method(fs, method, ((...args: unknown[]) => {
+      if (!ran && String(args[0]) === target) {
+        ran = true;
+        before();
+      }
+      return original(...args);
+    }) as typeof fs[K]);
+  };
+
+  // A save that renames a new file over config.json before the link: the link takes the new
+  // file, whose bytes are not the ones named, so the check of the linked bytes refuses it.
+  let expect = fresh();
+  let mock = once("linkSync", file, () => {
+    writeFileSync(`${file}.editor`, save);
+    renameSync(`${file}.editor`, file);
+  });
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: false, stale: true, ignored: [] });
+  mock.mock.restore();
+  assert.equal(readFileSync(file, "utf8"), save, "the editor's save stands");
+  assert.deepEqual(temporaries(), []);
+  assert.equal(readFileSync(prev, "utf8"), "an older previous config\n", "the older .prev is untouched");
+
+  // config.json gone before the link: nothing to link, and nothing created in its place.
+  expect = fresh();
+  mock = once("linkSync", file, () => rmSync(file));
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: false, stale: true, ignored: [] });
+  mock.mock.restore();
+  assert.deepEqual(readdirSync(directory), ["config.json.prev"]);
+  assert.equal(readFileSync(prev, "utf8"), "an older previous config\n");
+
+  // config.json gone before the identity check: no file is put in its place, and .prev holds the version matched.
+  expect = fresh();
+  mock = once("lstatSync", file, () => rmSync(file));
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: false, stale: true, ignored: [] });
+  mock.mock.restore();
+  assert.deepEqual(readdirSync(directory), ["config.json.prev"]);
+  assert.equal(readFileSync(prev, "utf8"), `${JSON.stringify(sectionSixDefaults, null, 2)}\n`);
+});
+
 test("a directory the config tests make inside the repository is ignored, so an interrupted run leaves nothing a task commit stages", (t) => {
   // The two tests above need a project under neither /tmp nor TMPDIR, so theirs sit in
   // tests/, and only their own cleanup removes them (atc-s96.129). Neither git command

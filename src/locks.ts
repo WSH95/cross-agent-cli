@@ -22,6 +22,13 @@ export interface AcquireOptions {
   onLost?: () => void;
 }
 
+/**
+ * `acquire`'s refusal when the wait ran out with the lock still another's: the one failure
+ * a caller answers as "busy". Anything else `acquire` throws — a lock directory it cannot
+ * make, a `flock` it cannot start — is a failure to lock, not a holder.
+ */
+export class LockHeldError extends Error {}
+
 export function lockPath(projectRoot: string, name: string): string {
   return path.resolve(projectRoot, ".cross-agent", "locks", name);
 }
@@ -103,7 +110,7 @@ export async function acquire(file: string, options: AcquireOptions): Promise<Lo
       child.stdout.on("data", held);
       child.once("error", reject);
       // An exit before `held` is flock's refusal: it waited and never got the lock.
-      void exit.then(() => reject(new Error(
+      void exit.then(() => reject(new LockHeldError(
         `${options.operation}: lock ${file} is held by another process (waited ${waitSeconds}s)`,
       )));
     });
