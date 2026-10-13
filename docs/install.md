@@ -180,7 +180,7 @@ The helper writes one configured MCP entry, `mcp_servers.cross-agent`, in
 `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), and an owned launcher and
 state in `$CODEX_HOME/cross-agent/`. A persistent OS lock file serializes setup changes.
 There is no project path or MCP `cwd` in that registration. It intentionally shadows
-the plugin's bundled server; keep the plugin installed and enabled for its skill and
+the plugin's bundled server; keep the plugin installed and enabled for its skills and
 updates. Codex's native config API checks the config version when writing, preserving
 unrelated settings and comments instead of replacing the whole file.
 
@@ -235,7 +235,7 @@ was observed with Codex 0.159.3 and remains in its inline manifest on 0.160.0;
 
 Codex installs plugins from marketplaces, and this repository is one:
 `.agents/plugins/marketplace.json` offers `cross-agent` from the repository's own
-root, and `.codex-plugin/plugin.json` gives it the launcher skill and this server.
+root, and `.codex-plugin/plugin.json` gives it the skills and this server.
 Codex installs a plugin by copying the whole marketplace directory into its cache, so
 register a clean export of the checkout's `HEAD`, in a directory of its own, and
 install the plugin from it:

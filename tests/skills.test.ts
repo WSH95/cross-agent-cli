@@ -1288,13 +1288,20 @@ test("the setup skill asks before every write and before its one commit, and eve
   assertInOrder(sectionOf(text, "After a write"),
     ["`file`", "`warning`", "`ignored`", "Commit this .gitignore change now?", "`git add -- .gitignore`", "`" + commit + "`"], "After a write");
   assertInOrder(text, ["Make this folder a git repository now?", "`git init`"], "the skill");
-  // The three it writes with, and the one read that shows what the commit will hold.
+  // The three it writes with, and the two reads that show what the commit will hold.
   const git = new Set(codeSpans(text).filter((span) => /^git(\s|$)/.test(span)));
-  assert.deepEqual([...git].sort(), ["git add -- .gitignore", commit, "git diff HEAD -- .gitignore", "git init"].sort(), "the only git the skill runs");
+  assert.deepEqual([...git].sort(),
+    ["git add -- .gitignore", commit, "git diff HEAD -- .gitignore", "git ls-files -- .gitignore", "git init"].sort(), "the only git the skill runs");
   // A refused write has no `file` to report: only an exit 0 reaches After a write.
   const after = flat(sectionOf(text, "After a write"));
   assert.match(after, /once it exits 0/);
   assert.match(after, /exits otherwise follows `## Refusals` or `## When a step fails`, never this section/);
+  // The skill's own `git init` leaves the user's files untracked, and a team loop's first step
+  // stops on them: their first commit is the user's to ask for, before the connection check's
+  // example request would meet that stop.
+  assertInOrder(after, ["this setup ran `git init` in a folder that already held files", "`dev-team` or `dev-team-engine`",
+    "a team task starts only from committed files", "first commit before the first team task", "if they ask", "`## Connection check`"],
+  "After a write, past the skill's own git init");
   // Each answer that changes a proposal asks what to change, and each Cancel stops without writing.
   assert.match(flat(sectionOf(text, "First setup")), /On \*Change something\*, ask in plain words what to change/);
   assert.match(flat(sectionOf(text, "A config the server refuses")), /\*Change something\* goes as in step 4; \*Cancel\* stops without writing/);
@@ -1314,30 +1321,45 @@ test("before the commit question the setup skill shows everything the commit wil
     assert.match(step, pin, `the commit question's message: ${pin}`);
   }
   assert.doesNotMatch(step, /git add|git commit/, "nothing is staged or committed before the answer");
+  // An empty diff is also a tracked file that already matches the last commit: the index tells
+  // it from an untracked one, and with nothing to commit there is no question.
+  assertInOrder(step, ["prints nothing", "`git ls-files -- .gitignore`", "already matches the last commit"], "an empty diff");
+  assert.match(step, /nothing to commit, so nothing blocks the team/);
 
   // And git answers as the step says, in each state a setup meets.
-  const read = codeSpans(text).filter((span) => /^git diff /.test(span));
-  assert.deepEqual(read, ["git diff HEAD -- .gitignore"]);
-  const [command, ...args] = read[0].split(" ");
+  const reads = [...new Set(codeSpans(text).filter((span) => /^git (diff|ls-files) /.test(span)))].sort();
+  assert.deepEqual(reads, ["git diff HEAD -- .gitignore", "git ls-files -- .gitignore"]);
   const repo = fs.mkdtempSync(path.join(tmpdir(), "setup-gitignore-"));
   t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
-  const reads = () => spawnSync(command, args, { cwd: repo, encoding: "utf8", env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } });
+  const run = (span: string) => {
+    const [command, ...args] = span.split(" ");
+    return spawnSync(command, args, { cwd: repo, encoding: "utf8", env: { ...env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } });
+  };
+  const [diff, listed] = [() => run(reads[0]), () => run(reads[1])];
   const gitignore = path.join(repo, ".gitignore");
   await git(repo, "init", "-q", "-b", "main");
   fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
-  assert.notEqual(reads().status, 0, "no commit yet: the read fails, and the commit holds the whole file");
+  assert.notEqual(diff().status, 0, "no commit yet: the diff fails, and the commit holds the whole file");
   await git(repo, "commit", "-q", "--allow-empty", "-m", "first");
-  const untracked = reads();
-  assert.deepEqual([untracked.status, untracked.stdout], [0, ""], "an untracked .gitignore: the read prints nothing, and the commit holds the whole file");
+  assert.deepEqual([diff().status, diff().stdout, listed().stdout], [0, "", ""],
+    "an untracked .gitignore: both print nothing, and the commit holds the whole file");
   fs.writeFileSync(gitignore, "dist/\nbuild/\n");
   await git(repo, "add", "--", ".gitignore");
   await git(repo, "commit", "-q", "-m", "ignore");
   // The user dropped `build/` before setup, and setup appended its two lines.
   fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
-  const tracked = reads();
+  const tracked = diff();
   assert.equal(tracked.status, 0, tracked.stderr);
   for (const line of [/^-build\/$/m, /^\+\.cross-agent\/$/m, /^\+\.worktrees\/$/m]) assert.match(tracked.stdout, line);
+  // The committed file held setup's lines, the user had deleted them, and setup's append put
+  // them back: the file matches the last commit again.
+  await git(repo, "add", "--", ".gitignore");
+  await git(repo, "commit", "-q", "-m", "setup");
+  fs.writeFileSync(gitignore, "dist/\n");
+  fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
+  assert.deepEqual([diff().status, diff().stdout, listed().stdout], [0, "", ".gitignore\n"],
+    "tracked and unchanged: the diff prints nothing, git ls-files names the file, and nothing is left to commit");
 });
 
 test("a step that needs a proposal checks it is available first, and otherwise shows its reason and follows Refusals", () => {
@@ -1455,7 +1477,7 @@ test("after a first setup or a reconnect the setup skill checks describe_mode an
   assert.match(section, /when `reconnect` is true, or when this setup ran `git init`: give the host's reconnect step/);
   // A server that answers for another project or mode, with no warning, is not connected.
   for (const pin of [/\*\*Another project or mode\*\* answering with no `warning`/, /which `projectRoot` and mode answered[^.]*not verified/,
-    /Under Codex, offer the hand-off below/, /\*\*End\*\*, once connected,/]) {
+    /Under Codex, offer the hand-off below/, /\*Not now\* leaves the connection not verified/, /\*\*End\*\*, once connected,/]) {
     assert.match(section, pin, `a server for another project or mode: ${pin}`);
   }
 });

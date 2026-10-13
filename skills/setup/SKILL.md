@@ -150,17 +150,24 @@ Every write ends here once it exits 0. A write that exits otherwise follows `## 
 
 1. Report `file`, and `previous` for a replacement. Show any `warning`.
 2. When `ignored` is not empty, show everything the commit will hold: in `root`, run
-   `git diff HEAD -- .gitignore`; when it fails because there is no commit yet, or prints
-   nothing because git does not track `.gitignore` yet, the commit holds the whole file,
-   so show that. Mark the `ignored` lines as setup's; if anything else is there, say
-   plainly that the commit holds it too. Then:
+   `git diff HEAD -- .gitignore`. When it fails because there is no commit yet, the commit
+   holds the whole file, so show that. When it prints nothing, run
+   `git ls-files -- .gitignore`: nothing printed means git does not track `.gitignore` yet,
+   so show the whole file; the file's name means it already matches the last commit: say
+   there is nothing to commit, so nothing blocks the team, and go to step 3. Mark the
+   `ignored` lines as setup's; if anything else is there, say plainly that the commit holds
+   it too. Then:
 
    Ask: "Commit this .gitignore change now?" — options: *Yes, commit it* / *No*
 
    On yes, in `root`, run `git add -- .gitignore`, then
    `git commit -m "chore: ignore cross-agent's state" -- .gitignore`. On no, say the team
    cannot start its first task until that change is committed.
-3. Go to `## Connection check` after a first setup, after replacing a refused config, or
+3. When this setup ran `git init` in a folder that already held files, and the mode is
+   `dev-team` or `dev-team-engine`, say plainly that a team task starts only from committed
+   files, so the files already here need a first commit before the first team task, and
+   that you can make it for them if they ask.
+4. Go to `## Connection check` after a first setup, after replacing a refused config, or
    when `reconnect` is true. Otherwise say the change takes effect at once.
 
 ## When a step fails
@@ -242,6 +249,7 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
 
   Ask: "Connect cross-agent to Codex now?" — options: *Yes* / *Not now*
 
-  On yes, follow `<skill-dir>/../cross-agent/references/codex-setup.md`.
+  On yes, follow `<skill-dir>/../cross-agent/references/codex-setup.md`. *Not now* leaves
+  the connection not verified.
 - **End**, once connected, with one example request: *"Use the cross-agent dev team to …"*,
   or *"Use cross-agent to have Codex review …"* for `solo`.
