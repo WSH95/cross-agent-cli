@@ -3298,9 +3298,17 @@ row, everything else against every mode's), the bare ones (`delegate`, `wait`,
 (`tests/skills.test.ts`, `src/server.ts#projectTools`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
-loads: read the config, call `describe_mode` **first** to get the active
+loads to run a team: read the config, call `describe_mode` **first** to get the active
 mode's loop and roles, then start, watch, answer, cancel, reconcile, report.
 It is short and identical on all three hosts.
+
+`skills/setup/SKILL.md` is the plugin's second skill, which sets a project up and changes
+its setup. It runs the plugin's own CLI by its path from the skill's directory,
+`<skill-dir>/../../bin/cross-agent`: `init --propose` to look and propose, then
+`init --config -` with the document the user confirmed, and `--replace --expect <sha256>`
+for a change. It asks through each host's question tool, gives each refusal code its next step
+(`tests/skills.test.ts#setupRefusalCodes`), and after a first setup or a reconnect checks the
+connection with `describe_mode` and `list_roles`.
 
 **After a `worktree: true` task settles, the launcher applies
 `project.mergePolicy` — nobody merges by hand under `auto`.** First it commits
@@ -3799,8 +3807,8 @@ The registration has no `cwd` or static environment binding. Its stable launcher
 `CODEX_HOME/cross-agent/` asks `codex plugin list --json` for the chosen installed,
 enabled plugin on each start, validates its identity and manifest, and execs that
 copy's server without changing cwd, markers, stdio or ancestry. The configured server
-intentionally shadows the bundled mount; the installed plugin still supplies the one
-skill. Marketplace catalog refreshes alone do not move the server, installed updates
+intentionally shadows the bundled mount; the installed plugin still supplies the
+skills. Marketplace catalog refreshes alone do not move the server, installed updates
 do, and disabling or removing the plugin refuses new connections. Existing connections
 need a restart. Default marker forwarding, approval mode and timeouts match the bundled
 mount; explicit policy remains the user's (`tests/codex-setup.test.ts#codexSetupLifecycle`).
@@ -3951,7 +3959,8 @@ handler passes:
   outranks the working directory, and would serve that project from the worktree — and
   `init` prints the binding to set up by hand (`tests/cli.test.ts#initBoundGrokAttachNotCopied`).
 
-  `--propose` and `--config -` are the setup skill's two calls (setup spec, section 2),
+  `--propose` and `--config -` are the setup skill's two calls (`skills/setup/SKILL.md`;
+  setup spec, section 2),
   each exclusive of `--mode` and `--from`, and every combination the command line cannot
   read is a 2. Their refusals are a 3 whose document is `{ok: false, code, reason}`, with
   the code the skill recognises: `no-such-directory`; `not-a-git-repository` for a folder

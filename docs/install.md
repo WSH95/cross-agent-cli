@@ -109,6 +109,12 @@ whose mode places its lead in an engine, `list_asks` and `answer` too. Fewer
 means the server resolved a row below the operator's, and it says which on its
 own stderr the first time a request asks it to resolve one.
 
+To set a project up for a team, open a session in it and run `/cross-agent:setup`, or ask
+it to set up cross-agent. The setup skill proposes a team from the engines you have
+installed, writes `.cross-agent/config.json` and two `.gitignore` lines only once you
+confirm, offers to commit the `.gitignore` change, and tells you when to reconnect (`/mcp`,
+choose cross-agent, Reconnect). Ask it again to change the team later.
+
 To remove it, `/plugin uninstall cross-agent@agent-plugins`. That leaves the agent-plugins
 marketplace registered for its other plugins; remove the marketplace too only if you use
 none of them.
@@ -162,10 +168,10 @@ home that runs the chat. Cross-agent requires Linux; attaching a skill does not 
 its `/proc` process guards run on native macOS, Windows, or cloud ChatGPT.
 
 Each chat's MCP process starts in that chat's project directory. A Git repository
-without `.cross-agent/config.json` uses `solo` defaults. For a team, ask the skill to
-run the bundled CLI's `init --mode dev-team` or `init --mode dev-team-engine` in the
-project, then reconnect. The skill resolves the CLI relative to its own installed
-location. Worktrees keep the ordinary project rules: an uninitialized worktree belongs
+without `.cross-agent/config.json` uses `solo` defaults. For a team, type `$` and pick
+the setup skill, or ask Codex to set up cross-agent: it proposes a team, writes the config
+once you confirm, and tells you when to reconnect. The skill resolves the CLI relative to
+its own installed location. Worktrees keep the ordinary project rules: an uninitialized worktree belongs
 to its main project; running `init` in a branch worktree makes it a separate project.
 
 ### What setup changes
@@ -312,7 +318,9 @@ as Codex reads it, and `codex mcp remove cross-agent` with `rm -r
 the marketplace setup above: do not combine the two configurations. Both use a
 `[mcp_servers.cross-agent]` table, which shadows the plugin's bundled server, budget
 and all. A copied standalone skill has no installed plugin for its Codex setup helper
-to resolve; keep using this checkout recipe or install through a marketplace.
+to resolve; keep using this checkout recipe or install through a marketplace. The setup
+skill needs the plugin's `bin/` beside its `skills/`, so this route sets a project up
+with the checkout's `bin/cross-agent init`.
 
 ## Install it in Grok
 
@@ -333,7 +341,6 @@ session on the machine, so the attach lives in the project:
 
 ```
 cd ~/code/my-project
-cross-agent init --mode dev-team
 printf '\n.grok/\n' >> .gitignore
 git add .gitignore && git commit -m 'Ignore cross-agent and Grok state' -- .gitignore
 # If .grok/config.toml already has a [plugins] or [mcp] table, merge by hand: see below.
@@ -348,11 +355,14 @@ max_output_bytes = 100000
 EOF
 ```
 
-`init` comes first because the server finds its project from where it runs: Grok starts
-the plugin's server in the session's own working directory, and the server serves the
-project whose `.cross-agent/config.json` it finds there or above it. `cross-agent` is on
-`PATH` only where you linked it; elsewhere the command is
-`~/src/cross-agent-cli/bin/cross-agent init --mode dev-team`.
+After the attach, open Grok in the trusted project and run `/setup` (or
+`/cross-agent:setup`, or ask it to set up cross-agent): it proposes a team and writes
+`.cross-agent/config.json` once you confirm. Until then the server serves the repository
+as `solo`: Grok starts the plugin's server in the session's own working directory, and the
+server serves the project whose `.cross-agent/config.json` it finds there or above it.
+From a terminal, `cross-agent init --mode dev-team` writes the mode's defaults instead —
+`~/src/cross-agent-cli/bin/cross-agent init --mode dev-team` where `cross-agent` is not on
+your `PATH`.
 `.grok/` goes into `.gitignore` beside `init`'s own entries because its file names your
 checkout's path, and because a committed `.grok/config.toml` would reach every task
 worktree: Grok takes a linked worktree as a project of its own, so it would load the

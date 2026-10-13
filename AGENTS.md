@@ -121,12 +121,15 @@ Shipped:
   `tests/fixtures/untyped-stdout.mjs` and the test file
   `tests/fixtures/child-check-probe.mjs`, and pins that every test file opens
   with it. `tests/lost-output.mjs` holds the text both print.
-- `skills/cross-agent/SKILL.md`: the launcher skill, the one skill a host
+- `skills/cross-agent/SKILL.md`: the launcher skill, one of the two skills a host
   discovers. It carries what every mode shares — the roster, the brief, the
   watch budget, the report — what every host-placed mode shares — the merge
   policy a `worktree: true` task settles under, the `review` and `critique`
   verbs, the reconciliation pass, each naming `host` placement — and the
   engine-placement section a host follows while a lead runs the loop.
+- `skills/setup/SKILL.md`: the setup skill, which sets a project up and changes
+  its setup through the plugin's own CLI, `init --propose` and then `init --config -`
+  once the user confirms, with each host's way of asking and reconnecting.
 - `modes/{dev-team,dev-team-engine,solo}/{mode.json, SKILL.md, roles/*.md}`:
   the three built-in modes. `SKILL.md` is that mode's loop, served by
   `describe_mode` and never copied into a host's skill directory;

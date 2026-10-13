@@ -7,6 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runCli } from "../src/cli.ts";
 import { hostConfigPaths } from "../src/gitmutate.ts";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
 import { projectTools } from "../src/server.ts";
@@ -894,15 +895,15 @@ test("the roster's first line is projectRoot, judged against the project the use
   // but only where the project served is not the worktree the host is in: a bare
   // repository's worktree with no config discovers itself.
   assert.match(before, /\*\*[Pp]roceed\*\*[^.]*uninitialized worktree/);
-  assert.match(before, /`projectRoot` is not the nearest directory at or above the working directory that holds a `\.git`, say so on the roster's first line: served by the main project at <projectRoot>; run `cross-agent init` here for a project of its own/);
+  assert.match(before, /`projectRoot` is not the nearest directory at or above the working directory that holds a `\.git`, say so on the roster's first line: served by the main project at <projectRoot>; ask for setup here for a project of its own/);
   // A root the user named or confirmed in this session proceeds as asked, wherever the host
   // sits; a binding the environment alone holds confirms nothing and beside another
   // initialized project it is the stale case that stops.
   assert.match(before, /\*\*[Pp]roceed as asked\*\*[^.]*named or confirmed `projectRoot` in this session[^.]*`--project`[^.]*`CROSS_AGENT_PROJECT`[^.]*wherever/);
   assert.match(before, /config\.json` — and the user has not named or confirmed `projectRoot` in this session, or when the user named a project and `projectRoot` is another/);
   assert.match(before, /`CROSS_AGENT_PROJECT` found only in the environment[^.]*confirms nothing/);
-  // Inside a task's worktree the line serves its root, and `init` there would exit 3.
-  assert.match(before, /[Ll]eave the `init` advice out when the working directory lies under `projectRoot`'s `git\.worktreeDir`/);
+  // Inside a task's worktree the line serves its root, and setup there refuses (`task-worktree`).
+  assert.match(before, /[Ll]eave the setup advice out when the working directory lies under `projectRoot`'s `git\.worktreeDir`/);
   // Any start the cases above leave open is confirmed before anything is dispatched.
   assert.match(before, /\*\*[Oo]therwise\*\*[^*]*show `projectRoot` and ask the user to confirm it before you dispatch anything/);
 });
@@ -1078,4 +1079,341 @@ test("the launcher spells a seat, has a team loop's resolver bound first, and sa
   }
   // None of it orders a loop step outside `host` placement.
   assert.deepEqual(unconditionedSteps(engineSection().rest), []);
+});
+
+// The setup skill (`skills/setup/SKILL.md`, setup spec section 1): the second skill a host
+// discovers, which sets a project up and later changes its setup by running the plugin's own
+// CLI, `init --propose` and then `init --config -` once the user confirms. What a machine can
+// check: the name a host matches, the CLI it runs and the options it passes, that it asks
+// before every write and never has the user type a command, that no option carries what its
+// message does not show, and that every answer the CLI gives has a next step.
+
+const setupDir = path.join(repoRoot, "skills", "setup");
+const setupFile = path.join(setupDir, "SKILL.md");
+/** The plugin's own CLI, as the setup skill spells it: relative to its own directory, run directly. */
+const SETUP_CLI = '"<skill-dir>/../../bin/cross-agent"';
+
+/** The setup skill's text, without its frontmatter. */
+function setupSkill(): string {
+  return fs.readFileSync(setupFile, "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
+}
+
+/** The code a document spells: each fenced block's body, then each inline span outside them, as one line each. */
+function codeSpans(text: string): string[] {
+  const blocks: string[] = [];
+  const rest = text.replace(/^[ \t]*```[^\n]*\n([\s\S]*?)\n[ \t]*```[ \t]*$/gm, (_fence, body: string) => {
+    blocks.push(body);
+    return "";
+  });
+  return [...blocks, ...[...rest.matchAll(/`([^`]+)`/g)].map(([, span]) => flat(span))];
+}
+
+/** One sentence per entry, read across the line wraps. */
+function sentences(text: string): string[] {
+  return flat(text).split(/(?<=[.!?])\s+/);
+}
+
+// The skill's text tells an agent what to do; these name a user who has to type a command.
+const USER_TYPES = [
+  /\b(?:ask|tell|have|let|get)\s+(?:the user|them)\s+to\s+(?:run|type|enter|paste|execute)\b/i,
+  /\bthe user (?:runs|types|enters|pastes|should run|must run|needs to run)\b/i,
+  /\b(?:in|from|open) (?:a|your|the) terminal\b/i,
+];
+
+/** The sentences of `text` that have the user type a command. */
+function userTypes(text: string): string[] {
+  return sentences(text).filter((sentence) => USER_TYPES.some((pattern) => pattern.test(sentence)));
+}
+
+/** One question the skill asks: its words, its options, and the text the options are read against. */
+interface Question { question: string; labels: string[]; unit: string }
+
+/**
+ * Every `Ask:` line of the skill outside `## Asking`, which states their form. Its unit is the
+ * text from the nearest heading or numbered step at or above it to the `Ask:` itself, so a
+ * blank line inside a step does not cut it, and the `Ask:` line's own words never count.
+ */
+function questions(text: string): Question[] {
+  const lines = text.replace(sectionOf(text, "Asking"), "").split("\n");
+  const found: Question[] = [];
+  for (const [index, line] of lines.entries()) {
+    const ask = /Ask: "([^"]+)" — options: (.*)$/.exec(line);
+    if (ask === null) continue;
+    let start = index;
+    while (start > 0 && !/^#{1,6} |^\s*\d+\. /.test(lines[start])) start--;
+    found.push({
+      question: ask[1],
+      labels: [...ask[2].matchAll(/\*([^*]+)\*/g)].map(([, label]) => label),
+      unit: [...lines.slice(start, index), line.slice(0, ask.index)].join("\n"),
+    });
+  }
+  return found;
+}
+
+// An answer that carries nothing to read: a label the message need not show.
+const CONTENT_FREE = new Set(["Yes", "No", "Not now", "Cancel", "Looks right", "Change something", "Change something else",
+  "Write it", "Replace it", "Yes, commit it"]);
+
+/** Each label of `asked` that names a word of three letters or more its unit does not show, with those words. */
+function unshownLabels(asked: Question[]): string[] {
+  const unshown: string[] = [];
+  for (const { question, labels, unit } of asked) {
+    for (const label of labels) {
+      if (CONTENT_FREE.has(label)) continue;
+      const words = label.toLowerCase().replace(/[*`(),]/g, " ").split(/\s+/).filter((word) => word.length >= 3);
+      const missing = words.filter((word) =>
+        !new RegExp(`(?<![a-z0-9-])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9-])`, "i").test(unit));
+      if (missing.length > 0) unshown.push(`"${question}" offers "${label}", and its message never shows ${missing.join(", ")}`);
+    }
+  }
+  return unshown;
+}
+
+/** Each code in `codes` that `section` does not name in backticks. */
+function unnamedCodes(section: string, codes: Iterable<string>): string[] {
+  return [...codes].filter((code) => !section.includes("`" + code + "`"));
+}
+
+/** Every refusal code `src/cli.ts` answers with, single words included. */
+function cliRefusalCodes(): Set<string> {
+  const source = fs.readFileSync(path.join(repoRoot, "src", "cli.ts"), "utf8");
+  return new Set([...source.matchAll(/code: "([a-z]+(?:-[a-z]+)*)"/g)].map(([, code]) => code));
+}
+
+test("the setup skill's frontmatter names it setup, user-invocable, and its description carries the four triggers", () => {
+  const source = fs.readFileSync(setupFile, "utf8");
+  const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(source);
+  assert.ok(frontmatter !== null, "a host reads the skill through its frontmatter");
+  const fields = new Map(
+    frontmatter[1].split("\n").filter((line) => /^\S/.test(line))
+      .map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim()] as [string, string]),
+  );
+  assert.equal(fields.get("name"), "setup");
+  assert.equal(fields.get("name"), path.basename(setupDir), "a host matches the skill by the name its directory carries");
+  assert.equal(fields.get("user-invocable"), "true", "the user starts it by name");
+  const description = fields.get("description") ?? "";
+  for (const trigger of ["set up cross-agent", "configure the team", "change a role's model or engine", "change the test command"]) {
+    assert.ok(description.includes(trigger), `the description names "${trigger}", or a host never loads the skill for it`);
+  }
+  assert.equal(fields.has("allowed-tools"), false, "the skill names no tool list");
+});
+
+test("the setup skill runs the plugin's own CLI from its directory, with only options init takes", async () => {
+  const text = setupSkill();
+  // Every spelling of the CLI is the plugin's own launcher, relative to this skill, run directly:
+  // `bin/cross-agent` is a shell script, which `node` cannot run.
+  const spelled = [...text.matchAll(/bin\/cross-agent/g)].length;
+  const uses = [...text.matchAll(/"<skill-dir>\/\.\.\/\.\.\/bin\/cross-agent"([^`\n]*)/g)];
+  assert.ok(uses.length >= 3, "the skill looks, writes and replaces through the CLI");
+  assert.equal(uses.length, spelled, "every spelling of the CLI is the plugin's own, relative to the skill");
+  for (const [use, after] of uses) {
+    assert.ok(after === "" || after.startsWith(" init "), `the skill runs a verb other than init: ${use}`);
+  }
+  assert.doesNotMatch(text, /\bnode\s+"<skill-dir>/, "the launcher is run directly, never through node");
+  assert.doesNotMatch(text, /`cross-agent [a-z]/, "no bare cross-agent verb, which only a PATH the user set up would find");
+  const launcher = path.resolve(setupDir, "../../bin/cross-agent");
+  assert.equal(launcher, path.join(repoRoot, "bin", "cross-agent"), "the path resolves to this plugin's launcher");
+  assert.notEqual(fs.statSync(launcher).mode & 0o111, 0, `${launcher} is not executable`);
+
+  // Every option it passes is one init's own usage names.
+  let printed = "";
+  const code = await runCli(["help", "--json"], repoRoot, { out: (chunk) => { printed += chunk; }, err: () => {} });
+  assert.equal(code, 0);
+  const usage = (JSON.parse(printed) as { verbs: Array<{ usage: string }> }).verbs.find((verb) => verb.usage.startsWith("cross-agent init "));
+  assert.ok(usage !== undefined, "the CLI's help names init");
+  const options = new Set([...usage.usage.matchAll(/--[a-z][a-z-]*/g)].map(([flag]) => flag).concat(["--json", "--project"]));
+  for (const span of codeSpans(text)) {
+    for (const [flag] of span.matchAll(/(?<![\w-])--[a-z][a-z-]*/g)) {
+      assert.ok(options.has(flag), `the skill passes ${flag}, which init does not take: ${span}`);
+    }
+  }
+  for (const call of [`${SETUP_CLI} init --propose --json`, `${SETUP_CLI} init --config - --json`, "--replace --expect"]) {
+    assert.ok(text.includes(call), `the skill runs ${call}`);
+  }
+  assert.doesNotMatch(text, /--mode\b|--from\b/, "the skill writes the document the user confirmed, never a mode's defaults");
+});
+
+test("the setup skill names each host's way to start it, its question tool, its reconnect step and its sandbox approval", () => {
+  const rows = sectionOf(setupSkill(), "Hosts").split("\n").filter((line) => line.startsWith("|"))
+    .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()));
+  assert.deepEqual(rows[0].slice(1), ["Claude Code", "Codex", "Grok"], "one column per host");
+  const row = (name: string): string[] => {
+    const found = rows.find((cells) => cells[0].startsWith(name));
+    assert.ok(found !== undefined, `the hosts table has a ${name} row`);
+    assert.equal(found.length, 4, `${name}: one cell per host`);
+    for (const cell of found.slice(1)) assert.notEqual(cell, "", `${name}: every host has its own`);
+    return found.slice(1);
+  };
+  const [claudeStart, codexStart, grokStart] = row("Start");
+  assert.match(claudeStart, /`\/cross-agent:setup`/);
+  assert.match(codexStart, /`\$`/);
+  assert.match(grokStart, /`\/setup`/);
+  const [claudeAsk, codexAsk, grokAsk] = row("Ask");
+  assert.match(claudeAsk, /`AskUserQuestion`/);
+  assert.match(codexAsk, /numbered choices/);
+  assert.match(grokAsk, /`ask_user_question`/);
+  const [claudeReconnect, codexReconnect, grokReconnect] = row("Reconnect");
+  assert.match(claudeReconnect, /`\/mcp`[^|]*Reconnect/);
+  assert.match(codexReconnect, /restart MCP servers[^|]*new chat/);
+  assert.match(grokReconnect, /new session/);
+  const [claudeApproval, codexApproval, grokApproval] = row("Approval");
+  assert.match(claudeApproval, /sandbox/);
+  assert.match(codexApproval, /escalated/);
+  assert.match(grokApproval, /approval/);
+});
+
+test("the setup skill never tells the user to type a command, and the guard catches one that does", () => {
+  const text = setupSkill();
+  assert.deepEqual(userTypes(text), [], "sentences that have the user type a command");
+  const base = userTypes(text).length;
+  for (const mutation of ["Ask the user to run `git init`.", "Then the user types the command in a terminal."]) {
+    assert.equal(userTypes(`${text}\n\n${mutation}\n`).length, base + 1, `the guard misses: ${mutation}`);
+  }
+  assert.match(flat(text), /You run every command/, "the skill says it runs every command itself");
+});
+
+test("the setup skill asks before every write and before its one commit, and every write ends in the same After a write", () => {
+  const text = setupSkill();
+  assertInOrder(sectionOf(text, "First setup"), ["*Looks right*", "--config -"], "First setup");
+  assertInOrder(sectionOf(text, "Later changes"), ["*Write it*", "--replace --expect"], "Later changes");
+  assertInOrder(sectionOf(text, "A config the server refuses"), ["*Replace it*", "--replace --expect"], "A config the server refuses");
+  for (const heading of ["First setup", "Later changes", "A config the server refuses"]) {
+    assert.ok(sectionOf(text, heading).includes("`## After a write`"), `${heading} ends in ## After a write`);
+  }
+  const commit = `git commit -m "chore: ignore cross-agent's state" -- .gitignore`;
+  assertInOrder(sectionOf(text, "After a write"),
+    ["`file`", "`warning`", "`ignored`", "Commit this .gitignore change now?", "`git add -- .gitignore`", "`" + commit + "`"], "After a write");
+  assertInOrder(text, ["Make this folder a git repository now?", "`git init`"], "the skill");
+  const git = new Set(codeSpans(text).filter((span) => /^git(\s|$)/.test(span)));
+  assert.deepEqual([...git].sort(), ["git add -- .gitignore", commit, "git init"].sort(), "the only git the skill runs");
+});
+
+test("the setup skill's options carry only what their message shows", () => {
+  const text = setupSkill();
+  const asked = questions(text);
+  assert.equal(asked.length, 7, `the skill's questions: ${asked.map((each) => each.question).join(" | ")}`);
+  for (const { question, labels } of asked) {
+    assert.ok(labels.length >= 2 && labels.length <= 4, `"${question}" offers ${labels.length} options`);
+    for (const label of labels) {
+      assert.ok(label.length <= 40, `"${question}": "${label}" is longer than a host shows`);
+      assert.doesNotMatch(label, /[`|]/, `"${question}": "${label}" carries code or a table`);
+    }
+  }
+  assert.deepEqual(unshownLabels(asked), []);
+  // An option naming what nobody showed, and a mode whose meaning was cut from its step.
+  const commit = "*Yes, commit it* / *No*";
+  assert.ok(text.includes(commit), "the commit question's options");
+  assert.match(unshownLabels(questions(text.replace(commit, "*Yes, commit it* / *Use Grok at maximum effort*"))).join("\n"),
+    /Use Grok at maximum effort/);
+  const meaning = text.split("\n").filter((line) => line.includes("**Background team**"));
+  assert.equal(meaning.length, 1, "the Background team's meaning is one line of step 3");
+  assert.match(unshownLabels(questions(text.replace(`${meaning[0]}\n`, ""))).join("\n"), /Background team \(dev-team-engine\)/);
+  const asking = flat(sectionOf(text, "Asking"));
+  assert.match(asking, /in the message/);
+  assert.match(asking, /never a preview, a table or a config/);
+});
+
+test("the launcher and the Codex setup guide send setting up or changing a team to the setup skill, never to init", () => {
+  const section = flat(sectionOf(launcher(), "Setting up a team"));
+  assert.match(section, /`<skill-dir>\/\.\.\/setup\/SKILL\.md`/);
+  assert.equal(path.resolve(launcherDir, "../setup/SKILL.md"), setupFile, "the path is the setup skill beside the launcher");
+  assert.match(section, /no `\.cross-agent\/config\.json`/, "a project with no config");
+  assert.match(section, /change the team/, "and a change to one");
+  assert.doesNotMatch(launcher(), /`cross-agent init/, "the launcher tells nobody to run init");
+  const guide = flat(fs.readFileSync(path.join(launcherDir, "references", "codex-setup.md"), "utf8"));
+  assert.match(guide, /setup skill/);
+  assert.doesNotMatch(guide, /init --mode/);
+  assert.match(guide, /Resolve `<skill-dir>` to the cross-agent skill's directory/);
+});
+
+// @anchor setupRefusalCodes
+test("the setup skill names every refusal code init's setup calls answer with", () => {
+  const codes = cliRefusalCodes();
+  assert.ok(codes.has("unsupported"), "a code of one word is read too");
+  assert.ok(codes.size >= 13, `only ${codes.size} codes read from src/cli.ts`);
+  const refusals = sectionOf(setupSkill(), "Refusals");
+  assert.deepEqual(unnamedCodes(refusals, codes), [], "codes the skill has no next step for");
+  assert.deepEqual(unnamedCodes(refusals.replaceAll("`unsupported`", "unsupported"), codes), ["unsupported"]);
+});
+
+test("the setup skill says what to do with each finding that blocks or changes a proposal", () => {
+  const text = flat(setupSkill());
+  assert.match(text, /`existing\.tracked`/);
+  assert.match(text, /`trackedReason`/);
+  const refusals = flat(sectionOf(setupSkill(), "Refusals"));
+  assert.match(refusals, /No engine found/);
+  for (const link of ["https://claude.com/claude-code", "https://github.com/openai/codex", "https://x.ai/cli"]) {
+    assert.ok(refusals.includes(link), `where to get an engine: ${link}`);
+  }
+  assert.match(refusals, /Every proposal unavailable/);
+  for (const rule of [/starts with a letter or digit/, /no `\.\.`/, /does not end in `\/` or `\.lock`/, /`task\/\*`/]) {
+    assert.match(refusals, rule, `the branch rule: ${rule}`);
+  }
+  assert.match(text, /`notes` verbatim/);
+  assert.match(text, /drops the <From> seat/);
+  assert.match(text, /adds a <To> seat/);
+  assert.match(text, /[Nn]ever show a substitution's seat number/);
+  assert.match(text, /`copiedFrom`/);
+});
+
+test("the setup skill gives each built-in mode and each of its roles a one-line meaning", () => {
+  const text = setupSkill();
+  const step = questions(text).find((each) => each.question === "How should cross-agent work here?");
+  assert.ok(step !== undefined && sectionOf(text, "First setup").includes(step.unit), "First setup asks for the mode");
+  const modes = fs.readdirSync(builtInModesDir()).filter((name) => fs.existsSync(path.join(builtInModesDir(), name, "mode.json")));
+  assert.deepEqual(modes.sort(), ["dev-team", "dev-team-engine", "solo"]);
+  const roles = sectionOf(text, "Roles");
+  for (const mode of modes) {
+    assert.ok(step.unit.includes("`" + mode + "`"), `the mode step says what ${mode} means before it asks`);
+    for (const key of [...loadMode(builtInModesDir(), mode).roles.map((role) => role.key), CONSULT_ROLE]) {
+      assert.ok(roles.includes("`" + key + "`"), `${mode}'s ${key} has no line in ## Roles`);
+    }
+  }
+});
+
+test("after a first setup or a reconnect the setup skill checks describe_mode and list_roles, refuses drift, ends with an example, and under Codex hands off to the connection setup", () => {
+  const section = flat(sectionOf(setupSkill(), "Connection check"));
+  assert.match(section, /first setup, whatever `reconnect` says/);
+  for (const pin of [/`describe_mode`/, /`list_roles`/, /without error/, /`projectRoot` is `root`/, /the mode is the one written/,
+    /no `warning`/, /`warning` means[^.]*old mode: give the reconnect step/, /not yet verified/, /`search_tool`/,
+    /"Use the cross-agent dev team to/]) {
+    assert.match(section, pin, `the connection check: ${pin}`);
+  }
+  assert.ok(section.includes("`<skill-dir>/../cross-agent/references/codex-setup.md`"), "the Codex connection setup, beside this skill");
+  assert.ok(fs.statSync(path.resolve(setupDir, "../cross-agent/references/codex-setup.md")).isFile());
+});
+
+test("a change keeps what the user did not ask to change, and a mode change raises limits.maxDepth to the new mode's need, shown before → after", () => {
+  const section = flat(sectionOf(setupSkill(), "Applying a change"));
+  for (const pin of [/[Kk]eep the current `project`, `limits`, `review`, `billing` and `engines`/, /`limits\.maxDepth`/,
+    /\(1 when the config sets none\)/, /raise it to the proposal's value/, /before → after/, /[Nn]ever lower `maxDepth`/,
+    /takes the model and effort another role on that engine has/, /"sandbox": "workspace"/, /`lead` is never Grok/]) {
+    assert.match(section, pin, `applying a change: ${pin}`);
+  }
+});
+
+test("a config the server refuses gets a replacement proposal written with its own hash, apart from a valid config's unbound role", () => {
+  const refused = flat(sectionOf(setupSkill(), "A config the server refuses"));
+  for (const pin of [/`fault`/, /`existing\.config` is null/, /replacement/, /`[^`]*--replace --expect <existing\.sha256>`/]) {
+    assert.match(refused, pin, `a refused config: ${pin}`);
+  }
+  const later = flat(sectionOf(setupSkill(), "Later changes"));
+  assert.match(later, /unbound/);
+  assert.match(later, /[Oo]ffer the proposal's binding for it/);
+});
+
+test("a permission failure may be the sandbox, gets one approved retry of that command alone, and every stop says the reason, the command and what is done", () => {
+  const section = flat(sectionOf(setupSkill(), "When a step fails"));
+  for (const word of ["`EROFS`", "`EACCES`", "`EPERM`", '"Read-only file system"', '"Permission denied"']) {
+    assert.ok(section.includes(word), `a permission failure: ${word}`);
+  }
+  assert.match(section, /may be the host's sandbox/);
+  assert.doesNotMatch(section, /is the host's sandbox/, "a permission error does not prove the sandbox caused it");
+  for (const pin of [/only the failed command once more, with the host's approval/, /That one retry is all/,
+    /Stop if it fails too, if the host offers no approval, or if the user declines/, /later command that writes `\.git` needs the same approval/,
+    /stop, no retry/, /lock/, /hook/, /[Ee]very stop[^.]*reason[^.]*failed command[^.]*done/,
+    /config is written and `\.gitignore` is changed but not committed/]) {
+    assert.match(section, pin, `a failed step: ${pin}`);
+  }
+  assert.doesNotMatch(flat(setupSkill()), /nothing was written/i, "a refused write may still have touched git's info/exclude");
 });

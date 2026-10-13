@@ -5,8 +5,9 @@ and the Codex CLI installed. Desktop Codex uses the same local MCP configuration
 the CLI on that host. A cloud chat or a different host needs its own installation;
 native macOS and Windows hosts cannot run cross-agent's Linux process guards.
 
-Resolve `<skill-dir>` to the directory of the `SKILL.md` you are reading. Run from
-the user's project, not the plugin's cache directory:
+Resolve `<skill-dir>` to the cross-agent skill's directory, the one holding this file's
+`references/`, also when the setup skill sent you here. Run from the user's project, not
+the plugin's cache directory:
 
 ```
 node "<skill-dir>/scripts/codex-setup.mjs" install
@@ -27,10 +28,10 @@ After a successful install, restart Codex's MCP servers using the host's restart
 control, or open a new session. If no restart control is available to you, report
 this remaining step; do not claim the current chat has tools yet. Then call
 `describe_mode`, verify `projectRoot` against the user's project, and call `list_roles`.
-A Git repository without a config runs `solo` on defaults. For a team, run the
-bundled CLI `"<skill-dir>/../../bin/cross-agent" init --mode dev-team` (or
-`dev-team-engine`) in the project, then reconnect because the mode selects tools at
-server startup. Do not initialize `solo` merely to make Codex attach.
+A Git repository without a config runs `solo` on defaults. For a team, or to change one,
+follow the setup skill beside this one (`<skill-dir>/../setup/SKILL.md`): it proposes a
+team, writes the config once the user confirms, and says when to reconnect, because the
+mode selects tools at server startup. Do not initialize `solo` merely to make Codex attach.
 
 For diagnosis, without changing setup:
 

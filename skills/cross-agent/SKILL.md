@@ -23,6 +23,15 @@ the marketplace plugin responsible for updates and skill discovery.
 This route is for a requested host-configuration change or diagnosis. An ordinary
 delegation with missing tools does not authorize installing or repairing the connection.
 
+## Setting up a team
+
+When the user wants a team in a project with no `.cross-agent/config.json`, asks to set up
+cross-agent or a team, or asks to change the team — the mode, a role's engine, model or
+effort, a seat, the test or setup command, or the merge policy — use the `setup` skill
+beside this one (`<skill-dir>/../setup/SKILL.md` from this skill's directory,
+`/cross-agent:setup` in Claude Code). It proposes, writes only once the user confirms, and
+says when to reconnect. Do not edit the config for the user.
+
 ## Before delegating
 
 Call `describe_mode`. It answers with the active mode — its `lead` among the
@@ -45,10 +54,8 @@ No step of an engine-placed loop is yours to run.
 If `describe_mode` refuses, tell the user the reason and stop. A project with no
 `.cross-agent/config.json` is not that case — it runs the built-in `solo` mode
 on defaults, so a one-off delegation needs no setup at all. A refusal means the
-config names a mode this server could not read, and `cross-agent init --mode
-<name>` is what binds a team to this project; it exits 0 when it wrote the config
-or found one already there, and 3 when the mode or the directory is not there, or
-the directory is a worktree it cannot make a project of.
+config names a mode this server could not read; the setup skill shows that config
+and replaces it once the user confirms.
 
 If no `describe_mode` is offered to you, under any prefix, a Grok host looks first:
 Grok lists an MCP server's tools behind its own `search_tool`, so search it for
@@ -70,16 +77,17 @@ per seat, `<role>#<seat>`, each with its own engine, model, effort and sandbox. 
 role whose `binding` is `null` is bound to no engine; it is still a role you can
 delegate, but your call has to name the `engine`. A team loop's own role
 answering so — the resolver, in a config written before it existed — is bound in
-`.cross-agent/config.json` before the loop starts, as its step 1 says;
-`cross-agent init` leaves an existing config alone and does not add it. A
+`.cross-agent/config.json` before the loop starts, as its step 1 says; `init --mode`
+leaves an existing config alone and does not add it, but the setup skill adds it to the
+existing config once the user confirms. A
 `warning` in the answer means `.cross-agent/config.json` was pointed at another
 mode after this server started: which tools exist was settled when it loaded, so
 report the drift and ask for a restart instead of working around it.
 
 Judge `projectRoot` against the project the user works in before anything is
 dispatched. It is not always the directory you were started in: a worktree nobody
-initialized is served by its main project on purpose, and only `cross-agent init`
-run in it makes it a project of its own.
+initialized is served by its main project on purpose, and only setup run in it makes
+it a project of its own.
 
 - **Stop**, telling the user, when the working directory lies in an initialized
   project other than `projectRoot` — a worktree or checkout holding its own
@@ -92,9 +100,9 @@ run in it makes it a project of its own.
   `projectRoot`'s repository, or anywhere in it that no config claims. Where
   `projectRoot` is not the nearest directory at or above the working directory that
   holds a `.git`, say so on the roster's first line: served by the main project at
-  <projectRoot>; run `cross-agent init` here for a project of its own. Leave the
-  `init` advice out when the working directory lies under `projectRoot`'s
-  `git.worktreeDir`: that is a task's worktree, where `init` exits 3.
+  <projectRoot>; ask for setup here for a project of its own. Leave the setup advice
+  out when the working directory lies under `projectRoot`'s `git.worktreeDir`: that is a
+  task's worktree, where setup refuses (`task-worktree`).
 - **Proceed as asked** when the user named or confirmed `projectRoot` in this
   session — with `--project`, `CROSS_AGENT_PROJECT` or in words — wherever your host
   sits.
@@ -344,7 +352,7 @@ not yours: the lead's loop orders its own reviews, and you delegate no specialis
 Under `host` placement, append one line per task to `.cross-agent/log.md` as it
 settles: role — a seated one as `<role>#<seat>` — engine, model, effort, duration,
 outcome, the task id. That file is
-the project's own record of what the team did: `cross-agent init` puts
+the project's own record of what the team did: setup puts
 `.cross-agent/` in `.gitignore`, and both root tools refuse to run in a project
 that tracks it, so the line costs no commit and reaches no task branch.
 

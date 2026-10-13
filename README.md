@@ -77,22 +77,17 @@ through the marketplace as usual; the connection follows the installed version.
 ask your session, for example: *"Use cross-agent to have Codex review src/parser.ts and
 tell me what it finds."*
 
-**Run a team.** Once per project, write its config — the mode, and the engine, model and
-effort of each role. In Claude Code, ask your session to run `cross-agent init --mode
-dev-team` in the project; from a terminal, run the installed copy's launcher
-([The operator CLI](#the-operator-cli)):
+**Run a team.** Once per project, set it up in your host: `/cross-agent:setup` in Claude
+Code, `$` and the setup skill in Codex, `/setup` in Grok, or say "set up cross-agent". It
+proposes a team — the mode, and the engine, model and effort of each role — from the
+engines you have installed, and writes `.cross-agent/config.json` and two `.gitignore`
+lines only once you confirm. Ask for setup again to change the team later.
 
-```
-cd ~/code/my-project
-cross-agent init --mode dev-team
-```
-
-Edit `.cross-agent/config.json` to bind the roles as you like. Commit that `.gitignore`
-change `init` made before the team's first task (`git add .gitignore && git commit -m '…'
--- .gitignore`): a loop's first step stops unless `git status --porcelain
---untracked-files=normal` prints nothing at the project's root. Start a new session in the
-project — the server reads the mode once, when it starts — and ask it for the work, for
-example: *"Use the cross-agent dev team to add a --json flag to the export command."* Under `dev-team` your session runs the loop — plan, plan review, implementation
+Setup offers to commit that change. Commit that `.gitignore` change before the team's
+first task if you decline: a loop's first step stops unless `git status --porcelain
+--untracked-files=normal` prints nothing at the project's root. Reconnect when setup says
+so — the server reads the mode once, when it starts — and ask for the work, for example:
+*"Use the cross-agent dev team to add a --json flag to the export command."* Under `dev-team` your session runs the loop — plan, plan review, implementation
 in a worktree, parallel code review, fixes, a tested merge. Under `dev-team-engine` a lead
 runs it and puts its questions to you, which you answer with `cross-agent answer`.
 
@@ -105,14 +100,14 @@ The CLI ships inside the plugin, so it needs no separate install, but installing
 plugin does not put a `cross-agent` command on your shell's `PATH`:
 
 - **In Claude Code** the plugin's `bin/cross-agent` is on the session's Bash tool `PATH`:
-  ask Claude to run `cross-agent init --mode dev-team`.
-- **In Codex** ask the cross-agent skill to initialize the project; it finds the bundled
-  CLI relative to its installed skill directory.
+  ask Claude to run `cross-agent report`.
+- **In Codex** the skills find the bundled CLI relative to their installed directory.
 - **From a terminal** run the installed copy's launcher, for example
   `~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent`, or link a
   clone's `bin/cross-agent` onto your `PATH`.
 
-You need `init` once per project for the team modes. `solo` works without a config
+Setup runs `init` for you; from a terminal, `cross-agent init --mode dev-team` writes a
+mode's defaults. `solo` works without a config
 after the one-time Codex setup. The rest is optional, since your session reaches the same operations
 through the plugin's tools:
 

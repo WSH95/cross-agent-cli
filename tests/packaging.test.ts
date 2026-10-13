@@ -60,13 +60,18 @@ test("no .mcp.json sits at the repository root, where it would be this project's
   assert.ok(found === undefined || !found.isFile(), ".mcp.json is a file at the repository root");
 });
 
-test("the skills directory the plugin ships by convention holds the launcher skill", () => {
+test("the skills directory the plugin ships by convention holds the launcher and setup skills", () => {
   const manifest = json(".claude-plugin/plugin.json");
   // No `skills` key: the directory is found by convention, which is what the Codex fallback
   // copy of `skills/` alone depends on too (design section 9).
   assert.equal(manifest.skills, undefined);
-  const skill = path.join(repoRoot, "skills", "cross-agent", "SKILL.md");
-  assert.ok(fs.statSync(skill).isFile(), `${skill} is not a file`);
+  for (const name of ["cross-agent", "setup"]) {
+    const skill = path.join(repoRoot, "skills", name, "SKILL.md");
+    assert.ok(fs.statSync(skill).isFile(), `${skill} is not a file`);
+  }
+  // The setup skill runs the plugin's CLI by its path from the skill's own directory.
+  const cli = path.join(repoRoot, "skills", "setup", "..", "..", "bin", "cross-agent");
+  assert.notEqual(fs.statSync(cli).mode & 0o111, 0, `${cli} is not executable`);
 });
 
 // Codex packaging (design section 9). Codex reads `.codex-plugin/plugin.json` at the plugin
@@ -106,8 +111,10 @@ test("the Codex manifest names this plugin at package.json's version, ships the 
   assert.equal(pkg.license, "MIT");
   assert.equal(typeof manifest.description, "string");
   assert.notEqual(manifest.description, "");
-  const skill = path.join(repoRoot, "skills", "cross-agent", "SKILL.md");
-  assert.ok(fs.statSync(skill).isFile(), `${skill} is not a file`);
+  for (const name of ["cross-agent", "setup"]) {
+    const skill = path.join(repoRoot, "skills", name, "SKILL.md");
+    assert.ok(fs.statSync(skill).isFile(), `${skill} is not a file`);
+  }
 });
 
 // @anchor codexManifestMounts

@@ -101,7 +101,7 @@ test("the builder writes the Claude and Codex payloads from a commit, each with 
     for (const [host, own, other] of hosts) {
       const plugin = path.join(out, host, "plugins", "cross-agent");
       for (const file of ["bin/cross-agent", "src/server.ts", "src/cli.ts", "src/runner.ts", "skills/cross-agent/SKILL.md",
-        "skills/cross-agent/references/codex-setup.md", "skills/cross-agent/scripts/codex-setup.mjs",
+        "skills/setup/SKILL.md", "skills/cross-agent/references/codex-setup.md", "skills/cross-agent/scripts/codex-setup.mjs",
         "skills/cross-agent/scripts/codex-config.mjs", "skills/cross-agent/scripts/codex-serve.mjs",
         "modes/solo/mode.json", "LICENSE", "package.json", own]) {
         assert.ok(fs.statSync(path.join(plugin, file)).isFile(), `${host}: ${file}`);
