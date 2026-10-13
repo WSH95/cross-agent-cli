@@ -112,7 +112,9 @@ gains options rather than a new verb, so one code path still writes the config.
 It returns one JSON document:
 
 - **`root`**, or a plain-words **refusal** when the folder cannot be a project: a task
-  worktree, or an unsupported layout (the checks `init` already makes). There is also a
+  worktree, or an unsupported layout (the checks `init` already makes). A linked branch
+  worktree, which `init` supports as a project of its own, is supported here too, under
+  `init`'s rules for it: its default branch is its own branch. There is also a
   new check: a folder with no `.git`, which `init --mode` still accepts unchanged. Its
   refusal carries a code the skill can recognise, so it can offer `git init`.
 - **`engines`**: for `claude`, `codex` and `grok`, whether each is found, and its path. The
@@ -177,6 +179,10 @@ bindings in the code. These are Claude `claude-opus-5-5` `xhigh`; Codex `gpt-6-a
 - With a config, it refuses unless given `--replace --expect <hash>` with the hash
   `--propose` returned. A file changed since, for example edited by hand, is never silently
   overwritten. The replacement is written whole, then renamed into place.
+- Two setup runs replacing one config are serialized by a lock. The replaced config is kept
+  as `.cross-agent/config.json.prev`, so a change can be undone. Node offers no atomic
+  check-and-replace, so a hand edit saved in the very instant of the rename could still be
+  lost; the previous copy is how it would be recovered. (Decision of 2026-10-13.)
 - It adds the `.gitignore` entries, as `init` does today.
 - It returns:
   - the file written;
