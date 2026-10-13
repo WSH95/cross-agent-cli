@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T12:41:19Z
+updated_at: 2026-10-13T14:07:30Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -7,6 +7,16 @@ branch: main
 # Handoff
 
 ## Now
+
+**In flight: the setup skill (`atc-s96.134`, spec approved 2026-10-13).** The spec is
+`docs/superpowers/specs/2026-10-13-setup-skill-design.md`, approved by the user, who chose
+the dev-team loop. There are two tasks, in order:
+- `atc-s96.134.1`: the CLI, `init --propose` and `init --config`. Its slug will be
+  `s96-134-setup-cli`.
+- `atc-s96.134.2`: the skill, launcher routing, docs and packaging. It depends on .1.
+
+AGENTS.md: Layout lines only (user-approved). If this session ended, reconcile from
+`list_tasks` and the slug's journal.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
