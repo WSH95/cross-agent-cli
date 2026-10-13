@@ -23,6 +23,14 @@ and write nothing under `.project-steward/` or `.beads/`. Git stays where your r
 puts it. The session that delegated you tracks the task, records it, and commits and merges
 what you leave.
 
+Run the test suite only through `npm test`. Under a sandbox that filters socket calls, as
+Codex's workspace-write sandbox does, a Node child's piped output is lost: `npm test`'s
+preflight stops the suite there with that cause, and a direct `node --test` stops each file
+before its tests. One file still runs there, only as `node --test --test-isolation=none
+tests/<concern>.test.ts`, and its tests that read a Node child's output fail because of the
+sandbox, not the change. The gate's run of the branch head, outside any sandbox, decides the
+suite.
+
 ## Project facts
 
 - Default branch: `main`.
@@ -95,7 +103,20 @@ Shipped:
 - `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;
   `tests/citations.test.ts` runs `tools/check-citations.mjs`, which fails
   `npm test` when a doc cites a line past a file's end or a symbol the file
-  does not declare.
+  does not declare. `tests/preflight.mjs` is `npm test`'s preflight, run before
+  `node --test`: it starts one Node child with piped output and stops the suite
+  at once, with the cause and what still runs, where that output is lost, as
+  under Codex's workspace-write sandbox; `tests/preflight.test.ts` pins it with
+  the preloads `tests/fixtures/discard-stdout.mjs` (a child's output lost) and
+  `tests/fixtures/spawn-eperm.mjs` (no child started, as Node reports it).
+  `tests/child-check.mjs` is every test file's first import (`../child-check.mjs`
+  under `tests/engines/`). In a `node --test` child whose piped stdout Node could
+  not type, as a direct `node --test` of a file gets under that sandbox, it stops
+  the file before its tests with the same cause and what still runs; in any other
+  process it does nothing. `tests/child-check.test.ts` pins it with the preload
+  `tests/fixtures/untyped-stdout.mjs` and the test file
+  `tests/fixtures/child-check-probe.mjs`, and pins that every test file opens
+  with it. `tests/lost-output.mjs` holds the text both print.
 - `skills/cross-agent/SKILL.md`: the launcher skill, the one skill a host
   discovers. It carries what every mode shares — the roster, the brief, the
   watch budget, the report — what every host-placed mode shares — the merge

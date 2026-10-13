@@ -1,3 +1,4 @@
+import "./child-check.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";

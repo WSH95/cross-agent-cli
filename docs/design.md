@@ -4234,8 +4234,9 @@ no file, because Grok reads `.claude-plugin/plugin.json` as a plugin in place.
 
 `package.json`: no dependencies, `"test": "node tests/preflight.mjs && node --test
 'tests/**/*.test.ts'"`, whose check stops the suite within seconds where a Node child's
-piped output never arrives, as under Codex's workspace-write sandbox, and `"bin":
-{"cross-agent": "src/cli.ts"}`.
+piped output never arrives, as under Codex's workspace-write sandbox (every test file
+opens with `tests/child-check.mjs#lostResults`, which stops a direct `node --test` of that
+file the same way), and `"bin": {"cross-agent": "src/cli.ts"}`.
 AGENTS.md carries the Project facts (default branch `main`, test command `npm
 test`, setup command `none`, merge policy `auto`), the layout, the conventions
 (one file per concern, tests next to behaviour, no dependency without a
