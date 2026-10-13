@@ -249,12 +249,18 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. **The pilot, `atc-s96.118` (P2).** The user installs `cross-agent@agent-plugins`
-   (0.1.2) at user scope with `/plugin install`; project scope would write the tracked
-   `.claude/settings.json`. Then run `cross-agent init --mode dev-team` here, bind every
-   role, and take one small bead through the loop. Record how `npm test` behaves inside
-   the real Claude and Codex sandboxes, which is still unverified. `atc-s96.117` (P3)
-   takes the specialist section's rule to the role prompts for every project.
+1. **The pilot, `atc-s96.118` (P2, in flight, claimed).** Done so far:
+   - `cross-agent@agent-plugins` 0.1.2 is installed, and `init --mode dev-team` ran here.
+   - `.cross-agent/config.json` (ignored) holds the user's bindings: planner and
+     implementer claude/claude-opus-5-5 xhigh; plan reviewer codex/gpt-6-astra xhigh;
+     reviewer seats claude-opus-5-5, codex/gpt-6.1-sol and grok-4.7, all xhigh; resolver
+     codex/gpt-6-astra max.
+   - The log was committed to make the root clean (`852f442`).
+
+   The server still serves `solo` and needs `/reload-plugins` before the loop's step 1.
+   Task 1 is `atc-s96.80` (EPIPE, claimed). Task 2 is `atc-s96.119`, which makes these
+   bindings `init`'s defaults. Record how `npm test` behaves inside the real sandboxes.
+   `atc-s96.117` (P3) takes the specialist section's rule to the role prompts.
 2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
 3. For an isolated native regression check, run
