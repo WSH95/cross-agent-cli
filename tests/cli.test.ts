@@ -146,7 +146,7 @@ test("init --mode binds each built-in mode's own roles, and an engine-placed lea
   assert.equal((await run(["init", "--mode", "dev-team-engine"], engineRoot)).code, 0);
   const led = written(engineRoot);
   // The lead keeps its own binding; every role it shares with dev-team is bound as dev-team's is.
-  assert.deepEqual(led.roles, { lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamRoles });
+  assert.deepEqual(led.roles, { lead: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" }, ...devTeamRoles });
   // A lead runs at depth 1 and its specialists at 2, and the documented default of 1
   // would hold them at the lead: the mode's cap is written, not left to be derived.
   assert.equal((led.limits as Record<string, number>).maxDepth, 2);

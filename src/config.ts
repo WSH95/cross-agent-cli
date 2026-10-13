@@ -135,7 +135,7 @@ const devTeamBindings: Record<string, RoleBinding> = {
 const builtInBindings: Record<string, Record<string, RoleBinding>> = {
   "dev-team": { ...devTeamBindings, consult: consultBinding },
   "dev-team-engine": {
-    lead: { engine: "claude", model: "claude-opus-5", effort: "high" }, ...devTeamBindings, consult: consultBinding,
+    lead: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" }, ...devTeamBindings, consult: consultBinding,
   },
   solo: { consult: consultBinding },
 };

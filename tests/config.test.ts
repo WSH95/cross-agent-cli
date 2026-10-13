@@ -616,7 +616,7 @@ test("initConfig writes the bindings of the mode it is given, and refuses a mode
   const engineRoot = project(t);
   assert.equal(config.initConfig(engineRoot, { mode: "dev-team-engine" }).wrote, true);
   const led = config.loadConfigWithMode(engineRoot, builtInModesDir());
-  assert.deepEqual(led.config.roles.lead, { engine: "claude", model: "claude-opus-5", effort: "high" });
+  assert.deepEqual(led.config.roles.lead, { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" });
   assert.deepEqual(Object.keys(led.config.roles), ["lead", "planner", "plan-reviewer", "implementer", "code-reviewer", "resolver", "consult"]);
   // The cap the mode needs is written, because the derived cap is the lower of the two.
   assert.equal(led.config.limits.maxDepth, 2);
