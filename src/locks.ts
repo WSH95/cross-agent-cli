@@ -154,7 +154,7 @@ export async function acquire(file: string, options: AcquireOptions): Promise<Lo
       // so a caller that blocks its loop right after this still frees the lock.
       if (!released) {
         child.stdin.end("\n");
-        released = exit;
+        released = exit.then(() => undefined);
       }
       return released;
     },

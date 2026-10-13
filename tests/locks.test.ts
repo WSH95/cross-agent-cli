@@ -67,6 +67,16 @@ test("two acquirers of one file serialize, and the directory is created on deman
   await (await acquire(file, { operation: "third writer", waitSeconds: 1 })).release();
 });
 
+test("release resolves to undefined, with the same completion promise on repeated calls", async (t) => {
+  const lock = await acquire(lockPath(project(t), recordLockName("release")), { operation: "release a lock" });
+  t.after(() => lock.release());
+  const released = lock.release();
+  assert.equal(lock.release(), released);
+  assert.equal(await released, undefined);
+  assert.equal(await lock.release(), undefined);
+  assert.equal(lock.lost, false);
+});
+
 // @anchor lockHeldSigkilled
 test("a lock held by a SIGKILLed process is taken by the next holder with no reclaim", async (t) => {
   const root = project(t);
@@ -178,6 +188,7 @@ test("a holder that dies before its release reports the lock lost", { timeout: 2
   assert.deepEqual(lost, ["lost"]);
   const next = await acquire(file, { operation: "take the freed lock", waitSeconds: 0 });
   await next.release();
+  assert.equal(await lock.release(), undefined, "releasing an already lost lock also resolves to void");
 
   const quiet: string[] = [];
   const released = await acquire(file, { operation: "hold and release", onLost: () => quiet.push("lost") });

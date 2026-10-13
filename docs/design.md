@@ -3998,7 +3998,10 @@ handler passes:
   refusal `acquire` marks as another's hold, `src/locks.ts#LockHeldError`, and
   `config-lock-failed`, carrying the error, for a lock that could not be prepared or tried
   for at all — the shared `info/exclude` unwritable, or a lock file `flock` cannot open;
-  `tests/cli.test.ts#initConfigLockFailed`), where
+  `tests/cli.test.ts#initConfigLockFailed`). Immediately before creation or replacement,
+  after discovery, a lost `config.lock` refuses with `config-lock-failed`, leaving
+  `config.json`, `config.json.prev` and `.gitignore` untouched
+  (`tests/cli.test.ts#initConfigLockLost`). For replacement,
   `src/config.ts#replaceConfig` checks again by content — the stored bytes, then the bytes of
   the very file `config.json` names, hard-linked aside — and by pathname — that
   `config.json` is still that file once the link is renamed to `config.json.prev` — before
@@ -4014,7 +4017,8 @@ handler passes:
   file, previous, mode, served, reconnect, ignored, warning?}`. `served` is what a server
   started at the root serves until it reconnects, read under the lock before the write: the
   project the server's own discovery finds from the root, `src/project.ts#discoverProject`
-  run as the server runs it, and the mode `loadConfigWithMode` reads there at start — `solo`
+  run as a server started at the root with no `--project` or `CROSS_AGENT_PROJECT` runs it,
+  and the mode `loadConfigWithMode` reads there at start — `solo`
   with no config, null where discovery or the config refuses, since no server runs on
   either. That project is the root itself once it holds a config, and before then the
   nearest configured directory above it, the main checkout a branch worktree is read at, or

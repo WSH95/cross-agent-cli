@@ -492,7 +492,7 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
     // Busy only where another writer held the lock past the wait; a lock that could not be
     // prepared at all — the shared exclusions unwritable, no lock directory — says why.
     if (error instanceof LockHeldError) return coded({ code: "config-busy", reason: message(error) });
-    return coded({ code: "config-lock-failed", reason: `${configLockName()} could not be taken: ${message(error)}` });
+    return coded({ code: "config-lock-failed", reason: message(error) });
   }
   // What a server started here serves until it reconnects, read before this write: the
   // project its own discovery finds from here (`src/project.ts#discoverProject`) — this root,
@@ -512,6 +512,9 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
       }
     } catch {
       served = null;
+    }
+    if (lock.lost) {
+      return coded({ code: "config-lock-failed", reason: `${configLockName()} was lost while the write was being prepared; nothing was written` });
     }
     result = initConfig(root, { document: checked.config, ...(expect === undefined ? {} : { expect }) });
   } finally {

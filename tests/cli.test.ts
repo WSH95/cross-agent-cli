@@ -2,15 +2,18 @@ import "./child-check.mjs";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
+import childProcess, { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { runCli } from "../src/cli.ts";
 import { boundDocument, CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
 import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord } from "../src/ledger.ts";
@@ -2149,6 +2152,24 @@ async function configure(root: string, document: unknown, args: string[] = [], e
   return { code: ran.code, answer: JSON.parse(ran.stdout) as Record<string, unknown> };
 }
 
+/** The same write through the public CLI function, so a test can interleave discovery and lock loss. */
+async function configureInProcess(t: TestContext, root: string, document: unknown, args: string[] = []): Promise<{ code: number; answer: Record<string, unknown> }> {
+  const input = t.mock.method(process.stdin, Symbol.asyncIterator, async function* () {
+    yield Buffer.from(JSON.stringify(document));
+  });
+  let stdout = "";
+  let stderr = "";
+  try {
+    const code = await runCli(["init", "--config", "-", "--json", ...args], root, {
+      out: (text) => { stdout += text; }, err: (text) => { stderr += text; },
+    }, suiteEnv);
+    assert.equal(stderr, "");
+    return { code, answer: JSON.parse(stdout) as Record<string, unknown> };
+  } finally {
+    input.mock.restore();
+  }
+}
+
 function sha256(bytes: string | Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -2729,13 +2750,67 @@ test("overlapping first --config writers: exactly one creates, the other gets co
   assert.deepEqual(written(root), writers[winner]);
 });
 
+// @anchor initConfigLockLost
+for (const replace of [false, true]) {
+  test(`init --config refuses ${replace ? "replacement" : "creation"} if its lock dies during discovery, leaving config, backup and ignores unchanged`, { timeout: 15000 }, async (t) => {
+    const root = await mainCheckout(scratch(t), "P");
+    const file = path.join(root, CONFIG_PATH);
+    const lockFile = path.join(root, ".cross-agent", "locks", "config.lock");
+    fs.mkdirSync(path.dirname(file));
+    if (replace) {
+      fs.writeFileSync(file, JSON.stringify(initDocument("solo")));
+      fs.writeFileSync(`${file}.prev`, "an older backup\n");
+    }
+    fs.writeFileSync(path.join(root, ".gitignore"), "# existing rules\n");
+    const allowed = new Set([path.join(".git", "info", "exclude"), path.join(".cross-agent", "locks"), path.relative(root, lockFile)]);
+    const kept = () => Object.fromEntries(Object.entries(snapshot(root)).filter(([name]) => !allowed.has(name)));
+    const before = kept();
+    const args = replace ? ["--replace", "--expect", sha256(fs.readFileSync(file))] : [];
+
+    // Keep acquire and its lost-state tracking real. Capture only this write's helper;
+    // discovery's first async realpath then waits for that helper to die before continuing.
+    const start = childProcess.spawn;
+    let helper: ReturnType<typeof start> | undefined;
+    const spawning = t.mock.method(childProcess, "spawn", (...args: Parameters<typeof start>) => {
+      const child = start(...args);
+      if (args[0] === "flock" && args[1]?.includes(lockFile)) helper = child;
+      return child;
+    });
+    const realpath = fsPromises.realpath;
+    let killedDuringDiscovery = false;
+    const discovery = t.mock.method(fsPromises, "realpath", async (...args: Parameters<typeof realpath>) => {
+      if (args[0] === root && helper !== undefined && !killedDuringDiscovery) {
+        killedDuringDiscovery = true;
+        const closed = once(helper, "close");
+        helper.kill("SIGKILL");
+        await closed;
+      }
+      return realpath(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      const failed = await configureInProcess(t, root, initDocument("dev-team"), args);
+      assert.equal(killedDuringDiscovery, true, "the acquired helper died while discovery was pending");
+      assert.deepEqual([failed.code, failed.answer.code], [3, "config-lock-failed"], JSON.stringify(failed.answer));
+      assert.match(failed.answer.reason as string, /config\.lock.*lost.*while.*write.*prepared/);
+      assert.deepEqual(kept(), before, "only lock preparation may have written anything");
+    } finally {
+      helper?.stdin?.destroy();
+      helper?.kill("SIGKILL");
+      discovery.mock.restore();
+      spawning.mock.restore();
+      syncBuiltinESMExports();
+    }
+  });
+}
+
 // @anchor initConfigLockFailed
 test("a config lock that cannot be prepared is config-lock-failed, carrying the error, and never config-busy", async (t) => {
   // The lock directory is a file, so the lock's own directory cannot be made.
   const root = await mainCheckout(scratch(t), "P");
   fs.mkdirSync(path.join(root, ".cross-agent"));
   fs.writeFileSync(path.join(root, ".cross-agent", "locks"), "");
-  const failed = await configure(root, initDocument("dev-team"));
+  const failed = await configureInProcess(t, root, initDocument("dev-team"));
   assert.deepEqual([failed.code, failed.answer.code], [3, "config-lock-failed"]);
   assert.match(failed.answer.reason as string, /EEXIST|ENOTDIR/);
   assert.equal(fs.existsSync(path.join(root, CONFIG_PATH)), false);
@@ -2749,7 +2824,7 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   const info = path.join(readOnly, ".git", "info");
   t.after(() => { try { fs.chmodSync(info, 0o755); } catch { /* gone */ } });
   fs.chmodSync(info, 0o555);
-  const denied = await configure(readOnly, initDocument("dev-team"));
+  const denied = await configureInProcess(t, readOnly, initDocument("dev-team"));
   fs.chmodSync(info, 0o755);
   assert.deepEqual([denied.code, denied.answer.code], [3, "config-lock-failed"]);
   assert.match(denied.answer.reason as string, /EACCES/);
@@ -2759,14 +2834,15 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   // The exclusions already written and the lock file there, but one flock cannot open: no
   // holder waited on, so a failure to lock rather than a busy one.
   const unopenable = await mainCheckout(scratch(t), "U");
-  assert.equal((await configure(unopenable, initDocument("dev-team"))).code, 0);
+  assert.equal((await configureInProcess(t, unopenable, initDocument("dev-team"))).code, 0);
   const lockFile = path.join(unopenable, ".cross-agent", "locks", "config.lock");
   t.after(() => { try { fs.chmodSync(lockFile, 0o644); } catch { /* gone */ } });
   fs.chmodSync(lockFile, 0o000);
   const stored = fs.readFileSync(path.join(unopenable, CONFIG_PATH));
-  const closed = await configure(unopenable, initDocument("solo"), ["--replace", "--expect", sha256(stored)]);
+  const closed = await configureInProcess(t, unopenable, initDocument("solo"), ["--replace", "--expect", sha256(stored)]);
   fs.chmodSync(lockFile, 0o644);
   assert.deepEqual([closed.code, closed.answer.code], [3, "config-lock-failed"], closed.answer.reason as string);
+  assert.equal((closed.answer.reason as string).match(/could not be taken/g)?.length, 1, closed.answer.reason as string);
   assert.match(closed.answer.reason as string, /flock exited \d+/);
   assert.deepEqual(fs.readFileSync(path.join(unopenable, CONFIG_PATH)), stored);
 });
