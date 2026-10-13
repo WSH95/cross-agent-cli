@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // fails the test rather than stalling it.
 
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.dirname(testsDir);
 const probe = path.join(testsDir, "fixtures", "child-check-probe.mjs");
 const untypedStdout = `--import=${pathToFileURL(path.join(testsDir, "fixtures", "untyped-stdout.mjs")).href}`;
 const marker = "child-check probe: its test ran\n";
@@ -27,18 +28,23 @@ function env(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return { ...own, ...extra };
 }
 
-// The probe under a nested `node --test`, whose report goes to stderr: the preload discards
-// the runner's own stdout too.
+// The probe under a nested `node --test` at the repository's root, whose report goes to
+// stderr: the preload discards the runner's own stdout too.
 function runProbe(flags: string[], extra?: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [
     "--test", "--test-reporter=spec", "--test-reporter-destination=stderr", ...flags, probe,
-  ], { env: env(extra), encoding: "utf8", timeout: 30_000 });
+  ], { cwd: repoRoot, env: env(extra), encoding: "utf8", timeout: 30_000 });
 }
 
 test("a node --test child whose stdout Node could not type stops before its tests, naming the cause and what still runs", () => {
   const result = runProbe([], { NODE_OPTIONS: untypedStdout });
   assert.equal(result.error, undefined, `the run did not end within 30 s: ${result.error}`);
   assert.equal(result.status, 1, result.stderr);
+  // The first line names the file and what went wrong with its stdout, relative to the
+  // runner's directory.
+  assert.ok(result.stderr.split("\n").includes(
+    "tests/fixtures/child-check-probe.mjs was stopped before its tests: its results reach node --test over a piped stdout whose type Node could not identify here.",
+  ), result.stderr);
   for (const pattern of [
     /sandbox that filters socket calls/, /npm test/,
     /node --test --test-isolation=none tests\/<concern>\.test\.ts/, /gate/,
@@ -61,14 +67,17 @@ test("an in-process run is never stopped, even with a stdout Node could not type
 });
 
 test("every test file npm test runs opens by importing the check", () => {
-  // The same files as npm test's glob, tests/**/*.test.ts.
-  const files = fs.readdirSync(testsDir, { recursive: true, encoding: "utf8" })
-    .filter((file) => file.endsWith(".test.ts")).sort();
-  assert.ok(files.some((file) => file.startsWith(`engines${path.sep}`)), files.join(", "));
+  // The files npm test runs: its script's pattern, expanded as Node 24's runner expands it,
+  // with the glob's own options, which leave out hidden paths and node_modules at any depth.
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> };
+  const pattern = /node --test '([^']+)'$/.exec(pkg.scripts.test)?.[1];
+  assert.ok(pattern, pkg.scripts.test);
+  const files = fs.globSync([pattern], { cwd: repoRoot, exclude: (name: string) => name === "node_modules" }).sort();
+  assert.ok(files.some((file) => file.startsWith(path.join("tests", "engines") + path.sep)), files.join(", "));
   const missing = files.filter((file) => {
-    const check = path.relative(path.dirname(path.join(testsDir, file)), path.join(testsDir, "child-check.mjs"))
+    const check = path.relative(path.dirname(path.join(repoRoot, file)), path.join(testsDir, "child-check.mjs"))
       .split(path.sep).join("/");
-    const first = fs.readFileSync(path.join(testsDir, file), "utf8").split("\n", 1)[0];
+    const first = fs.readFileSync(path.join(repoRoot, file), "utf8").split("\n", 1)[0];
     return first !== `import "${check.startsWith(".") ? check : `./${check}`}";`;
   });
   assert.deepEqual(missing, []);

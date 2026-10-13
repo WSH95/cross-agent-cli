@@ -30,7 +30,7 @@ function lostResults() {
 if (lostResults()) {
   const file = process.argv[1] === undefined ? "This test file" : path.relative(process.cwd(), process.argv[1]);
   fs.writeSync(2, [
-    `${file} was stopped before its tests: its results reach node --test over a piped stdout Node could not open here.`,
+    `${file} was stopped before its tests: its results reach node --test over a piped stdout whose type Node could not identify here.`,
     lostOutputCause,
     `Run the suite through npm test, whose preflight stops it here once with this cause. ${whatStillRuns}`,
   ].join("\n") + "\n");

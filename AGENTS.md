@@ -27,9 +27,9 @@ Run the test suite only through `npm test`. Under a sandbox that filters socket 
 Codex's workspace-write sandbox does, a Node child's piped output is lost: `npm test`'s
 preflight stops the suite there with that cause, and a direct `node --test` stops each file
 before its tests. One file still runs there, only as `node --test --test-isolation=none
-tests/<concern>.test.ts`, and its tests that read a Node child's output fail because of the
-sandbox, not the change. The gate's run of the branch head, outside any sandbox, decides the
-suite.
+tests/<concern>.test.ts`, and its tests that read a Node child's output fail or time out
+because of the sandbox, not the change. The gate's run of the branch head, outside any
+sandbox, decides the suite.
 
 ## Project facts
 
