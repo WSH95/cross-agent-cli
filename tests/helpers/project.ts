@@ -7,6 +7,7 @@ import type { TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { commandPath } from "../../src/engines/binaries.ts";
 import { create, scan, update, writeSpec } from "../../src/ledger.ts";
 import type { LaunchSpec, TaskRecord } from "../../src/ledger.ts";
 import type { Mode } from "../../src/modes.ts";
@@ -116,6 +117,24 @@ export function engineShim(directory: string, name: string): string {
   fs.writeFileSync(file, `#!${process.execPath}\nawait import(${JSON.stringify(pathToFileURL(fakeEngine).href)});\n`);
   fs.chmodSync(file, 0o755);
   return file;
+}
+
+/**
+ * A `PATH` on which exactly `engines` are installed: an executable stub named for each,
+ * which nothing runs, beside a link to the real `git`, so `init --propose` finds those
+ * engines and no other, and still reads the repository.
+ */
+export function enginePath(t: TestContext, engines: readonly string[]): string {
+  const directory = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), "cross-agent-path-")));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  for (const engine of engines) {
+    fs.writeFileSync(path.join(directory, engine), "#!/bin/sh\nexit 0\n");
+    fs.chmodSync(path.join(directory, engine), 0o755);
+  }
+  const git = commandPath("git", process.env);
+  assert.ok(git, "git is on this suite's PATH");
+  fs.symlinkSync(git, path.join(directory, "git"));
+  return directory;
 }
 
 export interface TestProject {

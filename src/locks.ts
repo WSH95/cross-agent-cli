@@ -45,6 +45,16 @@ export function gitLockName(): string {
 }
 
 /**
+ * Serializes `init --config`'s writes of the project's config, a creation and a replacement
+ * alike, so two setup runs never both pass the check of the bytes they replace. It is taken
+ * alone, with no other project lock and no repository lock held. The config's readers take
+ * nothing: a replacement is one `rename`, so a reader sees the old config or the new one whole.
+ */
+export function configLockName(): string {
+  return "config.lock";
+}
+
+/**
  * Serializes what may claim a workspace: `delegate`'s validate-and-spawn and the whole of
  * `git_mutate`, so no two of them can both pass one reservation check. A caller that takes
  * both project locks takes this one first and `git.lock` inside it.

@@ -3,7 +3,8 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import fs, { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -684,6 +685,201 @@ test("initConfig respects temporary directory boundaries", (t) => {
   setTmpdir(t, designated);
   assert.deepEqual(config.initConfig(sibling), { wrote: true, ignored: [".cross-agent/", ".worktrees/"] });
   assert.deepEqual(config.initConfig(sibling), { wrote: false, ignored: [] });
+});
+
+// `init --config -` checks a document read on stdin with the server's own checks, before
+// anything is written (setup spec, section 2): the loader's checks on text, the binding
+// checks against the mode, and the write-time rules on top.
+
+// @anchor parseConfigLabel
+test("parseConfig refuses with the label it is handed, as loadConfig does with its file", (t) => {
+  const root = project(t);
+  const raw = JSON.stringify({ roles: { planner: { engine: "gpt" } } });
+  const file = writeConfig(root, JSON.parse(raw));
+  assert.throws(() => config.parseConfig(raw, "stdin"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "stdin: roles.planner.engine: expected claude | codex | grok");
+    return true;
+  });
+  assert.throws(() => config.loadConfig(root), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, `${file}: roles.planner.engine: expected claude | codex | grok`);
+    return true;
+  });
+  assert.throws(() => config.parseConfig("{broken", "stdin"), /^Error: stdin: \$: expected valid JSON$/);
+
+  // A document that parses is what the loader makes of the same bytes, defaults filled.
+  const valid = JSON.stringify({ mode: "solo", roles: { consult: { engine: "grok" } }, limits: { stallMinutes: 7 } });
+  writeFileSync(file, valid);
+  assert.deepEqual(config.parseConfig(valid, "stdin"), config.loadConfig(root));
+  // And it binds against its mode as the server's loader binds the file, its faults labelled the same way.
+  assert.deepEqual(config.bindConfig(config.parseConfig(valid, "stdin"), "stdin"), config.loadConfigWithMode(root));
+  const unbound = config.parseConfig(JSON.stringify({ mode: "solo", roles: { critic: { engine: "claude" } } }), "stdin");
+  assert.throws(() => config.bindConfig(unbound, "stdin"), /^Error: stdin: roles\.critic: mode solo declares no role "critic"/);
+});
+
+// @anchor checkConfigDocument
+test("checkConfigDocument names the field and the rule", () => {
+  const devTeam = structuredClone(sectionSixDefaults);
+  assert.equal(config.checkConfigDocument(JSON.stringify(devTeam), "stdin").mode.id, "dev-team");
+  // A Grok writer is the server's to accept once it names the profile Grok writes under.
+  const grokWriter = structuredClone(sectionSixDefaults);
+  (grokWriter.roles as Record<string, unknown>).implementer = { engine: "grok", sandbox: "workspace" };
+  assert.deepEqual(config.checkConfigDocument(JSON.stringify(grokWriter), "stdin").config.roles.implementer, { engine: "grok", sandbox: "workspace" });
+  assert.deepEqual(config.mergePolicies, ["auto", "manual"]);
+
+  const engineLed = { ...structuredClone(sectionSixDefaults), mode: "dev-team-engine" };
+  (engineLed.roles as Record<string, unknown>) = { lead: { engine: "grok", model: "grok-4.7" }, ...sectionSixDefaults.roles };
+  const refusals: Array<[string, unknown, RegExp]> = [
+    ["a Grok implementer without the profile", { ...devTeam, roles: { ...devTeam.roles, implementer: { engine: "grok" } } },
+      /^stdin: roles\.implementer: engine grok has no sandbox profile "workspace-write"/],
+    ["a Grok lead", engineLed, /^stdin: roles\.lead\.engine: mode dev-team-engine places its lead in an engine, and grok cannot carry one/],
+    ["an unknown role", { ...devTeam, roles: { ...devTeam.roles, critic: { engine: "claude" } } }, /^stdin: roles\.critic: mode dev-team declares no role "critic"/],
+    ["a merge policy outside auto and manual", { ...devTeam, project: { ...devTeam.project, mergePolicy: "yolo" } },
+      /^stdin: project\.mergePolicy: expected auto \| manual$/],
+    ["a mode this build does not have", { ...devTeam, mode: "absent" }, /^stdin: mode: /],
+  ];
+  for (const [what, document, reason] of refusals) {
+    assert.throws(() => config.checkConfigDocument(JSON.stringify(document), "stdin"), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, reason, what);
+      return true;
+    }, what);
+  }
+  for (const empty of ["", " \n"]) assert.throws(() => config.checkConfigDocument(empty, "stdin"), /^Error: stdin: \$: the document is empty$/);
+  assert.throws(() => config.checkConfigDocument("mode: dev-team", "stdin"), /^Error: stdin: \$: expected valid JSON$/);
+});
+
+/** A solo document beside `sectionSixDefaults`, so a replacement's bytes differ from the file it replaces. */
+const soloDocument = { ...sectionSixDefaults, mode: "solo", roles: { consult: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" } } };
+
+function sha256(bytes: string | Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** What `initConfig` answered, less the warning every project under the temporary directory gets. */
+function settled(result: config.InitConfigResult): Omit<config.InitConfigResult, "warning"> {
+  const { warning: _warning, ...rest } = result;
+  return rest;
+}
+
+// @anchor initConfigDocument
+test("initConfig writes a given document exclusively and never replaces it without expect", (t) => {
+  const root = project(t);
+  const file = path.join(root, config.CONFIG_PATH);
+  const document = structuredClone(sectionSixDefaults) as unknown as config.CrossAgentConfig;
+  assert.equal(config.configBytes(root), null, "no file, no bytes");
+  assert.deepEqual(settled(config.initConfig(root, { document })), { wrote: true, ignored: [".cross-agent/", ".worktrees/"] });
+  assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(document, null, 2)}\n`);
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), ".cross-agent/\n.worktrees/\n");
+  const stored = config.configBytes(root)!;
+  assert.deepEqual(stored, { bytes: readFileSync(file), sha256: sha256(readFileSync(file)) });
+
+  // A config already there is never replaced without the hash it holds, and the refusal
+  // writes nothing at all, the ignore entries a hand-edited .gitignore dropped included.
+  writeFileSync(path.join(root, ".gitignore"), "node_modules/\n");
+  const solo = structuredClone(soloDocument) as unknown as config.CrossAgentConfig;
+  assert.deepEqual(settled(config.initConfig(root, { document: solo })), { wrote: false, ignored: [] });
+  assert.deepEqual(readFileSync(file), stored.bytes);
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), "node_modules/\n");
+  assert.deepEqual(readdirSync(path.join(root, ".cross-agent")), ["config.json"]);
+});
+
+// @anchor initConfigReplace
+test("initConfig replaces only the bytes expect names, keeping the replaced file as .prev", (t) => {
+  const root = project(t);
+  const directory = path.join(root, ".cross-agent");
+  const file = path.join(root, config.CONFIG_PATH);
+  const prev = `${file}.prev`;
+  config.initConfig(root, { document: structuredClone(sectionSixDefaults) as unknown as config.CrossAgentConfig });
+  writeFileSync(prev, "an older previous config\n");
+  const original = config.configBytes(root)!;
+  const before = lstatSync(file).ino;
+  const solo = structuredClone(soloDocument) as unknown as config.CrossAgentConfig;
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect: original.sha256 })), {
+    wrote: true, replaced: true, previous: prev, ignored: [],
+  });
+  assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(solo, null, 2)}\n`);
+  assert.notEqual(lstatSync(file).ino, before, "the replacement is a new file renamed into place");
+  assert.equal(lstatSync(prev).ino, before, ".prev is the replaced file itself");
+  assert.deepEqual(readFileSync(prev), original.bytes, "and the older .prev is gone");
+  assert.deepEqual(readdirSync(directory).sort(), ["config.json", "config.json.prev"]);
+
+  // A hash other than the file's, and no file at all, are stale: nothing is created or replaced.
+  const replaced = config.configBytes(root)!;
+  const gitignore = readFileSync(path.join(root, ".gitignore"), "utf8");
+  const third = { ...structuredClone(soloDocument), project: { ...soloDocument.project, testCommand: "pytest" } } as unknown as config.CrossAgentConfig;
+  assert.deepEqual(settled(config.initConfig(root, { document: third, expect: original.sha256 })), { wrote: false, stale: true, ignored: [] });
+  assert.deepEqual(readFileSync(file), replaced.bytes);
+  assert.deepEqual(readFileSync(prev), original.bytes);
+  rmSync(file);
+  assert.deepEqual(settled(config.initConfig(root, { document: third, expect: replaced.sha256 })), { wrote: false, stale: true, ignored: [] });
+  assert.deepEqual(readdirSync(directory), ["config.json.prev"]);
+  assert.deepEqual(readFileSync(prev), original.bytes);
+  assert.equal(readFileSync(path.join(root, ".gitignore"), "utf8"), gitignore);
+});
+
+// @anchor replaceConfigRaces
+test("the replacement catches an edit by content and by pathname, and the edit it cannot catch lands in .prev", (t) => {
+  const root = project(t);
+  const directory = path.join(root, ".cross-agent");
+  const file = path.join(root, config.CONFIG_PATH);
+  const prev = `${file}.prev`;
+  const edit = '{ "mode": "solo", "roles": {}, "edited": "by hand" }\n';
+  const solo = structuredClone(soloDocument) as unknown as config.CrossAgentConfig;
+  const temporaries = () => readdirSync(directory).filter((name) => name.endsWith(".tmp"));
+  /** A fresh config.json and an older .prev, and the hash a replacement of it would name. */
+  const fresh = (): string => {
+    rmSync(directory, { recursive: true, force: true });
+    config.initConfig(root, { document: structuredClone(sectionSixDefaults) as unknown as config.CrossAgentConfig });
+    writeFileSync(prev, "an older previous config\n");
+    return config.configBytes(root)!.sha256;
+  };
+  const matched = () => `${JSON.stringify(sectionSixDefaults, null, 2)}\n`;
+
+  // (a) An in-place write landing right after the link: the linked file's bytes changed.
+  let expect = fresh();
+  const link = fs.linkSync;
+  const linked = t.mock.method(fs, "linkSync", ((from: fs.PathLike, to: fs.PathLike) => {
+    link(from, to);
+    if (String(to).startsWith(`${prev}.`)) writeFileSync(file, edit);
+  }) as typeof fs.linkSync);
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: false, stale: true, ignored: [] });
+  linked.mock.restore();
+  assert.equal(readFileSync(file, "utf8"), edit, "the edit stands");
+  assert.deepEqual(temporaries(), []);
+  assert.equal(readFileSync(prev, "utf8"), "an older previous config\n", "the older .prev is untouched");
+
+  // (b) An in-place write after the check read the linked file: not caught, and kept in .prev.
+  expect = fresh();
+  const rename = fs.renameSync;
+  const renamed = t.mock.method(fs, "renameSync", ((from: fs.PathLike, to: fs.PathLike) => {
+    if (String(to) === prev) writeFileSync(file, edit);
+    rename(from, to);
+  }) as typeof fs.renameSync);
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: true, replaced: true, previous: prev, ignored: [] });
+  renamed.mock.restore();
+  assert.equal(readFileSync(file, "utf8"), `${JSON.stringify(solo, null, 2)}\n`);
+  assert.equal(readFileSync(prev, "utf8"), edit, "the edit is recovered from .prev");
+
+  // (c) A save that renames a new file over config.json before the identity check: caught.
+  expect = fresh();
+  const lstat = fs.lstatSync;
+  let saved = false;
+  const statted = t.mock.method(fs, "lstatSync", ((target: fs.PathLike, options?: fs.StatSyncOptions) => {
+    if (!saved && String(target) === file) {
+      saved = true;
+      writeFileSync(`${file}.editor`, edit);
+      renameSync(`${file}.editor`, file);
+    }
+    return lstat(target, options);
+  }) as typeof fs.lstatSync);
+  assert.deepEqual(settled(config.initConfig(root, { document: solo, expect })), { wrote: false, stale: true, ignored: [] });
+  statted.mock.restore();
+  assert.equal(saved, true, "the identity check ran");
+  assert.equal(readFileSync(file, "utf8"), edit, "the editor's save stands");
+  assert.deepEqual(temporaries(), []);
+  assert.equal(readFileSync(prev, "utf8"), matched(), ".prev holds the version the check matched");
 });
 
 test("a directory the config tests make inside the repository is ignored, so an interrupted run leaves nothing a task commit stages", (t) => {

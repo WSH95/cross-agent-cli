@@ -1,4 +1,5 @@
-import { appendFileSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import fs, { appendFileSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { adapterFor, sandboxFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
@@ -65,6 +66,12 @@ export interface InitConfigResult {
   /** The `.gitignore` entries this call added; empty when the file already had them. */
   ignored: string[];
   warning?: string;
+  /** Set when `expect` named the stored bytes and the document replaced them. */
+  replaced?: boolean;
+  /** Set when `expect` did not name the stored bytes, or a check of the replacement failed: nothing was written. */
+  stale?: boolean;
+  /** Where the replaced file was kept: `config.json.prev`. */
+  previous?: string;
 }
 
 export interface InitConfigOptions {
@@ -78,6 +85,18 @@ export interface InitConfigOptions {
    * initialized as a project of its own — carried whole but for its default branch.
    */
   copy?: CrossAgentConfig;
+  /**
+   * A whole config to write as given — the document `init --config -` checked
+   * (`checkConfigDocument`) — rather than one this function builds. Its mode is the one
+   * loaded, and the ignore entries are written only when it is.
+   */
+  document?: CrossAgentConfig;
+  /**
+   * The SHA-256 of the config this document replaces. Without it nothing is ever replaced;
+   * with it the stored bytes must be exactly those, and the replaced file is kept as
+   * `config.json.prev` (`replaceConfig`).
+   */
+  expect?: string;
 }
 
 /** A config and the mode it binds, checked against each other (design section 6). */
@@ -141,6 +160,18 @@ const builtInBindings: Record<string, Record<string, RoleBinding>> = {
 };
 
 /**
+ * The binding a role takes on `engine` when its built-in engine is not installed here:
+ * each engine's strongest model at its high effort, and Codex's at `max` for the resolver,
+ * as the built-in resolver is (`builtInBindings`). `init --propose` substitutes these
+ * (`src/setup.ts#proposeMode`), so they sit beside the bindings they stand in for.
+ */
+export function substituteBinding(engine: EngineName, role: string): RoleConfig {
+  if (engine === "claude") return { engine, model: "claude-opus-5-5", effort: "xhigh" };
+  if (engine === "codex") return { engine, model: "gpt-6-astra", effort: role === "resolver" ? "max" : "xhigh" };
+  return { engine, model: "grok-4.7", effort: "xhigh" };
+}
+
+/**
  * The defaults of a project that has no config file at all: the mode `discoverProject`
  * falls back to, this section's own project and limit values, and no role binding, because
  * binding is a local act nobody has performed here — a `delegate` in this state names its
@@ -166,7 +197,15 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return defaultConfig();
     throw new Error(`${file}: cannot read config: ${error instanceof Error ? error.message : String(error)}`);
   }
+  return parseConfig(raw, file);
+}
 
+/**
+ * `loadConfig`'s checks on the text of a config, each refusal labelled `<file>: <field>:
+ * <rule>`. The file is a label only: `init --config -` checks a document read on stdin with
+ * the same checks the server's loader applies to the file (`checkConfigDocument`).
+ */
+export function parseConfig(raw: string, file: string): CrossAgentConfig {
   function reject(field: string, problem: string): never {
     throw new Error(`${file}: ${field}: ${problem}`);
   }
@@ -281,9 +320,43 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
  * fail for want of one. Everything that launches or offers a tool reads both, here.
  */
 export function loadConfigWithMode(projectRoot: string, modesDir: string = builtInModesDir()): BoundConfig {
-  const config = loadConfig(projectRoot);
+  return bindConfig(loadConfig(projectRoot), path.join(projectRoot, CONFIG_PATH), modesDir);
+}
+
+/**
+ * The merge policies a config may be written with: the loop merges when the tests and the
+ * reviews pass, or the user merges. The server's load accepts any string, and only the
+ * write `init --config` makes is held to these (setup spec, section 2).
+ */
+export const mergePolicies = ["auto", "manual"] as const;
+
+/**
+ * A whole config document, as `init --config -` reads it, checked before anything is
+ * written: the server's load checks, its binding checks against the mode it names — a
+ * profile for what each role needs, and no Grok lead — and the write-time merge policy.
+ * Every refusal is `<label>: <field>: <rule>`; a mode that does not load is `<label>: mode:`.
+ */
+export function checkConfigDocument(raw: string, label: string, modesDir: string = builtInModesDir()): BoundConfig {
+  if (raw.trim() === "") throw new Error(`${label}: $: the document is empty`);
+  const config = parseConfig(raw, label);
+  let mode: Mode;
+  try {
+    mode = loadMode(modesDir, config.mode);
+  } catch (error) {
+    throw new Error(`${label}: mode: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const fault = bindingFault(mode, config, label);
+  if (fault !== null) throw new Error(fault);
+  if (!(mergePolicies as readonly string[]).includes(config.project.mergePolicy)) {
+    throw new Error(`${label}: project.mergePolicy: expected ${mergePolicies.join(" | ")}`);
+  }
+  return { config, mode };
+}
+
+/** A parsed config and the mode it names, checked against each other, a fault labelled with `file`. */
+export function bindConfig(config: CrossAgentConfig, file: string, modesDir: string = builtInModesDir()): BoundConfig {
   const mode = loadMode(modesDir, config.mode);
-  const fault = bindingFault(mode, config, path.join(projectRoot, CONFIG_PATH));
+  const fault = bindingFault(mode, config, file);
   if (fault !== null) throw new Error(fault);
   return { config, mode };
 }
@@ -441,6 +514,26 @@ function temporaryLocationWarning(projectRoot: string): string | undefined {
 }
 
 /**
+ * The bytes of the project's config as stored, and their SHA-256 in hex, or null with no
+ * file: what `init --propose` reports and `init --config --expect` names, hashed from the
+ * very bytes a reader parses.
+ */
+export function configBytes(projectRoot: string): { bytes: Buffer; sha256: string } | null {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path.join(projectRoot, CONFIG_PATH));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  return { bytes, sha256: sha256(bytes) };
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
  * The project's own state, added to `.gitignore` when it is not already there, and the
  * entries added. A tracked `.cross-agent/` would let a specialist commit a change to
  * `testCommand` or a journal inside its worktree and have the lead's own merge carry it
@@ -450,13 +543,20 @@ function temporaryLocationWarning(projectRoot: string): string | undefined {
  * end in a newline is not joined onto.
  */
 function ignoreProjectState(projectRoot: string, mode: Mode): string[] {
-  // The policy a one-shot would use where the mode declares none, so a `solo` project
-  // ignores the directory its own `worktree: true` calls create (design, "Modes").
-  return ignoreEntries(projectRoot, [".cross-agent/", `${gitPolicy(mode).worktreeDir.replace(/\/+$/, "")}/`]);
+  return ignoreEntries(projectRoot, stateEntries(mode));
 }
 
-/** Each of `wanted` added to the project's `.gitignore` where the file lacks it, and those added. */
-export function ignoreEntries(projectRoot: string, wanted: readonly string[]): string[] {
+/**
+ * The `.gitignore` entries a project of `mode` needs: its state, and the policy a one-shot
+ * would use where the mode declares none, so a `solo` project ignores the directory its own
+ * `worktree: true` calls create (design, "Modes").
+ */
+export function stateEntries(mode: Mode): string[] {
+  return [".cross-agent/", `${gitPolicy(mode).worktreeDir.replace(/\/+$/, "")}/`];
+}
+
+/** The project's `.gitignore` as it stands, and which of `wanted` it lacks, a spelling without the trailing slash counting as the entry. */
+function gitignoreState(projectRoot: string, wanted: readonly string[]): { file: string; existing: string; missing: string[] } {
   const file = path.join(projectRoot, ".gitignore");
   let existing = "";
   try {
@@ -465,14 +565,27 @@ export function ignoreEntries(projectRoot: string, wanted: readonly string[]): s
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const present = new Set(existing.split("\n").map((line) => line.trim().replace(/\/+$/, "")));
-  const missing = wanted.filter((entry) => !present.has(entry.replace(/\/+$/, "")));
+  return { file, existing, missing: wanted.filter((entry) => !present.has(entry.replace(/\/+$/, ""))) };
+}
+
+/** Each of `wanted` the project's `.gitignore` lacks, read and never written: what `init --propose` reports. */
+export function unignored(projectRoot: string, wanted: readonly string[]): string[] {
+  return gitignoreState(projectRoot, wanted).missing;
+}
+
+/** Each of `wanted` added to the project's `.gitignore` where the file lacks it, and those added. */
+export function ignoreEntries(projectRoot: string, wanted: readonly string[]): string[] {
+  const { file, existing, missing } = gitignoreState(projectRoot, wanted);
   if (missing.length === 0) return [];
   appendFileSync(file, `${existing === "" || existing.endsWith("\n") ? "" : "\n"}${missing.join("\n")}\n`);
   return missing;
 }
 
-/** The section 6 config that binds every role of `mode` to its built-in starting engine. */
-function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAgentConfig {
+/**
+ * The section 6 config that binds every role of `mode` to its built-in starting engine,
+ * each binding a copy of the table's, so a caller that adjusts one changes nothing else.
+ */
+export function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAgentConfig {
   const bindings = builtInBindings[mode.id];
   if (bindings === undefined) {
     throw new Error(`cross-agent init has no bindings for mode ${JSON.stringify(name)}; write ${CONFIG_PATH} by hand, binding each of ${mode.roles.map((role) => role.key).join(", ")} to an engine`);
@@ -480,7 +593,7 @@ function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAg
   const roles = Object.fromEntries(mode.roles.map((role) => {
     const binding = bindings[role.key];
     if (binding === undefined) throw new Error(`cross-agent init has no binding for role ${JSON.stringify(role.key)} of mode ${JSON.stringify(name)}`);
-    return [role.key, binding];
+    return [role.key, structuredClone(binding)];
   }));
   return {
     mode: mode.id,
@@ -497,20 +610,29 @@ function boundDocument(mode: Mode, name: string, defaultBranch: string): CrossAg
 }
 
 /**
- * Creates the section 6 config for a mode, or the copy of another project's, exclusively,
- * without reading or replacing an existing file. The mode is loaded first, so an unknown or
- * invalid one is refused before anything is written, and its roles are bound in the order
- * it declares them.
+ * Creates the section 6 config for a mode, the copy of another project's, or a document
+ * given whole, exclusively, without reading or replacing an existing file — unless `expect`
+ * names the bytes a given document replaces (`replaceConfig`). The mode is loaded first, so
+ * an unknown or invalid one is refused before anything is written, and its roles are bound
+ * in the order it declares them.
  */
 export function initConfig(projectRoot: string, options: InitConfigOptions = {}): InitConfigResult {
-  const name = options.copy?.mode ?? options.mode ?? DEFAULT_MODE;
+  const name = options.document?.mode ?? options.copy?.mode ?? options.mode ?? DEFAULT_MODE;
   const mode = loadMode(options.modesDir ?? builtInModesDir(), name);
-  const document = options.copy === undefined
+  const document = options.document ?? (options.copy === undefined
     ? boundDocument(mode, name, options.defaultBranch ?? projectDefaults.defaultBranch)
-    : { ...options.copy, project: { ...options.copy.project, defaultBranch: options.defaultBranch ?? options.copy.project.defaultBranch } };
+    : { ...options.copy, project: { ...options.copy.project, defaultBranch: options.defaultBranch ?? options.copy.project.defaultBranch } });
+  const text = JSON.stringify(document, null, 2) + "\n";
   const file = path.join(projectRoot, CONFIG_PATH);
-  mkdirSync(path.dirname(file), { recursive: true });
   const warning = temporaryLocationWarning(projectRoot);
+  const warned = (result: InitConfigResult): InitConfigResult => (warning === undefined ? result : { ...result, warning });
+  if (options.expect !== undefined) {
+    // A replacement needs the file it replaces, so it creates no directory either.
+    const replaced = replaceConfig(file, text, options.expect);
+    if ("stale" in replaced) return warned({ wrote: false, stale: true, ignored: [] });
+    return warned({ wrote: true, replaced: true, previous: replaced.previous, ignored: ignoreProjectState(projectRoot, mode) });
+  }
+  mkdirSync(path.dirname(file), { recursive: true });
   // Written whole, then linked into place: `link` fails with EEXIST when a config is
   // already there, which is the exclusivity this has always had, and a crash before it
   // leaves a temporary file rather than an empty `config.json` that the next run would
@@ -518,7 +640,7 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
   const temporary = `${file}.${process.pid}.tmp`;
   let wrote = false;
   try {
-    writeFileSync(temporary, JSON.stringify(document, null, 2) + "\n", { flag: "wx" });
+    writeFileSync(temporary, text, { flag: "wx" });
     linkSync(temporary, file);
     wrote = true;
   } catch (error) {
@@ -526,8 +648,65 @@ export function initConfig(projectRoot: string, options: InitConfigOptions = {})
   } finally {
     rmSync(temporary, { force: true });
   }
+  // A document given whole is setup's confirmed write, and a refusal of it writes nothing.
+  if (!wrote && options.document !== undefined) return warned({ wrote, ignored: [] });
   // Written whether or not the config was: a project whose config already exists may
   // still be tracking it, and both tools refuse to work in one that does.
-  const ignored = ignoreProjectState(projectRoot, mode);
-  return warning === undefined ? { wrote, ignored } : { wrote, ignored, warning };
+  return warned({ wrote, ignored: ignoreProjectState(projectRoot, mode) });
+}
+
+/**
+ * Replaces the config at `file` with `text`, only while it holds the bytes whose SHA-256 is
+ * `expect`, and keeps the replaced file as `config.json.prev`; `stale` where it does not,
+ * having changed neither the config nor `.gitignore`. `init --config` calls it under
+ * `config.lock` (`src/locks.ts#configLockName`), so two setup runs never both pass the check.
+ * Node has no atomic check-and-replace, so the check is made twice over. By content: the
+ * bytes read first, and then the bytes of the very file `config.json` names, hard-linked
+ * aside, so an in-place edit before that second read is caught. By pathname: after the link
+ * is renamed to `.prev`, `config.json` must still be that file, so a save that renamed a new
+ * file over it is caught. What neither can catch is an in-place edit after the second read,
+ * which lands in `.prev`, the same file, and a rename-style save between the identity check
+ * and the final rename, the race the setup spec accepts (decision of 2026-10-13). Every call
+ * goes through `node:fs`'s default export, as `src/ledger.ts`'s do.
+ */
+function replaceConfig(file: string, text: string, expect: string): { replaced: true; previous: string } | { stale: true } {
+  const previous = `${file}.prev`;
+  const temporary = `${file}.${process.pid}.tmp`;
+  const link = `${previous}.${process.pid}.tmp`;
+  try {
+    // i. The bytes the caller named.
+    let stored: Buffer;
+    try {
+      stored = fs.readFileSync(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { stale: true };
+      throw error;
+    }
+    if (sha256(stored) !== expect) return { stale: true };
+    // ii. The replacement, whole.
+    fs.writeFileSync(temporary, text, { flag: "wx" });
+    // iii. Whatever `config.json` names at this moment, the file itself.
+    try {
+      fs.linkSync(file, link);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { stale: true };
+      throw error;
+    }
+    // iv. Its bytes, read through the link.
+    if (sha256(fs.readFileSync(link)) !== expect) return { stale: true };
+    // v. Kept as `.prev`, replacing an older one.
+    fs.renameSync(link, previous);
+    // vi. `config.json` is still the file that was checked.
+    const kept = fs.lstatSync(previous);
+    const current = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (current === undefined || current.dev !== kept.dev || current.ino !== kept.ino) return { stale: true };
+    // vii. The replacement, renamed into place.
+    fs.renameSync(temporary, file);
+    return { replaced: true, previous };
+  } finally {
+    // viii. Neither temporary outlives the call: the link is gone once renamed, and the
+    // replacement once it is.
+    fs.rmSync(temporary, { force: true });
+    fs.rmSync(link, { force: true });
+  }
 }

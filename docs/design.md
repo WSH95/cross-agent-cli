@@ -1336,8 +1336,8 @@ Everything below is built, the operator CLI's listing among it
   the holder dies, so a dead holder needs no TTL, no stale detection, and no
   rename. (An earlier recipe, an `O_EXCL` file with a TTL and a rename-based
   reclaim, was refuted in T5's plan review: a reclaim by pathname can rename the
-  winner's fresh lock, so two reclaimers could both succeed.) Five locks, all
-  five named in one place and resolved through `lockPath`
+  winner's fresh lock, so two reclaimers could both succeed.) Six locks, all
+  six named in one place and resolved through `lockPath`
   (`src/locks.ts#lockPath`), and taken through `src/ledger.ts#projectLock`, which
   writes the ledger's exclusions before a lock can make `.cross-agent/locks/`:
   `spawn.lock` around `delegate`'s validate-and-spawn
@@ -1347,12 +1347,15 @@ Everything below is built, the operator CLI's listing among it
   `runner-<id>.lock` held by a runner for its lifetime
   (`src/locks.ts#runnerLockName`); `ask-<id>.lock` around each write to one ask,
   an answer or a cancel ("The lead model", item 3; `src/locks.ts#askLockName`);
-  and `git.lock` around every lead git
+  `git.lock` around every lead git
   mutation, taken by `git_mutate` inside its `spawn.lock`
-  (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`). All five are taken by
-  built code today: `delegate` and `cancel` hold `spawn.lock` — the one around
-  validate-and-spawn, the other around the parent's claim and the snapshot of
-  its descendants (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). A sixth lock
+  (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`); and `config.lock` around
+  `init --config`'s write of the project's config, a creation or a replacement, taken
+  alone, with no other lock held (`src/locks.ts#configLockName`, `src/cli.ts#initVerb`;
+  section 10). The config's readers take none: a replacement is one `rename`. All six
+  are taken by built code today: `delegate` and `cancel` hold `spawn.lock` — the one
+  around validate-and-spawn, the other around the parent's claim and the snapshot of
+  its descendants (`src/delegate.ts#delegate`, `src/tasks.ts#cancel`). A seventh lock
   is no project's: the **repository lock**, `<commonDir>/cross-agent.lock` in the git
   directory every worktree of a repository shares, so the projects of one repository —
   its main checkout and the worktrees initialized as projects of their own — order
@@ -3210,8 +3213,10 @@ name, and it is the value `delegate` carries to that engine's adapter
 (section 3). The file is written whole — a temporary beside it, linked into
 place — so a crash leaves a temporary rather than an empty config a later run
 would call "already exists" and never repair, and the link is what keeps `init`
-from replacing a config that is already there
-(`src/config.ts#initConfig`). `limits.maxDepth` is a whole number of hops and
+from replacing a config that is already there, unless `--config - --replace --expect`
+names the bytes it replaces, under `config.lock`, keeping the replaced file as
+`config.json.prev` (`src/config.ts#initConfig`, `#replaceConfig`; section 10).
+`limits.maxDepth` is a whole number of hops and
 never negative; zero is legal, and is the cap that offers every server the
 specialist row.
 
@@ -3890,7 +3895,7 @@ source as it does from any other.
 Each verb calls the function its tool calls, with the options the tool's
 handler passes:
 
-- `cross-agent init [--mode <name>] [--from <dir>] [--project <root>]` writes the
+- `cross-agent init [--mode <name>] [--from <dir>] [--propose] [--config - [--replace --expect <sha256>]] [--project <root>]` writes the
   bind-time config for a mode (`src/cli.ts#initVerb`); a project that already holds
   one is not rewritten, and that is a 0 with a line saying so; a `--project` that does
   not resolve to an existing directory, and a mode this build has not got or
@@ -3941,6 +3946,60 @@ handler passes:
   through `--project` or `CROSS_AGENT_PROJECT` is not copied — an explicit binding
   outranks the working directory, and would serve that project from the worktree — and
   `init` prints the binding to set up by hand (`tests/cli.test.ts#initBoundGrokAttachNotCopied`).
+
+  `--propose` and `--config -` are the setup skill's two calls (setup spec, section 2),
+  each exclusive of `--mode` and `--from`, and every combination the command line cannot
+  read is a 2. Their refusals are a 3 whose document is `{ok: false, code, reason}`, with
+  the code the skill recognises: `no-such-directory`; `not-a-git-repository` for a folder
+  with no `.git`, which `--mode` still writes and the skill answers by offering `git init`;
+  `task-worktree`; `unsupported`; `detached-head` and `branch-name` at a branch worktree,
+  `initWorktree`'s checks under their own names (`src/cli.ts#worktreeBranchRefusal`); and,
+  inside a task's environment, `inside-a-task` with the marker refusal's text
+  (`tests/cli.test.ts#initProposeRefused`, `#initTaskRefusalCoded`). `--propose` looks and
+  writes nothing, takes no lock, and reads the stored config once, hashing the very bytes it
+  parses (`tests/cli.test.ts#initPropose`, `#initProposeExisting`). It answers the engines,
+  found as the server finds them — `engines.<e>.bin` over `CROSS_AGENT_<E>_BIN` over `PATH`
+  (`src/setup.ts#findEngines`); the default branch, the test and the setup command, each
+  with where it came from, read from fixed names at the root and never run
+  (`src/setup.ts#detectDefaultBranch`, `#detectTestCommand`, `#detectSetupCommand`,
+  `tests/setup.test.ts#detectionReadsOnly`); the stored config raw, its SHA-256 and the
+  fault the server would find in it, the `.gitignore` entries and whether `.cross-agent/`
+  is tracked; and one proposal per built-in mode. The team rule
+  (`src/setup.ts#proposeMode`) keeps each binding whose engine is found, and otherwise
+  takes the first found engine the role may run on: the engine-placed lead Claude or Codex,
+  a writing role Claude or Codex, or Grok when neither is found, under Grok's `workspace`
+  profile and with a note that cross-agent checks Grok's git files after each step, and any
+  other role any engine (`tests/setup.test.ts#teamGrokOnly`, `#teamEverySubset`). Each
+  proposal then passes `--config`'s own content checks or is unavailable with their reason,
+  so `--config` never refuses an available proposal for what it says. At a branch
+  worktree the default branch is its own, as `init` makes it, and a first setup there builds
+  its main checkout's mode on that checkout's config, through the same rule and gate, as
+  `init` copies it (`src/setup.ts#propose`, `tests/cli.test.ts#initProposeWorktree`,
+  `#initProposeFromMain`). `--config -` reads a whole config on stdin and checks it as the
+  server checks one against its mode, with two rules of its own at write time: a merge
+  policy of `auto` or `manual`, and a default branch `src/setup.ts#defaultBranchFault`
+  accepts — a branch worktree's own, a name `git_root` reads, and none the task pattern
+  matches (`src/config.ts#checkConfigDocument`, `tests/cli.test.ts#initConfigRefused`). A
+  refusal names the field and the rule, `stdin: <field>: <rule>`, as `invalid-config`, and
+  writes nothing. It creates a config exclusively, as `init` does (`config-exists` where one
+  is there; `src/config.ts#initConfig`), and replaces one only with `--replace --expect <sha256>` naming its bytes:
+  checked once before the lock, writing nothing (`config-changed`), then under `config.lock`
+  (`src/locks.ts#configLockName`; `config-busy` past `limits.lockWaitSeconds`), where
+  `src/config.ts#replaceConfig` checks again by content — the stored bytes, then the bytes of
+  the very file `config.json` names, hard-linked aside — and by pathname — that
+  `config.json` is still that file once the link is renamed to `config.json.prev` — before
+  it renames the new config into place (`tests/config.test.ts#initConfigReplace`,
+  `#replaceConfigRaces`, `tests/cli.test.ts#initConfigReplace`, `#initConfigLock`). An edit
+  in place after the second read lands in `.prev`, the same file, and is recovered from
+  there; a save that renames a new file over `config.json` between the identity check and
+  the rename is lost, with `.prev` holding the version the check matched, the race the setup
+  spec accepts (decision of 2026-10-13). A refusal after the lock is prepared may leave what
+  `src/ledger.ts#projectLock` writes — the shared `info/exclude` entries and the lock file —
+  and never changes `config.json` or `.gitignore`. Its document is `{ok, wrote, replaced,
+  file, previous, mode, served, reconnect, ignored, warning?}`: `served` is the mode the
+  server reads at start from the config replaced, or `solo` with none, and `reconnect` says
+  the mode written is another (`tests/cli.test.ts#initConfigWrite`, `#initConfigReconnect`).
+  It writes the `.gitignore` entries `init` writes, and copies no Grok attach.
 - `cross-agent modes` lists every built-in mode as the loader reads it, with its
   roles, and marks the one the config names — the read `describe_mode` makes
   (`src/cli.ts#modesVerb`). A config naming a mode this build does not have is

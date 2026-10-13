@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { CONFIG_PATH, DEFAULT_MODE, ignoreEntries, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds } from "./config.ts";
-import type { CrossAgentConfig } from "./config.ts";
+import {
+  checkConfigDocument, CONFIG_PATH, configBytes, DEFAULT_MODE, ignoreEntries, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds,
+} from "./config.ts";
+import type { BoundConfig, CrossAgentConfig, InitConfigResult } from "./config.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest, GitMutateResult } from "./gitmutate.ts";
@@ -10,18 +12,22 @@ import { gitRoot, matchesPattern, nameFault } from "./gitroot.ts";
 import type { GitRootResult } from "./gitroot.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
-import { find, isProcessAlive, isTaskId, isTerminal, readOutcome, runnerLogPath, scan, tailLines, taskStatuses } from "./ledger.ts";
+import { find, isProcessAlive, isTaskId, isTerminal, projectLock, readOutcome, runnerLogPath, scan, tailLines, taskStatuses } from "./ledger.ts";
 import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
+import { configLockName } from "./locks.ts";
+import type { Lock } from "./locks.ts";
 import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
 import type { EffectiveGitPolicy, Mode, ModeLead, Workspace } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule, parseFlags } from "./project.ts";
 import { waiveReview } from "./review.ts";
+import { defaultBranchFault, propose } from "./setup.ts";
+import type { ProjectRepository, SetupProposal } from "./setup.ts";
 import { cancel, listTasks, result } from "./tasks.ts";
 import type { Outcome } from "./tasks.ts";
 import { enclosingWorktree, locateRepository, nestedReason, ownGit, verifyWorktree } from "./worktree.ts";
-import type { Repository } from "./worktree.ts";
+import type { Located, Repository } from "./worktree.ts";
 
 // `cross-agent`, the operator's own entry point (design section 10): a table of verbs over
 // one parser and one exit protocol. Each verb calls the function its tool calls, with the
@@ -110,6 +116,12 @@ export interface Verb {
   rest?: string;
   /** A value on the command line this verb cannot read, judged before anything runs: a 2, as a wrong flag is. */
   check?(parsed: Parsed): string | null;
+  /**
+   * Whether this command line's refusals carry a code a caller recognises — the setup
+   * skill's `init` calls — so the task-environment refusal is `{ ok: false, code:
+   * "inside-a-task", reason }` rather than `{ ok: false, reason }`.
+   */
+  codes?(parsed: Parsed): boolean;
   /**
    * Whether this command line writes the project — a config, an ask, a record, a lock, git
    * metadata. Writing is an operator's power, refused inside a task's environment.
@@ -248,52 +260,259 @@ function journalSteps(journal: Journal): string[] {
   ].join("  "));
 }
 
+/** A refusal of the setup skill's `init` calls: a 3 whose document carries a code the skill recognises. */
+function coded(refusal: { code: string; reason: string }): Answer {
+  return refused(refusal.reason, { ok: false, code: refusal.code, reason: refusal.reason });
+}
+
+/**
+ * Where `init` writes, judged before anything is written, or why it writes nowhere: the
+ * directory, whether a work tree encloses it, and its repository — none, with no `.git` at
+ * all. Each refusal carries the code `--propose` and `--config` answer with; `--mode` and
+ * `--from` answer with its reason alone, as they always have.
+ */
+async function initTarget(parsed: Parsed, context: Context): Promise<{ root: string; located: Located | null } | { refusal: { code: string; reason: string } }> {
+  let root: string;
+  try {
+    // An existing directory, resolved before anything is written: `initConfig` creates
+    // `.cross-agent/` with its parents, and a typo in `--project` would otherwise leave a
+    // project tree somewhere nobody asked for one.
+    root = fs.realpathSync(path.resolve(context.cwd, parsed.values["--project"] ?? "."));
+    if (!fs.statSync(root).isDirectory()) throw new Error(`${root} is not a directory`);
+  } catch (error) {
+    return { refusal: { code: "no-such-directory", reason: `cannot resolve the project: ${message(error)}` } };
+  }
+  // Every target is judged from outside it first, before its own `.git` is looked at: a
+  // task worktree is never a project, whatever its pointer holds now (design section 10).
+  const enclosure = await enclosingWorktree(root);
+  if (enclosure !== null) {
+    return "reason" in enclosure ? { refusal: { code: "unsupported", reason: enclosure.reason } }
+      : { refusal: { code: "task-worktree", reason: nestedReason(root, enclosure) } };
+  }
+  const dotGit = fs.lstatSync(path.join(root, ".git"), { throwIfNoEntry: false });
+  if (dotGit === undefined) return { root, located: null };
+  const located = await locateRepository(root);
+  const noWorkTree = (reason: string) => ({ refusal: { code: "unsupported", reason: `init makes no project of an unsupported root that is no work tree: ${reason}` } });
+  if (dotGit.isDirectory()) {
+    // A bare repository at `.git` makes the directory holding it no work tree of it.
+    return located.kind === "unsupported" ? noWorkTree(located.reason) : { root, located };
+  }
+  // A pointer file or a link. A linked worktree is initialized on its own branch. A
+  // checkout whose git directory lies outside it — a separated main's, a submodule, a
+  // `.git` linking to the root's git directory — is a work tree by its own git, and
+  // takes the mode's defaults as any main checkout does. Anything else is no project.
+  if (located.kind === "refused") return { refusal: { code: "unsupported", reason: `init makes no project of a root its repository refuses: ${located.reason}` } };
+  if (located.kind === "unsupported") {
+    let workTree = false;
+    try {
+      workTree = (await ownGit(root)).workTree;
+    } catch { /* a git that cannot say is no work tree's */ }
+    if (!workTree) return noWorkTree(located.reason);
+  }
+  return { root, located };
+}
+
+/**
+ * Why a linked worktree has no branch to make its project's default, or null: a detached
+ * HEAD, or a branch `git_root` could not name in any read of the default branch.
+ */
+function worktreeBranchRefusal(root: string, located: Repository): { code: string; reason: string } | null {
+  const branch = located.branch;
+  if (branch === null) {
+    return { code: "detached-head", reason: `${root} has a detached HEAD, which names no branch to make the project's default; check out its branch first` };
+  }
+  if (nameFault(branch) !== null) {
+    return {
+      code: "branch-name",
+      reason: `${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing "/" or ".lock"`,
+    };
+  }
+  return null;
+}
+
+/**
+ * The repository `init --propose` looks at and `init --config` writes for, or the coded
+ * refusal: a folder with no `.git` is no project of theirs — the skill offers `git init` —
+ * though `init --mode` still writes one; a linked worktree is a branch project, on its own
+ * branch, as `init` makes it.
+ */
+function projectRepository(root: string, located: Located | null): ProjectRepository | { code: string; reason: string } {
+  if (located === null) {
+    return {
+      code: "not-a-git-repository",
+      reason: `${root} is not a git repository, and cross-agent needs git for its branches and merges: run git init there, then set up again`,
+    };
+  }
+  if (located.kind === "linked" || located.kind === "bare-linked") {
+    const refusal = worktreeBranchRefusal(root, located);
+    if (refusal !== null) return refusal;
+    return { gitDir: located.gitDir, workTree: located.workTree, worktree: { branch: located.branch!, main: located.main } };
+  }
+  if (located.kind === "refused" || located.kind === "none") {
+    return { code: "unsupported", reason: `init makes no project of a root its repository refuses: ${located.reason}` };
+  }
+  return { gitDir: located.gitDir, workTree: located.workTree, worktree: null };
+}
+
+/** `--propose` and `--config` against the rest of `init`'s command line: a 2 for any pair that cannot be read together. */
+function initCheck(parsed: Parsed): string | null {
+  const given = (flag: string) => parsed.values[flag] !== undefined || parsed.booleans.has(flag);
+  if (given("--propose")) {
+    const other = ["--config", "--mode", "--from", "--replace", "--expect"].find(given);
+    if (other !== undefined) return `--propose looks at the project and writes nothing, so it takes no ${other}`;
+  }
+  if (given("--config")) {
+    const other = ["--mode", "--from"].find(given);
+    if (other !== undefined) return `--config writes the document it reads on stdin, so it takes no ${other}`;
+    if (parsed.values["--config"] !== "-") return `--config reads its document on stdin, named "-", not ${JSON.stringify(parsed.values["--config"])}`;
+  }
+  if (given("--replace") && !(given("--config") && given("--expect"))) {
+    return "--replace replaces the config with the document --config - reads, and needs --expect <sha256> naming the bytes it replaces";
+  }
+  if (given("--expect") && !given("--replace")) return "--expect names the bytes a replacement replaces: give it with --config - --replace";
+  const expect = parsed.values["--expect"];
+  if (expect !== undefined && !/^[0-9a-f]{64}$/.test(expect)) {
+    return `--expect is the config's SHA-256, 64 lowercase hex digits as init --propose reports it, not ${JSON.stringify(expect)}`;
+  }
+  return null;
+}
+
+/** A finding as one line of `--propose`'s text: its value and where it came from, or not found. */
+function fact(found: { found: boolean; value: string | null; from: string | null }): string {
+  return found.found ? `${found.value} (${found.from})` : "not found";
+}
+
+/** `--propose`'s document as a person reads it: the root, the engines, the facts, and each mode. */
+function proposalText(proposal: SetupProposal): string {
+  const lines = [`root: ${proposal.root}`, "engines:"];
+  for (const [engine, finding] of Object.entries(proposal.engines)) {
+    lines.push(`  ${engine}: ${finding.found ? `${finding.path} (${finding.from})` : `not found (${finding.command}, ${finding.from})`}`);
+  }
+  lines.push("project:", ...Object.entries(proposal.project).map(([key, value]) => `  ${key}: ${fact(value)}`));
+  const { existing } = proposal;
+  lines.push(`config: ${existing.sha256 === null ? "none" : `sha256 ${existing.sha256}${existing.fault === null ? "" : `, refused: ${existing.fault}`}`}`);
+  if (existing.mainCheckoutConfig !== null) {
+    lines.push(`main checkout's config: ${existing.mainCheckoutConfig.file}${existing.mainCheckoutConfig.fault === null ? "" : `, refused: ${existing.mainCheckoutConfig.fault}`}`);
+  }
+  lines.push(`.gitignore: ${existing.gitignore.complete ? "complete" : `lacks ${existing.gitignore.missing.join(", ")}`}`);
+  if (existing.tracked) lines.push(`blocked: ${existing.trackedReason}`);
+  for (const each of proposal.proposals) {
+    lines.push(`${each.mode}: ${each.available ? "available" : `unavailable: ${each.reason}`}${each.copiedFrom === null ? "" : `, from ${each.copiedFrom}`}`);
+    for (const swap of each.substitutions) {
+      lines.push(`  ${swap.seat === undefined ? swap.role : `${swap.role}#${swap.seat}`}: ${swap.from ?? "unbound"} → ${swap.to ?? "dropped"}`);
+    }
+    lines.push(...each.notes.map((note) => `  note: ${note}`));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** Standard input, whole: the document `init --config -` writes. */
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * `init --config -`: the confirmed document on stdin, checked whole as the server checks a
+ * config against its mode, and held to the write-time rules, before anything is written. A
+ * config already there is replaced only with `--replace --expect <sha256>` naming its bytes,
+ * checked once before `config.lock` and again inside it, and kept as `config.json.prev`
+ * (`src/config.ts#replaceConfig`). `reconnect` says whether the server, which reads its mode
+ * once at start, now serves another mode than the one written.
+ */
+async function initConfigWrite(root: string, repository: ProjectRepository, parsed: Parsed): Promise<Answer> {
+  const raw = await readStdin();
+  let checked: BoundConfig;
+  try {
+    checked = checkConfigDocument(raw, "stdin");
+  } catch (error) {
+    return coded({ code: "invalid-config", reason: message(error) });
+  }
+  const branchFault = defaultBranchFault(checked.mode, checked.config.project.defaultBranch, repository.worktree?.branch ?? null);
+  if (branchFault !== null) return coded({ code: "invalid-config", reason: `stdin: project.defaultBranch: ${branchFault}` });
+  const file = path.join(root, CONFIG_PATH);
+  const expect = parsed.values["--expect"];
+  const exists = { code: "config-exists", reason: `${file} already exists: init --config - replaces it only with --replace --expect <sha256>, the hash init --propose reports for it` };
+  const changed = (now: string) => ({
+    code: "config-changed",
+    reason: `${file} has changed since --expect ${expect} was read: ${now}; nothing was written, so look again with init --propose`,
+  });
+  // The check before the lock, which writes nothing: the lock itself writes the ledger's
+  // exclusions and its own file (`src/ledger.ts#projectLock`).
+  const stored = configBytes(root);
+  if (expect === undefined && stored !== null) return coded(exists);
+  if (expect !== undefined && stored === null) return coded(changed("there is no config there now"));
+  if (expect !== undefined && stored!.sha256 !== expect) return coded(changed(`its SHA-256 is ${stored!.sha256}`));
+  let lock: Lock;
+  try {
+    lock = await projectLock(root, configLockName(), { waitSeconds: lockWaitSeconds(root), operation: "init --config" });
+  } catch (error) {
+    return coded({ code: "config-busy", reason: message(error) });
+  }
+  let served: string | null;
+  let result: InitConfigResult;
+  try {
+    // The mode the server serves is the one it read at start from the config this replaces,
+    // or solo with none (`src/config.ts#defaultConfig`).
+    try {
+      served = loadConfig(root).mode;
+    } catch {
+      served = null;
+    }
+    result = initConfig(root, { document: checked.config, ...(expect === undefined ? {} : { expect }) });
+  } finally {
+    await lock.release();
+  }
+  if (result.stale === true) return coded(changed("another write replaced it, or it was edited, while this one waited or wrote"));
+  if (!result.wrote) return coded(exists);
+  const mode = checked.config.mode;
+  const reconnect = served !== mode;
+  const lines = [result.replaced === true
+    ? `cross-agent: replaced ${file} for mode ${mode}; the previous config is ${result.previous}`
+    : `cross-agent: wrote ${file} for mode ${mode}`];
+  if (result.ignored.length > 0) lines.push(`cross-agent: added ${result.ignored.join(", ")} to ${path.join(root, ".gitignore")}`);
+  if (reconnect) lines.push(`cross-agent: the server serves ${served ?? "no mode it can load"}; reconnect it to serve ${mode}`);
+  return {
+    code: EXIT.ok,
+    document: {
+      ok: true, wrote: true, replaced: result.replaced === true, file, previous: result.previous ?? null, mode, served, reconnect,
+      ignored: result.ignored, ...(result.warning === undefined ? {} : { warning: result.warning }),
+    },
+    text: `${lines.join("\n")}\n`,
+    ...(result.warning === undefined ? {} : { notes: `cross-agent: ${result.warning}\n` }),
+  };
+}
+
 const initVerb: Verb = {
-  usage: "cross-agent init [--mode <name>] [--from <dir>] [--project <root>]",
-  summary: "write .cross-agent/config.json, binding every role of a mode to an engine; in a worktree, its main checkout's config on the worktree's own branch",
+  usage: "cross-agent init [--mode <name>] [--from <dir>] [--propose] [--config - [--replace --expect <sha256>]] [--project <root>]",
+  summary: "write .cross-agent/config.json, binding every role of a mode to an engine; in a worktree, its main checkout's config on the worktree's own branch. "
+    + "--propose looks at the project and proposes a team for each built-in mode from the engines installed, writing nothing; "
+    + "--config - writes a config read on stdin once it passes the server's checks, and replaces one only with --replace --expect <sha256>",
   positionals: [],
-  flags: { "--mode": "name", "--from": "dir" },
+  flags: { "--mode": "name", "--from": "dir", "--config": "-", "--expect": "sha256" },
+  booleans: ["--propose", "--replace"],
+  check: initCheck,
+  codes: (parsed) => parsed.booleans.has("--propose") || parsed.values["--config"] !== undefined,
   writes: true,
   async run(parsed, context) {
     if (parsed.values["--mode"] !== undefined && parsed.values["--from"] !== undefined) {
       throw new UsageError("--mode names a mode's defaults and --from a project's config to copy: give one of them");
     }
-    let root: string;
-    try {
-      // An existing directory, resolved before anything is written: `initConfig` creates
-      // `.cross-agent/` with its parents, and a typo in `--project` would otherwise leave a
-      // project tree somewhere nobody asked for one.
-      root = fs.realpathSync(path.resolve(context.cwd, parsed.values["--project"] ?? "."));
-      if (!fs.statSync(root).isDirectory()) throw new Error(`${root} is not a directory`);
-    } catch (error) {
-      return refused(`cannot resolve the project: ${message(error)}`);
-    }
-    // Every target is judged from outside it first, before its own `.git` is looked at: a
-    // task worktree is never a project, whatever its pointer holds now (design section 10).
-    const enclosure = await enclosingWorktree(root);
-    if (enclosure !== null) return refused("reason" in enclosure ? enclosure.reason : nestedReason(root, enclosure));
-    const dotGit = fs.lstatSync(path.join(root, ".git"), { throwIfNoEntry: false });
-    if (dotGit !== undefined && !dotGit.isDirectory()) {
-      // A pointer file or a link. A linked worktree is initialized on its own branch. A
-      // checkout whose git directory lies outside it — a separated main's, a submodule, a
-      // `.git` linking to the root's git directory — is a work tree by its own git, and
-      // takes the mode's defaults below as any main checkout does. Anything else is no project.
-      const located = await locateRepository(root);
-      if (located.kind === "linked" || located.kind === "bare-linked") return initWorktree(root, located, parsed, context);
-      if (located.kind === "refused") return refused(`init makes no project of a root its repository refuses: ${located.reason}`);
-      if (located.kind === "unsupported") {
-        let workTree = false;
-        try {
-          workTree = (await ownGit(root)).workTree;
-        } catch { /* a git that cannot say is no work tree's */ }
-        if (!workTree) return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
+    const target = await initTarget(parsed, context);
+    if (initVerb.codes!(parsed)) {
+      if ("refusal" in target) return coded(target.refusal);
+      const repository = projectRepository(target.root, target.located);
+      if ("code" in repository) return coded(repository);
+      if (parsed.booleans.has("--propose")) {
+        const proposal = await propose(target.root, repository, { env: context.env });
+        return { code: EXIT.ok, document: proposal, text: proposalText(proposal) };
       }
+      return initConfigWrite(target.root, repository, parsed);
     }
-    if (dotGit?.isDirectory()) {
-      // A bare repository at `.git` makes the directory holding it no work tree of it.
-      const located = await locateRepository(root);
-      if (located.kind === "unsupported") return refused(`init makes no project of an unsupported root that is no work tree: ${located.reason}`);
-    }
+    if ("refusal" in target) return refused(target.refusal.reason);
+    const { root, located } = target;
+    if (located !== null && (located.kind === "linked" || located.kind === "bare-linked")) return initWorktree(root, located, parsed, context);
     if (parsed.values["--from"] !== undefined) {
       return refused(`--from copies a project's config into a linked worktree of its repository, and ${root} is none: init writes the mode's defaults there, so run it without --from`);
     }
@@ -325,11 +544,9 @@ const initVerb: Verb = {
  * every refusal comes before anything is written.
  */
 async function initWorktree(root: string, located: Repository, parsed: Parsed, context: Context): Promise<Answer> {
-  const branch = located.branch;
-  if (branch === null) return refused(`${root} has a detached HEAD, which names no branch to make the project's default; check out its branch first`);
-  if (nameFault(branch) !== null) {
-    return refused(`${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing "/" or ".lock"`);
-  }
+  const refusal = worktreeBranchRefusal(root, located);
+  if (refusal !== null) return refused(refusal.reason);
+  const branch = located.branch!;
   const named = parsed.values["--mode"];
   const from = parsed.values["--from"];
   let source: string | undefined;
@@ -1216,8 +1433,9 @@ export async function runCli(
   const marker = taskMarker(verb, parsed, env);
   let answered: Answer;
   try {
+    const reason = `${marker} is set in this environment: ${name} is an operator's command, and an engine reaches the project through its server, never this CLI`;
     answered = marker !== null
-      ? refused(`${marker} is set in this environment: ${name} is an operator's command, and an engine reaches the project through its server, never this CLI`)
+      ? refused(reason, verb.codes?.(parsed) === true ? { ok: false, code: "inside-a-task", reason } : undefined)
       : await verb.run(parsed, { cwd, env });
   } catch (error) {
     if (error instanceof UsageError) return usageError(error.message, verb);

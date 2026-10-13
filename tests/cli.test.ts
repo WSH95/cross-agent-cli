@@ -3,6 +3,7 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,13 +11,14 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
+import { boundDocument, CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
+import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord } from "../src/ledger.ts";
-import { builtInModesDir } from "../src/modes.ts";
-import { git } from "./helpers/git.ts";
+import { builtInModesDir, loadMode } from "../src/modes.ts";
+import { git, holdersOf } from "./helpers/git.ts";
 import {
-  bareDotGitProject, layoutRoot, linkedProject, mainCheckout, rootInsideCommonDir, separatedMainProject, submoduleProject, symlinkedGitProject,
-  umbrellaProject,
+  bareDotGitProject, enginePath, layoutRoot, layouts, linkedProject, mainCheckout, poll, rootInsideCommonDir, separatedMainProject, submoduleProject,
+  symlinkedGitProject, umbrellaProject,
 } from "./helpers/project.ts";
 import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
 import type { SeededProject } from "./helpers/seed.ts";
@@ -41,6 +43,19 @@ interface Ran {
 async function run(args: string[], cwd: string, bin: string[] = [process.execPath, cli], env: NodeJS.ProcessEnv = suiteEnv): Promise<Ran> {
   try {
     const { stdout, stderr } = await exec(bin[0], [...bin.slice(1), ...args], { cwd, env, encoding: "utf8" });
+    return { code: 0, stdout, stderr };
+  } catch (error) {
+    const failure = error as { code?: number; stdout?: string; stderr?: string };
+    return { code: failure.code ?? -1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
+  }
+}
+
+/** `run`, with `input` written to the command's standard input and the pipe closed after it. */
+async function runWithInput(args: string[], cwd: string, input: string, env: NodeJS.ProcessEnv = suiteEnv): Promise<Ran> {
+  const pending = exec(process.execPath, [cli, ...args], { cwd, env, encoding: "utf8" });
+  pending.child.stdin!.end(input);
+  try {
+    const { stdout, stderr } = await pending;
     return { code: 0, stdout, stderr };
   } catch (error) {
     const failure = error as { code?: number; stdout?: string; stderr?: string };
@@ -2078,4 +2093,578 @@ test("init copies no Grok attach that binds a project, and prints the binding to
     assert.ok(ran.stderr.includes(binding), ran.stderr);
     assert.match(ran.stderr, /by hand/);
   }
+});
+
+// `init --propose` and `init --config -` (setup spec, section 2): the setup skill's look at a
+// project, which writes nothing, and its confirmed write, checked as the server checks a
+// config and serialized under `config.lock`.
+
+/** The environment of a host on which exactly `engines` are installed. */
+function withEngines(t: TestContext, engines: readonly string[]): NodeJS.ProcessEnv {
+  return { ...suiteEnv, PATH: enginePath(t, engines) };
+}
+
+/** One proposal, as `init --propose --json` prints it. */
+interface ProposalAnswer {
+  mode: string;
+  available: boolean;
+  reason?: string;
+  document: CrossAgentConfig | null;
+  substitutions: Array<{ role: string; seat?: number; from: string | null; to: string | null }>;
+  notes: string[];
+  copiedFrom: string | null;
+}
+
+/** `init --propose --json`'s document, as far as these tests read it. */
+interface ProposeAnswer {
+  ok: true;
+  root: string;
+  engines: Record<string, { found: boolean; command: string; path: string | null; from: string }>;
+  project: Record<string, { found: boolean; value: string | null; from: string | null }>;
+  existing: {
+    config: unknown; sha256: string | null; fault: string | null; gitignore: { complete: boolean; missing: string[] };
+    tracked: boolean; trackedReason: string | null; mainCheckoutConfig: { file: string; fault: string | null } | null;
+  };
+  proposals: ProposalAnswer[];
+}
+
+/** `init --propose --json` at `root` with `env`, asserted 0. */
+async function proposeAt(root: string, env: NodeJS.ProcessEnv): Promise<ProposeAnswer> {
+  const ran = await run(["init", "--propose", "--json"], root, undefined, env);
+  assert.equal(ran.code, 0, `${ran.stdout}${ran.stderr}`);
+  return JSON.parse(ran.stdout) as ProposeAnswer;
+}
+
+/** One mode's proposal from an answer, asserted available. */
+function proposalOf(answer: ProposeAnswer, mode: string): CrossAgentConfig {
+  const proposal = answer.proposals.find((each) => each.mode === mode)!;
+  assert.equal(proposal.available, true, JSON.stringify(proposal));
+  return proposal.document!;
+}
+
+/** `init --config - --json` with `document` on stdin, its answer parsed. */
+async function configure(root: string, document: unknown, args: string[] = [], env: NodeJS.ProcessEnv = suiteEnv): Promise<{ code: number; answer: Record<string, unknown> }> {
+  const ran = await runWithInput(["init", "--config", "-", "--json", ...args], root, typeof document === "string" ? document : JSON.stringify(document), env);
+  assert.ok(ran.stdout !== "", ran.stderr);
+  return { code: ran.code, answer: JSON.parse(ran.stdout) as Record<string, unknown> };
+}
+
+function sha256(bytes: string | Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** The config `init --mode` writes for `mode` on `defaultBranch`. */
+function initDocument(mode: string, defaultBranch = "main"): CrossAgentConfig {
+  return boundDocument(loadMode(builtInModesDir(), mode), mode, defaultBranch);
+}
+
+/** A checkout's own files, its `.git` entry left out: what another checkout's setup must not touch. */
+function workingTree(directory: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(snapshot(directory)).filter(([name]) => name !== ".git" && !name.startsWith(`.git${path.sep}`)));
+}
+
+/** The lines of a repository's shared `info/exclude`, or null with none. */
+function excludeOf(commonDir: string): string | null {
+  const file = path.join(commonDir, "info", "exclude");
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+}
+
+const limitsWritten = {
+  maxDepth: 1, stallMinutes: 15, waitDefaultSeconds: 600, duplicateWindowMinutes: 10, lockWaitSeconds: 5, cancelGraceSeconds: 5, planReviewRounds: 3,
+};
+
+// @anchor initPropose
+test("init --propose --json returns the document and writes nothing", async (t) => {
+  const env = withEngines(t, ["claude", "codex"]);
+  const root = await mainCheckout(scratch(t), "P");
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  fs.writeFileSync(path.join(root, "package-lock.json"), "{}");
+  const before = snapshot(root);
+  const answer = await proposeAt(root, env);
+  const project = { defaultBranch: "main", testCommand: "npm test", setupCommand: "npm ci", mergePolicy: "auto" };
+  const fresh = (mode: string, roles: Record<string, unknown>, maxDepth = 1) => ({
+    mode, project, roles, engines: { claude: {}, codex: {}, grok: {} }, limits: { ...limitsWritten, maxDepth }, review: { afterResolver: "ask" },
+    billing: "subscription",
+  });
+  const team = { ...devTeamRoles, "code-reviewer": devTeamRoles["code-reviewer"].slice(0, 2) };
+  const dropped = [{ role: "code-reviewer", seat: 3, from: "grok", to: null }];
+  assert.deepEqual(answer, {
+    ok: true, root,
+    engines: {
+      claude: { found: true, command: "claude", path: path.join(env.PATH!, "claude"), from: "PATH" },
+      codex: { found: true, command: "codex", path: path.join(env.PATH!, "codex"), from: "PATH" },
+      grok: { found: false, command: "grok", path: null, from: "PATH" },
+    },
+    project: {
+      defaultBranch: { found: true, value: "main", from: "current branch" },
+      testCommand: { found: true, value: "npm test", from: "package.json scripts.test" },
+      setupCommand: { found: true, value: "npm ci", from: "package-lock.json" },
+      mergePolicy: { found: true, value: "auto", from: "default" },
+    },
+    existing: {
+      config: null, sha256: null, fault: null, gitignore: { complete: false, missing: [".cross-agent/", ".worktrees/"] },
+      tracked: false, trackedReason: null, mainCheckoutConfig: null,
+    },
+    proposals: [
+      { mode: "dev-team", available: true, document: fresh("dev-team", team), substitutions: dropped, notes: [], copiedFrom: null },
+      {
+        mode: "dev-team-engine", available: true,
+        document: fresh("dev-team-engine", { lead: { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" }, ...team }, 2),
+        substitutions: dropped, notes: [], copiedFrom: null,
+      },
+      { mode: "solo", available: true, document: fresh("solo", { consult: devTeamRoles.consult }), substitutions: [], notes: [], copiedFrom: null },
+    ],
+  });
+  // The text a person reads names the same things, and neither form wrote anything.
+  const text = await run(["init", "--propose"], root, undefined, env);
+  assert.equal(text.code, 0, text.stderr);
+  for (const shown of [root, "claude", "npm test", "npm ci", "dev-team-engine", "code-reviewer#3"]) assert.ok(text.stdout.includes(shown), `${shown}: ${text.stdout}`);
+  assert.deepEqual(snapshot(root), before, "the repository, .git included, is byte for byte as it was");
+});
+
+// @anchor initProposeExisting
+test("init --propose reports the stored config raw, its hash and fault, the .gitignore and tracking, writing nothing", async (t) => {
+  const env = withEngines(t, ["claude", "codex", "grok"]);
+  const root = await mainCheckout(scratch(t), "P");
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const file = path.join(root, CONFIG_PATH);
+  // The state a project has beside its config, which a look must leave as it is.
+  fs.mkdirSync(path.join(root, ".cross-agent", "locks"));
+  fs.writeFileSync(path.join(root, ".cross-agent", "locks", "spawn.lock"), "");
+  fs.mkdirSync(path.join(root, ".cross-agent", "tasks"));
+  fs.writeFileSync(path.join(root, ".cross-agent", "tasks", "a-task.json"), '{"id":"a-task"}\n');
+  const unchanged = async (expect: (existing: ProposeAnswer["existing"]) => void) => {
+    const before = snapshot(root);
+    const answer = await proposeAt(root, env);
+    expect(answer.existing);
+    assert.deepEqual(snapshot(root), before, "the look wrote nothing");
+    return answer;
+  };
+  await unchanged((existing) => {
+    assert.deepEqual(existing.config, written(root));
+    assert.equal(existing.sha256, sha256(fs.readFileSync(file)));
+    assert.equal(existing.fault, null);
+    assert.deepEqual(existing.gitignore, { complete: true, missing: [] });
+  });
+  // Raw as stored: a config the server fills with defaults is reported as written.
+  fs.writeFileSync(file, '{"mode":"solo","roles":{}}');
+  await unchanged((existing) => {
+    assert.deepEqual(existing.config, { mode: "solo", roles: {} });
+    assert.equal(existing.fault, null);
+  });
+  fs.writeFileSync(file, "{");
+  await unchanged((existing) => {
+    assert.equal(existing.config, null);
+    assert.equal(existing.sha256, sha256("{"));
+    assert.match(existing.fault!, /\$: expected valid JSON/);
+  });
+  fs.writeFileSync(file, '{"mode":"dev-team","roles":{"critic":{"engine":"claude"}}}');
+  await unchanged((existing) => {
+    assert.deepEqual(existing.config, { mode: "dev-team", roles: { critic: { engine: "claude" } } });
+    assert.match(existing.fault!, /declares no role/);
+  });
+  // Both entries, in a .gitignore a Windows editor saved, and .cross-agent/ committed.
+  fs.writeFileSync(path.join(root, ".gitignore"), "node_modules/\r\n.cross-agent/\r\n.worktrees/\r\n");
+  fs.writeFileSync(path.join(root, ".cross-agent", "x"), "committed\n");
+  await git(root, "add", "-f", ".cross-agent/x");
+  await git(root, "commit", "-m", "track the state");
+  await unchanged((existing) => {
+    assert.deepEqual(existing.gitignore, { complete: true, missing: [] });
+    assert.equal(existing.tracked, true);
+    assert.match(existing.trackedReason!, /\.cross-agent\/ is tracked/);
+  });
+});
+
+// @anchor initProposeRefused
+test("init --propose and --config refuse a folder that is no project, with a code, writing nothing; after git init, --propose answers", async (t) => {
+  const document = JSON.stringify(initDocument("dev-team"));
+  const plain = scratch(t);
+  const { main, task } = await mainWithTaskWorktree(t);
+  const umbrella = await umbrellaProject(t);
+  const bareDotGit = await bareDotGitProject(t);
+  const detachedMain = await initializedMain(t);
+  const detached = await linkedProject(t, detachedMain, "feature");
+  await git(detached, "checkout", "--detach");
+  const misnamed = await linkedProject(t, detachedMain, "feature+one");
+  const cases: Array<[string, string, string, RegExp]> = [
+    [plain, plain, "not-a-git-repository", /is not a git repository[\s\S]*git init/],
+    [task, main, "task-worktree", /is a worktree of the repository/],
+    [umbrella.umbrella, umbrella.umbrella, "unsupported", /no work tree/],
+    [bareDotGit.bare, bareDotGit.bare, "unsupported", /unsupported/],
+    [detached, detachedMain, "detached-head", /detached HEAD/],
+    [misnamed, detachedMain, "branch-name", /feature\+one/],
+  ];
+  for (const [root, watched, code, reason] of cases) {
+    const before = snapshot(watched);
+    const watchedRoot = snapshot(root);
+    for (const ran of [await run(["init", "--propose", "--json"], root), await runWithInput(["init", "--config", "-", "--json"], root, document)]) {
+      assert.equal(ran.code, 3, `${root}: ${ran.stdout}${ran.stderr}`);
+      const answer = JSON.parse(ran.stdout) as { ok: boolean; code: string; reason: string };
+      assert.deepEqual(Object.keys(answer), ["ok", "code", "reason"]);
+      assert.equal(answer.ok, false);
+      assert.equal(answer.code, code, root);
+      assert.match(answer.reason, reason);
+    }
+    assert.deepEqual(snapshot(watched), before, `${root}: nothing written, .git included`);
+    assert.deepEqual(snapshot(root), watchedRoot, `${root}: nothing written`);
+  }
+  for (const ran of [await run(["init", "--propose", "--json", "--project", path.join(plain, "absent")], plain),
+    await runWithInput(["init", "--config", "-", "--json", "--project", path.join(plain, "absent")], plain, document)]) {
+    assert.equal(ran.code, 3);
+    assert.equal((JSON.parse(ran.stdout) as { code: string }).code, "no-such-directory");
+  }
+  assert.equal(fs.existsSync(path.join(plain, "absent")), false);
+
+  // init --mode keeps writing a folder with no .git, and answers as it always has.
+  const legacy = await run(["init", "--mode", "solo", "--json"], plain);
+  assert.equal(legacy.code, 0, legacy.stderr);
+  const legacyAnswer = JSON.parse(legacy.stdout) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(legacyAnswer).sort(), ["file", "ignored", "mode", "warning", "wrote"]);
+  // What the skill offers on that refusal: once the folder is a repository, the look answers.
+  await git(plain, "init", "-b", "trunk");
+  const answer = await proposeAt(plain, suiteEnv);
+  assert.deepEqual(answer.project.defaultBranch, { found: true, value: "trunk", from: "current branch" });
+});
+
+// @anchor initConfigWrite
+test("init --config - writes a confirmed proposal", async (t) => {
+  const root = await mainCheckout(scratch(t), "P");
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  const crlf = "node_modules/\r\ndist/\r\n";
+  fs.writeFileSync(path.join(root, ".gitignore"), crlf);
+  const proposed = proposalOf(await proposeAt(root, withEngines(t, ["claude", "codex"])), "dev-team");
+  const { code, answer } = await configure(root, proposed);
+  assert.equal(code, 0, JSON.stringify(answer));
+  const file = path.join(root, CONFIG_PATH);
+  assert.deepEqual({ ...answer, warning: undefined }, {
+    ok: true, wrote: true, replaced: false, file, previous: null, mode: "dev-team", served: "solo", reconnect: true,
+    ignored: [".cross-agent/", ".worktrees/"], warning: undefined,
+  });
+  assert.match(answer.warning as string, /not isolated/);
+  assert.equal(fs.readFileSync(file, "utf8"), `${JSON.stringify(proposed, null, 2)}\n`);
+  assert.deepEqual(loadConfigWithMode(root).config, proposed);
+  const gitignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+  assert.ok(gitignore.startsWith(crlf), gitignore);
+  assert.equal(gitignore.slice(crlf.length), ".cross-agent/\n.worktrees/\n");
+});
+
+// @anchor initConfigRefused
+test("init --config - refuses an invalid document, naming the field and the rule, writing nothing", async (t) => {
+  const root = await mainCheckout(scratch(t), "P");
+  const valid = initDocument("dev-team");
+  const engineLed = initDocument("dev-team-engine");
+  engineLed.roles.lead = { engine: "grok", model: "grok-4.7" };
+  const cases: Array<[string, unknown, RegExp]> = [
+    ["a Grok implementer without workspace", { ...valid, roles: { ...valid.roles, implementer: { engine: "grok" } } }, /^stdin: roles\.implementer: engine grok has no sandbox profile/],
+    ["a Grok lead", engineLed, /^stdin: roles\.lead\.engine: .*grok cannot carry one/],
+    ["an unknown role", { ...valid, roles: { ...valid.roles, critic: { engine: "claude" } } }, /^stdin: roles\.critic: mode dev-team declares no role/],
+    ["a bad merge policy", { ...valid, project: { ...valid.project, mergePolicy: "yolo" } }, /^stdin: project\.mergePolicy: expected auto \| manual$/],
+    ["a mode this build lacks", { ...valid, mode: "absent" }, /^stdin: mode: /],
+    ["a task branch as the default", { ...valid, project: { ...valid.project, defaultBranch: "task/x" } }, /^stdin: project\.defaultBranch: .*task branch pattern task\/\*/],
+    ["empty stdin", "", /^stdin: \$: the document is empty$/],
+    ["no JSON", "mode = dev-team", /^stdin: \$: expected valid JSON$/],
+  ];
+  const before = snapshot(root);
+  for (const [what, document, reason] of cases) {
+    const { code, answer } = await configure(root, document);
+    assert.equal(code, 3, what);
+    assert.equal(answer.code, "invalid-config", what);
+    assert.match(answer.reason as string, reason, what);
+    assert.deepEqual(snapshot(root), before, `${what}: nothing written, .git included`);
+  }
+  assert.equal(fs.existsSync(path.join(root, ".cross-agent")), false);
+});
+
+// @anchor initConfigReplace
+test("init --config - never replaces without --replace and the matching --expect", async (t) => {
+  const root = await mainCheckout(scratch(t), "P");
+  assert.equal((await run(["init", "--mode", "dev-team"], root)).code, 0);
+  const file = path.join(root, CONFIG_PATH);
+  const rebound = initDocument("dev-team");
+  rebound.roles["plan-reviewer"] = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
+  const refusedHere = async (args: string[], code: string, reason: RegExp) => {
+    const before = snapshot(root);
+    const refusal = await configure(root, rebound, args);
+    assert.equal(refusal.code, 3, args.join(" "));
+    assert.equal(refusal.answer.code, code, args.join(" "));
+    assert.match(refusal.answer.reason as string, reason);
+    assert.deepEqual(snapshot(root), before, `${args.join(" ")}: nothing written, .git included`);
+    assert.equal(fs.existsSync(path.join(root, ".cross-agent", "locks")), false, "and no lock file");
+  };
+  await refusedHere([], "config-exists", /--replace --expect <sha256>/);
+  await refusedHere(["--replace", "--expect", "0".repeat(64)], "config-changed", /changed/);
+  // A hand edit between the look and the write is never overwritten.
+  const looked = (await proposeAt(root, suiteEnv)).existing.sha256!;
+  const original = fs.readFileSync(file);
+  fs.writeFileSync(file, `${original.toString("utf8").trimEnd()}\n\n`);
+  await refusedHere(["--replace", "--expect", looked], "config-changed", /changed/);
+  fs.writeFileSync(file, original);
+  const replaced = await configure(root, rebound, ["--replace", "--expect", looked]);
+  assert.equal(replaced.code, 0, JSON.stringify(replaced.answer));
+  assert.equal(replaced.answer.replaced, true);
+  assert.equal(replaced.answer.previous, `${file}.prev`);
+  assert.deepEqual(fs.readFileSync(`${file}.prev`), original);
+  assert.deepEqual(written(root), rebound);
+  // The same hash again names bytes that are no longer there.
+  const again = await configure(root, initDocument("dev-team"), ["--replace", "--expect", looked]);
+  assert.equal(again.code, 3);
+  assert.equal(again.answer.code, "config-changed");
+  assert.deepEqual(written(root), rebound);
+});
+
+// @anchor initConfigReconnect
+test("reconnect follows the served mode", async (t) => {
+  const solo = await mainCheckout(scratch(t), "S");
+  const first = await configure(solo, initDocument("solo"));
+  assert.deepEqual([first.code, first.answer.served, first.answer.reconnect], [0, "solo", false]);
+
+  const root = await mainCheckout(scratch(t), "D");
+  const team = await configure(root, initDocument("dev-team"));
+  assert.deepEqual([team.code, team.answer.served, team.answer.reconnect], [0, "solo", true]);
+  const rebound = initDocument("dev-team");
+  rebound.roles["plan-reviewer"] = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
+  const binding = await configure(root, rebound, ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))]);
+  assert.deepEqual([binding.code, binding.answer.served, binding.answer.reconnect], [0, "dev-team", false]);
+  const modeChange = await configure(root, initDocument("dev-team-engine"), ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))]);
+  assert.deepEqual([modeChange.code, modeChange.answer.served, modeChange.answer.mode, modeChange.answer.reconnect], [0, "dev-team", "dev-team-engine", true]);
+});
+
+test("conflicting init options are usage errors, and --help documents them", async (t) => {
+  const root = scratch(t);
+  const hash = "a".repeat(64);
+  const lines = [
+    ["--propose", "--config", "-"], ["--propose", "--mode", "solo"], ["--propose", "--from", "."], ["--propose", "--replace"], ["--propose", "--expect", hash],
+    ["--config", "-", "--mode", "solo"], ["--config", "-", "--from", "."], ["--config", "config.json"],
+    ["--replace", "--expect", hash], ["--config", "-", "--replace"], ["--config", "-", "--expect", hash],
+    ["--config", "-", "--replace", "--expect", "A".repeat(64)], ["--config", "-", "--replace", "--expect", "abc"], ["--propose", "--propose"],
+  ];
+  for (const args of lines) {
+    const text = await runWithInput(["init", ...args], root, "{}");
+    assert.equal(text.code, 2, `${args.join(" ")}: ${text.stderr}`);
+    assert.match(text.stderr, /usage: cross-agent init/, args.join(" "));
+    const json = await runWithInput(["init", "--json", ...args], root, "{}");
+    assert.equal(json.code, 2, args.join(" "));
+    const document = JSON.parse(json.stdout) as { ok: boolean; error: string; usage: string[] };
+    assert.deepEqual([document.ok, typeof document.error, Array.isArray(document.usage)], [false, "string", true], args.join(" "));
+  }
+  assert.deepEqual(fs.readdirSync(root), [], "a command line init cannot read writes nothing");
+  const help = await run(["init", "--help"], root);
+  const helpJson = await run(["init", "--help", "--json"], root);
+  const usage = (JSON.parse(helpJson.stdout) as { verbs: Array<{ usage: string }> }).verbs[0].usage;
+  for (const option of ["--propose", "--config -", "--replace", "--expect <sha256>"]) {
+    assert.ok(help.stdout.includes(option), `init --help names ${option}`);
+    assert.ok(usage.includes(option), `init --help --json names ${option}`);
+  }
+});
+
+// @anchor initProposeWorktree
+test("init --propose and --config serve a branch worktree as init does, its own branch the default", async (t) => {
+  const env = withEngines(t, ["claude", "codex", "grok"]);
+  const separated = await separatedMainProject(t);
+  const roots: Array<{ name: string; root: string; commonDir: string; others: string[] }> = [];
+  for (const layout of layouts) {
+    const made = await layoutRoot(t, layout);
+    roots.push({ name: layout, root: made.root, commonDir: made.commonDir, others: [made.main ?? path.join(path.dirname(made.root), "main")] });
+  }
+  roots.push({ name: "separated", root: separated.root, commonDir: separated.gitDir, others: [separated.main] });
+  for (const { name, root, commonDir, others } of roots) {
+    const elsewhere = others.map(workingTree);
+    const looked = await proposeAt(root, env);
+    assert.deepEqual(looked.project.defaultBranch, { found: true, value: "feature", from: "worktree branch" }, name);
+    for (const proposal of looked.proposals) {
+      assert.equal(proposal.available, true, `${name}: ${proposal.mode}: ${proposal.reason}`);
+      assert.equal(proposal.document!.project.defaultBranch, "feature", `${name}: ${proposal.mode}`);
+    }
+    const created = await configure(root, proposalOf(looked, "dev-team"));
+    assert.equal(created.code, 0, `${name}: ${JSON.stringify(created.answer)}`);
+    assert.equal(loadConfigWithMode(root).config.project.defaultBranch, "feature", name);
+    const again = await proposeAt(root, env);
+    assert.equal(again.existing.sha256, sha256(fs.readFileSync(path.join(root, CONFIG_PATH))), name);
+    const rebound = proposalOf(again, "dev-team");
+    rebound.roles["plan-reviewer"] = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
+    const replaced = await configure(root, rebound, ["--replace", "--expect", again.existing.sha256!]);
+    assert.deepEqual([replaced.code, replaced.answer.replaced], [0, true], name);
+    assert.deepEqual(written(root), rebound, name);
+    // Every other checkout as it was; the repository's shared exclusions are the one shared change.
+    assert.deepEqual(others.map(workingTree), elsewhere, name);
+    const exclude = excludeOf(commonDir)!.split("\n");
+    assert.ok(exclude.includes(".cross-agent/") && exclude.includes(".worktrees/"), `${name}: ${exclude.join("|")}`);
+  }
+
+  // A worktree on a task branch has no proposal, and a document on another branch is refused.
+  const main = await mainCheckout(scratch(t), "M");
+  const taskBranch = await linkedProject(t, main, "task/x");
+  for (const proposal of (await proposeAt(taskBranch, env)).proposals) {
+    assert.equal(proposal.available, false, proposal.mode);
+    assert.match(proposal.reason!, /task\/x" matches mode .*task branch pattern task\/\*/, proposal.mode);
+  }
+  const branch = await linkedProject(t, main, "feature");
+  const refusal = await configure(branch, initDocument("dev-team", "main"));
+  assert.equal(refusal.code, 3);
+  assert.equal(refusal.answer.code, "invalid-config");
+  assert.match(refusal.answer.reason as string, /^stdin: project\.defaultBranch: "main" is not this worktree's own branch "feature"/);
+  assert.equal(fs.existsSync(path.join(branch, ".cross-agent")), false);
+});
+
+// @anchor initProposeFromMain
+test("a first setup in a branch worktree builds on its main checkout's config, through the same rule and gate", async (t) => {
+  const all = withEngines(t, ["claude", "codex", "grok"]);
+  const main = await initializedMain(t);
+  const commonDir = path.join(main, ".git");
+  const mainTree = workingTree(main);
+  const linked = await linkedProject(t, main, "feature/one");
+  /** A look, which leaves the repository's shared exclusions as they were. */
+  const look = async (root: string, env: NodeJS.ProcessEnv, shared: string) => {
+    const before = excludeOf(shared);
+    const answer = await proposeAt(root, env);
+    assert.equal(excludeOf(shared), before, "a look writes no exclusion");
+    return answer;
+  };
+  const mainFile = path.join(main, CONFIG_PATH);
+  const source = written(main);
+  /** A fresh proposal here: `init`'s bindings, on this branch, with what detection found in an empty tree. */
+  const fresh = (mode: string) => ({
+    ...initDocument(mode), project: { defaultBranch: "feature/one", testCommand: "none", setupCommand: "none", mergePolicy: "auto" },
+  });
+
+  // Every engine found: the main checkout's config on this worktree's branch, the other modes fresh.
+  const found = await look(linked, all, commonDir);
+  assert.deepEqual(found.existing.mainCheckoutConfig, { file: mainFile, fault: null });
+  const copied = found.proposals[0];
+  assert.equal(copied.copiedFrom, mainFile);
+  assert.deepEqual(copied.document, { ...source, project: { ...(source.project as Record<string, string>), defaultBranch: "feature/one" } });
+  assert.deepEqual([copied.substitutions, copied.notes], [[], []]);
+  for (const proposal of found.proposals.slice(1)) {
+    assert.equal(proposal.copiedFrom, null, proposal.mode);
+    assert.deepEqual(proposal.document, fresh(proposal.mode), proposal.mode);
+  }
+
+  // Claude alone: the main's Claude roles and settings kept, and every change listed.
+  const claudeOnly = (await look(linked, withEngines(t, ["claude"]), commonDir)).proposals[0];
+  const document = claudeOnly.document!;
+  const claude = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
+  assert.deepEqual(document.roles, {
+    planner: claude, "plan-reviewer": claude, implementer: claude, "code-reviewer": [devTeamRoles["code-reviewer"][0]], resolver: claude, consult: claude,
+  });
+  assert.deepEqual(claudeOnly.substitutions, [
+    { role: "plan-reviewer", from: "codex", to: "claude" },
+    { role: "code-reviewer", seat: 2, from: "codex", to: null }, { role: "code-reviewer", seat: 3, from: "grok", to: null },
+    { role: "resolver", from: "codex", to: "claude" }, { role: "consult", from: "codex", to: "claude" },
+  ]);
+  assert.deepEqual([document.project.testCommand, document.limits, document.review], [
+    (source.project as Record<string, string>).testCommand, source.limits, source.review,
+  ]);
+  for (const proposal of (await look(linked, withEngines(t, []), commonDir)).proposals) {
+    assert.equal(proposal.available, false, proposal.mode);
+    assert.match(proposal.reason!, /^no engine found/);
+  }
+
+  // The write is exactly the copy init makes in a twin worktree.
+  assert.equal(excludeOf(commonDir)!.split("\n").includes(".cross-agent/"), false, "nothing has reached the lock yet");
+  const write = await configure(linked, copied.document);
+  assert.equal(write.code, 0, JSON.stringify(write.answer));
+  const twinMain = await initializedMain(t);
+  const twin = await linkedProject(t, twinMain, "feature/one");
+  assert.equal((await run(["init"], twin)).code, 0);
+  assert.equal(fs.readFileSync(path.join(linked, CONFIG_PATH), "utf8"), fs.readFileSync(path.join(twin, CONFIG_PATH), "utf8"));
+  assert.ok(excludeOf(commonDir)!.split("\n").includes(".cross-agent/") && excludeOf(commonDir)!.split("\n").includes(".worktrees/"));
+  assert.deepEqual(workingTree(main), mainTree, "the main checkout's config and files are as they were");
+
+  // A main whose implementer is on Grok, with Claude found: the writer moves to Claude.
+  const grokMain = await initializedMain(t);
+  const grokConfig = written(grokMain);
+  (grokConfig.roles as Record<string, unknown>).implementer = { engine: "grok", sandbox: "workspace" };
+  fs.writeFileSync(path.join(grokMain, CONFIG_PATH), JSON.stringify(grokConfig, null, 2));
+  const grokLinked = await linkedProject(t, grokMain, "feature/one");
+  const moved = (await look(grokLinked, withEngines(t, ["claude", "grok"]), path.join(grokMain, ".git"))).proposals[0];
+  assert.deepEqual(moved.document!.roles.implementer, claude);
+  assert.deepEqual(moved.substitutions.find((each) => each.role === "implementer"), { role: "implementer", from: "grok", to: "claude" });
+  assert.deepEqual(moved.notes, []);
+
+  // A merge policy the write refuses: auto, said, and written.
+  const yoloMain = await initializedMain(t);
+  const yoloConfig = written(yoloMain);
+  (yoloConfig.project as Record<string, string>).mergePolicy = "yolo";
+  fs.writeFileSync(path.join(yoloMain, CONFIG_PATH), JSON.stringify(yoloConfig, null, 2));
+  const yoloLinked = await linkedProject(t, yoloMain, "feature/one");
+  const yolo = (await look(yoloLinked, all, path.join(yoloMain, ".git"))).proposals[0];
+  assert.equal(yolo.document!.project.mergePolicy, "auto");
+  assert.ok(yolo.notes.some((note) => note.includes('"yolo"')), yolo.notes.join("|"));
+  assert.equal((await configure(yoloLinked, yolo.document)).code, 0);
+  const yoloExclude = excludeOf(path.join(yoloMain, ".git"))!.split("\n");
+  assert.ok(yoloExclude.includes(".cross-agent/") && yoloExclude.includes(".worktrees/"));
+
+  // A main config the server would refuse is reported, and builds nothing.
+  const brokenMain = await initializedMain(t);
+  fs.writeFileSync(path.join(brokenMain, CONFIG_PATH), '{"mode":"dev-team","roles":{"critic":{"engine":"claude"}}}');
+  const brokenLinked = await linkedProject(t, brokenMain, "feature/one");
+  const broken = await look(brokenLinked, all, path.join(brokenMain, ".git"));
+  assert.match(broken.existing.mainCheckoutConfig!.fault!, /declares no role/);
+  for (const proposal of broken.proposals) {
+    assert.equal(proposal.copiedFrom, null, proposal.mode);
+    assert.deepEqual(proposal.document, fresh(proposal.mode), proposal.mode);
+  }
+});
+
+// @anchor initConfigLock
+test("overlapping --config writers: exactly one replaces, the other gets config-changed", async (t) => {
+  const { acquire, configLockName, lockPath } = await import("../src/locks.ts");
+  const root = await mainCheckout(scratch(t), "P");
+  const file = path.join(root, CONFIG_PATH);
+  const original = { ...initDocument("dev-team"), limits: { ...limitsWritten, lockWaitSeconds: 30 } };
+  fs.mkdirSync(path.dirname(file));
+  fs.writeFileSync(file, `${JSON.stringify(original, null, 2)}\n`);
+  const bytes = fs.readFileSync(file);
+  const lockFile = lockPath(root, configLockName());
+  assert.equal(lockFile, path.join(root, ".cross-agent", "locks", "config.lock"));
+  const held = await acquire(lockFile, { operation: "a test holding the config lock", waitSeconds: 0 });
+  t.after(() => held.release());
+  const writers = [
+    { ...original, roles: { ...original.roles, "plan-reviewer": { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" } } },
+    { ...original, project: { ...original.project, testCommand: "make test" } },
+  ];
+  const pending = writers.map((document) => configure(root, document, ["--replace", "--expect", sha256(bytes)]));
+  // Both writers passed the check before the lock and wait for it beside the holder.
+  await poll(() => holdersOf(lockFile).length, (count) => count >= 3);
+  await held.release();
+  const settled = await Promise.all(pending);
+  const winner = settled.findIndex((each) => each.code === 0);
+  assert.ok(winner >= 0, JSON.stringify(settled));
+  assert.equal(settled[winner].answer.replaced, true);
+  const loser = settled[1 - winner];
+  assert.deepEqual([loser.code, loser.answer.code], [3, "config-changed"]);
+  assert.deepEqual(written(root), writers[winner]);
+  assert.deepEqual(fs.readFileSync(`${file}.prev`), bytes);
+
+  // A lock that does not come within the wait is config-busy, and changes no file of the project's.
+  const busy = { ...writers[winner], limits: { ...limitsWritten, lockWaitSeconds: 0 } };
+  fs.writeFileSync(file, `${JSON.stringify(busy, null, 2)}\n`);
+  const kept = [file, `${file}.prev`, path.join(root, ".gitignore")].map((each) => fs.readFileSync(each));
+  const holding = await acquire(lockFile, { operation: "a test holding the config lock", waitSeconds: 0 });
+  t.after(() => holding.release());
+  const refused = await configure(root, original, ["--replace", "--expect", sha256(fs.readFileSync(file))]);
+  await holding.release();
+  assert.deepEqual([refused.code, refused.answer.code], [3, "config-busy"]);
+  assert.match(refused.answer.reason as string, /config\.lock is held by another process/);
+  assert.deepEqual([file, `${file}.prev`, path.join(root, ".gitignore")].map((each) => fs.readFileSync(each)), kept);
+});
+
+// @anchor initTaskRefusalCoded
+test("inside a task's environment, both new options are refused with a code and init --mode keeps its document", async (t) => {
+  const root = scratch(t);
+  const env = { ...suiteEnv, CROSS_AGENT_TASK: "a-task" };
+  const reason = /^CROSS_AGENT_TASK is set in this environment: init is an operator's command, and an engine reaches the project through its server, never this CLI$/;
+  for (const ran of [await run(["init", "--propose", "--json"], root, undefined, env), await runWithInput(["init", "--config", "-", "--json"], root, JSON.stringify(initDocument("solo")), env)]) {
+    assert.equal(ran.code, 3, ran.stderr);
+    const answer = JSON.parse(ran.stdout) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(answer), ["ok", "code", "reason"]);
+    assert.deepEqual([answer.ok, answer.code], [false, "inside-a-task"]);
+    assert.match(answer.reason as string, reason);
+  }
+  const legacy = await run(["init", "--mode", "solo", "--json"], root, undefined, env);
+  assert.equal(legacy.code, 3);
+  const answer = JSON.parse(legacy.stdout) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(answer), ["ok", "reason"]);
+  assert.match(answer.reason as string, reason);
+  assert.deepEqual(fs.readdirSync(root), [], "nothing was written");
 });
