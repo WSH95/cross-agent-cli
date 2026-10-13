@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T03:46:49Z
+updated_at: 2026-10-13T04:17:40Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -263,9 +263,16 @@ The task worktree is removed, and its ignored files are archived in
    (`/reload-plugins` does not restart the server), and `.117` (the specialist rule in
    the role prompts). Review follow-ups: `.120`, `.121`, `.126`, `.127`.
 
-   Before a team task's step 1, commit `.beads/interactions.jsonl` if it is dirty. Open
-   question for the user: whether the `dev-team-engine` lead's default should also move to
-   claude-opus-5-5 (it stays claude-opus-5/high).
+   Before a team task's step 1, commit `.beads/interactions.jsonl` if it is dirty.
+
+   **`atc-s96.128` is done.** The user moved the `dev-team-engine` lead's default to
+   claude-opus-5-5 at xhigh. A consult one-shot merged it as `8f27449` and the cleanup is
+   finished. Findings filed: `.124` (now also covers the suite stalling in Codex's sandbox)
+   and `.129` (interrupted suites leave `tests/fixtures/runner-*.mjs`, which a task commit
+   stages; check the staged names until it is fixed).
+
+   `main` is ahead of the installed 0.1.2 by the EPIPE fix, the new `init` defaults and
+   this change. A release needs the user's authorization to push and publish.
 2. No release work is pending: PR #17 (0.1.2) is merged. Run `bd ready` to choose the
    next task. Future pushes, PR merges and Dolt remote sync require separate authorization.
 3. For an isolated native regression check, run

@@ -7,6 +7,20 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The engine lead's default, as a one-shot — `atc-s96.128` (2026-10-13)
+
+The user moved the `dev-team-engine` lead's default to claude/claude-opus-5-5/xhigh. It
+ran as a `consult` one-shot (codex/gpt-6-astra, `worktree: true`) and merged as `8f27449`.
+The commit is three lines: `src/config.ts`'s lead binding and the two tests that pin it.
+- **The consult's own suite stalled under Codex's sandbox.** Captured child stdout was
+  empty and `spawnSync` returned `EPERM`. Two interrupted runs took 1060 s in all, and the
+  consult said so rather than claiming a pass (`atc-s96.124`).
+- **The interrupted runs left four `tests/fixtures/runner-*.mjs` files.** The commit step's
+  `git add -A` staged them; the operator unstaged and deleted them before committing
+  (`atc-s96.129`).
+- **Results:** the test step on `8f27449` and the root suite after the merge each ran
+  1049 tests: 1047 pass, 0 fail, 2 guarded skips.
+
 ## The second dev-team task: `init`'s default bindings — `atc-s96.119` (2026-10-13)
 
 Bead `atc-s96.119` went through all ten steps of the `dev-team` loop and merged as
