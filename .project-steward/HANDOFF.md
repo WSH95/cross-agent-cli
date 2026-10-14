@@ -49,12 +49,11 @@ skill epic `atc-s96.134` is closed.
   push or release. `atc-s96.88` closed as already fixed by `atc-s96.139`.
 - `atc-s96.144` + `.145` merged as `5e3d713` (plan review hit its limit; the user chose the small
   fix and closed `atc-s96.148`; code review clean in two rounds); root suite 1125/1123/0 fail.
-- In flight: `atc-s96.147` (setup skill under the legacy Codex mount offers the one-time setup
-  instead of a restart). Plan approved after two review rounds (fix in `init --config`'s
-  `reconnect`: read `CROSS_AGENT_PROJECT` only where it names the root); worktree
-  `task/s96-147-legacy-reconnect`, implementer running. Then ask the user about pushing and a
-  0.1.7 release, with live Codex checks (legacy mount, shell inheritance) after it. The ~40 older backlog beads
-  under `atc-s96` are not in this scope unless the user says so.
+- `atc-s96.147` merged as `a450ddd` (plan narrowed in review to a binding that names the root;
+  code review clean in two rounds); root suite 1126/1124/0 fail. Every follow-up of this round is
+  closed. The ~40 older backlog beads under `atc-s96` are not in this scope unless the user says so.
+- Next: ask the user about pushing `main` and a 0.1.7 release (everything since `1b1ff0b`), then
+  the live Codex checks after it (legacy mount; shell inheritance of `CROSS_AGENT_PROJECT`).
 Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
