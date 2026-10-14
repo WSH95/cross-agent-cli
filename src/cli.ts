@@ -491,10 +491,12 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
     lock = await projectLock(root, configLockName(), { waitSeconds: lockWaitSeconds(root), operation });
   } catch (error) {
     // Busy only where another writer held the lock past the wait; a lock that could not be
-    // prepared at all — the shared exclusions unwritable, no lock directory — says why.
+    // prepared or tried for at all — the shared exclusions unwritable, no lock directory, a
+    // `flock` that could not start or could not open its file — says why.
     if (error instanceof LockHeldError) return coded({ code: "config-busy", reason: message(error) });
-    // `acquire`'s own refusal names the operation and the lock already; an error from before
-    // it — the lock directory, the shared exclusions — is bare errno text, given the lock here.
+    // A `flock` that ran and refused names the operation and the lock already (`acquire`'s own
+    // refusal); every other error — the shared exclusions, the lock directory, or a `flock` that
+    // could not start (spawn ENOENT, EAGAIN) — is bare errno text, given the lock here.
     const reason = message(error);
     return coded({
       code: "config-lock-failed",

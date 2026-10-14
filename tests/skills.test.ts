@@ -643,6 +643,8 @@ test("the solo loop is the short one and hands a one-shot that wrote to the laun
   assert.match(text, /launcher/, "the merge policy belongs to the launcher now, for every mode");
   assert.doesNotMatch(text, /run_command \{which: "test", where: "root", slug\}/, "one copy of the merge policy, and it is the launcher's");
   assert.doesNotMatch(text, /\*\*critique\*\*/, "and one copy of the verbs");
+  assert.match(text, /The setup skill writes the binding once/);
+  assert.doesNotMatch(text, /cross-agent init/);
 });
 
 /** Every `delegate {…}` call a document spells, as one line each. */
@@ -939,7 +941,8 @@ const teamLoops = ["dev-team", "dev-team-engine"];
 test("both dev-team loops check the roster before anything is dispatched: every role bound, the resolver too, or a stop naming the binding", () => {
   for (const mode of teamLoops) {
     const step = flat(sectionOf(loop(mode), "1. Root check"));
-    for (const pin of [/`list_roles`/, /`binding: null`/, /resolver/, /`cross-agent init` leaves alone/]) assert.match(step, pin, `${mode}: ${pin}`);
+    for (const pin of [/`list_roles`/, /`binding: null`/, /resolver/, /which the setup skill adds once they confirm/]) assert.match(step, pin, `${mode}: ${pin}`);
+    assert.doesNotMatch(step, /cross-agent init/, mode);
   }
   assert.match(flat(sectionOf(loop("dev-team"), "1. Root check")), /show the user the role/);
   assert.match(flat(sectionOf(loop("dev-team-engine"), "1. Root check")), /`ask \{question\}` the operator with the role/);
@@ -1376,7 +1379,7 @@ test("before the commit question the setup skill shows everything the commit wil
   // An empty diff is also a tracked file that already matches the last commit: the index tells
   // it from an untracked one, and with nothing to commit there is no question.
   assertInOrder(step, ["prints nothing", "`git ls-files -- .gitignore`", "already matches the last commit"], "an empty diff");
-  assert.match(step, /nothing to commit, so nothing blocks the team/);
+  assert.match(step, /already matches the last commit: say no `\.gitignore` commit is needed/);
 
   // And git answers as the step says, in each state a setup meets.
   const reads = [...new Set(codeSpans(text).filter((span) => /^git (diff|ls-files) /.test(span)))].sort();
@@ -1412,6 +1415,17 @@ test("before the commit question the setup skill shows everything the commit wil
   fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
   assert.deepEqual([diff().status, diff().stdout, listed().stdout], [0, "", ".gitignore\n"],
     "tracked and unchanged: the diff prints nothing, git ls-files names the file, and nothing is left to commit");
+
+  // A deletion staged before setup, and the working file put back: both reads miss it, so the
+  // step says only that `.gitignore` needs no commit, never that nothing blocks the team —
+  // loop step 1's `git status --porcelain` stops on the staged change.
+  fs.writeFileSync(gitignore, "dist/\n");
+  await git(repo, "add", "--", ".gitignore");
+  fs.writeFileSync(gitignore, "dist/\n.cross-agent/\n.worktrees/\n");
+  assert.deepEqual([diff().status, diff().stdout, listed().stdout], [0, "", ".gitignore\n"],
+    "a staged deletion the working file undoes: the diff prints nothing and git ls-files names the file");
+  assert.equal(await git(repo, "diff", "--cached", "--name-only"), ".gitignore", "and the index still holds a change");
+  assert.doesNotMatch(step, /blocks the team/);
 });
 
 test("a step that needs a proposal checks it is available first, and otherwise shows its reason and follows Refusals", () => {
@@ -1497,6 +1511,7 @@ test("the setup skill says what to do with each finding that blocks or changes a
   assert.match(text, /adds a <To> seat/);
   assert.match(text, /[Nn]ever show a substitution's seat number/);
   assert.match(text, /`copiedFrom`/);
+  assert.match(flat(sectionOf(setupSkill(), "First setup")), /`existing\.mainCheckoutConfig\.fault`[^.]*starts fresh/);
 });
 
 test("the setup skill gives each built-in mode and each of its roles a one-line meaning", () => {
@@ -1529,7 +1544,8 @@ test("after a first setup or a reconnect the setup skill checks describe_mode an
   assert.match(section, /when `reconnect` is true, or when this setup ran `git init`: give the host's reconnect step/);
   // A server that answers for another project or mode, with no warning, is not connected.
   for (const pin of [/\*\*Another project or mode\*\* answering with no `warning`/, /which `projectRoot` and mode answered[^.]*not verified/,
-    /Under Codex, offer the hand-off below/, /\*Not now\* leaves the connection not verified/, /\*\*End\*\*, once connected,/]) {
+    /Under Codex, offer the hand-off below/, /`CROSS_AGENT_PROJECT` naming another project keeps serving it[^.]*forwards that variable/,
+    /\*Not now\* leaves the connection not verified/, /\*\*End\*\*, once connected,/]) {
     assert.match(section, pin, `a server for another project or mode: ${pin}`);
   }
 });

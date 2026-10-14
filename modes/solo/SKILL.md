@@ -3,8 +3,8 @@
 One role, one turn, no ceremony. `solo` is also the mode a project with no
 `.cross-agent/config.json` runs as, so this loop works with nothing bound: every
 `delegate` names its own `engine` — `claude`, `codex` or `grok` — and may name
-`model` and `effort` beside it. `cross-agent init --mode solo` writes the
-binding once if you would rather not repeat it.
+`model` and `effort` beside it. The setup skill writes the binding once, when the
+user confirms, if you would rather not repeat it.
 
 ## A question
 

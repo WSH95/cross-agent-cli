@@ -86,7 +86,8 @@ The meaning each role shows in a table:
      - a seat with `from` null: "adds a <To> seat";
      - then the seats the document holds. Never show a substitution's seat number.
    - Show `notes` verbatim, and `copiedFrom` as "starts from the main checkout's team
-     (<file>)".
+     (<file>)". When `existing.mainCheckoutConfig.fault` is set, say the main checkout's
+     config is refused for that `fault`, so this proposal starts fresh, not from its team.
 
    Ask: "Does this look right?" — options: *Looks right* / *Change something*
 
@@ -160,9 +161,8 @@ Every write ends here once it exits 0. A write that exits otherwise follows `## 
    holds the whole file, so show that. When it prints nothing, run
    `git ls-files -- .gitignore`: nothing printed means git does not track `.gitignore` yet,
    so show the whole file; the file's name means it already matches the last commit: say
-   there is nothing to commit, so nothing blocks the team, and go to step 3. Mark the
-   `ignored` lines as setup's; if anything else is there, say plainly that the commit holds
-   it too. Then:
+   no `.gitignore` commit is needed, and go to step 3. Mark the `ignored` lines as setup's;
+   if anything else is there, say plainly that the commit holds it too. Then:
 
    Ask: "Commit this .gitignore change now?" — options: *Yes, commit it* / *No*
 
@@ -243,7 +243,10 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
   reconnect step and check again.
 - **Another project or mode** answering with no `warning`: say in plain words which
   `projectRoot` and mode answered, and that the connection is not verified. Under Codex,
-  offer the hand-off below.
+  offer the hand-off below, and say that a session started with `CROSS_AGENT_PROJECT`
+  naming another project keeps serving it, since the hand-off's connection forwards that
+  variable: only a new session started in `root` without it, or with it naming `root`,
+  connects here.
 - **New session needed** (Grok, or Codex without a restart): the check cannot finish here.
   Say the connection is not yet verified, and give the request to start the new session
   with; the launcher checks the connection first there.

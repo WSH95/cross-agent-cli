@@ -83,6 +83,7 @@ test("one-time setup uses a versioned native config edit, inherits each chat's c
   assert.equal(f.state().writes, 1, "repeated setup is idempotent");
   const removed = f.run("remove");
   assert.equal(removed.status, 0, removed.stderr);
+  assert.match(removed.stdout, /The marketplace plugin and its skills remain installed\./);
   assert.deepEqual(f.state().config, before);
   assert.equal(f.run("remove").status, 0, "removing twice is harmless");
 });

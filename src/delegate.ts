@@ -331,7 +331,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     // role config binds to a list is delegated by seat, and that seat's binding is the one.
     const seats = seatsOf(config, request.role);
     if (seats === undefined && request.engine === undefined) {
-      return refuse(`role ${JSON.stringify(request.role)} is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — "cross-agent init --mode ${config.mode}" writes every binding for a new project and leaves an existing config alone`);
+      return refuse(`role ${JSON.stringify(request.role)} is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — cross-agent's setup skill binds it once the user confirms, in a new project or an existing config, and from a terminal "cross-agent init --mode ${config.mode}" writes every binding for a new project and leaves an existing config alone`);
     }
     if (request.seat !== undefined && (!Number.isSafeInteger(request.seat) || request.seat < 1)) {
       return refuse(`seat must be a whole number from 1, not ${request.seat}`);
@@ -686,7 +686,7 @@ function baseHint(failure: { stderr?: string }, config: CrossAgentConfig, projec
   if (failure.stderr === undefined || !failure.stderr.includes(base)) return "";
   const configured = fs.statSync(path.join(projectRoot, CONFIG_PATH), { throwIfNoEntry: false })?.isFile() ?? false;
   return `. A one-shot branches from project.defaultBranch, which is ${JSON.stringify(base)} here; `
-    + (configured ? `set another in ${CONFIG_PATH}` : `this project has no ${CONFIG_PATH}, so run "cross-agent init --mode ${config.mode}" and set project.defaultBranch`)
+    + (configured ? `set another in ${CONFIG_PATH}` : `this project has no ${CONFIG_PATH}, so write one with cross-agent's setup skill, or from a terminal run "cross-agent init --mode ${config.mode}" and set project.defaultBranch`)
     + " if that is not this repository's default branch";
 }
 

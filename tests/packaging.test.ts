@@ -418,15 +418,15 @@ test("the install guide attaches Grok per project through the project's own .gro
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
     // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
     "cross-agent init", "~/src/cross-agent-cli/bin/cross-agent init",
-    // `.grok/` ignored beside `init`'s entries, on a line of its own even after a last line with no
+    // `.grok/` ignored where setup, or `init`, adds cross-agent's own entries later, on a line of its own even after a last line with no
     // newline, and the change committed: a loop's first step stops on a dirty tree, and a committed
     // `.grok/config.toml` would reach every task worktree, which Grok takes as a project of its own.
-    "printf '\\n.grok/\\n' >> .gitignore", "git add .gitignore && git commit", "Commit that `.gitignore` change",
+    "printf '\\n.grok/\\n' >> .gitignore", "git add .gitignore && git commit -m 'Ignore Grok state' -- .gitignore", "Commit that `.gitignore` change",
     "every task worktree",
     // A project that already tracks the file untracks it in the same commit, by the index rather
     // than a pathspec: `-- .gitignore` leaves the removal staged, and naming the file re-adds it.
     "already tracks `.grok/config.toml`",
-    "git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore cross-agent and Grok state'",
+    "git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore Grok state'",
     // The attach itself, project-scoped: the plugin read in place, at an absolute path (Grok
     // expands no `~` in `paths`), and the result cap `describe_mode` under `dev-team-engine` needs.
     ".grok/config.toml", "[plugins]", 'paths = ["$HOME/src/cross-agent-cli"]', 'enabled = ["cross-agent"]',
@@ -451,6 +451,8 @@ test("the install guide attaches Grok per project through the project's own .gro
     "The launcher skill reaches a Grok specialist at the root", "refused by Grok's own dispatcher",
   ].filter((words) => !section.includes(words));
   assert.deepEqual(missing, [], "the Grok section names each of these");
+  // The commit holds only the `.grok/` line: setup, or `init`, adds cross-agent's own entries later.
+  assert.ok(!section.includes("Ignore cross-agent and Grok state"), "the Grok section's commit message names only Grok state");
   // `echo` would join `.grok/` onto a last line that has no newline, which `init` leaves alone
   // when it has nothing to add.
   assert.ok(!section.includes("echo '.grok/' >> .gitignore"), "the Grok section appends the ignore line with printf");

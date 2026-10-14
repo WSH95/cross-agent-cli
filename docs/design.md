@@ -3209,7 +3209,7 @@ ask whatever stands (`src/config.ts#afterResolverOptions`, section 7). A config
 written before these existed loads as it is, with both settings at their defaults
 and the resolver bound to nothing, which `list_roles` answers `binding: null` and
 step 1 of both loops stops on; `init` leaves an existing config alone, so the
-binding is added by hand (`tests/config.test.ts#oldConfigLoads`).
+setup skill, or a hand edit, adds the binding (`tests/config.test.ts#oldConfigLoads`).
 
 `cross-agent init` writes `engines` with an empty object per engine; the `bin`
 above is what an operator adds when an engine is not on `PATH` under its own
@@ -3306,8 +3306,9 @@ It is short and identical on all three hosts.
 its setup. It runs the plugin's own CLI by its path from the skill's directory,
 `<skill-dir>/../../bin/cross-agent`: `init --propose` to look and propose, then
 `init --config -` with the document the user confirmed, and `--replace --expect <sha256>`
-for a change. It asks through each host's question tool, gives each refusal code its next step
-(`tests/skills.test.ts#setupRefusalCodes`), and after a first setup or a reconnect checks the
+for a change. It asks through each host's question tool — or, when that tool fails or the
+session cannot take an answer, in chat as numbered choices, ending its turn — gives each
+refusal code its next step (`tests/skills.test.ts#setupRefusalCodes`), and after a first setup or a reconnect checks the
 connection with `describe_mode` and `list_roles`.
 
 **After a `worktree: true` task settles, the launcher applies
@@ -3840,8 +3841,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 35,473 bytes under
-`dev-team`, 40,996 under `dev-team-engine` and 3,463 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 35,480 bytes under
+`dev-team`, 41,004 under `dev-team-engine` and 3,473 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

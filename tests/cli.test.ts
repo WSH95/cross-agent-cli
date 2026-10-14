@@ -2840,7 +2840,7 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
 
   // The exclusions already written and the lock file there, but one flock cannot open: no
   // holder waited on, so a failure to lock rather than a busy one.
-  const unopenable = await mainCheckout(scratch(t), "U");
+  const unopenable = await mainCheckout(scratch(t), "U V");
   assert.equal((await configureInProcess(t, unopenable, initDocument("dev-team"))).code, 0);
   const lockFile = path.join(unopenable, ".cross-agent", "locks", "config.lock");
   t.after(() => { try { fs.chmodSync(lockFile, 0o644); } catch { /* gone */ } });
@@ -2852,11 +2852,36 @@ test("a config lock that cannot be prepared is config-lock-failed, carrying the 
   assert.equal((closed.answer.reason as string).match(/could not be taken/g)?.length, 1, closed.answer.reason as string);
   assert.match(closed.answer.reason as string, /flock exited \d+/);
   // `acquire`'s own refusal already names the operation and the lock, and is passed through as it is.
-  assert.match(closed.answer.reason as string, /^init --config: lock \S*\/config\.lock could not be taken: /, closed.answer.reason as string);
+  assert.ok((closed.answer.reason as string).startsWith(`init --config: lock ${lockFile} could not be taken: `), closed.answer.reason as string);
   assert.doesNotMatch(closed.answer.reason as string, /could not be prepared/);
   // Named once as what could not be had; flock's own words, quoted after it, give the path again.
   assert.equal((closed.answer.reason as string).match(/config\.lock could not be/g)?.length, 1, closed.answer.reason as string);
   assert.deepEqual(fs.readFileSync(path.join(unopenable, CONFIG_PATH)), stored);
+});
+
+// @anchor initConfigLockUnstarted
+test("a config lock whose flock cannot start is config-lock-failed, naming the lock it could not prepare", async (t) => {
+  const root = await mainCheckout(scratch(t), "P");
+  const lockFile = path.join(root, ".cross-agent", "locks", "config.lock");
+  // Only this write's `flock` is sent to a binary that is not there, as on a host without
+  // util-linux: the spawn itself fails, so `acquire` rejects with bare errno text.
+  const start = childProcess.spawn;
+  const spawning = t.mock.method(childProcess, "spawn", (...args: Parameters<typeof start>) => {
+    if (args[0] === "flock" && args[1]?.includes(lockFile)) args[0] = path.join(root, "no-such-dir", "flock");
+    return start(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const failed = await configureInProcess(t, root, initDocument("dev-team"));
+    assert.deepEqual([failed.code, failed.answer.code], [3, "config-lock-failed"], JSON.stringify(failed.answer));
+    const reason = failed.answer.reason as string;
+    assert.ok(reason.startsWith("config.lock could not be prepared: "), reason);
+    assert.match(reason, /ENOENT/);
+    assert.equal(fs.existsSync(path.join(root, CONFIG_PATH)), false);
+  } finally {
+    spawning.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 // @anchor initTaskRefusalCoded

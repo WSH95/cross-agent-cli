@@ -100,7 +100,7 @@ async function main() {
       }
       for (const name of ["serve.mjs", "state.json"]) fs.unlinkSync(path.join(dir, name));
       if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
-      console.log("Removed the managed MCP setup. The marketplace plugin and its skill remain installed. Restart Codex's MCP servers.");
+      console.log("Removed the managed MCP setup. The marketplace plugin and its skills remain installed. Restart Codex's MCP servers.");
       return;
     }
     const plugin = installedPlugin(verb === "check" && state ? state.codex : codex, home, pluginId ?? state?.pluginId);

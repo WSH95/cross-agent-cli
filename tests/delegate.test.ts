@@ -1003,6 +1003,23 @@ test("a project with no config delegates on the engine the call names, and no co
   assert.equal(fs.existsSync(path.join(p.root, ".cross-agent", "config.json")), false);
 });
 
+test("a one-shot in a project with no config, on a repository with no main, names the setup skill and terminal init for project.defaultBranch", async (t) => {
+  const p = await projectWithRoles(t);
+  const solo = buildMode(p.modesDir, "solo", [{ key: "consult" }]);
+  fs.rmSync(path.join(p.root, ".cross-agent", "config.json"));
+  // The documented default branch is not this repository's, so git's own refusal names it.
+  await git(p.root, "branch", "-m", "main", "trunk");
+  const options = {
+    authority: operator, mode: solo,
+    env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall", CROSS_AGENT_GROK_BIN: p.bin }),
+  };
+  assert.match(
+    refusal(await delegate(p.root, request({ role: "consult", cwd: p.root, engine: "grok", worktree: true }), options)),
+    /this project has no \.cross-agent\/config\.json, so write one with cross-agent's setup skill, or from a terminal run "cross-agent init --mode solo" and set project\.defaultBranch/,
+  );
+  assert.deepEqual(p.records(), []);
+});
+
 test("a delegation whose spawn lock was lost before the record is written launches nothing", async (t) => {
   const p = await projectWithRoles(t);
   const worktree = await p.worktree("task/lost");
@@ -1291,7 +1308,7 @@ test("the profile a specialist runs under is the mode's default unless config ov
   fs.writeFileSync(configFile, JSON.stringify(base));
   assert.equal(
     refusal(await delegate(p.root, request({ role: "claudish", cwd: p.root }), options)),
-    `refused delegation: role "claudish" is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — "cross-agent init --mode dev-team" writes every binding for a new project and leaves an existing config alone`,
+    `refused delegation: role "claudish" is bound to no engine in ${CONFIG_PATH}: name engine in this call, or bind it there — cross-agent's setup skill binds it once the user confirms, in a new project or an existing config, and from a terminal "cross-agent init --mode dev-team" writes every binding for a new project and leaves an existing config alone`,
   );
   // And a role neither declares is the mode's refusal, because the mode is what says
   // where a role works.

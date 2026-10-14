@@ -342,7 +342,7 @@ session on the machine, so the attach lives in the project:
 ```
 cd ~/code/my-project
 printf '\n.grok/\n' >> .gitignore
-git add .gitignore && git commit -m 'Ignore cross-agent and Grok state' -- .gitignore
+git add .gitignore && git commit -m 'Ignore Grok state' -- .gitignore
 # If .grok/config.toml already has a [plugins] or [mcp] table, merge by hand: see below.
 mkdir -p .grok
 cat >> .grok/config.toml <<EOF
@@ -363,10 +363,10 @@ server serves the project whose `.cross-agent/config.json` it finds there or abo
 From a terminal, `cross-agent init --mode dev-team` writes the mode's defaults instead —
 `~/src/cross-agent-cli/bin/cross-agent init --mode dev-team` where `cross-agent` is not on
 your `PATH`.
-`.grok/` goes into `.gitignore` beside `init`'s own entries because its file names your
-checkout's path, and because a committed `.grok/config.toml` would reach every task
-worktree: Grok takes a linked worktree as a project of its own, so it would load the
-plugin for every worktree specialist, and a specialist's edit to it — or to `.claude/`,
+`.grok/` goes into `.gitignore`, where setup, or `init` from a terminal, adds cross-agent's
+own entries later, because its file names your checkout's path, and because a committed
+`.grok/config.toml` would reach every task worktree: Grok takes a linked worktree as a
+project of its own, so it would load the plugin for every worktree specialist, and a specialist's edit to it — or to `.claude/`,
 `.codex/` or `.mcp.json` — is refused at the worktree's commit and at the merge, naming
 the path, so the ignore is what keeps the file out of the worktrees in the first place.
 Host configuration must be regular files: a symbolic link at any of the four root
@@ -387,7 +387,7 @@ loaded no plugin at all.
 A project that already tracks `.grok/config.toml` needs one step more, since `.gitignore`
 does not cover a tracked file: in place of the commit line, with nothing else staged, run
 `git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore
-cross-agent and Grok state'`, before you edit the file. That commits the file's removal
+Grok state'`, before you edit the file. That commits the file's removal
 with the `.gitignore` change and keeps the file on your disk, though other clones lose it at
 their next pull. A commit limited to `-- .gitignore` would leave the removal staged, and one
 that also named `.grok/config.toml` would track the file again.
@@ -402,7 +402,7 @@ value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
-35,473 bytes under `dev-team`, 40,996 under `dev-team-engine` and 3,463 under `solo`, and
+35,480 bytes under `dev-team`, 41,004 under `dev-team-engine` and 3,473 under `solo`, and
 the answer adds the project's root beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with
