@@ -459,3 +459,5 @@ Set up Project Steward in this repository.
 - 2026-10-14T08:46:54Z — claude — atc-s96.143 merged as c028cc3 (plan and code review clean on all seats); root suite 1123/1121/0 fail; follow-ups atc-s96.144, .145 filed. Next: release 0.1.6 (user-approved).
 - 2026-10-14T08:51:56Z — claude — atc-s96.146 release 0.1.6: 1b1ff0b pushed; agent-plugins PR #21 opened (21 files, dist == target, validate passes, MERGEABLE/CLEAN). Waiting on the user's merge.
 - 2026-10-14T08:57:02Z — claude — atc-s96.146 release 0.1.6 merged (PR #21 → a7cabee) and installed in Claude Code; server serves 0.1.6 text. Codex update pending (user). atc-s96.146 closed.
+- 2026-10-14T09:07:03Z — claude — [auto-checkpoint] Codex updated to 0.1.6; atc-s96.88 closed (fixed by .139); atc-s96.144 + .145 in the dev-team loop (planning).
+- 2026-10-14T10:34:12Z — claude — [auto-checkpoint] atc-s96.144+.145: plan review limit reached (not converging); user chose the small fix; atc-s96.148 closed (init's refusals cover it); simplified plan in review. atc-s96.147 filed for next.

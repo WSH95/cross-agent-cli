@@ -42,7 +42,17 @@ skill epic `atc-s96.134` is closed.
   the user as `a7cabee`; Claude Code updated and reconnected, and this session's server serves the
   0.1.6 text. Codex's cache still held 0.1.5: its update (`codex plugin marketplace upgrade`, then
   `codex plugin add cross-agent@agent-plugins`) is the user's.
-- Open, low priority: `atc-s96.144`, `atc-s96.145`.
+- Codex updated to 0.1.6 at the user's request (`codex plugin marketplace upgrade`, `codex plugin
+  add cross-agent@agent-plugins`); its cache equals the 0.1.6 dist payload.
+- User instruction (2026-10-14, saved with `bd remember`): follow-up beads are not left open; fix
+  them through the dev-team loop, including follow-ups those fixes generate, and ask before any
+  push or release. `atc-s96.88` closed as already fixed by `atc-s96.139`.
+- In flight: `atc-s96.144` + `.145` as one dev-team task. Plan review hit its 3-round limit
+  without converging (the plan had grown into a copy of every `init` check); the user chose to
+  simplify back to the small fix and closed `atc-s96.148` as covered by `init`'s own refusals.
+  The simplified plan (`/tmp/claude-1000/cross-agent-plans/atc-s96.144-plan-r4-simplified.md`) is
+  in its one review. Next: `atc-s96.147` (setup skill under the legacy Codex mount). The ~40 older
+  backlog beads under `atc-s96` are not in this scope unless the user says so.
 Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
