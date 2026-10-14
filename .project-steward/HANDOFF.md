@@ -38,8 +38,10 @@ skill epic `atc-s96.134` is closed.
 - Task 3, `atc-s96.143` (`rootWriteFault`'s refusal names the setup skill first): merged as
   `c028cc3` (review round 1 clean on all three seats), root suite 1123/1121/0 fail, bead closed.
   Follow-ups `atc-s96.144`, `atc-s96.145` (P4) are open.
-- Next, approved by the user (2026-10-14, "Fix .143, then 0.1.6"): push `main` and publish 0.1.6.
-Ask the user before any push or release. Local commits since `fccfae9` (`92277cc` through this record commit, `2deb7c6` among them) are not pushed.
+- Release 0.1.6 (`atc-s96.146`, user-approved 2026-10-14): source `1b1ff0b` pushed to `main`;
+  https://github.com/WSH95/agent-plugins/pull/21 open, mergeable, payload verified. Waiting on the
+  user to merge it and update the plugin; then a live re-check if wanted, and close `atc-s96.146`.
+Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.

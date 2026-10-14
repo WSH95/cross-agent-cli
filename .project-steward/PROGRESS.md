@@ -457,3 +457,4 @@ Set up Project Steward in this repository.
 - 2026-10-14T08:05:45Z — claude — [auto-checkpoint] atc-s96.136+.137+.138 merged as 2deb7c6 (two review rounds, all seats no major issues); root suite running, cleanup and records next.
 - 2026-10-14T08:06:59Z — claude — atc-s96.136 + .137 + .138 merged as 2deb7c6 (two review rounds, all seats no major issues); root suite 1123/1121/0 fail; worktree and branch removed; follow-up atc-s96.143 open.
 - 2026-10-14T08:46:54Z — claude — atc-s96.143 merged as c028cc3 (plan and code review clean on all seats); root suite 1123/1121/0 fail; follow-ups atc-s96.144, .145 filed. Next: release 0.1.6 (user-approved).
+- 2026-10-14T08:51:56Z — claude — atc-s96.146 release 0.1.6: 1b1ff0b pushed; agent-plugins PR #21 opened (21 files, dist == target, validate passes, MERGEABLE/CLEAN). Waiting on the user's merge.

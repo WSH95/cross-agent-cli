@@ -7,6 +7,27 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.6 — `atc-s96.146` (2026-10-14)
+
+The package and both manifests are 0.1.6. Since 0.1.5 (`fccfae9`) the payload changes only texts
+and messages: the setup follow-ups (`atc-s96.136`, `.137`, `.138`) and `rootWriteFault`'s
+setup-skill hint (`atc-s96.143`). The flaky-test fixes (`atc-s96.135`, `.139`) are test-only.
+After the bump:
+- `CODEX_SETUP_PROBE=$(command -v codex) node --test tests/packaging.test.ts tests/dist.test.ts
+  tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none skipped;
+- `npm test` at the root ran 1123 tests: 1121 pass, 0 fail, 2 guarded skips.
+
+The frozen source release is `1b1ff0b`. It was pushed to `main` as a fast-forward from
+`fccfae9`, on the user's approval ("Fix .143, then 0.1.6").
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/21 on
+`publish/cross-agent-plugin/20261014085118` (commit `1f56240`). It holds 21 files: the marketplace
+version, and in both payloads the plugin manifest, `package.json`, the three mode loops,
+`skills/setup/SKILL.md`, `skills/cross-agent/scripts/codex-setup.mjs` and
+`src/{cli,delegate,worktree}.ts`. The target's `cross-agent/` equals the frozen dist (`diff -r`).
+`claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin. The PR
+is `MERGEABLE`, merge state `CLEAN`. No merge was performed.
+
 ## `rootWriteFault` names the setup skill first — `atc-s96.143` (2026-10-14)
 
 Went through the `dev-team` loop and merged as a fast-forward from `375bd5e` to `c028cc3`
