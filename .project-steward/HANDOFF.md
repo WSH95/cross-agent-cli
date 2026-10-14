@@ -47,12 +47,11 @@ skill epic `atc-s96.134` is closed.
 - User instruction (2026-10-14, saved with `bd remember`): follow-up beads are not left open; fix
   them through the dev-team loop, including follow-ups those fixes generate, and ask before any
   push or release. `atc-s96.88` closed as already fixed by `atc-s96.139`.
-- In flight: `atc-s96.144` + `.145` as one dev-team task. Plan review hit its 3-round limit
-  without converging (the plan had grown into a copy of every `init` check); the user chose to
-  simplify back to the small fix and closed `atc-s96.148` as covered by `init`'s own refusals.
-  The simplified plan (`/tmp/claude-1000/cross-agent-plans/atc-s96.144-plan-r4-simplified.md`) is
-  in its one review. Next: `atc-s96.147` (setup skill under the legacy Codex mount). The ~40 older
-  backlog beads under `atc-s96` are not in this scope unless the user says so.
+- `atc-s96.144` + `.145` merged as `5e3d713` (plan review hit its limit; the user chose the small
+  fix and closed `atc-s96.148`; code review clean in two rounds); root suite 1125/1123/0 fail.
+- Next: `atc-s96.147` (setup skill under the legacy Codex mount offers the one-time setup instead
+  of a restart). Then ask the user about pushing and a 0.1.7 release. The ~40 older backlog beads
+  under `atc-s96` are not in this scope unless the user says so.
 Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**

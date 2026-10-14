@@ -7,6 +7,37 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The separated worktree's init hint and the legacy Codex mount — `atc-s96.144` + `.145` (2026-10-14)
+
+Went through the `dev-team` loop and merged as a fast-forward from `9d66272` to `5e3d713` (slug
+`s96-144-init-hints`; `c357ef7` and the wrap-up `5e3d713`).
+- **`atc-s96.144`:** at a worktree of a `--separate-git-dir` main
+  (`repo.kind === "linked" && repo.main === null`), where plain `cross-agent init` refuses,
+  `src/worktree.ts#rootWriteFault`'s config-less refusal names `cross-agent init --mode dev-team`
+  and offers `--from <main checkout>`. Every other root's text is byte-identical.
+  `tests/cli.test.ts#configlessHintRuns` runs the quoted command at every layout and checks that
+  it exits 0 and clears the fault; it was red only at the separated layout before the change.
+- **`atc-s96.145`:** `docs/install.md`'s legacy Codex mount names the setup skill first (it
+  writes the config through the plugin's CLI with no MCP server), then terminal `cross-agent init`
+  through the installed plugin's launcher where `cross-agent` is not on `PATH`; pinned by
+  `tests/packaging.test.ts#codexLegacyMountSetup`. `docs/design.md` says what the refusal names.
+
+Verification:
+- **Plan review:** rounds 1–3 (codex/gpt-6-astra/xhigh) answered `major issues` each time: the
+  plan grew into a copy of every `init` check inside the message, and each round found a rarer
+  state it mishandled (majors 1 → 1 → 2, not converging). At the limit the user chose to simplify
+  back to the small fix and closed `atc-s96.148` (branch states) as covered by `init`'s own
+  refusals; filesystem obstructions are left to `init` too. The simplified plan's review answered
+  `no major issues` with one Minor, folded.
+- **Code review:** round 1 (`c357ef7`) all three seats `no major issues`; one Minor (the test
+  checked the fault with a hard-coded branch) and two small doc points were fixed in the wrap-up.
+  Round 2 (`5e3d713`) all three seats `no major issues`.
+- **Gate and root suite:** each ran 1125 tests: 1123 pass, 0 fail, 2 guarded skips.
+- **Open:** `atc-s96.147` (the setup skill's connection check under the legacy mount) is the next
+  task. A live Codex check of the legacy-mount paragraph is due after the next release.
+- **Cost:** 17 engine tasks, 4,681 s of engine time; the three non-converging plan rounds account
+  for most of the planning time.
+
 ## Release 0.1.6 — `atc-s96.146` (2026-10-14)
 
 The package and both manifests are 0.1.6. Since 0.1.5 (`fccfae9`) the payload changes only texts
