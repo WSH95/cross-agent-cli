@@ -57,7 +57,8 @@ Shipped:
   `src/mailbox.ts` (`ask`, `list_asks`, `answer` over `.cross-agent/asks/`).
 - `src/config.ts`: `.cross-agent/config.json` loading and validation
   (`loadConfig` for the bindings alone; `loadConfigWithMode` for the config
-  and the mode checked against each other; `effectiveMaxDepth`).
+  and the mode checked against each other; `effectiveMaxDepth`), and the
+  optional `records` block, its tracker verb table and path rules.
 - `src/setup.ts`: `init --propose`'s look at a project — the engines found as
   the server finds them, the default branch, the test and setup commands, each
   with where it came from — and the team rule that proposes each built-in mode
@@ -86,7 +87,10 @@ Shipped:
   `src/runcommand.ts` (`run_command`: the configured test or setup
   command by selector; a worktree test run tests a detached checkout of the
   branch head under `.cross-agent/gate/` and journals `tested`),
-  `src/journal.ts` (the per-task git journal), `src/review.ts` (the merge's
+  `src/journal.ts` (the per-task git journal), `src/records.ts` (`record`:
+  declared record files read, or written and committed at the root under
+  `git.lock` → the repository lock, journaled in `.cross-agent/runs/<run>.json`),
+  `src/review.ts` (the merge's
   review guard: the verdict a review's result ends on, the head a review
   covered, the hold on a reviewed worktree, the setup marker, the waiver),
   `src/runner.ts` (the detached per-task runner), `src/guard.ts` (depth,

@@ -12,7 +12,7 @@ import * as config from "../src/config.ts";
 import { adapterFor, adapters } from "../src/engines/registry.ts";
 import type { EngineName } from "../src/engines/types.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
-import { buildMode, modesRoot } from "./helpers/mode.ts";
+import { buildMode, modeDocument, modesRoot } from "./helpers/mode.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDefaults = { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" };
@@ -958,4 +958,223 @@ test("a directory the config tests make inside the repository is ignored, so an 
     const checked = spawnSync("git", ["check-ignore", "--no-index", "--quiet", relative], { cwd: repository });
     assert.equal(checked.status, 0, `${relative} is not ignored`);
   }
+});
+
+// The `records` block (design section 6): absent, or both halves — the project's record files
+// and its tracker's commands — each checked whole at load.
+
+type RecordsBlock = { files: string[]; tracker: Record<string, string[]> };
+
+/** The approved example block, a fresh copy on every call so a test that edits one changes nothing else. */
+function recordsBlock(): RecordsBlock {
+  return {
+    files: [".project-steward/HANDOFF.md", ".project-steward/PROGRESS.md", ".project-steward/DECISIONS.md"],
+    tracker: {
+      ready: ["bd", "ready"],
+      show: ["bd", "show", "{id}"],
+      create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
+      file: ["bd", "create", "--title={title}", "--description={text}"],
+      epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+      claim: ["bd", "update", "{id}", "--claim"],
+      close: ["bd", "close", "{id}", "--reason={text}"],
+      depend: ["bd", "dep", "add", "{id}", "{on}"],
+      files: [".beads/interactions.jsonl"],
+    },
+  };
+}
+
+/** A config holding `records` is refused by `loadConfig` at exactly `field`, its rule matching each pattern. */
+function refusesRecords(root: string, records: unknown, field: string, ...patterns: RegExp[]): void {
+  const file = writeConfig(root, { roles: {}, records });
+  assert.throws(() => config.loadConfig(root), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.startsWith(`${file}: ${field}: `), `${field}: ${error.message}`);
+    for (const pattern of patterns) assert.match(error.message, pattern);
+    return true;
+  });
+}
+
+// @anchor recordsLoadAsBefore
+test("a config without records loads as before, and one with files and a tracker loads", (t) => {
+  const root = project(t);
+  writeConfig(root, { roles: {} });
+  assert.equal(Object.hasOwn(config.loadConfig(root), "records"), false);
+  assert.equal(Object.hasOwn(config.loadConfigWithMode(root, builtInModesDir()).config, "records"), false);
+
+  writeConfig(root, { roles: {}, records: recordsBlock() });
+  assert.deepEqual(config.loadConfig(root).records, recordsBlock());
+  assert.deepEqual(config.loadConfigWithMode(root, builtInModesDir()).config.records, recordsBlock());
+  // The optional verbs are optional, and the tracker's own files may be none.
+  const required = recordsBlock();
+  delete required.tracker.epic;
+  delete required.tracker.depend;
+  required.tracker.files = [];
+  writeConfig(root, { roles: {}, records: required });
+  assert.deepEqual(config.loadConfig(root).records, required);
+});
+
+// @anchor recordsBothHalves
+test("a records block missing either half is refused, naming it", (t) => {
+  const root = project(t);
+  const both = /a records block has both files and a tracker, or the config has none/;
+  refusesRecords(root, { files: recordsBlock().files }, "records.tracker", both);
+  refusesRecords(root, { tracker: recordsBlock().tracker }, "records.files", both);
+  refusesRecords(root, { ...recordsBlock(), files: [] }, "records.files");
+  refusesRecords(root, {}, "records.files", both);
+  refusesRecords(root, [], "records");
+});
+
+// @anchor recordsRequiredPlaceholders
+test("a create template without {parent}, or any template missing a placeholder its verb requires, is refused, naming it", (t) => {
+  const root = project(t);
+  const block = recordsBlock();
+  block.tracker.create = ["bd", "create", "--title={title}", "--description={text}"];
+  refusesRecords(root, block, "records.tracker.create", /lacks \{parent\}, which create requires/);
+  // Every placeholder of every verb, the argument naming it taken out in turn.
+  for (const [verb, argv] of Object.entries(recordsBlock().tracker)) {
+    if (verb === "files") continue;
+    for (const [index, argument] of argv.entries()) {
+      const name = /\{([A-Za-z]+)\}/.exec(argument)?.[1];
+      if (name === undefined) continue;
+      const missing = recordsBlock();
+      missing.tracker[verb] = argv.filter((_, at) => at !== index);
+      refusesRecords(root, missing, `records.tracker.${verb}`, new RegExp(`lacks \\{${name}\\}, which ${verb} requires`));
+    }
+  }
+  // A required verb is required, and an optional one may be left out (the test above).
+  for (const verb of ["ready", "show", "create", "file", "claim", "close"]) {
+    const without = recordsBlock();
+    delete without.tracker[verb];
+    refusesRecords(root, without, `records.tracker.${verb}`);
+  }
+});
+
+test("a template naming a placeholder its verb does not take, or one twice, is refused", (t) => {
+  const root = project(t);
+  const with_ = (verb: string, argv: string[]): RecordsBlock => {
+    const block = recordsBlock();
+    block.tracker[verb] = argv;
+    return block;
+  };
+  refusesRecords(root, with_("show", ["bd", "show", "{id}", "--title={title}"]), "records.tracker.show[3]", /\{title\} is no placeholder show takes/);
+  refusesRecords(root, with_("ready", ["bd", "ready", "--parent={parent}"]), "records.tracker.ready[2]", /\{parent\} is no placeholder ready takes/);
+  refusesRecords(root, with_("claim", ["bd", "update", "{id}", "--also={id}"]), "records.tracker.claim[3]", /\{id\} is named twice, also \[2\]/);
+  refusesRecords(root, with_("show", ["{id}", "show"]), "records.tracker.show[0]");
+  // A template is a command and its arguments: not a string, not empty, and not an empty command.
+  for (const argv of ["bd show {id}", [], ["", "show", "{id}"], ["bd", 5, "{id}"]]) {
+    refusesRecords(root, with_("show", argv as string[]), "records.tracker.show");
+  }
+});
+
+test("free text fills only after an =", (t) => {
+  const root = project(t);
+  const block = recordsBlock();
+  block.tracker.file = ["bd", "create", "{title}", "--description={text}"];
+  refusesRecords(root, block, "records.tracker.file[2]", /free text fills only the part after an =/);
+  block.tracker.file = ["bd", "create", "--title={title}", "--description=x{text}"];
+  refusesRecords(root, block, "records.tracker.file[3]", /free text fills only the part after an =/);
+  // An id fills a whole argument or the part after an =, and nothing else.
+  block.tracker.file = recordsBlock().tracker.file;
+  block.tracker.show = ["bd", "show", "#{id}"];
+  refusesRecords(root, block, "records.tracker.show[2]", /an id fills a whole argument or the part after an =/);
+  // `--title={title}` and a whole-argument `{id}` load, and so does an id after an =.
+  block.tracker.show = ["bd", "show", "--id={id}"];
+  writeConfig(root, { roles: {}, records: block });
+  assert.deepEqual(config.loadConfig(root).records, block);
+  assert.deepEqual(config.loadConfig(root).records!.tracker.claim, ["bd", "update", "{id}", "--claim"]);
+});
+
+// @anchor recordsForbiddenPaths
+test("declared paths refuse .git, .cross-agent/, host configuration and instruction files", (t) => {
+  const root = project(t);
+  for (const declared of ["a/.GIT/x", ".git/config", ".cross-agent/x", ".CROSS-AGENT/x", ".Claude/x", ".mcp.json", ".codex/a.md", "docs/agents.md", "CLAUDE.md"]) {
+    const named = new RegExp(JSON.stringify(declared).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"));
+    refusesRecords(root, { ...recordsBlock(), files: [declared] }, "records.files[0]", named);
+    const tracked = recordsBlock();
+    tracked.tracker.files = [declared];
+    refusesRecords(root, tracked, "records.tracker.files[0]", named);
+  }
+});
+
+test("…refuse an absolute path, a .. segment, a duplicate and characters outside the path alphabet", (t) => {
+  const root = project(t);
+  for (const declared of ["/etc/x", "a/../b", "./a.md", "a//b.md", "a/", "a b.md", "a\\b.md", "~/a.md", ""]) {
+    const files = [".project-steward/HANDOFF.md", declared];
+    refusesRecords(root, { ...recordsBlock(), files }, "records.files[1]", new RegExp(JSON.stringify(declared).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")));
+  }
+  refusesRecords(root, { ...recordsBlock(), files: [".project-steward/HANDOFF.md", 7] }, "records.files[1]");
+  // A path in both lists, refused at its second occurrence and naming the first.
+  const twice = recordsBlock();
+  twice.tracker.files = [".beads/interactions.jsonl", ".project-steward/PROGRESS.md"];
+  refusesRecords(root, twice, "records.tracker.files[1]", /"\.project-steward\/PROGRESS\.md" is declared twice, also records\.files\[1\]/);
+  refusesRecords(root, { ...recordsBlock(), files: ["a.md", "b.md", "a.md"] }, "records.files[2]", /also records\.files\[0\]/);
+});
+
+// @anchor recordsWorktreeDir
+test("…refuse a path under the mode's worktree directory", (t) => {
+  const root = project(t);
+  const modes = modesRoot(t);
+  const under = ".worktrees/task/HANDOFF.md";
+  // The built-in team, and two modes spelling the same directory otherwise: a mode keeps its
+  // own spelling, and every role that works in a worktree spells it as the policy does.
+  const cases: Array<{ mode?: string; modesDir: string }> = [{ modesDir: builtInModesDir() }];
+  for (const [id, spelling] of [["dotted", "./.worktrees"], ["slashed", ".worktrees/"]]) {
+    const implementer = [{ key: "implementer", workspace: "worktree" as const }];
+    const roles = (modeDocument(id, implementer).roles as Array<Record<string, unknown>>)
+      .map((role) => ({ ...role, workspace: { kind: "worktree", branchPattern: "task/*", dir: spelling } }));
+    assert.equal(buildMode(modes, id, implementer, { git: { worktreeDir: spelling, branchPattern: "task/*" }, roles }).git!.worktreeDir, spelling);
+    cases.push({ mode: id, modesDir: modes });
+  }
+  const tracked = recordsBlock();
+  tracked.tracker.files = [under];
+  for (const { mode, modesDir } of cases) {
+    for (const [field, records] of [["records.files[0]", { ...recordsBlock(), files: [under] }], ["records.tracker.files[0]", tracked]] as const) {
+      const document = { ...(mode === undefined ? {} : { mode }), roles: {}, records };
+      const file = writeConfig(root, document);
+      const refused = (label: string) => (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.startsWith(`${label}: ${field}: `), `${mode} ${field}: ${error.message}`);
+        assert.match(error.message, /"\.worktrees\/task\/HANDOFF\.md" lies under the mode's worktree directory \.worktrees\//);
+        return true;
+      };
+      // The rule needs the mode, so the file alone loads.
+      assert.deepEqual(config.loadConfig(root).records, records);
+      assert.throws(() => config.loadConfigWithMode(root, modesDir), refused(file));
+      assert.throws(() => config.checkConfigDocument(JSON.stringify(document), "stdin", modesDir), refused("stdin"));
+    }
+  }
+  // A path that only begins with the directory's name is not under it.
+  writeConfig(root, { roles: {}, records: { ...recordsBlock(), files: [".worktrees-notes.md"] } });
+  assert.deepEqual(config.loadConfigWithMode(root, builtInModesDir()).config.records!.files, [".worktrees-notes.md"]);
+});
+
+// @anchor recordsSymbolicLink
+test("…refuse a symbolic link at load", (t) => {
+  const root = project(t);
+  mkdirSync(path.join(root, "elsewhere"));
+  symlinkSync(path.join(root, "elsewhere"), path.join(root, ".project-steward"));
+  const file = writeConfig(root, { roles: {}, records: recordsBlock() });
+  // The file alone loads: a link is a fact of the disk, read where the mode is.
+  assert.deepEqual(config.loadConfig(root).records, recordsBlock());
+  assert.throws(() => config.loadConfigWithMode(root, builtInModesDir()), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.startsWith(`${file}: records.files[0]: `), error.message);
+    assert.match(error.message, /"\.project-steward" is a symbolic link/);
+    return true;
+  });
+  // A link at the last component is refused too, and a path nothing exists at yet is not.
+  fs.unlinkSync(path.join(root, ".project-steward"));
+  mkdirSync(path.join(root, ".project-steward"));
+  symlinkSync(path.join(root, "elsewhere"), path.join(root, ".project-steward", "PROGRESS.md"));
+  assert.throws(() => config.loadConfigWithMode(root, builtInModesDir()), /records\.files\[1\]: "\.project-steward\/PROGRESS\.md" is a symbolic link/);
+  fs.unlinkSync(path.join(root, ".project-steward", "PROGRESS.md"));
+  assert.deepEqual(config.loadConfigWithMode(root, builtInModesDir()).config.records, recordsBlock());
+});
+
+test("records refuses an unknown key", (t) => {
+  const root = project(t);
+  refusesRecords(root, { ...recordsBlock(), notes: ["x.md"] }, "records.notes");
+  const block = recordsBlock();
+  block.tracker.archive = ["bd", "archive", "{id}"];
+  refusesRecords(root, block, "records.tracker.archive");
 });

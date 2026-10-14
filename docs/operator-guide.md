@@ -1,7 +1,8 @@
 # Operating cross-agent
 
-How a project's team is configured and guarded, the operator CLI verb by verb, and how
-several branches of one repository run their teams at once. Installing is in
+How a project's team is configured and guarded, how a project declares its records,
+the operator CLI verb by verb, and how several branches of one repository run their
+teams at once. Installing is in
 `docs/install.md`; the design, which this guide follows, is `docs/design.md`.
 
 ## Team configuration
@@ -46,6 +47,106 @@ reviewer seat has not finished a clean review of, unless you waive it with
 `cross-agent waive <slug> <commit>`. A reviewer is refused while the worktree holds
 uncommitted changes or its setup command runs. `cross-agent journal <slug>` shows
 the `tested` and `review-waived` steps.
+
+## Records: the tracker and the project's record files
+
+A project that keeps its own records — a handoff, a progress log, decisions — and a
+tracker for its backlog can declare both in a `records` block of
+`.cross-agent/config.json`. A config has no block, or one with both halves: `files`,
+the record files, and `tracker`, the tracker's commands with the files its writes
+change. A block with only one half is refused at load, naming the missing one; a
+config without a block loads and behaves exactly as before.
+
+```json
+"records": {
+  "files": [".project-steward/HANDOFF.md", ".project-steward/PROGRESS.md", ".project-steward/DECISIONS.md"],
+  "tracker": {
+    "ready":  ["bd", "ready"],
+    "show":   ["bd", "show", "{id}"],
+    "create": ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
+    "file":   ["bd", "create", "--title={title}", "--description={text}"],
+    "epic":   ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+    "claim":  ["bd", "update", "{id}", "--claim"],
+    "close":  ["bd", "close", "{id}", "--reason={text}"],
+    "depend": ["bd", "dep", "add", "{id}", "{on}"],
+    "files":  [".beads/interactions.jsonl"]
+  }
+}
+```
+
+The server reads the block once, when it starts, and registers the `record` tool for
+your session and an engine lead only where it found one; a specialist is refused it.
+After you add or remove the block, start a new session: until then a removed block
+makes `record` refuse, and an added one is a `warning` in `describe_mode`, each naming
+the restart. `describe_mode` answers the block as `records` — the files, and each
+configured verb with its command and whether it writes.
+
+**`record`** reads or writes the files under `files`, and only those; the tracker's
+own files are not its to write. `{path}` reads one: its text and its `sha256`, up to
+1 MiB, or `exists: false`. `{changes: [{path, mode, text, expect}], message}` writes a
+batch and commits it at the root as one commit with that message: `replace` swaps the
+whole file and needs `expect`, the `sha256` your read answered, or `null` for a file
+that does not exist yet, so a file someone changed since is refused rather than
+overwritten; `append` adds the text, after a newline where the file lacks its last
+one. The whole batch is checked before anything is written. The root must be wholly
+clean — nothing staged, changed or untracked anywhere, and no declared record file
+marked assume-unchanged or skip-worktree, in the batch or not; the refusal names each
+path, and a mark is cleared with `git update-index --no-assume-unchanged <path>` (or
+`--no-skip-worktree`). A project under `core.ignoreStat`, which marks every tracked
+file, is refused on every write until the marks on its record files are cleared. The
+commit carries exactly the batch's paths, on the default branch, under the locks every
+git write of this project takes, and the repository's hooks run as they do for a root
+merge; a hook that refuses the commit leaves the files and the index as they were.
+Batch bytes a file already has commit nothing.
+
+Every commit `record` lands is journaled in `.cross-agent/runs/<run>.json` — `operator`
+for your own calls, and a lead's first task id for its run, a resumed lead continuing
+the same file — as a `recorded` step with `before`, `after`, the paths, the message and
+`verified`. Watch for `verified: false`: the commit landed but carried something else,
+or left the root unclean — a hook that adds a path does that — and its `problems` say
+what; the call answered `ok: false` naming them, and the commit stands. A call that
+answers "commit `<sha>` landed; its step could not be written" left the commit in
+place without its step.
+
+A declared path is a relative path of letters, digits, `.`, `_` and `-` segments
+joined by `/`: no `.` or `..` segment, nothing under `.git` or `.cross-agent/`, no
+host configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`), no `AGENTS.md` or
+`CLAUDE.md` anywhere, in any case, no path under the mode's worktree directory, no
+path declared twice across both lists, and no existing component that is a symbolic
+link. Each refusal names the field, as `records.files[<n>]` counted from 0, and the
+path. One case is not refused: a declared path your `.gitignore` covers is written but
+never committed, and the call answers `ok` with no commit, so keep record files out of
+ignored directories.
+
+The tracker's verbs are fixed; each template is a command and its arguments, run with
+no shell, naming each placeholder its verb takes exactly once:
+
+| verb | writes | placeholders | required |
+|---|---|---|---|
+| `ready` | no | — | yes |
+| `show` | no | `{id}` | yes |
+| `create` | yes | `{title}`, `{text}`, `{parent}` | yes |
+| `file` | yes | `{title}`, `{text}` | yes |
+| `claim` | yes | `{id}` | yes |
+| `close` | yes | `{id}`, `{text}` | yes |
+| `epic` | yes | `{title}`, `{text}` | no |
+| `depend` | yes | `{id}`, `{on}` | no |
+
+An id — `{id}`, `{parent}`, `{on}` — fills a whole argument or the part after an `=`;
+free text — `{title}`, `{text}` — only the part after an `=`; the command itself holds
+none. The tracker's contract: `create`, `file` and `epic` print the new item's id, and
+`{parent}` expresses membership in the epic however the tracker can — a parent flag, a
+label or a milestone. A tracker whose `show` lists no children is handed its set as a
+list of ids. A tracker that cannot print a new item's id, or cannot express epic
+membership through `{parent}`, cannot file a goal's items or report follow-ups' ids: it
+needs a wrapper command that meets the contract, or the project keeps no-records
+behaviour. Both halves are required. A project with a tracker and no record files of
+its own names one, such as a handoff file; a project with record files and no tracker
+has nothing to fall back on, and needs tracker commands that meet the contract — a
+small wrapper script is enough — or keeps no-records behaviour.
+
+Nothing runs the tracker yet: this build validates the tracker half and
+`describe_mode` describes it, and `record` is the only tool the block registers.
 
 ## The operator CLI
 

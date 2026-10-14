@@ -5,6 +5,7 @@ import { adapterFor, sandboxFor, sandboxProfiles } from "./engines/registry.ts";
 import type { SandboxProfile } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName } from "./engines/types.ts";
+import { isHostConfigPath } from "./gitmutate.ts";
 import { builtInModesDir, findRole, gitPolicy, loadMode } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 
@@ -42,6 +43,34 @@ export interface RoleConfig {
  */
 export type RoleBinding = RoleConfig | RoleConfig[];
 
+/**
+ * The tracker's verbs, fixed in code (design section 6, "The `records` block"): whether each
+ * writes, the placeholders its template names, every one of them exactly once, and whether a
+ * tracker must declare it.
+ */
+export const trackerVerbs = {
+  ready: { writes: false, placeholders: [], required: true },
+  show: { writes: false, placeholders: ["id"], required: true },
+  create: { writes: true, placeholders: ["title", "text", "parent"], required: true },
+  file: { writes: true, placeholders: ["title", "text"], required: true },
+  claim: { writes: true, placeholders: ["id"], required: true },
+  close: { writes: true, placeholders: ["id", "text"], required: true },
+  epic: { writes: true, placeholders: ["title", "text"], required: false },
+  depend: { writes: true, placeholders: ["id", "on"], required: false },
+} as const;
+export type TrackerVerb = keyof typeof trackerVerbs;
+/** Placeholders that carry an id: a whole argument or the part after an `=`; every other fills only after an `=`. */
+export const idPlaceholders: readonly string[] = ["id", "parent", "on"];
+
+/**
+ * The project's records: the files `record` reads and commits, and the tracker's commands
+ * with the files its writes change. A config has both halves or no block at all.
+ */
+export interface RecordsConfig {
+  files: string[];
+  tracker: { [verb in TrackerVerb]?: string[] } & { files: string[] };
+}
+
 export interface CrossAgentConfig {
   /** The active mode, one directory under the modes shelf (design, "Modes"). */
   mode: string;
@@ -59,6 +88,8 @@ export interface CrossAgentConfig {
   /** What the team loop does with a Critical or Important finding still standing after the resolver's round (D3). */
   review: { afterResolver: AfterResolver };
   billing: "subscription" | "api";
+  /** The project's record files and tracker, where it keeps them through `record` (design section 6). */
+  records?: RecordsConfig;
 }
 
 export interface InitConfigResult {
@@ -201,6 +232,59 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
 }
 
 /**
+ * Why a declared record path may not be one, or null: the rules `parseConfig` holds every
+ * path of a `records` block to, in order. The alphabet keeps a path one git never quotes and
+ * never names outside the root; `.git`, the project's own `.cross-agent/`, a host's project
+ * configuration and the instruction files a host reads are never a record.
+ */
+function recordPathFault(file: string): string | null {
+  const named = JSON.stringify(file);
+  const segments = file.split("/");
+  if (!segments.every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))) {
+    return `${named} is not a relative path of "/"-separated segments of letters, digits, ".", "_" and "-"`;
+  }
+  if (segments.some((segment) => segment === "." || segment === "..")) return `${named} has a "." or ".." segment`;
+  if (segments.some((segment) => segment.toLowerCase() === ".git")) return `${named} lies in a .git directory, which is git's own`;
+  if (segments[0].toLowerCase() === ".cross-agent") return `${named} lies under .cross-agent/, which only the server writes`;
+  if (isHostConfigPath(file)) {
+    return `${named} is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, in any case), which no tool commits`;
+  }
+  if (segments.some((segment) => ["agents.md", "claude.md"].includes(segment.toLowerCase()))) {
+    return `${named} is an instruction file a host reads (AGENTS.md or CLAUDE.md, in any case), which no tool commits`;
+  }
+  return null;
+}
+
+/** Every path a `records` block declares, with the field that declares it: `files`, then `tracker.files`. */
+function recordPaths(records: RecordsConfig): { field: string; index: number; path: string }[] {
+  return [
+    ...records.files.map((file, index) => ({ field: "files", index, path: file })),
+    ...records.tracker.files.map((file, index) => ({ field: "tracker.files", index, path: file })),
+  ];
+}
+
+/**
+ * Why a declared path may not be read or written through, or null: an existing component
+ * of it, under `root`, that is a symbolic link. The walk ends where nothing exists yet.
+ */
+export function recordPathLink(root: string, relative: string): string | null {
+  const segments = relative.split("/");
+  for (let end = 1; end <= segments.length; end++) {
+    const prefix = segments.slice(0, end).join("/");
+    let entry: fs.Stats;
+    try {
+      entry = fs.lstatSync(path.join(root, prefix));
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return null;
+      return `${JSON.stringify(prefix)} cannot be read: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (entry.isSymbolicLink()) return `${JSON.stringify(prefix)} is a symbolic link`;
+  }
+  return null;
+}
+
+/**
  * `loadConfig`'s checks on the text of a config, each refusal labelled `<file>: <field>:
  * <rule>`. The file is a label only: `init --config -` checks a document read on stdin with
  * the same checks the server's loader applies to the file (`checkConfigDocument`).
@@ -309,17 +393,111 @@ export function parseConfig(raw: string, file: string): CrossAgentConfig {
   const review = { ...reviewDefaults, ...object(document.review === undefined ? {} : document.review, "review") };
   oneOf(review.afterResolver, "review.afterResolver", afterResolverOptions);
   const billing = oneOf(document.billing === undefined ? "subscription" : document.billing, "billing", ["subscription", "api"] as const);
-  return { ...document, mode, project, roles, limits, review, billing } as CrossAgentConfig;
+
+  /** One list of declared paths at `field`, each held to `recordPathFault`. */
+  function pathList(value: unknown, field: string, emptyAllowed: boolean): string[] {
+    if (!Array.isArray(value) || (!emptyAllowed && value.length === 0)) {
+      invalid(field, emptyAllowed ? "a list of paths, which may be empty" : "a non-empty list of paths");
+    }
+    return (value as unknown[]).map((entry, index) => {
+      if (typeof entry !== "string") invalid(`${field}[${index}]`, "a path relative to the project root");
+      const fault = recordPathFault(entry as string);
+      if (fault !== null) reject(`${field}[${index}]`, fault);
+      return entry as string;
+    });
+  }
+
+  /** One verb's template: a command and its arguments, each placeholder the verb takes named once and in its place. */
+  function template(verb: TrackerVerb, value: unknown): string[] {
+    const field = `records.tracker.${verb}`;
+    if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string") || value[0] === "") {
+      invalid(field, "a non-empty list of strings: the command, then its arguments, run with no shell");
+    }
+    const argv = value as string[];
+    const takes: readonly string[] = trackerVerbs[verb].placeholders;
+    const seen = new Map<string, number>();
+    for (const [index, argument] of argv.entries()) {
+      for (const [, name] of argument.matchAll(/\{([A-Za-z]+)\}/g)) {
+        const at = `${field}[${index}]`;
+        if (index === 0) reject(at, "the command itself holds no placeholder");
+        if (!takes.includes(name)) {
+          reject(at, `{${name}} is no placeholder ${verb} takes; it takes ${takes.length === 0 ? "none" : takes.map((each) => `{${each}}`).join(", ")}`);
+        }
+        const earlier = seen.get(name);
+        if (earlier !== undefined) reject(at, `{${name}} is named twice, also [${earlier}]`);
+        seen.set(name, index);
+        const afterEquals = new RegExp(`^[^{}]*=\\{${name}\\}$`).test(argument);
+        if (idPlaceholders.includes(name)) {
+          if (argument !== `{${name}}` && !afterEquals) reject(at, `an id fills a whole argument or the part after an =, as {${name}} or --flag={${name}}`);
+        } else if (!afterEquals) {
+          reject(at, `free text fills only the part after an =, as --flag={${name}}`);
+        }
+      }
+    }
+    for (const name of takes) if (!seen.has(name)) reject(field, `lacks {${name}}, which ${verb} requires`);
+    return [...argv];
+  }
+
+  // Absent, or both halves (design section 6): the project's record files, and its tracker's
+  // commands with the files those commands change.
+  function records(value: unknown): RecordsConfig {
+    const block = object(value, "records");
+    for (const key of Object.keys(block)) {
+      if (key !== "files" && key !== "tracker") reject(`records.${key}`, "a records block has files and tracker, and nothing else");
+    }
+    for (const half of ["files", "tracker"] as const) {
+      if (block[half] === undefined) reject(`records.${half}`, "a records block has both files and a tracker, or the config has none");
+    }
+    const files = pathList(block.files, "records.files", false);
+    const declared = object(block.tracker, "records.tracker");
+    const verbs = Object.keys(trackerVerbs) as TrackerVerb[];
+    for (const key of Object.keys(declared)) {
+      if (key !== "files" && !(verbs as string[]).includes(key)) {
+        reject(`records.tracker.${key}`, `not a tracker verb; the verbs are ${verbs.join(", ")}, and files names the tracker's own files`);
+      }
+    }
+    for (const verb of verbs) {
+      if (trackerVerbs[verb].required && declared[verb] === undefined) {
+        reject(`records.tracker.${verb}`, `${verb} is required: a tracker declares every one of ${verbs.filter((each) => trackerVerbs[each].required).join(", ")}`);
+      }
+    }
+    const tracker = {} as RecordsConfig["tracker"];
+    for (const verb of verbs) if (declared[verb] !== undefined) tracker[verb] = template(verb, declared[verb]);
+    tracker.files = pathList(declared.files, "records.tracker.files", true);
+    const checked: RecordsConfig = { files, tracker };
+    const first = new Map<string, string>();
+    for (const { field, index, path: file } of recordPaths(checked)) {
+      const at = `records.${field}[${index}]`;
+      const earlier = first.get(file);
+      if (earlier !== undefined) reject(at, `${JSON.stringify(file)} is declared twice, also ${earlier}`);
+      first.set(file, at);
+    }
+    return checked;
+  }
+  const recordsBlock = document.records === undefined ? undefined : records(document.records);
+  return {
+    ...document, mode, project, roles, limits, review, billing, ...(recordsBlock === undefined ? {} : { records: recordsBlock }),
+  } as CrossAgentConfig;
 }
 
 /**
  * The config and the mode it names, each valid and the two agreeing (design section 6).
  * `loadConfig` stays the loader for everything that needs bindings alone — a runner, a
  * lock, a reconciliation — because those run where no mode has been read and must not
- * fail for want of one. Everything that launches or offers a tool reads both, here.
+ * fail for want of one. Everything that launches or offers a tool reads both, here. A
+ * `records` block's paths are read on disk here too: none may pass through a symbolic link.
  */
 export function loadConfigWithMode(projectRoot: string, modesDir: string = builtInModesDir()): BoundConfig {
-  return bindConfig(loadConfig(projectRoot), path.join(projectRoot, CONFIG_PATH), modesDir);
+  const file = path.join(projectRoot, CONFIG_PATH);
+  const bound = bindConfig(loadConfig(projectRoot), file, modesDir);
+  const records = bound.config.records;
+  if (records !== undefined) {
+    for (const { field, index, path: declared } of recordPaths(records)) {
+      const linked = recordPathLink(projectRoot, declared);
+      if (linked !== null) throw new Error(`${file}: records.${field}[${index}]: ${linked}`);
+    }
+  }
+  return bound;
 }
 
 /**
@@ -401,6 +579,17 @@ export function bindingFault(mode: Mode, config: CrossAgentConfig, file: string)
       }
     }
   }
+  // A record under the mode's worktree directory would be a path in some task's checkout,
+  // not the root's. The directory is compared in one spelling, the normalization
+  // `src/modes.ts` validates it with; the mode keeps its own.
+  if (config.records !== undefined) {
+    const dir = path.posix.normalize(gitPolicy(mode).worktreeDir).replace(/\/+$/, "");
+    for (const { field, index, path: declared } of recordPaths(config.records)) {
+      if (declared === dir || declared.startsWith(`${dir}/`)) {
+        return `${file}: records.${field}[${index}]: ${JSON.stringify(declared)} lies under the mode's worktree directory ${dir}/`;
+      }
+    }
+  }
   // P9: a Grok child inherits the operator's own configuration and has no per-run
   // isolation of any kind, so there is no Grok lead — only a Grok specialist, which
   // ancestry holds to its row ("The lead model", item 4).
@@ -425,6 +614,18 @@ export function engineLeadRole(mode: Mode): string | undefined {
 export function modeDrift(served: Mode, config: CrossAgentConfig): string | null {
   return config.mode === served.id ? null
     : `mode ${JSON.stringify(config.mode)} in ${CONFIG_PATH}, ${JSON.stringify(served.id)} served; restart the server to change modes`;
+}
+
+/**
+ * Whether the config's `records` block has come or gone since this server started, as a
+ * reason or null. `record` is registered once, from the block the server started with: a
+ * block removed since makes it refuse, and one added is a warning `describe_mode` carries.
+ */
+export function recordsDrift(served: boolean, config: CrossAgentConfig): string | null {
+  if (served === (config.records !== undefined)) return null;
+  return served
+    ? `records was removed from ${CONFIG_PATH} after this server started; restart the server`
+    : `records was added to ${CONFIG_PATH} after this server started, so record is not registered; restart the server to serve it`;
 }
 
 /** Whether a binding is a list, one binding per seat. */

@@ -3,13 +3,18 @@ import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { resolveAuthority } from "./authority.ts";
 import type { Authority, Row } from "./authority.ts";
-import { effectiveMaxDepth, isSeated, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, roleProfile, seatsOf } from "./config.ts";
+import {
+  effectiveMaxDepth, isSeated, loadConfig, loadConfigWithMode, lockWaitSeconds, modeDrift, recordsDrift, roleProfile, seatsOf, trackerVerbs,
+} from "./config.ts";
+import type { RecordsConfig, TrackerVerb } from "./config.ts";
 import { delegate } from "./delegate.ts";
 import type { DelegateRequest } from "./delegate.ts";
 import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
 import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
+import { record } from "./records.ts";
+import type { RecordChange, RecordRequest } from "./records.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
 import { waiveReview } from "./review.ts";
@@ -278,6 +283,11 @@ function delegateRequest(args: Json): DelegateRequest {
 export interface ToolOptions {
   /** The active mode, loaded once by whoever starts the server: it decides what registers. */
   mode: Mode;
+  /**
+   * The `records` block of the config this server started with: `record` registers only
+   * with one, and a block added or removed since is a restart (`recordsDriftFault`).
+   */
+  records?: RecordsConfig;
 }
 
 /**
@@ -289,6 +299,15 @@ export interface ToolOptions {
 function driftFault(projectRoot: string, mode: Mode): string | null {
   try {
     return modeDrift(mode, loadConfig(projectRoot));
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** A `records` block come or gone since this server started, as `driftFault` reads a mode's. */
+function recordsDriftFault(projectRoot: string, served: boolean): string | null {
+  try {
+    return recordsDrift(served, loadConfig(projectRoot));
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -542,6 +561,86 @@ function mailboxTools(projectRoot: string): ToolDefinition[] {
   ];
 }
 
+/** The `record` request as the wire spells it, its shape checked before anything reads it: the read form or the write form. */
+function recordRequest(args: Json): RecordRequest {
+  const reading = args.path !== undefined;
+  if (reading === (args.changes !== undefined)) {
+    throw new RpcError(-32602, "record takes exactly one of path, to read a record file, and changes, to write some");
+  }
+  if (reading) {
+    if (args.message !== undefined) throw new RpcError(-32602, "record's message goes with changes, and a read takes none");
+    return { path: requiredString(args, "path", "record") };
+  }
+  if (!Array.isArray(args.changes) || args.changes.length === 0) {
+    throw new RpcError(-32602, "record's changes must be a non-empty array of {path, mode, text, expect}");
+  }
+  const changes = (args.changes as unknown[]).map((value, index): RecordChange => {
+    const at = `record's changes[${index}]`;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new RpcError(-32602, `${at} must be an object`);
+    const { path: file, mode, text: body, expect } = value as Json;
+    if (typeof file !== "string") throw new RpcError(-32602, `${at}.path must be a string`);
+    if (mode !== "replace" && mode !== "append") throw new RpcError(-32602, `${at}.mode must be replace or append`);
+    if (typeof body !== "string") throw new RpcError(-32602, `${at}.text must be a string`);
+    if (expect !== undefined && expect !== null && typeof expect !== "string") throw new RpcError(-32602, `${at}.expect must be a string or null`);
+    return { path: file, mode, text: body, ...(expect === undefined ? {} : { expect: expect as string | null }) };
+  });
+  return { changes, message: requiredString(args, "message", "record") };
+}
+
+/** `describe_mode`'s `records`: the record files, and each configured verb, in the table's order, with whether it writes. */
+function describeRecords(records: RecordsConfig): Json {
+  const verbs = (Object.keys(trackerVerbs) as TrackerVerb[]).filter((verb) => records.tracker[verb] !== undefined);
+  return {
+    files: records.files,
+    tracker: {
+      verbs: Object.fromEntries(verbs.map((verb) => [verb, { argv: records.tracker[verb], writes: trackerVerbs[verb].writes }])),
+      files: records.tracker.files,
+    },
+  };
+}
+
+/**
+ * `record`, registered only where the config this server started with has a `records` block
+ * (design section 1), for the operator and the lead. A lead's commits are journaled under its
+ * chain's first record, so a resumed lead continues the run journal it began; the operator's
+ * under `operator`.
+ */
+function recordTools(projectRoot: string, mode: Mode, modesDir: string): ToolDefinition[] {
+  return [
+    {
+      name: "record",
+      description: "Read or write the project's declared record files (records.files). {path} reads one: its text and sha256, or exists: false, up to 1 MiB. {changes: [{path, mode, text, expect}], message} writes a batch: mode replace or append, a replace naming in expect the sha256 its read answered, or null for a new file, and an append adding a missing final newline first. The whole batch is checked before anything is written, the project root must be wholly clean, and exactly the batch's paths are committed at the root on the default branch under git.lock and the repository lock; the commit is journaled in .cross-agent/runs/<run>.json.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string" }, mode: { type: "string", enum: ["replace", "append"] },
+                text: { type: "string" }, expect: { type: ["string", "null"] },
+              },
+              required: ["path", "mode", "text"],
+            },
+          },
+          message: { type: "string" },
+        },
+      },
+      rows: ["operator", "lead"],
+      handler: async (args, context) => {
+        const request = recordRequest(fields(args, "record"));
+        const drift = driftFault(projectRoot, mode) ?? recordsDriftFault(projectRoot, true);
+        if (drift !== null) return answer({ ok: false, reason: drift });
+        const run = context.authority.row === "operator" ? "operator" : callerLineage(projectRoot, context.authority).at(-1);
+        if (run === undefined) return answer({ ok: false, reason: "record needs the task this lead runs as, and this call resolved none" });
+        return answer(await record(projectRoot, request, { waitSeconds: lockWaitSeconds(projectRoot), run, modesDir }));
+      },
+    },
+  ];
+}
+
 /** The tools for the project at `projectRoot`, each with the rows of the permission matrix it is offered to. */
 export function projectTools(projectRoot: string, options: ToolOptions): ToolDefinition[] {
   const { mode } = options;
@@ -561,7 +660,15 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         // judges against the project its user works in (design section 7). The loop's two
         // settings are the config's, read where an engine lead that runs no shell reads them.
         const review = { planReviewRounds: config.limits.planReviewRounds, afterResolver: config.review.afterResolver };
-        return "reason" in described ? { ...text(described), isError: true } : text({ ...described, projectRoot, review });
+        if ("reason" in described) return { ...text(described), isError: true };
+        // The project's records where its config keeps them, and a restart named where the
+        // block has come or gone since `record` was registered or left out.
+        const warning = recordsDrift(options.records !== undefined, config);
+        return text({
+          ...described, projectRoot, review,
+          ...(config.records === undefined ? {} : { records: describeRecords(config.records) }),
+          ...(warning === null ? {} : { warning }),
+        });
       },
     },
     {
@@ -725,6 +832,8 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     ...worktreeTools(projectRoot, mode),
     // The mailbox exists where a lead runs in an engine and nowhere else.
     ...(mode.lead.placement === "engine" ? mailboxTools(projectRoot) : []),
+    // `record` exists where the config this server started with keeps records.
+    ...(options.records === undefined ? [] : recordTools(projectRoot, mode, modesDir)),
   ];
 }
 
@@ -763,7 +872,9 @@ async function main(): Promise<void> {
     }
     return resolved;
   };
-  createServer({ tools: projectTools(root, { mode }), authority }).connect(process.stdin, process.stdout);
+  createServer({
+    tools: projectTools(root, { mode, ...(config.records === undefined ? {} : { records: config.records }) }), authority,
+  }).connect(process.stdin, process.stdout);
 }
 
 if (isMainModule(import.meta.url)) {

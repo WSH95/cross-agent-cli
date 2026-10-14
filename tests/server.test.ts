@@ -1379,3 +1379,117 @@ test("waive_review is the operator's, and the lead's only under lead-decides wit
   assert.equal(nothing.isError, true);
   assert.match(nothing.body.reason as string, /nothing is gated/);
 });
+
+// A `records` block registers `record` (design section 1), from the block the server started
+// with. None of these calls reaches git: each is a listing, `describe_mode`, or refused first.
+
+/** The approved example block (design section 6). */
+const records = {
+  files: [".project-steward/HANDOFF.md", ".project-steward/PROGRESS.md", ".project-steward/DECISIONS.md"],
+  tracker: {
+    ready: ["bd", "ready"],
+    show: ["bd", "show", "{id}"],
+    create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
+    file: ["bd", "create", "--title={title}", "--description={text}"],
+    epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+    claim: ["bd", "update", "{id}", "--claim"],
+    close: ["bd", "close", "{id}", "--reason={text}"],
+    depend: ["bd", "dep", "add", "{id}", "{on}"],
+    files: [".beads/interactions.jsonl"],
+  },
+};
+
+// @anchor recordRows
+test("a records block registers record for operator and lead; none registers nothing new", async (t) => {
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 }, records });
+  const names = async (mode: Mode, row: Authority["row"], served?: typeof records) => {
+    const request = inProcess({ tools: projectTools(root, { mode, ...(served === undefined ? {} : { records: served }) }), authority: () => ({ row, reason: "test", depth: 0 }) });
+    return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
+  };
+  const specialist = ["describe_mode", "list_roles", "check", "result", "list_tasks"];
+  assert.deepEqual(await names(devTeamEngine, "operator", records), [...thirteen, "list_asks", "answer", "record"]);
+  assert.deepEqual(await names(devTeamEngine, "lead", records), [...thirteen, "ask", "list_asks", "record"]);
+  assert.deepEqual(await names(devTeamEngine, "specialist", records), specialist);
+  for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(devTeam, row, records), [...thirteen, "record"], row);
+  // Without the block, every list is today's.
+  assert.deepEqual(await names(devTeamEngine, "operator"), [...thirteen, "list_asks", "answer"]);
+  assert.deepEqual(await names(devTeamEngine, "lead"), [...thirteen, "ask", "list_asks"]);
+  assert.deepEqual(await names(devTeamEngine, "specialist"), specialist);
+  for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(devTeam, row), thirteen, row);
+});
+
+test("a specialist's record call is refused by name", async (t) => {
+  const root = await projectWithConfig(t, { roles: {}, records });
+  const reason = "specialist by ancestry: task S (implementer, running)";
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam, records }), authority: () => ({ row: "specialist", reason, taskId: "S", depth: 2 }) });
+  for (const args of [{ path: ".project-steward/HANDOFF.md" }, { changes: [{ path: ".project-steward/HANDOFF.md", mode: "append", text: "x" }], message: "m" }]) {
+    const reply = await request("tools/call", { name: "record", arguments: args });
+    assert.deepEqual(reply.error, { code: -32602, message: `record is not available to a specialist server: ${reason}` });
+  }
+});
+
+// @anchor describeModeRecords
+test("describe_mode answers records only where configured", async (t) => {
+  const described = async (config: Json, served?: typeof records) => {
+    const root = await projectWithConfig(t, config);
+    const request = inProcess({ tools: projectTools(root, { mode: devTeam, ...(served === undefined ? {} : { records: served }) }), authority: () => operator });
+    return payload(await request("tools/call", { name: "describe_mode", arguments: {} })).body;
+  };
+  const answer = await described({ roles: {}, records }, records);
+  const { files: trackerFiles, ...verbs } = records.tracker;
+  const writes: Record<string, boolean> = { ready: false, show: false, create: true, file: true, claim: true, close: true, epic: true, depend: true };
+  assert.deepEqual(answer.records, {
+    files: records.files,
+    tracker: { verbs: Object.fromEntries(Object.entries(verbs).map(([verb, argv]) => [verb, { argv, writes: writes[verb] }])), files: trackerFiles },
+  });
+  // The verbs in the table's own order, whatever order the config wrote them in.
+  assert.deepEqual(Object.keys(((answer.records as Json).tracker as Json).verbs as Json), ["ready", "show", "create", "file", "claim", "close", "epic", "depend"]);
+  assert.equal(Object.hasOwn(answer, "warning"), false);
+  // Only the verbs configured.
+  const { epic: _, depend: __, ...required } = records.tracker;
+  const fewer = await described({ roles: {}, records: { ...records, tracker: required } }, { ...records, tracker: required as typeof records.tracker });
+  assert.deepEqual(Object.keys(((fewer.records as Json).tracker as Json).verbs as Json), ["ready", "show", "create", "file", "claim", "close"]);
+  // No block, no key.
+  const plain = await described({ roles: {} });
+  assert.equal(Object.hasOwn(plain, "records"), false);
+  assert.equal(Object.hasOwn(plain, "warning"), false);
+});
+
+// @anchor recordsDriftRestart
+test("a removed block refuses with a restart; an added one is a describe_mode warning", async (t) => {
+  // Served with the block, and the config has since lost it: record refuses, naming a restart.
+  const removed = await projectWithConfig(t, { roles: {} });
+  const served = inProcess({ tools: projectTools(removed, { mode: devTeam, records }), authority: () => operator });
+  for (const args of [{ path: ".project-steward/HANDOFF.md" }, { changes: [{ path: ".project-steward/HANDOFF.md", mode: "append", text: "x" }], message: "m" }]) {
+    const refused = payload(await served("tools/call", { name: "record", arguments: args }));
+    assert.equal(refused.isError, true);
+    assert.match(refused.body.reason as string, /records was removed from \.cross-agent\/config\.json after this server started; restart the server/);
+  }
+  assert.match(payload(await served("tools/call", { name: "describe_mode", arguments: {} })).body.warning as string, /removed.*restart/);
+
+  // Served without it, and the config has since gained one: describe_mode warns, and record is not there.
+  const added = await projectWithConfig(t, { roles: {}, records });
+  const unserved = inProcess({ tools: projectTools(added, { mode: devTeam }), authority: () => operator });
+  const answer = payload(await unserved("tools/call", { name: "describe_mode", arguments: {} })).body;
+  assert.match(answer.warning as string, /records was added to \.cross-agent\/config\.json after this server started, so record is not registered; restart the server/);
+  assert.equal(((((await unserved("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name)).includes("record"), false);
+  assert.deepEqual((await unserved("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } })).error,
+    { code: -32602, message: "unknown tool: record" });
+});
+
+test("record's arguments are checked as the wire spells them, before anything is read", async (t) => {
+  const root = await projectWithConfig(t, { roles: {}, records });
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam, records }), authority: () => operator });
+  const change = { path: ".project-steward/HANDOFF.md", mode: "append", text: "x" };
+  for (const args of [
+    {}, { path: "" }, { path: 5 }, { path: "a", changes: [change], message: "m" }, { path: "a", message: "m" },
+    { changes: [], message: "m" }, { changes: [change] }, { changes: [change], message: "" }, { changes: "x", message: "m" },
+    { changes: [{ ...change, mode: "prepend" }], message: "m" }, { changes: [{ ...change, text: 5 }], message: "m" },
+    { changes: [{ ...change, path: 5 }], message: "m" }, { changes: [{ ...change, expect: 5 }], message: "m" }, { changes: [null], message: "m" },
+  ]) {
+    assert.equal(((await request("tools/call", { name: "record", arguments: args })).error as Json)?.code, -32602, JSON.stringify(args));
+  }
+  // A well-formed read is the tool's to answer: a declared file nothing has written yet.
+  assert.deepEqual(payload(await request("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } })),
+    { body: { ok: true, path: ".project-steward/HANDOFF.md", exists: false }, isError: false });
+});
