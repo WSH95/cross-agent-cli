@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T21:07:32Z
+updated_at: 2026-10-14T22:08:34Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -222,6 +222,12 @@ What stands is the project's own record. The operator conditions a release names
 - **Task 2 (`atc-2jl.2` + `.6`) merged as `9360f3e`** and closed: `track`, the shared root-commit
   helpers; root suite 1175/1173/0 fail. Follow-ups `atc-2jl.7` (a design.md word, into `.3`) and
   `atc-9w2` (flaky `tests/wait.test.ts#quietTaskWhose`).
+- **Task 3 (`atc-2jl.3` + `.7`) merged as `c6a6433`** and closed: setup proposes the `records`
+  block for `dev-team-engine` where beads and project-steward are found; reconnect covers a block
+  added or removed; root suite 1182/1180/0 fail. Follow-up `atc-2jl.8` (a short line in
+  `docs/operator-guide.md`, into `.4`).
+- **Next: Task 4 (`atc-2jl.4`)**, with `.8` and `atc-s96.117` folded in and `.5` noted for the
+  live trace.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -348,10 +354,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **`atc-2jl.3` (setup proposes records; reconnect), with `atc-2jl.7` folded in**, through the
-   dev-team loop; the brief carries `bd --help` for create, update, close, ready and dep add.
-   Then `.4` (the run loop, prompts, launcher, docs, AGENTS.md), `.5` at the live trace, and
-   `atc-9w2`; then ask about a release.
+0. **`atc-2jl.4` (the run loop, lead and specialist prompts, launcher, docs, AGENTS.md)**, with
+   `atc-2jl.8` and `atc-s96.117` folded in, through the dev-team loop; `.5` at the live trace;
+   then `atc-9w2`; then ask about a release.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.

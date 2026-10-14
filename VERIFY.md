@@ -7,6 +7,37 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Setup proposes the records block — `atc-2jl.3`, with `atc-2jl.7` (2026-10-14)
+
+Task 3 of epic `atc-2jl`. Went through the `dev-team` loop and merged as a fast-forward from
+`89a92ba` to `c6a6433` (slug `2jl-3-setup`; `a34923f` the change, `c6a6433` the review wrap-up).
+`src/setup.ts#detectRecords` proposes a `records` block for `dev-team-engine` alone, and only
+where both halves are found: a real `.beads/` holding `config.yaml` or `metadata.json` with `bd`
+on `PATH` (looked up, never run), and every regular `.md` file directly under a real
+`.project-steward/` that the path rules admit. The tracker is bd 1.2's own commands
+(`BEADS_TRACKER`: `--silent` creates, `update --claim`, `close --reason`, `dep add`) committing
+`.beads/interactions.jsonl`. A declared path through a symbolic link proposes nothing; a base's
+own block stands over the detected one. `init --config` now answers `reconnect` when a write adds
+or removes the block against what the running server registered. The setup skill shows the block
+before it asks and reads `describe_mode`'s records warning at its connection check.
+`atc-2jl.7`'s word in `docs/design.md` is reflowed in it.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`, one Important (I1, a test
+  fixture that could not fail); round 2 `no major issues`. The host supplied bd 1.2.2's flags
+  from `bd --help`, since no specialist runs `bd`.
+- **Code review:** round 1 (`a34923f`) all three seats `no major issues`, four Minor rows fixed
+  in the wrap-up (a marker that can now fail, the removed-block reconnect text, a base's block
+  pinned, the guide's steward-files wording); proposing `.beads/issues.jsonl` was left out of
+  scope. Round 2 (`c6a6433`) all three seats `no major issues`; seat 1's one cosmetic Minor (a
+  short line in `docs/operator-guide.md` around 81) goes to Task 4.
+- **Gate and root suite:** 1182 tests at `a34923f` and at `c6a6433`, 0 fail; the root suite at
+  `c6a6433` ran 1182: 1180 pass, 0 fail, 2 guarded skips. Citation check: 1782 citations,
+  0 misses, 0 drifted since `89a92ba`, 0 not judged.
+- **Not verified:** that a real `init --propose` here proposes the block (the tests use a fake
+  `bd`); nothing yet runs the proposed tracker commands from an engine lead (Task 4 and the live
+  trace).
+
 ## The `track` tool — `atc-2jl.2`, with `atc-2jl.6` (2026-10-14)
 
 Task 2 of epic `atc-2jl`. Went through the `dev-team` loop and merged as a fast-forward from
