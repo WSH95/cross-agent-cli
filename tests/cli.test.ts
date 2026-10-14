@@ -2529,6 +2529,25 @@ test("reconnect follows the served mode", async (t) => {
   assert.deepEqual([nestedRepository.code, nestedRepository.answer.served, nestedRepository.answer.reconnect], [0, "dev-team", true]);
 });
 
+// @anchor initConfigReconnectBound
+test("reconnect follows a server bound by CROSS_AGENT_PROJECT to this root: its first setup reconnects even in solo, and a binding elsewhere changes nothing", async (t) => {
+  // Codex's legacy explicit-project mount: a server bound to a root with no config never started.
+  const root = await mainCheckout(scratch(t), "B");
+  const bound = { ...suiteEnv, CROSS_AGENT_PROJECT: root };
+  const first = await configure(root, initDocument("solo"), [], bound);
+  assert.deepEqual([first.code, first.answer.served, first.answer.reconnect], [0, null, true]);
+  // Once the root holds a config, the bound server serves it, and a change in its own mode needs no reconnect.
+  const rebound = initDocument("solo");
+  rebound.roles.consult = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
+  const binding = await configure(root, rebound, ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))], bound);
+  assert.deepEqual([binding.code, binding.answer.served, binding.answer.reconnect], [0, "solo", false]);
+  // A binding that names another project, configured or not, leaves the answer as it was.
+  const other = await mainCheckout(scratch(t), "O");
+  assert.equal((await run(["init", "--mode", "dev-team"], other)).code, 0);
+  const elsewhere = await configure(await mainCheckout(scratch(t), "E"), initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: other });
+  assert.deepEqual([elsewhere.code, elsewhere.answer.served, elsewhere.answer.reconnect], [0, "solo", false]);
+});
+
 test("conflicting init options are usage errors, and --help documents them", async (t) => {
   const root = scratch(t);
   const hash = "a".repeat(64);

@@ -455,6 +455,20 @@ async function readStdin(): Promise<string> {
 }
 
 /**
+ * Whether `CROSS_AGENT_PROJECT` in `env` names `root`, resolved as discovery resolves it
+ * (`src/project.ts#discoverProject`): an absolute path whose real path is `root`.
+ */
+function namesRoot(env: Readonly<NodeJS.ProcessEnv>, root: string): boolean {
+  const named = env.CROSS_AGENT_PROJECT;
+  if (named === undefined || !path.isAbsolute(named)) return false;
+  try {
+    return fs.realpathSync(named) === root;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * `init --config -`: the confirmed document on stdin, checked whole as the server checks a
  * config against its mode, and held to the write-time rules, before anything is written. A
  * config already there is replaced only with `--replace --expect <sha256>` naming its bytes,
@@ -462,7 +476,7 @@ async function readStdin(): Promise<string> {
  * (`src/config.ts#replaceConfig`). `reconnect` says whether the server, which reads its mode
  * once at start, now serves another mode than the one written.
  */
-async function initConfigWrite(root: string, repository: ProjectRepository, parsed: Parsed): Promise<Answer> {
+async function initConfigWrite(root: string, repository: ProjectRepository, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): Promise<Answer> {
   const raw = await readStdin();
   let checked: BoundConfig;
   try {
@@ -508,13 +522,16 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   // a configured directory above it, or the main checkout a branch worktree with no config of
   // its own is read at — and the mode it loads there at start, solo with no config
   // (`src/config.ts#defaultConfig`). A discovery that refuses, or a config the server
-  // refuses, is a server that cannot be running: null.
+  // refuses, is a server that cannot be running: null. A `CROSS_AGENT_PROJECT` in this
+  // process's environment is read only where it names this root: the server is assumed to
+  // carry the same binding, as Codex's legacy explicit-project mount does, and bound to a
+  // root with no config it never started.
   let servedRoot: string | null = null;
   let served: string | null = null;
   let result: InitConfigResult;
   try {
     try {
-      const found = await discoverProject([], {}, root);
+      const found = await discoverProject([], namesRoot(env, root) ? env : {}, root);
       if ("root" in found) {
         servedRoot = found.root;
         served = loadConfigWithMode(found.root).mode.id;
@@ -579,7 +596,7 @@ const initVerb: Verb = {
         const proposal = await propose(target.root, repository, { env: context.env });
         return { code: EXIT.ok, document: proposal, text: proposalText(proposal) };
       }
-      return initConfigWrite(target.root, repository, parsed);
+      return initConfigWrite(target.root, repository, parsed, context.env);
     }
     if ("refusal" in target) return refused(target.refusal.reason);
     const { root, located } = target;

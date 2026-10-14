@@ -4038,9 +4038,14 @@ handler passes:
   nearest configured directory above it, the main checkout a branch worktree is read at, or
   its git toplevel: a repository nested in a configured directory, a submodule of a
   configured superproject and a first setup in a branch worktree with a main checkout each
-  report the outer project's mode. `reconnect` is whether that project is another than the
+  report the outer project's mode. The one exception is a `CROSS_AGENT_PROJECT` in the CLI's
+  own environment that names the root, resolved as discovery resolves it: the server is
+  assumed to carry the same binding, as Codex's legacy explicit-project mount does, so
+  discovery runs with it, and a first setup there reports null, because a server bound to a
+  root with no config never started; a variable naming anything else is not read.
+  `reconnect` is whether that project is another than the
   root or its mode another than the mode written (`tests/cli.test.ts#initConfigWrite`,
-  `#initConfigReconnect`, `#initProposeFromMain`).
+  `#initConfigReconnect`, `#initConfigReconnectBound`, `#initProposeFromMain`).
   It writes the `.gitignore` entries `init` writes, and copies no Grok attach.
 - `cross-agent modes` lists every built-in mode as the loader reads it, with its
   roles, and marks the one the config names — the read `describe_mode` makes
