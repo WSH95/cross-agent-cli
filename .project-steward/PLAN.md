@@ -2,6 +2,11 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Release 0.1.4 (in progress 2026-10-13)
+
+`atc-s96.140`: ships the setup skill (`atc-s96.134`). The user authorized pushing `main`, the
+agent-plugins pull request, and an agent-plugins README update. Beads holds the publication record.
+
 ## The setup skill (merged 2026-10-13; ships with 0.1.4)
 
 `atc-s96.134`: a plugin user sets a project up, or changes its team, through the `setup` skill and

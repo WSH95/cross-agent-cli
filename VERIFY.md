@@ -7,6 +7,23 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.4 — `atc-s96.140` (2026-10-13)
+
+The package and both manifests are 0.1.4. The user authorized the release: pushing `main`,
+an agent-plugins pull request, and an update to agent-plugins' `README.md` for the setup
+skill.
+
+The payload's changes since 0.1.3 (`6f9f2c4`):
+- the setup skill, `skills/setup/SKILL.md` (`atc-s96.134.2`);
+- `init --propose` and `init --config` in `src/cli.ts`, `src/config.ts`, `src/setup.ts` and
+  `src/locks.ts` (`atc-s96.134.1`);
+- the launcher and `references/codex-setup.md`, which route setup to the new skill.
+
+After the bump:
+- `CODEX_SETUP_PROBE=$(command -v codex) node --test tests/packaging.test.ts tests/dist.test.ts
+  tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none skipped;
+- `npm test` at the root ran 1117 tests: 1115 pass, 0 fail, 2 guarded skips.
+
 ## The setup skill — `atc-s96.134.2` (2026-10-13)
 
 The second of the setup skill's two tasks. It ran through all ten steps of the `dev-team`
