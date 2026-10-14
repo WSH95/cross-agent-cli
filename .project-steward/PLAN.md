@@ -2,10 +2,11 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Release 0.1.4 (in progress 2026-10-13)
+## Release 0.1.4 (merged 2026-10-14)
 
-`atc-s96.140`: ships the setup skill (`atc-s96.134`). The user authorized pushing `main`, the
-agent-plugins pull request, and an agent-plugins README update. Beads holds the publication record.
+`atc-s96.140` is closed: source `6e46507` pushed, agent-plugins PR #19 merged by the user as
+`1091b8a` (payload and marketplace README), plugin updated. Live checks in `VERIFY.md`; a
+consent bug found in Grok single-turn mode (`atc-s96.141`) goes into 0.1.5.
 
 ## The setup skill (merged 2026-10-13; ships with 0.1.4)
 

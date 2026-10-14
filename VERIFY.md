@@ -51,6 +51,48 @@ Checks on the published branch:
 No merge was performed. The target checkout is kept at
 `/tmp/agent-artifact-pr-u5pyifhh/target`.
 
+The user merged PR #19 on 2026-10-14 at 02:57:41Z, as `1091b8a`. They updated the Claude
+Code plugin and reconnected, and this session's server now runs
+`~/.claude/plugins/cache/agent-plugins/cross-agent/0.1.4/src/server.ts`.
+
+**Live checks of the setup skill** (spec section 3), each in a fresh scratch git repository:
+
+- **Claude Code.** Discovery holds: the session lists `cross-agent:setup`. One end-to-end
+  run went through six headless `claude -p` turns, the first with `/cross-agent:setup` and
+  each later one with `--resume`; together they cost about $1.95. The run covered:
+  - the two-sentence opener, then `--propose` through
+    `…/0.1.4/skills/setup/../../bin/cross-agent`, which detected all three engines, `npm
+    test`, `npm ci` and `main`;
+  - with no question tool in this mode, numbered choices in chat, and the turn ended;
+  - the proposal table;
+  - "use Claude for the plan reviewer", applied and shown before → after;
+  - *Looks right*, then the write, the `/tmp` warning, and the whole-file preview for an
+    untracked `.gitignore`;
+  - *Yes*, then `git add` and the exact commit, leaving the tree clean;
+  - the `/mcp` reconnect step;
+  - after a fresh start, `describe_mode` and `list_roles` showing `dev-team` with no
+    `warning`, and the closing example request.
+- **Grok** 1.0.52, run with `--trust` in a scratch project with no `.grok` config.
+  - Discovery holds: Grok lists the `setup` skill, and `grok -p "/setup"` invoked it,
+    through the plugin Claude Code installed.
+  - **Defect:** after `ask_user_question` could not be answered in single-turn mode, the
+    agent picked the recommended mode itself. It wrote the config and committed
+    `.gitignore` with no answer from the user. This is bug `atc-s96.141`, priority 1, for
+    0.1.5.
+- **Codex** 0.162.1. The user approved installing the plugin, so `codex plugin add
+  cross-agent@agent-plugins` installed 0.1.4 with both skills. The run used `codex exec
+  --sandbox workspace-write` with `$setup`, then `exec resume`:
+  - discovery, and `--propose` (`pytest`, no setup command), worked inside the sandbox;
+  - numbered choices, and the turn ended;
+  - *Looks right*: `--config` refused with `config-lock-failed` (EROFS on
+    `.git/info/exclude`). The skill retried that one command outside the sandbox, and the
+    write succeeded;
+  - *Yes*: the index is read-only too. `git add` and the commit ran outside the sandbox,
+    and the tree ended clean;
+  - Codex had no cross-agent MCP tools, so the skill said the connection is not yet
+    verified and offered the connection hand-off. The probe stopped there, because the
+    hand-off would change the user's Codex MCP configuration.
+
 ## The setup skill — `atc-s96.134.2` (2026-10-13)
 
 The second of the setup skill's two tasks. It ran through all ten steps of the `dev-team`
