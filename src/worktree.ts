@@ -396,7 +396,7 @@ export function rootWriteFault(
   if (repo.kind === "main") return null;
   const config = path.join(projectRoot, CONFIG_PATH);
   if (!(statSync(config, { throwIfNoEntry: false })?.isFile() ?? false)) {
-    return `${repo.workTree} is not an initialized project; run "cross-agent init" in ${repo.workTree}`;
+    return `${repo.workTree} is not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "cross-agent init" in ${repo.workTree}`;
   }
   if (scope === "initialized") return null;
   if (repo.branch === null) return `${repo.workTree} has a detached HEAD; check out ${defaultBranch} there first`;

@@ -1645,7 +1645,7 @@ test("a one-shot at a root that is no main checkout and holds no config is refus
   const options = { authority: operator, mode: solo, env: engineEnv(p) };
   assert.match(
     refusal(await delegate(bare.root, request({ role: "consult", cwd: bare.root, engine: "grok", worktree: true }), options)),
-    /not an initialized project; run "cross-agent init" in /,
+    /not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "cross-agent init" in /,
   );
   assert.equal(fs.existsSync(path.join(bare.root, ".worktrees")), false);
   assert.equal(await git(bare.root, "branch", "--list", "task/*"), "");

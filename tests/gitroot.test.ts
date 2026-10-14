@@ -892,7 +892,7 @@ for (const layout of layouts) {
 test("a root that is no main checkout and holds no config takes no write, and still answers reads", async (t) => {
   const { root } = await layoutRoot(t, "bare-linked");
   const directory = path.join(root, ".worktrees", "x");
-  const init = /not an initialized project; run "cross-agent init" in /;
+  const init = /not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "cross-agent init" in /;
   assert.match(refusal(await gitRoot(root, { args: ["worktree", "add", "-b", "task/x", directory, "main"], slug: "x" }, { waitSeconds: 5 })), init);
   assert.equal(fs.existsSync(directory), false);
   assert.match(refusal(await gitMutate(root, { slug: "x", args: ["status"] }, { waitSeconds: 5 })), init);

@@ -586,8 +586,9 @@ test("the loop's commit step stages the work and never the project's own state",
 // @anchor commitRefusesHostConfig
 test("a commit carrying a host's project configuration is refused naming each path, and goes through once the worktree holds none", async (t) => {
   const { root, add } = await repository(t);
-  // The root first: the install guide's recipe ignores `.grok/` beside `init`'s own lines, and the
-  // project tracks a `.mcp.json` of its own.
+  // The root first: the install guide's recipe ignores `.grok/` in the `.gitignore` where setup, or
+  // `init`, adds cross-agent's own entries, which `initConfig` wrote here already, and the project
+  // tracks a `.mcp.json` of its own.
   await writeFile(path.join(root, ".gitignore"), `${await readFile(path.join(root, ".gitignore"), "utf8")}.grok/\n`);
   await writeFile(path.join(root, ".mcp.json"), '{"mcpServers": {}}\n');
   await git(root, "add", ".gitignore", ".mcp.json");

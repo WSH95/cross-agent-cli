@@ -2275,8 +2275,9 @@ cached across calls.
 (`src/worktree.ts#rootWriteFault`). A main checkout takes them as it always has.
 Any other root takes none without its own `.cross-agent/config.json` — an
 uninitialized worktree is served as its main checkout's project, or with no main as
-one nobody configured — and the refusal names `cross-agent init`; with a config, a
-write also needs the root's HEAD on a branch, and that branch to be
+one nobody configured — and the refusal names cross-agent's setup skill and
+`cross-agent init`; with a config, a write also needs the root's HEAD on a branch,
+and that branch to be
 `project.defaultBranch`, the refusal naming both and the fix. Scope `"initialized"`
 asks the first question alone and covers every `run_command` at such a root, a test
 run with no slug, a setup run and a worktree run included; scope `"write"` asks all

@@ -330,7 +330,7 @@ async function nonMainRoot(t: TestContext, layout: LayoutName, settings?: Record
   return made;
 }
 
-const notInitialized = /not an initialized project; run "cross-agent init" in /;
+const notInitialized = /not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "cross-agent init" in /;
 
 // @anchor linkedRootTests
 test("an initialized linked root runs its suite in itself, and journals the run after its own merge", async (t) => {
