@@ -336,8 +336,9 @@ git and the handoff: R1 finds it at every start.
 Read the handoff, `record {path: <the handoff>}`: once the run has them it names the
 run's goal, its epic and its set. The set is the ids your brief names, or the epic's
 children from `track {verb: "show", id: <the epic>}`, or the set the handoff names. A
-brief that is a goal whose set the handoff does not name for this goal is R3's. Read
-each item with `track {verb: "show", id: <the item>}`:
+brief that is a goal whose set the handoff does not name for this goal is R3's, unless
+the handoff says this goal's filing has begun, which you `ask {question}` the operator
+about. Read each item with `track {verb: "show", id: <the item>}`:
 
 - **closed** — done; a merged branch of it still standing is step 1's to clean up.
 - **open** — to do, by R2.
@@ -382,7 +383,9 @@ progress.
 2. Then `delegate {role: "planner", cwd: <project root>, brief}` with the goal, the
    operator's answers, and the instruction to return a design and its breakdown:
    ordered items, each one task, each with its acceptance criteria and the items it
-   depends on. Review it as step 3 reviews a plan, under the same rounds and limits.
+   depends on. Review it as step 3 reviews a plan, under the same rounds and limits,
+   the plan reviewer's brief saying that it reviews a goal's design and breakdown and
+   that each item is planned and tested on its own when it runs.
 3. One approval: `ask {question}` with the design and the ordered items, each with its
    acceptance and its dependencies, asking for a yes, a change or a stop.
 4. Only on a yes, and in this order: `record` the approved design, with the handoff

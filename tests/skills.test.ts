@@ -700,6 +700,13 @@ test("a goal is clarified through ask, approved in one ask, recorded before fili
   assert.match(step, /A stop ends the run with nothing filed/);
 });
 
+// @anchor engineRunGoalReview
+test("a goal's design and breakdown goes to the plan reviewer as that, each item planned and tested on its own when it runs", () => {
+  // The plan reviewer's prompt is written for one task's plan: the brief says what this one is.
+  assert.match(flat(subsection(theRun(), "R3.")),
+    /plan reviewer's brief[^.]*reviews a goal's design and breakdown[^.]*each item is planned and tested on its own when it runs/);
+});
+
 // @anchor plannerGoalBreakdown
 test("the planner answers the design and breakdown R3 asks of it, and every other brief with a plan of one task", () => {
   // The planner's prompt reaches it as its system instructions, and it plans one task for one
@@ -715,6 +722,8 @@ test("the planner answers the design and breakdown R3 asks of it, and every othe
 // @anchor engineRunEdges
 test("a goal whose set the handoff does not name is R3's, a stopped step 10 ends the run, and a new record file's expect is null", () => {
   assert.match(flat(subsection(theRun(), "R1.")), /goal whose set the handoff does not name[^.]*is R3's/);
+  // Unless its filing began and a crash cut it short: R3 again could file the epic twice.
+  assert.match(flat(subsection(theRun(), "R1.")), /is R3's, unless the handoff says this goal's filing has begun[^.]*`ask \{question\}` the operator/);
   assert.match(flat(subsection(theRun(), "R5.")), /The run ends when[^.]*or a step 10 that stopped/);
   const opening = flat(theRun().slice(0, theRun().indexOf("\n### R1.")));
   assert.match(opening, /every `replace` an `expect`[^.]*or `null` for a file that does not exist yet/);

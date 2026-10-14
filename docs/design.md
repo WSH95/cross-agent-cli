@@ -3649,16 +3649,19 @@ tasks, or after step 9's merge and passing suite and before step 10's cleanup.
 a closed item is done and an open one is to do; one its own session claimed carries
 on where it stood, the bookkeeping of a merge whose root suite it saw pass finished
 first; anything it cannot establish is put to the operator through `ask` and never
-closed on a guess; and a goal whose set the handoff does not name is R3's
-(`tests/skills.test.ts#engineRunResume`, `#engineRunEdges`). **R2** works the set in
+closed on a guess; and a goal whose set the handoff does not name is R3's, unless
+the handoff says its filing has begun, which is asked of the operator rather than
+filed twice (`tests/skills.test.ts#engineRunResume`, `#engineRunEdges`). **R2** works the set in
 dependency order: step 1, `claim`, steps 2 to 9 with the item's id as the slug, its
 follow-ups filed, one `record` of its progress, its decisions and the handoff,
 `close`, then step 10; a task that stops short of step 9's passing suite ends the
 run with its item still in progress (`#engineRunSet`, `#engineRunStopShort`).
 **R3** turns a goal into a set: clarified through `ask`, designed and broken down by
-the planner under step 3's review, approved by the operator in one `ask`, recorded
-before anything is filed, then the epic, its items and their dependencies filed, the
-set being the ids `create` printed (`#engineRunGoal`). **R4** files a follow-up
+the planner under step 3's review — the plan reviewer told it reviews a goal's design
+and breakdown, each item planned and tested on its own when it runs — approved by the
+operator in one `ask`, recorded before anything is filed, then the epic, its items
+and their dependencies filed, the set being the ids `create` printed
+(`#engineRunGoal`, `#engineRunGoalReview`). **R4** files a follow-up
 outside the set and the epic, never worked in the run; the operator approves one by
 naming it in a new run's brief (`#engineRunFollowUps`). **R5** ends the run once
 every item is closed, or at a stop — the operator's, a task short of step 9's
@@ -4155,7 +4158,7 @@ as a regular file through no link, unless the file binds a project, and trusting
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
 20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,747 bytes under
-`dev-team`, 51,130 under `dev-team-engine` and 3,601 under `solo`
+`dev-team`, 51,385 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
