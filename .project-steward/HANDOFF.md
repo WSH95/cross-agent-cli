@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-13T21:46:59Z
+updated_at: 2026-10-14T02:52:05Z
 updated_by: claude
 session_status: complete
 branch: main
@@ -18,8 +18,9 @@ Decision 0021 records it and the user-approved `AGENTS.md` edits.
 - Both went through the dev-team loop; `VERIFY.md` has a section for each.
 
 **Next steps:**
-1. Release 0.1.4 to deliver the skill: bump the version, push `main`, publish the agent-plugins
-   PR. Pushing and publishing need the user's approval.
+1. Release 0.1.4 (`atc-s96.140`) is published: `main` pushed at `6e46507`, and
+   https://github.com/WSH95/agent-plugins/pull/19 is open and mergeable. It carries the payload
+   and the marketplace README update. The user merges it and updates the plugin.
 2. After the user installs 0.1.4, the per-host live checks (spec section 3): discovery in Claude
    Code, Grok and Codex; each host's approval for a `.git` write; one end-to-end setup in Claude
    Code. Then close `atc-s96.134`.

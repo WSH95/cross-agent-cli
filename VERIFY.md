@@ -24,6 +24,33 @@ After the bump:
   tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none skipped;
 - `npm test` at the root ran 1117 tests: 1115 pass, 0 fail, 2 guarded skips.
 
+The frozen source release is `6e465075a28dce4c47656716616da6e6ad3744e8`. It was pushed to
+`main` as a fast-forward from `3656382`.
+
+The publisher's dry run proposed 19 files under `cross-agent/`:
+- the Claude marketplace metadata's version;
+- in both payloads: the plugin manifest, `package.json`, the launcher skill and
+  `references/codex-setup.md`, the new `skills/setup/SKILL.md`, and `src/cli.ts`,
+  `src/config.ts`, `src/locks.ts` and the new `src/setup.ts`.
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/19 on
+`publish/cross-agent-plugin/20261014025055`, payload commit `869cd72`. A second commit,
+`f376e9f`, updates the marketplace `README.md`'s cross-agent section for the setup skill, as
+the user asked:
+- setup from the session on every host;
+- `/cross-agent:setup`, Codex's `$`, Grok's `/setup`;
+- no `init --mode` advice;
+- a setup example.
+
+Checks on the published branch:
+- the PR holds 20 files, no attribution trailer, and is open, mergeable and clean;
+- the target's `cross-agent/` equals the frozen dist (`diff -r`), and all three versions
+  read 0.1.4;
+- `claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin.
+
+No merge was performed. The target checkout is kept at
+`/tmp/agent-artifact-pr-u5pyifhh/target`.
+
 ## The setup skill — `atc-s96.134.2` (2026-10-13)
 
 The second of the setup skill's two tasks. It ran through all ten steps of the `dev-team`
