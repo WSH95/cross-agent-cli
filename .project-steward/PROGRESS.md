@@ -464,3 +464,4 @@ Set up Project Steward in this repository.
 - 2026-10-14T11:11:13Z — claude — atc-s96.144 + .145 merged as 5e3d713 (small fix after plan review hit its limit; atc-s96.148 closed by the user); root suite 1125/1123/0 fail. Next: atc-s96.147.
 - 2026-10-14T11:34:29Z — claude — [auto-checkpoint] atc-s96.147: plan approved (round 2, narrowed to a binding naming the root); implementer running in task/s96-147-legacy-reconnect.
 - 2026-10-14T12:27:10Z — claude — atc-s96.147 merged as a450ddd; root suite 1126/1124/0 fail; all follow-ups of this round closed. Next: ask about push and 0.1.7.
+- 2026-10-14T13:17:13Z — claude — atc-s96.149 release 0.1.7: 0ab03cf pushed; agent-plugins PR #22 opened (9 files, dist == target, validate passes, MERGEABLE/CLEAN). Waiting on the user's merge.

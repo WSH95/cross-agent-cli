@@ -52,9 +52,10 @@ skill epic `atc-s96.134` is closed.
 - `atc-s96.147` merged as `a450ddd` (plan narrowed in review to a binding that names the root;
   code review clean in two rounds); root suite 1126/1124/0 fail. Every follow-up of this round is
   closed. The ~40 older backlog beads under `atc-s96` are not in this scope unless the user says so.
-- Next: ask the user about pushing `main` and a 0.1.7 release (everything since `1b1ff0b`), then
-  the live Codex checks after it (legacy mount; shell inheritance of `CROSS_AGENT_PROJECT`).
-Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
+- Release 0.1.7 (`atc-s96.149`, user-approved): `0ab03cf` pushed; agent-plugins PR #22 open,
+  mergeable, payload verified. Waiting on the user's merge and plugin update; then the live Codex
+  checks (legacy mount; shell inheritance of `CROSS_AGENT_PROJECT`), and close `atc-s96.149`.
+Ask the user before any push or release. `main` was pushed at `0ab03cf`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
