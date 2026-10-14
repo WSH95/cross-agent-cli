@@ -7,6 +7,45 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.5 — `atc-s96.142` (2026-10-14)
+
+The package and both manifests are 0.1.5. The payload's one change since 0.1.4 (`6e46507`)
+is the setup skill's consent rule (`atc-s96.141`). After the bump:
+- `CODEX_SETUP_PROBE=$(command -v codex) node --test tests/packaging.test.ts tests/dist.test.ts
+  tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none skipped;
+- `npm test` at the root ran 1118 tests: 1116 pass, 0 fail, 2 guarded skips.
+
+## The setup skill waits for the user's own answer — `atc-s96.141` (2026-10-14)
+
+The defect came from the 0.1.4 live check:
+- Under Grok single-turn headless (`grok --trust -p "/setup"`), `ask_user_question` could not
+  be answered.
+- The agent took the recommended mode itself and wrote the config and the `.gitignore`
+  commit.
+- Claude Code and Codex asked in chat and stopped.
+
+The fix went through the `dev-team` loop and merged as a fast-forward from `b7647a8` to
+`bebd8f1` (slug `s96-141-setup-consent`). It changes two files:
+- **`skills/setup/SKILL.md`:** `## Asking` opens with **Wait for the user's answer**. Writes,
+  `git init` and the `.gitignore` add and commit run only on the user's own explicit answer
+  in this conversation. A default, the recommended option or silence is never an answer. When
+  the question tool fails or the session cannot take an answer, the skill asks numbered
+  choices in chat and ends its turn, having written nothing.
+- **`tests/skills.test.ts`:** one test with the `CONSENT` guard and seven mutations.
+
+Verification:
+- **Plan review:** codex/gpt-6-astra/xhigh, `no major issues` in one round. Its one Minor
+  (filter the in-sandbox fallback to the new test) was folded.
+- **Red:** only the new test failed, listing all five gaps.
+- **Code review round 1** (`bebd8f1`): all three seats `no major issues`.
+  - code-reviewer#1 tried 11 more mutations beyond the planned seven, and every one bit.
+  - code-reviewer#3 (Grok) judged the text would have stopped the original run.
+  - Two Minors were not taken: a contrary sentence beside the rule escapes the guard, and the
+    label "recommended" could be over-read. The live re-check covers the second.
+  - `docs/design.md`'s note on the chat fallback went to `atc-s96.137`.
+- **Gate and root suite:** each ran 1118 tests: 1116 pass, 0 fail, 2 guarded skips.
+- **Cost:** 7 engine tasks, 2,156 s of engine time (`.cross-agent/log.md`).
+
 ## Release 0.1.4 — `atc-s96.140` (2026-10-13)
 
 The package and both manifests are 0.1.4. The user authorized the release: pushing `main`,

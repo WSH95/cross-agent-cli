@@ -2,6 +2,11 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Release 0.1.5 (prepared 2026-10-14)
+
+`atc-s96.142`: ships the setup skill's consent fix (`atc-s96.141`, merged as `bebd8f1`). Push and
+publish wait for the user's OK.
+
 ## Release 0.1.4 (merged 2026-10-14)
 
 `atc-s96.140` is closed: source `6e46507` pushed, agent-plugins PR #19 merged by the user as

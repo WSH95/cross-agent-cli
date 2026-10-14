@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-14T02:52:05Z
+updated_at: 2026-10-14T03:59:58Z
 updated_by: claude
-session_status: complete
+session_status: in-progress
 branch: main
 ---
 # Handoff
@@ -17,15 +17,18 @@ Decision 0021 records it and the user-approved `AGENTS.md` edits.
   passed (1117 tests, 0 fail) on a re-run; the first run hit a test-only race (`atc-s96.139`).
 - Both went through the dev-team loop; `VERIFY.md` has a section for each.
 
-**Next steps:**
-1. Release 0.1.4 (`atc-s96.140`) is published: `main` pushed at `6e46507`, and
-   https://github.com/WSH95/agent-plugins/pull/19 is open and mergeable. It carries the payload
-   and the marketplace README update. The user merges it and updates the plugin.
-2. After the user installs 0.1.4, the per-host live checks (spec section 3): discovery in Claude
-   Code, Grok and Codex; each host's approval for a `.git` write; one end-to-end setup in Claude
-   Code. Then close `atc-s96.134`.
-3. Follow-ups: `atc-s96.135` and `.139` (flaky tests), `.136` (lock-failure wording), `.137`
-   (remaining `cross-agent init` advice), `.138` (an overclaiming setup sentence).
+**Release 0.1.4 is merged and installed (`atc-s96.140`, closed).** Source `6e46507` pushed;
+agent-plugins PR #19 (payload + marketplace README) merged by the user as `1091b8a`; plugin updated.
+Live checks (`VERIFY.md`): Claude Code end to end passed; Codex passed through approved retries
+outside its sandbox (cross-agent now installed in the user's Codex; MCP hand-off not run); Grok
+discovers `/setup` but in single-turn headless mode wrote and committed without the user's answer.
+
+**`atc-s96.141` is merged (`bebd8f1`):** the setup skill now waits for the user's own answer and,
+where it cannot ask, asks in chat and ends its turn. **Release 0.1.5 (`atc-s96.142`) is prepared and
+committed locally; pushing `main` and publishing the agent-plugins PR wait for the user's OK.** Then the
+live re-check on Grok, Claude Code and Codex, and close `atc-s96.134`.
+
+**Next steps after that:** follow-ups `atc-s96.135`, `.139` (flaky tests), `.136`, `.137`, `.138`.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.
