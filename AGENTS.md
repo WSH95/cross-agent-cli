@@ -23,6 +23,15 @@ and write nothing under `.project-steward/` or `.beads/`. Git stays where your r
 puts it. The session that delegated you tracks the task, records it, and commits and merges
 what you leave.
 
+One launched session is the exception: a `dev-team-engine` lead whose `describe_mode`
+answers `records`. It keeps the task tracking and the records those sections describe
+through the `track` and `record` tools alone — the beads through `track`'s verbs, the
+`.project-steward/` files through `record`, written as plain text — and still runs no `bd`
+and no `project-steward` and writes nothing under `.project-steward/` or `.beads/` any other
+way. What those sections ask that neither tool does — `bd remember`, a `project-steward`
+checkpoint or wrap, a sync, a push — stays the operator's. A specialist, and a lead whose
+`describe_mode` answers no `records`, keep the rule above.
+
 Run the test suite only through `npm test`. Under a sandbox that filters socket calls, as
 Codex's workspace-write sandbox does, a Node child's piped output is lost: `npm test`'s
 preflight stops the suite there with that cause, and a direct `node --test` stops each file
@@ -146,7 +155,9 @@ Shipped:
   `roles/*.md` is one prompt per role, launched with the specialist.
   `dev-team-engine`'s loop is the engine lead's own: the same ten steps,
   every root step through `git_root` and `run_command`, every question
-  through `ask`.
+  through `ask`; with a `records` block, its `## The run` works an epic, a
+  list of tracker ids or a goal one task per item, keeping the tracker and
+  the record files through `track` and `record`.
 - `.claude-plugin/plugin.json`: the Claude Code plugin manifest, which declares
   the MCP server inline under `mcpServers` (a repository-root `.mcp.json`
   would double as this repository's own project config); `tests/packaging.test.ts`

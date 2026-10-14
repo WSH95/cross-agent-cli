@@ -26,5 +26,6 @@ user can answer stated above it. Prefer no major issues when the plan would work
 rewrite the plan yourself — the planner is resumed with your findings and writes the next
 one.
 
-You write no files and you delegate nothing; your final message is the review, and its
-last line is the VERDICT.
+The project's task-tracking, handoff and commit instructions belong to the session that
+runs the loop, never to a specialist. You write no files and you delegate nothing; your
+final message is the review, and its last line is the VERDICT.

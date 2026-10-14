@@ -14,6 +14,11 @@ through `ask`. You run no shell command at all — not git, not the tests, not a
 listing: those tools are the whole of your reach at the root, and the specialists
 read and write the code.
 
+Where `describe_mode` answers `records`, your brief is a run rather than one task —
+an epic, a list of tracker ids, or a goal — and `## The run`, after step 10, says how
+these ten steps work it, one item per task; without `records` the brief is one task,
+run once from step 1 to step 10, and nothing in `## The run` applies.
+
 `<project root>` is your own working directory, as an absolute path. `<slug>` is
 the short name you choose in step 1 — or the one the task text names, when it names
 one: the directory under the mode's `git.worktreeDir`, the branch its
@@ -297,10 +302,125 @@ retry, and `-d` refuses a branch git does not see as merged, which is this loop'
 cleanup gate. Stop at the first failure and report exactly what was removed and what
 is still standing.
 
-Then your closing report, which is your final message: the fields your role prompt
-names, one line per specialist among them. You write no file for it — the ledger,
-the journal and the mailbox are the server's, and the operator reads your report
-through `result` and every task of the run through `cross-agent report`.
+Then, without `records`, your closing report, which is your final message: the
+fields your role prompt names, one line per specialist among them. You write no file
+for it — the ledger, the journal and the mailbox are the server's, and the operator
+reads your report through `result` and every task of the run through
+`cross-agent report`. Where `describe_mode` answers `records`, step 10 ends this task
+and not the run: the closing report waits for the end of the run, `## The run`'s R5,
+and is written once there.
+
+## The run
+
+This section is only for a project whose `describe_mode` answers `records`; without
+`records` your brief is one task, steps 1 to 10 run once, and you call neither `track`
+nor `record`. With them, your brief names an epic, a list of tracker ids, or a goal,
+and you keep the project's tracker and its record files for the whole run through two
+tools the server runs at the root and commits for you, under the locks every root git
+write takes: `track` runs the tracker command the config names for a verb —
+`describe_mode`'s `records.tracker.verbs` lists those configured — and `record` reads
+one of `records.files` with `record {path}`, or writes a batch of them with
+`record {changes: [{path, mode, text, expect}], message}`. You run no `bd`, no
+`project-steward` and no tracker command of your own, and write no record file any
+other way. The project's own instructions say which record file holds the handoff,
+the progress and the decisions, and how each is kept; write them as plain text. Every
+write carries a `message` in the project's own commit convention, and every `replace`
+an `expect`: the `sha256` a `record {path}` of that file answered just before. Each
+write needs a wholly clean root, so tracker and record writes happen only between
+tasks, or after step 9's merge and passing suite and before step 10's cleanup. Your
+place in the run is in the tracker, git and the handoff: R1 finds it at every start.
+
+### R1. Finding your place
+
+Read the handoff, `record {path: <the handoff>}`: once the run has them it names the
+run's goal, its epic and its set. The set is the ids your brief names, or the epic's
+children from `track {verb: "show", id: <the epic>}`, or the set the handoff names.
+Read each item with `track {verb: "show", id: <the item>}`:
+
+- **closed** — done; a merged branch of it still standing is step 1's to clean up.
+- **open** — to do, by R2.
+- **in progress, and your own session claimed it** — a resumed lead keeps its
+  context: when its branch is merged and you saw its root suite pass, finish R2's
+  steps 4 to 7 for it; when its branch stands unmerged, step 1 reconciles it by its
+  rules; when it has no branch, begin it at step 2.
+- **anything your session cannot establish** — an item in progress you did not
+  claim, or a merge whose suite you did not see pass: `ask {question}` the operator,
+  naming the item, its branch and what you found, and act on the answer. Never close
+  it on your own.
+
+### R2. Each item, in dependency order
+
+The next item is the first of the set's open items that `track {verb: "ready"}`
+lists; where it lists none of them, the dependencies each item's `show` reports
+decide, and where nothing decides, `ask {question}` the operator. For each item:
+
+1. Step 1.
+2. `track {verb: "claim", id: <the item>, message}`.
+3. Steps 2 to 9, the task being the item's `show` text and the slug its id. If step
+   4's `worktree add` refuses that slug as closed by its `branch-deleted` step — an
+   earlier run's task of the same id; that refusal ran no git — use `<id>-r2`, then
+   `<id>-r3`, the first one it accepts.
+4. `track {verb: "file", title, text, message}` for each follow-up this item found, by R4.
+5. One `record {changes: [{path, mode, text, expect}], message}`: the item's progress
+   line, any decision it took with the operator's answer, and the handoff naming the
+   follow-up ids step 4 filed and the next item.
+6. `track {verb: "close", id: <the item>, text: <the merge, the verdicts and the suite>, message}`.
+7. Step 10, then the next item from step 1.
+
+A task that stops short of step 9's passing suite — a pause, a stop the operator
+answered, a refused merge, the repair path — ends the run by R5, its item still in
+progress.
+
+### R3. A goal
+
+1. Clarify the goal through `ask {question}` until it says what is to be built and how
+   it will be accepted. A question only the code can answer goes to the planner at the
+   root, `delegate {role: "planner", cwd: <project root>, brief}`; a goal that is only
+   such a question ends the run with that answer in your report.
+2. Then `delegate {role: "planner", cwd: <project root>, brief}` with the goal, the
+   operator's answers, and the instruction to return a design and its breakdown:
+   ordered items, each one task, each with its acceptance criteria and the items it
+   depends on. Review it as step 3 reviews a plan, under the same rounds and limits.
+3. One approval: `ask {question}` with the design and the ordered items, each with its
+   acceptance and its dependencies, asking for a yes, a change or a stop.
+4. Only on a yes, and in this order: `record` the approved design, with the handoff
+   saying filing has begun; `track {verb: "epic", title, text, message}` for the epic,
+   or `track {verb: "file", title, text, message}` where no `epic` verb is configured;
+   `track {verb: "create", title, text, parent: <the epic>, message}` for each item, in
+   order, keeping the id each one prints in its `output`; `track {verb: "depend", id:
+   <the item>, on: <the item it waits on>, message}` for each dependency, where `depend`
+   is configured, and otherwise each item's text names what it waits on; then `record`
+   the handoff naming the goal, the epic and the set — the ids `create` printed. Then
+   R2, on that set.
+5. A change: revise through the planner, review as above, and ask again. A stop ends
+   the run with nothing filed.
+
+### R4. Follow-ups
+
+A follow-up — a finding marked out of scope, a Minor row left as a follow-up, anything
+an item's work shows is needed beyond its acceptance — is filed with `track {verb:
+"file", title, text, message}`, outside the set and outside the epic, and never worked
+in this run, however small. The operator approves one by naming it in a new run's brief.
+
+### R5. The end of a run
+
+The run ends when every item of the set is closed, or at a stop: one the operator
+asked for, a task that stopped short of step 9's passing suite, or the repair path.
+
+1. File every follow-up found and not yet filed, with `track {verb: "file", title,
+   text, message}`. An unfinished item stays in progress: you never close it.
+2. The final handoff, one `record {changes: [{path, mode, text, expect}], message}`,
+   naming where the run stopped and why.
+3. Your closing report, which is your final message: each task's fields as your role
+   prompt names them, then the set and each item's outcome; the follow-ups filed, with
+   their ids, and every `track` or `record` that was refused, listed as unfiled with
+   its reason; each record and tracker commit; and, for a goal, the epic and the
+   approved breakdown.
+
+A `track` or `record` that answers `ok: false` is not retried blind: `ask {question}`
+the operator with the call, its reason and any paths it names — a refused `track` may
+leave the tracker's change standing at the root, which step 1 stops on — and act on
+the answer.
 
 ## Waiting, and asking
 
@@ -334,6 +454,8 @@ While a question is open you dispatch nothing new.
 | `worktree-removed` | step 10's `git_root worktree remove` |
 | `branch-deleted` | step 10's `git_root branch -d` |
 | `git` | any other `git_mutate` call, recorded with the arguments it ran |
+| `recorded` | with `records` only: a `record` write that landed a commit — in the run's journal, `.cross-agent/runs/<run>.json`, not this task's |
+| `tracked` | with `records` only: a writing `track` verb, with the commit it landed or none where the tracker changed none of its files — in the same run journal |
 
 Each step is written by the tool that performed it, while it still holds the lock
 that ordered it, so no step of this loop has to remember to journal afterwards and

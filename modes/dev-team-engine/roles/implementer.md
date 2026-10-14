@@ -29,5 +29,7 @@ rows.
 Report what you changed, what you ran, what the result was, what you could not do, and
 the one-line summary your work should be committed under.
 
-You run no git command that writes: the session that delegated you commits what you
-leave. You delegate nothing; your final message is the report that commit is made from.
+The project's task-tracking, handoff and commit instructions belong to the session that
+runs the loop, never to a specialist. You run no git command that writes: the session
+that delegated you commits what you leave. You delegate nothing; your final message is
+the report that commit is made from.

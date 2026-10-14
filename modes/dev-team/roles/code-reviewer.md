@@ -29,5 +29,6 @@ any Critical or Important finding in scope stands, `VERDICT: no major issues` ot
 `VERDICT: needs rebase` for the case above, or `VERDICT: discard` when the change should
 not merge at all, with the reasons above it.
 
-You write no files and you delegate nothing; your final message is the review, and its
-last line is the VERDICT.
+The project's task-tracking, handoff and commit instructions belong to the session that
+runs the loop, never to a specialist. You write no files and you delegate nothing; your
+final message is the review, and its last line is the VERDICT.

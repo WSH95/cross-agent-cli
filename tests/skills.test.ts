@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runCli } from "../src/cli.ts";
+import { trackerVerbs } from "../src/config.ts";
+import type { RecordsConfig } from "../src/config.ts";
 import { hostConfigPaths } from "../src/gitmutate.ts";
 import { builtInModesDir, CONSULT_ROLE, describeMode, findRole, loadMode } from "../src/modes.ts";
 import { projectTools } from "../src/server.ts";
@@ -599,6 +601,212 @@ test("the lead's report spells each specialist's line in cross-agent report's se
   assert.match(lead, /every field present on every line/);
   // A seat of a many-seat role is spelled as the command spells it.
   assert.match(lead, /`<role>#<seat>`/);
+});
+
+// The engine lead's run (design section 7, "The engine lead's run"): under `dev-team-engine`
+// with a `records` block, the lead's brief may name an epic, a list of tracker ids or a goal,
+// and the loop's `## The run` works it one task per item, keeping the tracker and the record
+// files through `track` and `record` alone. Without the block none of it applies.
+
+/**
+ * One `### ` subsection of a document, by its heading, to the next `### ` or the end. It cuts
+ * the raw text, so flatten it afterwards: `flat` removes the line breaks it cuts on.
+ */
+function subsection(text: string, heading: string): string {
+  const start = text.indexOf(`\n### ${heading}`);
+  assert.ok(start >= 0, `no subsection ${heading}`);
+  const next = text.indexOf("\n### ", start + 1);
+  return text.slice(start, next === -1 ? text.length : next);
+}
+
+/** The units of `text` as `unconditionedSteps` cuts them: blank-line blocks, cut further at every list item. */
+function unitsOf(text: string): string[] {
+  const units: string[] = [];
+  for (const block of text.split(/\n\s*\n/)) {
+    let unit: string[] = [];
+    for (const line of block.split("\n")) {
+      if (/^\s*(?:[-*]|\d+\.)\s/.test(line) && unit.length > 0) {
+        units.push(unit.join("\n"));
+        unit = [];
+      }
+      unit.push(line);
+    }
+    if (unit.length > 0) units.push(unit.join("\n"));
+  }
+  return units;
+}
+
+// A records tool named as a call: `track`, `record`, or either with its arguments. The existing
+// tool-name check judges only names carrying an underscore, so these two pass it unseen.
+const RECORDS_CALL = /`(?:track|record)(?:`|\s*\{)/;
+
+/** A block with every verb the tracker table has, the optional `epic` and `depend` included. */
+const everyVerb: RecordsConfig = {
+  files: [".project-steward/HANDOFF.md", ".project-steward/PROGRESS.md", ".project-steward/DECISIONS.md"],
+  tracker: {
+    ready: ["bd", "ready"],
+    show: ["bd", "show", "{id}"],
+    create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
+    file: ["bd", "create", "--title={title}", "--description={text}"],
+    epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+    claim: ["bd", "update", "{id}", "--claim"],
+    close: ["bd", "close", "{id}", "--reason={text}"],
+    depend: ["bd", "dep", "add", "{id}", "{on}"],
+    files: [".beads/interactions.jsonl"],
+  },
+};
+
+/** Every tool this project's server registers under `name` when its config keeps records. */
+function registryWithRecords(name: string): Map<string, Tool> {
+  const tools = projectTools(repoRoot, { mode: loadMode(builtInModesDir(), name), records: everyVerb });
+  return new Map(tools.map((tool) => [tool.name, tool]));
+}
+
+/** The engine loop's `## The run`, raw. */
+function theRun(): string {
+  return sectionOf(loop("dev-team-engine"), "The run");
+}
+
+/** The lead's role prompt, raw. */
+function leadPrompt(): string {
+  return fs.readFileSync(path.join(builtInModesDir(), "dev-team-engine", "roles", "lead.md"), "utf8");
+}
+
+// @anchor engineRunSet
+test("the engine loop works a set: step 1, claim, steps 2–9, file, record, close, step 10, in dependency order", () => {
+  const step = flat(subsection(theRun(), "R2."));
+  assertInOrder(step, ["1. Step 1.", 'track {verb: "claim"', "Steps 2 to 9", 'track {verb: "file"', "record {changes",
+    'track {verb: "close"', "Step 10"], "the run's R2");
+  assert.match(step, /dependency order/);
+  assert.match(step, /`track \{verb: "ready"\}`/);
+});
+
+// @anchor engineRunReport
+test("with records, step 10 ends the task and the report waits for the run's end; without records it is the final message", () => {
+  const step = flat(sectionOf(loop("dev-team-engine"), "10."));
+  assert.match(step, /[Ww]ithout `records`, your closing report, which is your final message/);
+  assert.match(step, /`records`[^.]*step 10 ends this task/);
+  assert.match(step, /closing report waits for the end of the run/);
+  assert.ok(flat(subsection(theRun(), "R5.")).includes("closing report, which is your final message"), "R5 writes the report once");
+});
+
+// @anchor engineRunGoal
+test("a goal is clarified through ask, approved in one ask, recorded before filing, and its set is the ids create printed, named in the handoff", () => {
+  const step = flat(subsection(theRun(), "R3."));
+  assertInOrder(step, ["ask {question", 'delegate {role: "planner"', "One approval", "Only on a yes", "`record` the approved design",
+    'track {verb: "epic"', 'track {verb: "create"', "parent: <the epic>", "keeping the id each one prints", 'track {verb: "depend"',
+    "the handoff naming the goal, the epic and the set"], "the run's R3");
+  assert.match(step, /ask again/);
+  assert.match(step, /A stop ends the run with nothing filed/);
+});
+
+// @anchor engineRunFollowUps
+test("a follow-up is filed with track file, outside the set, and never worked", () => {
+  const step = flat(subsection(theRun(), "R4."));
+  for (const pin of [/`track \{verb: "file"/, /outside the set/, /never worked/, /naming it in a new run/]) assert.match(step, pin);
+  // Nothing outside a goal's filing creates an item of the set.
+  const creates = (text: string) => flat(text).split('track {verb: "create"').length - 1;
+  assert.equal(creates(theRun()), creates(subsection(theRun(), "R3.")), "only R3 creates items");
+});
+
+// @anchor engineRunStopShort
+test("an item that stops before merge after a review found a follow-up: the follow-up is filed at the run's end, and the item is not closed", () => {
+  assert.match(flat(subsection(theRun(), "R2.")), /stops short of step 9's passing suite[^.]*ends the run by R5/);
+  assertInOrder(flat(subsection(theRun(), "R5.")), ["File every follow-up found and not yet filed", 'track {verb: "file"',
+    "An unfinished item stays in progress", "never close"], "the run's R5");
+  assert.equal(flat(theRun()).split('track {verb: "close"').length - 1, 1, "one close, R2's, after the item's merge and suite");
+});
+
+// @anchor engineRunResume
+test("a resumed lead finishes the bookkeeping of a merge whose suite it saw pass, and asks the operator about any state its session cannot establish", () => {
+  const step = flat(subsection(theRun(), "R1."));
+  for (const pin of [/your own session claimed it/, /merged and you saw its root suite pass[^.]*R2's steps 4 to 7/,
+    /cannot establish[^.]*`ask \{question\}`/, /Never close it on your own/]) {
+    assert.match(step, pin);
+  }
+});
+
+// @anchor engineRunWithoutRecords
+test("without records the loop calls neither tool", () => {
+  const source = loop("dev-team-engine");
+  const run = theRun();
+  // Outside `## The run`, every unit that names a records tool says it is for `records` alone.
+  const flagged = (text: string) => unitsOf(text).filter((unit) => RECORDS_CALL.test(unit) && !/`records`/.test(unit));
+  const rest = source.replace(run, "");
+  assert.deepEqual(flagged(rest), [], "units outside ## The run that name a records tool without naming records");
+  const opening = flat(run.slice(0, run.indexOf("\n### R1.")));
+  assert.match(opening, /only for a project whose `describe_mode` answers `records`/);
+  assert.match(opening, /without `records` your brief is one task[^.]*neither `track` nor `record`/);
+  for (const name of ["dev-team", "solo"]) assert.doesNotMatch(loop(name), RECORDS_CALL, `the ${name} loop`);
+  // The guard bites: one unconditioned call outside the section is one flagged unit.
+  assert.ok(source.includes("## 2. Plan\n\n"), "the anchor the mutation needs is still there");
+  const mutated = rest.replace("## 2. Plan\n\n", "## 2. Plan\n\nFirst `track {verb: \"claim\", id: <the item>, message}`.\n\n");
+  assert.equal(flagged(mutated).length, flagged(rest).length + 1, "the guard misses an unconditioned track call");
+});
+
+// @anchor leadRunReport
+test("the lead's report adds the set, each outcome, the follow-ups filed and unfiled, and the commits", () => {
+  const additions = ["the set and each item's outcome", "follow-ups filed", "unfiled", "record and tracker commit", "approved"];
+  assertInOrder(flat(leadPrompt()), ["nobody verified", "`records`", ...additions], "the lead's report");
+  // R5's `records` condition is `## The run`'s opening paragraph, which the test above checks.
+  assertInOrder(flat(subsection(theRun(), "R5.")), additions, "the run's R5");
+});
+
+// @anchor engineRunToolsOffered
+test("every records tool the loop names is offered to the lead row when records are configured", () => {
+  const tools = registryWithRecords("dev-team-engine");
+  for (const name of ["track", "record"]) {
+    assert.ok(tools.get(name)?.rows.includes("lead"), `${name} is offered to the lead row with a records block`);
+    assert.equal(registry("dev-team-engine").has(name), false, `${name} is not registered without one`);
+  }
+  for (const [where, text] of [["the engine loop", loop("dev-team-engine")], ["lead.md", leadPrompt()]]) {
+    for (const [, name] of flat(text).matchAll(/`(track|record)(?=`|\s*\{)/g)) {
+      assert.ok(tools.has(name), `${where} names ${name}, which is not registered`);
+    }
+  }
+  let checked = 0;
+  for (const [, call] of flat(loop("dev-team-engine")).matchAll(/`((?:track|record) \{[^`]*\})`/g)) {
+    checked++;
+    const name = call.slice(0, call.indexOf(" "));
+    const keys = delegateKeys(call);
+    const offered = Object.keys((tools.get(name)?.inputSchema as { properties?: object } | undefined)?.properties ?? {});
+    for (const key of keys) assert.ok(offered.includes(key), `${call}: ${name} takes no ${key}`);
+    if (name === "track") {
+      const verb = /verb: "([a-z]+)"/.exec(call)?.[1] ?? "";
+      assert.ok(Object.hasOwn(trackerVerbs, verb), `${call}: ${verb} is no tracker verb`);
+      const { writes, placeholders } = trackerVerbs[verb as keyof typeof trackerVerbs];
+      assert.deepEqual([...keys].sort(), ["verb", ...placeholders, ...(writes ? ["message"] : [])].sort(),
+        `${call}: a ${verb} call spells its verb, every placeholder it takes${writes ? " and message" : ""}`);
+    } else {
+      assert.ok(["path", "changes,message"].includes(keys.join(",")), `${call}: a record call reads {path} or writes {changes, message}`);
+    }
+  }
+  assert.ok(checked >= 8, `only ${checked} records calls found; the run spells more than that`);
+});
+
+// @anchor engineHostNoRecords
+test("under engine placement with records the host makes no tracker call and writes no record", () => {
+  const { rest, section } = engineSection();
+  const text = flat(section);
+  for (const pin of [/`records`/, /`records`, the epic, the list of tracker ids or the goal the user gave/,
+    /never call[^.]*`track` or `record`/, /no tracker call and write no record/, /no `bd` and no `project-steward`/, /like any other ask/]) {
+    assert.match(text, pin);
+  }
+  assert.doesNotMatch(rest, RECORDS_CALL, "the launcher outside its engine-placement section names no records tool");
+});
+
+// @anchor specialistsLeaveBookkeeping
+test("every specialist prompt leaves tracking, handoff and commit instructions to the session that runs the loop", () => {
+  const sentence = "The project's task-tracking, handoff and commit instructions belong to the session that runs the loop, never to a specialist.";
+  const modes = builtInModesDir();
+  const prompts: Array<[string, string]> = [
+    ...["dev-team", "dev-team-engine"].flatMap((mode) => ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]
+      .map((key) => [`${mode}'s ${key}`, fs.readFileSync(path.join(modes, mode, "roles", `${key}.md`), "utf8")] as [string, string])),
+    ["the built-in consult role", findRole(loadMode(modes, "dev-team"), CONSULT_ROLE)?.prompt ?? ""],
+    ["solo's consult.md", fs.readFileSync(path.join(modes, "solo", "roles", "consult.md"), "utf8")],
+  ];
+  for (const [where, prompt] of prompts) assert.ok(flat(prompt).includes(sentence), `${where} leaves the bookkeeping to the loop`);
+  assert.equal(flat(leadPrompt()).includes(sentence), false, "the lead runs the loop: the bookkeeping is its own with records");
 });
 
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {

@@ -119,7 +119,9 @@ const DEFAULT_GIT_POLICY: GitPolicy = { worktreeDir: ".worktrees", branchPattern
 const consultPrompt = `You are the consultant for this task. You work in the directory you were given and
 nowhere else: at the project root you are read-only and you answer rather than change
 anything, and in a task worktree of your own you may edit files — but you never run git,
-because the session that delegated you commits and merges what you leave there.
+because the session that delegated you commits and merges what you leave there. The
+project's task-tracking, handoff and commit instructions belong to the session that runs
+the loop, never to a specialist.
 
 Answer what the brief asks: a review, a critique, an investigation, a search across the
 codebase, an explanation of how something works. Cite what you read by path and symbol,

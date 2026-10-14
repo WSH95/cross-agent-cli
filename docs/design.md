@@ -109,6 +109,13 @@ All of this section is built.
 | Loop-guard layer 2 | intact | relaxed for the lead's server only |
 | Cost per task | one engine per specialist | one more, for the lead |
 
+Under `engine`, where the config keeps a `records` block (section 6), the lead's
+brief may name an epic, a list of tracker ids or a goal rather than one task, and
+the lead works it one task per item, keeping the project's tracker and its record
+files through `track` and `record`, which the server runs at the root and commits;
+the host makes no tracker call and writes no record (section 7, "The engine lead's
+run"). Without the block a brief is one task.
+
 #### Authority is process ancestry, not a token
 
 A lead token carried in the launch spec was considered and rejected. It is
@@ -463,7 +470,9 @@ watches it with `wait` and `check`, answers it through `list_asks` and `answer`,
 cancels or resumes it, and reads its closing report through `result`, and never
 runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
 placement"; `tests/skills.test.ts#launcherRoutesPlacement`, which fails on any
-paragraph outside that section ordering a loop step without naming `host`).
+paragraph outside that section ordering a loop step without naming `host`), nor,
+where the config keeps records, any tracker call or record write
+(`tests/skills.test.ts#engineHostNoRecords`).
 Reconciliation follows who is live: the lead's step 1 while a lead is, and at the
 start of a session too, when the host delegates the lead and leaves the root to it;
 the continuing lead's when the user resumes a failed one; and the host's own pass
@@ -494,7 +503,11 @@ ten steps in the same order with every root step through `git_root` and
 `run_command`, every question through `ask`, and its ownership rules in step 1,
 and `roles/lead.md` is the lead's identity, its limits, its wait budget per engine
 and its closing report (`tests/skills.test.ts#engineLoopSteps`,
-`#engineLoopOwnership`, `#leadRolePrompt`).
+`#engineLoopOwnership`, `#leadRolePrompt`). With a `records` block, the loop's
+`## The run` works an epic, a list of tracker ids or a goal one task per item, and
+`roles/lead.md` names those entry points, the bookkeeping it keeps through `track`
+and `record` alone, and what its closing report adds at the run's end
+(`tests/skills.test.ts#engineRunSet`, `#leadRunReport`).
 
 A mode is `modes/<name>/{mode.json, SKILL.md, roles/*.md}`, hand-validated in
 the style of `src/config.ts` (no schema library, no dependency). `mode.json`
@@ -3507,7 +3520,8 @@ below, `modes/solo/SKILL.md` the zero-ceremony one, and
 `modes/dev-team-engine/SKILL.md` the same ten steps for a lead in an engine: every
 root step through `git_root` and `run_command`, every question through `ask`, no
 shell command, ownership by `self` and `own` in step 1, and the closing report as
-its final message (`tests/skills.test.ts#engineLoopSteps`, `#engineLoopOwnership`).
+its final message, written once at the run's end where the config keeps records
+(`tests/skills.test.ts#engineLoopSteps`, `#engineLoopOwnership`).
 Which tools a loop may call is a test rather than a promise: every call-shaped
 name in the launcher and in each loop — the names that carry an underscore — is
 checked against the tools that mode registers for the row its placement runs it
@@ -3515,7 +3529,11 @@ in (the launcher's engine-placement section against `dev-team-engine`'s operator
 row, everything else against every mode's), the bare ones (`delegate`, `wait`,
 `check`, `result`, `cancel`) by a second test that names them, and every spelled
 `delegate {…}` by a third that holds it to the keys the schema requires
-(`tests/skills.test.ts`, `src/server.ts#projectTools`).
+(`tests/skills.test.ts`, `src/server.ts#projectTools`). The two records tools,
+`track` and `record`, are bare words too, and a fourth test holds every `track` and
+`record` call the engine loop spells to its verb's placeholders — every one a
+writing verb takes, with its `message` — and both tools to the lead row where a
+block is configured (`tests/skills.test.ts#engineRunToolsOffered`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
 loads to run a team: read the config, call `describe_mode` **first** to get the active
@@ -3613,10 +3631,44 @@ anything else. Under `engine` the lead is read-only at the root and cannot
 append it: its closing report **is** the task's final message, which the host
 reads through `result`, and `cross-agent report` renders the log from the ledger
 (`src/cli.ts#reportVerb`). An engine lead writes no project file itself; the
-ledger, the journal and the mailbox are all written by the server on its behalf.
+ledger, the journal and the mailbox are all written by the server on its behalf,
+and, with `records`, the record files and the tracker's files reach the default
+branch through `record` and `track`, which the server commits.
 E3 is the case (`docs/probes.md#e3`): `result` on the lead returned the report
 byte for byte as its result file holds it, and `cross-agent report` rendered the
 run's five tasks, each `passed`.
+
+**The engine lead's run** (`modes/dev-team-engine/SKILL.md`, `## The run`). Where
+`describe_mode` answers `records`, the lead's brief is a run — an epic, a list of
+tracker ids or a goal — which the ten steps work one item per task, the tracker and
+the record files kept through `track` and `record` alone and written only between
+tasks, or after step 9's merge and passing suite and before step 10's cleanup.
+**R1** finds the lead's place at every start, in the tracker, git and the handoff:
+a closed item is done and an open one is to do; one its own session claimed carries
+on where it stood, the bookkeeping of a merge whose root suite it saw pass finished
+first; anything it cannot establish is put to the operator through `ask` and never
+closed on a guess (`tests/skills.test.ts#engineRunResume`). **R2** works the set in
+dependency order: step 1, `claim`, steps 2 to 9 with the item's id as the slug, its
+follow-ups filed, one `record` of its progress, its decisions and the handoff,
+`close`, then step 10; a task that stops short of step 9's passing suite ends the
+run with its item still in progress (`#engineRunSet`, `#engineRunStopShort`).
+**R3** turns a goal into a set: clarified through `ask`, designed and broken down by
+the planner under step 3's review, approved by the operator in one `ask`, recorded
+before anything is filed, then the epic, its items and their dependencies filed, the
+set being the ids `create` printed (`#engineRunGoal`). **R4** files a follow-up
+outside the set and the epic, never worked in the run; the operator approves one by
+naming it in a new run's brief (`#engineRunFollowUps`). **R5** ends the run: every
+follow-up not yet filed, the final handoff, and the closing report, written once,
+adding the set and each item's outcome, what was filed and what was refused, and
+each record and tracker commit (`#engineRunReport`, `#leadRunReport`). Without
+`records` the brief is one task, step 10's closing report is the final message, and
+no unit of the loop outside `## The run` names either tool without naming `records`
+(`#engineRunWithoutRecords`). A run is one lead process, so its context has to last
+it: the loop survives compaction because it reaches the lead as its system
+instructions rather than as conversation, but whether a headless engine compacts on
+its own is unverified — `docs/probes.md` records no such run — and the fallbacks
+are a resume, which keeps the session, then a fresh lead on the same brief, which
+R1 places.
 
 - Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
   document is `{slug, branch, worktree?, defaultBranch, defaultShaBeforeMerge?,
@@ -3835,7 +3887,11 @@ convergence verdict counts. **Diagnosis**: at a limit the loop stops with the
 findings per round, that verdict and its evidence, and four options, and
 recommends simplify when the rounds are not converging. **Proportion**: the
 planner plans the smallest change that meets the acceptance and lists anything
-beyond it as optional, and the plan reviewer asks for nothing beyond it. Acceptance is
+beyond it as optional, and the plan reviewer asks for nothing beyond it. And one
+sentence runs through every specialist prompt, the consultant's included —
+**bookkeeping**: the project's task-tracking, handoff and commit instructions belong
+to the session that runs the loop, never to a specialist
+(`tests/skills.test.ts#specialistsLeaveBookkeeping`). Acceptance is
 behavioural (the end-to-end runs). The devpack's text was carried over once by
 `tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
 code: it drops the sentences naming the devpack's own machinery, drops the git
@@ -4089,8 +4145,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 35,480 bytes under
-`dev-team`, 41,004 under `dev-team-engine` and 3,473 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,245 bytes under
+`dev-team`, 50,473 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
@@ -4725,8 +4781,9 @@ the adapters depend on. Steps 5 to 8 — the engine contract, all three adapters
 the tools, and the modes with the worktree provider and `init --mode` — are
 built and green too, and so are steps 9 to 13: the skills and the mode loops,
 then each host's packaging with its integration probes and end-to-end run right
-after it. What is left is the backlog, row 14, and the rest of row 15, the
-engine lead's ownership of the backlog and the records.
+after it. What is left is the backlog, row 14. Row 15, the engine lead's ownership
+of the backlog and the records, is built, and its live acceptance trace is the
+operator's, after a release carries it.
 Rows 7 and 8 were where the built git and reservation machinery was finally
 reached by a caller: `delegate` consults a reservation, and `git_mutate` is
 registered by the mode that declares the worktree provider.
@@ -4748,7 +4805,7 @@ registered by the mode that declares the worktree provider.
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). **Grok done** (T15, from `f4d6647`): no manifest of its own — a project's `.grok/config.toml` names the checkout under `[plugins]` and raises `[mcp] max_output_bytes`, and Grok reads the Claude manifest, skill and inline server alike (section 9, `docs/probes.md#t15Attach`); I1 and I2 under a Grok host, its read-only row at the root, a deny rule on this server's tools, the ten-minute `wait`, the hop counts and the worktree mount (`docs/probes.md#i1GrokHost` and the sections after it); E6 under host placement and E7 under engine placement (`docs/probes.md#e6`, `#e7`). |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
-| 15 | The engine lead owns the backlog and the records | `atc-2jl.1`, `.2`, `.3` | **Tasks 1, 2 and 3 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Task 2: `track`, the configured tracker commands run at the root with no shell, a reading verb under `git.lock` alone and a writing verb on the same procedure, sharing its steps with `record` (`src/records.ts#track`, `#rootReady`, `#landCommit`), killed at 120 s, and registered beside `record`; with it, a landed commit that could not be verified is told apart from one that is not the call's paths alone. Task 3: setup proposing the block for `dev-team-engine` where it finds beads and project-steward, shown before the user confirms, and `reconnect` when a write adds or removes it (`src/setup.ts#detectRecords`). Task 4 is not built: the lead's run in `dev-team-engine`'s loop. |
+| 15 | The engine lead owns the backlog and the records | `atc-2jl.1`, `.2`, `.3`, `.4` | **Tasks 1 to 4 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Task 2: `track`, the configured tracker commands run at the root with no shell, a reading verb under `git.lock` alone and a writing verb on the same procedure, sharing its steps with `record` (`src/records.ts#track`, `#rootReady`, `#landCommit`), killed at 120 s, and registered beside `record`; with it, a landed commit that could not be verified is told apart from one that is not the call's paths alone. Task 3: setup proposing the block for `dev-team-engine` where it finds beads and project-steward, shown before the user confirms, and `reconnect` when a write adds or removes it (`src/setup.ts#detectRecords`). Task 4: the lead's run in `dev-team-engine`'s loop, `## The run`, which works an epic, a list of tracker ids or a goal one task per item and keeps the tracker and the record files through `track` and `record` alone, with the lead's prompt and closing report to match, the launcher's engine placement leaving the host no tracker call and no record write, and every specialist prompt leaving the project's bookkeeping to the session that runs the loop (sections 7 and 8, `tests/skills.test.ts#engineRunSet`, `#engineHostNoRecords`, `#specialistsLeaveBookkeeping`). |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
 Integration probes after each packaging task, run by the operator:

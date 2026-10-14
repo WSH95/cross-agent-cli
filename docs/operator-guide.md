@@ -78,11 +78,10 @@ Setup proposes this block for `dev-team-engine` alone, and only where it finds b
 beads — `.beads/` holding `config.yaml` or `metadata.json`, and `bd` on `PATH` — and
 project-steward: every regular `.md` file directly under a real `.project-steward/`
 that the path rules admit, never `state.json`, `config.toml`, `backend.json` or
-anything under `runtime/`. `--silent`
-makes each `bd create` print only the new id, and `.beads/interactions.jsonl` is the
-file bd's closes append to. Setup shows the block before it asks whether the proposal
-looks right, and you can change or drop it there; a write that adds or removes the
-block answers `reconnect: true`.
+anything under `runtime/`. `--silent` makes each `bd create` print only the new id,
+and `.beads/interactions.jsonl` is the file bd's closes append to. Setup shows the
+block before it asks whether the proposal looks right, and you can change or drop it
+there; a write that adds or removes the block answers `reconnect: true`.
 
 The server reads the block once, when it starts, and registers the `record` and
 `track` tools for your session and an engine lead only where it found one; a
@@ -193,6 +192,38 @@ that starts a background process holding its output is reported as timed out and
 process is not killed; and a server that dies while the tracker runs takes the tracker
 with it only when its whole process group is killed, so after such a crash read what
 the next write's clean-root check names, or reconcile the root yourself.
+
+**The engine lead's run.** Under `dev-team-engine` with this block, give the host an
+epic, a list of tracker ids or a goal, and its lead works the whole of it in one run,
+one task per item, in dependency order: it claims the item, runs the loop's steps with
+the item's id as the slug, files the follow-ups the item found, writes one `record` of
+the item's progress, the decisions you made and the handoff, closes the item and
+cleans up, then takes the next. A goal gets one approval: the lead clarifies it with
+you, has the planner design it and break it into items under the plan review's
+rounds, and asks you once, with the design and the ordered items — a yes files the
+epic and its items, a change is revised and asked again, and a stop ends the run with
+nothing filed. A brief that names no id is a goal, so to run a single task without
+that approval, file it first and name its id. A follow-up is filed outside the set and
+the epic and never worked in the run, however small; you approve one by naming it in a
+new run's brief. The run ends when every item is closed, or at a stop — yours, a task
+that stopped short of its merge and passing suite, or the repair path — and the lead
+files what is left to file, writes the final handoff and closes on one report: each
+task's lines, the set and each item's outcome, the follow-ups filed with their ids and
+any refused call listed as unfiled, each record and tracker commit, and for a goal the
+epic and the breakdown you approved. A lead resumed, or started fresh on the same
+brief, finds its place in the tracker, git and the handoff, and asks you about
+anything its session cannot establish rather than guessing; it never closes such an
+item on its own. Your host makes no tracker call and writes no record while the run
+is the lead's. Without the block, a brief is one task, as before.
+
+What stays yours is what neither tool does. The lead writes the record files as plain
+text through `record`, so project-steward's own state, its `state.json` and its
+checkpoints, goes stale over a run: run `project-steward checkpoint` when you want it
+current. `bd remember`, a sync and a push are yours too. Two limits stand: follow-ups
+are kept out of the run by the loop's instruction, not by a guard; and a run is one
+lead process, whose context over a long run has not been verified headless — the loop
+reaches the lead as its system instructions, and a lead that stops short is resumed,
+then, failing that, started fresh on the same brief, which finds its place as above.
 
 ## The operator CLI
 
@@ -326,8 +357,10 @@ runs the loop, your session stays free to check status, watch it, answer its
 questions through a mailbox, and cancel it, and the run survives closing your
 session. Both are built: `dev-team` and `solo` place the loop in your host
 session, and `dev-team-engine` in a Claude or Codex lead it launches, which asks
-you questions through `list_asks`/`answer` or `cross-agent answer`.
-Either way the design derives a server's authority from process ancestry
+you questions through `list_asks`/`answer` or `cross-agent answer`. With a
+`records` block, a `dev-team-engine` lead works a set of tracker items or a goal in
+one run, keeping the tracker and the record files itself (Records, "The engine lead's
+run"). Either way the design derives a server's authority from process ancestry
 rather than from depth or a token: the server walks its own parent chain for
 the engine that spawned it, matches that against the ledger, and serves the
 operator, lead, or specialist row of the permission matrix accordingly,

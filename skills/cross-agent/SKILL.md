@@ -413,11 +413,12 @@ line, judged as that section says, then `list_roles`, one line per role, the lea
 among them, with its engine, model, effort, workspace and sandbox, so the user sees
 what this run will start, and where, before it starts. Then start the lead with
 one call: `delegate {role: <lead.role>, cwd: <project root>, brief}`, the role being
-`mode.lead.role` from `describe_mode` and the brief the task itself. The server
-mounts itself into the lead and launches it with the mode's loop and the lead's own
-role prompt, so the brief is the task text and nothing about the loop. Narrate it as
-any dispatch, then `wait {task_id, timeout_seconds: 600}`, again and again, exactly
-as for any task.
+`mode.lead.role` from `describe_mode` and the brief the task itself — or, where
+`describe_mode` answers `records`, the epic, the list of tracker ids or the goal the
+user gave. The server mounts itself into the lead and launches it with the mode's
+loop and the lead's own role prompt, so the brief is the task text and nothing about
+the loop. Narrate it as any dispatch, then `wait {task_id, timeout_seconds: 600}`,
+again and again, exactly as for any task.
 
 The lead asks you questions. After every `wait` that timed out, call `list_asks
 {status: "open"}`: an open ask is the lead waiting on you. Put the question to the
@@ -461,15 +462,25 @@ answering — `describe_mode`, `list_roles`, `list_tasks`, the one `delegate` of
 lead, `wait`, `check`, `result`, `list_asks`, `answer`, `cancel` and
 `waive_review`, the last on the user's explicit word alone, when the lead's
 question asks for a waiver — and never a loop step: while a lead is live you never
-call `git_root`, `git_mutate`, `run_command` or `verify_worktree`, and you never
-delegate a specialist at all. You run no `git` and no test command of your own on
-the project either, not even to look: the root check is the lead's step 1, and what
-it found is in its report. `cross-agent report` and `cross-agent answer` are the
+call `git_root`, `git_mutate`, `run_command`, `verify_worktree`, `track` or `record`,
+and you never delegate a specialist at all. You run no `git` and no test command of
+your own on the project either, not even to look: the root check is the lead's
+step 1, and what it found is in its report. `cross-agent report` and `cross-agent answer` are the
 only commands of yours this placement needs, with one exception: where your host
 offers this skill as a file to read rather than loading it, as a Codex host has,
 reading this skill's own `SKILL.md` is yours too, and it is the one file you read.
 The steps are the lead's, and a step the lead did not take is one its journal and
 its report do not have.
+
+Where `describe_mode` answers `records`, the lead keeps the project's tracker and its
+record files for the whole run, and the bookkeeping the project's own instructions
+give a session is the lead's: you make no tracker call and write no record — never
+`track` or `record`, no `bd` and no `project-steward`, and no write to a file under
+`records.files` or `records.tracker.files` — before the lead starts, while it runs,
+or after it settles. A goal's breakdown reaches you as the lead's one approval
+question: relay it like any other ask; the answer is the user's. What the lead could
+not file is in its report, listed as unfiled, for the user. Without `records` this
+placement is as above.
 
 Who reconciles follows from who is live. At the start of a session you delegate the
 lead and touch nothing at the root, and while a lead is live — any status short of

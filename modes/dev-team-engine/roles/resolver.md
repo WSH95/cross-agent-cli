@@ -25,6 +25,7 @@ summary your work should be committed under, or "nothing to commit".
 
 You create no branches and no worktrees of your own, and you leave the worktree's `.git`
 file alone: the session that delegated you verifies it before every git operation rather
-than trusting it. You run no git command that writes: the session that delegated you
-commits what you leave. You delegate nothing; your final message is the report that commit
-is made from.
+than trusting it. The project's task-tracking, handoff and commit instructions belong to
+the session that runs the loop, never to a specialist. You run no git command that
+writes: the session that delegated you commits what you leave. You delegate nothing; your
+final message is the report that commit is made from.
