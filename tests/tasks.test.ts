@@ -605,6 +605,16 @@ test("a task a cascade could not write is reported as such, and a later cancel f
   assert.equal(p.record(lead.id).status, "cancelled");
 });
 
+/**
+ * A delegation refused because the cascade reached its lead first. `cancel` claims the lead
+ * `cancelling` under `spawn.lock` and settles it only after releasing the lock, so a
+ * delegation that takes the lock after the claim reads the lead in either state, and both
+ * are the same refusal.
+ */
+function refusedUnderCancel(reason: string, leadId: string): void {
+  assert.match(reason, new RegExp(`parent task ${leadId} is (cancelling|cancelled)$`));
+}
+
 test("a delegation racing a cascade is either refused or cancelled with the rest", async (t) => {
   const p = await projectWithRoles(t);
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -624,10 +634,24 @@ test("a delegation racing a cascade is either refused or cancelled with the rest
       assert.equal(settled.status, "cancelled", `${attempt}: ${JSON.stringify(outcomes.ok && outcomes.outcomes)}`);
       assert.ok(outcomes.ok && outcomes.outcomes.some((outcome) => outcome.id === child.taskId));
     } else {
-      assert.match(child.reason, new RegExp(`parent task ${lead.id} is cancelling`));
+      refusedUnderCancel(child.reason, lead.id);
     }
     assert.equal(p.record(lead.id).status, "cancelled");
   }
+});
+
+test("a delegation that reads its lead only after the cascade settled it is refused all the same", async (t) => {
+  const p = await projectWithRoles(t);
+  const worktree = await p.worktree("task/after-cascade");
+  const lead = await launch(p, { role: "lead", cwd: p.root });
+  // The racing test's other ending, forced: the cancel took spawn.lock first, and the lead
+  // was settled before the delegation's own read under the lock, as a loaded machine orders it.
+  assert.equal(outcomeOf(cancelled(await cancel(p.root, lead.id)), lead.id).outcome, "cancelled");
+  const child = await delegate(p.root, { role: "implementer", brief: "late", cwd: worktree, branch: "task/after-cascade" }, {
+    authority: leadRow(lead.id), mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
+  });
+  assert.equal(child.ok, false, "nothing is delegated under a cancelled lead");
+  refusedUnderCancel(child.ok === false ? child.reason : "", lead.id);
 });
 
 // @anchor unknownTaskReads

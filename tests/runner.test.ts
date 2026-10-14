@@ -82,6 +82,21 @@ function ownedProcesses(root: string): Inspected[] {
   return identities;
 }
 
+/**
+ * A JSON file another process writes in place, or null until it holds all of it:
+ * `writeFileSync` creates the file before it writes a byte, so a poll can land between the
+ * two and read nothing (atc-s96.139).
+ */
+function jsonWhenWhole<T>(file: string): T | null {
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
 function harness(options: {
   named?: boolean; delayedImport?: boolean; delayedPlan?: boolean; refusal?: boolean; race?: string; failure?: string;
   leadingHyphen?: boolean; competitor?: "at-write" | "before-write";
@@ -317,11 +332,10 @@ ${options.named ? "export { adapter };" : "export default adapter;"}
     },
     engineLaunches: () => (fs.existsSync(invocations) ? fs.readFileSync(invocations, "utf8").trim().split("\n").filter(Boolean) : []),
     read: () => ledger.read(root, record.id),
-    audit: () => fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { at: number; record: TaskRecord }) : [],
-    descendant: () => poll(
-      () => fs.existsSync(descendantFile) ? JSON.parse(fs.readFileSync(descendantFile, "utf8")) as Inspected & { sid: number } : null,
-      (identity) => identity !== null,
-    ).then((identity) => identity!),
+    // Only lines whose newline has landed: an append still in progress is the start of a line.
+    audit: () => (fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").split("\n").slice(0, -1) : [])
+      .map((line) => JSON.parse(line) as { at: number; record: TaskRecord }),
+    descendant: () => poll(() => jsonWhenWhole<Inspected & { sid: number }>(descendantFile), (identity) => identity !== null).then((identity) => identity!),
     outcome: async (file = outcomeFile) => JSON.parse(await poll(
       () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""),
       (text) => text.length > 0,
@@ -418,6 +432,35 @@ test("the runner harness writes its generated modules under its own temporary ro
   } finally {
     await h.cleanup();
   }
+});
+
+test("the harness reads a descendant file only once its writer has finished it", async () => {
+  const h = harness();
+  try {
+    const file = path.join(h.root, "descendant.json");
+    const whole = { pid: 1, startTime: "1", pgid: 1, state: "S", sid: 1 };
+    // `writeFileSync` creates the file before it writes to it, so a poll can find it empty
+    // (atc-s96.139) or holding only the start of what is coming.
+    for (const partial of ["", JSON.stringify(whole).slice(0, 9)]) {
+      fs.writeFileSync(file, partial);
+      // `poll` makes its first read before it first yields, so that read is of the partial file.
+      const read = h.descendant();
+      fs.writeFileSync(file, JSON.stringify(whole));
+      assert.deepEqual(await read, whole);
+    }
+  } finally { await h.cleanup(); }
+});
+
+test("the harness's audit reads only the lines the adapter has finished appending", async () => {
+  const h = harness();
+  try {
+    const line = JSON.stringify({ at: 1, record: h.record });
+    // An append still in progress leaves the start of its line and no newline yet.
+    fs.writeFileSync(h.auditFile, `${line}\n${line.slice(0, 20)}`);
+    assert.deepEqual(h.audit(), [JSON.parse(line)]);
+    fs.appendFileSync(h.auditFile, `${line.slice(20)}\n`);
+    assert.deepEqual(h.audit(), [JSON.parse(line), JSON.parse(line)]);
+  } finally { await h.cleanup(); }
 });
 
 // @anchor launchSpecsRound
@@ -536,8 +579,7 @@ test("process helpers reject stale identities and signal only the verified group
       fs.writeFileSync(process.argv[1], JSON.stringify(child.pid));
       setInterval(() => {}, 1000);
     `, descendantFile], { detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root } }));
-    await poll(() => fs.existsSync(descendantFile), Boolean);
-    const descendant = proc(JSON.parse(fs.readFileSync(descendantFile, "utf8")))!;
+    const descendant = proc((await poll(() => jsonWhenWhole<number>(descendantFile), (pid) => pid !== null))!)!;
     const identity = { ...helpers.identityOf(child.child.pid!)!, pgid: child.child.pid! };
     assert.equal(identity.startTime, proc(identity.pid)?.startTime);
     assert.equal(helpers.groupAlive(identity), true);
@@ -601,8 +643,7 @@ test("group helpers find descendants of a reaped leader without a prior scan", a
       fs.writeFileSync(process.argv[1], JSON.stringify(child.pid));
       setInterval(() => {}, 1000);
     `, descendantFile], { detached: true, stdio: "ignore", env: { RUNNER_TEST_ROOT: h.root } }));
-    await poll(() => fs.existsSync(descendantFile), Boolean);
-    const descendant = proc(JSON.parse(fs.readFileSync(descendantFile, "utf8")))!;
+    const descendant = proc((await poll(() => jsonWhenWhole<number>(descendantFile), (pid) => pid !== null))!)!;
     const identity = { ...helpers.identityOf(leader.child.pid!)!, pgid: leader.child.pid! };
     assert.equal(descendant.pgid, identity.pid);
     // Reap the leader before any helper has looked at this group.
