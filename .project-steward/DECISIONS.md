@@ -1203,3 +1203,16 @@ dev team, asking only for decisions that are the user's.
 Consequences: `atc-2jl` carries the decisions and the proposed shape; the team plans the
 design and its breakdown first, then each task through the dev-team loop. The feature
 reaches this repository's own lead only with a release carrying it.
+
+Plan (2026-10-14): approved after three plan-review rounds (codex `gpt-6-astra` at xhigh:
+6 → 2 → 0 majors), the user having asked mid-way that planning and review not dwell on rare
+scenarios. The approved design and breakdown are `atc-2jl`'s design field: two config
+shapes (no `records`, or `files` with `tracker`); a fixed verb table (`ready`, `show`,
+`create {parent}`, `file`, `claim`, `close`, optional `epic`, `depend`) whose placeholders
+are all required; a wholly clean root before every records commit, under `git.lock` then
+the repository lock; a run journal under `.cross-agent/runs/`; the lead's run (R1-R5) with
+bookkeeping after the merge and before cleanup. Tasks `atc-2jl.1`-`.4`; `.4` folds
+`atc-s96.117`. The plan's proposed limitations (P1 unverified long-run context; P2-P4 crash
+and server-death windows; P6-P7 the two shapes and the tracker contract; P8 follow-ups kept
+out by instruction; P9 project-steward's own `state.json` not updated by the lead) are
+carried under the user's rare-scenario guidance and stand open to the user's objection.
