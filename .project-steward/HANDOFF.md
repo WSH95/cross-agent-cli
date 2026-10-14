@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-14T05:52:43Z
+updated_at: 2026-10-14T06:30:55Z
 updated_by: claude
-session_status: complete
+session_status: in-progress
 branch: main
 ---
 # Handoff
@@ -28,7 +28,12 @@ discovers `/setup` but in single-turn headless mode wrote and committed without 
 (single-turn `/setup`, twice), Claude Code and Codex: numbered choices, nothing written. The setup
 skill epic `atc-s96.134` is closed.
 
-**Next steps:** follow-ups `atc-s96.135`, `.139` (flaky tests), `.136`, `.137`, `.138`.
+**In flight: the follow-ups, through the dev-team loop (user's choice 2026-10-14).**
+- Task 1, `atc-s96.135` + `.139` (flaky tests, test-only): merged as `5311717`, root suite
+  1121/1119/0 fail, beads closed.
+- Task 2, `atc-s96.136` + `.137` + `.138` (setup/init wording, mode loops, delegate refusals,
+  design/install docs): next.
+Ask the user before any push or release. Two local record commits (`92277cc`, `19db256`) are not pushed.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.

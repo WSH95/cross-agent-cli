@@ -7,6 +7,33 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Two flaky tests, fixed in the tests — `atc-s96.135` + `atc-s96.139` (2026-10-14)
+
+Both went through the `dev-team` loop as one task and merged as a fast-forward from `19db256`
+to `5311717` (slug `s96-135-flaky-tests`). The change is test-only and touches nothing in
+`src/`.
+- **`atc-s96.135`:** "a delegation racing a cascade" can read the lead `cancelled` rather than
+  `cancelling`. `cancel` claims the lead under `spawn.lock` and settles it after releasing the
+  lock, so both words are the truthful refusal `docs/design.md` promises. The test now accepts
+  exactly those two words, matched to the end of the reason. A new test forces the order that
+  flaked: the cascade completes before the delegation reads the lead.
+- **`atc-s96.139`:** the runner harness parsed `descendant.json` while it was being written.
+  - `jsonWhenWhole` polls through an empty or partial file, and still rethrows any error other
+    than `SyntaxError`. It now serves the harness's `descendant()` and the two inline reads.
+  - `audit` parses only lines that end in a newline.
+  - Two new tests force a partial file.
+
+Verification:
+- **Plan review:** codex/gpt-6-astra/xhigh, `no major issues`. Two Minors were folded: the red
+  run allows the known flakes, and the claim that atomic publication is untestable was
+  removed.
+- **Red:** each new test failed for its stated reason. The old racing test also flaked on its
+  own in that run (`…is cancelled`), which reproduces the bug.
+- **Code review round 1** (`5311717`): all three seats `no major issues`. One Minor was not
+  taken, because it is practically unreachable: a `finally` read of `unpublished-agent.json`.
+- **Gate and root suite:** each ran 1121 tests: 1119 pass, 0 fail, 2 guarded skips.
+- **Cost:** 7 engine tasks, 2,175 s of engine time.
+
 ## Release 0.1.5 — `atc-s96.142` (2026-10-14)
 
 The package and both manifests are 0.1.5. The payload's one change since 0.1.4 (`6e46507`)
