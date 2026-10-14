@@ -7,6 +7,34 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The `track` tool — `atc-2jl.2`, with `atc-2jl.6` (2026-10-14)
+
+Task 2 of epic `atc-2jl`. Went through the `dev-team` loop and merged as a fast-forward from
+`f662107` to `9360f3e` (slug `2jl-2-track`; `cad6503` the change, `9360f3e` the review wrap-up).
+`src/records.ts#track` runs the configured tracker commands at the root with no shell
+(`src/runcommand.ts#runArgv`): a reading verb under `git.lock` alone, refused when HEAD or the
+root changed; a writing verb on the shared root-commit procedure (`underLocks`, `rootReady`,
+`landCommit`, which `record`'s `commitRecords` now uses too, its answers unchanged), committing
+only `tracker.files` or journalling a no-commit `tracked` step; a non-zero exit, a kill at 120 s,
+a moved HEAD or a change outside `tracker.files` commits nothing and leaves the tracker's change
+in place. `track` registers beside `record` for the operator and lead rows. `atc-2jl.6`'s three
+Minors (the could-not-verify wording, the guide's journal paths, a root-user skip) are in it.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, three Minors folded; the
+  planner's one "human decision" was the host's own brief (`tests/server.test.ts#recordRows`
+  pins record-only registration until Task 2), settled by the host.
+- **Code review:** round 1 (`cad6503`) all three seats `no major issues`, four Minor rows fixed in
+  the wrap-up (journaled-call wording, the post-run answer qualified, a trimmed refusal, a failing
+  read-verb test). Round 2 (`9360f3e`) all three seats `no major issues`; one leftover word in
+  `docs/design.md` went to `atc-2jl.7`.
+- **Gate and root suite:** 1175 tests at `cad6503` and at `9360f3e`; the root suite at
+  `9360f3e` ran 1175: 1173 pass, 0 fail, 2 guarded skips. Citation check: 1772 citations,
+  0 misses (seat 1's run). The implementer's first worktree run of the wrap-up hit a race in
+  `tests/wait.test.ts#quietTaskWhose`, untouched by this change; the re-run passed (`atc-9w2`).
+- **Not verified:** a tracker that leaves a background process holding its output (the bound is
+  stated, untested); nothing yet calls `track` from an engine lead (Task 4).
+
 ## The records config, the root commit and `record` — `atc-2jl.1` (2026-10-14)
 
 Task 1 of epic `atc-2jl` (the engine lead owns the backlog and the project's records, Decision

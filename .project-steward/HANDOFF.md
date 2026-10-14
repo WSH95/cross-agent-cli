@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T19:43:18Z
+updated_at: 2026-10-14T21:07:32Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -219,6 +219,9 @@ What stands is the project's own record. The operator conditions a release names
   Minors of `.1`, folded into `.2`). **Task 1 (`atc-2jl.1`) merged as `c1cb58c`** and closed:
   records config, root commit procedure, run journal, `record`; root suite 1160/1158/0 fail.
   Plans and reviews: `.cross-agent/plans/atc-2jl*/` (ignored).
+- **Task 2 (`atc-2jl.2` + `.6`) merged as `9360f3e`** and closed: `track`, the shared root-commit
+  helpers; root suite 1175/1173/0 fail. Follow-ups `atc-2jl.7` (a design.md word, into `.3`) and
+  `atc-9w2` (flaky `tests/wait.test.ts#quietTaskWhose`).
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -345,10 +348,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **`atc-2jl.2` (`track`), with `atc-2jl.6` folded in:** through the dev-team loop (plan,
-   plan review, worktree, implement, gate, three seats, merge, root suite, cleanup, close);
-   then `.3` (setup) and `.4` (the run loop, prompts, launcher, docs, AGENTS.md), then ask
-   about a release (the dev team here runs released builds).
+0. **`atc-2jl.3` (setup proposes records; reconnect), with `atc-2jl.7` folded in**, through the
+   dev-team loop; the brief carries `bd --help` for create, update, close, ready and dep add.
+   Then `.4` (the run loop, prompts, launcher, docs, AGENTS.md), `.5` at the live trace, and
+   `atc-9w2`; then ask about a release.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.

@@ -472,3 +472,5 @@ Set up Project Steward in this repository.
 - 2026-10-14T18:06:22Z — claude — atc-2jl plan approved (3 plan-review rounds, 6→2→0 majors); tasks atc-2jl.1-.4 filed; Task 1 next.
 - 2026-10-14T18:49:05Z — claude — [auto-checkpoint] atc-2jl.1: plan approved (3 rounds); implementer 4fc7a1c0… running in task/2jl-1-record.
 - 2026-10-14T19:43:18Z — claude — atc-2jl.1 merged as c1cb58c (record tool, records config, run journal); root suite 1160/1158/0 fail; closed. Follow-ups atc-2jl.5, .6. Next: atc-2jl.2.
+- 2026-10-14T20:23:45Z — claude — [auto-checkpoint] atc-2jl.2: implemented and committed as cad6503 on task/2jl-2-track; gate running.
+- 2026-10-14T21:07:32Z — claude — atc-2jl.2 (+.6) merged as 9360f3e (track; shared root-commit helpers); root suite 1175/1173/0 fail; closed. Follow-ups atc-2jl.7, atc-9w2. Next: atc-2jl.3.
