@@ -1177,3 +1177,29 @@ repository cannot test — each host's discovery of the skill, `<skill-dir>` exp
 its approval for a `.git` write under a sandbox — is the operator's live check after the
 release. Follow-ups: `atc-s96.136`, `.137` (remaining `cross-agent init` advice, a refused
 main-checkout config), `.138` (an overclaiming sentence), and the flaky tests `.135`, `.139`.
+
+## 0022 — 2026-10-14 — dev-team-engine: the engine lead owns the backlog and the project's records (`atc-2jl`); user-approved direction
+
+Context: Under `dev-team-engine` the host session stands in for the user, or relays
+between the user and the lead, yet the project's bookkeeping (beads, Project Steward,
+their commits) stayed with the host: Decision 0019 wrote the "If cross-agent launched
+you" section for `dev-team`, where the host is the lead, and grouped the engine lead with
+the specialists. An `AGENTS.md` exception alone cannot change it: the lead is read-only at
+the root with no shell, its engines load none of the user's plugins, and `git_root` has no
+root `commit`.
+
+Decision: The user chose, in order: the lead owns the backlog too (it may be handed an
+epic or a list of beads, or a goal it turns into an epic); the user approves a goal's
+breakdown once, and follow-ups are filed but not worked until approved; a general feature
+(the config names tracker commands and record files; beads and project-steward are the
+first configuration, not a dependency); `dev-team-engine` itself changes, a one-task brief
+being a set of one and a project without the config keeping today's behaviour; and records
+reach `main` by a server commit at the root (a `record` tool for declared record files, a
+`track` tool for tracker commands, each committing only its declared paths, locked and
+journaled), not through task branches. `atc-s96.117` is folded in. The user allowed
+`AGENTS.md` changes in this session and asked for the work to run through the configured
+dev team, asking only for decisions that are the user's.
+
+Consequences: `atc-2jl` carries the decisions and the proposed shape; the team plans the
+design and its breakdown first, then each task through the dev-team loop. The feature
+reaches this repository's own lead only with a release carrying it.
