@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { CONFIG_PATH } from "./config.ts";
+import { CONFIG_PATH, DEFAULT_MODE } from "./config.ts";
 import { run } from "./gitmutate.ts";
 import { gitdirOf, withoutLineEnds } from "./ledger.ts";
 
@@ -396,7 +396,13 @@ export function rootWriteFault(
   if (repo.kind === "main") return null;
   const config = path.join(projectRoot, CONFIG_PATH);
   if (!(statSync(config, { throwIfNoEntry: false })?.isFile() ?? false)) {
-    return `${repo.workTree} is not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "cross-agent init" in ${repo.workTree}`;
+    // A linked root whose main checkout git records no path to — a separated main's worktree —
+    // is where plain `init` refuses (`src/cli.ts#initWorktree`), so the command there names the
+    // defaults `init` writes wherever no main is known, and the copy it cannot find.
+    const separated = repo.kind === "linked" && repo.main === null;
+    const init = separated ? `cross-agent init --mode ${DEFAULT_MODE}` : "cross-agent init";
+    const copy = separated ? `, or "cross-agent init --from <main checkout>" there to copy that checkout's config` : "";
+    return `${repo.workTree} is not an initialized project; set it up there with cross-agent's setup skill, or from a terminal run "${init}" in ${repo.workTree}${copy}`;
   }
   if (scope === "initialized") return null;
   if (repo.branch === null) return `${repo.workTree} has a detached HEAD; check out ${defaultBranch} there first`;

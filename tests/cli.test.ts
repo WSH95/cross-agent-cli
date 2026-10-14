@@ -18,6 +18,7 @@ import { boundDocument, CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } fro
 import type { CrossAgentConfig } from "../src/config.ts";
 import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
+import { locateRepository, rootWriteFault } from "../src/worktree.ts";
 import { git, holdersOf } from "./helpers/git.ts";
 import {
   bareDotGitProject, enginePath, layoutRoot, layouts, linkedProject, mainCheckout, poll, rootInsideCommonDir, separatedMainProject, submoduleProject,
@@ -1976,6 +1977,27 @@ test("init in a worktree of a separated main needs --from, or --mode for the def
   const ran = await run(["init", "--mode", "solo"], separated.root);
   assert.equal(ran.code, 0, ran.stderr);
   assert.equal(defaultBranchOf(separated.root), "feature");
+});
+
+// @anchor configlessHintRuns
+test("the terminal command a config-less root's refusal names writes its config there, in every layout", async (t) => {
+  const roots: Array<{ name: string; root: string }> = [];
+  for (const layout of layouts) roots.push({ name: layout, root: (await layoutRoot(t, layout)).root });
+  roots.push({ name: "separated", root: (await separatedMainProject(t)).root });
+  for (const { name, root } of roots) {
+    const located = await locateRepository(root);
+    if ("reason" in located) assert.fail(`${name}: ${located.reason}`);
+    const fault = rootWriteFault(located, root, "feature", "initialized") ?? "";
+    const command = /from a terminal run "cross-agent ([^"]+)" in /.exec(fault);
+    assert.ok(command !== null && fault.includes(`" in ${located.workTree}`), `${name}: ${fault}`);
+    // Where git records no main checkout, the copy init cannot find is offered beside the defaults.
+    if (name === "separated") {
+      assert.ok(fault.includes(`, or "cross-agent init --from <main checkout>" there to copy that checkout's config`), fault);
+    }
+    const ran = await run(command[1].split(" "), located.workTree);
+    assert.equal(ran.code, 0, `${name}: ${command[1]}: ${ran.stderr}`);
+    assert.equal(rootWriteFault(located, root, "feature", "write"), null, name);
+  }
 });
 
 // @anchor initTaskPatternBranchRefused

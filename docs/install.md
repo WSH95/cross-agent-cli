@@ -219,13 +219,19 @@ binding. Tool names may carry the prefix `mcp__cross_agent__` (Codex folds the h
 ### Legacy explicit-project mount
 
 Without the one-time setup, the bundled mount still runs in Codex's cached plugin
-folder. It requires `CROSS_AGENT_PROJECT` to name a directory already initialized with
-`cross-agent init`, even for `solo`:
+folder. It requires `CROSS_AGENT_PROJECT` to name a directory that already holds
+`.cross-agent/config.json`, even for `solo`:
 
 ```
 cd ~/code/my-project
 CROSS_AGENT_PROJECT="$PWD" codex
 ```
+
+In a project with no config yet, start Codex the same way and run the setup skill there
+(type `$` and pick it): it writes the config through the plugin's own CLI and needs no
+MCP server. Once it has, restart Codex's MCP servers, or start Codex again as above, and
+the mount starts on that config. From a terminal, `cross-agent init` in the project
+writes the config too.
 
 The setup helper removes the need for this launch convention. The legacy limitation
 was observed with Codex 0.159.3 and remains in its inline manifest on 0.160.0;

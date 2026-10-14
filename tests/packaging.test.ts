@@ -337,6 +337,21 @@ test("the Codex fallback is the table codex mcp add writes plus the plugin mount
   }
 });
 
+// @anchor codexLegacyMountSetup
+test("the install guide's legacy Codex mount has the setup skill write the config it needs, and keeps terminal init", () => {
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "install.md"), "utf8");
+  const start = guide.indexOf("### Legacy explicit-project mount");
+  const end = guide.indexOf("\n### ", start + 1);
+  assert.ok(start >= 0 && end > start, "the Codex section has the legacy mount");
+  const section = guide.slice(start, end).replace(/\s+/g, " ");
+  // The mount starts only on a config, which the setup skill writes without the server it waits for.
+  assert.ok(section.includes('CROSS_AGENT_PROJECT="$PWD" codex'), section);
+  assert.match(section, /setup skill[^.]*needs no MCP server/);
+  const skill = section.indexOf("setup skill");
+  assert.ok(skill >= 0 && section.indexOf("`cross-agent init`") > skill, "the setup skill first, terminal init after it");
+  assert.doesNotMatch(section, /already initialized with `cross-agent init`/);
+});
+
 // Grok packaging (design section 9). grok 1.0.46 reads this repository as a plugin in place when
 // a project's own `.grok/config.toml` names the checkout under `[plugins]`: the skill from
 // `skills/` and the server from `.claude-plugin/plugin.json`'s `mcpServers`, with
