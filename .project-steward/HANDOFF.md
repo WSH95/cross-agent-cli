@@ -35,8 +35,10 @@ skill epic `atc-s96.134` is closed.
   design/install docs): merged as `2deb7c6` (two review rounds; round 2 clean on all three
   seats), root suite 1123/1121/0 fail, worktree and branch removed, beads closed. Follow-up
   `atc-s96.143` (`rootWriteFault`'s init hint and a test comment) is open.
-- The five follow-ups are done. `main` holds skill and doc text changes since 0.1.5, so a 0.1.6
-  release would ship them; that is the user's call.
+- Task 3, `atc-s96.143` (`rootWriteFault`'s refusal names the setup skill first): merged as
+  `c028cc3` (review round 1 clean on all three seats), root suite 1123/1121/0 fail, bead closed.
+  Follow-ups `atc-s96.144`, `atc-s96.145` (P4) are open.
+- Next, approved by the user (2026-10-14, "Fix .143, then 0.1.6"): push `main` and publish 0.1.6.
 Ask the user before any push or release. Local commits since `fccfae9` (`92277cc` through this record commit, `2deb7c6` among them) are not pushed.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**

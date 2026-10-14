@@ -7,6 +7,30 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## `rootWriteFault` names the setup skill first — `atc-s96.143` (2026-10-14)
+
+Went through the `dev-team` loop and merged as a fast-forward from `375bd5e` to `c028cc3`
+(slug `s96-143-worktree-hint`). The refusal for a root that is no main checkout and holds no
+`.cross-agent/config.json` now reads `<workTree> is not an initialized project; set it up there
+with cross-agent's setup skill, or from a terminal run "cross-agent init" in <workTree>`. It
+fires in the same cases as before: a worktree whose main checkout git cannot name, and a root
+whose config was removed. The setup skill sets up both. Only the string changed. Its three pins
+(`tests/runcommand.test.ts`, `tests/gitroot.test.ts`, `tests/delegate.test.ts`), the sentence in
+`docs/design.md` that describes it, and a stale comment in `tests/gitmutate.test.ts` changed with
+it. The planner's survey of `src/`, `skills/`, `modes/` and the user guides found no other
+refusal or hint that sends a plugin user to `cross-agent init`.
+
+Verification:
+- **Plan review:** codex/gpt-6-astra/xhigh, `no major issues` with no findings. The fold round
+  took in the design sentence on the lead's decision.
+- **Red:** the 5 tests the plan named failed on the old text before the source change.
+- **Code review round 1** (`c028cc3`): all three seats `no major issues`. One cosmetic Minor (a
+  short line left in `docs/design.md`) was not taken.
+- **Gate and root suite:** each ran 1123 tests: 1121 pass, 0 fail, 2 guarded skips.
+- **Follow-ups filed:** `atc-s96.144` (terminal `init` with no flags is refused at a separated
+  main's worktree) and `atc-s96.145` (the legacy Codex mount docs name only `init`).
+- **Cost:** 7 engine tasks, 1,823 s of engine time.
+
 ## The setup follow-ups' wording — `atc-s96.136` + `.137` + `.138` (2026-10-14)
 
 All three went through the `dev-team` loop as one task and merged as a fast-forward from
