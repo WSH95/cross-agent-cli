@@ -1216,3 +1216,8 @@ bookkeeping after the merge and before cleanup. Tasks `atc-2jl.1`-`.4`; `.4` fol
 and server-death windows; P6-P7 the two shapes and the tracker contract; P8 follow-ups kept
 out by instruction; P9 project-steward's own `state.json` not updated by the lead) are
 carried under the user's rare-scenario guidance and stand open to the user's objection.
+
+Task 1 (`atc-2jl.1`, 2026-10-14): merged as `c1cb58c`. It edited two `AGENTS.md` Layout lines
+under the user's allowance for this session: the `src/config.ts` line names the optional
+`records` block, its tracker verb table and path rules, and `src/records.ts` joins the
+one-file-per-concern list. No other user-owned text changed.

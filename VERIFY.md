@@ -7,6 +7,32 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The records config, the root commit and `record` — `atc-2jl.1` (2026-10-14)
+
+Task 1 of epic `atc-2jl` (the engine lead owns the backlog and the project's records, Decision
+0022). Went through the `dev-team` loop and merged as a fast-forward from `ca46231` to `c1cb58c`
+(slug `2jl-1-record`; `eb92543` the change, `c1cb58c` the review wrap-up). A config may carry a
+`records` block in exactly two shapes (none, or `files` with `tracker`); `src/config.ts` validates
+its fixed verb table and path rules at load; `src/records.ts#record` reads a declared record file,
+or writes a batch and commits the changed declared files at the root under `git.lock` then the
+repository lock, verifies the commit and journals it in `.cross-agent/runs/<run>.json`; the server
+registers `record` for the operator and lead rows only when the block is configured.
+
+Verification:
+- **Plan review:** the epic's design and breakdown took three rounds (codex/gpt-6-astra/xhigh:
+  6, 2, then 0 majors); Task 1's plan took three (I1 the worktree directory's spelling, I2 the
+  rollback boundary, then I3 a link walk without a block), then `no major issues`.
+- **Code review:** round 1 (`eb92543`) all three seats `no major issues`, five Minor rows fixed in
+  the wrap-up (a thrown verification error still journals the landed commit; an unreadable record
+  file is refused by name; a spawned-server registration test; a mode-preservation test; the docs'
+  "exactly the batch's paths" corrected). Round 2 (`c1cb58c`) all three seats `no major issues`;
+  its three Minors (two wordings, a root-user skip) went to `atc-2jl.6`.
+- **Gate and root suite:** the gate ran 1156 tests at `eb92543` and 1160 at `c1cb58c`; the root
+  suite at `c1cb58c` ran 1160: 1158 pass, 0 fail, 2 guarded skips. Citation check: 1744
+  citations, 0 misses (seat 1's run).
+- **Not verified:** the tool's `expect` type array (`["string", "null"]`) against a real Codex or
+  Grok host (`atc-2jl.5`); nothing yet calls `record` from an engine lead (Task 4).
+
 ## Release 0.1.7 — `atc-s96.149` (2026-10-14)
 
 The package and both manifests are 0.1.7. Since 0.1.6 (`1b1ff0b`) the payload carries the

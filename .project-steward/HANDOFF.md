@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T18:49:05Z
+updated_at: 2026-10-14T19:43:18Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -214,11 +214,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-2jl`: epic plan approved (3 rounds; the design field holds it); tasks `.1`-`.4` filed.
-  **Task 1 (`atc-2jl.1`, claimed):** plan approved after 3 plan-review rounds (I1-I3,
-  M1-M3 folded); worktree `.worktrees/2jl-1-record` on `task/2jl-1-record` (journal slug
-  `2jl-1-record`); implementer task `4fc7a1c07bb7ff305de6d7fbebddc1e6bf49` running. Plans
-  and reviews: `.cross-agent/plans/atc-2jl/`, `.cross-agent/plans/atc-2jl.1/` (ignored).
+- `atc-2jl`: epic plan approved (3 rounds; the epic's design field holds it); tasks `.1`-`.4`,
+  follow-ups `.5` (record's `expect` type array vs real hosts, at Task 4) and `.6` (round-2
+  Minors of `.1`, folded into `.2`). **Task 1 (`atc-2jl.1`) merged as `c1cb58c`** and closed:
+  records config, root commit procedure, run journal, `record`; root suite 1160/1158/0 fail.
+  Plans and reviews: `.cross-agent/plans/atc-2jl*/` (ignored).
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -345,9 +345,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **`atc-2jl.1`:** when implementer `4fc7a1c0…` settles: commit via `git_mutate`, the gate
-   (rebase on main, `run_command` test), three code-review seats, merge, root suite, cleanup,
-   close the bead; then Task 2 (`atc-2jl.2`, `track`).
+0. **`atc-2jl.2` (`track`), with `atc-2jl.6` folded in:** through the dev-team loop (plan,
+   plan review, worktree, implement, gate, three seats, merge, root suite, cleanup, close);
+   then `.3` (setup) and `.4` (the run loop, prompts, launcher, docs, AGENTS.md), then ask
+   about a release (the dev team here runs released builds).
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
