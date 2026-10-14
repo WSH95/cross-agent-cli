@@ -468,3 +468,4 @@ Set up Project Steward in this repository.
 - 2026-10-14T13:25:32Z — claude — atc-s96.149 release 0.1.7 merged (PR #22 → 9354b8f), installed in Claude Code and Codex; live legacy-mount check passed (env reaches the shell, skill offered, reconnect true, restarted mount serves). Closed.
 - 2026-10-14T17:09:40Z — claude — atc-2jl filed (Decision 0022): the engine lead owns the backlog and records; planning through the dev team next.
 - 2026-10-14T17:12:57Z — claude — [auto-checkpoint] atc-2jl: epic planning running (planner 535574e9…).
+- 2026-10-14T18:01:20Z — claude — [auto-checkpoint] atc-2jl: plan rounds 1-2 major (6→2, converging); plan r3 in round-3 review (a0f4fbce…).
