@@ -27,6 +27,25 @@ version, and in both payloads the plugin manifest, `package.json`, `src/cli.ts` 
 `claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin. The PR
 is `MERGEABLE`, merge state `CLEAN`. No merge was performed.
 
+The user merged PR #22 on 2026-10-14 at 13:21:22Z, as `9354b8f`, and updated the plugin in Claude
+Code; this session's server runs `…/cross-agent/0.1.7/src/server.ts`. Codex's plugin was updated
+too (`codex plugin marketplace upgrade`, `codex plugin add cross-agent@agent-plugins`); its cache
+equals the 0.1.7 dist payload (`diff -rq`).
+
+**Live check of the legacy explicit-project mount** (Codex 0.162.1, the plugin's bundled mount, no
+one-time setup), in a fresh scratch git repository with no config:
+- `CROSS_AGENT_PROJECT=$PWD codex exec -s read-only`: the shell's `printenv CROSS_AGENT_PROJECT`
+  printed the repository's path, so Codex's default shell carries the variable to the CLI; the
+  `cross-agent:setup` skill was offered from the 0.1.7 cache; no `describe_mode` tool was
+  available, as the mount does not start without a config.
+- The skill's first write, run as the skill runs it (the installed 0.1.7 `bin/cross-agent`,
+  `init --propose --json`, then `init --config - --json` with the `solo` document, under the same
+  `CROSS_AGENT_PROJECT`): `{"ok":true,"wrote":true,"mode":"solo","served":null,"reconnect":true}`,
+  where 0.1.6 answered `served: "solo", reconnect: false`. So the setup skill gives Codex's
+  restart step instead of the one-time-setup hand-off.
+- A fresh `codex exec` in the same repository under the binding (the guide's "start Codex
+  again"): the mount started and `describe_mode` answered mode `solo` with that `projectRoot`.
+
 ## The setup skill's reconnect under Codex's legacy mount — `atc-s96.147` (2026-10-14)
 
 Went through the `dev-team` loop and merged as a fast-forward from `20f2f92` to `a450ddd` (slug

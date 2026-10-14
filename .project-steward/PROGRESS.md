@@ -465,3 +465,4 @@ Set up Project Steward in this repository.
 - 2026-10-14T11:34:29Z — claude — [auto-checkpoint] atc-s96.147: plan approved (round 2, narrowed to a binding naming the root); implementer running in task/s96-147-legacy-reconnect.
 - 2026-10-14T12:27:10Z — claude — atc-s96.147 merged as a450ddd; root suite 1126/1124/0 fail; all follow-ups of this round closed. Next: ask about push and 0.1.7.
 - 2026-10-14T13:17:13Z — claude — atc-s96.149 release 0.1.7: 0ab03cf pushed; agent-plugins PR #22 opened (9 files, dist == target, validate passes, MERGEABLE/CLEAN). Waiting on the user's merge.
+- 2026-10-14T13:25:32Z — claude — atc-s96.149 release 0.1.7 merged (PR #22 → 9354b8f), installed in Claude Code and Codex; live legacy-mount check passed (env reaches the shell, skill offered, reconnect true, restarted mount serves). Closed.
