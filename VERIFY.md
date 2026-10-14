@@ -7,6 +7,33 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The setup skill's reconnect under Codex's legacy mount — `atc-s96.147` (2026-10-14)
+
+Went through the `dev-team` loop and merged as a fast-forward from `20f2f92` to `a450ddd` (slug
+`s96-147-legacy-reconnect`; `f5f44e2` and the test wrap-up `a450ddd`). Under Codex's legacy
+explicit-project mount, a first `solo` setup reported `served: "solo", reconnect: false`, so the
+setup skill offered the one-time setup instead of a restart. `src/cli.ts#initConfigWrite` now
+reads `CROSS_AGENT_PROJECT` from the CLI's environment only when it names the root being set up
+(`namesRoot`, resolved as discovery resolves it): a first write there reports
+`served: null, reconnect: true`, and the unchanged skill gives Codex's reconnect step. Every
+other binding, or none, keeps today's calculation. `docs/design.md` records the exception.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`: the first plan passed the
+  whole environment, which also changed a session bound to another project; narrowed to a
+  binding that names the root. Round 2 `no major issues`, no findings.
+- **Red:** `tests/cli.test.ts#initConfigReconnectBound`'s first assertion got
+  `[0, "solo", false]` before the fix and `[0, null, true]` after.
+- **Code review:** round 1 (`f5f44e2`) all three seats `no major issues`; three Minors (no
+  symlink, relative, missing or unconfigured-elsewhere binding in the test) were added in the
+  wrap-up, each shown to fail against a deliberately broken `namesRoot`. Round 2 (`a450ddd`) all
+  three seats `no major issues`.
+- **Gate and root suite:** each ran 1126 tests: 1124 pass, 0 fail, 2 guarded skips.
+- **Due after the next release (operator checks):** a live Codex session under the legacy mount
+  (setup skill offered, first write, reconnect step, `describe_mode`), and whether Codex's shell
+  carries `CROSS_AGENT_PROJECT` by default; where it does not, the fix is inert and behaviour is
+  as before.
+
 ## The separated worktree's init hint and the legacy Codex mount — `atc-s96.144` + `.145` (2026-10-14)
 
 Went through the `dev-team` loop and merged as a fast-forward from `9d66272` to `5e3d713` (slug
