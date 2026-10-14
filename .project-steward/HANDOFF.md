@@ -32,8 +32,12 @@ skill epic `atc-s96.134` is closed.
 - Task 1, `atc-s96.135` + `.139` (flaky tests, test-only): merged as `5311717`, root suite
   1121/1119/0 fail, beads closed.
 - Task 2, `atc-s96.136` + `.137` + `.138` (setup/init wording, mode loops, delegate refusals,
-  design/install docs): next.
-Ask the user before any push or release. Two local record commits (`92277cc`, `19db256`) are not pushed.
+  design/install docs): merged as `2deb7c6` (two review rounds; round 2 clean on all three
+  seats), root suite 1123/1121/0 fail, worktree and branch removed, beads closed. Follow-up
+  `atc-s96.143` (`rootWriteFault`'s init hint and a test comment) is open.
+- The five follow-ups are done. `main` holds skill and doc text changes since 0.1.5, so a 0.1.6
+  release would ship them; that is the user's call.
+Ask the user before any push or release. Local commits since `fccfae9` (`92277cc` through this record commit, `2deb7c6` among them) are not pushed.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.

@@ -7,6 +7,44 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The setup follow-ups' wording — `atc-s96.136` + `.137` + `.138` (2026-10-14)
+
+All three went through the `dev-team` loop as one task and merged as a fast-forward from
+`f62abe0` to `2deb7c6` (slug `s96-136-wording`, two commits: `a5191f2` and the wrap-up
+`2deb7c6`). Only texts, messages and comments changed; no code path did.
+- **`atc-s96.136`:** the `init --config` lock comment in `src/cli.ts#initConfigWrite` now says
+  a `flock` that could not start also gets the `config.lock could not be prepared:` prefix.
+  `initConfigLockFailed` asserts the exact lock path with `startsWith` on a project named
+  `U V`, which the old `\S*` regex failed. A new test, `initConfigLockUnstarted`, sends `flock`
+  to a missing binary and pins that prefix and `ENOENT`.
+- **`atc-s96.137`:** the three mode loops name the setup skill where they named `cross-agent
+  init`. The unbound-role refusal and `baseHint`'s no-config hint in `src/delegate.ts` name the
+  setup skill first and keep terminal `cross-agent init --mode`; a new test covers `baseHint`.
+  The setup skill says that a refused main-checkout config (`existing.mainCheckoutConfig.fault`)
+  makes the proposal start fresh, and under Codex that a forwarded `CROSS_AGENT_PROJECT` naming
+  another project keeps serving it. Also: `codex-setup.mjs`'s remove message says "its skills",
+  the Grok install commit is `'Ignore Grok state'`, and `docs/design.md` gives the setup skill's
+  chat fallback and says the setup skill, or a hand edit, adds an old config's binding. The mode
+  text sizes in `docs/install.md` and `docs/design.md` are now 35,480 / 41,004 / 3,473.
+- **`atc-s96.138`:** after a write, a `.gitignore` that already matches the last commit gets
+  "no `.gitignore` commit is needed" in place of the claim that nothing blocks the team. A new
+  variant of the real-git test stages a deletion that both of the skill's reads miss.
+
+Verification:
+- **Plan review:** codex/gpt-6-astra/xhigh. Two attempts failed with "Selected model is at
+  capacity"; the third answered `no major issues`, with two Minors folded (a fixture reference,
+  and a whitespace fallback that would not have worked).
+- **Red:** the implementer saw 11 tests fail at their intended assertions before the change and
+  pass after it. The optional `flock` test pins unchanged behaviour, so it was seen red only
+  against a deliberately wrong expectation.
+- **Code review round 1** (`a5191f2`): all three seats `no major issues`. Two Minors from seat
+  #1 (a dangling "its" in `docs/install.md`, and lines the rewrap left overlong) were fixed in the
+  wrap-up `2deb7c6`. Round 2 (`2deb7c6`): all three seats `no major issues`, nothing in scope.
+- **Gate and root suite:** each ran 1123 tests: 1121 pass, 0 fail, 2 guarded skips.
+- **Follow-up:** `atc-s96.143`, `src/worktree.ts#rootWriteFault`'s init hint and a comment in
+  `tests/gitmutate.test.ts`, both outside this task's scope.
+- **Cost:** 13 engine tasks (two of them the capacity failures), 4,355 s of engine time.
+
 ## Two flaky tests, fixed in the tests — `atc-s96.135` + `atc-s96.139` (2026-10-14)
 
 Both went through the `dev-team` loop as one task and merged as a fast-forward from `19db256`
