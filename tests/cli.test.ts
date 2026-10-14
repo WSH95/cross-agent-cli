@@ -1996,7 +1996,7 @@ test("the terminal command a config-less root's refusal names writes its config 
     }
     const ran = await run(command[1].split(" "), located.workTree);
     assert.equal(ran.code, 0, `${name}: ${command[1]}: ${ran.stderr}`);
-    assert.equal(rootWriteFault(located, root, "feature", "write"), null, name);
+    assert.equal(rootWriteFault(located, root, defaultBranchOf(located.workTree), "write"), null, name);
   }
 });
 

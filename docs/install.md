@@ -231,7 +231,9 @@ In a project with no config yet, start Codex the same way and run the setup skil
 (type `$` and pick it): it writes the config through the plugin's own CLI and needs no
 MCP server. Once it has, restart Codex's MCP servers, or start Codex again as above, and
 the mount starts on that config. From a terminal, `cross-agent init` in the project
-writes the config too.
+writes the config too; installing the plugin puts no `cross-agent` on your shell's `PATH`,
+so where none is, the installed plugin's own launcher runs it, for example
+`~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent init`.
 
 The setup helper removes the need for this launch convention. The legacy limitation
 was observed with Codex 0.159.3 and remains in its inline manifest on 0.160.0;

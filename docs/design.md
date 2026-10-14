@@ -2280,8 +2280,7 @@ one nobody configured — and the refusal names cross-agent's setup skill and th
 where git records no path to the main checkout and plain `init` refuses
 (`src/cli.ts#initWorktree`), `--mode` with the default mode, and `--from <main checkout>`
 to copy that checkout's config (`tests/cli.test.ts#configlessHintRuns`); with a config, a
-write also needs the root's HEAD on a branch,
-and that branch to be
+write also needs the root's HEAD on a branch, and that branch to be
 `project.defaultBranch`, the refusal naming both and the fix. Scope `"initialized"`
 asks the first question alone and covers every `run_command` at such a root, a test
 run with no slug, a setup run and a worktree run included; scope `"write"` asks all
