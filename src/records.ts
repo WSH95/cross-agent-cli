@@ -341,9 +341,8 @@ interface Label {
 }
 
 const recordLabel: Label = { tool: "record", files: "the record files", file: "a record file", asWas: "the index and the files are as they were" };
-const trackLabel: Label = {
-  tool: "track", files: "the tracker's files", file: "a tracker file", asWas: "the index is as it was; the tracker's change is left in place",
-};
+// What stays after a failed commit is named by `trackWrite`, from what the root shows.
+const trackLabel: Label = { tool: "track", files: "the tracker's files", file: "a tracker file", asWas: "the index is as it was" };
 
 /**
  * `body` under `git.lock`, and under the repository lock inside it where `repository` asks

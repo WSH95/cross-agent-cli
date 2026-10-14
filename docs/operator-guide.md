@@ -104,11 +104,14 @@ journals nothing.
 Every commit `record` lands is journaled in `.cross-agent/runs/<run>.json` — `operator`
 for your own calls, and a lead's first task id for its run, a resumed lead continuing
 the same file — as a `recorded` step with `before`, `after`, the paths it was asked to
-commit, the message and `verified`. Every writing verb `track` runs to the end is
-journaled there too, as a `tracked` step with the verb, the ids the call named,
-`before`, the paths and the message, and `after` and `verified` where it landed a
-commit; a verb that changed none of the tracker's files is a step with `paths: []` and
-no commit. Watch for `verified: false`: the commit landed but carried something else,
+commit, the message and `verified`. A writing verb `track` runs is journaled there
+too, as a `tracked` step with the verb, the ids the call named, `before`, the paths and
+the message, and `after` and `verified` where it landed a commit; a verb that changed
+none of the tracker's files is a step with `paths: []` and no commit. A `track` call
+refused before its commit — the tracker failed, was killed, moved HEAD or changed a
+file outside `tracker.files`, or the commit itself was refused — commits nothing and
+writes no step; a commit that lands stands and is journaled, verified or not. Watch
+for `verified: false`: the commit landed but carried something else,
 or left the root unclean — a hook that adds a path does that — and the call answered
 "commit `<sha>` landed, but it is not exactly the call's paths"; or a check could not
 run, and it answered "…but it could not be verified as the call's paths alone". Either

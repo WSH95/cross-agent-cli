@@ -3122,7 +3122,8 @@ shell, at the root, its stdin closed, in `run_command`'s environment
 is a plain child of the server, killed at 120 s (`src/records.ts#trackTimeoutSeconds`)
 with its pipes destroyed, so the call ends then even while a process it started holds
 them; every answer once it has run carries its exit code and the last 64 KiB of its
-output (`tests/records.test.ts#trackTimeout`). After `locateRepository` and
+output, unless git itself cannot run after the run, when the answer is git's error
+alone (`tests/records.test.ts#trackTimeout`). After `locateRepository` and
 `rootWriteFault` — `"write"` for a writing verb, `"initialized"` for a reading one:
 - a **reading verb** (`ready`, `show`) holds `git.lock` alone, needs no clean root
   and commits nothing; HEAD and `uncommitted()` are read before and after the run,
@@ -3140,9 +3141,12 @@ output (`tests/records.test.ts#trackTimeout`). After `locateRepository` and
   verified and journaled as `record`'s are (`#trackCommitsTrackerFiles`).
 
 `track` never reverses the tracker's own changes. A refusal once the tracker has run
-commits nothing, names what the root shows and leaves it in place; the only thing
-`track` undoes is its own staging, reset when a commit fails, git's output then under
-`git` so that `exitCode` is always the tracker's (`#trackHookRefusal`). A refusal may so
+and before a commit lands commits nothing and writes no step, names what the root
+shows and leaves it in place; the only thing `track` undoes is its own staging, reset
+when a commit fails, git's output then under `git` so that `exitCode` is always the
+tracker's (`#trackHookRefusal`). A commit that lands stands and is journaled, verified
+or not, as `record`'s does: one whose verification found a problem is answered `ok:
+false` with the commit and its step. A refusal may so
 leave the root unclean, and a later `record` or `track` write is then refused by its
 own clean-root check until the operator commits or removes the change; an earlier
 failure refuses nothing by itself, and a tracker that committed for itself and left
@@ -3731,7 +3735,8 @@ run's five tasks, each `passed`.
   landed, `paths` the entries it was asked to carry, `message` the one requested,
   and `verified` whether the commit carries exactly those paths and left the root
   clean (`src/records.ts#RunJournal`, `#RecordedStep`). A `tracked` step, one per
-  writing verb `track` ran to the end, is `{step, at, verb, ids, before, after?,
+  writing verb `track` accepted or whose commit landed — a call refused before its
+  commit writes none — is `{step, at, verb, ids, before, after?,
   paths, message, verified?, problems?}`: `ids` the ids the call filled, in the verb's
   placeholder order — `[id]` for `claim` and `close`, `[parent]` for `create`, `[id,
   on]` for `depend`, none for `file` and `epic` — and, where the tracker changed none

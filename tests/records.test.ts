@@ -689,6 +689,15 @@ test("a read verb commits nothing and refuses when it changed the root", async (
   assert.notEqual(after, before);
   assert.match(moved.reason, new RegExp(`${before}.*${after}`));
   assert.equal(fs.existsSync(journalFile(root)), false);
+  // And one that failed, with its exit code and what it printed.
+  configure(root, trackerBlock({ show: "fail" }));
+  const failed = trackRefused(await trackCall(root, { verb: "show", id: "X-1" }));
+  assert.match(failed.reason, /exited 3/);
+  assert.equal(failed.exitCode, 3);
+  assert.match(failed.output ?? "", /fake tracker failed/);
+  assert.equal(await head(root), after);
+  assert.equal(await status(root), "?? scratch.txt");
+  assert.equal(fs.existsSync(journalFile(root)), false);
 
   // It takes git.lock alone: it completes while the repository lock is held, which it would
   // otherwise wait a minute for, and is refused while git.lock is.
@@ -863,7 +872,7 @@ test("a hook that refuses a track commit resets the index and leaves the tracker
   const before = await head(root);
   hook(root, "#!/bin/sh\necho 'refused by the hook' >&2\nexit 1\n");
   const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
-  assert.match(result.reason, /git commit exited 1; the index is as it was; the tracker's change is left in place/);
+  assert.match(result.reason, /git commit exited 1; the index is as it was; the root shows \.beads\/interactions\.jsonl, left in place$/);
   assert.equal(result.git!.exitCode, 1);
   assert.match(result.git!.stderr, /refused by the hook/);
   assert.equal(result.exitCode, 0);
