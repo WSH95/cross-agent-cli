@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T22:08:34Z
+updated_at: 2026-10-14T22:36:39Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -226,8 +226,11 @@ What stands is the project's own record. The operator conditions a release names
   block for `dev-team-engine` where beads and project-steward are found; reconnect covers a block
   added or removed; root suite 1182/1180/0 fail. Follow-up `atc-2jl.8` (a short line in
   `docs/operator-guide.md`, into `.4`).
-- **Next: Task 4 (`atc-2jl.4`)**, with `.8` and `atc-s96.117` folded in and `.5` noted for the
-  live trace.
+- **Task 4 (`atc-2jl.4` + `.8` + `atc-s96.117`, claimed):** plan approved after 2 plan-review
+  rounds (I1, two test pins vs the drafted text; M1, M2) and the optimization pass
+  (`.cross-agent/plans/atc-2jl.4/plan-approved.md`); worktree `.worktrees/2jl-4-run` on
+  `task/2jl-4-run` (slug `2jl-4-run`) next. Follow-up `atc-2jl.9` (`nameFault` and a trailing `.`).
+  `.5` noted for the live trace.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
