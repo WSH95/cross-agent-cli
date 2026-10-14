@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-14T05:43:17Z
+updated_at: 2026-10-14T05:52:43Z
 updated_by: claude
-session_status: in-progress
+session_status: complete
 branch: main
 ---
 # Handoff
@@ -23,12 +23,12 @@ Live checks (`VERIFY.md`): Claude Code end to end passed; Codex passed through a
 outside its sandbox (cross-agent now installed in the user's Codex; MCP hand-off not run); Grok
 discovers `/setup` but in single-turn headless mode wrote and committed without the user's answer.
 
-**`atc-s96.141` is merged (`bebd8f1`):** the setup skill now waits for the user's own answer and,
-where it cannot ask, asks in chat and ends its turn. **Release 0.1.5 (`atc-s96.142`) is published:
-`main` pushed at `fccfae9`; https://github.com/WSH95/agent-plugins/pull/20 awaits the user's merge.** Then the
-live re-check on Grok, Claude Code and Codex, and close `atc-s96.134`.
+**Release 0.1.5 is merged and installed (`atc-s96.142`, closed 2026-10-14).** PR #20 merged as
+`9adee2e`; it carries the consent fix `atc-s96.141` (`bebd8f1`). Live re-check passed on Grok
+(single-turn `/setup`, twice), Claude Code and Codex: numbered choices, nothing written. The setup
+skill epic `atc-s96.134` is closed.
 
-**Next steps after that:** follow-ups `atc-s96.135`, `.139` (flaky tests), `.136`, `.137`, `.138`.
+**Next steps:** follow-ups `atc-s96.135`, `.139` (flaky tests), `.136`, `.137`, `.138`.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**
 - `main` was pushed at the frozen source `6f9f2c4`.

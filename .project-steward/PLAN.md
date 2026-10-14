@@ -2,10 +2,11 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Release 0.1.5 (prepared 2026-10-14)
+## Release 0.1.5 (merged 2026-10-14)
 
-`atc-s96.142`: ships the setup skill's consent fix (`atc-s96.141`, merged as `bebd8f1`). Push and
-publish wait for the user's OK.
+`atc-s96.142` is closed: source `fccfae9` pushed, agent-plugins PR #20 merged by the user as
+`9adee2e`. It ships the setup skill's consent fix (`atc-s96.141`); the live re-check passed on
+Grok, Claude Code and Codex.
 
 ## Release 0.1.4 (merged 2026-10-14)
 
@@ -13,12 +14,12 @@ publish wait for the user's OK.
 `1091b8a` (payload and marketplace README), plugin updated. Live checks in `VERIFY.md`; a
 consent bug found in Grok single-turn mode (`atc-s96.141`) goes into 0.1.5.
 
-## The setup skill (merged 2026-10-13; ships with 0.1.4)
+## The setup skill (done 2026-10-14; shipped in 0.1.4, fixed in 0.1.5)
 
 `atc-s96.134`: a plugin user sets a project up, or changes its team, through the `setup` skill and
 the CLI's `init --propose` / `init --config`, with no terminal step. Parts merged as `e3ff61c` and
-`62f5aad` through the dev-team loop (Decision 0021). Open until release 0.1.4 and the per-host live
-checks.
+`62f5aad` through the dev-team loop (Decision 0021); the consent fix `atc-s96.141` as `bebd8f1`.
+`atc-s96.134` is closed after the live checks on all three hosts.
 
 ## Release 0.1.3 (merged 2026-10-13)
 

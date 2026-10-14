@@ -26,6 +26,22 @@ The publish opened https://github.com/WSH95/agent-plugins/pull/20 on
 The target's `cross-agent/` equals the frozen dist (`diff -r`). `claude plugin validate`
 passes for the marketplace and, with `--strict`, for the plugin. No merge was performed.
 
+The user merged PR #20 on 2026-10-14 at 05:46:28Z, as `9adee2e`, then updated the plugin and
+reconnected. This session's server runs `…/cross-agent/0.1.5/src/server.ts`, and Codex's
+plugin was updated to 0.1.5.
+
+**Live re-check of `atc-s96.141`.** Each run used a fresh scratch git repository with one
+commit, and asked for setup once, single-turn:
+- **Grok:** `grok --trust -p "/setup"`, run twice. Both runs called `--propose`, tried
+  `ask_user_question`, then asked the mode question as numbered choices in chat and stopped
+  ("Nothing has been written yet").
+- **Claude Code:** `claude -p "/cross-agent:setup"` asked numbered choices and stopped.
+- **Codex:** `codex exec --sandbox workspace-write '$setup'` asked numbered choices and
+  stopped.
+
+In all four runs, no `.cross-agent/config.json` was written, `git status --porcelain` was
+empty, and the repository still had its one commit. The defect is fixed on every host.
+
 ## The setup skill waits for the user's own answer — `atc-s96.141` (2026-10-14)
 
 The defect came from the 0.1.4 live check:
