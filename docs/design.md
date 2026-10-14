@@ -723,7 +723,7 @@ engine`; **records** only where the config the server started with has a
 | `ask` | `question`, or `id` to keep waiting on an earlier ask of the lead's lineage; `timeout_seconds` | writes `.cross-agent/asks/<id>.json` and blocks until answered, cancelled or the timeout, which answers `open` with the id to ask again by | engine lead |
 | `list_asks` | optional `status` | the asks of the lead's own lineage; every ask for the operator | engine lead |
 | `answer` | `ask_id`, `text` | the operator's reply; the first one wins, and it is persisted, so it survives a killed lead | engine lead |
-| `record` | `path`; or `changes[]` of `{path, mode: "replace" \| "append", text, expect}` and `message` | reads a declared record file, with its `sha256`, up to 1 MiB; or writes a batch of them, checked whole before the first write, and commits exactly its paths at the root under `git.lock` and the repository lock, journaled in `.cross-agent/runs/<run>.json` (section 4) | records |
+| `record` | `path`; or `changes[]` of `{path, mode: "replace" \| "append", text, expect}` and `message` | reads a declared record file, with its `sha256`, up to 1 MiB; or writes a batch of them, checked whole before the first write, and commits the batch's files that changed, and nothing outside the batch, at the root under `git.lock` and the repository lock, journaled in `.cross-agent/runs/<run>.json` (section 4) | records |
 
 Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
@@ -3038,7 +3038,8 @@ races its own tools against a review is the limit stated above.
 **`record`: the root commit procedure.** `record` is how a project's own record
 files (section 6, "The `records` block") reach the default branch without a task:
 the operator, or an engine lead that has no shell, writes a batch of them and the
-server commits exactly that batch at the root (`src/records.ts#record`). Its read
+server commits what the batch changed, and nothing outside it, at the root
+(`src/records.ts#record`). Its read
 form, `{path}`, takes no lock and answers a declared file's text and `sha256`, up
 to 1 MiB, or `exists: false`. Its write form checks the batch's own shape first —
 every path declared in `records.files` and named once, `expect` on every replace,
@@ -3063,10 +3064,12 @@ repository lock, and holds both for the rest of the call, in this order:
    the `sha256` of its bytes or `null` for none — and only then writes each file
    through `.cross-agent/tmp/` and a rename, keeping the bytes and mode it replaced
    (`#recordBatchWritesNothing`, `#recordRefusesLinkAtWrite`);
-5. `uncommitted()` again must list the batch's paths and nothing else, compared as
-   strings — the path alphabet is one git never quotes — and an empty list answers
-   `ok` with no commit and no journal step;
-6. `git add -- :(literal)<path>…` and `git commit -m <message>`.
+5. every entry `uncommitted()` lists again must be one of the batch's paths,
+   compared as strings — the path alphabet is one git never quotes; those entries,
+   the batch's files whose bytes changed, are what the commit and its journal step
+   carry, so a file the batch left with the bytes it had is in neither, and an empty
+   list answers `ok` with no commit and no journal step;
+6. `git add -- :(literal)<entry>…` and `git commit -m <message>`.
 
 The commit's landing is the boundary. Until `<default>` moves, any failure —
 another entry in step 5, a failed `add`, a hook that refuses the commit, a throw —
@@ -3074,9 +3077,12 @@ runs `git reset -q` on what was added, puts each file's bytes and mode back and
 removes a file it created, and the answer carries git's output
 (`#recordHookRefusalRestores`). Once it has moved, nothing is undone, whatever the
 commit call returned: the commit is verified — `diff-tree -r --name-only <before>
-<after>` lists only those paths, and `uncommitted()` is empty — and journaled with
-`verified` and any `problems`; a commit whose verification finds one answers `ok:
-false` naming it, and is left as it landed (`#recordHookAddedPath`). A journal write that
+<after>` lists only those entries, and `uncommitted()` is empty — and journaled with
+`verified` and any `problems`, a check git could not run at all being one more; a
+commit whose verification finds one answers `ok: false` naming it, with the commit,
+and is left as it landed (`#recordHookAddedPath`, `#recordVerificationThrows`). A
+declared file that cannot be read is refused by name, in either form, before anything
+is written (`#recordUnreadableFile`). A journal write that
 fails answers "commit `<after>` landed; its step could not be written", the commit
 and its files in place (`#recordJournalWriteFails`), and a branch that cannot be
 read after the commit call is answered as it is, nothing put back, since whether it

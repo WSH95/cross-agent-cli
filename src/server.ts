@@ -609,7 +609,7 @@ function recordTools(projectRoot: string, mode: Mode, modesDir: string): ToolDef
   return [
     {
       name: "record",
-      description: "Read or write the project's declared record files (records.files). {path} reads one: its text and sha256, or exists: false, up to 1 MiB. {changes: [{path, mode, text, expect}], message} writes a batch: mode replace or append, a replace naming in expect the sha256 its read answered, or null for a new file, and an append adding a missing final newline first. The whole batch is checked before anything is written, the project root must be wholly clean, and exactly the batch's paths are committed at the root on the default branch under git.lock and the repository lock; the commit is journaled in .cross-agent/runs/<run>.json.",
+      description: "Read or write the project's declared record files (records.files). {path} reads one: its text and sha256, or exists: false, up to 1 MiB. {changes: [{path, mode, text, expect}], message} writes a batch: mode replace or append, a replace naming in expect the sha256 its read answered, or null for a new file, and an append adding a missing final newline first. The whole batch is checked before anything is written, the project root must be wholly clean, and the batch's files that changed, and nothing outside the batch, are committed at the root on the default branch under git.lock and the repository lock; the commit is journaled in .cross-agent/runs/<run>.json.",
       inputSchema: {
         type: "object",
         properties: {

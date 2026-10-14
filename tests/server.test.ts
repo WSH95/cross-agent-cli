@@ -1493,3 +1493,22 @@ test("record's arguments are checked as the wire spells them, before anything is
   assert.deepEqual(payload(await request("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } })),
     { body: { ok: true, path: ".project-steward/HANDOFF.md", exists: false }, isError: false });
 });
+
+// @anchor serverRegistersRecord
+test("a server started on a config with a records block registers record, and one without does not", async (t) => {
+  // The row is pinned to the specialist's, whatever this suite runs under, by a task no record
+  // matches: there a registered tool is refused by name and one never registered is unknown.
+  const reason = "specialist: CROSS_AGENT_TASK present and no record matches";
+  for (const [config, expected] of [
+    [{ roles: {}, records }, `record is not available to a specialist server: ${reason}`],
+    [{ roles: {} }, "unknown tool: record"],
+  ] as const) {
+    const client = stdioClient(await projectWithConfig(t, config), { env: { CROSS_AGENT_TASK: "no-such-task" } });
+    try {
+      const reply = await client.request("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } });
+      assert.deepEqual(reply.error, { code: -32602, message: expected });
+    } finally {
+      client.close();
+    }
+  }
+});

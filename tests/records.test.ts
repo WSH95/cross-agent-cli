@@ -14,7 +14,7 @@ import { builtInModesDir, loadMode } from "../src/modes.ts";
 import { readRunJournal, record } from "../src/records.ts";
 import type { RecordChange, RecordRequest, RecordResult } from "../src/records.ts";
 import { createServer, projectTools } from "../src/server.ts";
-import { git, holdersOf } from "./helpers/git.ts";
+import { git, gitShim, holdersOf } from "./helpers/git.ts";
 import { poll } from "./helpers/project.ts";
 
 // `record` is the root commit procedure of design section 4 for the project's own record
@@ -398,6 +398,64 @@ test("a journal write that fails after the commit answers that the commit landed
   assert.equal(await git(root, "show", `HEAD:${handoff}`), "The handoff.\n- more");
   assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
   assert.equal(readRunJournal(root, "operator"), null);
+});
+
+// @anchor recordVerificationThrows
+test("a git that cannot run while a landed commit is verified leaves the commit journaled verified false and named", async (t) => {
+  const root = await repository(t);
+  const before = await git(root, "rev-parse", "HEAD");
+  // Verification's `diff-tree` dies on a signal, so git reports no exit code at all.
+  await gitShim(t, { signalOn: "diff-tree" });
+  const failed = refused(await call(root, appendToHandoff));
+  const after = await git(root, "rev-parse", "HEAD");
+  assert.notEqual(after, before);
+  assert.match(failed.reason, new RegExp(`^commit ${after} landed, but .*git diff-tree .* could not run`));
+  assert.equal(failed.commit, after);
+  assert.deepEqual(failed.paths, [handoff]);
+  assert.equal(failed.journal!.verified, false);
+  assert.ok(failed.journal!.problems!.some((problem) => /git diff-tree .* could not run/.test(problem)), JSON.stringify(failed.journal));
+  assert.deepEqual(readRunJournal(root, "operator")!.steps, [failed.journal]);
+  // Nothing is put back once the commit has landed.
+  assert.equal(contents(root, handoff), "The handoff.\n- more\n");
+  assert.equal(await git(root, "show", `HEAD:${handoff}`), "The handoff.\n- more");
+  assert.equal(await git(root, "status", "--porcelain", "--untracked-files=all"), "");
+});
+
+// @anchor recordUnreadableFile
+test("an unreadable declared file is refused by name, in the read form and the write form", async (t) => {
+  const root = await repository(t);
+  const before = await git(root, "rev-parse", "HEAD");
+  // A tracked record file nobody may read.
+  fs.chmodSync(path.join(root, handoff), 0o000);
+  const read = await call(root, { path: handoff });
+  fs.chmodSync(path.join(root, handoff), 0o644);
+  assert.match(refused(read).reason, /^"\.project-steward\/HANDOFF\.md" cannot be read: /);
+  // A declared file git does not see — excluded, so the root stays clean — reaches the batch's own read.
+  fs.appendFileSync(path.join(root, ".git", "info", "exclude"), `${decisions}\n`);
+  fs.writeFileSync(path.join(root, decisions), "D0.\n", { mode: 0o000 });
+  const written = await call(root, { changes: [{ path: decisions, mode: "replace", text: "D1.\n", expect: sha256("D0.\n") }], message: "unreadable" });
+  fs.chmodSync(path.join(root, decisions), 0o644);
+  assert.match(refused(written).reason, /^"\.project-steward\/DECISIONS\.md" cannot be read: /);
+  assert.equal(contents(root, decisions), "D0.\n");
+  assert.equal(contents(root, handoff), "The handoff.\n");
+  assert.equal(await git(root, "rev-parse", "HEAD"), before);
+  // Both locks were released.
+  accepted(await call(root, appendToHandoff));
+});
+
+// @anchor recordKeepsMode
+test("a replaced file keeps its mode, and so does one put back after a refused commit", async (t) => {
+  const root = await repository(t);
+  const file = path.join(root, handoff);
+  const mode = () => fs.statSync(file).mode & 0o7777;
+  fs.chmodSync(file, 0o600);
+  accepted(await call(root, { changes: [{ path: handoff, mode: "replace", text: "Replaced.\n", expect: sha256("The handoff.\n") }], message: "replace" }));
+  assert.equal(contents(root, handoff), "Replaced.\n");
+  assert.equal(mode(), 0o600, "after a replace");
+  hook(root, "#!/bin/sh\nexit 1\n");
+  refused(await call(root, appendToHandoff));
+  assert.equal(contents(root, handoff), "Replaced.\n");
+  assert.equal(mode(), 0o600, "after the bytes were put back");
 });
 
 test("record refuses while git.lock is held past its wait", async (t) => {

@@ -180,13 +180,19 @@ function readRecord(projectRoot: string, file: string): RecordResult {
   if (entry.size > maxReadBytes) {
     return { ok: false, reason: `${JSON.stringify(file)} is ${entry.size} bytes, more than the ${maxReadBytes} bytes record reads` };
   }
-  const bytes = fs.readFileSync(target);
+  let bytes: Buffer;
+  try {
+    bytes = fs.readFileSync(target);
+  } catch (error) {
+    return { ok: false, reason: `${JSON.stringify(file)} cannot be read: ${message(error)}` };
+  }
   return { ok: true, path: file, exists: true, text: bytes.toString("utf8"), sha256: sha256(bytes) };
 }
 
 /**
  * The project's record files (design section 4, "`record`: the root commit procedure"): a
- * declared file read, or a batch written and committed at the root as exactly its paths. The
+ * declared file read, or a batch written and committed at the root as the batch's files that
+ * changed, and nothing outside it. The
  * whole batch is judged before the first byte is written; the root must be wholly clean;
  * the commit is made under `git.lock` and then the repository lock, and no `spawn.lock`,
  * because no workspace is claimed or cleared. Until the commit lands, any failure puts the
@@ -320,13 +326,14 @@ async function commitRecords(
     if (linked !== null) return { ok: false, reason: `record refuses ${named}: ${linked}` };
     const target = path.join(workTree, change.path);
     let entry: fs.Stats | undefined;
+    let previous: Buffer | null = null;
     try {
       entry = fs.lstatSync(target, { throwIfNoEntry: false });
+      if (entry?.isFile()) previous = fs.readFileSync(target);
     } catch (error) {
       return { ok: false, reason: `${named} cannot be read: ${message(error)}` };
     }
     if (entry !== undefined && !entry.isFile()) return { ok: false, reason: `${named} is not a regular file` };
-    const previous = entry === undefined ? null : fs.readFileSync(target);
     if (change.expect === null && previous !== null) {
       return { ok: false, reason: `${named} exists, and expect null names a file that does not; read it and name its sha256` };
     }
@@ -372,8 +379,8 @@ async function commitRecords(
       written.push(each);
       place(workTree, each.target, each.change.mode === "replace" ? Buffer.from(each.change.text, "utf8") : appended(each.previous, each.change.text), each.fileMode);
     }
-    // 6. What the write changed is the batch's paths and nothing else, compared as strings:
-    // the path alphabet is one git never quotes.
+    // 6. Everything the write changed is one of the batch's paths, compared as strings: the
+    // path alphabet is one git never quotes. These entries are what the commit carries.
     const changed = await uncommitted(gitDir, workTree);
     if ("unread" in changed) return await undone({ ok: false, reason: changed.unread });
     const strays = changed.filter((entry) => !paths.includes(entry));
@@ -413,19 +420,31 @@ async function commitRecords(
     return await undone({ ok: false, reason: `${cause}; the index and the files are as they were`, ...output });
   }
 
-  // 10. Landed, whatever the commit call returned: verified, and left as it is.
+  // 10. Landed, whatever the commit call returned: verified, and left as it is. A check that
+  // throws — a git that cannot run at all — is one more problem, so the step is still journaled.
   const problems: string[] = [];
-  const diff = await run(gitDir, workTree, ["diff-tree", "-r", "--name-only", "-z", before, after]);
-  if (diff.exitCode !== 0) {
-    problems.push(`git diff-tree exited ${diff.exitCode}: ${diff.stderr.trim()}`);
-  } else {
+  const verify = async (check: () => Promise<void>): Promise<void> => {
+    try {
+      await check();
+    } catch (error) {
+      problems.push(message(error));
+    }
+  };
+  await verify(async () => {
+    const diff = await run(gitDir, workTree, ["diff-tree", "-r", "--name-only", "-z", before, after]);
+    if (diff.exitCode !== 0) {
+      problems.push(`git diff-tree exited ${diff.exitCode}: ${diff.stderr.trim()}`);
+      return;
+    }
     for (const name of diff.stdout.split("\0").filter(Boolean)) {
       if (!entries.includes(name)) problems.push(`${name} is in the commit and was not the call's`);
     }
-  }
-  const left = await uncommitted(gitDir, workTree);
-  if ("unread" in left) problems.push(left.unread);
-  else for (const entry of left) problems.push(`${entry} is left uncommitted at the root`);
+  });
+  await verify(async () => {
+    const left = await uncommitted(gitDir, workTree);
+    if ("unread" in left) problems.push(left.unread);
+    else for (const entry of left) problems.push(`${entry} is left uncommitted at the root`);
+  });
 
   // 11. Journaled whatever verification found.
   let journal: RecordedStep;

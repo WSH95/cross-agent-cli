@@ -94,17 +94,20 @@ marked assume-unchanged or skip-worktree, in the batch or not; the refusal names
 path, and a mark is cleared with `git update-index --no-assume-unchanged <path>` (or
 `--no-skip-worktree`). A project under `core.ignoreStat`, which marks every tracked
 file, is refused on every write until the marks on its record files are cleared. The
-commit carries exactly the batch's paths, on the default branch, under the locks every
-git write of this project takes, and the repository's hooks run as they do for a root
-merge; a hook that refuses the commit leaves the files and the index as they were.
-Batch bytes a file already has commit nothing.
+commit carries the batch's files whose bytes changed, and nothing outside the batch, on
+the default branch, under the locks every git write of this project takes, and the
+repository's hooks run as they do for a root merge; a hook that refuses the commit
+leaves the files and the index as they were. A file the batch leaves with the bytes it
+already had is not in the commit, and a batch that changes nothing commits and
+journals nothing.
 
 Every commit `record` lands is journaled in `.cross-agent/runs/<run>.json` — `operator`
 for your own calls, and a lead's first task id for its run, a resumed lead continuing
-the same file — as a `recorded` step with `before`, `after`, the paths, the message and
-`verified`. Watch for `verified: false`: the commit landed but carried something else,
-or left the root unclean — a hook that adds a path does that — and its `problems` say
-what; the call answered `ok: false` naming them, and the commit stands. A call that
+the same file — as a `recorded` step with `before`, `after`, the paths it committed, the
+message and `verified`. Watch for `verified: false`: the commit landed but carried
+something else, or left the root unclean — a hook that adds a path does that — or git
+could not run to check it, and its `problems` say what; the call answered `ok: false`
+naming them, with the commit, and the commit stands. A call that
 answers "commit `<sha>` landed; its step could not be written" left the commit in
 place without its step.
 
