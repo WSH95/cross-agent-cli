@@ -492,13 +492,14 @@ const beadsAndSteward = {
 
 /**
  * A main checkout keeping beads and project-steward, on a `PATH` holding Claude, Codex and an
- * executable `bd` that would leave a marker outside the repository if anything ran it.
+ * executable `bd` that would leave a marker outside the repository if anything ran it. The
+ * marker is the shell's own redirection, since that `PATH` holds no `touch`.
  */
 async function recordsProject(t: TestContext): Promise<{ root: string; PATH: string; marker: string }> {
   const root = lay(await mainCheckout(scratch(t), "P"), beadsAndSteward);
   const PATH = enginePath(t, ["claude", "codex"]);
   const marker = path.join(scratch(t), "bd-ran");
-  fs.writeFileSync(path.join(PATH, "bd"), `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
+  fs.writeFileSync(path.join(PATH, "bd"), `#!/bin/sh\n: > ${JSON.stringify(marker)}\n`);
   fs.chmodSync(path.join(PATH, "bd"), 0o755);
   return { root, PATH, marker };
 }
@@ -518,6 +519,10 @@ test("proposes records for the background team where it finds beads, bd on PATH 
   // Detection never gives the host-placed team or one-off help a block.
   assert.equal("records" in documentOf(byMode["dev-team"]), false);
   assert.equal("records" in documentOf(byMode.solo), false);
+  // A base's own block stands over the one detected.
+  const own = { files: [".project-steward/NOTES.md"], tracker: beadsTracker };
+  const base = { ...baseConfig("dev-team-engine"), records: own };
+  assert.deepEqual(documentOf(setup.proposeMode(modes["dev-team-engine"], new Set(["claude", "codex"]), project, { base, records: expected })).records, own);
   // A beads directory with only `metadata.json` is beads too.
   fs.rmSync(path.join(root, ".beads", "config.yaml"));
   fs.writeFileSync(path.join(root, ".beads", "metadata.json"), "{}\n");

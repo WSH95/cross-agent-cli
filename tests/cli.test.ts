@@ -2594,6 +2594,9 @@ test("init --config answers reconnect when the written config adds or removes re
   const text = await runWithInput(["init", "--config", "-", ...replacing()], root, JSON.stringify(withRecords));
   assert.equal(text.code, 0, text.stderr);
   assert.match(text.stdout, /records block this write added; reconnect/);
+  const removed = await runWithInput(["init", "--config", "-", ...replacing()], root, JSON.stringify(plain));
+  assert.equal(removed.code, 0, removed.stderr);
+  assert.match(removed.stdout, /records block this write removed; reconnect/);
 });
 
 test("conflicting init options are usage errors, and --help documents them", async (t) => {

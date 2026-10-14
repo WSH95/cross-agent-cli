@@ -76,8 +76,9 @@ config without a block loads and behaves exactly as before.
 
 Setup proposes this block for `dev-team-engine` alone, and only where it finds both
 beads — `.beads/` holding `config.yaml` or `metadata.json`, and `bd` on `PATH` — and
-project-steward: every regular `.md` file directly under `.project-steward/`, never
-`state.json`, `config.toml`, `backend.json` or anything under `runtime/`. `--silent`
+project-steward: every regular `.md` file directly under a real `.project-steward/`
+that the path rules admit, never `state.json`, `config.toml`, `backend.json` or
+anything under `runtime/`. `--silent`
 makes each `bd create` print only the new id, and `.beads/interactions.jsonl` is the
 file bd's closes append to. Setup shows the block before it asks whether the proposal
 looks right, and you can change or drop it there; a write that adds or removes the
