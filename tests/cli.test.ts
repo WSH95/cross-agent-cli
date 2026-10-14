@@ -2541,11 +2541,26 @@ test("reconnect follows a server bound by CROSS_AGENT_PROJECT to this root: its 
   rebound.roles.consult = { engine: "claude", model: "claude-opus-5-5", effort: "xhigh" };
   const binding = await configure(root, rebound, ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))], bound);
   assert.deepEqual([binding.code, binding.answer.served, binding.answer.reconnect], [0, "solo", false]);
+  // A binding through a symlink names the root its real path is, as discovery resolves it.
+  const linked = await mainCheckout(scratch(t), "L");
+  const link = path.join(scratch(t), "link");
+  fs.symlinkSync(linked, link, "dir");
+  const throughLink = await configure(linked, initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: link });
+  assert.deepEqual([throughLink.code, throughLink.answer.served, throughLink.answer.reconnect], [0, null, true]);
   // A binding that names another project, configured or not, leaves the answer as it was.
   const other = await mainCheckout(scratch(t), "O");
   assert.equal((await run(["init", "--mode", "dev-team"], other)).code, 0);
   const elsewhere = await configure(await mainCheckout(scratch(t), "E"), initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: other });
   assert.deepEqual([elsewhere.code, elsewhere.answer.served, elsewhere.answer.reconnect], [0, "solo", false]);
+  const unconfiguredOther = await mainCheckout(scratch(t), "U");
+  const elsewhereUnconfigured = await configure(await mainCheckout(scratch(t), "F"), initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: unconfiguredOther });
+  assert.deepEqual([elsewhereUnconfigured.code, elsewhereUnconfigured.answer.served, elsewhereUnconfigured.answer.reconnect], [0, "solo", false]);
+  // So does a binding discovery would refuse: a relative path, even "." naming the root the CLI
+  // runs in, and an absolute path that does not exist.
+  const relative = await configure(await mainCheckout(scratch(t), "R"), initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: "." });
+  assert.deepEqual([relative.code, relative.answer.served, relative.answer.reconnect], [0, "solo", false]);
+  const missing = await configure(await mainCheckout(scratch(t), "M"), initDocument("solo"), [], { ...suiteEnv, CROSS_AGENT_PROJECT: path.join(scratch(t), "missing") });
+  assert.deepEqual([missing.code, missing.answer.served, missing.answer.reconnect], [0, "solo", false]);
 });
 
 test("conflicting init options are usage errors, and --help documents them", async (t) => {
