@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T18:01:20Z
+updated_at: 2026-10-14T18:49:05Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -214,13 +214,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-2jl` epic planning: design + 4-task breakdown (1 records config/root commit/run
-  journal/`record`; 2 `track`; 3 setup proposes records + reconnect; 4 the run loop, prompts,
-  launcher, docs, AGENTS.md). Plan rounds 1 and 2 ended `major issues` (6 → 2 majors,
-  converging); plan r3 is under round-3 review, task `a0f4fbce30baa7d0b432f695b506d39bb7ad`.
-  Rounds 1-3 and plans are under `.cross-agent/plans/atc-2jl/` (ignored). The user asked
-  (2026-10-14) that planning and review not dwell on rare scenarios (bd memory
-  `plan-focus-not-rare-scenarios`).
+- `atc-2jl`: epic plan approved (3 rounds; the design field holds it); tasks `.1`-`.4` filed.
+  **Task 1 (`atc-2jl.1`, claimed):** plan approved after 3 plan-review rounds (I1-I3,
+  M1-M3 folded); worktree `.worktrees/2jl-1-record` on `task/2jl-1-record` (journal slug
+  `2jl-1-record`); implementer task `4fc7a1c07bb7ff305de6d7fbebddc1e6bf49` running. Plans
+  and reviews: `.cross-agent/plans/atc-2jl/`, `.cross-agent/plans/atc-2jl.1/` (ignored).
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -347,9 +345,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **`atc-2jl`:** act on plan review round 3 (`a0f4fbce…`): clean → file the four tasks
-   as child beads and run Task 1 through the dev-team loop; `major issues` → round limit
-   (3): ask the user (fold and proceed / one more round / simplify / pause).
+0. **`atc-2jl.1`:** when implementer `4fc7a1c0…` settles: commit via `git_mutate`, the gate
+   (rebase on main, `run_command` test), three code-review seats, merge, root suite, cleanup,
+   close the bead; then Task 2 (`atc-2jl.2`, `track`).
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
