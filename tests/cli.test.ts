@@ -2563,6 +2563,39 @@ test("reconnect follows a server bound by CROSS_AGENT_PROJECT to this root: its 
   assert.deepEqual([missing.code, missing.answer.served, missing.answer.reconnect], [0, "solo", false]);
 });
 
+// @anchor initConfigReconnectRecords
+test("init --config answers reconnect when the written config adds or removes records under the same mode", async (t) => {
+  // The server registers `record` and `track` once, from the block it started with.
+  const root = await mainCheckout(scratch(t), "R");
+  const plain = initDocument("dev-team-engine");
+  const tracker = {
+    ready: ["bd", "ready"],
+    show: ["bd", "show", "{id}"],
+    create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}", "--silent"],
+    file: ["bd", "create", "--title={title}", "--description={text}", "--silent"],
+    epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}", "--silent"],
+    claim: ["bd", "update", "{id}", "--claim"],
+    close: ["bd", "close", "{id}", "--reason={text}"],
+    depend: ["bd", "dep", "add", "{id}", "{on}"],
+    files: [".beads/interactions.jsonl"],
+  };
+  const withRecords = { ...plain, records: { files: [".project-steward/HANDOFF.md"], tracker } };
+  const replacing = () => ["--replace", "--expect", sha256(fs.readFileSync(path.join(root, CONFIG_PATH)))];
+  const answered = async (document: unknown, args: string[]) => {
+    const { code, answer } = await configure(root, document, args);
+    return [code, answer.served, answer.reconnect];
+  };
+  assert.deepEqual(await answered(plain, []), [0, "solo", true]);
+  assert.deepEqual(await answered(withRecords, replacing()), [0, "dev-team-engine", true], "a block added");
+  const reshown = { ...withRecords, records: { ...withRecords.records, tracker: { ...tracker, show: ["bd", "show", "{id}", "--json"] } } };
+  assert.deepEqual(await answered(reshown, replacing()), [0, "dev-team-engine", false], "a block changed");
+  assert.deepEqual(await answered(plain, replacing()), [0, "dev-team-engine", true], "a block removed");
+  // The text a person reads names what the served config lacks.
+  const text = await runWithInput(["init", "--config", "-", ...replacing()], root, JSON.stringify(withRecords));
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, /records block this write added; reconnect/);
+});
+
 test("conflicting init options are usage errors, and --help documents them", async (t) => {
   const root = scratch(t);
   const hash = "a".repeat(64);

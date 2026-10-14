@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   bindConfig, boundDocument, checkConfigDocument, CONFIG_PATH, configBytes, DEFAULT_MODE, engineLeadRole, isSeated, mergePolicies,
-  parseConfig, stateEntries, substituteBinding, unignored,
+  parseConfig, recordPathFault, recordPathLink, stateEntries, substituteBinding, unignored,
 } from "./config.ts";
-import type { CrossAgentConfig, RoleBinding, RoleConfig } from "./config.ts";
+import type { CrossAgentConfig, RecordsConfig, RoleBinding, RoleConfig } from "./config.ts";
 import { writableProfiles } from "./delegate.ts";
 import { commandPath, engineBin } from "./engines/binaries.ts";
 import { profileFault } from "./engines/registry.ts";
@@ -18,7 +18,8 @@ import type { Mode, ModeRole } from "./modes.ts";
 // `cross-agent init --propose` (setup spec, section 2): a look at a project — the engines
 // found as the server finds them, its default branch, its test and setup commands, each with
 // where it came from — and the team rule that proposes each built-in mode from what was
-// found. Nothing here writes: it reads fixed names at the root, never walks the tree and
+// found. Nothing here writes: it reads fixed names at the root, lists the one directory
+// `.project-steward/` and never walks the tree, looks `bd` up on `PATH` without running it,
 // runs no program of the project's, and the only programs it runs are read-only git
 // commands the server's root tools already run.
 
@@ -158,6 +159,48 @@ export function findEngines(config: CrossAgentConfig | null, env: Readonly<NodeJ
   })) as Record<EngineName, EngineFinding>;
 }
 
+/**
+ * The tracker a beads project is proposed: bd's own commands (bd 1.2). `--silent` makes each
+ * create print only the new item's id, as the tracker contract needs, and
+ * `.beads/interactions.jsonl` is the tracked file bd's writes change.
+ */
+const BEADS_TRACKER: RecordsConfig["tracker"] = {
+  ready: ["bd", "ready"],
+  show: ["bd", "show", "{id}"],
+  create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}", "--silent"],
+  file: ["bd", "create", "--title={title}", "--description={text}", "--silent"],
+  epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}", "--silent"],
+  claim: ["bd", "update", "{id}", "--claim"],
+  close: ["bd", "close", "{id}", "--reason={text}"],
+  depend: ["bd", "dep", "add", "{id}", "{on}"],
+  files: [".beads/interactions.jsonl"],
+};
+
+/**
+ * The `records` block a project keeping beads and project-steward is proposed (design section
+ * 6, "The `records` block"), or null: both halves are found or nothing is proposed. The
+ * tracker half is a real `.beads/` holding `config.yaml` or `metadata.json`, and `bd` on
+ * `PATH`, looked up and never run; the files half is every regular `.md` file directly under a
+ * real `.project-steward/` that the path rules admit. A declared path through a symbolic link
+ * proposes nothing, since the server would refuse that config at start.
+ */
+export function detectRecords(root: string, env: Readonly<NodeJS.ProcessEnv>): RecordsConfig | null {
+  if (commandPath("bd", env) === null) return null;
+  if (regularFile(root, ".beads/config.yaml") === null && regularFile(root, ".beads/metadata.json") === null) return null;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(root, ".project-steward"), { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  // A `Dirent` reports a symbolic link as no file.
+  const files = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => `.project-steward/${entry.name}`).filter((file) => recordPathFault(file) === null).sort();
+  if (files.length === 0) return null;
+  const records: RecordsConfig = { files, tracker: structuredClone(BEADS_TRACKER) };
+  return [...records.files, ...records.tracker.files].every((file) => recordPathLink(root, file) === null) ? records : null;
+}
+
 /** The one line a proposal carries when one of its writing roles is on Grok. */
 export const GROK_GIT_NOTE = "Grok's sandbox cannot protect the repository's git files, so cross-agent checks them after each step instead.";
 const NO_ENGINE = "no engine found: install Claude Code, Codex or Grok";
@@ -253,13 +296,16 @@ function writable(role: ModeRole, binding: RoleConfig): RoleConfig {
  * the first engine it may take, in the order Claude, Codex, Grok, whose engine is found; a
  * many-seat role keeps the base's seats whose engine is found, or else the built-in ones. A
  * writing role on an engine without the mode's profile takes the engine's own writable
- * profile, which only Grok needs. The result passes `init --config`'s content checks —
+ * profile, which only Grok needs. A base's own `records` block stands, and the `records`
+ * given fills only a document with none. The result passes `init --config`'s content checks —
  * `checkConfigDocument` and `defaultBranchFault` — or is unavailable with their reason, so
  * `init --config` never refuses an available proposal for what it says.
  */
 export function proposeMode(
   mode: Mode, found: ReadonlySet<EngineName>, project: CrossAgentConfig["project"],
-  options: { base?: CrossAgentConfig; engines?: CrossAgentConfig["engines"]; worktreeBranch?: string | null; modesDir?: string } = {},
+  options: {
+    base?: CrossAgentConfig; engines?: CrossAgentConfig["engines"]; worktreeBranch?: string | null; modesDir?: string; records?: RecordsConfig;
+  } = {},
 ): Proposal {
   const unavailable = (reason: string): Proposal => ({
     mode: mode.id, available: false, reason, document: null, substitutions: [], notes: [], copiedFrom: null,
@@ -325,6 +371,7 @@ export function proposeMode(
     }
     document = { ...structuredClone(base), project: section, roles };
   }
+  if (options.records !== undefined && document.records === undefined) document = { ...document, records: structuredClone(options.records) };
   try {
     checkConfigDocument(JSON.stringify(document), "proposal", options.modesDir ?? builtInModesDir());
   } catch (error) {
@@ -362,7 +409,8 @@ function storedConfig(projectRoot: string, modesDir: string): { raw: unknown; sh
  * checkout holds one the server would load, has that config as the base of its mode's
  * proposal, so it starts as the same team its main checkout runs, as `init` there copies
  * it (`src/cli.ts#initWorktree`); every other proposal is fresh. Engines are looked up with
- * the root's own config where it parses, else that base.
+ * the root's own config where it parses, else that base. The background team's proposal
+ * carries the `records` block `detectRecords` finds, where it finds one.
  */
 export async function propose(
   root: string, repository: ProjectRepository, options: { env: Readonly<NodeJS.ProcessEnv>; modesDir?: string },
@@ -392,11 +440,13 @@ export async function propose(
   const missing = unignored(root, stateEntries(loadMode(modesDir, DEFAULT_MODE)));
   const trackedReason = await trackedStateFault(repository.gitDir, repository.workTree);
   const installed = new Set(engineNames.filter((engine) => engines[engine].found));
+  const records = detectRecords(root, options.env);
   const proposals = PROPOSED_MODES.map((name) => {
     const based = base !== undefined && base.config.mode === name;
     const proposal = proposeMode(loadMode(modesDir, name), installed, project, {
       ...(based ? { base: base!.config } : {}), ...(lookup?.engines === undefined ? {} : { engines: lookup.engines }),
       worktreeBranch: repository.worktree?.branch ?? null, modesDir,
+      ...(name === "dev-team-engine" && records !== null ? { records } : {}),
     });
     return based ? { ...proposal, copiedFrom: base!.file } : proposal;
   });

@@ -77,6 +77,12 @@ The meaning each role shows in a table:
      for `code-reviewer`), with its meaning, engine, model and effort. Then the branch,
      test command, setup command and merge policy: "auto: merge when tests and reviews
      pass" or "manual: you merge".
+   - When the `document` has `records`, show it below the table: each record file under
+     `records.files`; each tracker verb with its command, one line each; and the tracker's
+     own files under `records.tracker.files`. Say that this block gives the background
+     team's lead the `record` and `track` tools, which write these files and run these
+     commands, committing each change at the project root, and that it can be changed or
+     dropped like anything else here.
    - List the substitutions in plain words:
      - a single role: "plan reviewer: Codex not found, using Claude" when
        `engines.<from>.found` is false; "implementer: Grok replaced by Claude, since Grok
@@ -114,8 +120,12 @@ The meaning each role shows in a table:
   before → after. The `lead` is never Grok.
 - **Other changes.** Seats can be added or removed. The test and setup commands are
   strings. The merge policy is `auto` or `manual`.
+- **Records.** A record file or a tracker file can be added or removed, a tracker command
+  changed, or the whole `records` block dropped. The write checks every path and command,
+  and a refusal names the field.
 - **New mode.** Use the new mode's proposal only when it is `available`; otherwise show its
-  `reason` and follow `## Refusals`. Take its `mode` and `roles`. Keep the current
+  `reason` and follow `## Refusals`. Take its `mode` and `roles`, and its `records` block
+  where it has one; where it has none, the config keeps no block. Keep the current
   `project`, `limits`, `review`, `billing` and `engines`. One exception: when the current
   `limits.maxDepth` (1 when the config sets none) is below the proposal's, raise it to the
   proposal's value. Show the raise as its own before → after line: "depth limit 1 → 2: the
@@ -126,6 +136,9 @@ The meaning each role shows in a table:
 - Show the current setup from `existing.config` as the same table.
 - A role the mode declares but the config leaves unbound shows as unbound. Offer the
   proposal's binding for it as a change when that proposal is `available`.
+- Show `records` as First setup step 4 does when the config has a block. When the mode is
+  `dev-team-engine`, the config has no `records`, and that proposal is `available` with
+  one, offer its block as a change.
 - Ask in plain words what to change, apply it through `## Applying a change`, and show
   each change as before → after. Then:
 
@@ -238,9 +251,11 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
 - **Reconnect first** when `reconnect` is true, or when this setup ran `git init`: give the
   host's reconnect step and wait for the user.
 - **Check:** call `describe_mode` and `list_roles`. It is connected when both answer
-  without error, `projectRoot` is `root`, the mode is the one written, and `list_roles`
-  has no `warning`. A `warning` means the server still serves its old mode: give the
-  reconnect step and check again.
+  without error, `projectRoot` is `root`, the mode is the one written, and both answers
+  carry no `warning`. A `list_roles` `warning` means the server still serves its old mode:
+  give the reconnect step and check again. A `describe_mode` `warning` means the server
+  started before the `records` block was added or removed: give the reconnect step and
+  check again too.
 - **Another project or mode** answering with no `warning`: say in plain words which
   `projectRoot` and mode answered, and that the connection is not verified. Under Codex,
   offer the hand-off below, and say that a session started with `CROSS_AGENT_PROJECT`

@@ -63,9 +63,9 @@ config without a block loads and behaves exactly as before.
   "tracker": {
     "ready":  ["bd", "ready"],
     "show":   ["bd", "show", "{id}"],
-    "create": ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
-    "file":   ["bd", "create", "--title={title}", "--description={text}"],
-    "epic":   ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+    "create": ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}", "--silent"],
+    "file":   ["bd", "create", "--title={title}", "--description={text}", "--silent"],
+    "epic":   ["bd", "create", "--type=epic", "--title={title}", "--description={text}", "--silent"],
     "claim":  ["bd", "update", "{id}", "--claim"],
     "close":  ["bd", "close", "{id}", "--reason={text}"],
     "depend": ["bd", "dep", "add", "{id}", "{on}"],
@@ -73,6 +73,15 @@ config without a block loads and behaves exactly as before.
   }
 }
 ```
+
+Setup proposes this block for `dev-team-engine` alone, and only where it finds both
+beads — `.beads/` holding `config.yaml` or `metadata.json`, and `bd` on `PATH` — and
+project-steward: every regular `.md` file directly under `.project-steward/`, never
+`state.json`, `config.toml`, `backend.json` or anything under `runtime/`. `--silent`
+makes each `bd create` print only the new id, and `.beads/interactions.jsonl` is the
+file bd's closes append to. Setup shows the block before it asks whether the proposal
+looks right, and you can change or drop it there; a write that adds or removes the
+block answers `reconnect: true`.
 
 The server reads the block once, when it starts, and registers the `record` and
 `track` tools for your session and an engine lead only where it found one; a

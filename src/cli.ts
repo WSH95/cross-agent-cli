@@ -474,7 +474,8 @@ function namesRoot(env: Readonly<NodeJS.ProcessEnv>, root: string): boolean {
  * config already there is replaced only with `--replace --expect <sha256>` naming its bytes,
  * checked once before `config.lock` and again inside it, and kept as `config.json.prev`
  * (`src/config.ts#replaceConfig`). `reconnect` says whether the server, which reads its mode
- * once at start, now serves another mode than the one written.
+ * once at start, now serves another mode than the one written, or a `records` block come or
+ * gone against the one written, since it registers `record` and `track` once, at start.
  */
 async function initConfigWrite(root: string, repository: ProjectRepository, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): Promise<Answer> {
   const raw = await readStdin();
@@ -528,13 +529,16 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   // root with no config it never started.
   let servedRoot: string | null = null;
   let served: string | null = null;
+  let servedRecords = false;
   let result: InitConfigResult;
   try {
     try {
       const found = await discoverProject([], namesRoot(env, root) ? env : {}, root);
       if ("root" in found) {
         servedRoot = found.root;
-        served = loadConfigWithMode(found.root).mode.id;
+        const bound = loadConfigWithMode(found.root);
+        served = bound.mode.id;
+        servedRecords = bound.config.records !== undefined;
       }
     } catch {
       served = null;
@@ -549,7 +553,7 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
   if (result.stale === true) return coded(changed("another write replaced it, or it was edited, while this one waited or wrote"));
   if (!result.wrote) return coded(exists);
   const mode = checked.config.mode;
-  const reconnect = servedRoot !== root || served !== mode;
+  const reconnect = servedRoot !== root || served !== mode || servedRecords !== (checked.config.records !== undefined);
   const lines = [result.replaced === true
     ? `cross-agent: replaced ${file} for mode ${mode}; the previous config is ${result.previous}`
     : `cross-agent: wrote ${file} for mode ${mode}`];
@@ -558,6 +562,8 @@ async function initConfigWrite(root: string, repository: ProjectRepository, pars
     lines.push(`cross-agent: a server started here found no project before this write; reconnect it to serve ${root} as ${mode}`);
   } else if (servedRoot !== root) {
     lines.push(`cross-agent: a server started here serves ${servedRoot}${served === null ? ", whose config it cannot start on" : ` as ${served}`}; reconnect it to serve ${root} as ${mode}`);
+  } else if (reconnect && served === mode) {
+    lines.push(`cross-agent: the server serves ${mode} ${servedRecords ? "with the records block this write removed" : "without the records block this write added"}; reconnect it to serve the config written`);
   } else if (reconnect) {
     lines.push(`cross-agent: ${served === null ? "the server cannot start on the config this replaced" : `the server serves ${served}`}; reconnect it to serve ${mode}`);
   }

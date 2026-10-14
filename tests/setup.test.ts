@@ -13,6 +13,7 @@ import type { CrossAgentConfig } from "../src/config.ts";
 import type { EngineName } from "../src/engines/types.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
 import type { Mode } from "../src/modes.ts";
+import { projectTools } from "../src/server.ts";
 import * as setup from "../src/setup.ts";
 import { git } from "./helpers/git.ts";
 import { enginePath, mainCheckout } from "./helpers/project.ts";
@@ -455,4 +456,131 @@ test("a base config goes through the same rule and gate", () => {
   const engineBase = based(["grok"], baseConfig("dev-team-engine"));
   assert.equal(engineBase.available, false);
   assert.equal(engineBase.reason, "the background team's lead must be Claude or Codex");
+});
+
+// The `records` block `init --propose` gives the background team (design section 6, "The
+// `records` block"): beads' own commands where `.beads/` and `bd` are found, and
+// project-steward's Markdown files, or nothing.
+
+/** The tracker a beads project is proposed: bd's own commands, each create printing only the new id. */
+const beadsTracker = {
+  ready: ["bd", "ready"],
+  show: ["bd", "show", "{id}"],
+  create: ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}", "--silent"],
+  file: ["bd", "create", "--title={title}", "--description={text}", "--silent"],
+  epic: ["bd", "create", "--type=epic", "--title={title}", "--description={text}", "--silent"],
+  claim: ["bd", "update", "{id}", "--claim"],
+  close: ["bd", "close", "{id}", "--reason={text}"],
+  depend: ["bd", "dep", "add", "{id}", "{on}"],
+  files: [".beads/interactions.jsonl"],
+};
+
+/** Each file under `root`, by its path there, with its text; a directory on the way is made. */
+function lay(root: string, files: Record<string, string>): string {
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    fs.writeFileSync(path.join(root, name), text);
+  }
+  return root;
+}
+
+/** A beads directory and a project-steward one, as a project that keeps both holds them. */
+const beadsAndSteward = {
+  ".beads/config.yaml": "issue-prefix: P\n", ".beads/interactions.jsonl": "",
+  ".project-steward/PROGRESS.md": "# Progress\n", ".project-steward/HANDOFF.md": "# Handoff\n", ".project-steward/DECISIONS.md": "# Decisions\n",
+};
+
+/**
+ * A main checkout keeping beads and project-steward, on a `PATH` holding Claude, Codex and an
+ * executable `bd` that would leave a marker outside the repository if anything ran it.
+ */
+async function recordsProject(t: TestContext): Promise<{ root: string; PATH: string; marker: string }> {
+  const root = lay(await mainCheckout(scratch(t), "P"), beadsAndSteward);
+  const PATH = enginePath(t, ["claude", "codex"]);
+  const marker = path.join(scratch(t), "bd-ran");
+  fs.writeFileSync(path.join(PATH, "bd"), `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
+  fs.chmodSync(path.join(PATH, "bd"), 0o755);
+  return { root, PATH, marker };
+}
+
+// @anchor proposeRecords
+test("proposes records for the background team where it finds beads, bd on PATH and project-steward", async (t) => {
+  const { root, PATH, marker } = await recordsProject(t);
+  const expected = {
+    files: [".project-steward/DECISIONS.md", ".project-steward/HANDOFF.md", ".project-steward/PROGRESS.md"], tracker: beadsTracker,
+  };
+  const proposed = await setup.propose(root, mainRepository(root), { env: { PATH } });
+  const byMode = Object.fromEntries(proposed.proposals.map((proposal) => [proposal.mode, proposal]));
+  const project = { defaultBranch: "main", testCommand: "none", setupCommand: "none", mergePolicy: "auto" };
+  assert.deepEqual(documentOf(byMode["dev-team-engine"]), {
+    ...setup.proposeMode(modes["dev-team-engine"], new Set(["claude", "codex"]), project).document, records: expected,
+  });
+  // Detection never gives the host-placed team or one-off help a block.
+  assert.equal("records" in documentOf(byMode["dev-team"]), false);
+  assert.equal("records" in documentOf(byMode.solo), false);
+  // A beads directory with only `metadata.json` is beads too.
+  fs.rmSync(path.join(root, ".beads", "config.yaml"));
+  fs.writeFileSync(path.join(root, ".beads", "metadata.json"), "{}\n");
+  assert.deepEqual(setup.detectRecords(root, { PATH }), expected);
+  // `bd` is looked up, never run.
+  assert.equal(fs.existsSync(marker), false, "bd ran");
+});
+
+// @anchor proposeNoRecords
+test("proposes no records block where either half is missing", async (t) => {
+  const withBd = { PATH: enginePath(t, ["bd"]) };
+  const withoutBd = { PATH: enginePath(t, ["claude", "codex"]) };
+  const steward = { ".project-steward/HANDOFF.md": "# Handoff\n" };
+  const beads = { ".beads/config.yaml": "issue-prefix: P\n" };
+  assert.notEqual(setup.detectRecords(lay(scratch(t), { ...beads, ...steward }), withBd), null, "a complete project proposes a block");
+  const linkedTo = (name: string, files: Record<string, string>): string => {
+    const real = lay(scratch(t), files);
+    const root = scratch(t);
+    fs.symlinkSync(path.join(real, name), path.join(root, name), "dir");
+    return root;
+  };
+  const cases: Array<[string, string, NodeJS.ProcessEnv]> = [
+    ["no .beads/", lay(scratch(t), steward), withBd],
+    [".beads/ holding only README.md", lay(scratch(t), { ".beads/README.md": "beads\n", ...steward }), withBd],
+    ["no bd on PATH", lay(scratch(t), { ...beads, ...steward }), withoutBd],
+    ["no .project-steward/", lay(scratch(t), beads), withBd],
+    [".project-steward/ with only its state, config and backend", lay(scratch(t), {
+      ...beads, ".project-steward/state.json": "{}\n", ".project-steward/config.toml": "", ".project-steward/backend.json": "{}\n",
+    }), withBd],
+    [".beads a symbolic link", lay(linkedTo(".beads", beads), steward), withBd],
+    [".project-steward a symbolic link", lay(linkedTo(".project-steward", steward), beads), withBd],
+  ];
+  for (const [what, root, env] of cases) assert.equal(setup.detectRecords(root, env), null, what);
+
+  // Without bd the background team is still proposed, with no block.
+  const root = lay(await mainCheckout(scratch(t), "P"), { ...beads, ...steward });
+  const engine = (await setup.propose(root, mainRepository(root), { env: withoutBd })).proposals.find((proposal) => proposal.mode === "dev-team-engine")!;
+  assert.equal("records" in documentOf(engine), false);
+});
+
+// @anchor proposeRecordsStewardState
+test("never proposes the steward's state, config, backend or runtime", async (t) => {
+  const root = lay(scratch(t), {
+    ".beads/config.yaml": "issue-prefix: P\n",
+    ".project-steward/HANDOFF.md": "# Handoff\n", ".project-steward/state.json": "{}\n", ".project-steward/config.toml": "",
+    ".project-steward/backend.json": "{}\n", ".project-steward/runtime/NOTES.md": "# Notes\n",
+    ".project-steward/my notes.md": "outside the path alphabet\n", ".project-steward/AGENTS.md": "an instruction file\n",
+  });
+  fs.mkdirSync(path.join(root, ".project-steward", "notes.md"));
+  fs.symlinkSync("HANDOFF.md", path.join(root, ".project-steward", "LINK.md"));
+  assert.deepEqual(setup.detectRecords(root, { PATH: enginePath(t, ["bd"]) })?.files, [".project-steward/HANDOFF.md"]);
+});
+
+// @anchor proposedRecordsRegister
+test("the proposed block passes init --config's checks and registers both tools", async (t) => {
+  const { root, PATH } = await recordsProject(t);
+  const proposed = (await setup.propose(root, mainRepository(root), { env: { PATH } })).proposals.find((proposal) => proposal.mode === "dev-team-engine")!;
+  const document = documentOf(proposed);
+  assert.equal(config.checkConfigDocument(JSON.stringify(document), "proposal").mode.id, "dev-team-engine");
+  fs.mkdirSync(path.join(root, ".cross-agent"));
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify(document));
+  const loaded = loadConfigWithMode(root);
+  assert.deepEqual(loaded.config.records, document.records);
+  const names = projectTools(root, { mode: loaded.mode, records: loaded.config.records }).map((tool) => tool.name);
+  for (const name of ["record", "track"]) assert.ok(names.includes(name), `${name} is registered: ${names.join(", ")}`);
 });

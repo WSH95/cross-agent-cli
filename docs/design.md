@@ -3144,21 +3144,21 @@ alone (`tests/records.test.ts#trackTimeout`). After `locateRepository` and
 and before a commit lands commits nothing and writes no step, names what the root
 shows and leaves it in place; the only thing `track` undoes is its own staging, reset
 when a commit fails, git's output then under `git` so that `exitCode` is always the
-tracker's (`#trackHookRefusal`). A commit that lands stands and is journaled, verified
-or not, as `record`'s does: one whose verification found a problem is answered `ok:
-false` with the commit and its step. A refusal may so
-leave the root unclean, and a later `record` or `track` write is then refused by its
-own clean-root check until the operator commits or removes the change; an earlier
-failure refuses nothing by itself, and a tracker that committed for itself and left
-the root clean blocks nothing. A writing verb holds `git.lock` for up to 120 s plus
-the commit's hooks, while the project's other git tools wait `lockWaitSeconds` and
-refuse; the run calls it between tasks, and a refused call can be retried. Two limits
-are stated rather than solved. A server that dies while the tracker runs (P3): the
-tracker, a plain child, ends with a kill of the server's group, and otherwise
-exclusion is not guaranteed, and the next write's clean-root check, its verification
-or the operator's reconciliation shows what it left. And a tracker that starts a
-background process holding its output is reported as timed out at 120 s; that process
-is the tracker's own and is not killed.
+tracker's (`#trackHookRefusal`). A refusal may so leave the root unclean, and a later
+`record` or `track` write is then refused by its own clean-root check until the
+operator commits or removes the change; an earlier failure refuses nothing by itself,
+and a tracker that committed for itself and left the root clean blocks nothing. A
+commit that lands stands and is journaled, verified or not, as `record`'s does: one
+whose verification found a problem is answered `ok: false` with the commit and its
+step. A writing verb holds `git.lock` for up to 120 s plus the commit's hooks, while
+the project's other git tools wait `lockWaitSeconds` and refuse; the run calls it
+between tasks, and a refused call can be retried. Two limits are stated rather than
+solved. A server that dies while the tracker runs (P3): the tracker, a plain child,
+ends with a kill of the server's group, and otherwise exclusion is not guaranteed,
+and the next write's clean-root check, its verification or the operator's
+reconciliation shows what it left. And a tracker that starts a background process
+holding its output is reported as timed out at 120 s; that process is the tracker's
+own and is not killed.
 
 ### 5. Loop guard
 
@@ -3424,7 +3424,8 @@ engine without editing a portable mode.
 and `tracker`, the tracker's commands, one template per verb, with `files`, the
 files its writes change (`src/config.ts#RecordsConfig`). Any other shape is refused
 at load, naming the missing half (`tests/config.test.ts#recordsBothHalves`). It loads
-under any mode.
+under any mode. Setup proposes it for `dev-team-engine` alone, where it finds both
+halves (section 10).
 
 ```json
 "records": {
@@ -3432,9 +3433,9 @@ under any mode.
   "tracker": {
     "ready":  ["bd", "ready"],
     "show":   ["bd", "show", "{id}"],
-    "create": ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}"],
-    "file":   ["bd", "create", "--title={title}", "--description={text}"],
-    "epic":   ["bd", "create", "--type=epic", "--title={title}", "--description={text}"],
+    "create": ["bd", "create", "--title={title}", "--description={text}", "--parent={parent}", "--silent"],
+    "file":   ["bd", "create", "--title={title}", "--description={text}", "--silent"],
+    "epic":   ["bd", "create", "--type=epic", "--title={title}", "--description={text}", "--silent"],
     "claim":  ["bd", "update", "{id}", "--claim"],
     "close":  ["bd", "close", "{id}", "--reason={text}"],
     "depend": ["bd", "dep", "add", "{id}", "{on}"],
@@ -3487,7 +3488,9 @@ no tool list changes (`tests/config.test.ts#recordsLoadAsBefore`).
 The block the server started with is what registers `record` and `track` (section
 1). A block removed since makes both refuse, and one added since is a `warning` in
 `describe_mode`, each naming the restart (`src/config.ts#recordsDrift`,
-`tests/server.test.ts#recordsDriftRestart`). `describe_mode` answers `records:
+`tests/server.test.ts#recordsDriftRestart`). So `init --config` answers `reconnect:
+true` when the block written comes or goes against the one the server serves
+(`tests/cli.test.ts#initConfigReconnectRecords`). `describe_mode` answers `records:
 {files, tracker: {verbs: {<verb>: {argv, writes}}, files}}`, each configured verb in
 the table's order, only where the config has a block
 (`tests/server.test.ts#describeModeRecords`). `track` runs the tracker's verbs, with the
@@ -3526,7 +3529,10 @@ its setup. It runs the plugin's own CLI by its path from the skill's directory,
 for a change. It asks through each host's question tool — or, when that tool fails or the
 session cannot take an answer, in chat as numbered choices, ending its turn — gives each
 refusal code its next step (`tests/skills.test.ts#setupRefusalCodes`), and after a first
-setup or a reconnect checks the connection with `describe_mode` and `list_roles`.
+setup or a reconnect checks the connection with `describe_mode` and `list_roles`. It
+shows a proposal's `records` before it asks, and its connection check reads
+`describe_mode`'s `warning` (`tests/skills.test.ts#setupShowsRecords`,
+`#setupChecksRecordsWarning`).
 
 **After a `worktree: true` task settles, the launcher applies
 `project.mergePolicy` — nobody merges by hand under `auto`.** First it commits
@@ -4233,7 +4239,16 @@ handler passes:
   profile and with a note that cross-agent checks Grok's git files after each step, and any
   other role any engine (`tests/setup.test.ts#teamGrokOnly`, `#teamEverySubset`). Each
   proposal then passes `--config`'s own content checks or is unavailable with their reason,
-  so `--config` never refuses an available proposal for what it says. At a branch
+  so `--config` never refuses an available proposal for what it says. The `dev-team-engine`
+  proposal alone carries a `records` block, and only where both halves are found: beads, a
+  real `.beads/` holding `config.yaml` or `metadata.json` with `bd` on `PATH`, looked up
+  and never run, proposes bd's own commands, each create with `--silent` so that it prints
+  only the new id, and `.beads/interactions.jsonl` as the tracker's file; project-steward
+  proposes every regular `.md` file directly under a real `.project-steward/` that the path
+  rules admit, never its `state.json`, `config.toml`, `backend.json` or `runtime/`; and a
+  declared path through a symbolic link proposes nothing (`src/setup.ts#detectRecords`,
+  `tests/setup.test.ts#proposeRecords`, `#proposeNoRecords`, `#proposeRecordsStewardState`,
+  `#proposedRecordsRegister`). At a branch
   worktree the default branch is its own, as `init` makes it, and a first setup there builds
   its main checkout's mode on that checkout's config, through the same rule and gate, as
   `init` copies it (`src/setup.ts#propose`, `tests/cli.test.ts#initProposeWorktree`,
@@ -4282,8 +4297,10 @@ handler passes:
   discovery runs with it, and a first setup there reports null, because a server bound to a
   root with no config never started; a variable naming anything else is not read.
   `reconnect` is whether that project is another than the
-  root or its mode another than the mode written (`tests/cli.test.ts#initConfigWrite`,
-  `#initConfigReconnect`, `#initConfigReconnectBound`, `#initProposeFromMain`).
+  root or its mode another than the mode written, or its config's `records` presence
+  another than the written config's (`tests/cli.test.ts#initConfigWrite`,
+  `#initConfigReconnect`, `#initConfigReconnectBound`, `#initConfigReconnectRecords`,
+  `#initProposeFromMain`).
   It writes the `.gitignore` entries `init` writes, and copies no Grok attach.
 - `cross-agent modes` lists every built-in mode as the loader reads it, with its
   roles, and marks the one the config names — the read `describe_mode` makes
@@ -4731,7 +4748,7 @@ registered by the mode that declares the worktree provider.
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). **Grok done** (T15, from `f4d6647`): no manifest of its own — a project's `.grok/config.toml` names the checkout under `[plugins]` and raises `[mcp] max_output_bytes`, and Grok reads the Claude manifest, skill and inline server alike (section 9, `docs/probes.md#t15Attach`); I1 and I2 under a Grok host, its read-only row at the root, a deny rule on this server's tools, the ten-minute `wait`, the hop counts and the worktree mount (`docs/probes.md#i1GrokHost` and the sections after it); E6 under host placement and E7 under engine placement (`docs/probes.md#e6`, `#e7`). |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
-| 15 | The engine lead owns the backlog and the records | `atc-2jl.1`, `.2` | **Tasks 1 and 2 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Task 2: `track`, the configured tracker commands run at the root with no shell, a reading verb under `git.lock` alone and a writing verb on the same procedure, sharing its steps with `record` (`src/records.ts#track`, `#rootReady`, `#landCommit`), killed at 120 s, and registered beside `record`; with it, a landed commit that could not be verified is told apart from one that is not the call's paths alone. Tasks 3 and 4 are not built: setup proposing the block, and the lead's run in `dev-team-engine`'s loop. |
+| 15 | The engine lead owns the backlog and the records | `atc-2jl.1`, `.2`, `.3` | **Tasks 1, 2 and 3 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Task 2: `track`, the configured tracker commands run at the root with no shell, a reading verb under `git.lock` alone and a writing verb on the same procedure, sharing its steps with `record` (`src/records.ts#track`, `#rootReady`, `#landCommit`), killed at 120 s, and registered beside `record`; with it, a landed commit that could not be verified is told apart from one that is not the call's paths alone. Task 3: setup proposing the block for `dev-team-engine` where it finds beads and project-steward, shown before the user confirms, and `reconnect` when a write adds or removes it (`src/setup.ts#detectRecords`). Task 4 is not built: the lead's run in `dev-team-engine`'s loop. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
 Integration probes after each packaging task, run by the operator:

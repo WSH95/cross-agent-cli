@@ -61,8 +61,9 @@ Shipped:
   optional `records` block, its tracker verb table and path rules.
 - `src/setup.ts`: `init --propose`'s look at a project — the engines found as
   the server finds them, the default branch, the test and setup commands, each
-  with where it came from — and the team rule that proposes each built-in mode
-  from them.
+  with where it came from, and, for the background team, a `records` block
+  where beads and project-steward are both found — and the team rule that
+  proposes each built-in mode from them.
 - `src/modes.ts`: the mode loader, `describe_mode`'s payload, the built-in
   `consult` role, and `builtInModesDir`.
 - `src/cli.ts`: the operator CLI — `init`, `modes`, `tasks`, `show`, `log`,

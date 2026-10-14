@@ -1550,6 +1550,35 @@ test("after a first setup or a reconnect the setup skill checks describe_mode an
   }
 });
 
+// @anchor setupShowsRecords
+test("the setup skill shows the records block before it asks", () => {
+  // The background team's proposal may carry a `records` block (`src/setup.ts#detectRecords`):
+  // the user sees every file and command it names before the write, and can change or drop it.
+  const text = setupSkill();
+  const asked = questions(text).find((each) => each.question === "Does this look right?");
+  assert.ok(asked !== undefined, "First setup asks about the proposal");
+  const unit = flat(asked.unit);
+  for (const pin of ["the `document` has `records`, show it below the table", "`records.files`", "each tracker verb with its command",
+    "`records.tracker.files`", "`record` and `track` tools"]) {
+    assert.ok(unit.includes(pin), `the proposal's message: ${pin}`);
+  }
+  assertInOrder(sectionOf(text, "First setup"), ["`records`", "*Looks right*", "--config -"], "First setup");
+  const applying = flat(sectionOf(text, "Applying a change"));
+  assert.ok(applying.includes("whole `records` block dropped"), "a change may drop the block");
+  const mode = /\*\*New mode\.\*\*[^*]*/.exec(applying);
+  assert.ok(mode !== null && mode[0].includes("its `records` block where it has one"), "a new mode takes its proposal's block");
+  assert.match(flat(sectionOf(text, "Later changes")), /config has no `records`[^.]*offer its block as a change/);
+});
+
+// @anchor setupChecksRecordsWarning
+test("the setup skill's connection check reads describe_mode's records warning", () => {
+  // A server started before the block came or went carries a `warning` in `describe_mode`
+  // (`src/config.ts#recordsDrift`), with the mode and the root both as written.
+  const section = flat(sectionOf(setupSkill(), "Connection check"));
+  assert.ok(section.includes("both answers carry no `warning`"), "the check reads both answers' warnings");
+  assert.match(section, /A `describe_mode` `warning` means[^.]*`records` block was added or removed: give the reconnect step/);
+});
+
 test("a change keeps what the user did not ask to change, and a mode change raises limits.maxDepth to the new mode's need, shown before → after", () => {
   const section = flat(sectionOf(setupSkill(), "Applying a change"));
   for (const pin of [/[Kk]eep the current `project`, `limits`, `review`, `billing` and `engines`/, /`limits\.maxDepth`/,

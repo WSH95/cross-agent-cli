@@ -237,7 +237,7 @@ export function loadConfig(projectRoot: string): CrossAgentConfig {
  * never names outside the root; `.git`, the project's own `.cross-agent/`, a host's project
  * configuration and the instruction files a host reads are never a record.
  */
-function recordPathFault(file: string): string | null {
+export function recordPathFault(file: string): string | null {
   const named = JSON.stringify(file);
   const segments = file.split("/");
   if (!segments.every((segment) => /^[A-Za-z0-9._-]+$/.test(segment))) {
