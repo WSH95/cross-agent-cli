@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T03:59:58Z
+updated_at: 2026-10-14T05:43:17Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -24,8 +24,8 @@ outside its sandbox (cross-agent now installed in the user's Codex; MCP hand-off
 discovers `/setup` but in single-turn headless mode wrote and committed without the user's answer.
 
 **`atc-s96.141` is merged (`bebd8f1`):** the setup skill now waits for the user's own answer and,
-where it cannot ask, asks in chat and ends its turn. **Release 0.1.5 (`atc-s96.142`) is prepared and
-committed locally; pushing `main` and publishing the agent-plugins PR wait for the user's OK.** Then the
+where it cannot ask, asks in chat and ends its turn. **Release 0.1.5 (`atc-s96.142`) is published:
+`main` pushed at `fccfae9`; https://github.com/WSH95/agent-plugins/pull/20 awaits the user's merge.** Then the
 live re-check on Grok, Claude Code and Codex, and close `atc-s96.134`.
 
 **Next steps after that:** follow-ups `atc-s96.135`, `.139` (flaky tests), `.136`, `.137`, `.138`.

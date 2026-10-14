@@ -15,6 +15,17 @@ is the setup skill's consent rule (`atc-s96.141`). After the bump:
   tests/publish.test.ts tests/codex-native.test.ts` passed 33 tests, none skipped;
 - `npm test` at the root ran 1118 tests: 1116 pass, 0 fail, 2 guarded skips.
 
+The frozen source release is `fccfae9`. It was pushed to `main` as a fast-forward from
+`6e46507`.
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/20 on
+`publish/cross-agent-plugin/20261014054254`. It holds 7 files:
+- the marketplace version;
+- in both payloads, the plugin manifest, `package.json` and `skills/setup/SKILL.md`.
+
+The target's `cross-agent/` equals the frozen dist (`diff -r`). `claude plugin validate`
+passes for the marketplace and, with `--strict`, for the plugin. No merge was performed.
+
 ## The setup skill waits for the user's own answer — `atc-s96.141` (2026-10-14)
 
 The defect came from the 0.1.4 live check:
