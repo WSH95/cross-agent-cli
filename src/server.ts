@@ -13,8 +13,8 @@ import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest } from "./gitmutate.ts";
 import { gitRoot } from "./gitroot.ts";
 import type { GitRootRequest } from "./gitroot.ts";
-import { record } from "./records.ts";
-import type { RecordChange, RecordRequest } from "./records.ts";
+import { record, track } from "./records.ts";
+import type { RecordChange, RecordRequest, TrackRequest } from "./records.ts";
 import { maxTimeoutSeconds, runCommand } from "./runcommand.ts";
 import type { RunCommandRequest } from "./runcommand.ts";
 import { waiveReview } from "./review.ts";
@@ -284,8 +284,8 @@ export interface ToolOptions {
   /** The active mode, loaded once by whoever starts the server: it decides what registers. */
   mode: Mode;
   /**
-   * The `records` block of the config this server started with: `record` registers only
-   * with one, and a block added or removed since is a restart (`recordsDriftFault`).
+   * The `records` block of the config this server started with: `record` and `track` register
+   * only with one, and a block added or removed since is a restart (`recordsDriftFault`).
    */
   records?: RecordsConfig;
 }
@@ -587,6 +587,19 @@ function recordRequest(args: Json): RecordRequest {
   return { changes, message: requiredString(args, "message", "record") };
 }
 
+/**
+ * The `track` request as the wire spells it: a verb, and each value a string where it is
+ * present. Which verb, which values it takes and what each may hold are `track`'s to judge.
+ */
+function trackRequest(args: Json): TrackRequest {
+  const request: TrackRequest = { verb: requiredString(args, "verb", "track") };
+  for (const key of ["id", "parent", "on", "title", "text", "message"] as const) {
+    const value = optional(args, key, "string", "track") as string | undefined;
+    if (value !== undefined) request[key] = value;
+  }
+  return request;
+}
+
 /** `describe_mode`'s `records`: the record files, and each configured verb, in the table's order, with whether it writes. */
 function describeRecords(records: RecordsConfig): Json {
   const verbs = (Object.keys(trackerVerbs) as TrackerVerb[]).filter((verb) => records.tracker[verb] !== undefined);
@@ -600,10 +613,10 @@ function describeRecords(records: RecordsConfig): Json {
 }
 
 /**
- * `record`, registered only where the config this server started with has a `records` block
- * (design section 1), for the operator and the lead. A lead's commits are journaled under its
- * chain's first record, so a resumed lead continues the run journal it began; the operator's
- * under `operator`.
+ * `record` and `track`, registered only where the config this server started with has a
+ * `records` block (design section 1), for the operator and the lead. A lead's commits are
+ * journaled under its chain's first record, so a resumed lead continues the run journal it
+ * began; the operator's under `operator`.
  */
 function recordTools(projectRoot: string, mode: Mode, modesDir: string): ToolDefinition[] {
   return [
@@ -636,6 +649,30 @@ function recordTools(projectRoot: string, mode: Mode, modesDir: string): ToolDef
         const run = context.authority.row === "operator" ? "operator" : callerLineage(projectRoot, context.authority).at(-1);
         if (run === undefined) return answer({ ok: false, reason: "record needs the task this lead runs as, and this call resolved none" });
         return answer(await record(projectRoot, request, { waitSeconds: lockWaitSeconds(projectRoot), run, modesDir }));
+      },
+    },
+    {
+      name: "track",
+      description: "Run one of the project's configured tracker commands (records.tracker) at the project root, with no shell: its argument list as the config writes it, each placeholder filled whole from this call. ready and show read: they take no message, run under git.lock alone, commit nothing, and are refused if the tracker moved HEAD or changed what the root shows. create, file, epic, claim, close and depend write: they need message, the commit message; the root must be wholly clean first, the tracker runs under git.lock and the repository lock, and the files it changed are committed at the root on the default branch, or the call journaled with no commit where it changed none, in .cross-agent/runs/<run>.json. A write is refused, committing nothing and leaving the tracker's change in place, if the tracker moved HEAD, failed, or changed a file outside records.tracker.files. Every placeholder a verb takes is required and no other is accepted: id, parent and on are ids (a letter or digit, then letters, digits, '.', '_' or '-'); title is one line of at most 256 bytes; text is at most 64 KiB; neither holds a NUL. The tracker is killed after 120 seconds; the answer carries its exit code and the last 64 KiB of its output.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          verb: { type: "string", enum: Object.keys(trackerVerbs) },
+          id: { type: "string" }, parent: { type: "string" }, on: { type: "string" },
+          title: { type: "string" }, text: { type: "string" }, message: { type: "string" },
+        },
+        required: ["verb"],
+      },
+      rows: ["operator", "lead"],
+      handler: async (args, context) => {
+        const request = trackRequest(fields(args, "track"));
+        const drift = driftFault(projectRoot, mode) ?? recordsDriftFault(projectRoot, true);
+        if (drift !== null) return answer({ ok: false, reason: drift });
+        const run = context.authority.row === "operator" ? "operator" : callerLineage(projectRoot, context.authority).at(-1);
+        if (run === undefined) return answer({ ok: false, reason: "track needs the task this lead runs as, and this call resolved none" });
+        return answer(await track(projectRoot, request, {
+          waitSeconds: lockWaitSeconds(projectRoot), run, modesDir, depth: context.authority.depth,
+        }));
       },
     },
   ];
@@ -832,7 +869,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     ...worktreeTools(projectRoot, mode),
     // The mailbox exists where a lead runs in an engine and nowhere else.
     ...(mode.lead.placement === "engine" ? mailboxTools(projectRoot) : []),
-    // `record` exists where the config this server started with keeps records.
+    // `record` and `track` exist where the config this server started with keeps records.
     ...(options.records === undefined ? [] : recordTools(projectRoot, mode, modesDir)),
   ];
 }

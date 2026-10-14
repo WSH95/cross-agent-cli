@@ -1407,10 +1407,10 @@ test("a records block registers record for operator and lead; none registers not
     return (((await request("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name);
   };
   const specialist = ["describe_mode", "list_roles", "check", "result", "list_tasks"];
-  assert.deepEqual(await names(devTeamEngine, "operator", records), [...thirteen, "list_asks", "answer", "record"]);
-  assert.deepEqual(await names(devTeamEngine, "lead", records), [...thirteen, "ask", "list_asks", "record"]);
+  assert.deepEqual(await names(devTeamEngine, "operator", records), [...thirteen, "list_asks", "answer", "record", "track"]);
+  assert.deepEqual(await names(devTeamEngine, "lead", records), [...thirteen, "ask", "list_asks", "record", "track"]);
   assert.deepEqual(await names(devTeamEngine, "specialist", records), specialist);
-  for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(devTeam, row, records), [...thirteen, "record"], row);
+  for (const row of ["operator", "lead"] as const) assert.deepEqual(await names(devTeam, row, records), [...thirteen, "record", "track"], row);
   // Without the block, every list is today's.
   assert.deepEqual(await names(devTeamEngine, "operator"), [...thirteen, "list_asks", "answer"]);
   assert.deepEqual(await names(devTeamEngine, "lead"), [...thirteen, "ask", "list_asks"]);
@@ -1492,6 +1492,56 @@ test("record's arguments are checked as the wire spells them, before anything is
   // A well-formed read is the tool's to answer: a declared file nothing has written yet.
   assert.deepEqual(payload(await request("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } })),
     { body: { ok: true, path: ".project-steward/HANDOFF.md", exists: false }, isError: false });
+});
+
+// @anchor trackRows
+test("a records block registers track beside record for operator and lead; a specialist's call is refused by name", async (t) => {
+  const root = await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 }, records });
+  const server = (row: Authority["row"], served?: typeof records, reason = "test") =>
+    inProcess({ tools: projectTools(root, { mode: devTeamEngine, ...(served === undefined ? {} : { records: served }) }), authority: () => ({ row, reason, depth: 0 }) });
+  for (const row of ["operator", "lead"] as const) {
+    const names = ((((await server(row, records)("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name));
+    assert.deepEqual(names.slice(-2), ["record", "track"], row);
+  }
+  // A specialist is refused by this server's own name for the tool, reading or writing.
+  const reason = "specialist by ancestry: task S (implementer, running)";
+  for (const args of [{ verb: "ready" }, { verb: "claim", id: "X-1", message: "m" }]) {
+    const reply = await server("specialist", records, reason)("tools/call", { name: "track", arguments: args });
+    assert.deepEqual(reply.error, { code: -32602, message: `track is not available to a specialist server: ${reason}` });
+  }
+  // Without the block, there is no track.
+  assert.deepEqual((await server("operator")("tools/call", { name: "track", arguments: { verb: "ready" } })).error,
+    { code: -32602, message: "unknown tool: track" });
+
+  // Served with the block, and the config has since lost it: track refuses, naming a restart.
+  const removed = await projectWithConfig(t, { roles: {} });
+  const served = inProcess({ tools: projectTools(removed, { mode: devTeam, records }), authority: () => operator });
+  const refused = payload(await served("tools/call", { name: "track", arguments: { verb: "ready" } }));
+  assert.equal(refused.isError, true);
+  assert.match(refused.body.reason as string, /records was removed from \.cross-agent\/config\.json after this server started; restart the server/);
+  // Served without it, and the config has since gained one: the warning names both tools.
+  const added = await projectWithConfig(t, { roles: {}, records });
+  const unserved = inProcess({ tools: projectTools(added, { mode: devTeam }), authority: () => operator });
+  assert.match(payload(await unserved("tools/call", { name: "describe_mode", arguments: {} })).body.warning as string, /restart the server to serve record and track$/);
+});
+
+test("track's arguments are checked as the wire spells them, before anything runs", async (t) => {
+  const root = await projectWithConfig(t, { roles: {}, records });
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam, records }), authority: () => operator });
+  for (const args of [
+    [], "ready", 5, {}, { verb: "" }, { verb: 5 }, { verb: "show", id: 5 }, { verb: "show", id: null },
+    { verb: "create", title: "t", text: "x", parent: 5, message: "m" }, { verb: "depend", id: "X-1", on: 5, message: "m" },
+    { verb: "file", title: 5, text: "x", message: "m" }, { verb: "close", id: "X-1", text: 5, message: "m" }, { verb: "claim", id: "X-1", message: 5 },
+  ]) {
+    assert.equal(((await request("tools/call", { name: "track", arguments: args })).error as Json)?.code, -32602, JSON.stringify(args));
+  }
+  // A well-formed call is the tool's to answer: here, an id the tracker could not be handed.
+  const answered = await request("tools/call", { name: "track", arguments: { verb: "claim", id: "-X-1", message: "m" } });
+  assert.equal(answered.error, undefined);
+  const { body, isError } = payload(answered);
+  assert.equal(isError, true);
+  assert.equal(body.ok, false);
+  assert.match(body.reason as string, /\{id\}/);
 });
 
 // @anchor serverRegistersRecord

@@ -275,7 +275,7 @@ project.
 | `ask` | — | yes | no |
 | `list_asks` | yes | own asks | no |
 | `answer` | yes | no | no |
-| `record` (only with a records block) | yes | yes | no |
+| `record`, `track` (only with a records block) | yes | yes | no |
 
 A refused tool is refused at **`tools/call` by name**, not merely omitted from
 `tools/list`. Each tool carries the rows it is offered to
@@ -724,6 +724,7 @@ engine`; **records** only where the config the server started with has a
 | `list_asks` | optional `status` | the asks of the lead's own lineage; every ask for the operator | engine lead |
 | `answer` | `ask_id`, `text` | the operator's reply; the first one wins, and it is persisted, so it survives a killed lead | engine lead |
 | `record` | `path`; or `changes[]` of `{path, mode: "replace" \| "append", text, expect}` and `message` | reads a declared record file, with its `sha256`, up to 1 MiB; or writes a batch of them, checked whole before the first write, and commits the batch's files that changed, and nothing outside the batch, at the root under `git.lock` and the repository lock, journaled in `.cross-agent/runs/<run>.json` (section 4) | records |
+| `track` | `verb`, the placeholders that verb takes (`id`, `parent`, `on`, `title`, `text`), and `message` for a verb that writes | runs the configured tracker command for the verb at the root with no shell, its placeholders filled from the call, and answers its exit code and the last 64 KiB of its output; a reading verb under `git.lock` alone, committing nothing; a writing verb on the root commit procedure under `git.lock` and the repository lock, committing only `tracker.files` and journaling a `tracked` step, with a commit or without one (section 4) | records |
 
 Statuses: `launching`, `running`, `stalled` (running, no engine event for
 `stallMinutes`), `orphaned` (engine alive, runner dead), `cancelling`,
@@ -737,10 +738,11 @@ and lead rows, and `verify_worktree`, `git_mutate`, `git_root`, `run_command` an
 `placement: engine` the mailbox's three more: `ask` for the lead, `list_asks` for
 both rows and `answer` for the operator, fifteen tools for each of those rows and
 still five for a specialist (`src/server.ts#mailboxTools`). Where the config the
-server started with has a `records` block, `record` is registered last, for the
-operator and lead rows, and every list without one is unchanged; a block removed
-since makes `record` refuse, naming a restart, and one added since is a `warning`
-in `describe_mode` (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). `waive_review` is
+server started with has a `records` block, `record` and then `track` are registered
+last, for the operator and lead rows, and every list without one is unchanged; a
+block removed since makes both refuse, naming a restart, and one added since is a
+`warning` in `describe_mode` (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`,
+`tests/server.test.ts#trackRows`). `waive_review` is
 offered to the lead row and holds it to its own rule inside
 (`src/review.ts#waiveReview`), as `wait` and `cancel` hold the lead to its
 children. The
@@ -890,7 +892,7 @@ Everything below is built, the operator CLI's listing among it
   setup command is running, naming the command's process group
   (`src/review.ts#markSetup`). No task works under either, because no task works
   anywhere under `.cross-agent/` (`src/worktree.ts#notProjectState`, section 4).
-  `runs/` holds the run journals `record` writes, one per run (section 7), and
+  `runs/` holds the run journals `record` and `track` write, one per run (section 7), and
   `tmp/` the temporaries a record file is written to before it is renamed into
   place (`src/records.ts#record`); git ignores both with the rest of the directory.
 - Launch protocol: `delegate` creates the record as `launching` with a
@@ -1362,9 +1364,9 @@ Everything below is built, the operator CLI's listing among it
   (`src/locks.ts#runnerLockName`); `ask-<id>.lock` around each write to one ask,
   an answer or a cancel ("The lead model", item 3; `src/locks.ts#askLockName`);
   `git.lock` around every lead git
-  mutation, taken by `git_mutate` inside its `spawn.lock`, and by `record` with no
-  `spawn.lock` at all (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`,
-  `src/records.ts#record`); and `config.lock` around
+  mutation, taken by `git_mutate` inside its `spawn.lock`, and by `record` and
+  `track` with no `spawn.lock` at all (`src/locks.ts#gitLockName`, `src/gitmutate.ts#mutate`,
+  `src/records.ts#record`, `#track`); and `config.lock` around
   `init --config`'s write of the project's config, a creation or a replacement, taken
   alone, with no other lock held (`src/locks.ts#configLockName`, `src/cli.ts#initVerb`;
   section 10). The config's readers take none: a replacement is one `rename`. All six
@@ -1378,13 +1380,14 @@ Everything below is built, the operator CLI's listing among it
   with `acquire` directly and innermost: the order is `spawn.lock` → `git.lock` →
   the repository lock, and no project lock is taken while it is held. Every
   `git_mutate`, `git_root`'s journaled verbs and `rebase --abort`, `delegate`'s
-  discard of a one-shot that never launched, and `record`'s write form hold it; a
-  read holds none
+  discard of a one-shot that never launched, `record`'s write form and `track`'s
+  writing verbs hold it; a read holds none, and `track`'s reading verbs hold
+  `git.lock` alone
   (`src/gitmutate.ts#mutate`, `src/gitroot.ts#gitRoot`, `src/delegate.ts#discardWorktree`,
-  `src/records.ts#record`,
+  `src/records.ts#record`, `#track`,
   `tests/gitmutate.test.ts#repositoryLockOrder`, `#repositoryLockContention`,
   `#repositoryLockReleasedOnError`, `tests/gitroot.test.ts#rebaseAbortTakesRepositoryLock`,
-  `tests/records.test.ts#recordWaitsForRepositoryLock`).
+  `tests/records.test.ts#recordWaitsForRepositoryLock`, `#trackReadVerb`).
   Its loss is reported as a project lock's is, as `lockLost: true`
   (`tests/gitmutate.test.ts#lockLostWhile`). **One helper, one waiting rule**: every
   waiter blocks up to `lockWaitSeconds` and then refuses, naming the operation. The key is in config and validated — a
@@ -3078,11 +3081,17 @@ removes a file it created, and the answer carries git's output
 (`#recordHookRefusalRestores`). Once it has moved, nothing is undone, whatever the
 commit call returned: the commit is verified — `diff-tree -r --name-only <before>
 <after>` lists only those entries, and `uncommitted()` is empty — and journaled with
-`verified` and any `problems`, a check git could not run at all being one more; a
-commit whose verification finds one answers `ok: false` naming it, with the commit,
-and is left as it landed (`#recordHookAddedPath`, `#recordVerificationThrows`). A
+`verified` and any `problems`, a check that could not run — a git that cannot run at
+all, a `diff-tree` that exits non-zero, an `uncommitted()` that cannot be read — being
+one more. A commit with a problem answers `ok: false` naming them, with the commit,
+and is left as it landed: "commit `<after>` landed, but it is not exactly the call's
+paths" where a path in the commit is not the call's or an entry is left at the root,
+and "commit `<after>` landed, but it could not be verified as the call's paths alone"
+where only a check could not run (`#recordHookAddedPath`, `#recordVerificationThrows`).
+Steps 1 to 3 and everything from the `add` on are shared with `track`'s writing verbs
+(`src/records.ts#rootReady`, `#landCommit`), under the same locks (`#underLocks`). A
 declared file that cannot be read is refused by name, in either form, before anything
-is written (`#recordUnreadableFile`). A journal write that
+is written (`tests/records.test.ts#recordUnreadableFile`). A journal write that
 fails answers "commit `<after>` landed; its step could not be written", the commit
 and its files in place (`#recordJournalWriteFails`), and a branch that cannot be
 read after the commit call is answered as it is, nothing put back, since whether it
@@ -3097,6 +3106,55 @@ and never committed — `uncommitted()` cannot see it — and the call answers `
 no commit; the operator guide names it as a limitation. A crash between a commit and
 its journal step leaves a commit of declared paths after the journal's last
 `after`, which is how it is found.
+
+**`track`: the tracker on the same procedure.** `track` runs one verb of the
+project's configured tracker (section 6, "The `records` block") at the root
+(`src/records.ts#track`). Before anything runs or is locked it judges the call: the
+verb is one of the table's and the tracker configures it; every placeholder the verb
+takes is supplied and none it does not; an id matches `^[A-Za-z0-9][A-Za-z0-9._-]*$`;
+`{title}` is one line of at most 256 bytes and `{text}` at most 64 KiB, neither with a
+NUL; and a writing verb carries a `message`, non-empty and with no NUL, which a reading
+verb may not (`tests/records.test.ts#trackRefusesValues`, `#trackCreateParent`). The
+template is filled in one pass, so a value holding `{id}`, `$&` or a shell's
+metacharacters arrives as written, and it runs as `spawn(argv[0], rest)` with no
+shell, at the root, its stdin closed, in `run_command`'s environment
+(`src/runcommand.ts#commandEnv`, `#runArgv`, `tests/records.test.ts#trackNoShell`). It
+is a plain child of the server, killed at 120 s (`src/records.ts#trackTimeoutSeconds`)
+with its pipes destroyed, so the call ends then even while a process it started holds
+them; every answer once it has run carries its exit code and the last 64 KiB of its
+output (`tests/records.test.ts#trackTimeout`). After `locateRepository` and
+`rootWriteFault` — `"write"` for a writing verb, `"initialized"` for a reading one:
+- a **reading verb** (`ready`, `show`) holds `git.lock` alone, needs no clean root
+  and commits nothing; HEAD and `uncommitted()` are read before and after the run,
+  and a run that changed either is refused naming what changed, which stays
+  (`#trackReadVerb`);
+- a **writing verb** holds both locks and takes steps 1 to 3 as `record` does, its
+  mark check on `tracker.files` and skipped where that list is empty
+  (`#trackUncleanRoot`, `#trackEmptyTrackerFiles`). Then it runs the tracker, and in
+  this order: HEAD must still be the default branch at `before`, judged before any
+  no-change return, or the call is refused naming both commits (`#trackMovedHead`); a
+  non-zero exit or a kill is refused (`#trackFailingTracker`); every `uncommitted()`
+  entry must be one of `tracker.files`, or the call is refused naming the others
+  (`#trackStrayChange`); with no entries a `tracked` step is journaled with no commit
+  (`#trackNoChangeJournaled`); and otherwise the entries are added, committed,
+  verified and journaled as `record`'s are (`#trackCommitsTrackerFiles`).
+
+`track` never reverses the tracker's own changes. A refusal once the tracker has run
+commits nothing, names what the root shows and leaves it in place; the only thing
+`track` undoes is its own staging, reset when a commit fails, git's output then under
+`git` so that `exitCode` is always the tracker's (`#trackHookRefusal`). A refusal may so
+leave the root unclean, and a later `record` or `track` write is then refused by its
+own clean-root check until the operator commits or removes the change; an earlier
+failure refuses nothing by itself, and a tracker that committed for itself and left
+the root clean blocks nothing. A writing verb holds `git.lock` for up to 120 s plus
+the commit's hooks, while the project's other git tools wait `lockWaitSeconds` and
+refuse; the run calls it between tasks, and a refused call can be retried. Two limits
+are stated rather than solved. A server that dies while the tracker runs (P3): the
+tracker, a plain child, ends with a kill of the server's group, and otherwise
+exclusion is not guaranteed, and the next write's clean-root check, its verification
+or the operator's reconciliation shows what it left. And a tracker that starts a
+background process holding its output is reported as timed out at 120 s; that process
+is the tracker's own and is not killed.
 
 ### 5. Loop guard
 
@@ -3422,14 +3480,14 @@ link, read on disk (`src/config.ts#loadConfigWithMode`, `#recordPathLink`,
 write. A config without the block loads exactly as before, with no `records` key, and
 no tool list changes (`tests/config.test.ts#recordsLoadAsBefore`).
 
-The block the server started with is what registers `record` (section 1). A block
-removed since makes `record` refuse, and one added since is a `warning` in
+The block the server started with is what registers `record` and `track` (section
+1). A block removed since makes both refuse, and one added since is a `warning` in
 `describe_mode`, each naming the restart (`src/config.ts#recordsDrift`,
 `tests/server.test.ts#recordsDriftRestart`). `describe_mode` answers `records:
 {files, tracker: {verbs: {<verb>: {argv, writes}}, files}}`, each configured verb in
 the table's order, only where the config has a block
-(`tests/server.test.ts#describeModeRecords`). Nothing runs the tracker yet: its half is
-validated and described, and `track` is the work plan's next task.
+(`tests/server.test.ts#describeModeRecords`). `track` runs the tracker's verbs, with the
+values a call fills each template with judged by these same rules (section 4).
 
 ### 7. The skills
 
@@ -3667,12 +3725,18 @@ run's five tasks, each `passed`.
   `worktree-created` step takes no second worktree, and a slug already merged
   takes no second merge (`src/gitroot.ts#journalFault`).
 - Run journal: `.cross-agent/runs/<run>.json`, built in `src/records.ts`, the
-  record of the root commits one run made through `record` (section 4). The
-  document is `{run, defaultBranch, steps}`, and a `recorded` step is `{step, at,
+  record of the root commits one run made through `record` and `track` (section 4).
+  The document is `{run, defaultBranch, steps}`, and a `recorded` step is `{step, at,
   before, after, paths, message, verified, problems?}`: `after` is the commit as it
   landed, `paths` the entries it was asked to carry, `message` the one requested,
   and `verified` whether the commit carries exactly those paths and left the root
-  clean (`src/records.ts#RunJournal`, `#RecordedStep`). The run id is a file name
+  clean (`src/records.ts#RunJournal`, `#RecordedStep`). A `tracked` step, one per
+  writing verb `track` ran to the end, is `{step, at, verb, ids, before, after?,
+  paths, message, verified?, problems?}`: `ids` the ids the call filled, in the verb's
+  placeholder order — `[id]` for `claim` and `close`, `[parent]` for `create`, `[id,
+  on]` for `depend`, none for `file` and `epic` — and, where the tracker changed none
+  of its files, `paths: []` with no `after` and no `verified`, since nothing was
+  committed (`src/records.ts#TrackedStep`). The run id is a file name
   of the task alphabet: `operator` under the operator row, and for a lead the last
   of its lineage ids, its chain's first record, so a resumed lead continues the
   journal its first record began (`src/server.ts#recordTools`,
@@ -4479,7 +4543,7 @@ src/mailbox.ts    src/review.ts     src/records.ts
 src/engines/{types,spawn,registry,binaries}.ts
 src/engines/{claude,codex,grok}.ts
 tests/*.test.ts   tests/engines/*.test.ts
-tests/fixtures/fake-engine.mjs
+tests/fixtures/fake-engine.mjs   tests/fixtures/fake-tracker.mjs
 bin/cross-agent
 tools/probe.mjs   tools/check-citations.mjs   tools/from-openmaus.mjs
 tools/e2e-verify.mjs   tools/build-dist.mjs   tools/publish_agent_artifact_pr.py
@@ -4495,7 +4559,7 @@ Present today:
 `src/{modes,cli}.ts` and `modes/{dev-team,dev-team-engine,solo}/` from row 8,
 `src/mailbox.ts` and the CLI's `answer` and `report` from row 11, `src/review.ts` —
 the merge's review guard, the setup marker and the waiver — from `atc-s96.104`,
-`src/records.ts` — `record` and the run journal — from row 15,
+`src/records.ts` — `record`, `track` and the run journal — from row 15,
 and all seven of `src/engines/`: the contract and pipeline from T4, the registry and the binary
 helpers from row 5, and the three adapters, complete, from row 6. Plus the
 tests, `tools/probe.mjs`, `tools/check-citations.mjs` (the citation checker
@@ -4662,7 +4726,7 @@ registered by the mode that declares the worktree provider.
 | 12 | Codex and Grok packaging | `atc-s96.14`, `.15` | Thin-launcher end-to-end under each host. **Codex done** (T14, from `388a885`): `.codex-plugin/plugin.json` with its launcher `.codex-plugin/serve`, its `env_vars` handing the server the project and a task's markers (`docs/probes.md#codexMarkers`), the marketplace entry and the fallback snippet (section 9); the verifier's `--read-rollout` and its reading of Codex's code-mode `wait`; the guarded `codexI2Real` run; I1 and I2 under a Codex host, the ten-minute `wait` through the plugin and its hop counts (`docs/probes.md#t14` and the sections after it); E4 under host placement and E5 under engine placement (`docs/probes.md#e4`, `#e5`). **Grok done** (T15, from `f4d6647`): no manifest of its own — a project's `.grok/config.toml` names the checkout under `[plugins]` and raises `[mcp] max_output_bytes`, and Grok reads the Claude manifest, skill and inline server alike (section 9, `docs/probes.md#t15Attach`); I1 and I2 under a Grok host, its read-only row at the root, a deny rule on this server's tools, the ten-minute `wait`, the hop counts and the worktree mount (`docs/probes.md#i1GrokHost` and the sections after it); E6 under host placement and E7 under engine placement (`docs/probes.md#e6`, `#e7`). |
 | 13 | Operator CLI remainder | `atc-s96.16` | **Done** (T16: fifteen commits, `f8d4507` to `8efa717`, its review's fix round and wrap-up included). `modes`, `tasks`, `show`, `log`, `cancel`, `verify-worktree`, `git`, `journal` and `list-asks` on row 11's dispatcher and exit protocol, each calling the function its tool calls (section 10): `listTasks` reads without a pass for the operator (`src/tasks.ts#listTasks`); the reads proved side-effect free over an uninitialized repository and over a seeded ledger; the verbs that write refused inside a task's environment; `list-asks` naming a damaged ask file rather than throwing, the CLI half of `atc-s96.65`; `report`'s messages indented. `answer` and `report` shipped with row 11. |
 | 14 | Backlog | `atc-s96.25`, `.26`, `.28` | Arbitrary-path workspaces; config-declared adapters; engine `doctor`. `atc-s96.27` left this row as Task 4c (plan decision 10): the built-in `consult` role, the no-config default to `solo`, `delegate {worktree: true}`, the launcher's merge-policy steps, and `review` and `critique` as verbs of the loop rather than a second protocol. |
-| 15 | The engine lead owns the backlog and the records | `atc-2jl.1` | **Task 1 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Tasks 2–4 are not built: `track`, which runs the tracker through the same procedure; setup proposing the block; and the lead's run in `dev-team-engine`'s loop. Nothing runs the tracker yet. |
+| 15 | The engine lead owns the backlog and the records | `atc-2jl.1`, `.2` | **Tasks 1 and 2 built.** The optional `records` block, in its two shapes, with the tracker's verb table, the placeholder rules and the path rules checked at parse, bind and load (section 6, `src/config.ts#parseConfig`, `#bindingFault`, `#loadConfigWithMode`); `record`, the root commit procedure of section 4 under `git.lock` and the repository lock, with the run journal of section 7 (`src/records.ts`); and its registration for the operator and lead rows only where the block is configured, with `describe_mode`'s `records` and the drift rule (`src/server.ts#recordTools`, `src/config.ts#recordsDrift`). Task 2: `track`, the configured tracker commands run at the root with no shell, a reading verb under `git.lock` alone and a writing verb on the same procedure, sharing its steps with `record` (`src/records.ts#track`, `#rootReady`, `#landCommit`), killed at 120 s, and registered beside `record`; with it, a landed commit that could not be verified is told apart from one that is not the call's paths alone. Tasks 3 and 4 are not built: setup proposing the block, and the lead's run in `dev-team-engine`'s loop. |
 | — | Claude P2 | `atc-s96.17` | **Done** (2026-09-19): three rows — the first run, the rerun under `filesystem.denyWrite`, and a read-only role at the project root. The first found the containment failure `atc-s96.52` records; the other two are the fix. |
 
 Integration probes after each packaging task, run by the operator:

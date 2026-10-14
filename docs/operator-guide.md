@@ -74,11 +74,11 @@ config without a block loads and behaves exactly as before.
 }
 ```
 
-The server reads the block once, when it starts, and registers the `record` tool for
-your session and an engine lead only where it found one; a specialist is refused it.
-After you add or remove the block, start a new session: until then a removed block
-makes `record` refuse, and an added one is a `warning` in `describe_mode`, each naming
-the restart. `describe_mode` answers the block as `records` — the files, and each
+The server reads the block once, when it starts, and registers the `record` and
+`track` tools for your session and an engine lead only where it found one; a
+specialist is refused both. After you add or remove the block, start a new session:
+until then a removed block makes both refuse, and an added one is a `warning` in
+`describe_mode`, each naming the restart. `describe_mode` answers the block as `records` — the files, and each
 configured verb with its command and whether it writes.
 
 **`record`** reads or writes the files under `files`, and only those; the tracker's
@@ -103,13 +103,18 @@ journals nothing.
 
 Every commit `record` lands is journaled in `.cross-agent/runs/<run>.json` — `operator`
 for your own calls, and a lead's first task id for its run, a resumed lead continuing
-the same file — as a `recorded` step with `before`, `after`, the paths it committed, the
-message and `verified`. Watch for `verified: false`: the commit landed but carried
-something else, or left the root unclean — a hook that adds a path does that — or git
-could not run to check it, and its `problems` say what; the call answered `ok: false`
-naming them, with the commit, and the commit stands. A call that
-answers "commit `<sha>` landed; its step could not be written" left the commit in
-place without its step.
+the same file — as a `recorded` step with `before`, `after`, the paths it was asked to
+commit, the message and `verified`. Every writing verb `track` runs to the end is
+journaled there too, as a `tracked` step with the verb, the ids the call named,
+`before`, the paths and the message, and `after` and `verified` where it landed a
+commit; a verb that changed none of the tracker's files is a step with `paths: []` and
+no commit. Watch for `verified: false`: the commit landed but carried something else,
+or left the root unclean — a hook that adds a path does that — and the call answered
+"commit `<sha>` landed, but it is not exactly the call's paths"; or a check could not
+run, and it answered "…but it could not be verified as the call's paths alone". Either
+way its `problems` say what, the call answered `ok: false` naming them, with the
+commit, and the commit stands. A call that answers "commit `<sha>` landed; its step
+could not be written" left the commit in place without its step.
 
 A declared path is a relative path of letters, digits, `.`, `_` and `-` segments
 joined by `/`: no `.` or `..` segment, nothing under `.git` or `.cross-agent/`, no
@@ -148,8 +153,33 @@ its own names one, such as a handoff file; a project with record files and no tr
 has nothing to fall back on, and needs tracker commands that meet the contract — a
 small wrapper script is enough — or keeps no-records behaviour.
 
-Nothing runs the tracker yet: this build validates the tracker half and
-`describe_mode` describes it, and `record` is the only tool the block registers.
+**`track`** runs one of these verbs: `{verb, <the verb's placeholders>, message?}`,
+as `{verb: "claim", id: "X-1", message: "Claim X-1"}`. Every placeholder the verb
+takes is required and no other is accepted. An id is a letter or digit followed by
+letters, digits, `.`, `_` or `-`; `title` is one line of at most 256 bytes; `text` is
+at most 64 KiB; neither may hold a NUL. A writing verb needs `message`, the commit
+message, and a reading verb takes none. All of this is checked before anything runs.
+The template is filled in one pass and run with no shell at the project root, in the
+environment `run_command` gives a command, so a value arrives as you wrote it, quotes,
+`$` and `{…}` included. The reading verbs, `ready` and `show`, take only the project's
+git lock and commit nothing; the root need not be clean, but a read that moved HEAD or
+changed what `git status` shows is refused, naming the change. A writing verb takes
+the same locks and the same clean root as a `record` write, with no file under
+`tracker.files` marked; runs the tracker; and commits the files it changed on the
+default branch with your message, journaling a `tracked` step, or journals the step
+with no commit where it changed none. It is refused, and commits nothing, when the
+tracker moved HEAD — committed for itself, for instance — exited non-zero, was killed,
+or changed a file outside `tracker.files`; the refusal names the exit code, the
+output and any paths the root shows. `track` never reverses what the tracker
+changed: it resets only what it staged itself, when a commit fails. A refusal may
+leave the root unclean, and then your next `record` or `track` write is refused by its
+own clean-root check until you commit or remove the change; an earlier failure
+refuses nothing by itself. The tracker is killed after 120 seconds, and the answer
+carries its exit code and the last 64 KiB of its output. Two limits stand: a tracker
+that starts a background process holding its output is reported as timed out and that
+process is not killed; and a server that dies while the tracker runs takes the tracker
+with it only when its whole process group is killed, so after such a crash read what
+the next write's clean-root check names, or reconcile the root yourself.
 
 ## The operator CLI
 

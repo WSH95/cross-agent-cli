@@ -618,14 +618,15 @@ export function modeDrift(served: Mode, config: CrossAgentConfig): string | null
 
 /**
  * Whether the config's `records` block has come or gone since this server started, as a
- * reason or null. `record` is registered once, from the block the server started with: a
- * block removed since makes it refuse, and one added is a warning `describe_mode` carries.
+ * reason or null. `record` and `track` are registered once, from the block the server started
+ * with: a block removed since makes both refuse, and one added is a warning `describe_mode`
+ * carries.
  */
 export function recordsDrift(served: boolean, config: CrossAgentConfig): string | null {
   if (served === (config.records !== undefined)) return null;
   return served
     ? `records was removed from ${CONFIG_PATH} after this server started; restart the server`
-    : `records was added to ${CONFIG_PATH} after this server started, so record is not registered; restart the server to serve it`;
+    : `records was added to ${CONFIG_PATH} after this server started, so record is not registered; restart the server to serve record and track`;
 }
 
 /** Whether a binding is a list, one binding per seat. */

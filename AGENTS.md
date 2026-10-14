@@ -86,10 +86,14 @@ Shipped:
   under `git.lock`, and the repository lock for a verb that changes it),
   `src/runcommand.ts` (`run_command`: the configured test or setup
   command by selector; a worktree test run tests a detached checkout of the
-  branch head under `.cross-agent/gate/` and journals `tested`),
+  branch head under `.cross-agent/gate/` and journals `tested`; `commandEnv` and
+  `runArgv`, shared with `track`),
   `src/journal.ts` (the per-task git journal), `src/records.ts` (`record`:
   declared record files read, or written and committed at the root under
-  `git.lock` → the repository lock, journaled in `.cross-agent/runs/<run>.json`),
+  `git.lock` → the repository lock, journaled in `.cross-agent/runs/<run>.json`;
+  `track`: a configured tracker verb run at the root with no shell, a reading verb
+  under `git.lock` alone, a writing verb committing only `tracker.files` on the
+  same procedure),
   `src/review.ts` (the merge's
   review guard: the verdict a review's result ends on, the head a review
   covered, the hold on a reviewed worktree, the setup marker, the waiver),
@@ -105,7 +109,8 @@ Shipped:
   with the settings sandbox, the file tools' permission rules and a tool
   allowlist, deny list; Codex: `exec`/`exec resume` with the prompt on stdin;
   Grok: `streaming-messages-json`, `--rules`, not an engine-placed lead);
-  `tests/fixtures/fake-engine.mjs` stands in for a CLI;
+  `tests/fixtures/fake-engine.mjs` stands in for a CLI, and
+  `tests/fixtures/fake-tracker.mjs` for a tracker's command line;
   `tests/helpers/project.ts` builds a per-test project and sweeps every
   process it spawned.
 - `tests/<concern>.test.ts`: `node:test` with `node:assert/strict`;

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import { constants } from "node:os";
 import path from "node:path";
@@ -79,8 +80,9 @@ export const maxTimeoutSeconds = Math.floor((2 ** 31 - 1) / 1000);
  * **not a task**, so it carries no `CROSS_AGENT_TASK` and no lineage. What it does carry
  * is the depth, one below its caller's, so a `cross-agent` server started inside a test
  * suite resolves as a specialist and never as the operator (design section 5, layer 2).
+ * `track` runs the tracker in the same environment (`src/records.ts#track`).
  */
-function commandEnv(
+export function commandEnv(
   parentEnv: Readonly<NodeJS.ProcessEnv>, depth: number, billing: "subscription" | "api", projectRoot: string,
 ): NodeJS.ProcessEnv {
   const env = childEnv(parentEnv, depth, "", [], billing, projectRoot);
@@ -101,7 +103,7 @@ const redirectingGit = [
   "GIT_NAMESPACE", "GIT_CEILING_DIRECTORIES", "GIT_COMMON_DIR",
 ];
 
-interface Ran {
+export interface Ran {
   exitCode: number;
   tail: string;
   /** The run was killed at its timeout: there is no exit code to judge. */
@@ -138,6 +140,32 @@ async function shell(
     }
     child.stdin!.end("go\n");
   }
+  return settle(child, seconds, () => {
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+    } catch { /* it exited between the timer and the signal */ }
+  });
+}
+
+/**
+ * One argument list run to completion with no shell, or killed at its timeout: `track`'s
+ * tracker (`src/records.ts#track`). It is a plain child of the server, not a group of its
+ * own, so the kill reaches the process itself; the pipes are destroyed with it, so the call
+ * ends at the timeout even while something the command started still holds its output open.
+ * Its stdin is closed, so the server's own JSON-RPC stream never reaches it. A command that
+ * cannot be started rejects, as `shell` does.
+ */
+export async function runArgv(argv: readonly string[], cwd: string, env: NodeJS.ProcessEnv, seconds: number): Promise<Ran> {
+  const child = spawn(argv[0], argv.slice(1), { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  return settle(child, seconds, () => {
+    child.kill("SIGKILL");
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+  });
+}
+
+/** A started child's interleaved output tail and exit code, with `kill` sent at its timeout. */
+async function settle(child: ChildProcess, seconds: number, kill: () => void): Promise<Ran> {
   const chunks: Buffer[] = [];
   let size = 0;
   const keep = (chunk: Buffer): void => {
@@ -152,9 +180,7 @@ async function shell(
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    try {
-      if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-    } catch { /* it exited between the timer and the signal */ }
+    kill();
   }, seconds * 1000);
   try {
     const exitCode = await new Promise<number>((resolve, reject) => {

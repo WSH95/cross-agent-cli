@@ -7,12 +7,13 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { CONFIG_PATH, loadConfig } from "../src/config.ts";
 import { create } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath } from "../src/locks.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
-import { readRunJournal, record } from "../src/records.ts";
-import type { RecordChange, RecordRequest, RecordResult } from "../src/records.ts";
+import { readRunJournal, record, track } from "../src/records.ts";
+import type { RecordChange, RecordRequest, RecordResult, TrackOptions, TrackRequest, TrackResult } from "../src/records.ts";
 import { createServer, projectTools } from "../src/server.ts";
 import { git, gitShim, holdersOf } from "./helpers/git.ts";
 import { poll } from "./helpers/project.ts";
@@ -409,7 +410,7 @@ test("a git that cannot run while a landed commit is verified leaves the commit 
   const failed = refused(await call(root, appendToHandoff));
   const after = await git(root, "rev-parse", "HEAD");
   assert.notEqual(after, before);
-  assert.match(failed.reason, new RegExp(`^commit ${after} landed, but .*git diff-tree .* could not run`));
+  assert.match(failed.reason, new RegExp(`^commit ${after} landed, but it could not be verified as the call's paths alone: .*git diff-tree .* could not run`));
   assert.equal(failed.commit, after);
   assert.deepEqual(failed.paths, [handoff]);
   assert.equal(failed.journal!.verified, false);
@@ -423,6 +424,10 @@ test("a git that cannot run while a landed commit is verified leaves the commit 
 
 // @anchor recordUnreadableFile
 test("an unreadable declared file is refused by name, in the read form and the write form", async (t) => {
+  if (process.getuid!() === 0) {
+    t.skip("root reads a file whatever its mode says");
+    return;
+  }
   const root = await repository(t);
   const before = await git(root, "rev-parse", "HEAD");
   // A tracked record file nobody may read.
@@ -509,4 +514,362 @@ test("a resumed lead's steps go to its chain's run journal", async (t) => {
   assert.deepEqual(journal.steps.map((step) => step.after), [answer.commit]);
   assert.equal(readRunJournal(root, resumed.id), null);
   assert.equal(readRunJournal(root, "operator"), null);
+});
+
+// `track` runs the project's configured tracker commands at the root, with no shell: a
+// reading verb under `git.lock` alone, committing nothing, and a writing verb on the root
+// commit procedure `record` uses, committing only `tracker.files`. The tracker here is
+// `tests/fixtures/fake-tracker.mjs`, whose first argument says what it does.
+
+const fakeTracker = fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "fake-tracker.mjs"));
+const beads = ".beads/interactions.jsonl";
+
+/**
+ * A records block whose tracker is the fake one, each verb doing what `actions` names: by
+ * default a writing verb appends to the tracker's own file and a reading one prints. No
+ * `epic`, so that verb is one this tracker does not configure.
+ */
+function trackerBlock(actions: Record<string, string> = {}, files: string[] = [beads]): Record<string, unknown> {
+  const command = (verb: string, writes: boolean) => [process.execPath, fakeTracker, actions[verb] ?? (writes ? `append=${beads}` : "print")];
+  return {
+    files: [handoff, progress, decisions],
+    tracker: {
+      ready: command("ready", false),
+      show: [...command("show", false), "{id}"],
+      create: [...command("create", true), "--title={title}", "--description={text}", "--parent={parent}"],
+      file: [...command("file", true), "--title={title}", "--description={text}"],
+      claim: [...command("claim", true), "{id}", "--claim"],
+      close: [...command("close", true), "{id}", "--reason={text}"],
+      depend: [...command("depend", true), "{id}", "{on}"],
+      files,
+    },
+  };
+}
+
+/** The config rewritten with another records block: `track` reads it on every call. */
+function configure(root: string, records: unknown): void {
+  fs.writeFileSync(path.join(root, CONFIG_PATH), JSON.stringify({ roles: {}, project: { testCommand: "none" }, records }));
+}
+
+function trackCall(root: string, request: TrackRequest, options: Partial<TrackOptions> = {}): Promise<TrackResult> {
+  return track(root, request, { waitSeconds: 1, run: "operator", ...options });
+}
+
+function trackAccepted(result: TrackResult): Extract<TrackResult, { ok: true }> {
+  assert.equal(result.ok, true, JSON.stringify(result));
+  return result as Extract<TrackResult, { ok: true }>;
+}
+
+function trackRefused(result: TrackResult): Extract<TrackResult, { ok: false }> {
+  assert.equal(result.ok, false, JSON.stringify(result));
+  const failed = result as Extract<TrackResult, { ok: false }>;
+  assert.ok(failed.reason.trim().length > 0);
+  return failed;
+}
+
+interface TrackerRun { argv: string[]; cwd: string; env: Record<string, string>; pid: number }
+
+/** Where the fake tracker writes what it saw, outside the root, and the environment that tells it to. */
+function recorder(t: TestContext): { env: NodeJS.ProcessEnv; read(): TrackerRun | null } {
+  const directory = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-tracker-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "ran.json");
+  return {
+    env: { ...process.env, FAKE_TRACKER_RECORD: file },
+    read: () => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) as TrackerRun : null,
+  };
+}
+
+const journalFile = (root: string): string => path.join(root, ".cross-agent", "runs", "operator.json");
+const head = (root: string): Promise<string> => git(root, "rev-parse", "HEAD");
+const status = (root: string): Promise<string> => git(root, "status", "--porcelain", "--untracked-files=all");
+
+// @anchor trackNoShell
+test("track runs its argument list without a shell; metacharacters arrive literally", async (t) => {
+  const root = await repository(t, trackerBlock({ file: "print" }));
+  const seen = recorder(t);
+  const title = "$(touch pwned); `id` | x {id} $&";
+  const text = "a {text} with $HOME, 'quotes' and \"more\";\nand a line > out.txt";
+  const result = trackAccepted(await trackCall(root, { verb: "file", title, text, message: "track: file" }, {
+    env: { ...seen.env, CROSS_AGENT_TASK: "T-1", CROSS_AGENT_LINEAGE: "T-0", CLAUDECODE: "1", GIT_DIR: path.join(root, "elsewhere") },
+    depth: 2,
+  }));
+  const ran = seen.read()!;
+  assert.deepEqual(ran.argv, [process.execPath, fakeTracker, "print", `--title=${title}`, `--description=${text}`]);
+  assert.equal(fs.existsSync(path.join(root, "pwned")), false);
+  assert.equal(fs.existsSync(path.join(root, "out.txt")), false);
+  assert.equal(ran.cwd, root);
+  for (const name of ["CROSS_AGENT_TASK", "CROSS_AGENT_LINEAGE", "CLAUDECODE", "GIT_DIR"]) assert.equal(Object.hasOwn(ran.env, name), false, name);
+  assert.equal(ran.env.CROSS_AGENT_DEPTH, "3", "one below the caller");
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.output, `${JSON.stringify(["print", `--title=${title}`, `--description=${text}`])}\nFAKE-1\n`);
+});
+
+// @anchor trackRefusesValues
+test("track refuses a bad id, a NUL, a missing placeholder, a placeholder its verb does not take, and a message on a read verb", async (t) => {
+  const root = await repository(t, trackerBlock());
+  const seen = recorder(t);
+  const before = await head(root);
+  const cases: Array<[string, TrackRequest, RegExp]> = [
+    ["an id that opens with a dash", { verb: "claim", id: "-X-1", message: "m" }, /\{id\}/],
+    ["an id with a slash", { verb: "show", id: "X/1" }, /\{id\}/],
+    ["an empty id", { verb: "claim", id: "", message: "m" }, /\{id\}/],
+    ["an on with a space", { verb: "depend", id: "X-1", on: "X 2", message: "m" }, /\{on\}/],
+    ["a NUL in a title", { verb: "file", title: "a\0b", text: "t", message: "m" }, /NUL/],
+    ["a NUL in a text", { verb: "close", id: "X-1", text: "a\0b", message: "m" }, /NUL/],
+    ["a missing placeholder", { verb: "close", id: "X-1", message: "m" }, /\{text\}/],
+    ["a placeholder its verb does not take", { verb: "claim", id: "X-1", title: "t", message: "m" }, /\{title\}/],
+    ["a message on a read verb", { verb: "show", id: "X-1", message: "m" }, /message/],
+    ["an unknown verb", { verb: "delete", id: "X-1", message: "m" }, /"delete"/],
+    ["an unconfigured epic", { verb: "epic", title: "t", text: "x", message: "m" }, /epic/],
+    ["a two-line title", { verb: "file", title: "one\ntwo", text: "t", message: "m" }, /\{title\}/],
+    ["a title with a carriage return", { verb: "file", title: "one\rtwo", text: "t", message: "m" }, /\{title\}/],
+    ["a 257-byte title", { verb: "file", title: `${"é".repeat(128)}a`, text: "t", message: "m" }, /257 bytes/],
+    ["a text over 64 KiB", { verb: "file", title: "t", text: "a".repeat(64 * 1024 + 1), message: "m" }, /65537 bytes/],
+    ["a write verb with no message", { verb: "claim", id: "X-1" }, /message/],
+    ["an empty message", { verb: "claim", id: "X-1", message: "" }, /message/],
+    ["a NUL in a message", { verb: "claim", id: "X-1", message: "a\0b" }, /message/],
+  ];
+  for (const [name, request, named] of cases) {
+    assert.match(trackRefused(await trackCall(root, request, { env: seen.env })).reason, named, name);
+    assert.equal(seen.read(), null, `${name}: the tracker never ran`);
+    assert.equal(await head(root), before, name);
+  }
+  assert.equal(await status(root), "");
+  // The largest values are taken whole.
+  const largest = { title: "t".repeat(256), text: "x".repeat(64 * 1024) };
+  trackAccepted(await trackCall(root, { verb: "file", ...largest, message: "track: the largest values" }, { env: seen.env }));
+  assert.deepEqual(seen.read()!.argv.slice(3), [`--title=${largest.title}`, `--description=${largest.text}`]);
+});
+
+// @anchor trackCreateParent
+test("create requires parent and file takes none", async (t) => {
+  const root = await repository(t, trackerBlock());
+  const seen = recorder(t);
+  assert.match(trackRefused(await trackCall(root, { verb: "create", title: "t", text: "x", message: "m" }, { env: seen.env })).reason, /\{parent\}/);
+  assert.match(trackRefused(await trackCall(root, { verb: "file", title: "t", text: "x", parent: "E-1", message: "m" }, { env: seen.env })).reason, /\{parent\}/);
+  assert.equal(seen.read(), null);
+  const created = trackAccepted(await trackCall(root, { verb: "create", title: "t", text: "x", parent: "E-1", message: "track: create" }, { env: seen.env }));
+  assert.deepEqual(seen.read()!.argv.slice(3), ["--title=t", "--description=x", "--parent=E-1"]);
+  assert.deepEqual(created.journal!.ids, ["E-1"]);
+  const filed = trackAccepted(await trackCall(root, { verb: "file", title: "t", text: "x", message: "track: file" }, { env: seen.env }));
+  assert.deepEqual(seen.read()!.argv.slice(3), ["--title=t", "--description=x"]);
+  assert.deepEqual(filed.journal!.ids, []);
+  // Two ids, in the table's order.
+  assert.deepEqual(trackAccepted(await trackCall(root, { verb: "depend", id: "X-2", on: "X-1", message: "track: depend" })).journal!.ids, ["X-2", "X-1"]);
+});
+
+// @anchor trackReadVerb
+test("a read verb commits nothing and refuses when it changed the root", async (t) => {
+  const root = await repository(t, trackerBlock({ show: "append=notes.txt" }));
+  const before = await head(root);
+  // A read needs no clean root.
+  fs.writeFileSync(path.join(root, "scratch.txt"), "mine\n");
+  const ready = trackAccepted(await trackCall(root, { verb: "ready" }));
+  assert.equal(ready.exitCode, 0);
+  assert.match(ready.output, /FAKE-1/);
+  assert.equal(Object.hasOwn(ready, "commit"), false);
+  assert.equal(await head(root), before);
+  assert.equal(fs.existsSync(journalFile(root)), false);
+
+  // A read that changed the root is refused, naming what changed, and the change stays.
+  const changed = trackRefused(await trackCall(root, { verb: "show", id: "X-1" }));
+  assert.match(changed.reason, /notes\.txt/);
+  assert.doesNotMatch(changed.reason, /scratch\.txt/);
+  assert.equal(changed.exitCode, 0);
+  assert.match(changed.output ?? "", /FAKE-1/);
+  assert.equal(fs.existsSync(path.join(root, "notes.txt")), true);
+  assert.equal(await head(root), before);
+  assert.equal(fs.existsSync(journalFile(root)), false);
+  fs.rmSync(path.join(root, "notes.txt"));
+  // And one that moved HEAD.
+  configure(root, trackerBlock({ show: "commit=notes.txt" }));
+  const moved = trackRefused(await trackCall(root, { verb: "show", id: "X-1" }));
+  const after = await head(root);
+  assert.notEqual(after, before);
+  assert.match(moved.reason, new RegExp(`${before}.*${after}`));
+  assert.equal(fs.existsSync(journalFile(root)), false);
+
+  // It takes git.lock alone: it completes while the repository lock is held, which it would
+  // otherwise wait a minute for, and is refused while git.lock is.
+  const shared = await acquire(repositoryLockPath(path.join(root, ".git")), { operation: "another project's git step", waitSeconds: 5 });
+  t.after(() => shared.release());
+  const started = Date.now();
+  trackAccepted(await trackCall(root, { verb: "ready" }));
+  assert.ok(Date.now() - started < 30_000, `${Date.now() - started} ms`);
+  await shared.release();
+  const held = await acquire(lockPath(root, gitLockName()), { operation: "another git step", waitSeconds: 5 });
+  t.after(() => held.release());
+  assert.match(trackRefused(await trackCall(root, { verb: "ready" })).reason, /held by another process/);
+  await held.release();
+});
+
+// @anchor trackCommitsTrackerFiles
+test("a write verb commits only tracker.files and journals tracked", async (t) => {
+  const root = await repository(t, trackerBlock());
+  const before = await head(root);
+  const result = trackAccepted(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  const after = await head(root);
+  assert.notEqual(after, before);
+  assert.equal(await git(root, "rev-parse", `${after}^`), before);
+  assert.equal(await git(root, "diff-tree", "-r", "--name-only", before, after), beads);
+  assert.equal((await git(root, "log", "-1", "--format=%B", after)).trim(), "track: claim X-1");
+  assert.equal(result.verb, "claim");
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /FAKE-1/);
+  assert.equal(result.commit, after);
+  assert.deepEqual(result.paths, [beads]);
+  const [step] = readRunJournal(root, "operator")!.steps;
+  assert.deepEqual(result.journal, step);
+  assert.equal(typeof step.at, "number");
+  assert.deepEqual({ ...step, at: 0 }, {
+    step: "tracked", at: 0, verb: "claim", ids: ["X-1"], before, after, paths: [beads], message: "track: claim X-1", verified: true,
+  });
+  assert.equal(await status(root), "");
+});
+
+// @anchor trackNoChangeJournaled
+test("a write verb that changed nothing tracked journals the call without a commit", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: "print" }));
+  const before = await head(root);
+  const result = trackAccepted(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.equal(await head(root), before);
+  assert.equal(Object.hasOwn(result, "commit"), false);
+  const [step] = readRunJournal(root, "operator")!.steps;
+  assert.deepEqual(result.journal, step);
+  assert.deepEqual({ ...step, at: 0 }, { step: "tracked", at: 0, verb: "claim", ids: ["X-1"], before, paths: [], message: "track: claim X-1" });
+  assert.equal(await status(root), "");
+});
+
+// @anchor trackEmptyTrackerFiles
+test("with tracker.files empty, a write verb ignores a mark on another file and journals the call", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: "print" }, []));
+  const before = await head(root);
+  // A mark the whole index's listing would show, on a file no tracker path names.
+  await git(root, "update-index", "--assume-unchanged", "README.md");
+  const result = trackAccepted(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.equal(await head(root), before);
+  const [step] = readRunJournal(root, "operator")!.steps;
+  assert.deepEqual(result.journal, step);
+  assert.deepEqual({ ...step, at: 0 }, { step: "tracked", at: 0, verb: "claim", ids: ["X-1"], before, paths: [], message: "track: claim X-1" });
+});
+
+// @anchor trackStrayChange
+test("a change outside tracker.files commits nothing and is named", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: "append=README.md" }));
+  const before = await head(root);
+  const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.match(result.reason, /README\.md/);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output ?? "", /FAKE-1/);
+  assert.equal(await head(root), before);
+  assert.equal(await git(root, "diff", "--cached", "--name-only"), "");
+  assert.equal(await status(root), " M README.md");
+  assert.equal(fs.existsSync(journalFile(root)), false);
+});
+
+// @anchor trackFailingTracker
+test("a failing tracker commits nothing and answers its exit code and output", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: `fail=${beads}` }));
+  const before = await head(root);
+  const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.match(result.reason, /exited 3/);
+  assert.equal(result.exitCode, 3);
+  assert.match(result.output ?? "", /fake tracker failed/);
+  assert.equal(await head(root), before);
+  assert.equal(fs.existsSync(journalFile(root)), false);
+  // What the tracker wrote before it failed stays where it put it.
+  assert.equal(contents(root, beads)!.split("\n").filter(Boolean).length, 1);
+  assert.equal(await status(root), `?? ${beads}`);
+  fs.rmSync(path.join(root, ".beads"), { recursive: true });
+
+  // A command that does not exist is refused by name, and nothing changes.
+  const missing = path.join(root, "no-such-tracker");
+  const block = trackerBlock() as { tracker: Record<string, unknown> };
+  configure(root, { ...block, tracker: { ...block.tracker, claim: [missing, "{id}"] } });
+  const absent = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.ok(absent.reason.includes(missing), absent.reason);
+  assert.equal(await head(root), before);
+  assert.equal(await status(root), "");
+  assert.equal(fs.existsSync(journalFile(root)), false);
+});
+
+// @anchor trackMovedHead
+test("a tracker that commits its own change and leaves the root clean is refused for moving HEAD", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: `commit=${beads}` }));
+  const before = await head(root);
+  const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  const moved = await head(root);
+  assert.notEqual(moved, before);
+  assert.match(result.reason, new RegExp(`moved main from ${before} to ${moved}`));
+  assert.equal(result.exitCode, 0);
+  assert.equal(fs.existsSync(journalFile(root)), false);
+  // The tracker's commit stays, and a clean root blocks nothing after it.
+  assert.equal(await git(root, "rev-parse", `${moved}^`), before);
+  assert.equal(await git(root, "log", "-1", "--format=%s"), "fake");
+  assert.equal(await status(root), "");
+  const next = trackAccepted(await trackCall(root, { verb: "close", id: "X-1", text: "done", message: "track: close X-1" }));
+  assert.equal(next.journal!.before, moved);
+});
+
+// @anchor trackTimeout
+test("a tracker past its timeout is killed", async (t) => {
+  const root = await repository(t, trackerBlock({ claim: "sleep" }));
+  const seen = recorder(t);
+  const before = await head(root);
+  const started = Date.now();
+  const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }, { env: seen.env, timeoutSeconds: 1 }));
+  assert.ok(Date.now() - started < 20_000, `${Date.now() - started} ms`);
+  assert.match(result.reason, /longer than 1s/);
+  assert.equal(result.exitCode, 137);
+  const { pid } = seen.read()!;
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  assert.equal(await head(root), before);
+  assert.equal(await status(root), "");
+  assert.equal(fs.existsSync(journalFile(root)), false);
+  // Both locks were let go.
+  trackAccepted(await trackCall(root, { verb: "close", id: "X-1", text: "done", message: "track: close X-1" }));
+});
+
+// @anchor trackUncleanRoot
+test("track refuses a root with any change before it runs", async (t) => {
+  const root = await repository(t, trackerBlock());
+  const seen = recorder(t);
+  let before = await head(root);
+  fs.writeFileSync(path.join(root, "notes.txt"), "x\n");
+  let reason = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "m" }, { env: seen.env })).reason;
+  assert.match(reason, /notes\.txt/);
+  assert.match(reason, /clean/);
+  assert.equal(seen.read(), null, "the tracker never ran");
+  assert.equal(await head(root), before);
+  fs.rmSync(path.join(root, "notes.txt"));
+  // A tracker file marked assume-unchanged, its bytes as committed.
+  fs.mkdirSync(path.join(root, ".beads"));
+  fs.writeFileSync(path.join(root, beads), "");
+  await git(root, "add", beads);
+  await git(root, "commit", "-q", "-m", "the tracker's file");
+  before = await head(root);
+  await git(root, "update-index", "--assume-unchanged", beads);
+  reason = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "m" }, { env: seen.env })).reason;
+  assert.match(reason, /\.beads\/interactions\.jsonl/);
+  assert.match(reason, /--no-assume-unchanged/);
+  assert.equal(seen.read(), null, "the tracker never ran");
+  assert.equal(await head(root), before);
+});
+
+// @anchor trackHookRefusal
+test("a hook that refuses a track commit resets the index and leaves the tracker's change standing", async (t) => {
+  const root = await repository(t, trackerBlock());
+  const before = await head(root);
+  hook(root, "#!/bin/sh\necho 'refused by the hook' >&2\nexit 1\n");
+  const result = trackRefused(await trackCall(root, { verb: "claim", id: "X-1", message: "track: claim X-1" }));
+  assert.match(result.reason, /git commit exited 1; the index is as it was; the tracker's change is left in place/);
+  assert.equal(result.git!.exitCode, 1);
+  assert.match(result.git!.stderr, /refused by the hook/);
+  assert.equal(result.exitCode, 0);
+  assert.equal(await head(root), before);
+  assert.equal(await git(root, "diff", "--cached", "--name-only"), "");
+  assert.equal(await status(root), `?? ${beads}`);
+  assert.equal(contents(root, beads)!.split("\n").filter(Boolean).length, 1);
+  assert.equal(fs.existsSync(journalFile(root)), false);
 });
