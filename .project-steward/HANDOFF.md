@@ -38,9 +38,11 @@ skill epic `atc-s96.134` is closed.
 - Task 3, `atc-s96.143` (`rootWriteFault`'s refusal names the setup skill first): merged as
   `c028cc3` (review round 1 clean on all three seats), root suite 1123/1121/0 fail, bead closed.
   Follow-ups `atc-s96.144`, `atc-s96.145` (P4) are open.
-- Release 0.1.6 (`atc-s96.146`, user-approved 2026-10-14): source `1b1ff0b` pushed to `main`;
-  https://github.com/WSH95/agent-plugins/pull/21 open, mergeable, payload verified. Waiting on the
-  user to merge it and update the plugin; then a live re-check if wanted, and close `atc-s96.146`.
+- Release 0.1.6 (`atc-s96.146`, closed): source `1b1ff0b` pushed; agent-plugins PR #21 merged by
+  the user as `a7cabee`; Claude Code updated and reconnected, and this session's server serves the
+  0.1.6 text. Codex's cache still held 0.1.5: its update (`codex plugin marketplace upgrade`, then
+  `codex plugin add cross-agent@agent-plugins`) is the user's.
+- Open, low priority: `atc-s96.144`, `atc-s96.145`.
 Ask the user before any push or release. `main` was pushed at `1b1ff0b`; record commits after it are local.
 
 **Release 0.1.3 is merged and installed (`atc-s96.133`, closed 2026-10-13).**

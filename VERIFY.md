@@ -28,6 +28,11 @@ version, and in both payloads the plugin manifest, `package.json`, the three mod
 `claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin. The PR
 is `MERGEABLE`, merge state `CLEAN`. No merge was performed.
 
+The user merged PR #21 on 2026-10-14 at 08:54:56Z, as `a7cabee`, then updated the plugin in
+Claude Code and reconnected. This session's server runs `…/cross-agent/0.1.6/src/server.ts`, and
+its `describe_mode` serves the 0.1.6 loop text (step 1 of the dev-team loop names the setup skill).
+Codex's plugin cache still held only 0.1.5 at that point; updating it is the user's step.
+
 ## `rootWriteFault` names the setup skill first — `atc-s96.143` (2026-10-14)
 
 Went through the `dev-team` loop and merged as a fast-forward from `375bd5e` to `c028cc3`
