@@ -1126,6 +1126,24 @@ function userTypes(text: string): string[] {
   return sentences(text).filter((sentence) => USER_TYPES.some((pattern) => pattern.test(sentence)));
 }
 
+// The consent rule `## Asking` opens with, before the first question: what waits for the
+// user's own answer, what is never one, and what a session that cannot take one does. Each
+// part is one whole sentence, so a part cut, moved out of `## Asking`, or hedged on either
+// side is a gap.
+const CONSENT: Array<[string, RegExp]> = [
+  ["the rule opens ## Asking", /^ ## Asking - \*\*Wait for the user's answer\.\*\* /],
+  ["what waits for the answer", /(?:^|[.*] )Every write \(`init --config`\), `git init`, and the `\.gitignore` add and commit run only on the user's own explicit answer to its question, given in this conversation\. /],
+  ["what is never an answer", /(?:^|\. )A default, the recommended option or silence is never an answer\. /],
+  ["a session that cannot take an answer", /(?:^|\. )When it fails, or this session cannot take an answer \(a single-turn or headless run\), ask in chat as numbered choices and end your turn\. /],
+  ["a session that ends first", /(?:^|\. )A session that ends before the user answers has written nothing\. /],
+];
+
+/** Each part of the consent rule that `## Asking` does not state whole. */
+function consentGaps(text: string): string[] {
+  const asking = flat(sectionOf(text, "Asking"));
+  return CONSENT.filter(([, sentence]) => !sentence.test(asking)).map(([part]) => part);
+}
+
 /** One question the skill asks: its words, its options, and the text the options are read against. */
 interface Question { question: string; labels: string[]; unit: string }
 
@@ -1305,6 +1323,40 @@ test("the setup skill asks before every write and before its one commit, and eve
   // Each answer that changes a proposal asks what to change, and each Cancel stops without writing.
   assert.match(flat(sectionOf(text, "First setup")), /On \*Change something\*, ask in plain words what to change/);
   assert.match(flat(sectionOf(text, "A config the server refuses")), /\*Change something\* goes as in step 4; \*Cancel\* stops without writing/);
+});
+
+test("the setup skill opens ## Asking, before any question, with its consent rule, and the guard catches the rule cut, moved or weakened", () => {
+  // A single-turn Grok run whose question tool could not be answered took the recommended mode,
+  // wrote the config and committed `.gitignore`: only the user's own answer lets a write run.
+  const text = setupSkill();
+  assert.deepEqual(consentGaps(text), [], "parts of the consent rule ## Asking does not state whole");
+  const asking = sectionOf(text, "Asking");
+  const end = text.indexOf(asking) + asking.length;
+  const asks = [...text.matchAll(/^[ \t]*Ask: "/gm)];
+  assert.equal(asks.length, questions(text).length, "every question the skill asks is an Ask: line");
+  for (const ask of asks) {
+    assert.ok((ask.index ?? 0) > end, `a question comes before the consent rule ends: ${text.slice(ask.index, ask.index + 60)}`);
+  }
+  // The rule cut, moved out of `## Asking`, hedged, weakened, given an exception, or going on
+  // in a session that cannot take an answer: each is a gap the guard names.
+  const rule = /^- \*\*Wait for the user's answer\.\*\*[\s\S]*?\n(?=- )/m.exec(text)?.[0] ?? "";
+  const cut = text.replace(rule, "");
+  const mutations: Array<[string, string, string]> = [
+    ["cut", cut, "what waits for the answer"],
+    ["moved", `${cut}\n${rule}`, "what is never an answer"],
+    ["hedged before", text.replace(/Every\s+write\s+\(/, "Where it can, every write ("), "what waits for the answer"],
+    ["weakened", text.replace(/is\s+never\s+an\s+answer\./, "is rarely an answer."), "what is never an answer"],
+    ["exception added", text.replace(/is\s+never\s+an\s+answer\./, "is never an answer, unless the session cannot take one."),
+      "what is never an answer"],
+    ["recommended option dropped", text.replace(/A\s+default,\s+the\s+recommended\s+option\s+or\s+silence/, "A default or silence"),
+      "what is never an answer"],
+    ["goes on instead of stopping", text.replace(/and\s+end\s+your\s+turn\./, "and take the recommended option."),
+      "a session that cannot take an answer"],
+  ];
+  for (const [how, mutated, part] of mutations) {
+    assert.notEqual(mutated, text, `the ${how} mutation changes nothing`);
+    assert.ok(consentGaps(mutated).includes(part), `the guard misses the rule ${how}: ${consentGaps(mutated).join(", ")}`);
+  }
 });
 
 test("before the commit question the setup skill shows everything the commit will hold, setup's lines marked and anything else named", async (t) => {

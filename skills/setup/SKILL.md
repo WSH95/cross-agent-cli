@@ -12,10 +12,16 @@ directly from the project root.
 
 ## Asking
 
+- **Wait for the user's answer.** Every write (`init --config`), `git init`, and the
+  `.gitignore` add and commit run only on the user's own explicit answer to its question,
+  given in this conversation. A default, the recommended option or silence is never an
+  answer.
 - What the user must read goes in the message.
 - An option is a content-free answer, or a short label for something the message just
   showed: never a preview, a table or a config.
-- Ask with the host's question tool (`## Hosts`).
+- Ask with the host's question tool (`## Hosts`). When it fails, or this session cannot
+  take an answer (a single-turn or headless run), ask in chat as numbered choices and end
+  your turn. A session that ends before the user answers has written nothing.
 - Every question below is written `Ask: "<question>" — options: *A* / *B*`.
 
 ## Hosts
