@@ -364,11 +364,12 @@ From a terminal, `cross-agent init --mode dev-team` writes the mode's defaults i
 `~/src/cross-agent-cli/bin/cross-agent init --mode dev-team` where `cross-agent` is not on
 your `PATH`.
 `.grok/` goes into `.gitignore`, where setup, or `init` from a terminal, adds cross-agent's
-own entries later, because its file names your checkout's path, and because a committed
-`.grok/config.toml` would reach every task worktree: Grok takes a linked worktree as a
-project of its own, so it would load the plugin for every worktree specialist, and a specialist's edit to it — or to `.claude/`,
-`.codex/` or `.mcp.json` — is refused at the worktree's commit and at the merge, naming
-the path, so the ignore is what keeps the file out of the worktrees in the first place.
+own entries later, because `.grok/config.toml` names your checkout's path, and because a
+committed `.grok/config.toml` would reach every task worktree: Grok takes a linked
+worktree as a project of its own, so it would load the plugin for every worktree
+specialist, and a specialist's edit to it — or to `.claude/`, `.codex/` or `.mcp.json` —
+is refused at the worktree's commit and at the merge, naming the path, so the ignore is
+what keeps the file out of the worktrees in the first place.
 Host configuration must be regular files: a symbolic link at any of the four root
 paths, or anywhere below them, is refused by name, case-insensitively. A commit checks
 its current tree, index and working tree (even ignored links); a merge checks the
@@ -387,9 +388,9 @@ loaded no plugin at all.
 A project that already tracks `.grok/config.toml` needs one step more, since `.gitignore`
 does not cover a tracked file: in place of the commit line, with nothing else staged, run
 `git rm --cached .grok/config.toml && git add .gitignore && git commit -m 'Ignore
-Grok state'`, before you edit the file. That commits the file's removal
-with the `.gitignore` change and keeps the file on your disk, though other clones lose it at
-their next pull. A commit limited to `-- .gitignore` would leave the removal staged, and one
+Grok state'`, before you edit the file. That commits the file's removal with the
+`.gitignore` change and keeps the file on your disk, though other clones lose it at their
+next pull. A commit limited to `-- .gitignore` would leave the removal staged, and one
 that also named `.grok/config.toml` would track the file again.
 
 The heredoc is for a project whose `.grok/config.toml` has no `[plugins]` or `[mcp]` table

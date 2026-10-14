@@ -3308,8 +3308,8 @@ its setup. It runs the plugin's own CLI by its path from the skill's directory,
 `init --config -` with the document the user confirmed, and `--replace --expect <sha256>`
 for a change. It asks through each host's question tool — or, when that tool fails or the
 session cannot take an answer, in chat as numbered choices, ending its turn — gives each
-refusal code its next step (`tests/skills.test.ts#setupRefusalCodes`), and after a first setup or a reconnect checks the
-connection with `describe_mode` and `list_roles`.
+refusal code its next step (`tests/skills.test.ts#setupRefusalCodes`), and after a first
+setup or a reconnect checks the connection with `describe_mode` and `list_roles`.
 
 **After a `worktree: true` task settles, the launcher applies
 `project.mergePolicy` — nobody merges by hand under `auto`.** First it commits

@@ -418,9 +418,10 @@ test("the install guide attaches Grok per project through the project's own .gro
     // The bind-time config first: Grok starts the plugin's server in the session's directory,
     // which finds the project by the config it holds; `cross-agent` is on PATH only where linked.
     "cross-agent init", "~/src/cross-agent-cli/bin/cross-agent init",
-    // `.grok/` ignored where setup, or `init`, adds cross-agent's own entries later, on a line of its own even after a last line with no
-    // newline, and the change committed: a loop's first step stops on a dirty tree, and a committed
-    // `.grok/config.toml` would reach every task worktree, which Grok takes as a project of its own.
+    // `.grok/` ignored where setup, or `init`, adds cross-agent's own entries later, on a line of
+    // its own even after a last line with no newline, and the change committed: a loop's first step
+    // stops on a dirty tree, and a committed `.grok/config.toml` would reach every task worktree,
+    // which Grok takes as a project of its own.
     "printf '\\n.grok/\\n' >> .gitignore", "git add .gitignore && git commit -m 'Ignore Grok state' -- .gitignore", "Commit that `.gitignore` change",
     "every task worktree",
     // A project that already tracks the file untracks it in the same commit, by the index rather
