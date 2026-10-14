@@ -206,20 +206,24 @@ nothing filed. A brief that names no id is a goal, so to run a single task witho
 that approval, file it first and name its id. A follow-up is filed outside the set and
 the epic and never worked in the run, however small; you approve one by naming it in a
 new run's brief. The run ends when every item is closed, or at a stop — yours, a task
-that stopped short of its merge and passing suite, or the repair path — and the lead
-files what is left to file, writes the final handoff and closes on one report: each
+that stopped short of its merge and passing suite, the repair path, or a cleanup that
+stopped — and the lead files what is left to file, writes the final handoff and closes
+on one report: each
 task's lines, the set and each item's outcome, the follow-ups filed with their ids and
 any refused call listed as unfiled, each record and tracker commit, and for a goal the
 epic and the breakdown you approved. A lead resumed, or started fresh on the same
 brief, finds its place in the tracker, git and the handoff, and asks you about
 anything its session cannot establish rather than guessing; it never closes such an
-item on its own. Your host makes no tracker call and writes no record while the run
-is the lead's. Without the block, a brief is one task, as before.
+item on its own. Your host does no bookkeeping of its own accord at any point of the
+run — no tracker call, no record write, no `bd` and no `project-steward` — before the
+lead starts, while it runs, or after it settles. Without the block, a brief is one
+task, as before.
 
-What stays yours is what neither tool does. The lead writes the record files as plain
-text through `record`, so project-steward's own state, its `state.json` and its
-checkpoints, goes stale over a run: run `project-steward checkpoint` when you want it
-current. `bd remember`, a sync and a push are yours too. Two limits stand: follow-ups
+What neither tool does is yours. The lead writes the record files as plain text
+through `record`, so project-steward's own state, its `state.json` and its
+checkpoints, goes stale over a run until a checkpoint brings it current:
+`bd remember`, a `project-steward` checkpoint or wrap, a sync and a push are yours,
+done by you or by your host on your explicit request. Two limits stand: follow-ups
 are kept out of the run by the loop's instruction, not by a guard; and a run is one
 lead process, whose context over a long run has not been verified headless — the loop
 reaches the lead as its system instructions, and a lead that stops short is resumed,

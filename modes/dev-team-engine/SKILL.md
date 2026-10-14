@@ -325,17 +325,19 @@ one of `records.files` with `record {path}`, or writes a batch of them with
 other way. The project's own instructions say which record file holds the handoff,
 the progress and the decisions, and how each is kept; write them as plain text. Every
 write carries a `message` in the project's own commit convention, and every `replace`
-an `expect`: the `sha256` a `record {path}` of that file answered just before. Each
-write needs a wholly clean root, so tracker and record writes happen only between
-tasks, or after step 9's merge and passing suite and before step 10's cleanup. Your
-place in the run is in the tracker, git and the handoff: R1 finds it at every start.
+an `expect`: the `sha256` a `record {path}` of that file answered just before, or
+`null` for a file that does not exist yet. Each write needs a wholly clean root, so
+tracker and record writes happen only between tasks, or after step 9's merge and
+passing suite and before step 10's cleanup. Your place in the run is in the tracker,
+git and the handoff: R1 finds it at every start.
 
 ### R1. Finding your place
 
 Read the handoff, `record {path: <the handoff>}`: once the run has them it names the
 run's goal, its epic and its set. The set is the ids your brief names, or the epic's
-children from `track {verb: "show", id: <the epic>}`, or the set the handoff names.
-Read each item with `track {verb: "show", id: <the item>}`:
+children from `track {verb: "show", id: <the epic>}`, or the set the handoff names. A
+brief that is a goal whose set the handoff does not name for this goal is R3's. Read
+each item with `track {verb: "show", id: <the item>}`:
 
 - **closed** — done; a merged branch of it still standing is step 1's to clean up.
 - **open** — to do, by R2.
@@ -405,7 +407,8 @@ in this run, however small. The operator approves one by naming it in a new run'
 ### R5. The end of a run
 
 The run ends when every item of the set is closed, or at a stop: one the operator
-asked for, a task that stopped short of step 9's passing suite, or the repair path.
+asked for, a task that stopped short of step 9's passing suite, the repair path, or a
+step 10 that stopped.
 
 1. File every follow-up found and not yet filed, with `track {verb: "file", title,
    text, message}`. An unfinished item stays in progress: you never close it.

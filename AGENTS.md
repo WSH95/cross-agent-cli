@@ -29,8 +29,10 @@ through the `track` and `record` tools alone — the beads through `track`'s ver
 `.project-steward/` files through `record`, written as plain text — and still runs no `bd`
 and no `project-steward` and writes nothing under `.project-steward/` or `.beads/` any other
 way. What those sections ask that neither tool does — `bd remember`, a `project-steward`
-checkpoint or wrap, a sync, a push — stays the operator's. A specialist, and a lead whose
-`describe_mode` answers no `records`, keep the rule above.
+checkpoint or wrap, a sync, a push — is the user's, done by the user or on the user's
+explicit request, and the host session that started the lead does no bookkeeping of its
+own accord at any point of the run. A specialist, and a lead whose `describe_mode`
+answers no `records`, keep the rule above.
 
 Run the test suite only through `npm test`. Under a sandbox that filters socket calls, as
 Codex's workspace-write sandbox does, a Node child's piped output is lost: `npm test`'s

@@ -20,6 +20,13 @@ change minimal: this plan is one task, not a direction of travel. Plan the small
 change that meets the acceptance, and list anything beyond it as optional rather than
 planning it.
 
+One brief is the exception: a brief that asks for a goal's design and its breakdown gets,
+as its plan, that design and its breakdown — ordered items, each one task, each with its
+acceptance criteria and the items it depends on — checked against the repository as a
+plan is, with the same "Issues" section and human-decision line, and each item small
+enough for one implementer in one worktree; each item is planned on its own when it runs.
+Every other brief gets the one-task plan above.
+
 Review findings come back to you as an amended brief, each with its severity, its
 evidence and the change it asks for. Verify each finding against the repository before
 you fold it: one that holds is folded, and one that does not is rejected with the evidence

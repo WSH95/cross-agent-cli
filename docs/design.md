@@ -471,8 +471,10 @@ cancels or resumes it, and reads its closing report through `result`, and never
 runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
 placement"; `tests/skills.test.ts#launcherRoutesPlacement`, which fails on any
 paragraph outside that section ordering a loop step without naming `host`), nor,
-where the config keeps records, any tracker call or record write
-(`tests/skills.test.ts#engineHostNoRecords`).
+where the config keeps records, any tracker call, record write or other bookkeeping
+of its own accord at any point of the run, what neither records tool does being the
+user's, done by the user or on the user's explicit request
+(`tests/skills.test.ts#engineHostNoRecords`, `#engineHostBookkeepingScope`).
 Reconciliation follows who is live: the lead's step 1 while a lead is, and at the
 start of a session too, when the host delegates the lead and leaves the root to it;
 the continuing lead's when the user resumes a failed one; and the host's own pass
@@ -3647,7 +3649,8 @@ tasks, or after step 9's merge and passing suite and before step 10's cleanup.
 a closed item is done and an open one is to do; one its own session claimed carries
 on where it stood, the bookkeeping of a merge whose root suite it saw pass finished
 first; anything it cannot establish is put to the operator through `ask` and never
-closed on a guess (`tests/skills.test.ts#engineRunResume`). **R2** works the set in
+closed on a guess; and a goal whose set the handoff does not name is R3's
+(`tests/skills.test.ts#engineRunResume`, `#engineRunEdges`). **R2** works the set in
 dependency order: step 1, `claim`, steps 2 to 9 with the item's id as the slug, its
 follow-ups filed, one `record` of its progress, its decisions and the handoff,
 `close`, then step 10; a task that stops short of step 9's passing suite ends the
@@ -3657,10 +3660,12 @@ the planner under step 3's review, approved by the operator in one `ask`, record
 before anything is filed, then the epic, its items and their dependencies filed, the
 set being the ids `create` printed (`#engineRunGoal`). **R4** files a follow-up
 outside the set and the epic, never worked in the run; the operator approves one by
-naming it in a new run's brief (`#engineRunFollowUps`). **R5** ends the run: every
-follow-up not yet filed, the final handoff, and the closing report, written once,
-adding the set and each item's outcome, what was filed and what was refused, and
-each record and tracker commit (`#engineRunReport`, `#leadRunReport`). Without
+naming it in a new run's brief (`#engineRunFollowUps`). **R5** ends the run once
+every item is closed, or at a stop — the operator's, a task short of step 9's
+passing suite, the repair path or a step 10 that stopped — with every follow-up not
+yet filed, the final handoff, and the closing report, written once, adding the set
+and each item's outcome, what was filed and what was refused, and each record and
+tracker commit (`#engineRunReport`, `#leadRunReport`). Without
 `records` the brief is one task, step 10's closing report is the final message, and
 no unit of the loop outside `## The run` names either tool without naming `records`
 (`#engineRunWithoutRecords`). A run is one lead process, so its context has to last
@@ -3862,6 +3867,10 @@ conventions only: planner and plan reviewer read at the root; the implementer
 edits and runs the tests in its worktree and reports a commit summary but
 never runs git write commands; the code reviewer reads the committed branch in
 the worktree, one seat among several reading on its own; nobody delegates.
+The planner's plan is one task, with one exception: the brief the engine lead's
+R3 sends, which asks for a goal's design and its breakdown into ordered items, each
+one task with its acceptance criteria and dependencies, gets that as its plan, each
+item planned on its own when it runs (`tests/skills.test.ts#plannerGoalBreakdown`).
 `solo` has one role prompt.
 
 The resolver is delegated once two fix rounds have left Critical or Important
@@ -4145,8 +4154,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,245 bytes under
-`dev-team`, 50,473 under `dev-team-engine` and 3,601 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,747 bytes under
+`dev-team`, 51,130 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

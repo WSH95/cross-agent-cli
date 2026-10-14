@@ -700,6 +700,26 @@ test("a goal is clarified through ask, approved in one ask, recorded before fili
   assert.match(step, /A stop ends the run with nothing filed/);
 });
 
+// @anchor plannerGoalBreakdown
+test("the planner answers the design and breakdown R3 asks of it, and every other brief with a plan of one task", () => {
+  // The planner's prompt reaches it as its system instructions, and it plans one task for one
+  // implementer: R3's brief is the one exception it names, in the words R3 asks with.
+  const asked = ["design and its breakdown", "ordered items, each one task, each with its acceptance criteria and the items it depends on"];
+  assertInOrder(flat(subsection(theRun(), "R3.")), asked, "R3's planner brief");
+  for (const mode of ["dev-team", "dev-team-engine"]) {
+    const planner = flat(fs.readFileSync(path.join(builtInModesDir(), mode, "roles", "planner.md"), "utf8"));
+    assertInOrder(planner, ["this plan is one task", ...asked, "Every other brief gets the one-task plan"], `${mode}'s planner`);
+  }
+});
+
+// @anchor engineRunEdges
+test("a goal whose set the handoff does not name is R3's, a stopped step 10 ends the run, and a new record file's expect is null", () => {
+  assert.match(flat(subsection(theRun(), "R1.")), /goal whose set the handoff does not name[^.]*is R3's/);
+  assert.match(flat(subsection(theRun(), "R5.")), /The run ends when[^.]*or a step 10 that stopped/);
+  const opening = flat(theRun().slice(0, theRun().indexOf("\n### R1.")));
+  assert.match(opening, /every `replace` an `expect`[^.]*or `null` for a file that does not exist yet/);
+});
+
 // @anchor engineRunFollowUps
 test("a follow-up is filed with track file, outside the set, and never worked", () => {
   const step = flat(subsection(theRun(), "R4."));
@@ -759,11 +779,16 @@ test("every records tool the loop names is offered to the lead row when records 
     assert.ok(tools.get(name)?.rows.includes("lead"), `${name} is offered to the lead row with a records block`);
     assert.equal(registry("dev-team-engine").has(name), false, `${name} is not registered without one`);
   }
+  // Every name the loop or the lead's prompt spells as a call is a tool offered to the lead row.
+  const unoffered = (text: string) => [...flat(text).matchAll(/`([a-z][a-z_]*) \{/g)]
+    .map(([, name]) => name).filter((name) => !tools.get(name)?.rows.includes("lead"));
   for (const [where, text] of [["the engine loop", loop("dev-team-engine")], ["lead.md", leadPrompt()]]) {
-    for (const [, name] of flat(text).matchAll(/`(track|record)(?=`|\s*\{)/g)) {
-      assert.ok(tools.has(name), `${where} names ${name}, which is not registered`);
-    }
+    assert.deepEqual(unoffered(text), [], `${where} spells calls to tools the lead row is not offered`);
   }
+  // And the check bites: a misspelled call is one it names.
+  const ready = '`track {verb: "ready"}`';
+  assert.ok(loop("dev-team-engine").includes(ready), "the anchor the mutation needs is still there");
+  assert.deepEqual(unoffered(loop("dev-team-engine").replace(ready, '`trak {verb: "ready"}`')), ["trak"], "the check misses a misspelled call");
   let checked = 0;
   for (const [, call] of flat(loop("dev-team-engine")).matchAll(/`((?:track|record) \{[^`]*\})`/g)) {
     checked++;
@@ -793,6 +818,19 @@ test("under engine placement with records the host makes no tracker call and wri
     assert.match(text, pin);
   }
   assert.doesNotMatch(rest, RECORDS_CALL, "the launcher outside its engine-placement section names no records tool");
+});
+
+// @anchor engineHostBookkeepingScope
+test("under engine placement with records the host keeps nothing of its own accord at any point of the run, and what neither tool does is the user's", () => {
+  // One scope, the launcher's, in the launcher and the operator guide alike: no bookkeeping of
+  // the host's own accord, before, during or after the lead; the rest on the user's request.
+  const section = flat(engineSection().section);
+  const guide = flat(fs.readFileSync(path.join(repoRoot, "docs", "operator-guide.md"), "utf8"));
+  for (const [where, text] of [["the launcher", section], ["the operator guide", guide]]) {
+    assert.match(text, /of (your|its) own accord at any point of the run/, where);
+    assert.match(text, /`bd remember`, a `project-steward` checkpoint or wrap, a sync(,| and) a push[^.]*(is|are) (the user's|yours)[^.]*explicit request/, where);
+  }
+  assert.doesNotMatch(guide, /while the run is the lead's/, "the guide's narrower scope is gone");
 });
 
 // @anchor specialistsLeaveBookkeeping

@@ -465,10 +465,11 @@ question asks for a waiver — and never a loop step: while a lead is live you n
 call `git_root`, `git_mutate`, `run_command`, `verify_worktree`, `track` or `record`,
 and you never delegate a specialist at all. You run no `git` and no test command of
 your own on the project either, not even to look: the root check is the lead's
-step 1, and what it found is in its report. `cross-agent report` and `cross-agent answer` are the
-only commands of yours this placement needs, with one exception: where your host
-offers this skill as a file to read rather than loading it, as a Codex host has,
-reading this skill's own `SKILL.md` is yours too, and it is the one file you read.
+step 1, and what it found is in its report. `cross-agent report` and
+`cross-agent answer` are the only commands of yours this placement needs, with one
+exception: where your host offers this skill as a file to read rather than loading
+it, as a Codex host has, reading this skill's own `SKILL.md` is yours too, and it is
+the one file you read.
 The steps are the lead's, and a step the lead did not take is one its journal and
 its report do not have.
 
@@ -476,11 +477,13 @@ Where `describe_mode` answers `records`, the lead keeps the project's tracker an
 record files for the whole run, and the bookkeeping the project's own instructions
 give a session is the lead's: you make no tracker call and write no record — never
 `track` or `record`, no `bd` and no `project-steward`, and no write to a file under
-`records.files` or `records.tracker.files` — before the lead starts, while it runs,
-or after it settles. A goal's breakdown reaches you as the lead's one approval
-question: relay it like any other ask; the answer is the user's. What the lead could
-not file is in its report, listed as unfiled, for the user. Without `records` this
-placement is as above.
+`records.files` or `records.tracker.files` — of your own accord at any point of the
+run, before the lead starts, while it runs, or after it settles. What neither tool
+does — `bd remember`, a `project-steward` checkpoint or wrap, a sync, a push — is the
+user's, done by the user or by you on the user's explicit request. A goal's
+breakdown reaches you as the lead's one approval question: relay it like any other
+ask; the answer is the user's. What the lead could not file is in its report, listed
+as unfiled, for the user. Without `records` this placement is as above.
 
 Who reconciles follows from who is live. At the start of a session you delegate the
 lead and touch nothing at the root, and while a lead is live — any status short of
