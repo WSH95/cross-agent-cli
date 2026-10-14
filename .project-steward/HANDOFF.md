@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-14T06:30:55Z
+updated_at: 2026-10-14T17:12:57Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -7,6 +7,13 @@ branch: main
 # Handoff
 
 ## Now
+
+**New epic `atc-2jl` (Decision 0022, 2026-10-14): the `dev-team-engine` lead owns the backlog
+and the project's records.** The user chose: the lead takes an epic/bead list or a goal it
+breaks down (approved once by the user); a general `records` config (tracker commands, record
+files); `dev-team-engine` itself changes; records committed at the root by new `track` and
+`record` tools. `atc-s96.117` is folded in. The user allowed `AGENTS.md` edits this session and
+asked for the work to run through the dev team, asking only for the user's own decisions.
 
 **The setup skill is merged (`atc-s96.134`; parts `.1` and `.2` closed 2026-10-13).** A plugin user now
 sets a project up, or changes its team, by asking the host (`/cross-agent:setup`, Codex `$`, Grok `/setup`,
@@ -207,6 +214,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
+- `atc-2jl` epic planning: planner task `535574e9929d1e5093c114dcbbbedfd1dd63` (claude
+  opus, xhigh) is writing the design and the task breakdown; plan review follows, then each
+  task through the dev-team loop.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -333,6 +343,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
+0. **`atc-2jl`:** wait on planner `535574e9…`, then plan review (codex gpt-6-astra),
+   file the breakdown as child beads, and run each through the dev-team loop.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
