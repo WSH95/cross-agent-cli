@@ -367,14 +367,14 @@ function reservationFault(projectRoot: string, target: string): string | null {
  * reason or null. What a root tool runs and what it journals are read from files there, so
  * tracking them hands a specialist a way to reach the root: a change to `testCommand`, or a
  * forged journal, committed inside its own worktree and carried to the default branch by the
- * lead's own merge (design section 4). The refusal names every tracked path and `.gitignore`,
- * because that is the repair.
+ * lead's own merge (design section 4). The refusal names every tracked path, `.gitignore`, and
+ * a `git rm` that untracks every one whatever its case, because that is the repair.
  */
 export async function trackedStateFault(gitDir: string, workTree: string): Promise<string | null> {
   const ran = await run(gitDir, workTree, ["ls-files", "--error-unmatch", "--", ":(icase).cross-agent"]);
   const tracked = ran.exitCode === 0 ? ran.stdout.split("\n").filter(Boolean) : [];
   if (tracked.length === 0) return null;
-  return `.cross-agent/ is tracked by this repository (${tracked.join(", ")}): a specialist could then commit what the lead runs at the root. Add .cross-agent/ to .gitignore and "git rm -r --cached .cross-agent" first`;
+  return `.cross-agent/ is tracked by this repository (${tracked.join(", ")}): a specialist could then commit what the lead runs at the root. Add .cross-agent/ to .gitignore and "git rm -r --cached -- ':(icase).cross-agent'" first`;
 }
 
 /**

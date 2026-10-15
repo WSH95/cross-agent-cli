@@ -2607,8 +2607,12 @@ the caller wrote (`src/gitroot.ts#execute`). **Every** branch argument matches
 the mode's `branchPattern` — a new task branch, and the branch a merge or a
 delete names, whatever its journal records — or, for a read, is the default
 branch; a `<base>` is the default branch and nothing else
-(`src/gitroot.ts#judge`, `#matchesPattern`). `git_mutate` takes any branch its
-caller names, and its unbounded `args` reach the same ref store through the
+(`src/gitroot.ts#judge`, `#matchesPattern`). Every branch argument is also a name git
+reads as written (`#nameFault`), and the new one `worktree add -b` creates keeps, besides,
+to the alphabet a task's slug keeps to — letters, digits, `.`, `_`, `/` and `-`, starting
+with a letter or digit — while a read, the merge and the delete take any name git does
+(`src/gitroot.ts#newBranchFault`, `tests/gitroot.test.ts#newTaskBranchAlphabet`).
+`git_mutate` takes any branch its caller names, and its unbounded `args` reach the same ref store through the
 worktree's git-dir, so this whitelist bounds `git_root` and says nothing about
 what a worktree mutation can do.
 
@@ -2696,7 +2700,8 @@ it. With `.cross-agent/` tracked, an implementer's own commit inside its
 worktree reaches the default branch through the lead's merge, and the lead then
 runs it at the root. The check is `git ls-files --error-unmatch --
 :(icase).cross-agent` at the root, in any case, and the refusal names every
-tracked path and `.gitignore`, because that is the repair
+tracked path, `.gitignore`, and `git rm -r --cached -- ':(icase).cross-agent'`,
+which untracks every one whatever its case, because that is the repair
 (`tests/gitroot.test.ts#trackedStateNamesEveryPath`). `cross-agent init` writes
 those entries — `.cross-agent/` and the worktree directory this mode's tasks use,
 its own where it declares one and this build's where it does not — appending
@@ -4595,7 +4600,7 @@ with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
   original task's engine (`src/guard.ts#resumeRefusal`), and a transfer would
   have to reconstruct one engine's session state inside another's.
 
-Four limits of worktree projects are deferred the same way, each for its reason:
+Three limits of worktree projects are deferred the same way, each for its reason:
 
 - **A worktree project inside its main checkout's directory** — `M/branches/x`, or
   a host's own `.claude/worktrees/<name>` — is refused as a root. Supporting it needs

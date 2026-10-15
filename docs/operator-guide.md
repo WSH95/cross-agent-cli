@@ -312,8 +312,8 @@ directory is separate from its checkout (`git init --separate-git-dir`), git rec
 path to the checkout, so name it: `cross-agent init --from <main checkout>`, or `--mode
 <name>` for the defaults. `init` refuses a worktree with a detached HEAD, one on a
 branch the mode's task pattern matches (`task/*`), and one on a branch the root tools
-cannot name: one `git check-ref-format --branch` refuses, one starting with `-`, `HEAD`
-or `@`, or one holding `@{`.
+cannot name: one `git check-ref-format --branch` refuses, one starting with `-`, one
+that is `HEAD` or `@`, or one holding `@{`.
 
 A worktree project may not lie inside another work tree of its repository: one under
 the main checkout, such as `my-project/branches/x`, is refused, as a task's worktree

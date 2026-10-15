@@ -592,11 +592,19 @@ test("nameFault takes every branch name git check-ref-format --branch takes as w
 });
 
 // @anchor newTaskBranchAlphabet
-test("git_root reads a branch git names as written, and creates a task branch only in the alphabet a slug keeps to", async (t) => {
+test("git_root reads, merges and deletes a branch git names as written, and creates a task branch only in the alphabet a slug keeps to", async (t) => {
   const { root } = await repository(t);
-  // A branch some other path made: every read names it as git does.
-  await git(root, "branch", "task/a+b", "main");
+  // A branch some other path made, and a journal `git_mutate` bound to it: every verb that
+  // names an existing branch — a read, the merge, the delete — takes it as git does.
+  const bound = path.join(root, ".worktrees", "ab");
+  await git(root, "worktree", "add", "-b", "task/a+b", bound);
+  accepted(await gitMutate(root, { slug: "ab", path: bound, branch: "task/a+b", args: ["commit", "--allow-empty", "-m", "work"] }, { waitSeconds: 5 }));
   assert.equal(accepted(await gitRoot(root, { args: ["rev-parse", "task/a+b"] }, { waitSeconds: 5 })).stdout.trim(), await git(root, "rev-parse", "task/a+b"));
+  accepted(await gitRoot(root, { args: ["merge", "--ff-only", "task/a+b"], slug: "ab" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["worktree", "remove", bound], slug: "ab" }, { waitSeconds: 5 }));
+  accepted(await gitRoot(root, { args: ["branch", "-d", "task/a+b"], slug: "ab" }, { waitSeconds: 5 }));
+  assert.deepEqual(readJournal(root, "ab")!.steps.map((step) => step.step), ["committed", "merged", "worktree-removed", "branch-deleted"]);
+  assert.equal(await git(root, "branch", "--list", "task/*"), "");
 
   // A branch this tool creates is a task's, named after its slug.
   const directory = path.join(root, ".worktrees", "cd");
@@ -750,7 +758,7 @@ test("a tracked .cross-agent/ is refused by every verb, naming .gitignore", asyn
 });
 
 // @anchor trackedStateNamesEveryPath
-test("a tracked .cross-agent/ in any case is refused naming every tracked path and .gitignore, however many", async (t) => {
+test("a tracked .cross-agent/ in any case is refused naming every tracked path, .gitignore, and a git rm that untracks them all", async (t) => {
   const { root } = await repository(t);
   // Five paths, one under the directory in another case, which a filesystem that ignores
   // case reads as the project's own: the repair is whole only when every one is named.
@@ -765,6 +773,15 @@ test("a tracked .cross-agent/ in any case is refused naming every tracked path a
   for (const file of tracked) assert.ok(reason.includes(file), `${file}: ${reason}`);
   assert.match(reason, /\.gitignore/);
   assert.doesNotMatch(reason, /…/);
+
+  // The command the refusal names, split as a shell splits it, untracks every one of them
+  // whatever its case, and the root tools work again.
+  const advised = /"git (rm [^"]+)"/.exec(reason);
+  assert.ok(advised !== null, reason);
+  await git(root, ...advised[1].split(" ").map((word) => word.replace(/^'(.*)'$/, "$1")));
+  await git(root, "commit", "-m", "stop tracking it");
+  assert.equal(await git(root, "ls-files", "--", ":(icase).cross-agent"), "");
+  accepted(await gitRoot(root, { args: ["status", "--porcelain", "--untracked-files=no"] }, { waitSeconds: 5 }));
 });
 
 // @anchor linkedWorktreeRoot
