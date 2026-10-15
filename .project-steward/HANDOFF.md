@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T05:30:20Z
+updated_at: 2026-10-15T06:16:28Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -236,9 +236,13 @@ What stands is the project's own record. The operator conditions a release names
   slug sentence names `git_root`'s branch exclusions; root suite 1201/1199/0 fail.
 - **`atc-9w2` merged as `213dacf`** and closed: the flaky test accepts both correct reasons of a
   setup race; root suite 1201/1199/0 fail. `atc-2jl.5` waits for the live trace after a release.
-- **Release 0.1.8 (`atc-s96.150`, in progress):** `541bc98` pushed to `main` on the user's approval;
-  agent-plugins PR #23 open (`MERGEABLE`, `CLEAN`), awaiting the user's merge. Steward commits after
-  `541bc98` are local.
+- **Release 0.1.8 (`atc-s96.150`):** `541bc98` pushed; agent-plugins PR #23 merged by the user, Claude
+  Code updated and reconnected; Codex updated here (`codex plugin marketplace upgrade`, `codex plugin
+  add`), its cache equals the dist payload. Steward commits after `541bc98` are local.
+- **Live acceptance trace passed** (`VERIFY.md`): run 1 (epic, Claude lead) and run 2 (goal, Codex
+  lead) met every pass condition in `~/.cache/agent-team/cross-agent-trace/kvtiny`; `atc-2jl.5` settled by
+  a direct probe (Claude and Codex both pass `expect: null`). `atc-2jl`, `atc-2jl.5` and `atc-s96.150`
+  closed. Nothing of `atc-2jl` remains.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -365,11 +369,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **The user merges agent-plugins PR #23** and updates the plugin (Claude Code; Codex with
-   `codex plugin marketplace upgrade` and `codex plugin add cross-agent@agent-plugins`). Then the
-   epic's live acceptance trace on 0.1.8 (`.cross-agent/plans/atc-2jl/plan-approved.md`, "Live
-   acceptance trace"), with `atc-2jl.5`; record it in `VERIFY.md` and close `atc-2jl.5`, `atc-2jl`
-   and `atc-s96.150`.
+0. **Epic `atc-2jl` is done and released (0.1.8).** Pick the next work from `bd ready` with the user;
+   steward commits after `541bc98` are local, for the user to push when wanted.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.

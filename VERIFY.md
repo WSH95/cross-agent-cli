@@ -7,6 +7,71 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The live acceptance trace of `atc-2jl` on 0.1.8, with `atc-2jl.5` (2026-10-15)
+
+The epic plan's trace (`.cross-agent/plans/atc-2jl/plan-approved.md`, "Live acceptance trace"),
+run on the installed 0.1.8 after the user merged agent-plugins PR #23. Claude Code updated by the
+user; Codex updated here (`codex plugin marketplace upgrade`, `codex plugin add
+cross-agent@agent-plugins`), its cache equal to the dist payload (`diff -rq`).
+
+**The project.** `~/.cache/agent-team/cross-agent-trace/kvtiny`: a tiny ES-module library with a
+`node --test` suite, beads initialized by `bd init --non-interactive -p kv --skip-agents` (bd 1.2.2,
+its git hooks installed, its own init commit), `.project-steward/` with `HANDOFF.md`,
+`PROGRESS.md` and `DECISIONS.md`, and an `AGENTS.md` whose Task backend and Project Steward sections
+say how the records are kept. **Step 1 passed:** the installed CLI's `init --propose` gave the
+`dev-team-engine` proposal the `records` block (the three steward files; bd's verbs;
+`.beads/interactions.jsonl`). It was written as proposed but for a cheaper roster (lead
+claude-opus-5-5 high; Sonnet and Codex specialists at medium; one review seat).
+
+**Run 1: an epic, a Claude lead.** Epic `kv-q15` with A `kv-q15.1` (clamp; its text names a
+bigint follow-up to file) and B `kv-q15.2` (lerp, depends on A). Host: a headless `codex exec`
+told to work epic kv-q15, nobody attending. All pass conditions held:
+- A was claimed, merged (`e3c5a68`), recorded (`91c9195`) and closed (`a2bfe9c`) before B was
+  claimed (B's claim journal step starts from `a2bfe9c`); then B merged (`bb808a3`), recorded
+  (`e2c9555`), closed (`0c23568`); the epic was closed (`769abe1`) and the final handoff written
+  (`83203bf`).
+- A's follow-up `kv-xs9` (bigint), and `kv-ts1` (NaN, from the plan), were filed with no parent,
+  never claimed, and are open at the end.
+- The host's transcript: 64 cross-agent calls (describe_mode, list_roles, one delegate, then
+  wait, list_tasks, list_asks, check, result) and three `cat`s of skill files; no `bd`,
+  `project-steward`, `track` or `record` call, no file change. It showed the lead's report whole.
+- Every commit on `main` is a task merge (each task journal's `merged`) or a run-journal step;
+  every step with a commit is `verified: true`; the claims and filings committed nothing.
+  `git status --porcelain` empty at the end, no worktree or branch left.
+
+**Run 2: a goal, a Codex lead** (codex gpt-6-astra high). Goal: snap(n, step) and snapClamp(n,
+step, lo, hi). The lead asked one clarifying question, relayed verbatim by the host, which ended
+its turn; I answered with `cross-agent answer` and resumed the host. Its one approval ask carried
+the design and the ordered two items, each with its acceptance and dependency; it was answered
+"yes" at 06:00:51 UTC, and the run's first write came after it (06:01:10). All pass conditions
+held:
+- The yes filed in R3's order: `record` of the approved design with the handoff saying filing has
+  begun (`7951ef0`), `track epic` (`kv-34j`), two `track create {parent}`, `track depend`, then the
+  handoff naming the goal, the epic and the set (`c3ec920`).
+- The items were worked as in run 1: claim, merge (`668754c`, `e2478e5`), record, close, then
+  cleanup (to the millisecond, each record and close before its `worktree remove`), the epic closed
+  (`9e13427`) and the final handoff (`959de95`). Every commit on `main` is a merge or a verified
+  run-journal step; the root clean at the end.
+- The host's three sessions made no `bd`, `project-steward`, `track` or `record` call and changed
+  no file.
+
+**`atc-2jl.5`, `record`'s `expect` type array.** Both leads were offered `record` and called it
+with `expect` as a sha256 on every replace (each write landed and verified); neither sent an
+explicit null (both omitted `expect` on appends). A direct probe settled it: a headless `codex
+exec` and a headless `claude -p`, each told to call `record` with `{"path":
+".project-steward/DECISIONS.md", "mode": "replace", "expect": null}`, sent `"expect": null` and got
+the server's own refusal ("exists, and expect null names a file that does not"), the file and the
+root unchanged. So both hosts accept the schema and pass the null through.
+
+**Observed, nothing to fix in this epic:**
+- Claude Code's project-steward plugin hooks write `.project-steward/runtime/` in any project with
+  `.project-steward/`; in a project that does not ignore it, the root is unclean and `record`
+  refuses (as the first Claude probe did). `project-steward init` ignores that directory; the
+  scratch project, made by hand, did not until it was added.
+- The Codex host waited in 45-second calls rather than the launcher's 600 for Codex, and read the
+  steward's `HANDOFF.md` once because project-steward's session-resume skill told it to; neither
+  touched a record.
+
 ## Release 0.1.8 — `atc-s96.150` (2026-10-15)
 
 The package and both manifests are 0.1.8. Since 0.1.7 (`0ab03cf`) the payload carries epic
