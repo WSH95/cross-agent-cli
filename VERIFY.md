@@ -7,6 +7,30 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.9 — `atc-s96.151` (2026-10-15)
+
+The package and both manifests are 0.1.9. Since 0.1.8 (`541bc98`) the payload carries the backlog
+run's nine tasks (`f395066` … `1696dad`): the launcher's text on Claude Code's 120 s backgrounding,
+the server and the narration; the binding in `delegate`, `wait` and `result` and `describe_mode`'s
+`projectWarning`; the CLI's ancestry refusal of write verbs below an engine; bounded `list_tasks`;
+every git child in its own group with a 30-minute timeout and an output cap; EPIPE handling in the
+CLI and the server; `childEnv` dropping `GROK_SESSION_ID` and `AI_AGENT`, and the specialists'
+plain-shell paragraph; the tidy task's single sources and case-blind guards; and the docs. After the
+bump, `npm test` at the root ran 1233 tests: 1231 pass, 0 fail, 2 guarded skips. The opt-in real-Codex
+packaging probe (`CODEX_SETUP_PROBE`) was not run this time.
+
+The frozen source release is `439a8c8`, pushed to `main` as a fast-forward from `541bc98` on the
+user's approval ("push and publish").
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/24 on
+`publish/cross-agent-plugin/20261015184254` (commit `b8f0571`), 67 files. The target's `cross-agent/`
+equals the frozen dist (`diff -r`). Its Claude and Codex plugin manifests and `package.json` read
+0.1.9. `claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin. The
+PR is `MERGEABLE`, merge state `CLEAN`. No merge was performed.
+
+**Not verified yet:** the release on an installed 0.1.9, which needs the PR merged and each host
+updated (Claude Code's plugin update, Codex's `codex plugin marketplace upgrade`).
+
 ## What a specialist's engine is given — `atc-s96.77`, `.113`, `.92`, `.78`, `.76` (2026-10-15)
 
 Task 9 of the backlog run, its last (old tasks 11 and 12 combined). Went through the `dev-team`

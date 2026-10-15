@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T18:18:54Z
+updated_at: 2026-10-15T18:43:48Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -16,7 +16,7 @@ limitations; `.25`, `.26`, `.28`, `.48`, `.96`, `.99`, `.100`, `.110`, `.93` def
 (2) docs `.125` `.126` `.127` + task 1's two follow-ups — merged as `17ea9ae`, closed; (3) EPIPE `.120` `.121` — merged as `f811cf4`, closed; (4) server answers `.95` `.102` — merged as `12709e0`, closed;
 (5) tidy `.84` `.87` `.91` `.81` `.89` `.90` `.101` (old tasks 5 and 6 combined) — merged as `1dfad88`, closed; (7) self-hosting authority
 `.123` `.74` — merged as `4b785cc`, closed; (8) verifier `.69` `.72` `.62` `.94` — merged as `f6b89c2`, closed; (9) answer bounds `.79` and (10) hung git `.98`, combined as one task — merged as `9f29d5c`, closed;
-(11) Grok specialist isolation `.77` `.92` `.78` `.76` and (12) Claude compound commands `.113`, combined as the last task — merged as `1696dad`, closed. **The backlog run is complete.**
+(11) Grok specialist isolation `.77` `.92` `.78` `.76` and (12) Claude compound commands `.113`, combined as the last task — merged as `1696dad`, closed. **The backlog run is complete.** Released as 0.1.9 (`439a8c8`, pushed); agent-plugins PR #24 open, not merged.
 Team runs from the installed 0.1.8 build. No push or release without asking.
 
 **New epic `atc-2jl` (Decision 0022, 2026-10-14): the `dev-team-engine` lead owns the backlog
@@ -380,10 +380,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **The backlog run is complete (see Now).** Every task merged through the `dev-team` loop and its
-   beads are closed; the deferred beads stay open with their reasons. Nothing is pushed. The team
-   runs the installed 0.1.8 build, so none of the run's changes reach it until a release (version
-   bump, push, publish). Ask the user before the push and before the release.
+0. **The backlog run is complete and released as 0.1.9 (see Now).** `main` is pushed to `439a8c8`;
+   https://github.com/WSH95/agent-plugins/pull/24 is open for the user to merge. After the merge,
+   update the hosts (Claude Code's plugin update; Codex: `codex plugin marketplace upgrade`) so the
+   team runs 0.1.9. The deferred beads stay open with their reasons.
    Before it: **Epic `atc-2jl` is done and released (0.1.8).**
    steward commits after `541bc98` are local, for the user to push when wanted.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T18:43:48Z — claude
+Release 0.1.9 (`atc-s96.151`): versions bumped, root suite 1233 tests, 1231 pass, 0 fail, 2 skipped; `main` pushed to `439a8c8` on the user's approval; agent-plugins PR #24 opened (payload equals dist, plugin validates, mergeable), not merged.
+
 ### 2026-10-15T18:18:54Z — claude
 Backlog run task 9, the last (specialist environment: `atc-s96.77`, `.113`, `.92`, `.78`, `.76`), merged through the `dev-team` loop as `1696dad`: `childEnv` drops the host's `GROK_SESSION_ID` and `AI_AGENT`; every specialist prompt carries a plain-shell paragraph; Grok's built-in tools, the launcher skill and server under a Claude Code install, and the operator's plugin hooks recorded as stated limitations from the ledger; root suite 1233 tests, 1231 pass, 0 fail, 2 skipped; beads closed. The backlog run is complete.
 
