@@ -3,6 +3,28 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T21:06:00Z — codex
+Solo verification `atc-s96.153` completed all six functional scenarios with requested models,
+default effort, exit 0 and depth 1. Claude/Codex scoped verifiers pass 8/8; Grok writable
+remains blocked at 7 pass and one unresolved native `search_replace` event shape, independently
+reproduced and filed as `atc-s96.155`. Both Codex specialists searched parent directories
+against their role instruction (`atc-s96.156`); functional results and verifier gates still
+pass. All 123 sample tests pass, main is clean at `7b3110b`, task branches/worktrees removed,
+and 106 earlier evidence files retain their hashes. No product fixes or engine retries.
+Configured the approved engine-led mode through the released CLI and created fresh chat
+`01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` for `atc-s96.154`; live roster matches and its one
+Claude Opus xhigh lead has started. The independent final audit and config restoration follow
+only after that lead settles. No push or remote sync.
+
+### 2026-10-15T20:47:00Z — codex
+Started the user-approved remaining-mode acceptance (`atc-s96.153`, `.154`) using installed
+0.1.9 and the previously saved Slugkit project. Connection check passes outside the sandbox;
+sample baseline is clean `22c0657`, all 123 tests pass, no live tasks or task worktrees.
+Saved original config and preparation evidence, applied solo through the released CLI with
+hash protection, and created test chat `01a14151-6aba-7c13-b616-102793981539` for Claude,
+Codex and Grok consultation plus writable one-shots. The engine-led workflow follows only
+after solo settles. Diagnose/report only, local evidence commit authorized, no push.
+
 ### 2026-10-15T20:20:50Z — codex
 `atc-s96.152` closed: installed 0.1.9 passed the complete Codex-host `dev-team` acceptance
 run in the independent Slugkit sample. All 11 tasks finished at depth 1; Claude, Codex,

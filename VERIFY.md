@@ -7,6 +7,79 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Codex solo acceptance — `atc-s96.153` (2026-10-15)
+
+**Blocked at the Grok writable transcript check; Codex directory-scope compliance failed.**
+All six requested functional scenarios completed with correct examples, exit 0, the approved
+bindings at depth 1, and native evidence retained. Claude and Codex each passed all eight
+scoped verifier checks. Grok passed seven; its writable transcript uses the native
+`search_replace` edit tool, which the verifier does not recognize. That row remains `?`,
+not a pass. The verification run is complete; the unresolved findings are `atc-s96.155`
+(verifier coverage) and `atc-s96.156` (Codex scope compliance). No product fixes were made.
+
+Fresh Codex chat `01a14151-6aba-7c13-b616-102793981539` on `local` ran the installed 0.1.9
+MCP tools and live served solo loop in the same independent Slugkit sample,
+`/home/wsh/Documents/cross-agent-codex-host-e2e-20261015`. Its handshake confirmed that root,
+host placement, the configured Claude consultant, and no warnings. The released setup CLI
+replaced the config using its expected SHA-256. Main, automatic merging, no setup command,
+and `python3 -m unittest discover -s tests -t .` were preserved. The connection check passed
+outside the sandbox; its sandbox attempt could not initialize Codex's read-only state runtime.
+
+Each delegation named its engine and model explicitly and omitted effort. Actual records
+agree: Claude `claude-opus-5-5`, Codex `gpt-6.1-sol`, Grok `grok-4.7`, all default effort.
+All read-only consultants ran at the root with the read-only profile; writable tasks ran in
+server-created worktrees with `workspace-write` for Claude/Codex and `workspace` for Grok.
+
+| Engine | Read-only task | Writable task | Functional / verifier / compliance result |
+| --- | --- | --- | --- |
+| Claude | `239074c03cc0321c8c7f378aacf26a63e87e` | `bb070fc0780d4238aea50258f08d33785a17` | Both pass; 8/8; no scope violation observed |
+| Codex | `08956a56d94a1de787e620f7bc8032624391` | `4e67856c4e49b097abcc9424d39d60d0c061` | Both functionally pass; 8/8; both fail assigned-directory compliance |
+| Grok | `e8cedb0faac88b10b845496c1b8b333deb07` | `a83d88f8e73118be440a0f6c5eaddd790ae8` | Read-only passes; writable functionally passes but acceptance is blocked; 7 pass, 1 unresolved |
+
+All six sets covered multiple words, one word, empty input, punctuation, repeated whitespace,
+and accented Unicode. Read-only tasks left the commit, status, branches, and worktrees
+unchanged. Writable tasks added only `docs/solo-claude.md`, `docs/solo-codex.md`, and
+`docs/solo-grok.md`, respectively. Their commits were `ee28a37`, `f4e2116`, and `7b3110b`.
+Each passed all 123 tests at the committed branch head and again after its fast-forward
+merge, then removed its worktree and branch. Grok's post-task checks found unchanged root
+and worktree heads, clean index and tracked files, and only the requested untracked document.
+Those checks do not assert that Grok's OS sandbox protects every git metadata path.
+
+The host ran each scoped verifier before starting the next engine, with that engine's
+read-only task as `--since` and writable task as `--slug`. Claude/Codex each returned exit 0,
+eight passes, two records, and two inspected transcripts. Grok returned exit 2, seven passes,
+zero failures, and one row without evidence. A separate coordinator invocation reproduced
+that exact result before the mode changed. Four Grok `search_replace` calls appear in its
+writable native log at lines 10, 14 (two calls), and 18, all editing the requested document.
+`tools/e2e-verify.mjs#engineTools` omits that tool, so the transcript reader fails closed.
+Manual inspection neither replaces nor waives the unresolved row. `atc-s96.155` retains
+the exact command, task IDs, log positions, actual result, and captured config.
+
+Both Codex tasks ran `find .. -name AGENTS.md -print`, despite their injected consultant
+prompt's instruction to work in the given directory and nowhere else. The read-only search
+enumerated sibling repositories; the writable search began at the parent worktree directory.
+Their native logs and role prompts reproduce the failure (`atc-s96.156`). Both recovered
+from an unavailable `python` command by using `python3`. No engine process failed, and no
+out-of-scope writes, delegations, or engine launches were observed in those Codex transcripts.
+The host summary's functional `pass` does not erase its separate scope `fail`.
+
+Host deviations: an initial refused `git_root rev-parse HEAD` and a read-only branch query
+preceded reconciliation; reconciliation completed before delegation. A temporary example
+parser error and a failed diagnostic path search were corrected without rerunning tasks.
+The intended repeated read-only brief hit the finished-task duplicate window; the host
+reconciled and used the documented `force: true`, including for Grok. This was not a failed
+engine retry. No models changed, no review waivers were used, and nothing was pushed.
+
+Final solo sample main: `7b3110b8971883183de1c9cbdb41e97df63350aa`, clean, root worktree
+only, no task branches, all 123 tests passing. Evidence is under the sample's ignored
+`.cross-agent/remaining-modes-evidence/solo/`: `solo-run-summary.json`, full MCP captures,
+per-engine native logs/results and verifier commands/configs/outputs, the manifest, and
+`coordinator-audit.json`. The coordinator checked bindings, statuses, depths, sandbox
+profiles, worktree tuples, log/result hashes, cleanup, tests, and all three verifier outputs;
+106 files from the earlier dev-team evidence remained unchanged. Source changes are records
+only; the product suite was not rerun. Whitespace and citation checks validate these edits.
+The separate engine-led verification is `atc-s96.154`.
+
 ## Codex host acceptance — `atc-s96.152` (2026-10-15)
 
 **Pass.** A new Codex desktop chat ran the full host-placed `dev-team` loop against installed

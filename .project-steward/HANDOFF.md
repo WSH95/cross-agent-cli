@@ -1,12 +1,33 @@
 ---
-updated_at: 2026-10-15T20:20:50Z
+updated_at: 2026-10-15T21:06:00Z
 updated_by: codex
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
 
 ## Now
+
+**Engine-led Codex host acceptance is in progress (`atc-s96.154`).** Fresh chat
+`01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` on `local` confirmed the correct sample root and
+approved roster, with no warnings, and launched one Claude `claude-opus-5-5` lead at xhigh.
+The released CLI configured `dev-team-engine`, depth 2, no records integration, and the
+existing three-engine reviewer bindings. Monitor that chat; run no sample git/tests or loop
+steps while its lead is live. After it settles, independently verify all eight checks,
+lineage, mailbox, reviewed commits, tests and cleanup; retain the full lead result, then
+restore the saved original config through the released CLI. The exact brief and original
+config are in the sample's `.cross-agent/remaining-modes-evidence/`.
+
+Solo verification (`atc-s96.153`) finished in chat `01a14151-6aba-7c13-b616-102793981539`:
+all six scenarios produced the expected examples, all tasks exited 0 at depth 1 with requested bindings,
+and the clean sample ended at `7b3110b` with 123 passing tests and complete cleanup. Claude
+and Codex verifier pairs pass 8/8; Grok writable is blocked on the reader's unrecognized
+`search_replace` tool, independently reproduced (`atc-s96.155`). Both Codex tasks searched
+outside their assigned directory (`atc-s96.156`), although their functional/verifier checks
+passed. The independent audit confirms 106 earlier evidence files unchanged. Full details
+are in `VERIFY.md` and the ignored sample evidence. Diagnose/report only; do not fix these
+findings. Record and commit validated evidence locally. No push or remote sync; existing
+dirty `.beads/interactions.jsonl` stays uncommitted.
 
 **Codex host acceptance passed (`atc-s96.152`, closed, 2026-10-15).** Installed 0.1.9 ran
 the full `dev-team` host loop in test chat `01a14126-c384-7c73-9be7-0a948bb701d7` on `local`,
@@ -398,6 +419,12 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
+1. Monitor engine-led test chat `01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` for `atc-s96.154`.
+   After it settles, audit its full lead report, task/log lineage, mailbox and scoped
+   eight-check verifier, then restore the original sample config. Update the verification
+   records and commit the validated evidence locally. Keep `.155` and `.156` open; this
+   acceptance scope authorizes diagnosis/reporting only.
+
 1. `atc-s96.152` is complete. Review `VERIFY.md` and the retained sample evidence if needed;
    no test rerun or follow-up fix is pending. Ask before any push or new acceptance scope.
 
@@ -477,7 +504,10 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-None. The Codex host acceptance run completed and its live connection was verified.
+Grok writable solo acceptance remains blocked by the verifier's unrecognized native
+`search_replace` tool (`atc-s96.155`); both Codex solo tasks also failed assigned-directory
+compliance (`atc-s96.156`). These do not block the independent engine-led test on the clean
+sample. Product fixes are outside the user's acceptance scope.
 
 The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10-03 (`c05671e`, Decision 0014).
 
