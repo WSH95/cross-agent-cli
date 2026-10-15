@@ -86,7 +86,9 @@ lines only once you confirm. Ask for setup again to change the team later.
 Setup offers to commit that change. Commit that `.gitignore` change before the team's
 first task if you decline: a loop's first step stops unless `git status --porcelain
 --untracked-files=normal` prints nothing at the project's root. Reconnect when setup says
-so — the server reads the mode once, when it starts — and ask for the work, for example:
+so — the server reads the mode once, when it starts; in Claude Code, `/mcp`, choose
+cross-agent, Reconnect, since `/reload-plugins` does not restart the server — and ask for
+the work, for example:
 *"Use the cross-agent dev team to add a --json flag to the export command."* Under `dev-team` your session runs the loop — plan, plan review, implementation
 in a worktree, parallel code review, fixes, a tested merge. Under `dev-team-engine` a lead
 runs it and puts its questions to you, which you answer with `cross-agent answer`.

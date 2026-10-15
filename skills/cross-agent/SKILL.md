@@ -85,7 +85,9 @@ leaves an existing config alone and does not add it, but the setup skill adds it
 existing config once the user confirms. A
 `warning` in the answer means `.cross-agent/config.json` was pointed at another
 mode after this server started: which tools exist was settled when it loaded, so
-report the drift and ask for a restart instead of working around it.
+report the drift and ask for a restart instead of working around it. Under a Claude
+Code host that restart is `/mcp`, choose cross-agent, Reconnect; `/reload-plugins`
+does not restart the server.
 
 Judge `projectRoot` against the project the user works in before anything is
 dispatched. It is not always the directory you were started in: a worktree nobody
@@ -148,9 +150,12 @@ Narrate every dispatch in one line before you wait on it: *delegating `<role>` �
 `<cwd>`*. The user is paying for these
 engines and cannot see them; a task nobody announced is a task nobody can stop.
 Take the engine, model and effort from the roster's line for that role or seat, or
-from your call where it names them; where neither the roster's line nor your call
-names a model — as when your call names another engine and no model — say that
-engine's default, as such, and the same for its effort. Name a task you did not
+from your call where it names them; a model or an effort that neither the roster's
+line nor your call names is that engine's default: say so, as such. A call that names
+another engine than the roster's line is its own rule, because the server drops the
+line's model and effort with its binding: the model and the effort are your call's
+alone, and where your call names either not at all, say that engine's default for that
+one. Name a task you did not
 dispatch — a lead's specialist — by the engine, model and effort its record in
 `list_tasks` carries, a `null` there being that engine's default: never guess them.
 
@@ -419,7 +424,8 @@ comes after it.
   `checkout`, `branch -f` or `reset` at the root: it takes no lock, and can land
   between a merge's check of HEAD and the merge.
 - A mid-session change to `.cross-agent/config.json`'s `mode` needs a server
-  restart. `list_roles` names that drift; the tools this server registered are
+  restart — under a Claude Code host, `/mcp`, choose cross-agent, Reconnect, since
+  `/reload-plugins` does not restart the server. `list_roles` names that drift; the tools this server registered are
   the ones its own mode declared.
 
 ## Engine placement

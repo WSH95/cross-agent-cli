@@ -485,3 +485,29 @@ test("the README has the operator commit init's .gitignore change before a team'
   assert.ok(section.includes("Commit that `.gitignore` change"), "the quick start says to commit init's .gitignore change");
   assert.ok(section.includes("git status --porcelain --untracked-files=normal"), "and says why: the first step's clean-tree check");
 });
+
+// @anchor claudeReconnect
+test("wherever the docs and the launcher have a Claude Code user restart the server, they name /mcp's Reconnect and say /reload-plugins does not restart it", () => {
+  // The server reads the mode and the records block once, when it starts, and under Claude
+  // Code `/reload-plugins` leaves the running server as it was: only `/mcp`'s Reconnect, or a
+  // new session, starts it again (atc-s96.125).
+  const reconnect = /`\/mcp`, choose cross-agent, Reconnect[^.]*`\/reload-plugins` does not restart the server/;
+  for (const [file, heading] of [
+    ["README.md", "## Quick start"],
+    ["docs/install.md", "## Install it in Claude Code"],
+    ["docs/operator-guide.md", "## Team configuration"],
+    ["docs/operator-guide.md", "## Records: the tracker and the project's record files"],
+  ]) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    const start = text.indexOf(`${heading}\n`);
+    assert.ok(start >= 0, `${file} has ${heading}`);
+    const next = text.indexOf("\n## ", start + 1);
+    const section = text.slice(start, next < 0 ? text.length : next).replace(/\s+/g, " ");
+    assert.match(section, reconnect, `${file}, ${heading}`);
+  }
+  // In the launcher, every paragraph or bullet that asks for a restart says how.
+  const launcher = fs.readFileSync(path.join(repoRoot, "skills", "cross-agent", "SKILL.md"), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
+  const units = launcher.split(/\n\s*\n|\n(?=[-*] )/).filter((unit) => /\brestart\b/.test(unit)).map((unit) => unit.replace(/\s+/g, " "));
+  assert.ok(units.length >= 2, "the launcher's drift paragraph and its guardrail ask for a restart");
+  for (const unit of units) assert.match(unit, reconnect, unit);
+});

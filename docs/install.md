@@ -113,7 +113,8 @@ To set a project up for a team, open a session in it and run `/cross-agent:setup
 it to set up cross-agent. The setup skill proposes a team from the engines you have
 installed, writes `.cross-agent/config.json` and two `.gitignore` lines only once you
 confirm, offers to commit the `.gitignore` change, and tells you when to reconnect (`/mcp`,
-choose cross-agent, Reconnect). Ask it again to change the team later.
+choose cross-agent, Reconnect, lighter than a new session; `/reload-plugins` does not
+restart the server). Ask it again to change the team later.
 
 To remove it, `/plugin uninstall cross-agent@agent-plugins`. That leaves the agent-plugins
 marketplace registered for its other plugins; remove the marketplace too only if you use
@@ -411,7 +412,7 @@ value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
-36,895 bytes under `dev-team`, 52,216 under `dev-team-engine` and 3,601 under `solo`, and
+36,906 bytes under `dev-team`, 52,225 under `dev-team-engine` and 3,601 under `solo`, and
 the answer adds the project's root beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with

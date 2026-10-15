@@ -532,9 +532,14 @@ test("every dispatch is narrated with the engine, model and effort the roster, t
   const narration = launcher().split(/\n\s*\n/).map(flat).filter((paragraph) => paragraph.startsWith("Narrate every dispatch"));
   assert.equal(narration.length, 1, "one paragraph says how a dispatch is narrated");
   assert.match(narration[0], /from the roster's line for that role or seat, or from your call where it names them/);
+  // A field neither the line nor the call names runs at that engine's default, field by field.
   // A call that names another engine drops the bound model and effort, and `delegate` answers
-  // with the task id alone: what runs then is that engine's default, and the narration says so.
-  assert.match(narration[0], /where neither the roster's line nor your call names a model[^.]*say that engine's default, as such/);
+  // with the task id alone: the call's model and effort are then all there is, and whichever
+  // it leaves out is that engine's default, so the switch is a rule of its own, not an example.
+  assert.match(narration[0], /a model or an effort that neither the roster's line nor your call names is that engine's default[^.]*as such/);
+  assert.match(narration[0], /call that names another engine than the roster's line is its own rule[^.]*drops the line's model and effort[^.]*your call's alone[^.]*where your call names either not at all, say that engine's default for that one/);
+  assert.doesNotMatch(narration[0], /as when your call names another engine/);
+  assert.doesNotMatch(narration[0], /the same for its effort/);
   assert.match(narration[0], /task you did not dispatch[^.]*by the engine, model and effort its record in `list_tasks` carries/);
   assert.match(narration[0], /never guess them/);
 });
@@ -1619,6 +1624,7 @@ test("the setup skill names each host's way to start it, its question tool, its 
   assert.match(grokAsk, /`ask_user_question`/);
   const [claudeReconnect, codexReconnect, grokReconnect] = row("Reconnect");
   assert.match(claudeReconnect, /`\/mcp`[^|]*Reconnect/);
+  assert.match(claudeReconnect, /`\/reload-plugins` does not restart the server/);
   assert.match(codexReconnect, /restart MCP servers[^|]*new chat/);
   assert.match(grokReconnect, /new session/);
   const [claudeApproval, codexApproval, grokApproval] = row("Approval");

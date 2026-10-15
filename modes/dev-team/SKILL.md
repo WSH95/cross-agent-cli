@@ -58,7 +58,7 @@ Then `list_roles`: every role this loop delegates — the planner, the plan revi
 the implementer, every seat of the code reviewer, and the resolver — must be bound.
 A `binding: null` is a config written before that role existed: show the user the
 role and a binding to add under `roles` in `.cross-agent/config.json` — for the
-resolver, a stronger model, for example
+resolver, one on a stronger setting, for example
 `{"engine": "codex", "model": "gpt-6-astra", "effort": "max"}` — which the setup
 skill adds once they confirm, and stop; a `list_roles` that refuses names a binding
 the config cannot hold, and stops the same way.

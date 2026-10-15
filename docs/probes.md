@@ -4183,10 +4183,10 @@ the record's `createdAt` to `updatedAt` is 320.2 s. The `wait` on the plan revie
 275.0 s).
 
 **Reading.** Under this host, 120 s is not the MCP tool timeout: a call still running then
-keeps running, and its answer arrives later as a task notification. The launcher's row and
-watching paragraph say that, and that a backgrounded call is no reason to call again
-(`tests/skills.test.ts#budgetTable`, `#backgroundedCall`), and so does `docs/design.md`'s
-"Time limits". A backgrounded call belongs to the host session and ends when that session
+keeps running, and its answer arrives later as a task notification. The launcher's row says
+that (`tests/skills.test.ts#budgetTable`); its watching paragraph says it too, and that a
+backgrounded call is no reason to call again (`tests/skills.test.ts#backgroundedCall`), and
+so does `docs/design.md`'s "Time limits". A backgrounded call belongs to the host session and ends when that session
 exits; the task it waits on is run by its detached runner and keeps running, and a later
 session waits on it by its id.
 

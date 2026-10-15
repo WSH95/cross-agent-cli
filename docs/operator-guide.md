@@ -24,12 +24,13 @@ loop's first step stops unless `git status --porcelain --untracked-files=normal`
 prints nothing at the project's root. The server discovers that project from the
 host session's working directory, so a session started anywhere inside it runs
 that project's team. It reads the mode once, when it starts: after `init`, or after you
-change `mode`, start a new session, since a running server refuses a delegation under a
-mode it is not serving and says to restart it.
+change `mode`, start a new session, or, lighter, in Claude Code `/mcp`, choose
+cross-agent, Reconnect — `/reload-plugins` does not restart the server — since a running
+server refuses a delegation under a mode it is not serving and says to restart it.
 
 In a `dev-team` project `init` binds the code reviewer to three seats — Claude,
 Codex and Grok, each read-only — which review the committed branch in parallel, and
-the resolver to a stronger model, which takes the findings two fix rounds have left
+the resolver on a stronger setting, which takes the findings two fix rounds have left
 standing; a code reviewer bound to a writable profile is refused by field, since its
 seats read beside each other in one worktree. A config written before the resolver
 existed still loads, and its team's first task stops at the roster until you add
@@ -85,8 +86,9 @@ there; a write that adds or removes the block answers `reconnect: true`.
 
 The server reads the block once, when it starts, and registers the `record` and
 `track` tools for your session and an engine lead only where it found one; a
-specialist is refused both. After you add or remove the block, start a new session:
-until then a removed block makes both refuse, and an added one is a `warning` in
+specialist is refused both. After you add or remove the block, start a new session, or
+in Claude Code `/mcp`, choose cross-agent, Reconnect, since `/reload-plugins` does not
+restart the server: until then a removed block makes both refuse, and an added one is a `warning` in
 `describe_mode`, each naming the restart. `describe_mode` answers the block as `records` — the files, and each
 configured verb with its command and whether it writes.
 

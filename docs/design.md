@@ -565,7 +565,7 @@ Three modes ship built in (`modes/dev-team/mode.json`, `modes/solo/mode.json`,
   and gates the merge: a config binds it once per seat — `init` binds three, on
   three engines — and every seat reviews the committed branch in parallel. The
   resolver works in the task's worktree as the implementer does, on a stronger
-  model, and only when two fix rounds have left Critical or Important findings
+  setting, and only when two fix rounds have left Critical or Important findings
   standing (section 7).
 - **`solo`**: the built-in consultant alone, no worktree role, `placement:
   host`. It is the proof that the seam is real, the zero-ceremony one-shot
@@ -4161,8 +4161,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,895 bytes under
-`dev-team`, 52,216 under `dev-team-engine` and 3,601 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,906 bytes under
+`dev-team`, 52,225 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
@@ -5118,8 +5118,9 @@ binding, and the project follows its own path (Context).
   (`tests/server.test.ts#cancelledEndsWait`), including when the notification shares one stdin
   chunk with the call it cancels (`#cancellationSharingChunk`). `check` is the other writer of the two
   transitions, and writes both (`tests/tasks.test.ts#checkWritesStall`).
-- **Modes (recorded, except the hosts).** `init --mode dev-team` writes section
-  6's config byte for byte and it loads against the built-in mode, whose roles
+- **Modes (recorded, except the hosts).** `init --mode dev-team` writes the values of
+  section 6's config — `consult` bound as well, and `engines` with no `bin`, as that
+  section says — and it loads against the built-in mode, whose roles
   default to read-only, read-only, `workspace-write`, read-only, `workspace-write`
   and read-only — the resolver beside the implementer, the consultant last — with
   the temporary-directory warning on stderr (`tests/cli.test.ts#initModeDev`); `--mode
