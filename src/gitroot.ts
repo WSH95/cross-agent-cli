@@ -191,7 +191,7 @@ export function nameFault(value: string): string | null {
   return refused ? `${JSON.stringify(value)} is not a branch name` : null;
 }
 
-/** A branch `worktree add -b` creates: a name `nameFault` takes, in the alphabet a task's slug keeps to. */
+/** A branch `worktree add -b` creates: a name `nameFault` takes, of letters, digits, `.`, `_`, `/` and `-`, starting with a letter or digit. */
 function newBranchFault(value: string): string | null {
   return nameFault(value) ?? (/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) ? null
     : `${JSON.stringify(value)} is not a task branch name: a new one is letters, digits, ".", "_", "/" and "-", starting with a letter or digit`);

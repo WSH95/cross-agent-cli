@@ -22,7 +22,7 @@ import { builtInModesDir, loadMode } from "../src/modes.ts";
 import { locateRepository, rootWriteFault } from "../src/worktree.ts";
 import { git, holdersOf } from "./helpers/git.ts";
 import {
-  bareDotGitProject, enginePath, layoutRoot, layouts, linkedProject, mainCheckout, poll, rootInsideCommonDir, separatedMainProject, submoduleProject,
+  bareDotGitProject, cliEnv, enginePath, layoutRoot, layouts, linkedProject, mainCheckout, poll, rootInsideCommonDir, separatedMainProject, submoduleProject,
   symlinkedGitProject, umbrellaProject,
 } from "./helpers/project.ts";
 import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
@@ -36,7 +36,7 @@ import type { SeededProject } from "./helpers/seed.ts";
 
 const exec = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-const suiteEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("CROSS_AGENT_")));
+const suiteEnv = cliEnv;
 
 interface Ran {
   code: number;
@@ -2221,6 +2221,19 @@ async function configureInProcess(t: TestContext, root: string, document: unknow
   const input = t.mock.method(process.stdin, Symbol.asyncIterator, async function* () {
     yield Buffer.from(JSON.stringify(document));
   });
+  // This process's own stat with no parent, as `tests/fixtures/operator-ancestry.mjs` gives a
+  // CLI the suite starts: the write is the operator's even when the suite runs below a task.
+  const own = `/proc/${process.pid}/stat`;
+  const original = fs.readFileSync;
+  const ancestry = t.mock.method(fs, "readFileSync", ((target: fs.PathOrFileDescriptor, options?: unknown) => {
+    const read = (original as (target: fs.PathOrFileDescriptor, options?: unknown) => string | Buffer)(target, options);
+    if (target !== own) return read;
+    const text = String(read);
+    const end = text.lastIndexOf(")") + 1;
+    const fields = text.slice(end).trim().split(/\s+/);
+    fields[1] = "0";
+    return `${text.slice(0, end)} ${fields.join(" ")}\n`;
+  }) as typeof fs.readFileSync);
   let stdout = "";
   let stderr = "";
   try {
@@ -2231,6 +2244,7 @@ async function configureInProcess(t: TestContext, root: string, document: unknow
     return { code, answer: JSON.parse(stdout) as Record<string, unknown> };
   } finally {
     input.mock.restore();
+    ancestry.mock.restore();
   }
 }
 

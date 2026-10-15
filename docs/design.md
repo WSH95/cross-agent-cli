@@ -2123,7 +2123,12 @@ reached through a symlink is denied under the real name and not the link's, and
 a rule is a string the engine matches against a command line. The layer that
 does not depend on spelling is the by-name one — `claude`, `codex`, `grok`,
 `cross-agent` — and a configured `engines.<e>.bin` is denied exactly as config
-spells it. The targets are the
+spells it. The three path forms name only the checkout this server runs from — a Codex host's cache
+copy of the plugin, the directory `--plugin-dir` names — so a server or CLI started
+from any other checkout of this repository, a task worktree of it among them, matches
+none of them. That is not the boundary: a server below a task's engine serves the
+specialist row by ancestry (section 5, layer 1), and the CLI below one refuses every
+write (section 10). The targets are the
 guard's; the forms are each adapter's `denyArgs`. Claude `Bash(<target> *)` and
 `Bash(<target>)` in one appendable `--disallowedTools` array (enforced under
 `bypassPermissions`, P3, and under the `dontAsk` the adapter runs in since
@@ -2609,7 +2614,7 @@ delete names, whatever its journal records — or, for a read, is the default
 branch; a `<base>` is the default branch and nothing else
 (`src/gitroot.ts#judge`, `#matchesPattern`). Every branch argument is also a name git
 reads as written (`#nameFault`), and the new one `worktree add -b` creates keeps, besides,
-to the alphabet a task's slug keeps to — letters, digits, `.`, `_`, `/` and `-`, starting
+to the new-branch rule — letters, digits, `.`, `_`, `/` and `-`, starting
 with a letter or digit — while a read, the merge and the delete take any name git does
 (`src/gitroot.ts#newBranchFault`, `tests/gitroot.test.ts#newTaskBranchAlphabet`).
 `git_mutate` takes any branch its caller names, and its unbounded `args` reach the same ref store through the
@@ -4302,7 +4307,7 @@ handler passes:
   its git directory: `src/cli.ts#enclosingRepository`); `task-worktree`; `unsupported`
   for the roots `init` refuses; `detached-head` and `branch-name` at a branch worktree,
   `initWorktree`'s checks under their own names (`src/cli.ts#worktreeBranchRefusal`); and,
-  inside a task's environment, `inside-a-task` with the marker refusal's text
+  inside a task's environment or below a task's engine, `inside-a-task` with the refusal's text
   (`tests/cli.test.ts#initProposeRefused`, `#initTaskRefusalCoded`). `--propose` looks and
   writes nothing, takes no lock, and reads the stored config once, hashing the very bytes it
   parses (`tests/cli.test.ts#initPropose`, `#initProposeExisting`). It answers the engines,
@@ -4511,6 +4516,19 @@ fails closed: a verb that does not declare that it only reads is refused as a
 write (`#cliWritesFailsClosed`).
 `CROSS_AGENT_PROJECT` is no marker, being also the operator's own way to name a
 project, and the reads answer the same with a marker as without one.
+
+A process that carries none of those markers is held by ancestry instead, as a server
+is: each verb that writes resolves the row for the project it would act on before it
+runs, and refuses with 3 and the walk's reason unless that row is the operator's —
+`specialist by ancestry: task <id> (<role>, <status>)`, an ancestor carrying
+`CROSS_AGENT_TASK`, or the walk's own failure, which refuses an operator too, who reruns
+the verb from a plain terminal (`src/cli.ts#ancestryRefusal`,
+`src/authority.ts#resolveAuthority`, `tests/authority.test.ts#cliBelowEngine`). The
+operator's terminal and a host session reach a root carrying nothing. Where a sandbox
+gives the CLI a PID namespace of its own, as Claude Code's Bash sandbox does, the walk
+ends at that namespace's root and sees a task only through a marker a process inside it
+was started with; a process that sheds every marker and every marked ancestor reads as
+the operator, which is outside the guarantee as it is for a server (section 5).
 
 `src/cli.ts`: `cross-agent init --mode <name> | modes | tasks | show <id> |
 log <id> | cancel <id> | verify-worktree <path> <branch> | git <slug> --

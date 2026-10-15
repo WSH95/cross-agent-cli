@@ -16,6 +16,7 @@ import type { EngineIdentity, TaskOutcome, TaskPatch, TaskRecord, TaskStatus } f
 import { answerAsk, createAsk } from "../../src/mailbox.ts";
 import type { AskRecord } from "../../src/mailbox.ts";
 import { git } from "./git.ts";
+import { cliEnv } from "./project.ts";
 
 // Fixtures for the operator's reads: a project whose ledger holds a task in every status,
 // built through the ledger's own functions and the CLI's own `init`, and the byte-for-byte
@@ -26,8 +27,6 @@ import { git } from "./git.ts";
 const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../../", import.meta.url));
 const cli = path.join(sources, "src", "cli.ts");
-/** Nothing of the suite's own CROSS_AGENT_* reaches the CLI: the suite may be a task itself. */
-const suiteEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("CROSS_AGENT_")));
 
 /**
  * Every entry under `directory`, by path relative to it: a file as its bytes, a directory
@@ -127,7 +126,7 @@ export async function seededProject(t: TestContext): Promise<SeededProject> {
   await git(root, "config", "user.email", "test@example.invalid");
   await git(root, "config", "commit.gpgSign", "false");
   await git(root, "commit", "--allow-empty", "-m", "initial");
-  await exec(process.execPath, [cli, "init", "--mode", "dev-team"], { cwd: root, env: suiteEnv, encoding: "utf8" });
+  await exec(process.execPath, [cli, "init", "--mode", "dev-team"], { cwd: root, env: cliEnv, encoding: "utf8" });
   const configFile = path.join(root, ".cross-agent", "config.json");
   const config = JSON.parse(fs.readFileSync(configFile, "utf8")) as { limits: Record<string, number> };
   config.limits = { ...config.limits, cancelGraceSeconds: 0, lockWaitSeconds: 1, stallMinutes: 0.02 };

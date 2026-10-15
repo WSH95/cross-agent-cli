@@ -27,6 +27,17 @@ export const suiteEnv: NodeJS.ProcessEnv = Object.fromEntries(
   Object.entries(process.env).filter(([name]) => !name.startsWith("CROSS_AGENT_")),
 );
 
+/**
+ * The environment for every CLI a test starts as the operator: `suiteEnv`, with the preload
+ * that makes the CLI's walk reach the root at once (`tests/fixtures/operator-ancestry.mjs`),
+ * so a write is the operator's even when the suite runs below a task's engine.
+ */
+export const cliEnv: NodeJS.ProcessEnv = {
+  ...suiteEnv,
+  NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${pathToFileURL(path.join(worktreeRoot, "tests", "fixtures", "operator-ancestry.mjs")).href}`]
+    .filter(Boolean).join(" "),
+};
+
 export function proc(pid: number): { pid: number; startTime: string; pgid: number; sid: number; state: string } | null {
   try {
     const raw = fs.readFileSync(`/proc/${pid}/stat`, "utf8");

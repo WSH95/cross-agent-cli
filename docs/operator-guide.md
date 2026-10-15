@@ -283,7 +283,9 @@ exits 3 when no project resolves. 4, 5 and 6 are verdicts and print on stdout:
 for a cascade that left a task active, and `list-asks` 5 for an open ask. A verb
 that writes — `init`, `answer`, `cancel`, `git`, `git-root`, `waive` and `tasks --reconcile` — exits
 3 when its own environment carries `CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or
-`CROSS_AGENT_LINEAGE`, the markers of a task's process tree: writing is the
+`CROSS_AGENT_LINEAGE`, the markers of a task's process tree, or when it runs below a
+task's engine whatever its environment says, naming what the walk found — a walk that
+cannot finish refuses too, and the verb then runs from a plain terminal: writing is the
 operator's, and an engine reaches the project through the server.
 
 ## Several branches at once

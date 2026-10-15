@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { resolveAuthority } from "./authority.ts";
 import {
   checkConfigDocument, CONFIG_PATH, configBytes, DEFAULT_MODE, ignoreEntries, initConfig, loadConfig, loadConfigWithMode, lockWaitSeconds,
 } from "./config.ts";
@@ -39,7 +40,8 @@ import type { Located, Repository } from "./worktree.ts";
 // the bind-time config for a mode; `answer` replies to an engine-placed lead's question
 // without a host session; `report` renders the per-task log from the ledger, which is where
 // that log comes from under engine placement. Every verb that writes is the operator's, and
-// is refused inside a task's environment (`taskMarker`).
+// is refused inside a task's environment (`taskMarker`) and below a task's engine
+// (`ancestryRefusal`).
 
 const exec = promisify(execFile);
 
@@ -128,7 +130,8 @@ export interface Verb {
   codes?(parsed: Parsed): boolean;
   /**
    * Whether this command line writes the project — a config, an ask, a record, a lock, git
-   * metadata. Writing is an operator's power, refused inside a task's environment.
+   * metadata. Writing is an operator's power, refused inside a task's environment
+   * (`taskMarker`) and below a task's engine (`ancestryRefusal`).
    */
   writes: boolean | ((parsed: Parsed) => boolean);
   run(parsed: Parsed, context: Context): Promise<Answer>;
@@ -1420,15 +1423,37 @@ function shape(verb: Verb): string {
 }
 
 /**
+ * Whether this command line writes, as its verb declares. It fails closed: only an explicit
+ * `false` reads, so a verb that declares nothing — which nothing here type-checks — is
+ * refused as the write it may be.
+ */
+function writing(verb: Verb, parsed: Parsed): boolean {
+  const writes: unknown = typeof verb.writes === "function" ? verb.writes(parsed) : verb.writes;
+  return writes !== false;
+}
+
+/**
  * The marker a task's environment carries, when this command line writes and the
  * environment carries one, or null. A verb that writes is an operator's power, and the deny
  * list keeps only the launch forms it names out of an engine's hands (`src/guard.ts#denyTargets`).
- * It fails closed: only an explicit `false` reads, so a verb that declares nothing — which
- * nothing here type-checks — is refused as the write it may be.
  */
 export function taskMarker(verb: Verb, parsed: Parsed, env: Readonly<NodeJS.ProcessEnv>): string | null {
-  const writes: unknown = typeof verb.writes === "function" ? verb.writes(parsed) : verb.writes;
-  return writes === false ? null : TASK_MARKERS.find((variable) => env[variable] !== undefined) ?? null;
+  return writing(verb, parsed) ? TASK_MARKERS.find((variable) => env[variable] !== undefined) ?? null : null;
+}
+
+/**
+ * The walk's reason when this process is not the operator's by ancestry, or null: a write
+ * below a task's engine is refused whatever its environment says, as a server below one
+ * serves the specialist row (`src/authority.ts#resolveAuthority`). The markers were refused
+ * before this runs, so the depth is 0 and only ancestry decides. Where no project is found,
+ * the verb itself refuses or writes in the current directory; only the ledger match depends
+ * on the root, and a marked ancestor is caught whichever ledger is read. A walk that cannot
+ * finish refuses.
+ */
+async function ancestryRefusal(parsed: Parsed, context: Context): Promise<string | null> {
+  const found = await project(parsed, context);
+  const authority = resolveAuthority("root" in found ? found.root : context.cwd, context.env, { maxDepth: Infinity });
+  return authority.row === "operator" ? null : authority.reason;
 }
 
 /**
@@ -1514,12 +1539,15 @@ export async function runCli(
     return EXIT.ok;
   }
   // Checked on the command line as read, so a usage error is still a 2 and help is still
-  // help, and before the verb runs, so a refused write has written nothing.
+  // help, and before the verb runs, so a refused write has written nothing: the markers
+  // first, then, for a write they let through, the process's ancestry.
   const marker = taskMarker(verb, parsed, env);
   let answered: Answer;
   try {
-    const reason = `${marker} is set in this environment: ${name} is an operator's command, and an engine reaches the project through its server, never this CLI`;
-    answered = marker !== null
+    const evidence = marker !== null ? `${marker} is set in this environment`
+      : writing(verb, parsed) ? await ancestryRefusal(parsed, { cwd, env }) : null;
+    const reason = `${evidence}: ${name} is an operator's command, and an engine reaches the project through its server, never this CLI`;
+    answered = evidence !== null
       ? refused(reason, verb.codes?.(parsed) === true ? { ok: false, code: "inside-a-task", reason } : undefined)
       : await verb.run(parsed, { cwd, env });
   } catch (error) {

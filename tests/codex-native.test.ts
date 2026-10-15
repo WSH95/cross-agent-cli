@@ -8,6 +8,7 @@ import readline from "node:readline";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { configClient } from "../skills/cross-agent/scripts/codex-config.mjs";
+import { cliEnv } from "./helpers/project.ts";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -29,8 +30,8 @@ test("real Codex setup preserves TOML and mounts the installed server for separa
   const config = path.join(home, "config.toml");
   fs.writeFileSync(config, '# preserve this comment\n[mcp_servers.unrelated]\ncommand = "true"\nenabled = false\n');
   const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CROSS_AGENT_"))), CODEX_HOME: home };
-  const run = (command: string, args: string[], cwd = scratch) => execFileSync(command, args,
-    { cwd, env, encoding: "utf8", timeout: 30000, stdio: ["ignore", "pipe", "pipe"] });
+  const run = (command: string, args: string[], cwd = scratch, extra: NodeJS.ProcessEnv = {}) => execFileSync(command, args,
+    { cwd, env: { ...env, ...extra }, encoding: "utf8", timeout: 30000, stdio: ["ignore", "pipe", "pipe"] });
   let close: (() => Promise<void>) | undefined;
   try {
     run(codex, ["plugin", "marketplace", "add", source]);
@@ -55,14 +56,14 @@ test("real Codex setup preserves TOML and mounts the installed server for separa
 
     const projects = [path.join(scratch, "solo project"), path.join(scratch, "team-project")];
     for (const project of projects) { fs.mkdirSync(project); run("git", ["init", "-b", "main"], project); }
-    run(process.execPath, [path.join(source, "src/cli.ts"), "init", "--mode", "dev-team"], projects[1]);
+    run(process.execPath, [path.join(source, "src/cli.ts"), "init", "--mode", "dev-team"], projects[1], { NODE_OPTIONS: cliEnv.NODE_OPTIONS });
     run("git", ["add", ".gitignore"], projects[1]);
     run("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "initial"], projects[1]);
     const inherited = path.join(scratch, "inherited-worktree");
     const independent = path.join(scratch, "initialized-worktree");
     run("git", ["worktree", "add", "-b", "inherited", inherited], projects[1]);
     run("git", ["worktree", "add", "-b", "independent", independent], projects[1]);
-    run(process.execPath, [path.join(source, "src/cli.ts"), "init"], independent);
+    run(process.execPath, [path.join(source, "src/cli.ts"), "init"], independent, { NODE_OPTIONS: cliEnv.NODE_OPTIONS });
     const child = spawn(codex, ["app-server", "--stdio"], { cwd: scratch, env, stdio: ["pipe", "pipe", "pipe"] });
     let next = 0;
     let stderr = "";

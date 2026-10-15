@@ -415,7 +415,10 @@ test("a mode with no worktree role still has the git policy its one-shots use, m
 // @anchor devTeamModes
 test("the two dev-team modes carry the same role prompts, byte for byte", () => {
   const modes = builtInModesDir();
-  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]) {
+  const lead = loadMode(modes, "dev-team-engine").lead.role;
+  const shared = loadMode(modes, "dev-team").roles.map((role) => role.key).filter((key) => key !== CONSULT_ROLE && key !== lead);
+  assert.ok(shared.length > 0, "dev-team names its specialists");
+  for (const key of shared) {
     assert.equal(
       fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
       fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),

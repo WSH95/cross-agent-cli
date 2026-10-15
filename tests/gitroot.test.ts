@@ -592,7 +592,7 @@ test("nameFault takes every branch name git check-ref-format --branch takes as w
 });
 
 // @anchor newTaskBranchAlphabet
-test("git_root reads, merges and deletes a branch git names as written, and creates a task branch only in the alphabet a slug keeps to", async (t) => {
+test("git_root reads, merges and deletes a branch git names as written, and creates a task branch only by the new-branch rule", async (t) => {
   const { root } = await repository(t);
   // A branch some other path made, and a journal `git_mutate` bound to it: every verb that
   // names an existing branch — a read, the merge, the delete — takes it as git does.

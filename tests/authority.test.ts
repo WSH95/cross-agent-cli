@@ -10,12 +10,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveAuthority } from "../src/authority.ts";
 import type { Authority } from "../src/authority.ts";
-import { create, currentBootId, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
+import { CONFIG_PATH } from "../src/config.ts";
+import { create, currentBootId, find, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
 import type { EngineIdentity, TaskRecord } from "../src/ledger.ts";
+import { readAsk } from "../src/mailbox.ts";
 import { identityOf } from "../src/process.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
-import { project as testProject, waitForRecord } from "./helpers/project.ts";
+import { suiteEnv, project as testProject, waitForRecord } from "./helpers/project.ts";
 import type { TestProject } from "./helpers/project.ts";
+import { seededProject, snapshot } from "./helpers/seed.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const preload = pathToFileURL(path.join(fixtures, "spawn-child.mjs")).href;
@@ -658,4 +661,87 @@ test("the walk reaches an engine thirty-two hops up and fails closed at thirty-t
     // The first chain is ended before the second starts, so the test never holds both.
     process.kill(-pid, "SIGKILL");
   }
+});
+
+// ---- The CLI below an engine -------------------------------------------------------------
+
+// @anchor cliBelowEngine
+test("a CLI below a task's engine refuses every write by ancestry, whatever its environment says, and still reads", { timeout: 60_000 }, async (t) => {
+  const seeded = await seededProject(t);
+  const { root, slug, asks, byStatus } = seeded;
+  const implementer = create(root, { role: "implementer", brief: "the implementer's brief", cwd: root, engine: "claude", depth: 1 });
+  const exchange = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-below-"));
+  t.after(() => fs.rmSync(exchange, { recursive: true, force: true }));
+  // Directories no project claims, so the ledger the CLI scans there records no engine.
+  const [unrecorded, proposed, preloaded] = ["unrecorded", "proposed", "preloaded"].map((name) => {
+    fs.mkdirSync(path.join(exchange, name));
+    return path.join(exchange, name);
+  });
+  const writes = [
+    ["answer", asks.open.id, "text"],
+    ["cancel", byStatus.running.id],
+    ["git", slug, "--", "status"],
+    ["git-root", "--", "status"],
+    ["tasks", "--reconcile"],
+    ["waive", slug, seeded.journal.steps.at(-1)!.after!],
+  ];
+  const reads = [["report", "--json"], ["tasks", "--json"], ["show", byStatus.done.id, "--json"]];
+  const commands = [
+    ...writes.map((args) => ({ args, cwd: root })),
+    { args: ["init", "--mode", "solo"], cwd: unrecorded },
+    { args: ["cancel", byStatus.running.id, "--json"], cwd: root },
+    { args: ["init", "--propose", "--json"], cwd: proposed },
+    ...reads.map((args) => ({ args, cwd: root })),
+    // With the preload every CLI the suite runs as the operator carries (`tests/helpers/project.ts#cliEnv`).
+    { args: ["init", "--mode", "solo"], cwd: preloaded, preload: true },
+  ];
+  const file = path.join(exchange, "commands.json");
+  fs.writeFileSync(file, JSON.stringify(commands));
+  const answer = path.join(exchange, "answer.json");
+  const env = taskEnv(implementer.id, 1);
+  // The CLI runs below the engine with the markers unset, as a specialist that sheds them would.
+  const pid = chain(t, [engine(env), { argv: [process.execPath, path.join(fixtures, "run-cli.mjs"), answer, file], env: { ...suiteEnv, ...env } }]);
+  await update(root, implementer.id, { status: "running", engineIdentity: engineIdentity(pid) });
+  const state = path.join(root, ".cross-agent");
+  const before = snapshot(state);
+  fs.writeFileSync(`${answer}.go`, "");
+  const deadline = Date.now() + 50_000;
+  while (!fs.existsSync(answer)) {
+    assert.ok(Date.now() < deadline, "the CLI never answered");
+    await delay(20);
+  }
+  const results = (JSON.parse(fs.readFileSync(answer, "utf8")) as { results: Array<{ args: string[]; code: number; stdout: string; stderr: string }> }).results;
+  const tail = (verb: string) => `${verb} is an operator's command, and an engine reaches the project through its server, never this CLI`;
+  const byAncestry = (verb: string) => `specialist by ancestry: task ${implementer.id} (implementer, running): ${tail(verb)}`;
+  const unmatched = new RegExp(`^specialist: ancestor \\d+ carries CROSS_AGENT_TASK=${implementer.id} and no record matches: ${tail("init")}$`);
+  const [written, [init, cancelled, proposal], read, [operator]] =
+    [results.slice(0, 6), results.slice(6, 9), results.slice(9, 12), results.slice(12)];
+
+  // A write refused by the engine its walk met, and nothing under .cross-agent/ written.
+  for (const ran of written) {
+    assert.deepEqual({ code: ran.code, stdout: ran.stdout, stderr: ran.stderr },
+      { code: 3, stdout: "", stderr: `cross-agent: ${byAncestry(ran.args[0])}\n` }, ran.args.join(" "));
+  }
+  assert.deepEqual(snapshot(state), before, "nothing under .cross-agent/ changed");
+  assert.equal(find(root, byStatus.running.id)!.status, "running");
+  assert.equal(readAsk(root, asks.open.id).ask!.status, "open");
+  // Where the ledger it scans records no engine, the ancestor started with the marker refuses it.
+  assert.equal(init.code, 3, init.stderr);
+  assert.equal(init.stdout, "");
+  assert.match(init.stderr.replace(/^cross-agent: /, "").trimEnd(), unmatched);
+  assert.deepEqual(fs.readdirSync(unrecorded), [], "init wrote nothing");
+  // The same refusals as documents, coded where the setup skill reads a code.
+  assert.equal(cancelled.code, 3, cancelled.stderr);
+  assert.deepEqual(JSON.parse(cancelled.stdout), { ok: false, reason: byAncestry("cancel") });
+  assert.equal(proposal.code, 3, proposal.stderr);
+  const coded = JSON.parse(proposal.stdout) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(coded), ["ok", "code", "reason"]);
+  assert.deepEqual([coded.ok, coded.code], [false, "inside-a-task"]);
+  assert.match(coded.reason as string, unmatched);
+  assert.deepEqual(fs.readdirSync(proposed), [], "a refused look wrote nothing");
+  // The reads answer below the same engine.
+  for (const ran of read) assert.equal(ran.code, 0, `${ran.args.join(" ")}: ${ran.stderr}`);
+  // The preload the suite's own CLI runs carry makes them the operator's even here.
+  assert.equal(operator.code, 0, operator.stderr);
+  assert.ok(fs.existsSync(path.join(preloaded, CONFIG_PATH)), "the preloaded init wrote its config");
 });
