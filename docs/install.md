@@ -476,11 +476,11 @@ Four things hold for every Grok session attached this way:
   committed `.grok/config.toml`, which the recipe keeps out, or a mount at user scope
   would change that, and the recipe adds neither. Installing the plugin in Claude Code is
   such a mount: Grok discovers your Claude Code plugins, so with it installed there every
-  Grok specialist, in a worktree as well as at the root, mounts the server, gets the
-  specialist row's five read tools and is offered the launcher skill (`docs/probes.md`,
-  "What specialists were given and refused, from this repository's ledger"). A Grok
-  specialist at the project root inherits the attach and gets the specialist row's five
-  read tools.
+  Grok specialist mounts the server, in a worktree as well (all 51 worktree seats in this
+  repository's ledger did), gets the specialist row's five read tools and is offered the
+  launcher skill (`docs/probes.md`, "What specialists were given and refused, from this
+  repository's ledger"). A Grok specialist at the project root inherits the attach and
+  gets the specialist row's five read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
   plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
   `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a

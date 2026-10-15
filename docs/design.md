@@ -1937,7 +1937,7 @@ which is a property of the line, not of the pipeline.
   this repository's ledger, an association between command text and refusal
   rather than the layer's rule (`docs/probes.md#specialistLedger`,
   `#claudeWebTools`). No permission rule approves them: none has been run, and
-  one wide enough to would also approve shapes the deny list's
+  one wide enough to approve them would also approve shapes the deny list's
   `Bash(<target> *)` prefix rules cannot read, such as a launch through a
   variable. The role prompts carry the workaround instead (section 8).
   `--append-system-prompt-file <role.md>` is **settled by P9**
@@ -2136,11 +2136,12 @@ which is a property of the line, not of the pipeline.
   (`src/runner.ts#stopEngine`), which bounds what stays in that group and proves
   nothing about a subagent Grok may host elsewhere. *The launcher skill and this
   server*: with the plugin installed in the operator's Claude Code, which Grok
-  discovers, every Grok specialist, in a worktree as well as at the root, is
-  offered the `cross-agent` skill and mounts this server, which serves it the
-  specialist row's five read tools by ancestry (section 5); the row holds no
-  `delegate`. The keys that would drop either, `plugins.disabled` and
-  `skills.disabled`, are config-file keys, the operator's to set. *The
+  discovers, every Grok specialist is offered the `cross-agent` skill and mounts
+  this server, in a worktree as well (all 51 worktree seats in this repository's
+  ledger did), and the server serves it the specialist row's five read tools by
+  ancestry (section 5); the row holds no `delegate`. The keys that would drop
+  either, `plugins.disabled` and `skills.disabled`, are config-file keys, the
+  operator's to set. *The
   operator's Claude Code plugin hooks* run inside every Grok specialist, in its
   sandbox and under its markers and ancestry, so a server one reached would
   serve the specialist row; `GROK_CLAUDE_HOOKS_ENABLED` is documented for
@@ -2203,9 +2204,9 @@ copies the parent environment and removes: the exact names `CLAUDECODE`,
 one for every MCP server it starts, and a child inheriting it would be told it
 works where the operator does; `GROK_SESSION_ID`, the session id a Grok host
 hands every server it starts, and `AI_AGENT`, the label a Claude Code host gives
-its server — every spec in this repository's ledger carried
-`claude-code_<version>_harness` — each naming the host's session or agent, which
-a child would carry as its own (`docs/probes.md#grokHostHops`,
+its server — every spec in this repository's ledger carried one,
+`claude-code_<version>_harness` or `_agent` — each naming the host's session or
+agent, which a child would carry as its own (`docs/probes.md#grokHostHops`,
 `#specialistLedger`); anything starting with `CLAUDE_CODE_`, `CLAUDE_PLUGIN_`,
 `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing` is
 `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
@@ -5194,7 +5195,9 @@ binding, and the project follows its own path (Context).
   mount, in a folder its operator trusts — sees exactly the specialist row and
   has its own `delegate` refused (I1, `atc-s96.54`). A Grok specialist in a
   linked worktree still reaches no server while git ignores `.grok/` (section 9),
-  because a project-scoped mount is per-directory. On grok 1.0.46 a Grok specialist's
+  because a project-scoped mount is per-directory, unless a mount at user scope
+  brings one: a Claude Code install of the plugin does (section 3,
+  `docs/probes.md#specialistLedger`). On grok 1.0.46 a Grok specialist's
   server at the project root runs
   inside the engine's bubblewrap and cannot read the identity-holding ancestor's environment, so it
   resolves the specialist row by `src/authority.ts#decide`'s fail-closed branch: the row

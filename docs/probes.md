@@ -4236,21 +4236,24 @@ holds `GROK_SESSION_ID`, since no Grok host ran here. Since `atc-s96.77`
 `src/guard.ts#childEnv` drops `AI_AGENT` and `GROK_SESSION_ID` and passes `GIT_EDITOR` on.
 
 **Grok specialists.** 52: 51 code-reviewer seats, each read-only in a task's linked
-worktree, and one `consult` at the root. Each `system/init` offered 27 built-in tools,
-`spawn_subagent`, `scheduler_create`, `scheduler_delete`, `scheduler_list`, `monitor`,
-`workflow`, `ask_user_question`, `send_feedback` and four image tools among them. Their
-calls: `read_file` 1,197, `grep` 904, `run_terminal_command` 334, `list_dir` 20, `web_fetch`
-10, and nothing else — no subagent, scheduled task, monitor, workflow, question, image,
-`search_tool` or `use_tool`. The 51 worktree seats' init lines list the `cross-agent`
-skill, and each one's `events.jsonl` records `mcp_server_connected` for `cross-agent`
+worktree, and one `consult` at the root. Each `system/init` offered 27 built-in tools (26,
+without `web_fetch`, in three), `spawn_subagent`, `scheduler_create`, `scheduler_delete`,
+`scheduler_list`, `monitor`, `workflow`, `ask_user_question`, `send_feedback` and four image
+tools among them in every one. Their calls: `read_file` 1,197, `grep` 904,
+`run_terminal_command` 334, `list_dir` 20, `web_fetch` 10, and nothing else — no subagent,
+scheduled task, monitor, workflow, question, image, `search_tool` or `use_tool`. The 51
+worktree seats, run from 2026-10-13 to 2026-10-15, list the `cross-agent` skill in their
+init lines, and each one's `events.jsonl` records `mcp_server_connected` for `cross-agent`
 with `tool_count: 5`, the specialist row's `describe_mode`, `list_roles`, `check`, `result`
-and `list_tasks`. That is wider than T15, where a worktree specialist mounted nothing
+and `list_tasks`; the one root `consult`, on 2026-10-04, listed no such skill and connected
+to no server. That is wider than T15, where a worktree specialist mounted nothing
 (`docs/probes.md#grokWorktreeMount`): here the plugin is installed in the operator's
-Claude Code, and Grok discovers Claude Code plugins (A0's 75 skills from them), so the
-skill and the server reach a specialist in any directory. The sessions' `updates.jsonl`
-record 548 hook runs, every one `success`: 542 of `plugin/project-steward/hooks` on
-`post_tool_use`, `user_prompt_submit`, `stop` and `session_end`, 4 of `plugin/codex/hooks`
-and 2 of `plugin/grok-build/hooks`.
+Claude Code, and Grok discovers Claude Code plugins (A0's 75 skills from them). That the
+skill and the server reach a Grok specialist in any directory, the root included, is read
+from that discovery and not observed: no Grok specialist ran at the root after 2026-10-04.
+The sessions' `updates.jsonl` record 548 hook runs, every one `success`: 542 of
+`plugin/project-steward/hooks` on `post_tool_use`, `user_prompt_submit`, `stop` and
+`session_end`, 4 of `plugin/codex/hooks` and 2 of `plugin/grok-build/hooks`.
 
 **What Grok documents, unexercised.** Grok 1.0.52's guide, under
 `~/.grok/docs/user-guide/`: `--disallowed-tools <TOOLS>`, a headless-only denylist of
