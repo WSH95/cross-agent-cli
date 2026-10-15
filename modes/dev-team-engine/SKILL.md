@@ -415,13 +415,20 @@ step 10 that stopped.
 
 1. File every follow-up found and not yet filed, with `track {verb: "file", title,
    text, message}`. An unfinished item stays in progress: you never close it.
-2. The final handoff, one `record {changes: [{path, mode, text, expect}], message}`,
+2. The run's epic — a goal's, from R3, or the one your brief names — is closed here
+   only when every item of the set is closed and no stop ended the run: `track {verb:
+   "show", id: <the epic>}`, and once it reports every child closed, `track {verb:
+   "close", id: <the epic>, text: <the set, each item closed>, message}`. A child it
+   reports not closed leaves the epic open, named in the handoff and your report. A
+   brief that is a list of ids has no epic, and a run that ended at a stop closes
+   nothing here.
+3. The final handoff, one `record {changes: [{path, mode, text, expect}], message}`,
    naming where the run stopped and why.
-3. Your closing report, which is your final message: each task's fields as your role
+4. Your closing report, which is your final message: each task's fields as your role
    prompt names them, then the set and each item's outcome; the follow-ups filed, with
    their ids, and every `track` or `record` that was refused, listed as unfiled with
-   its reason; each record and tracker commit; and, for a goal, the epic and the
-   approved breakdown.
+   its reason; each record and tracker commit, the epic's close among them; and, for a
+   goal, the epic and the approved breakdown.
 
 A `track` or `record` that answers `ok: false` is not retried blind: `ask {question}`
 the operator with the call, its reason and any paths it names — a refused `track` may

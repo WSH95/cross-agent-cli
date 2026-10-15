@@ -3644,39 +3644,43 @@ run's five tasks, each `passed`.
 `describe_mode` answers `records`, the lead's brief is a run — an epic, a list of
 tracker ids or a goal — which the ten steps work one item per task, the tracker and
 the record files kept through `track` and `record` alone and written only between
-tasks, or after step 9's merge and passing suite and before step 10's cleanup.
-**R1** finds the lead's place at every start, in the tracker, git and the handoff:
-a closed item is done and an open one is to do; one its own session claimed carries
-on where it stood, the bookkeeping of a merge whose root suite it saw pass finished
-first; anything it cannot establish is put to the operator through `ask` and never
-closed on a guess; and a goal whose set the handoff does not name is R3's, unless
-the handoff says its filing has begun, which is asked of the operator rather than
-filed twice (`tests/skills.test.ts#engineRunResume`, `#engineRunEdges`). **R2** works the set in
+tasks, or after step 9's merge and passing suite and before step 10's cleanup. **R1**
+finds the lead's place at every start, in the tracker, git and the handoff: a closed
+item is done and an open one is to do; one its own session claimed carries on where
+it stood, the bookkeeping of a merge whose root suite it saw pass finished first;
+anything it cannot establish is put to the operator through `ask` and never closed on
+a guess; and a goal whose set the handoff does not name is R3's, unless the handoff
+says its filing has begun, which is asked of the operator rather than filed twice
+(`tests/skills.test.ts#engineRunResume`, `#engineRunEdges`). **R2** works the set in
 dependency order: step 1, `claim`, steps 2 to 9 with the item's id as the slug, its
 follow-ups filed, one `record` of its progress, its decisions and the handoff,
-`close`, then step 10; a task that stops short of step 9's passing suite ends the
-run with its item still in progress (`#engineRunSet`, `#engineRunStopShort`).
-**R3** turns a goal into a set: clarified through `ask`, designed and broken down by
-the planner under step 3's review — the plan reviewer told it reviews a goal's design
-and breakdown, each item planned and tested on its own when it runs — approved by the
+`close`, then step 10; a task that stops short of step 9's passing suite ends the run
+with its item still in progress (`#engineRunSet`, `#engineRunStopShort`). **R3**
+turns a goal into a set: clarified through `ask`, designed and broken down by the
+planner under step 3's review — the plan reviewer told it reviews a goal's design and
+breakdown, each item planned and tested on its own when it runs — approved by the
 operator in one `ask`, recorded before anything is filed, then the epic, its items
 and their dependencies filed, the set being the ids `create` printed
-(`#engineRunGoal`, `#engineRunGoalReview`). **R4** files a follow-up
-outside the set and the epic, never worked in the run; the operator approves one by
-naming it in a new run's brief (`#engineRunFollowUps`). **R5** ends the run once
-every item is closed, or at a stop — the operator's, a task short of step 9's
-passing suite, the repair path or a step 10 that stopped — with every follow-up not
-yet filed, the final handoff, and the closing report, written once, adding the set
-and each item's outcome, what was filed and what was refused, and each record and
-tracker commit (`#engineRunReport`, `#leadRunReport`). Without
-`records` the brief is one task, step 10's closing report is the final message, and
-no unit of the loop outside `## The run` names either tool without naming `records`
+(`#engineRunGoal`, `#engineRunGoalReview`). **R4** files a follow-up outside the set
+and the epic, never worked in the run; the operator approves one by naming it in a
+new run's brief (`#engineRunFollowUps`). **R5** ends the run once every item is
+closed, or at a stop — the operator's, a task short of step 9's passing suite, the
+repair path or a step 10 that stopped — with every follow-up not yet filed, the final
+handoff, and the closing report, written once, adding the set and each item's
+outcome, what was filed and what was refused, and each record and tracker commit
+(`#engineRunReport`, `#leadRunReport`). When every item closed and no stop ended the
+run, R5 also closes the run's epic — a goal's, or the one the brief names — once
+`show` reports each of its children closed, after the follow-ups and before the final
+handoff, its close among the report's tracker commits; a list of ids has no epic, and
+a stop closes nothing R2 did not (`#engineRunCloseEpic`). Without `records` the brief
+is one task, step 10's closing report is the final message, and no unit of the loop
+outside `## The run` names either tool without naming `records`
 (`#engineRunWithoutRecords`). A run is one lead process, so its context has to last
 it: the loop survives compaction because it reaches the lead as its system
 instructions rather than as conversation, but whether a headless engine compacts on
-its own is unverified — `docs/probes.md` records no such run — and the fallbacks
-are a resume, which keeps the session, then a fresh lead on the same brief, which
-R1 places.
+its own is unverified — `docs/probes.md` records no such run — and the fallbacks are
+a resume, which keeps the session, then a fresh lead on the same brief, which R1
+places.
 
 - Journal: `.cross-agent/journal/<slug>.json`, built in `src/journal.ts`. The
   document is `{slug, branch, worktree?, defaultBranch, defaultShaBeforeMerge?,
@@ -4158,7 +4162,7 @@ as a regular file through no link, unless the file binds a project, and trusting
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
 20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,747 bytes under
-`dev-team`, 51,385 under `dev-team-engine` and 3,601 under `solo`
+`dev-team`, 51,950 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

@@ -210,7 +210,10 @@ that stopped short of its merge and passing suite, the repair path, or a cleanup
 stopped — and the lead files what is left to file, writes the final handoff and closes
 on one report: each task's lines, the set and each item's outcome, the follow-ups
 filed with their ids and any refused call listed as unfiled, each record and tracker
-commit, and for a goal the epic and the breakdown you approved. A lead resumed, or
+commit, and for a goal the epic and the breakdown you approved. When every item closed
+and nothing stopped the run, the lead also closes the epic it worked — a goal's, or
+the one you named — once the tracker shows each of its children closed; a list of ids
+has no epic, and a run that stopped leaves its epic open. A lead resumed, or
 started fresh on the same brief, finds its place in the tracker, git and the handoff,
 and asks you about anything its session cannot establish rather than guessing; it
 never closes such an item on its own. Your host does no bookkeeping of its own accord

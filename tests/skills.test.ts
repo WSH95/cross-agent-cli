@@ -743,7 +743,23 @@ test("an item that stops before merge after a review found a follow-up: the foll
   assert.match(flat(subsection(theRun(), "R2.")), /stops short of step 9's passing suite[^.]*ends the run by R5/);
   assertInOrder(flat(subsection(theRun(), "R5.")), ["File every follow-up found and not yet filed", 'track {verb: "file"',
     "An unfinished item stays in progress", "never close"], "the run's R5");
-  assert.equal(flat(theRun()).split('track {verb: "close"').length - 1, 1, "one close, R2's, after the item's merge and suite");
+  // Two closes in the run, each of its own id: R2's of the item, after its merge and suite, and
+  // R5's of the run's epic once every item is closed. No other close exists, so an item that
+  // stopped short stays in progress; a close of any other id, or a third close, fails here.
+  const closes = flat(theRun()).split('track {verb: "close"').slice(1).map((after) => /^, id: <([^>]*)>/.exec(after)?.[1]);
+  assert.deepEqual(closes, ["the item", "the epic"], "R2 closes the item and R5 only the run's epic");
+});
+
+// @anchor engineRunCloseEpic
+test("a run that ends with every item closed closes its epic once show reports every child closed, and a list of ids or a stop closes none", () => {
+  const step = flat(subsection(theRun(), "R5."));
+  // After the follow-ups, filed outside the epic, and before the handoff and the report that carry its close.
+  assertInOrder(step, ["File every follow-up found and not yet filed", "The run's epic — a goal's, from R3, or the one your brief names",
+    "only when every item of the set is closed and no stop ended the run", 'track {verb: "show", id: <the epic>}',
+    "once it reports every child closed", 'track {verb: "close", id: <the epic>', "The final handoff", "the epic's close among them"],
+    "the run's R5");
+  assert.match(step, /A child it reports not closed leaves the epic open/);
+  assert.match(step, /list of ids has no epic, and a run that ended at a stop closes nothing here/);
 });
 
 // @anchor engineRunResume
