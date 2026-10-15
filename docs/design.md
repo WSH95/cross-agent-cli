@@ -4161,8 +4161,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,747 bytes under
-`dev-team`, 52,068 under `dev-team-engine` and 3,601 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,895 bytes under
+`dev-team`, 52,216 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
@@ -4252,7 +4252,7 @@ handler passes:
   (`#initDetachedRefused`). The worktree's branch becomes the default
   branch, so it must be a name `git_root` takes in every read of it —
   `src/gitroot.ts#nameFault`'s letters, digits, `.`, `_`, `/` and `-`, no `..`, no
-  trailing `/` or `.lock`, where `git check-ref-format` would take `feature+one`
+  trailing `.`, `/` or `.lock`, where `git check-ref-format` would take `feature+one`
   (`tests/cli.test.ts#initBranchOutsideAlphabetRefused`) — and, once the mode is settled, a branch the
   mode's task pattern does not match, since every root verb, row 2 of the verifier and
   a sibling's journaled `branch -d` act on that pattern (`src/gitroot.ts#matchesPattern`,

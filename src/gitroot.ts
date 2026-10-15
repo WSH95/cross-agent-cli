@@ -175,12 +175,12 @@ export function matchesPattern(value: string, pattern: string): boolean {
 
 /**
  * A branch argument is a branch name: never a path, a range, a revision or an option —
- * letters, digits, `.`, `_`, `/` and `-`, with no `..` and no trailing `/` or `.lock`.
+ * letters, digits, `.`, `_`, `/` and `-`, with no `..` and no trailing `.`, `/` or `.lock`.
  * `cross-agent init` holds a worktree project's default branch to it too, since every
  * read of that branch through this tool is judged by it.
  */
 export function nameFault(value: string): string | null {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes("..") || value.endsWith("/") || value.endsWith(".lock")) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes("..") || value.endsWith(".") || value.endsWith("/") || value.endsWith(".lock")) {
     return `${JSON.stringify(value)} is not a branch name`;
   }
   return null;

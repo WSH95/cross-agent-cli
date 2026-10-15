@@ -7,7 +7,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { gitMutate } from "../src/gitmutate.ts";
-import { gitRoot } from "../src/gitroot.ts";
+import { gitRoot, nameFault } from "../src/gitroot.ts";
 import { runCommand } from "../src/runcommand.ts";
 import type { GitRootResult } from "../src/gitroot.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
@@ -521,6 +521,29 @@ test("git_root refuses a path outside the mode's worktree directory, a base that
     /worktree directory/,
   );
   assert.equal(fs.existsSync(path.join(outside, "x")), false);
+});
+
+test("git_root refuses a branch name ending in '.' before git runs, and still takes one with a '.' inside it", async (t) => {
+  const { root } = await repository(t);
+  const before = await state(root);
+  const directory = path.join(root, ".worktrees", "example.");
+
+  // The journal takes the slug `example.`, but git refuses the branch `task/example.`, so
+  // the name is judged before git is asked to create it.
+  const refused = await gitRoot(root, { args: ["worktree", "add", "-b", "task/example.", directory, "main"], slug: "example." }, { waitSeconds: 5 });
+  assert.equal(refusal(refused), 'git_root worktree add -b <branch> <dir> <base>: "task/example." is not a branch name');
+  assert.equal((refused as Extract<GitRootResult, { ok: false }>).exitCode, undefined, "refused before its git command runs");
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(readJournal(root, "example."), null);
+  // A read names a branch under the same rule.
+  assert.match(refusal(await gitRoot(root, { args: ["rev-parse", "task/example."] }, { waitSeconds: 5 })), /"task\/example\." is not a branch name/);
+  assert.deepEqual(await state(root), before);
+
+  assert.equal(nameFault("task/example."), '"task/example." is not a branch name');
+  assert.equal(nameFault("task/atc-2jl.9"), null);
+  // A tracker id with a `.` inside it, the usual bead shape, still gets its worktree.
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/atc-2jl.9", path.join(root, ".worktrees", "atc-2jl.9"), "main"], slug: "atc-2jl.9" }, { waitSeconds: 5 }));
+  assert.match(await git(root, "branch", "--list", "task/*"), /task\/atc-2jl\.9/);
 });
 
 test("a worktree lives directly under the mode's worktree directory, never inside another", async (t) => {

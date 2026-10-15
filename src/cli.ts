@@ -328,7 +328,7 @@ function worktreeBranchRefusal(root: string, located: Repository): { code: strin
   if (nameFault(branch) !== null) {
     return {
       code: "branch-name",
-      reason: `${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing "/" or ".lock"`,
+      reason: `${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing ".", "/" or ".lock"`,
     };
   }
   return null;

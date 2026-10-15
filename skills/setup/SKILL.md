@@ -239,9 +239,9 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
 - **Every proposal unavailable, or the one a change needs, while engines were found:** show
   each `reason`, and the branch rule when a reason names the branch.
 - **The branch rule:** a default branch whose name starts with a letter or digit, uses
-  only letters, digits, `.`, `_`, `/` and `-`, has no `..`, does not end in `/` or
-  `.lock`, and does not match `task/*`. A branch worktree's default branch is its own
-  checked-out branch.
+  only letters, digits, `.`, `_`, `/` and `-`, has no `..` and no trailing `.`, does
+  not end in `/` or `.lock`, and does not match `task/*`. A branch worktree's default
+  branch is its own checked-out branch.
 
 ## Connection check
 

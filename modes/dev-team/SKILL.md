@@ -16,7 +16,9 @@ this mode, written `<branch>` below), the journal file every git step appends
 to, and the `slug` that `git_mutate`, `git_root` and `run_command` all take.
 Because it is all four, its alphabet is the narrowest of them: letters, digits,
 `.`, `_` and `-`, starting with a letter, a digit or an underscore, or the
-journal refuses the call before any git runs.
+journal refuses the call before any git runs. Because it names a branch, it
+also holds no `..` and ends in neither `.` nor `.lock`, or `git_root` refuses
+the call before its git command runs.
 `<default>` is `project.defaultBranch`, and `<worktree path>` is
 `<project root>/<git.worktreeDir>/<slug>`, absolute. `describe_mode` gives you
 the policy those come from, and each role's own prompt — the text `delegate`

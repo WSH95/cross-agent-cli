@@ -271,7 +271,7 @@ export function defaultBranchFault(mode: Mode, defaultBranch: string, worktreeBr
     return `${JSON.stringify(defaultBranch)} is not this worktree's own branch ${JSON.stringify(worktreeBranch)}: a branch project's default branch is the branch it has checked out`;
   }
   const name = nameFault(defaultBranch);
-  if (name !== null) return `${name}: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing "/" or ".lock"`;
+  if (name !== null) return `${name}: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing ".", "/" or ".lock"`;
   const pattern = gitPolicy(mode).branchPattern;
   if (matchesPattern(defaultBranch, pattern)) {
     return `${JSON.stringify(defaultBranch)} matches mode ${mode.id}'s task branch pattern ${pattern}: a project's default branch is never a task's`;

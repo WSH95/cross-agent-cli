@@ -380,6 +380,12 @@ test("defaultBranchFault gates every proposal", () => {
   }
 });
 
+test("defaultBranchFault refuses a default branch ending in '.', naming the trailing '.' in its rule", () => {
+  const fault = setup.defaultBranchFault(modes["dev-team"], "main.", null)!;
+  assert.match(fault, /^"main\." is not a branch name: /);
+  assert.match(fault, /no trailing "\.", "\/" or "\.lock"/);
+});
+
 /** `init`'s config for `mode` as an operator adjusted it: a main checkout's, a branch project's base. */
 function baseConfig(mode = "dev-team"): CrossAgentConfig {
   const document = boundDocument(modes[mode], mode, "main");
