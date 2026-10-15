@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T06:16:28Z
+updated_at: 2026-10-15T06:45:55Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -7,6 +7,17 @@ branch: main
 # Handoff
 
 ## Now
+
+**Backlog run through the `dev-team` loop (the user, 2026-10-15): finish the remaining `atc-s96`
+beads, several beads per task, on requirements only — rare, hard edge cases get a stated
+limitation.** Triage committed as `6a6077a`: `.60`, `.105`, `.85`, `.86` closed as accepted
+limitations; `.25`, `.26`, `.28`, `.48`, `.96`, `.99`, `.100`, `.110`, `.93` deferred with reasons.
+31 beads in 12 tasks: (1) launcher text `.122` `.82` `.83` `.66` — in flight, planner running;
+(2) docs `.125` `.126` `.127`; (3) EPIPE `.120` `.121`; (4) server answers `.95` `.102`;
+(5) tidy `.84` `.87` `.91` `.81`; (6) gitroot `.89` `.90` `.101`; (7) self-hosting authority
+`.123` `.74`; (8) verifier `.69` `.72` `.62` `.94`; (9) answer bounds `.79`; (10) hung git `.98`;
+(11) Grok specialist isolation `.77` `.92` `.78` `.76`; (12) Claude compound commands `.113`.
+Team runs from the installed 0.1.8 build. No push or release without asking.
 
 **New epic `atc-2jl` (Decision 0022, 2026-10-14): the `dev-team-engine` lead owns the backlog
 and the project's records.** The user chose: the lead takes an epic/bead list or a goal it
@@ -369,7 +380,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **Epic `atc-2jl` is done and released (0.1.8).** Pick the next work from `bd ready` with the user;
+0. **Backlog run in progress (see Now).** Continue the next task in its list through the `dev-team`
+   loop; record each merge in VERIFY.md and close its beads.
+   Before it: **Epic `atc-2jl` is done and released (0.1.8).**
    steward commits after `541bc98` are local, for the user to push when wanted.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
