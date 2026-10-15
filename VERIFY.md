@@ -7,6 +7,31 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The binding in the answers, and `projectWarning` — `atc-s96.95`, `.102` (2026-10-15)
+
+Task 4 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`3d73742` to `12709e0` (slug `binding-answers`; commits `3570998`, `12709e0`). `delegate`, `wait`
+and `result` (both ok branches) now answer the task's `engine`, `model` and `effort` from its record,
+`null` where none was named; the `dev-team-engine` lead fills each report line from those answers,
+never from memory, and its loop no longer points the report at `list_roles`; the launcher narrates
+the delegation's answer and names the fields in "Starting a task", as the three tool descriptions
+do. `describe_mode` answers `projectWarning` (its own key, beside the unchanged `warning`) when the
+directory the server was started in lies in an initialized project other than `projectRoot`
+(`src/server.ts#cwdProjectWarning`, given the directory by `main` alone); the launcher shows it and
+judges it as the roster's Stop case. `dev-team-engine`'s `describe_mode` size is now 52,527 bytes.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, 2 Minor folded (named
+  values pinned on every answer; the engine loop's report source).
+- **Code review:** round 1 (`3570998`) all three seats `no major issues`, 5 Minor fixed in a
+  wrap-up (the whole check inside its `try`; a served-project case; the Codex bundled-mount limit
+  stated; the fields named in the tool descriptions; a stale comment); round 2 (`12709e0`) all three
+  `no major issues`. One test title left stale in `tests/tasks.test.ts` is folded into task 5.
+- **Gate and root suite:** 1213 tests at `12709e0`, 1211 pass, 0 fail, 2 guarded skips.
+- **Accepted limitations:** a lead may still ignore the text (the ledger and `cross-agent report`
+  stay the authority); under Codex's bundled mount the server starts in its cache copy, so the
+  warning never speaks for the host's project there.
+
 ## EPIPE on the CLI's stderr and the server's stdout — `atc-s96.120`, `.121` (2026-10-15)
 
 Task 3 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T09:21:35Z
+updated_at: 2026-10-15T10:30:58Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -13,7 +13,7 @@ beads, several beads per task, on requirements only — rare, hard edge cases ge
 limitation.** Triage committed as `6a6077a`: `.60`, `.105`, `.85`, `.86` closed as accepted
 limitations; `.25`, `.26`, `.28`, `.48`, `.96`, `.99`, `.100`, `.110`, `.93` deferred with reasons.
 31 beads in 12 tasks: (1) launcher text `.122` `.82` `.83` `.66` — merged as `f395066`, closed;
-(2) docs `.125` `.126` `.127` + task 1's two follow-ups — merged as `17ea9ae`, closed; (3) EPIPE `.120` `.121` — merged as `f811cf4`, closed; (4) server answers `.95` `.102`;
+(2) docs `.125` `.126` `.127` + task 1's two follow-ups — merged as `17ea9ae`, closed; (3) EPIPE `.120` `.121` — merged as `f811cf4`, closed; (4) server answers `.95` `.102` — merged as `12709e0`, closed;
 (5) tidy `.84` `.87` `.91` `.81`; (6) gitroot `.89` `.90` `.101`; (7) self-hosting authority
 `.123` `.74`; (8) verifier `.69` `.72` `.62` `.94`; (9) answer bounds `.79`; (10) hung git `.98`;
 (11) Grok specialist isolation `.77` `.92` `.78` `.76`; (12) Claude compound commands `.113`.
