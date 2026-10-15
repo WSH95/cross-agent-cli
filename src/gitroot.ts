@@ -38,6 +38,8 @@ export interface GitRootOptions {
    * held to the suite alone.
    */
   reviewRole?: string;
+  /** How long the verb may run before it is ended; `src/gitmutate.ts#gitTimeoutSeconds` unless given. */
+  timeoutSeconds?: number;
   now?: number;
 }
 
@@ -621,7 +623,7 @@ async function execute(
     if (verb.step === "merged" && index === parts.refAt) return branchHead!;
     return argument;
   });
-  const ran = await run(gitDir, workTree, argv);
+  const ran = await run(gitDir, workTree, argv, options.timeoutSeconds);
   if (ran.exitCode !== 0) {
     return {
       ok: false,

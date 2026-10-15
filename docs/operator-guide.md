@@ -347,8 +347,22 @@ merge itself would put the merge on another branch.
 The projects of one repository take turns at a lock in its git directory for every git
 write, and a project waits for it at least sixty seconds, whatever its own
 `limits.lockWaitSeconds`; where your hooks run longer than that, raise
-`limits.lockWaitSeconds`. A hook that hangs holds the lock until it is killed, and a
-call stuck behind it cannot be cancelled from inside. Recover by hand:
+`limits.lockWaitSeconds`.
+
+Every git step cross-agent runs — a `git_mutate` or `git_root` step, the `git` and
+`git-root` verbs' included — has thirty minutes, its hooks included (`gitTimeoutSeconds`).
+One still running then is ended with everything it started, and the call is refused with
+a reason that says so. Its locks are free again, and the refusal is a reconciliation
+trigger like any other: a post-commit, post-merge or post-checkout hook that hung ran after
+its command had already landed. git is sent SIGTERM first, on which it removes its own
+`index.lock`, and SIGKILL two seconds later; only a git that outlived the SIGTERM may leave
+`<git dir>/index.lock` behind, which you remove once no git runs there.
+
+git runs in a process group of its own, so a Ctrl-C at `cross-agent git` or `git-root`
+ends the CLI and frees its locks, but no longer reaches git or its hooks, which run on with
+no lock held for them; the same holds for a git whose server was killed with an engine's
+process group. And a call stuck behind a hung git cannot be cancelled from inside before
+its thirty minutes are up. End such a git, or a hung one you will not wait for, by hand:
 
 1. Find the hung git by its command line, with `ps -eo pid,ppid,args`: it carries
    `--work-tree=<the task's worktree>` for a `git_mutate` step, the `git <slug>` verb's

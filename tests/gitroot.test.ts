@@ -15,7 +15,7 @@ import { create, update } from "../src/ledger.ts";
 import { waiveReview } from "../src/review.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { git, gitShim, holderOf } from "./helpers/git.ts";
-import { layoutRoot, layouts, poll, project, reserve } from "./helpers/project.ts";
+import { layoutRoot, layouts, poll, proc, project, reserve } from "./helpers/project.ts";
 import type { LayoutName, LayoutRoot, TestProject } from "./helpers/project.ts";
 
 // `git_root` is the root half of design section 4: one whitelisted verb at the project
@@ -1082,6 +1082,35 @@ test("rebase --abort and every journaled verb take the repository lock, past the
   assert.equal(fs.existsSync(directory), false, "a journaled verb waits for it too");
   await shared.release();
   accepted(await created);
+});
+
+// @anchor gitRootTimeout
+test("git_root ends a git command that outlives its timeout, hooks included, and releases git.lock and the repository lock", { timeout: 60_000 }, async (t) => {
+  const { root } = await repository(t);
+  const scratch = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-hook-"));
+  const marker = path.join(scratch, "pid");
+  // Whatever the hook's child is when the test ends is killed, then its marker removed.
+  t.after(() => {
+    try {
+      process.kill(Number(fs.readFileSync(marker, "utf8")), "SIGKILL");
+    } catch { /* no pid was written, or it has exited */ }
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+  // The marker names the hook's own child, git's grandchild, which only a group kill reaches.
+  fs.mkdirSync(path.join(root, ".git", "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".git", "hooks", "post-checkout"),
+    `#!/bin/sh\nsh -c 'echo $$ > "$1"; exec sleep 30' sh ${JSON.stringify(marker)}\n`, { mode: 0o755 });
+  const directory = path.join(root, ".worktrees", "hangs");
+
+  const result = await gitRoot(root, { args: ["worktree", "add", "-b", "task/hangs", directory, "main"], slug: "hangs" }, { waitSeconds: 5, timeoutSeconds: 3 });
+  const pid = Number(await poll(() => fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "", (text) => /^\d+$/.test(text)));
+  // Gone, or a zombie, within five seconds: missed by the kill, it would sleep out its thirty.
+  await poll(() => proc(pid), (stat) => stat === null || ["Z", "X"].includes(stat.state), 5_000);
+  assert.match(refusal(result), /ran longer than 3s/);
+  for (const file of [lockPath(root, gitLockName()), repositoryLockPath(path.join(root, ".git"))]) {
+    await (await acquire(file, { operation: "a probe", waitSeconds: 0 })).release();
+  }
+  assert.equal(readJournal(root, "hangs"), null, "no worktree-created step is journaled");
 });
 
 // A closed journal is terminal (design section 4): its `branch-deleted` step ended the

@@ -24,7 +24,7 @@ import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
-import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
+import { cancel, check, defaultSettledLimit, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
 import { scan, taskStatuses } from "./ledger.ts";
 import type { TaskStatus } from "./ledger.ts";
 import { wait } from "./wait.ts";
@@ -873,15 +873,22 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "list_tasks",
-      description: "Every task of this project after a reconciliation pass, newest first, with the records no reader could judge.",
-      inputSchema: { type: "object", properties: { status: { type: "string", enum: [...taskStatuses] } } },
+      description: "Every active task of this project and the 20 most recent settled ones, after a reconciliation pass, newest first, with the records no reader could judge; `limit` sets how many settled tasks are listed, and `omitted` counts those left out.",
+      inputSchema: { type: "object", properties: { status: { type: "string", enum: [...taskStatuses] }, limit: { type: "number" } } },
       rows: ["operator", "lead", "specialist"],
       handler: async (args, context) => {
-        const status = optional(fields(args, "list_tasks"), "status", "string", "list_tasks") as string | undefined;
+        const values = fields(args, "list_tasks");
+        const status = optional(values, "status", "string", "list_tasks") as string | undefined;
         if (status !== undefined && !taskStatuses.includes(status as TaskStatus)) {
           throw new RpcError(-32602, `list_tasks status must be one of ${taskStatuses.join(", ")}`);
         }
-        const listed = await listTasks(projectRoot, status as TaskStatus | undefined);
+        const limit = optional(values, "limit", "number", "list_tasks") as number | undefined;
+        if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
+          throw new RpcError(-32602, `list_tasks' limit must be a whole number, not negative, not ${limit}`);
+        }
+        // The settled history is bounded unless the caller asks for more, so the ordinary
+        // answer stays one a host reads whole; the active tasks are always all there.
+        const listed = await listTasks(projectRoot, status as TaskStatus | undefined, { limit: limit ?? defaultSettledLimit });
         const leadTaskId = context.authority.row === "lead" ? context.authority.taskId : undefined;
         if (leadTaskId === undefined) return answer(listed);
         // A lead reads the roster to settle leftovers before it starts, and must never take

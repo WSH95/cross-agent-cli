@@ -11,7 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { initConfig } from "../src/config.ts";
-import { gitMutate, hostConfigPaths, uncommitted } from "../src/gitmutate.ts";
+import { GitRunError, gitMutate, hostConfigPaths, run, uncommitted } from "../src/gitmutate.ts";
 import type { GitMutateResult } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { appendStep, readJournal } from "../src/journal.ts";
@@ -19,7 +19,7 @@ import { create, update, writeSpec } from "../src/ledger.ts";
 import { acquire, gitLockName, lockPath, repositoryLockPath, spawnLockName } from "../src/locks.ts";
 import { verifyWorktree } from "../src/worktree.ts";
 import { gitShim, holderOf } from "./helpers/git.ts";
-import { layoutRoot, reserve } from "./helpers/project.ts";
+import { layoutRoot, proc, reserve } from "./helpers/project.ts";
 
 const exec = promisify(execFile);
 const sources = fileURLToPath(new URL("../", import.meta.url));
@@ -1159,4 +1159,88 @@ test("a mutation that fails, or whose git cannot run, releases the repository lo
   await gitShim(t, { signalOn: "signal-marker" });
   assert.match(refusal(await gitMutate(root, { slug: "failing", args: ["commit", "--allow-empty", "-m", "signal-marker"] }, { waitSeconds: 5 })), /could not run/);
   await free();
+});
+
+// A git command that never returns, because a hook it runs never does: `run` ends its whole
+// process group at its timeout, so the locks it holds come back however the hook behaves.
+
+/**
+ * An executable hook in the repository's own hooks directory, its script `body` with
+ * `$MARKER` naming a file it writes a pid to. Whatever that pid is when the test ends is
+ * SIGKILLed, so neither the hook nor the run that waited it out outlives the test.
+ */
+async function markedHook(t: TestContext, root: string, name: string, body: string): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), "cross-agent-hook-"));
+  const marker = path.join(directory, "pid");
+  // One hook kills, then removes: the repository's own cleanup may already have run.
+  t.after(async () => {
+    try {
+      process.kill(Number(fs.readFileSync(marker, "utf8")), "SIGKILL");
+    } catch { /* no pid was written, or it has exited */ }
+    await rm(directory, { recursive: true, force: true });
+  });
+  await mkdir(path.join(root, ".git", "hooks"), { recursive: true });
+  await writeFile(path.join(root, ".git", "hooks", name), `#!/bin/sh\nMARKER=${JSON.stringify(marker)}\n${body}\n`, { mode: 0o755 });
+  return marker;
+}
+
+/** The pid the hook wrote, once it has: a hook that never started fails here, by name. */
+async function markedPid(marker: string): Promise<number> {
+  const text = await poll(() => fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "", (value) => /^\d+$/.test(value));
+  return Number(text);
+}
+
+/**
+ * The process gone, or a zombie, within five seconds. A process the group kill missed lives
+ * the thirty seconds its hook sleeps, so the window tells the two apart.
+ */
+async function ended(pid: number): Promise<void> {
+  await poll(() => proc(pid), (stat) => stat === null || ["Z", "X"].includes(stat.state), 5_000);
+}
+
+// @anchor gitTimeoutEndsGroup
+test("a git command that outlives its timeout is ended with its hooks, refused naming the timeout, and leaves no lock behind", { timeout: 60_000 }, async (t) => {
+  const { root, add } = await repository(t);
+  const worktree = await add("hangs");
+  await writeFile(path.join(worktree, "tracked.txt"), "first\n");
+  await git(worktree, "add", "tracked.txt");
+  await git(worktree, "commit", "-m", "tracked");
+  await writeFile(path.join(worktree, "tracked.txt"), "second\n");
+  const head = await git(root, "rev-parse", "refs/heads/task/hangs");
+  // The marker names the hook's own child, git's grandchild, which only a group kill reaches.
+  const marker = await markedHook(t, root, "pre-commit", `sh -c 'echo $$ > "$1"; exec sleep 30' sh "$MARKER"`);
+
+  const result = await gitMutate(root, { slug: "hangs", args: ["commit", "-a", "-m", "hangs"] }, { waitSeconds: 5, timeoutSeconds: 3 });
+  await ended(await markedPid(marker));
+  assert.match(refusal(result), /ran longer than 3s/);
+  for (const file of [lockPath(root, spawnLockName()), lockPath(root, gitLockName()), repositoryLockPath(path.join(root, ".git"))]) {
+    await (await acquire(file, { operation: "a probe", waitSeconds: 0 })).release();
+  }
+  // git was told to stop before it was killed, and removed its own index lock.
+  assert.equal(fs.existsSync(path.join(await git(worktree, "rev-parse", "--absolute-git-dir"), "index.lock")), false);
+  assert.equal(await git(root, "rev-parse", "refs/heads/task/hangs"), head);
+  assert.equal(readJournal(root, "hangs"), null);
+});
+
+// @anchor gitTimeoutEscalates
+test("a hook that ignores SIGTERM with its output redirected is SIGKILLed with its group", { timeout: 60_000 }, async (t) => {
+  const { root } = await repository(t);
+  // Its output gone elsewhere, nothing keeps git's pipes open: only the group kill ends it.
+  const marker = await markedHook(t, root, "pre-commit", [
+    "exec >/dev/null 2>&1", "trap '' TERM", 'echo $$ > "$MARKER"',
+    "i=0", 'while [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done',
+  ].join("\n"));
+
+  const ran = run(path.join(root, ".git"), root, ["commit", "--allow-empty", "-m", "x"], 3);
+  await assert.rejects(ran, (error: Error) => error instanceof GitRunError && /ran longer than 3s/.test(error.message));
+  await ended(await markedPid(marker));
+});
+
+// @anchor gitOutputBound
+test("a git command whose output passes the cap on one stream is ended and refused as one that could not run", { timeout: 60_000 }, async (t) => {
+  const { root } = await repository(t);
+  // A hook's output is git's stderr: seventeen million bytes is past the sixteen MiB kept.
+  await markedHook(t, root, "pre-commit", 'echo $$ > "$MARKER"\nyes | head -c 17000000 >&2');
+
+  await assert.rejects(run(path.join(root, ".git"), root, ["commit", "--allow-empty", "-m", "x"]), (error: Error) => error instanceof GitRunError && /could not run/.test(error.message));
 });

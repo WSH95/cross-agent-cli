@@ -11,7 +11,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Authority } from "../src/authority.ts";
-import { create, taskStatuses } from "../src/ledger.ts";
+import { create, taskStatuses, update } from "../src/ledger.ts";
 import { builtInModesDir, describeMode, loadMode } from "../src/modes.ts";
 import type { Mode } from "../src/modes.ts";
 import { createServer, projectTools } from "../src/server.ts";
@@ -768,6 +768,8 @@ test("the delegation tools answer a refusal as an error result, and their argume
     ["check", { task_id: "t", lines: 0 }], ["check", { task_id: "t", lines: -1 }], ["check", { task_id: "t", lines: 1.5 }],
     ["wait", { task_id: "" }], ["wait", { task_id: "t", timeout_seconds: "soon" }], ["wait", { task_id: "t", timeout_seconds: -1 }],
     ["list_tasks", { status: "elsewhere" }],
+    // A limit is a count of settled tasks: a whole number, not negative.
+    ["list_tasks", { limit: -1 }], ["list_tasks", { limit: 1.5 }], ["list_tasks", { limit: "5" }],
   ] as const) {
     const reply = await call(name, args as Json);
     assert.equal((reply.error as Json)?.code, -32602, `${name} ${JSON.stringify(args)}`);
@@ -1050,6 +1052,39 @@ test("list_tasks marks a lead's own records self and the tasks it owns own, and 
   for (const task of (await tasksOf(operator)).values()) {
     assert.equal(Object.hasOwn(task, "self") || Object.hasOwn(task, "own"), false, task.id as string);
   }
+});
+
+// @anchor listTasksBounded
+test("list_tasks answers every active task and the 20 newest settled ones by default, under 20,000 bytes, and takes a limit", async (t) => {
+  const root = await projectWithConfig(t, { roles: {} });
+  const base = Date.now() - 3_600_000;
+  const settled: string[] = [];
+  for (let index = 0; index < 25; index++) {
+    const at = base + index * 60_000;
+    const record = create(root, { role: "planner", brief: `settled ${index}`, cwd: root, engine: "codex" }, at);
+    assert.equal((await update(root, record.id, { status: "running" }, at + 1_000)).applied, true);
+    assert.equal((await update(root, record.id, { status: "done" }, at + 2_000)).applied, true);
+    settled.unshift(record.id);
+  }
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+  const listed = async (args: Json) => {
+    const reply = await request("tools/call", { name: "list_tasks", arguments: args });
+    return { ...payload(reply), bytes: Buffer.byteLength(((reply.result as Json).content as Json[])[0].text as string) };
+  };
+
+  // The ordinary answer: the newest twenty, newest first, the rest counted, small enough to read whole.
+  const bounded = await listed({});
+  assert.equal(bounded.isError, false);
+  assert.deepEqual((bounded.body.tasks as Json[]).map((task) => task.id), settled.slice(0, 20));
+  assert.equal(bounded.body.omitted, 5);
+  assert.ok(bounded.bytes < 20_000, `the default answer is ${bounded.bytes} bytes`);
+  // A limit past the history lists it all and counts nothing; none lists no settled task.
+  const wide = await listed({ limit: 30 });
+  assert.deepEqual((wide.body.tasks as Json[]).map((task) => task.id), settled);
+  assert.equal(Object.hasOwn(wide.body, "omitted"), false);
+  const narrow = await listed({ limit: 0 });
+  assert.deepEqual(narrow.body.tasks, []);
+  assert.equal(narrow.body.omitted, 25);
 });
 
 // @anchor describeModeServes

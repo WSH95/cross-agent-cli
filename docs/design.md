@@ -729,7 +729,7 @@ engine`; **records** only where the config the server started with has a
 | `check` | `task_id`, optional `lines` | non-blocking status and the last activity lines, with the task's `seat` and `underReview` where its record has them; it reads the stall clock as `wait` does and writes the `running ↔ stalled` it finds | core |
 | `result` | `task_id` | the final message in full, the engine session id, and the task's `engine`, `model` and `effort` | core |
 | `cancel` | `task_id` | identity-checked termination of the runner's and the engine's process groups, the task's descendants first, and the open asks of its lineage cancelled, as `asksCancelled` | core |
-| `list_tasks` | optional `status` | ledger listing after reconciliation, with any invalid records reported, each task's `seat` and `underReview` where its record has them; to a lead, its own records marked `self` and the tasks it owns marked `own` | core |
+| `list_tasks` | optional `status`, `limit` | ledger listing after reconciliation, newest first: every active task and the `limit` newest settled ones, 20 by default (`src/tasks.ts#defaultSettledLimit`), `omitted` counting the rest, so the ordinary answer stays one a host reads whole; with any invalid records reported, each task's `seat` and `underReview` where its record has them; to a lead, its own records marked `self` and the tasks it owns marked `own` | core |
 | `verify_worktree` | `path`, `branch` | the checks of section 4; returns the explicit git-dir and work-tree to use, or a refusal | worktree |
 | `git_mutate` | `slug`, `args[]`, optional `path`, `branch` | the lead's only path for mutating git in a worktree: verify, `flock`, explicit `--git-dir`/`--work-tree`, journal (section 4) | worktree |
 | `git_root` | `args[]`, optional `slug` | one whitelisted git verb at the project root, journaled under the slug it names, under `git.lock` (section 4) | worktree |
@@ -2513,19 +2513,38 @@ for the bug this found (`atc-s96.35`, closed): with `GIT_DIR` inherited, `git -C
 verifier refused *every* worktree. It failed closed, so it was never a hole,
 but the lead could do nothing at all.
 
-One residual is stated rather than hidden: there is no timeout on the git
-child, so a command that hangs — a hook that never returns — holds `git.lock` and
-the repository lock until it is killed. Every other mutation of the project then
-waits `lockWaitSeconds` and refuses, and every git write of the repository's other
-projects waits the repository lock's sixty seconds or more and refuses, naming the
-lock; such a refusal is retryable after the loop's reconciliation. The call cannot be
-cancelled from inside: `gitMutate` holds `spawn.lock` for the whole call, and
-`cancel` needs that same lock. A `git_root` step's `worktree add` or `merge` holds
-`git.lock` and the repository lock, not `spawn.lock`, so `cancel` can run beside it —
-except the `worktree add` `delegate` runs for a one-shot, inside its own `spawn.lock`,
-where `cancel` waits too — and still does not end that git child, which nothing but
-the call owns; a `merge`'s hooks run at the root, and a `worktree add`'s post-checkout
-hook in the new worktree.
+Every git command a tool runs against a repository — `git_mutate`, `git_root`,
+`record`'s commit, the `worktree add` `delegate` runs for a one-shot, the gate's
+checkout — goes through `src/gitmutate.ts#run`, and has `src/gitmutate.ts#gitTimeoutSeconds`, thirty
+minutes, hooks included. git leads a process group of its own; at the timeout the
+group gets SIGTERM, on which git removes its own `index.lock` and ref locks, and
+SIGKILL two seconds later whatever SIGTERM did, since a hook may ignore it after git
+has gone; only then does the call answer, `ok: false`, with a reason that names the
+timeout and says the command may have completed in part, and with no step journaled
+(`tests/gitmutate.test.ts#gitTimeoutEndsGroup`, `#gitTimeoutEscalates`,
+`tests/gitroot.test.ts#gitRootTimeout`). Each caller's `finally` then frees every
+lock it took. A post-commit, post-merge or post-checkout hook runs after its command
+has landed, so the refusal is a reconciliation trigger like any other `ok: false`.
+
+What residual remains is stated rather than hidden. Until the timeout, a command that
+hangs — a hook that never returns — holds `git.lock` and the repository lock. Every
+other mutation of the project then waits `lockWaitSeconds` and refuses, and every git
+write of the repository's other projects waits the repository lock's sixty seconds or
+more and refuses, naming the lock; such a refusal is retryable after the loop's
+reconciliation. The call cannot be cancelled from inside before then: `gitMutate`
+holds `spawn.lock` for the whole call, and `cancel` needs that same lock. A
+`git_root` step's `worktree add` or `merge` holds `git.lock` and the repository lock,
+not `spawn.lock`, so `cancel` can run beside it — except the `worktree add`
+`delegate` runs for a one-shot, inside its own `spawn.lock`, where `cancel` waits too
+— and still does not end that git child, which nothing but the call owns; a `merge`'s
+hooks run at the root, and a `worktree add`'s post-checkout hook in the new worktree.
+A git that outlived its SIGTERM may leave `index.lock` behind, which the operator
+removes once no git runs there. Because git leads its own group, a terminal's Ctrl-C at
+the CLI's `git` or `git-root` verb, or a server killed with an engine's process group,
+ends the caller and frees its locks but no longer reaches git or its hooks, which run
+on unprotected. And the verifier's own `git -C` reads (`src/worktree.ts:50-53`), like
+the ones that find a project, keep no timeout: they run no hook, short of a
+`core.fsmonitor` command.
 `docs/operator-guide.md` gives the operator's recovery: find the hung git by its command line —
 `--work-tree=<the task's worktree>` for a `git_mutate` step,
 `--work-tree=<the project root>` for a `git_root` step — since no `CROSS_AGENT_*`
@@ -4652,7 +4671,7 @@ Three limits of worktree projects are deferred the same way, each for its reason
   their own with the external git directory protected. A
   separated main's checkout cannot be found from its worktrees, since git records no
   path to it, which is why `init` there asks for `--from`.
-- **Cancelling a hung git child.** `gitMutate` holds `spawn.lock` for the whole call
+- **Cancelling a hung git child sooner than its timeout.** `gitMutate` holds `spawn.lock` for the whole call
   and `cancel` needs that lock, so cancelling one needs subprocess ownership that does
   not first take it; `docs/operator-guide.md` gives the operator's recovery by hand (section 4).
 

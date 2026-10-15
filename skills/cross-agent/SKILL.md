@@ -163,6 +163,8 @@ holds, a `null` being that engine's default: where it differs from what the rule
 give, narrate the answer's. Name a task you did not
 dispatch — a lead's specialist — by the engine, model and effort its record in
 `list_tasks` carries, a `null` there being that engine's default: never guess them.
+For a task `list_tasks` leaves out, `result {task_id}` carries the same engine, model
+and effort.
 
 A refusal is an answer, not an error to retry: a request identical to a live
 task — the same role, seat, cwd and brief — is refused with the id to wait on
@@ -203,8 +205,8 @@ settled task, and a `hint` naming the call to make next. Act on the status:
 After a `wait` that timed out or came back `stalled`, call `list_tasks` before
 you wait again. `wait` runs a reconciliation pass itself when a record's own
 evidence says the ledger is adrift, but `list_tasks` reconciles unconditionally
-and refreshes the whole roster you are showing the user; one call per timeout is
-the whole of its cost.
+and refreshes the roster you are showing the user: every active task and the newest
+settled ones; one call per timeout is the whole of its cost.
 
 Never declare a task done from `check` alone: `check` reconciles nothing, so a
 record it reports as running may have lost its runner minutes ago. `check` is

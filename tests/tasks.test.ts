@@ -17,7 +17,7 @@ import { sandboxFor } from "../src/engines/registry.ts";
 import { git } from "./helpers/git.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
 import { alive, engineEnv, poll, waitForRecord, project, proc, strandedEngine } from "./helpers/project.ts";
-import { deadIdentity, snapshot } from "./helpers/seed.ts";
+import { deadIdentity, seededProject, snapshot } from "./helpers/seed.ts";
 import type { TestProject } from "./helpers/project.ts";
 
 const operator: Authority = { row: "operator", reason: "operator: no CROSS_AGENT_* variable and no engine ancestor", depth: 0 };
@@ -324,6 +324,38 @@ test("listTasks without a pass reads the ledger as it is: nothing is settled, an
   assert.equal(p.record(quiet.id).reason, "runner lost");
   assert.deepEqual(reconciled.invalid.map((entry) => entry.file), [broken]);
   assert.equal(fs.readFileSync(broken, "utf8"), "{not a record", "a pass names a damaged file and leaves it alone");
+});
+
+// @anchor listTasksLimit
+test("listTasks with a limit keeps every active task and the newest settled ones, counts what it left out, and still names the damaged file", async (t) => {
+  const seeded = await seededProject(t);
+  const { byStatus, lead, runningChild, worktreeTask } = seeded;
+  const active = new Set([byStatus.launching, byStatus.running, byStatus.stalled, byStatus.orphaned, byStatus.cancelling, lead, runningChild].map((record) => record.id));
+  const whole = await listTasks(seeded.root, undefined, { reconcile: false });
+  const ids = (listed: { tasks: Array<{ id: string }> }) => listed.tasks.map((task) => task.id);
+  const newestFirst = (kept: Set<string>) => ids(whole).filter((id) => kept.has(id));
+
+  // One settled task, the newest of the six, beside all seven active ones, in the ledger's order.
+  const one = await listTasks(seeded.root, undefined, { reconcile: false, limit: 1 });
+  assert.deepEqual(ids(one), newestFirst(new Set([...active, worktreeTask.id])));
+  assert.equal(one.omitted, 5);
+  assert.deepEqual(one.invalid.map((entry) => entry.file), [seeded.brokenTask]);
+  // None settled: the active tasks survive any limit.
+  const none = await listTasks(seeded.root, undefined, { reconcile: false, limit: 0 });
+  assert.deepEqual(ids(none), newestFirst(active));
+  assert.equal(none.omitted, 6);
+  assert.deepEqual(none.invalid.map((entry) => entry.file), [seeded.brokenTask]);
+  // A limit that leaves nothing out says nothing about it.
+  const all = await listTasks(seeded.root, undefined, { reconcile: false, limit: 6 });
+  assert.deepEqual(ids(all), ids(whole));
+  assert.equal(Object.hasOwn(all, "omitted"), false);
+  // No limit is the operator's whole ledger, as it was before the bound.
+  assert.equal(whole.tasks.length, 13);
+  assert.equal(Object.hasOwn(whole, "omitted"), false);
+  // The status filter comes first, and the bound counts within what it chose.
+  const done = await listTasks(seeded.root, "done", { reconcile: false, limit: 1 });
+  assert.deepEqual(ids(done), [worktreeTask.id]);
+  assert.equal(done.omitted, 3);
 });
 
 test("a cancel of a running task is settled by its own runner, with both identities and no live group", async (t) => {

@@ -171,7 +171,15 @@ export interface ListResult {
   /** What this pass could not decide, and what orphan cleanup would not act on. */
   errors: Array<{ id: string; reason: string }>;
   skipped: Array<{ id: string; reason: string }>;
+  /** How many settled tasks a `limit` left out; absent when it left none out. */
+  omitted?: number;
 }
+
+/**
+ * How many settled tasks `list_tasks` lists unless its caller asks for more: enough history
+ * for a lead's next step, and an answer a host reads whole however long the ledger grows.
+ */
+export const defaultSettledLimit = 20;
 
 export interface ListOptions {
   /**
@@ -180,6 +188,11 @@ export interface ListOptions {
    * read is side-effect free, and the reconciling read is the one it asks for by name.
    */
   reconcile?: boolean;
+  /**
+   * How many settled tasks to list, the newest; every active one is listed whatever it is.
+   * Absent, every task is: the operator CLI's `tasks` reads the whole ledger.
+   */
+  limit?: number;
 }
 
 /**
@@ -187,19 +200,27 @@ export interface ListOptions {
  * no caller of the tool reads a `running` task whose runner died an hour ago (design section
  * 2). The operator's `tasks` reconciles only under `--reconcile`: without the pass this is
  * the ledger exactly as it stands, the damaged files still named, and nothing in the project
- * is written.
+ * is written. A `limit` bounds the settled history after the pass, so the pass still covers
+ * the whole ledger.
  */
 export async function listTasks(projectRoot: string, status?: TaskStatus, options: ListOptions = {}): Promise<ListResult> {
-  const select = (records: readonly TaskRecord[]) => records
-    .filter((record) => status === undefined || record.status === status)
-    .sort((left, right) => right.createdAt - left.createdAt)
-    .map(view);
+  const select = (records: readonly TaskRecord[]) => {
+    const chosen = records
+      .filter((record) => status === undefined || record.status === status)
+      .sort((left, right) => right.createdAt - left.createdAt);
+    let settled = 0;
+    const kept = options.limit === undefined
+      ? chosen
+      : chosen.filter((record) => !isTerminal(record.status) || settled++ < options.limit!);
+    const omitted = chosen.length - kept.length;
+    return { tasks: kept.map(view), ...(omitted === 0 ? {} : { omitted }) };
+  };
   if (options.reconcile === false) {
     const { records, invalid } = scan(projectRoot);
-    return { ok: true, tasks: select(records), invalid, errors: [], skipped: [] };
+    return { ok: true, ...select(records), invalid, errors: [], skipped: [] };
   }
   const pass = await reconcileAndCleanup(projectRoot);
-  return { ok: true, tasks: select(scan(projectRoot).records), invalid: pass.invalid, errors: pass.errors, skipped: pass.skipped };
+  return { ok: true, ...select(scan(projectRoot).records), invalid: pass.invalid, errors: pass.errors, skipped: pass.skipped };
 }
 
 export interface Outcome {

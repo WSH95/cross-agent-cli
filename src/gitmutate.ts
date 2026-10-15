@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig, repositoryLockWait } from "./config.ts";
 import { appendStep, readJournal } from "./journal.ts";
 import type { Journal, JournalEntry, JournalStep } from "./journal.ts";
@@ -39,6 +39,8 @@ export interface GitMutateOptions {
   dir?: string;
   /** The active mode's `git.branchPattern`, whose one `*` the slug fills. */
   branchPattern?: string;
+  /** How long the subcommand may run before it is ended; `gitTimeoutSeconds` unless given. */
+  timeoutSeconds?: number;
   now?: number;
 }
 
@@ -63,11 +65,18 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const exec = promisify(execFile);
-// One git subcommand's output. Larger than anything a lead's mutation produces, and still
-// bounded, because exceeding it kills the child — which for a mutation is worse than
-// truncation would be.
+// One git subcommand's output, on each of its two streams. Larger than anything a lead's
+// mutation produces, and still bounded, because exceeding it ends the command — which for a
+// mutation is worse than truncation would be.
 const maxBuffer = 16 * 1024 * 1024;
+/**
+ * How long one git command may run, hooks included, before `run` ends it: thirty minutes,
+ * far past any commit, merge or worktree a lead asks for, and short of a hook that never
+ * returns holding every lock the call took for good (`tests/gitmutate.test.ts#gitTimeoutEndsGroup`).
+ */
+export const gitTimeoutSeconds = 1800;
+// How long git has, once told to stop, to remove its own lock files before its group is killed.
+const killGraceMs = 2000;
 // Each of these turns a whitelisted verb into an arbitrary one against an arbitrary
 // repository, which is exactly what this tool exists to prevent (design section 4). Both
 // git tools refuse them; `git_root` reads this same set (`src/gitroot.ts#argumentFault`).
@@ -186,19 +195,88 @@ async function rebasing(gitDir: string, branch: string): Promise<boolean> {
 // invocation in this project gets, so nothing the server inherited can redirect it.
 // `git_root` runs through this too, with the root's own directories, so there is one
 // place where this project decides what git works on (design section 4).
-export async function run(gitDir: string, workTree: string, args: string[]): Promise<Ran> {
+//
+// Every caller holds a lock while this runs, and a hook can run as long as it likes, so the
+// command has `seconds` and no more (`gitTimeoutSeconds`). git leads a process group of its
+// own, so ending it ends its hooks and whatever they started, as a configured command's
+// timeout does (`src/runcommand.ts#shell`). SIGTERM comes first, because git removes its own
+// `index.lock` and ref locks on it; SIGKILL always follows the grace, because a hook may
+// ignore SIGTERM after git itself has gone. The answer waits for both, so no hook of this
+// command is still running when the caller lets its locks go.
+export async function run(gitDir: string, workTree: string, args: string[], seconds = gitTimeoutSeconds): Promise<Ran> {
   const env = gitEnvironment();
   const argv = [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args];
-  try {
-    const { stdout, stderr } = await exec("git", argv, { cwd: workTree, env, encoding: "utf8", maxBuffer });
-    return { exitCode: 0, stdout, stderr };
-  } catch (error) {
-    const failure = error as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string };
-    // No numeric code means the child never reported one: git was not found, or it died on
-    // a signal. That is not a git failure the lead can read, so it is named as its own.
-    if (typeof failure.code !== "number") throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: ${message(error)}`);
-    return { exitCode: failure.code, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
+  const child = spawn("git", argv, { cwd: workTree, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const signal = (value: NodeJS.Signals): void => {
+    if (child.pid === undefined) return;
+    try {
+      process.kill(-child.pid, value);
+    } catch { /* ESRCH: every process of the group has already exited */ }
+  };
+  let ending: Promise<void> | undefined;
+  const end = (): void => {
+    ending ??= (async () => {
+      signal("SIGTERM");
+      await delay(killGraceMs);
+      signal("SIGKILL");
+      // A process outside the group may still hold a pipe open; the answer does not wait for it.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    })();
+  };
+
+  // Each stream keeps what fits under the cap; the chunk that would pass it, and everything
+  // after it on that stream, is dropped, and the command is ended.
+  const output = { stdout: { chunks: [] as Buffer[], size: 0, full: false }, stderr: { chunks: [] as Buffer[], size: 0, full: false } };
+  let overflowed: "stdout" | "stderr" | undefined;
+  for (const name of ["stdout", "stderr"] as const) {
+    const kept = output[name];
+    child[name]?.on("data", (chunk: Buffer) => {
+      if (kept.full) return;
+      if (kept.size + chunk.length > maxBuffer) {
+        kept.full = true;
+        overflowed ??= name;
+        end();
+        return;
+      }
+      kept.chunks.push(chunk);
+      kept.size += chunk.length;
+    });
   }
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    end();
+  }, seconds * 1000);
+
+  let closed: { code: number | null; signal: NodeJS.Signals | null } | { error: unknown };
+  try {
+    closed = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      // `close` rather than `exit`: the output is only whole once both pipes have ended.
+      child.once("close", (code: number | null, by: NodeJS.Signals | null) => resolve({ code, signal: by }));
+    });
+  } catch (error) {
+    closed = { error };
+  }
+  clearTimeout(timer);
+  // Once termination has begun it runs to its end, the group's SIGKILL included, even where
+  // git itself has already closed: a hook that ignored SIGTERM is still running.
+  await ending;
+
+  if (timedOut) {
+    throw new GitRunError(`git ${args.join(" ")} ran longer than ${seconds}s in ${workTree}; its process group, hooks included, was ended, so it may have completed in part: reconcile before repeating it`);
+  }
+  if (overflowed !== undefined) throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: its ${overflowed} passed ${maxBuffer} bytes`);
+  // No numeric code means the child never reported one: git was not found, or it died on
+  // a signal. That is not a git failure the lead can read, so it is named as its own.
+  if ("error" in closed) throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: ${message(closed.error)}`);
+  if (closed.code === null) throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: it was ended by ${closed.signal}`);
+  return {
+    exitCode: closed.code,
+    stdout: Buffer.concat(output.stdout.chunks).toString("utf8"),
+    stderr: Buffer.concat(output.stderr.chunks).toString("utf8"),
+  };
 }
 
 /** A branch's SHA, or undefined when there is no such branch to record. */
@@ -519,7 +597,7 @@ async function mutate(
     }
     const before = await revision(gitDir, workTree, verified.branch);
     const defaultSha = await revision(gitDir, workTree, defaultBranch);
-    const ran = await run(gitDir, workTree, request.args);
+    const ran = await run(gitDir, workTree, request.args, options.timeoutSeconds);
     if (ran.exitCode !== 0) {
       return {
         ok: false,
