@@ -119,10 +119,11 @@ show it to the user with the roster, and judge it as the first case below.
 
 ## Starting a task
 
-`delegate {role, brief, cwd}` launches one task and answers with its task id:
-under `host` placement each specialist your loop names, and under `engine`
-placement the lead and no one else (`## Engine placement`), whose brief, narration,
-refusals, waits, resume and cancel are the ones this skill describes for any task.
+`delegate {role, brief, cwd}` launches one task and answers with its task id and
+the engine, model and effort it runs on: under `host` placement each specialist
+your loop names, and under `engine` placement the lead and no one else
+(`## Engine placement`), whose brief, narration, refusals, waits, resume and
+cancel are the ones this skill describes for any task.
 Add `branch` when the role works in a worktree — the mode's loop says where
 that worktree comes from and on what branch — and `engine`, `model` or `effort`
 to override the binding for this call alone. Naming another `engine` drops the

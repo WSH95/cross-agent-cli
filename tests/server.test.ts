@@ -169,6 +169,19 @@ for (const [name, pins] of [
   });
 }
 
+// @anchor bindingToolDescriptions
+test("tools/list says delegate, wait and result answer with the engine, model and effort the task runs on", async (t) => {
+  // The three answers a lead's report line is filled from (atc-s96.95): a host reading the
+  // tool list learns they are there without calling one.
+  const root = await projectWithConfig(t, { roles: {} });
+  const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+  const tools = ((await request("tools/list")).result as Json).tools as Json[];
+  for (const name of ["delegate", "wait", "result"]) {
+    const description = tools.find((tool) => tool.name === name)!.description as string;
+    assert.match(description, /engine, model and effort the task runs on/, name);
+  }
+});
+
 test("list_tasks filters by the ledger's own statuses, the one list the ledger exports", async (t) => {
   const root = await projectWithConfig(t, { roles: {} });
   const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
@@ -1355,6 +1368,8 @@ test("describe_mode warns when the directory the server was started in lies in a
   assert.ok((warned.projectWarning as string).includes(initialized), warned.projectWarning as string);
   assert.equal(Object.hasOwn(warned, "warning"), false, "the records drift's own key stays its own");
 
+  // The project itself, where every ordinary session starts, is no warning.
+  assert.equal(Object.hasOwn(await described(main), "projectWarning"), false);
   // A worktree nobody initialized is served by its main project on purpose.
   assert.equal(Object.hasOwn(await described(uninitialized), "projectWarning"), false);
   // A directory the lookup finds no project for is no warning and no error.

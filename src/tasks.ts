@@ -149,7 +149,10 @@ export type ResultResult =
   | ({ ok: true; id: string; status: TaskStatus; settled: false } & Binding)
   | { ok: false; reason: string };
 
-/** The final message in full, once there is one. A task still running has only its status. */
+/**
+ * The final message in full, once there is one. A task still running has its status and no
+ * message; either answer carries the engine, model and effort its record holds.
+ */
 export function result(projectRoot: string, taskId: string): ResultResult {
   const record = find(projectRoot, taskId);
   if (record === null) return { ok: false, reason: `no task ${taskId}` };

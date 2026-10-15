@@ -541,8 +541,10 @@ test("every dispatch is narrated with the engine, model and effort the roster, t
   assert.doesNotMatch(narration[0], /as when your call names another engine/);
   assert.doesNotMatch(narration[0], /the same for its effort/);
   // The delegation answers with the three its record holds, which settles any doubt the
-  // rules above leave (atc-s96.95).
+  // rules above leave (atc-s96.95), and the section that introduces the call says so first.
   assert.match(narration[0], /delegation's answer carries the engine, model and effort the task's record holds[^.]*narrate the answer's/);
+  assert.match(flat(sectionOf(launcher(), "Starting a task")),
+    /`delegate \{role, brief, cwd\}` launches one task and answers with its task id and the engine, model and effort it runs on/);
   assert.match(narration[0], /task you did not dispatch[^.]*by the engine, model and effort its record in `list_tasks` carries/);
   assert.match(narration[0], /never guess them/);
 });

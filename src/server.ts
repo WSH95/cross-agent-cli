@@ -23,7 +23,6 @@ import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule } from "./project.ts";
-import type { Discovery } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
 import { scan, taskStatuses } from "./ledger.ts";
@@ -292,7 +291,10 @@ export interface ToolOptions {
   /**
    * The directory this server was started in: `describe_mode` warns where it lies in an
    * initialized project other than the one served. Absent, as for a server built
-   * in-process, nothing is checked.
+   * in-process, nothing is checked. Codex's bundled plugin mount starts this server in its
+   * cache copy of the plugin (`.codex-plugin/plugin.json`, `cwd: "."`), not the host's
+   * directory, so there the warning never speaks for the host's project, and the launcher's
+   * stop rule, judged against the host's own working directory, is what still applies.
    */
   cwd?: string;
 }
@@ -303,18 +305,18 @@ export interface ToolOptions {
  * discovery's own walk with no flag and no environment, so it finds what the host's working
  * directory would serve on its own. It reads no `realpath` of `projectRoot`: a root the walk
  * finds by its config is already real, and the roots it returns that are not hold no config,
- * which this rules out. A lookup that finds nothing, or fails, is no warning (atc-s96.102).
+ * which this rules out. A lookup that finds nothing, or fails anywhere, the config's own
+ * read included, is no warning (atc-s96.102).
  */
 async function cwdProjectWarning(projectRoot: string, cwd: string): Promise<string | null> {
-  let found: Discovery;
   try {
-    found = await discoverProject([], {}, cwd);
+    const found = await discoverProject([], {}, cwd);
+    if ("reason" in found || found.root === projectRoot || !holdsConfig(found.root)) return null;
+    return `this server serves ${projectRoot}, but the directory it was started in, ${cwd}, lies in the initialized project ${found.root}: `
+      + `a --project, a CROSS_AGENT_PROJECT or an attach naming ${projectRoot} may be left from another session`;
   } catch {
     return null;
   }
-  if ("reason" in found || found.root === projectRoot || !holdsConfig(found.root)) return null;
-  return `this server serves ${projectRoot}, but the directory it was started in, ${cwd}, lies in the initialized project ${found.root}: `
-    + `a --project, a CROSS_AGENT_PROJECT or an attach naming ${projectRoot} may be left from another session`;
 }
 
 /**
@@ -785,7 +787,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "delegate",
-      description: "Launch a specialist for a role on a brief in a working directory, returning its task id. Validates the role, the workspace, its reservation, duplicates and the resume binding first. A role with no binding takes its engine in the call; worktree: true gives a role that works at the project root a writable task worktree of its own instead. A role bound to a list of bindings is delegated by seat, 1-based.",
+      description: "Launch a specialist for a role on a brief in a working directory, returning its task id with the engine, model and effort the task runs on, null where none was named. Validates the role, the workspace, its reservation, duplicates and the resume binding first. A role with no binding takes its engine in the call; worktree: true gives a role that works at the project root a writable task worktree of its own instead. A role bound to a list of bindings is delegated by seat, 1-based.",
       inputSchema: {
         type: "object",
         properties: {
@@ -807,7 +809,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "wait",
-      description: "Wait for a task to settle, for its engine to go quiet for the configured stall threshold, or for the timeout, and answer with the call to make next. A lead may wait only on a task it delegated.",
+      description: "Wait for a task to settle, for its engine to go quiet for the configured stall threshold, or for the timeout, and answer with the call to make next and the engine, model and effort the task runs on. A lead may wait only on a task it delegated.",
       inputSchema: {
         type: "object",
         properties: { task_id: { type: "string" }, timeout_seconds: { type: "number" } },
@@ -852,7 +854,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "result",
-      description: "The final message of a settled task in full, with the engine session it ran under. A task still running answers with its status.",
+      description: "The final message of a settled task in full, with the engine session it ran under. A task still running answers with its status. Either way the answer carries the engine, model and effort the task runs on.",
       inputSchema: { type: "object", properties: { task_id: { type: "string" } }, required: ["task_id"] },
       rows: ["operator", "lead", "specialist"],
       handler: (args) => answer(result(projectRoot, requiredString(fields(args, "result"), "task_id", "result"))),
