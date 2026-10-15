@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T13:30:26Z — claude
+Backlog run task 6 (self-hosting authority: `atc-s96.123`, `.74`) merged through the `dev-team` loop as `4b785cc`: the CLI refuses writes by process ancestry; root suite 1218 tests, 1216 pass, 0 fail, 2 skipped; beads closed.
+
 ### 2026-10-15T11:57:29Z — claude
 Backlog run task 5 (tidy: `atc-s96.84`, `.87`, `.91`, `.81`, `.89`, `.90`, `.101`) merged through the `dev-team` loop as `1dfad88`; root suite 1217 tests, 1215 pass, 0 fail, 2 skipped; beads closed; two round-1 leftovers folded into task 6.
 

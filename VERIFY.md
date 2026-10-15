@@ -7,6 +7,51 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The CLI refuses writes by ancestry — `atc-s96.123`, `.74` (2026-10-15)
+
+Task 6 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`a94bb67` to `4b785cc` (slug `selfhost`; commits `3890a86`, `4b785cc`).
+- **`.123`:** every CLI write verb (`init`, `answer`, `cancel`, `git`, `git-root`, `waive`,
+  `tasks --reconcile`) now also resolves its row by process ancestry through
+  `src/authority.ts#resolveAuthority`, unchanged, and refuses with 3 unless the row is the
+  operator's (`src/cli.ts#ancestryRefusal`). The marker refusal is unchanged and checked first,
+  and reads stay open. The suite's own CLI runs walk as the operator through a test preload
+  (`tests/fixtures/operator-ancestry.mjs`, `cliEnv`), so `npm test` still passes below a task.
+  `tests/authority.test.ts#cliBelowEngine` pins the refusals, the reads and the preload below
+  an engine.
+- **`.74`:** no new deny patterns. Design section 3 says the deny list's path forms name only the
+  server's own checkout and are not the boundary; ancestry is.
+- Task 5's two leftovers: `#devTeamModes` derives the shared role keys from `dev-team`, and the
+  new-branch rule is no longer called the slug alphabet (design, `newBranchFault`'s comment,
+  a test name).
+
+Verification:
+- **Plan:** the planner flagged a human decision (the authorization change, fail-closed refusal of
+  an operator whose walk cannot finish, Claude's PID namespace). The controller settled it under the
+  user's standing instruction, since the bead itself offered the two options. Plan review round 1
+  (codex/gpt-6-astra/xhigh) `no major issues`, 3 Minor folded (a citation continuation, the
+  opt-in Codex test's two `init` calls, the settled answers).
+- **Code review:** round 1 (`3890a86`) all three seats `no major issues`; 3 Minor fixed in a
+  wrap-up (`init` and `init --config -` pinned below an engine; which ledger the check reads; the
+  guide's rerun wording). Round 2 (`4b785cc`) all three `no major issues`, no Minor.
+- **Live evidence (round 1, the worktree's CLI with the markers unset, `cancel` of an unknown
+  id):** the Codex seat exited 3 with "ancestor 1 carries CROSS_AGENT_TASK=… and no record
+  matches" (its sandbox has a PID namespace of its own). The Grok seat exited 3 with "ancestor
+  <pid> holds the engine identity of task …, but its environment cannot be read". The Claude
+  seat's `dontAsk` permissions refused the command, so a Claude seat is unverified. Its Bash
+  carries the markers and has its own PID namespace, so the marker path is the one that would
+  answer.
+- **Gate and root suite:** 1218 tests at `4b785cc`, 1216 pass, 0 fail, 2 guarded skips.
+- **Accepted limitations:**
+  - An operator whose walk cannot finish (32 hops, an unreadable stat, a reparent race) is refused
+    and reruns the verb from a plain terminal.
+  - Under a sandbox with its own PID namespace, the walk sees a task only through a marker a
+    process inside it was started with.
+  - A process that sheds every marker and every marked ancestor reads as the operator, as for a
+    server.
+  - A ledger read that throws exits 1 rather than 3 (nothing is written).
+  - A lead's refusal reads "specialist by ancestry … (lead, …)".
+
 ## Tidy: one source per rule, case-blind state guards, git's branch names — `atc-s96.84`, `.87`, `.91`, `.81`, `.89`, `.90`, `.101` (2026-10-15)
 
 Task 5 of the backlog run (old tasks 5 and 6 combined). Went through the `dev-team` loop and merged
