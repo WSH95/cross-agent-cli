@@ -759,6 +759,7 @@ test("a run that ends with every item closed closes its epic once show reports e
     "once it reports every child closed", 'track {verb: "close", id: <the epic>', "The final handoff", "the epic's close among them"],
     "the run's R5");
   assert.match(step, /A child it reports not closed leaves the epic open/);
+  assert.match(step, /leaves the epic open, named in the handoff and your report/);
   assert.match(step, /list of ids has no epic, and a run that ended at a stop closes nothing here/);
 });
 
@@ -795,6 +796,15 @@ test("the lead's report adds the set, each outcome, the follow-ups filed and unf
   assertInOrder(flat(leadPrompt()), ["nobody verified", "`records`", ...additions], "the lead's report");
   // R5's `records` condition is `## The run`'s opening paragraph, which the test above checks.
   assertInOrder(flat(subsection(theRun(), "R5.")), additions, "the run's R5");
+});
+
+// @anchor leadEpicClose
+test("the lead's prompt leaves the run's epic, which is no item, to R5's close, and its report carries that close", () => {
+  // The prompt reaches the lead as its system instructions: its rule on closing an item must not
+  // read as forbidding R5's close of an epic, which has no merge and no suite of its own.
+  const lead = flat(leadPrompt());
+  assert.match(lead, /never close an item whose merge and root suite you did not see pass[^.]*the run's epic is not an item[^.]*R5 closes it only on its own conditions/);
+  assertInOrder(lead, ["record and tracker commit", "the epic's close among them", "approved"], "the lead's report");
 });
 
 // @anchor engineRunToolsOffered

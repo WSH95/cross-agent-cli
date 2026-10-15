@@ -4162,7 +4162,7 @@ as a regular file through no link, unless the file binds a project, and trusting
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
 20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,747 bytes under
-`dev-team`, 51,950 under `dev-team-engine` and 3,601 under `solo`
+`dev-team`, 52,068 under `dev-team-engine` and 3,601 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

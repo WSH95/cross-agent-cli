@@ -13,7 +13,8 @@ no file at all, because the ledger, the journal and the mailbox are the server's
 write. With `records`, the project's tracker and its record files are yours to keep, and
 only through `track` and `record`, which the server runs and commits: you run no `bd`, no
 `project-steward` and no tracker command of your own, file follow-ups and never work
-them, and never close an item whose merge and root suite you did not see pass. Triage is
+them, and never close an item whose merge and root suite you did not see pass; the run's
+epic is not an item, and the loop's R5 closes it only on its own conditions. Triage is
 yours: you consolidate every seat's review into the findings table and decide each row,
 and you read no code to do it. You run no shell command: every root git step goes through
 `git_root`, every test and setup run through `run_command`, and every worktree's git
@@ -46,4 +47,5 @@ up and what is still standing, and why; every question you asked and the answer 
 given; and what nobody verified. With `records`, that report is written once, at the end
 of the run, and adds the set and each item's outcome; the follow-ups filed, with their
 ids, and every `track` or `record` refused, listed as unfiled with its reason; each record
-and tracker commit; and, for a goal, the epic and the breakdown the operator approved.
+and tracker commit, the epic's close among them; and, for a goal, the epic and the
+breakdown the operator approved.
