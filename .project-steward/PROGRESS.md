@@ -3,6 +3,16 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T19:53:25Z — codex
+`atc-s96.152`: prepared the approved Codex-host acceptance run. Installed the managed
+cross-agent 0.1.9 MCP connection; configuration check passes. Created the independent Slugkit
+sample at `/home/wsh/Documents/cross-agent-codex-host-e2e-20261015`, baseline `ebbcaaf`, with
+the approved host-placed team and three reviewer seats; all 116 baseline tests pass and its
+tree is clean. The complete brief and setup evidence are saved in its ignored evidence
+directory. Awaiting the sample's registration as a Codex project before creating its test
+chat. No engine tasks have started; the live handshake and full acceptance verdict remain pending.
+The evidence-only diff passes whitespace and citation checks (1850 citations, no misses or drift).
+
 ### 2026-10-15T18:43:48Z — claude
 Release 0.1.9 (`atc-s96.151`): versions bumped, root suite 1233 tests, 1231 pass, 0 fail, 2 skipped; `main` pushed to `439a8c8` on the user's approval; agent-plugins PR #24 opened (payload equals dist, plugin validates, mergeable), not merged.
 

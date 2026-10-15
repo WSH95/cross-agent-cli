@@ -7,6 +7,38 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Codex host acceptance preparation — `atc-s96.152` (2026-10-15)
+
+The user approved one full host-placed `dev-team` run against installed 0.1.9, with all
+three reviewer engines, in a fresh Slugkit sample. Defects are to be diagnosed and reported,
+not repaired. The live workflow has not started.
+
+The initial chat had the launcher skill but no cross-agent MCP tools. The installed
+`codex-setup.mjs check`, retried outside the sandbox after Codex's runtime hit a read-only
+filesystem, reported that one-time setup was missing or incomplete. The approved `install`
+then succeeded; `check` now resolves `cross-agent@agent-plugins` 0.1.9 and its installed server
+under `~/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/`. This verifies configuration,
+not a live MCP handshake.
+
+The independent sample is `/home/wsh/Documents/cross-agent-codex-host-e2e-20261015`, exported
+from Slugkit `f9eaf26` and initialized on `main` at `ebbcaaf`. The released CLI wrote its
+`dev-team` config using this repository's model and effort bindings, three read-only reviewer
+seats (Claude, Codex, Grok), automatic merging, and depth limit 1. Its configured test command,
+`python3 -m unittest discover -s tests -t .`, passed all 116 baseline tests; its working tree
+is clean. Setup JSON, baseline output, fixture metadata, and the complete test-chat brief
+are retained in the sample's ignored `.cross-agent/host-e2e-evidence/` directory.
+
+Preparation checks also confirm that the sample's role bindings exactly match this
+repository's, the feature is absent, and the complete brief is present. The evidence-only
+root diff passes `git diff --check`; `node tools/check-citations.mjs --since 7ff96a3` checks
+1850 citations with no misses or drift. The product suite was not rerun for these record edits.
+
+Pending: the user adds that folder as a saved Codex project, since the chat-creation tool
+accepts saved project IDs and cannot register a folder. Then create the authorized test chat
+there, require live `describe_mode` and `list_roles`, and run `slug_reverse` through the
+served loop and all eight verifier checks. No delegation, feature implementation, live
+review, merge, or end-to-end verdict is claimed by this preparation.
+
 ## Release 0.1.9 — `atc-s96.151` (2026-10-15)
 
 The package and both manifests are 0.1.9. Since 0.1.8 (`541bc98`) the payload carries the backlog
