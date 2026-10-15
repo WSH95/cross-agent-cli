@@ -4518,13 +4518,16 @@ write (`#cliWritesFailsClosed`).
 project, and the reads answer the same with a marker as without one.
 
 A process that carries none of those markers is held by ancestry instead, as a server
-is: each verb that writes resolves the row for the project it would act on before it
-runs, and refuses with 3 and the walk's reason unless that row is the operator's —
+is: before it runs, each verb that writes resolves its row against the ledger of the
+project the server would find from there, or of the current directory where none is
+found, and refuses with 3 and the walk's reason unless that row is the operator's —
 `specialist by ancestry: task <id> (<role>, <status>)`, an ancestor carrying
 `CROSS_AGENT_TASK`, or the walk's own failure, which refuses an operator too, who reruns
 the verb from a plain terminal (`src/cli.ts#ancestryRefusal`,
-`src/authority.ts#resolveAuthority`, `tests/authority.test.ts#cliBelowEngine`). The
-operator's terminal and a host session reach a root carrying nothing. Where a sandbox
+`src/authority.ts#resolveAuthority`, `tests/authority.test.ts#cliBelowEngine`). That
+ledger need not be the project the verb acts on — `init` writes at `--project` or the
+current directory — but only the match of an engine's identity reads it, and a marked
+ancestor is refused whichever ledger is read. The operator's terminal and a host session reach a root carrying nothing. Where a sandbox
 gives the CLI a PID namespace of its own, as Claude Code's Bash sandbox does, the walk
 ends at that namespace's root and sees a task only through a marker a process inside it
 was started with; a process that sheds every marker and every marked ancestor reads as

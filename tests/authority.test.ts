@@ -10,10 +10,11 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveAuthority } from "../src/authority.ts";
 import type { Authority } from "../src/authority.ts";
-import { CONFIG_PATH } from "../src/config.ts";
+import { boundDocument, CONFIG_PATH } from "../src/config.ts";
 import { create, currentBootId, find, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
 import type { EngineIdentity, TaskRecord } from "../src/ledger.ts";
 import { readAsk } from "../src/mailbox.ts";
+import { builtInModesDir, loadMode } from "../src/modes.ts";
 import { identityOf } from "../src/process.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
 import { suiteEnv, project as testProject, waitForRecord } from "./helpers/project.ts";
@@ -673,11 +674,12 @@ test("a CLI below a task's engine refuses every write by ancestry, whatever its 
   const exchange = fs.mkdtempSync(path.join(tmpdir(), "cross-agent-cli-below-"));
   t.after(() => fs.rmSync(exchange, { recursive: true, force: true }));
   // Directories no project claims, so the ledger the CLI scans there records no engine.
-  const [unrecorded, proposed, preloaded] = ["unrecorded", "proposed", "preloaded"].map((name) => {
+  const [unrecorded, proposed, confirmed, preloaded] = ["unrecorded", "proposed", "confirmed", "preloaded"].map((name) => {
     fs.mkdirSync(path.join(exchange, name));
     return path.join(exchange, name);
   });
   const writes = [
+    ["init", "--mode", "solo"],
     ["answer", asks.open.id, "text"],
     ["cancel", byStatus.running.id],
     ["git", slug, "--", "status"],
@@ -691,6 +693,8 @@ test("a CLI below a task's engine refuses every write by ancestry, whatever its 
     { args: ["init", "--mode", "solo"], cwd: unrecorded },
     { args: ["cancel", byStatus.running.id, "--json"], cwd: root },
     { args: ["init", "--propose", "--json"], cwd: proposed },
+    // A document the setup skill would confirm, refused before stdin is read.
+    { args: ["init", "--config", "-", "--json"], cwd: confirmed, input: JSON.stringify(boundDocument(loadMode(builtInModesDir(), "solo"), "solo", "main")) },
     ...reads.map((args) => ({ args, cwd: root })),
     // With the preload every CLI the suite runs as the operator carries (`tests/helpers/project.ts#cliEnv`).
     { args: ["init", "--mode", "solo"], cwd: preloaded, preload: true },
@@ -714,8 +718,8 @@ test("a CLI below a task's engine refuses every write by ancestry, whatever its 
   const tail = (verb: string) => `${verb} is an operator's command, and an engine reaches the project through its server, never this CLI`;
   const byAncestry = (verb: string) => `specialist by ancestry: task ${implementer.id} (implementer, running): ${tail(verb)}`;
   const unmatched = new RegExp(`^specialist: ancestor \\d+ carries CROSS_AGENT_TASK=${implementer.id} and no record matches: ${tail("init")}$`);
-  const [written, [init, cancelled, proposal], read, [operator]] =
-    [results.slice(0, 6), results.slice(6, 9), results.slice(9, 12), results.slice(12)];
+  const [written, [init, cancelled, ...coded], read, [operator]] =
+    [results.slice(0, 7), results.slice(7, 11), results.slice(11, 14), results.slice(14)];
 
   // A write refused by the engine its walk met, and nothing under .cross-agent/ written.
   for (const ran of written) {
@@ -733,12 +737,15 @@ test("a CLI below a task's engine refuses every write by ancestry, whatever its 
   // The same refusals as documents, coded where the setup skill reads a code.
   assert.equal(cancelled.code, 3, cancelled.stderr);
   assert.deepEqual(JSON.parse(cancelled.stdout), { ok: false, reason: byAncestry("cancel") });
-  assert.equal(proposal.code, 3, proposal.stderr);
-  const coded = JSON.parse(proposal.stdout) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(coded), ["ok", "code", "reason"]);
-  assert.deepEqual([coded.ok, coded.code], [false, "inside-a-task"]);
-  assert.match(coded.reason as string, unmatched);
-  assert.deepEqual(fs.readdirSync(proposed), [], "a refused look wrote nothing");
+  coded.forEach((ran, index) => {
+    const command = ran.args.join(" ");
+    assert.equal(ran.code, 3, `${command}: ${ran.stderr}`);
+    const document = JSON.parse(ran.stdout) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(document), ["ok", "code", "reason"], command);
+    assert.deepEqual([document.ok, document.code], [false, "inside-a-task"], command);
+    assert.match(document.reason as string, unmatched, command);
+    assert.deepEqual(fs.readdirSync([proposed, confirmed][index]), [], `${command} wrote nothing`);
+  });
   // The reads answer below the same engine.
   for (const ran of read) assert.equal(ran.code, 0, `${ran.args.join(" ")}: ${ran.stderr}`);
   // The preload the suite's own CLI runs carry makes them the operator's even here.

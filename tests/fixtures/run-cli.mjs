@@ -4,9 +4,10 @@
 // them. So what the CLI answers rests on its ancestry alone. Waits for `<answer>.go` first,
 // so the test can write the record the walk has to match before any CLI runs.
 //   node run-cli.mjs <answer> <commands>
-// <commands> is the path of a JSON array of {args, cwd, preload?}; with `preload`, the CLI
-// starts with `operator-ancestry.mjs` imported, as every CLI the suite runs as the operator
-// does (`tests/helpers/project.ts#cliEnv`). Renames {results: [{args, code, stdout, stderr}]}
+// <commands> is the path of a JSON array of {args, cwd, preload?, input?}; with `preload`, the
+// CLI starts with `operator-ancestry.mjs` imported, as every CLI the suite runs as the operator
+// does (`tests/helpers/project.ts#cliEnv`), and `input` is written to its stdin, which is
+// otherwise empty. Renames {results: [{args, code, stdout, stderr}]}
 // into <answer> whole, then exits: each CLI has already been waited for.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -23,9 +24,9 @@ while (!existsSync(`${answer}.go`)) await delay(10);
 const markers = ["CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"];
 const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !markers.includes(name)));
 const results = [];
-for (const { args, cwd, preload } of JSON.parse(readFileSync(commands, "utf8"))) {
+for (const { args, cwd, preload, input = "" } of JSON.parse(readFileSync(commands, "utf8"))) {
   const ran = spawnSync(process.execPath, [cli, ...args], {
-    cwd, encoding: "utf8",
+    cwd, encoding: "utf8", input,
     env: preload ? { ...env, NODE_OPTIONS: [env.NODE_OPTIONS, operator].filter(Boolean).join(" ") } : env,
   });
   results.push({ args, code: ran.status, stdout: ran.stdout, stderr: ran.error === undefined ? ran.stderr : String(ran.error) });
