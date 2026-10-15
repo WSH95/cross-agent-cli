@@ -28,8 +28,23 @@ equals the frozen dist (`diff -r`). Its Claude and Codex plugin manifests and `p
 0.1.9. `claude plugin validate` passes for the marketplace and, with `--strict`, for the plugin. The
 PR is `MERGEABLE`, merge state `CLEAN`. No merge was performed.
 
-**Not verified yet:** the release on an installed 0.1.9, which needs the PR merged and each host
-updated (Claude Code's plugin update, Codex's `codex plugin marketplace upgrade`).
+The user merged PR #24 (`bd9f573`, 2026-10-15T18:45:05Z), updated the plugin in Claude Code and
+reconnected the server. Read-only checks on the installed build: `installed_plugins.json` names
+0.1.9 at `~/.claude/plugins/cache/agent-plugins/cross-agent/0.1.9`, and the running server is that
+copy's `src/server.ts`, started after the update. An unfiltered `list_tasks` answered the 20 newest
+settled tasks with `omitted: 327` (`.79` live). `describe_mode` served every specialist prompt with
+the plain-shell paragraph (`.113` live), and `list_roles` the same bindings as before.
+
+Codex, at the user's request: `codex plugin marketplace upgrade` and `codex plugin add
+cross-agent@agent-plugins` installed 0.1.9; `codex plugin list --json` reads 0.1.9, installed and
+enabled, and its cache equals the 0.1.9 Codex dist payload (`diff -r`). Grok holds no copy of its
+own here: `grok plugin list` is empty and no project attach names this plugin; its specialists
+started the server from Claude Code's install (the last Grok seat's `events.jsonl`:
+`node ~/.claude/plugins/cache/agent-plugins/cross-agent/0.1.8/src/server.ts`), so they follow
+Claude Code's update.
+
+**Not verified yet:** that the next Grok session starts the 0.1.9 copy; the other changes on a live
+task (they ran in the suite only).
 
 ## What a specialist's engine is given — `atc-s96.77`, `.113`, `.92`, `.78`, `.76` (2026-10-15)
 
