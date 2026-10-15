@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T09:21:35Z — claude
+Backlog task 3 (EPIPE: atc-s96.120, .121) merged as `f811cf4` through the dev-team loop; review round 1 clean; root suite 1209/1207/0 fail; beads closed.
+
 ### 2026-10-15T08:44:43Z — claude
 Backlog task 2 (docs: atc-s96.125, .126, .127 + task 1 follow-ups) merged as `17ea9ae` through the dev-team loop; two review rounds clean; root suite 1207/1205/0 fail; beads closed.
 

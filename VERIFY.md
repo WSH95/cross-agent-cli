@@ -7,6 +7,81 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## EPIPE on the CLI's stderr and the server's stdout — `atc-s96.120`, `.121` (2026-10-15)
+
+Task 3 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`bf93670` to `f811cf4` (slug `epipe`). The CLI drops EPIPE on stderr as it already did on stdout,
+so `report 2>&1 | head` keeps the verb's exit code. The server, on EPIPE on stdout (its host gone
+mid-reply), exits with the code a stdin end gives it and no stack, and does nothing else: detached
+runners run on (`src/delegate.ts#startRunner` starts them `detached`, with `stdio: "ignore"`, and
+unrefs them), the next server's reconciliation settles them, and a pending `wait` or `ask` ends with
+the process. Only EPIPE is swallowed; any other stream error still throws.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, 2 Minor folded.
+- **Code review:** round 1 (`f811cf4`) all three seats `no major issues`; seat 3 probed both
+  shapes on Node 24.11.0 (without the handlers: exit 1 with an `Unhandled 'error' event` stack;
+  with them: exit 0, empty stderr; an `EIO` still throws). One optional Minor (cite
+  `startRunner` in the server's comment) not taken.
+- **Tests:** `tests/cli.test.ts#cliClosedStderr` and `tests/server.test.ts#serverClosedStdout`, each
+  seen failing before its fix. Gate and root suite: 1209 tests at `f811cf4`, 1207 pass, 0 fail,
+  2 guarded skips.
+- **Accepted limitations:** the immediate exit can stop an in-flight root write as a host kill
+  would, and may cut short queued stderr lines; a live host that closes the server's own stderr
+  can still crash it on its next stderr write (rare: the server writes stderr only at startup and
+  on a request's first permission check).
+
+## Docs — `atc-s96.125`, `.126`, `.127` and task 1's two follow-ups (2026-10-15)
+
+Task 2 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`a89871e` to `17ea9ae` (slug `docs-text`; commits `e631a4f`, `17ea9ae`). Every place that has a
+Claude Code user restart the server after `init` or a mode change (README, install guide, operator
+guide, setup skill, launcher) now names `/mcp`, choose cross-agent, Reconnect as the lighter path and
+says `/reload-plugins` does not restart the server, recorded in `docs/probes.md#claudeReloadPlugins`.
+The resolver is "on a stronger setting" everywhere; `describe_mode`'s sizes move to 36,906 / 52,225 /
+3,601. The design now says `init` writes the values of section 6's config, not its bytes. The
+launcher's narration treats an engine switch as its own rule (N2-1), and the probe entry's Reading
+credits each statement to the text that makes it (N2-2).
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings; the
+  optimization pass folded the launcher's two restart lines.
+- **Implementation:** the first run reported BLOCKED: the plan's verbatim sentence named
+  `` `delegate` `` in a paragraph both placements read, which the launcher's placement guard
+  refuses. The host sent the one-word correction ("the server drops") back as a plan correction
+  rather than stopping the run.
+- **Code review:** round 1 (`e631a4f`) all three seats `no major issues`, 3 Minor and one folded
+  follow-up (the probe entry), fixed in a wrap-up; round 2 (`17ea9ae`) all three `no major issues`.
+- **Gate and root suite:** 1207 tests at `17ea9ae`, 1205 pass, 0 fail, 2 guarded skips.
+- **Accepted limitation:** a resume that names no model runs the record's model, which the
+  engine-switch narration rule could misname on a chain whose first call switched engine and named
+  a model (the needs-work section already gives the resume's model rule).
+- **Not verified:** the Claude Code version behind the `/reload-plugins` observation.
+
+## Launcher text — `atc-s96.122`, `.82`, `.83`, `.66` (2026-10-15)
+
+Task 1 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`2fa1006` to `f395066` (slug `launcher-text`; commits `32b1571`, `f395066`). The launcher's Claude
+Code row and a new `## Watching` paragraph describe the 120 s backgrounding (the call keeps running,
+its answer arrives as a task notification, it is no reason to call again), cited to the new
+`docs/probes.md#claudeCodeBackground` (the pilot and this run, the message quoted verbatim) and one
+`docs/design.md` "Time limits" sentence. The launcher now says a host never starts `src/server.ts`
+itself, names `.claude/`, `.codex/`, `.grok/` and `.mcp.json` in the one-shot's commit step, takes
+the narration's engine, model and effort from the roster, the call or the task's record (a default
+named as such), and appends nothing to `.cross-agent/log.md` under engine placement. `.66`'s roster
+and `result` parts were already met and pinned.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings.
+- **Code review:** round 1 (`32b1571`) all three seats `no major issues`, 4 Minor (fixed in a
+  wrap-up); round 2 (`f395066`) all three `no major issues`, 2 Minor left as follow-ups (N2-1: the
+  narration rule for a call that names another engine; N2-2: the probe entry credits the row with
+  "no reason to call again"), folded into task 2.
+- **Gate and root suite:** 1205 tests at `f395066`, 1203 pass, 0 fail, 2 guarded skips, in the
+  gate's checkout and at the root after the merge.
+- **Not verified:** the Claude Code version; whether `claude -p` backgrounds at 120 s
+  (`modes/dev-team-engine/roles/lead.md` still says about 28 hours, an accepted limitation).
+
 ## The live acceptance trace of `atc-2jl` on 0.1.8, with `atc-2jl.5` (2026-10-15)
 
 The epic plan's trace (`.cross-agent/plans/atc-2jl/plan-approved.md`, "Live acceptance trace"),
@@ -98,57 +173,6 @@ merge was performed.
 **Not verified yet:** the epic's live acceptance trace (its plan's "Live acceptance trace", with
 `atc-2jl.5`'s `expect` type array against real Claude and Codex leads), which runs on the installed
 0.1.8.
-
-## Docs — `atc-s96.125`, `.126`, `.127` and task 1's two follow-ups (2026-10-15)
-
-Task 2 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
-`a89871e` to `17ea9ae` (slug `docs-text`; commits `e631a4f`, `17ea9ae`). Every place that has a
-Claude Code user restart the server after `init` or a mode change (README, install guide, operator
-guide, setup skill, launcher) now names `/mcp`, choose cross-agent, Reconnect as the lighter path and
-says `/reload-plugins` does not restart the server, recorded in `docs/probes.md#claudeReloadPlugins`.
-The resolver is "on a stronger setting" everywhere; `describe_mode`'s sizes move to 36,906 / 52,225 /
-3,601. The design now says `init` writes the values of section 6's config, not its bytes. The
-launcher's narration treats an engine switch as its own rule (N2-1), and the probe entry's Reading
-credits each statement to the text that makes it (N2-2).
-
-Verification:
-- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings; the
-  optimization pass folded the launcher's two restart lines.
-- **Implementation:** the first run reported BLOCKED: the plan's verbatim sentence named
-  `` `delegate` `` in a paragraph both placements read, which the launcher's placement guard
-  refuses. The host sent the one-word correction ("the server drops") back as a plan correction
-  rather than stopping the run.
-- **Code review:** round 1 (`e631a4f`) all three seats `no major issues`, 3 Minor and one folded
-  follow-up (the probe entry), fixed in a wrap-up; round 2 (`17ea9ae`) all three `no major issues`.
-- **Gate and root suite:** 1207 tests at `17ea9ae`, 1205 pass, 0 fail, 2 guarded skips.
-- **Accepted limitation:** a resume that names no model runs the record's model, which the
-  engine-switch narration rule could misname on a chain whose first call switched engine and named
-  a model (the needs-work section already gives the resume's model rule).
-- **Not verified:** the Claude Code version behind the `/reload-plugins` observation.
-
-## Launcher text — `atc-s96.122`, `.82`, `.83`, `.66` (2026-10-15)
-
-Task 1 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
-`2fa1006` to `f395066` (slug `launcher-text`; commits `32b1571`, `f395066`). The launcher's Claude
-Code row and a new `## Watching` paragraph describe the 120 s backgrounding (the call keeps running,
-its answer arrives as a task notification, it is no reason to call again), cited to the new
-`docs/probes.md#claudeCodeBackground` (the pilot and this run, the message quoted verbatim) and one
-`docs/design.md` "Time limits" sentence. The launcher now says a host never starts `src/server.ts`
-itself, names `.claude/`, `.codex/`, `.grok/` and `.mcp.json` in the one-shot's commit step, takes
-the narration's engine, model and effort from the roster, the call or the task's record (a default
-named as such), and appends nothing to `.cross-agent/log.md` under engine placement. `.66`'s roster
-and `result` parts were already met and pinned.
-
-Verification:
-- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings.
-- **Code review:** round 1 (`32b1571`) all three seats `no major issues`, 4 Minor (fixed in a
-  wrap-up); round 2 (`f395066`) all three `no major issues`, 2 Minor left as follow-ups (N2-1: the
-  narration rule for a call that names another engine; N2-2: the probe entry credits the row with
-  "no reason to call again"), folded into task 2.
-- **Gate and root suite:** 1205 tests at `f395066`, 1203 pass, 0 fail, 2 guarded skips, in the
-  gate's checkout and at the root after the merge.
-- **Not verified:** the Claude Code version; whether `claude -p` backgrounds at 120 s
-  (`modes/dev-team-engine/roles/lead.md` still says about 28 hours, an accepted limitation).
 
 ## The flaky `#quietTaskWhose` — `atc-9w2` (2026-10-15)
 
