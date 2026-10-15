@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T16:36:43Z — claude
+Backlog run task 8 (bounds: `atc-s96.79`, `.98`) merged through the `dev-team` loop as `9f29d5c`: `list_tasks` bounded to every active task and the 20 newest settled ones, and every git child ended after 30 minutes with its hooks; root suite 1231 tests, 1229 pass, 0 fail, 2 skipped; beads closed.
+
 ### 2026-10-15T15:03:15Z — claude
 Backlog run task 7 (verifier: `atc-s96.69`, `.72`, `.62`, `.94`) merged through the `dev-team` loop as `f6b89c2`; archive checks E4/E2/E2c `?` to pass; root suite 1223 tests, 1221 pass, 0 fail, 2 skipped; beads closed.
 

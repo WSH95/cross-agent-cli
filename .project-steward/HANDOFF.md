@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T15:03:15Z
+updated_at: 2026-10-15T16:36:43Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -15,8 +15,8 @@ limitations; `.25`, `.26`, `.28`, `.48`, `.96`, `.99`, `.100`, `.110`, `.93` def
 31 beads in 12 tasks: (1) launcher text `.122` `.82` `.83` `.66` — merged as `f395066`, closed;
 (2) docs `.125` `.126` `.127` + task 1's two follow-ups — merged as `17ea9ae`, closed; (3) EPIPE `.120` `.121` — merged as `f811cf4`, closed; (4) server answers `.95` `.102` — merged as `12709e0`, closed;
 (5) tidy `.84` `.87` `.91` `.81` `.89` `.90` `.101` (old tasks 5 and 6 combined) — merged as `1dfad88`, closed; (7) self-hosting authority
-`.123` `.74` — merged as `4b785cc`, closed; (8) verifier `.69` `.72` `.62` `.94` — merged as `f6b89c2`, closed; (9) answer bounds `.79` and (10) hung git `.98`, combined as one task;
-(11) Grok specialist isolation `.77` `.92` `.78` `.76`; (12) Claude compound commands `.113`.
+`.123` `.74` — merged as `4b785cc`, closed; (8) verifier `.69` `.72` `.62` `.94` — merged as `f6b89c2`, closed; (9) answer bounds `.79` and (10) hung git `.98`, combined as one task — merged as `9f29d5c`, closed;
+(11) Grok specialist isolation `.77` `.92` `.78` `.76` and (12) Claude compound commands `.113`, combined as the last task.
 Team runs from the installed 0.1.8 build. No push or release without asking.
 
 **New epic `atc-2jl` (Decision 0022, 2026-10-14): the `dev-team-engine` lead owns the backlog

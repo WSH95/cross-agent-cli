@@ -7,6 +7,51 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Bounded `list_tasks` and a timeout on every git child — `atc-s96.79`, `.98` (2026-10-15)
+
+Task 8 of the backlog run (old tasks 9 and 10 combined). Went through the `dev-team` loop and merged as
+a fast-forward from `fac95fb` to `9f29d5c` (slug `bounds`; commits `66ba113`, `9f29d5c`).
+- **`.79`:** `list_tasks` used to answer every record. On this repository that came to about
+  145 KB, over Claude Code's own MCP result limit, and the loops' root check calls it unfiltered.
+  - It now answers every active task plus the 20 newest settled ones
+    (`src/tasks.ts#defaultSettledLimit`), after the reconciliation pass and the `status` filter.
+  - It takes a `limit` (a whole number ≥ 0) and reports `omitted` for what it left out.
+  - CLI `tasks` and `report` are unchanged. `describe_mode` is unchanged on purpose: Grok's attach
+    ships `max_output_bytes = 100000`.
+- **`.98`:** `run`, which every git call goes through, is now built on `spawn`.
+  - git leads its own process group, and each output stream is capped at 16 MiB.
+  - At `gitTimeoutSeconds = 1800`, or on an overflow, the group gets SIGTERM, then always SIGKILL
+    2 s later. Only then does the call answer, and it refuses naming the timeout.
+  - `git_mutate` and `git_root` then answer `ok: false` with the locks free. `record` still decides
+    by whether its commit landed.
+  - A git that cannot start (a NUL in an argument, `E2BIG`) refuses instead of throwing.
+  - A gate checkout that git could not finish is refused, and its directory is removed.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`: 2 Important (an argument-free
+  call would have been refused; git's `close` could cancel the SIGKILL) and 4 Minor, all folded.
+  Round 2 `no major issues`, 2 Minor folded. The reviewer judged the separate process group the
+  right trade.
+- **Code review:** round 1 (`66ba113`) all three seats `no major issues`. Five Minor rows were fixed
+  in a wrap-up: a synchronous spawn fault (a regression from `main`), a line citation, the description
+  built from the constant, the design sentence narrowed for `record`, and the gate checkout's
+  cleanup. Round 2 (`9f29d5c`): all three `no major issues`, no Minor.
+- **Tests:** each new test failed first on what it pins. The three hang tests ran 30.2 s with the
+  hook sleeping out its 30 s before the change, and about 5 s after it. With the group SIGKILL
+  removed as a check, the TERM-ignoring hook survived.
+- **Gate and root suite:** 1231 tests at `9f29d5c`, 1229 pass, 0 fail, 2 guarded skips.
+- **Accepted limitations:**
+  - Git runs in its own group, so a terminal Ctrl-C on `cross-agent git`/`git-root`, or a server
+    killed as part of an engine's group, no longer reaches a running hook. That hook then runs with
+    the locks released (the operator guide says so).
+  - A hook that legitimately runs past 30 minutes is cut.
+  - A git that resists SIGTERM may leave `index.lock` behind.
+  - A hang shorter than 30 minutes still needs the by-hand procedure.
+  - The 20,000-byte figure holds for ordinary records only. `describe_mode` stays above Grok's
+    default cap.
+  - The `git -C` reads that find a project or verify a worktree keep no timeout.
+  - A refused gate checkout may leave a prunable worktree registration behind.
+
 ## The verifier learns its recorded Codex shapes and names every doubt — `atc-s96.69`, `.72`, `.62`, `.94` (2026-10-15)
 
 Task 7 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
