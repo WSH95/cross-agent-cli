@@ -3,6 +3,23 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T21:27:00Z — codex
+Completed `atc-s96.154`: installed 0.1.9 engine-led workflow functionally passes, independent
+verifier 8/8, 131 tests green, eight exit-0 records with correct bindings/depth/ownership,
+three clean reviews of `8396e6e`, merge and cleanup complete. The Claude lead used one
+read-only Bash reader after a 56.3 KB mode-response overflow, violating its no-shell rule;
+filed `atc-s96.157`, with no fix. Archived host rollout proves Codex launched only one lead,
+ran no loop steps, and relayed the full lead report verbatim. Independent native checks
+confirm red-before-function-write then green and the mailbox answer before planning.
+All three modes are now exercised, with the earlier dev-team pass, solo functional passes
+but Codex scope failures and Grok's blocked transcript check, and engine-led functional pass
+but lead compliance failure. Findings `.155`–`.157` stay open under diagnose/report-only scope.
+Restored the sample's original config byte-for-byte; clean main `8396e6e`, root worktree only,
+no task branches. Prior dev-team files and all solo logs/results/journals preserve their
+hashes. Updated `VERIFY.md` and the handoff; whitespace checks and all 1850 citations pass
+with no misses or drift. The validated local evidence commit follows.
+No product changes, engine retries, push or remote sync.
+
 ### 2026-10-15T21:06:00Z — codex
 Solo verification `atc-s96.153` completed all six functional scenarios with requested models,
 default effort, exit 0 and depth 1. Claude/Codex scoped verifiers pass 8/8; Grok writable

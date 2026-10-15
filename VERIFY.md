@@ -7,6 +7,102 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Codex engine-led acceptance — `atc-s96.154` (2026-10-15)
+
+**Functional pass, lead no-shell compliance fail.** The complete `dev-team-engine` loop
+finished under Codex hosting installed cross-agent 0.1.9. The independent verifier returned
+**8 pass, 0 fail, 0 without evidence**, exit 0, before the mode was restored. The Claude lead
+ran one read-only Bash command despite its no-shell rule; `atc-s96.157` records that
+integration/compliance finding. No product code was changed to work around it.
+
+All three built-in modes have now been exercised under Codex. This is not an unconditional
+pass for the tool and engines:
+
+| Mode / engine | Read-only result | Writable / full-loop result | Scoped verifier |
+| --- | --- | --- | --- |
+| `dev-team` (earlier `atc-s96.152`) | Included in team loop | Pass | 8/8 |
+| `solo` / Claude Opus | Pass | Pass | 8/8 |
+| `solo` / Codex `gpt-6.1-sol` | Fail directory-scope compliance; functional pass | Fail directory-scope compliance; functional pass | 8/8 |
+| `solo` / Grok | Pass | Blocked on transcript-reader coverage; functional pass | 7 pass, 1 unresolved |
+| `dev-team-engine` / Claude lead | Included in team loop | Fail no-shell compliance; functional pass | 8/8 |
+
+Fresh host chat `01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` on `local` confirmed the canonical
+sample root, engine placement, the approved roster, no records block, and no warnings. The
+released setup CLI raised the sample's depth limit to 2 and preserved main, the unittest
+command, setup none and merge auto. Its baseline was the completed solo head `7b3110b`.
+Lead `57e921b11be115d34a10b59557c43208f163` ran Claude `claude-opus-5-5` at xhigh, depth 1;
+all seven specialist records ran at depth 2 and named that lead as their parent:
+
+| Role | Actual engine / model / effort | Task ID |
+| --- | --- | --- |
+| Planner | Claude / `claude-opus-5-5` / xhigh | `a432f0d25e46ebacb502698659dd3b75b7de` |
+| Plan reviewer | Codex / `gpt-6-astra` / xhigh | `1cd8e179d53e67edc29034fafaccc1a83e6a` |
+| Planner revision | Claude / `claude-opus-5-5` / xhigh | `e6818b234b232dca38ebb666f4088498df40` |
+| Implementer | Claude / `claude-opus-5-5` / xhigh | `da8bb46f179840ab979a3ccb35be6b60e40f` |
+| Reviewer #1 | Claude / `claude-opus-5-5` / xhigh | `625559a7dafee414404de675650cfbd39b5f` |
+| Reviewer #2 | Codex / `gpt-6.1-sol` / xhigh | `dce0c4ce7cae1e6cf9342da4f3ba92068a52` |
+| Reviewer #3 | Grok / `grok-4.7` / xhigh | `ef200f734cba614e7e653b9af5cba02c77e1` |
+
+All eight records finished with exit 0 and retained native logs/results. The resolver was
+bound as approved but unnecessary. The lead asked ordering question
+`f08ae6e59277f055211e31e1902385f19803`; the Codex host displayed it and answered through the
+mailbox with the authorized fixture text, `ascending Python string order; preserve duplicates`.
+The recorded answer precedes the first planner's creation. The source coordinator verified
+that chronology independently rather than relying on the lead's report.
+
+Plan review round 1 ended `VERDICT: no major issues` with two Minor plan-order/evidence
+findings, both folded by the required planner revision. Implementation added `slug_sorted`,
+eight focused tests and README examples, changing only three files. The native implementer
+log records the missing-function `ImportError` at line 88, function insertion at line 230,
+then all 131 tests green at line 236. It covers all requested cases, including digits as
+strings, duplicates and composed/decomposed Unicode. An intermediate Unicode-escape editing
+mistake and a refused rewrite were corrected within the task. Twelve untracked entries seen
+only inside the Claude sandbox were mount artifacts; the real worktree held only the
+intended modifications. These are engine/sandbox observations, not failed delegations.
+
+The lead committed `8396e6e60b5dc74ca38f38c13d3a771031aa1ce7`, rebased without moving it,
+and ran the committed-head gate. All three concurrent reviews covered that exact SHA and
+ended `VERDICT: no major issues`, with no code findings. No correction round, resolver or
+waiver was needed. The fast-forward merge moved main from `7b3110b` to `8396e6e`; the root
+suite and independent coordinator suite each passed all 131 tests. The journal records the
+commit, tested head, merge, root test success, worktree removal and branch deletion.
+
+The scoped verifier command, run while the saved engine-mode config was still active, was:
+
+```sh
+node tools/e2e-verify.mjs --project /home/wsh/Documents/cross-agent-codex-host-e2e-20261015 --since 57e921b11be115d34a10b59557c43208f163 --slug codex-engine-host-20261015
+```
+
+It inspected eight native transcripts, applying the lead's allowed delegation row at depth
+1, and found no unauthorized delegation or engine launch. Its eight passes do not certify
+the separate no-shell invariant. Native lead log line 8 records Claude's persisted-output
+notice for the 56.3 KB `describe_mode` result; line 13 records a Bash `python3 -I` reader of
+that saved tool result. The command made no repository changes, but violated the lead's
+explicit restriction. The exact 57,968-byte persisted response and command are retained for
+`atc-s96.157`; the report does not claim the workaround was required or approved.
+
+The Codex host itself dispatched only its one lead, called no loop tools, and relayed the
+complete lead result verbatim before its own notes. The archived host rollout and independent
+prefix comparison verify this, with no host deviation found for the engine-led run. The
+coordinator's one initial test-first diagnostic parser failed on a string content block;
+the corrected read-only diagnostic verified the native event order without rerunning an engine.
+
+Evidence is under the sample's ignored `.cross-agent/remaining-modes-evidence/engine/`:
+`coordinator-audit.json`, `coordinator-verifier.txt` and its argv/result JSON, full lead
+tool calls, mailbox, config snapshot, `lead-result-verbatim.md`, the host rollout and
+`host-audit.json`, the persisted Claude response, and `supplemental-proof.json`. Native
+task logs/results/specs and the journal remain under `.cross-agent/`. The lead's optional
+documentation/options suggestions are not defects or approved work. Its uncertain read-only
+enforcement observation for Grok is not promoted to a verified sandbox guarantee or bug.
+
+After both chats and all tasks settled, the released CLI restored the original sample config
+byte-for-byte (SHA-256 `6dc1f7e2ed4f2a73fdf94183b70210b940f5fa29caf94c2e83501f92c20ea192`).
+`restoration.json` records clean main at `8396e6e`, only the root worktree, and no task branches.
+The 106 prior dev-team evidence files and all 15 solo native logs/results/journals retain
+their hashes. Both verification tasks are complete as diagnosis/reporting work; findings
+`atc-s96.155`, `.156`, and `.157` remain open. Source changes are evidence/stewardship only,
+validated by whitespace and citation checks. No push, remote sync, product fix or engine retry.
+
 ## Codex solo acceptance — `atc-s96.153` (2026-10-15)
 
 **Blocked at the Grok writable transcript check; Codex directory-scope compliance failed.**

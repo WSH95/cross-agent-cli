@@ -2,15 +2,19 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Remaining Codex host modes (in progress, 2026-10-15)
+## Remaining Codex host modes (verification complete, 2026-10-15)
 
 `atc-s96.153` finished the six solo scenarios: all functionally pass, Claude/Codex verifiers
 pass 8/8, Grok writable acceptance is blocked by the transcript reader's missing native edit
 tool (`atc-s96.155`), and both Codex tasks fail assigned-directory compliance (`atc-s96.156`).
 The sample is clean at `7b3110b`, all 123 tests pass, cleanup is complete, and prior evidence
-is preserved. `atc-s96.154` is in progress in a fresh engine-led chat, with a Claude Opus
-lead at xhigh, the approved three-engine reviewers, and depth 2. Both use installed 0.1.9;
-the coordinator records results without product fixes. No push or remote sync is authorized.
+is preserved. `atc-s96.154` completed the full Claude-led workflow: eight records with the
+approved bindings and lineage, all three reviews clean, 131 tests passing, and verifier 8/8.
+Its lead violated the no-shell rule while reading an oversized mode response (`atc-s96.157`).
+The Codex host relayed the full lead report verbatim and ran no loop steps. All three modes
+have been exercised; results include functional passes, compliance failures and Grok's
+unresolved verifier row. Sample main is clean at `8396e6e`, cleanup complete, original config
+restored byte-for-byte. The three findings remain open; no product fixes, push or remote sync.
 
 ## Codex host acceptance (complete, 2026-10-15)
 

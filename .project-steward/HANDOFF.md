@@ -1,32 +1,35 @@
 ---
-updated_at: 2026-10-15T21:06:00Z
+updated_at: 2026-10-15T21:27:00Z
 updated_by: codex
-session_status: active
+session_status: closed
 branch: main
 ---
 # Handoff
 
 ## Now
 
-**Engine-led Codex host acceptance is in progress (`atc-s96.154`).** Fresh chat
-`01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` on `local` confirmed the correct sample root and
-approved roster, with no warnings, and launched one Claude `claude-opus-5-5` lead at xhigh.
-The released CLI configured `dev-team-engine`, depth 2, no records integration, and the
-existing three-engine reviewer bindings. Monitor that chat; run no sample git/tests or loop
-steps while its lead is live. After it settles, independently verify all eight checks,
-lineage, mailbox, reviewed commits, tests and cleanup; retain the full lead result, then
-restore the saved original config through the released CLI. The exact brief and original
-config are in the sample's `.cross-agent/remaining-modes-evidence/`.
+**All three Codex-host modes have been exercised; diagnosis/reporting is complete.**
+`atc-s96.154` finished in chat `01a14161-76ce-7ad2-9a39-d7cc9aa2cff0`: Claude Opus xhigh
+lead `57e921b11be115d34a10b59557c43208f163`, seven depth-2 specialists with correct parents
+and bindings, all three reviews clean on `8396e6e`, 131 tests passing, and independent
+verifier 8/8. Its one read-only Bash call violated the no-shell rule after a 56.3 KB mode
+response overflow (`atc-s96.157`); functional success does not erase that compliance failure.
+The host launched only the lead and relayed its report verbatim, verified from the archived
+rollout. Native evidence independently confirms test-first execution and the scripted mailbox
+answer before planning. The sample is clean on main at `8396e6e`, root worktree only, no task
+branches, and its original dev-team config is restored byte-for-byte. Evidence is in
+`.cross-agent/remaining-modes-evidence/` under the sample; `VERIFY.md` has the complete matrix.
 
 Solo verification (`atc-s96.153`) finished in chat `01a14151-6aba-7c13-b616-102793981539`:
-all six scenarios produced the expected examples, all tasks exited 0 at depth 1 with requested bindings,
+all six scenarios produced the expected examples, all tasks exited 0 at depth 1 with the
+requested bindings,
 and the clean sample ended at `7b3110b` with 123 passing tests and complete cleanup. Claude
 and Codex verifier pairs pass 8/8; Grok writable is blocked on the reader's unrecognized
 `search_replace` tool, independently reproduced (`atc-s96.155`). Both Codex tasks searched
 outside their assigned directory (`atc-s96.156`), although their functional/verifier checks
 passed. The independent audit confirms 106 earlier evidence files unchanged. Full details
 are in `VERIFY.md` and the ignored sample evidence. Diagnose/report only; do not fix these
-findings. Record and commit validated evidence locally. No push or remote sync; existing
+findings. Results and findings are recorded in local evidence commits. No push or remote sync; existing
 dirty `.beads/interactions.jsonl` stays uncommitted.
 
 **Codex host acceptance passed (`atc-s96.152`, closed, 2026-10-15).** Installed 0.1.9 ran
@@ -259,10 +262,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-s96.152` is complete and closed; no acceptance work remains. Its root changes are
-  evidence and stewardship files only. The sample and its ignored full evidence are retained.
-  Beads generated an entry in `.beads/interactions.jsonl`; that log remains uncommitted,
-  following the repository's standing warning.
+- `atc-s96.152`, `.153` and `.154` verification work is complete. The source changes are
+  evidence/stewardship only; the sample and ignored native evidence are retained. Findings
+  `.155`, `.156` and `.157` remain open, with no fixes authorized in this diagnosis scope.
+  Beads generated `.beads/interactions.jsonl`; that log remains uncommitted under the
+  repository's standing warning. No push or remote sync is authorized.
 
 - `atc-2jl`: epic plan approved (3 rounds; the epic's design field holds it); tasks `.1`-`.4`,
   follow-ups `.5` (record's `expect` type array vs real hosts, at Task 4) and `.6` (round-2
@@ -419,11 +423,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Monitor engine-led test chat `01a14161-76ce-7ad2-9a39-d7cc9aa2cff0` for `atc-s96.154`.
-   After it settles, audit its full lead report, task/log lineage, mailbox and scoped
-   eight-check verifier, then restore the original sample config. Update the verification
-   records and commit the validated evidence locally. Keep `.155` and `.156` open; this
-   acceptance scope authorizes diagnosis/reporting only.
+1. Review `VERIFY.md` and `bd show atc-s96.155`, `.156`, `.157` for the three reproducible
+   findings. The verification is complete; no rerun or fix is pending in the approved scope.
+   The original sample config is restored. Verifier snapshots retain each mode's depth cap;
+   do not judge old depth-2 records under the restored depth-1 configuration. Ask before new
+   fix scope, push or remote sync.
 
 1. `atc-s96.152` is complete. Review `VERIFY.md` and the retained sample evidence if needed;
    no test rerun or follow-up fix is pending. Ask before any push or new acceptance scope.
@@ -505,9 +509,10 @@ Previous release and backlog pointers:
 ## Blockers
 
 Grok writable solo acceptance remains blocked by the verifier's unrecognized native
-`search_replace` tool (`atc-s96.155`); both Codex solo tasks also failed assigned-directory
-compliance (`atc-s96.156`). These do not block the independent engine-led test on the clean
-sample. Product fixes are outside the user's acceptance scope.
+`search_replace` tool (`atc-s96.155`). Both Codex solo tasks failed assigned-directory
+compliance (`atc-s96.156`), and the Claude lead failed no-shell compliance (`atc-s96.157`).
+The runs and evidence are complete; these findings prevent an unconditional clean pass.
+Product fixes are outside the user's acceptance scope.
 
 The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10-03 (`c05671e`, Decision 0014).
 
