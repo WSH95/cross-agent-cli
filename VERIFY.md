@@ -7,6 +7,33 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.8 — `atc-s96.150` (2026-10-15)
+
+The package and both manifests are 0.1.8. Since 0.1.7 (`0ab03cf`) the payload carries epic
+`atc-2jl`, the engine lead owning the backlog and the project's records: the optional `records`
+config, the `record` and `track` tools (`atc-2jl.1`, `.2`), setup's records proposal and reconnect
+(`.3`), the engine lead's run with the specialists' bookkeeping sentence and the planner's
+goal-breakdown exception (`.4`), the run's epic close (`.10`), and `git_root`'s trailing-`.` refusal
+(`.9`); `atc-9w2`'s test fix is not in the payload. After the bump:
+- `CODEX_SETUP_PROBE=$(command -v codex) node --test tests/packaging.test.ts tests/dist.test.ts
+  tests/publish.test.ts tests/codex-native.test.ts` passed 34 tests, none skipped;
+- `npm test` at the root ran 1201 tests: 1199 pass, 0 fail, 2 guarded skips.
+
+The frozen source release is `541bc98`, pushed to `main` as a fast-forward from `0ab03cf` on the
+user's approval ("Push and release 0.1.8").
+
+The publish opened https://github.com/WSH95/agent-plugins/pull/23 on
+`publish/cross-agent-plugin/20261015052940` (commit `84aa080`). It holds 53 files: the marketplace
+version, and in both payloads the plugin manifest, `package.json`, the three modes' loops and role
+prompts, both skills, and `src/{cli,config,gitroot,modes,records,runcommand,server,setup}.ts`. The
+target's `cross-agent/` equals the frozen dist (`diff -r`). `claude plugin validate` passes for the
+marketplace and, with `--strict`, for the plugin. The PR is `MERGEABLE`, merge state `CLEAN`. No
+merge was performed.
+
+**Not verified yet:** the epic's live acceptance trace (its plan's "Live acceptance trace", with
+`atc-2jl.5`'s `expect` type array against real Claude and Codex leads), which runs on the installed
+0.1.8.
+
 ## The flaky `#quietTaskWhose` — `atc-9w2` (2026-10-15)
 
 Went through the `dev-team` loop and merged as a fast-forward from `c867d3c` to `213dacf` (slug

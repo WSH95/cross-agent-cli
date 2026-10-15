@@ -486,3 +486,4 @@ Set up Project Steward in this repository.
 - 2026-10-15T01:35:31Z — claude — [auto-checkpoint] atc-2jl.9: committed 4c2288e, gate passed; code review round 1 in progress (seats 1, 2 no major issues).
 - 2026-10-15T01:41:46Z — claude — atc-2jl.9 merged as 4c2288e (nameFault refuses a trailing "."; the loops' slug sentence); 1 review round; root suite 1201/1199/0 fail; closed. Next: atc-9w2.
 - 2026-10-15T02:06:40Z — claude — atc-9w2 merged as 213dacf (the flaky #quietTaskWhose accepts both correct reasons); root suite 1201/1199/0 fail; closed. Epic atc-2jl work done but for atc-2jl.5 (live trace). Next: ask the user about a push and a release.
+- 2026-10-15T05:30:20Z — claude — Release 0.1.8 (atc-s96.150): 541bc98 pushed to main on the user's approval; agent-plugins PR #23 opened (53 files, MERGEABLE/CLEAN, payload equals dist, validation passes). Awaiting the user's merge; then the live acceptance trace.

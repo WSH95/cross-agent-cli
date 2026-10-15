@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T02:06:40Z
+updated_at: 2026-10-15T05:30:20Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -236,8 +236,9 @@ What stands is the project's own record. The operator conditions a release names
   slug sentence names `git_root`'s branch exclusions; root suite 1201/1199/0 fail.
 - **`atc-9w2` merged as `213dacf`** and closed: the flaky test accepts both correct reasons of a
   setup race; root suite 1201/1199/0 fail. `atc-2jl.5` waits for the live trace after a release.
-- **`main` is 28 commits ahead of `origin/main`, unpushed;** the plugin is still 0.1.7. A push and a
-  0.1.8 release wait for the user.
+- **Release 0.1.8 (`atc-s96.150`, in progress):** `541bc98` pushed to `main` on the user's approval;
+  agent-plugins PR #23 open (`MERGEABLE`, `CLEAN`), awaiting the user's merge. Steward commits after
+  `541bc98` are local.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -364,9 +365,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **Ask the user about a push of `main` and a 0.1.8 release** (README, "Development"); nothing
-   is pushed. After a release, the epic's live acceptance trace (plan, "Live acceptance trace"),
-   with `atc-2jl.5`, is the operator's; then close `atc-2jl`.
+0. **The user merges agent-plugins PR #23** and updates the plugin (Claude Code; Codex with
+   `codex plugin marketplace upgrade` and `codex plugin add cross-agent@agent-plugins`). Then the
+   epic's live acceptance trace on 0.1.8 (`.cross-agent/plans/atc-2jl/plan-approved.md`, "Live
+   acceptance trace"), with `atc-2jl.5`; record it in `VERIFY.md` and close `atc-2jl.5`, `atc-2jl`
+   and `atc-s96.150`.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
