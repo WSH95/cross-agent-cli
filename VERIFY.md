@@ -99,6 +99,33 @@ merge was performed.
 `atc-2jl.5`'s `expect` type array against real Claude and Codex leads), which runs on the installed
 0.1.8.
 
+## Docs — `atc-s96.125`, `.126`, `.127` and task 1's two follow-ups (2026-10-15)
+
+Task 2 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`a89871e` to `17ea9ae` (slug `docs-text`; commits `e631a4f`, `17ea9ae`). Every place that has a
+Claude Code user restart the server after `init` or a mode change (README, install guide, operator
+guide, setup skill, launcher) now names `/mcp`, choose cross-agent, Reconnect as the lighter path and
+says `/reload-plugins` does not restart the server, recorded in `docs/probes.md#claudeReloadPlugins`.
+The resolver is "on a stronger setting" everywhere; `describe_mode`'s sizes move to 36,906 / 52,225 /
+3,601. The design now says `init` writes the values of section 6's config, not its bytes. The
+launcher's narration treats an engine switch as its own rule (N2-1), and the probe entry's Reading
+credits each statement to the text that makes it (N2-2).
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings; the
+  optimization pass folded the launcher's two restart lines.
+- **Implementation:** the first run reported BLOCKED: the plan's verbatim sentence named
+  `` `delegate` `` in a paragraph both placements read, which the launcher's placement guard
+  refuses. The host sent the one-word correction ("the server drops") back as a plan correction
+  rather than stopping the run.
+- **Code review:** round 1 (`e631a4f`) all three seats `no major issues`, 3 Minor and one folded
+  follow-up (the probe entry), fixed in a wrap-up; round 2 (`17ea9ae`) all three `no major issues`.
+- **Gate and root suite:** 1207 tests at `17ea9ae`, 1205 pass, 0 fail, 2 guarded skips.
+- **Accepted limitation:** a resume that names no model runs the record's model, which the
+  engine-switch narration rule could misname on a chain whose first call switched engine and named
+  a model (the needs-work section already gives the resume's model rule).
+- **Not verified:** the Claude Code version behind the `/reload-plugins` observation.
+
 ## Launcher text — `atc-s96.122`, `.82`, `.83`, `.66` (2026-10-15)
 
 Task 1 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
