@@ -9,7 +9,10 @@ A team here is a **mode**: roles, a loop, and a git policy. You dispatch the
 roles, watch them, decide what happens next, and report. You do not do their
 work, and you never start an engine CLI yourself — a `claude`, `codex` or `grok`
 the server did not launch carries none of the guard the server puts around one,
-and none of its tasks can be waited on, cancelled or reported.
+and none of its tasks can be waited on, cancelled or reported. Nor do you start this
+server yourself — `src/server.ts`, the plugin's MCP entrypoint, under `node` or any
+other way, not even to read from it: your host starts the one copy that serves you,
+and what you need from it is one of its tools.
 
 ## Codex host setup
 
@@ -144,6 +147,10 @@ Narrate every dispatch in one line before you wait on it: *delegating `<role>` �
 `<role>#<seat>` for a seated role — to `<engine>`/`<model>` at `<effort>` in
 `<cwd>`*. The user is paying for these
 engines and cannot see them; a task nobody announced is a task nobody can stop.
+Take the engine, model and effort from the roster's line for that role or seat, or
+from your call where it names them, and name a task you did not dispatch — a lead's
+specialist — by the engine and model its record in `list_tasks` carries: never
+guess them.
 
 A refusal is an answer, not an error to retry: a request identical to a live
 task — the same role, seat, cwd and brief — is refused with the id to wait on
@@ -197,7 +204,7 @@ task costs you many short waits, not one long one:
 
 | host | its MCP tool timeout | `timeout_seconds` to pass |
 | --- | --- | --- |
-| Claude Code | about 28 hours by default | 600 |
+| Claude Code | about 28 hours by default; a call still running at 120 s is moved to the background, where it keeps running and its answer arrives later as a task notification (`docs/probes.md#claudeCodeBackground`) | 600 |
 | Codex | `tool_timeout_sec` per server, 3600 in `.codex-plugin/plugin.json` and in the lead mount (`docs/probes.md#codexHostTimeout`) | 600 |
 | Grok | `tool_timeout_sec` per server, 6000 by default; a 600 s `wait` returned intact under a Grok host (`docs/probes.md#grokToolTimeout`) | 600 |
 
@@ -205,6 +212,13 @@ Those are the budgets of the design's "Time limits": there is no cap on a task,
 only on one call about it. `timeout_seconds` defaults to the project's
 `limits.waitDefaultSeconds`, and the silence threshold that produces `stalled`
 is `limits.stallMinutes`.
+
+Under a Claude Code host, a `wait` — or, under `host` placement, a `run_command` —
+still running at 120 s comes back at once saying it was moved to the background as a
+task. That is the call still running, not its answer: it runs to its own end, and its
+answer, the one it would have returned, arrives later as a task notification. A
+backgrounded call is neither a timeout nor a reason to issue the same `wait` or
+`run_command` again; wait for its notification and act on the answer it carries.
 
 ## A needs-work round
 
@@ -298,8 +312,9 @@ below is yours there.
    journals the `committed` step. The two exclusions are not optional: a
    `.gitignore` the specialist wrote in its worktree outranks the repository's
    own, and the project's state is never committed to a task branch — the merge
-   refuses a branch carrying either directory anyway, and that refusal costs you
-   the run.
+   refuses a branch carrying either directory anyway, or a host's project
+   configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` — which the commit
+   above refuses first, naming the path; either refusal costs you the run.
 2. Then apply the project's `project.mergePolicy`. You apply it; nobody merges
    by hand under `auto`.
 
@@ -362,6 +377,9 @@ its closing report is its own final message, which you read with `result {task_i
 of the run from the ledger, then each task's final message; it exits 0, or 3 for an
 unknown `--since`, by the protocol in the operator guide's table
 (`docs/operator-guide.md`, "The operator CLI", in the cross-agent repository).
+Nor do you append to `.cross-agent/log.md` under this placement, at any point of the
+run: that file is `host` placement's, and here the lead's report and
+`cross-agent report` are the record.
 
 Under `host` placement, close the session with the same per-task list to the user,
 plus what was not verified: a suite nobody ran, a review nobody asked for, a branch

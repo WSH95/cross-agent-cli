@@ -293,6 +293,17 @@ test("under engine placement the host runs no command on the project and shows t
   "under engine placement the session closes on the lead's report itself");
 });
 
+// @anchor engineHostNoLog
+test("under engine placement the host appends nothing to .cross-agent/log.md: the lead's report and cross-agent report are the record", () => {
+  // The launcher put the log under host placement and said the lead appends nothing, and it
+  // said nothing of an engine-placed host's own lines (E8, atc-s96.66).
+  const paragraphs = sectionOf(launcher(), "Reporting").split(/\n\s*\n/).map(flat)
+    .filter((paragraph) => paragraph.includes("`engine`") && paragraph.includes("`.cross-agent/log.md`"));
+  assert.equal(paragraphs.length, 1, "one Reporting paragraph says what an engine-placed host does with the log");
+  assert.match(paragraphs[0], /[Nn]or do you append to `\.cross-agent\/log\.md` under this placement/);
+  assert.match(paragraphs[0], /the lead's report and `cross-agent report` are the record/);
+});
+
 // @anchor hostWithoutTools
 test("a host offered none of this server's tools tells the user the server did not start, and why under Codex and Grok", () => {
   // T14's probe (c): a Codex session started without `CROSS_AGENT_PROJECT` was offered the
@@ -364,7 +375,11 @@ test("under engine placement the host's one read outside its two commands is thi
 // @anchor budgetTable
 test("the launcher's budget table gives every host a wait that fits inside its tool timeout", () => {
   const text = flat(launcher());
-  assert.match(text, /Claude Code[^|]*\|[^|]*\|[^|]*600/, "Claude Code's row and its wait");
+  // Claude Code's 28 hours is not where its host hands a call back: at 120 s it moves the call
+  // to the background, and the answer comes later as a notification (the pilot, atc-s96.122).
+  assert.match(text,
+    /\| Claude Code \|[^|]*28 hours[^|]*120 s[^|]*moved to the background[^|]*keeps running[^|]*task notification[^|]*`docs\/probes\.md#claudeCodeBackground`[^|]*\|\s*600\s*\|/,
+    "Claude Code's row describes the backgrounding, cites the runs that saw it, and keeps its wait");
   assert.match(text, /Codex[^|]*\|[^|]*`tool_timeout_sec`[^|]*3600[^|]*\|[^|]*600/, "Codex's row names the manifest key and this repo's value");
   // Where Codex's 3600 lives, and the run that measured a 600 s `wait` inside it (T14's B3).
   assert.match(text, /Codex[^|]*\|[^|]*`\.codex-plugin\/plugin\.json`[^|]*lead mount[^|]*`docs\/probes\.md#codexHostTimeout`[^|]*\|/,
@@ -373,6 +388,18 @@ test("the launcher's budget table gives every host a wait that fits inside its t
   assert.match(text, /Grok[^|]*\|[^|]*`tool_timeout_sec`[^|]*6000[^|]*`docs\/probes\.md#grokToolTimeout`[^|]*\|\s*600\s*\|/,
     "Grok's row names the per-server key and its default, and cites the measured wait");
   assert.match(text, /Time limits/, "the table is the design's own budget, cited");
+});
+
+// @anchor backgroundedCall
+test("under a Claude Code host a call moved to the background at 120 s is waited out through its task notification, never re-issued", () => {
+  // The pilot's host got every 600 s `wait` and every `run_command` test run back at 120 s as
+  // "moved to the background as task …" (atc-s96.122): that is the call still running, and
+  // issuing it again starts a second call beside it.
+  const watching = flat(sectionOf(launcher(), "Watching"));
+  assert.match(watching, /Claude Code host, a `wait`[^.]*`host` placement[^.]*`run_command`[^.]*120 s[^.]*moved to the background/);
+  assert.match(watching, /answer[^.]*arrives later as a task notification/);
+  assert.match(watching, /neither a timeout nor a reason to issue the same `wait` or `run_command` again/);
+  assert.match(watching, /wait for its notification and act on the answer it carries/);
 });
 
 test("the launcher carries the merge policy for every mode, in the order a one-shot settles under", () => {
@@ -481,11 +508,31 @@ test("the launcher's guardrails keep the host out of a specialist's work and off
   }
 });
 
+// @anchor hostNeverStartsServer
+test("the host never starts this server itself, beside its rule against starting an engine CLI", () => {
+  // A host that started `src/server.ts` under its own shell would hold a second server of its
+  // own, outside the one its host attached and the lineage that one reads (atc-s96.82).
+  const paragraphs = launcher().split(/\n\s*\n/).map(flat).filter((paragraph) => paragraph.includes("never start an engine CLI yourself"));
+  assert.equal(paragraphs.length, 1, "one paragraph keeps the host off the engine CLIs");
+  assert.match(paragraphs[0], /[Nn]or do you start this server yourself — `src\/server\.ts`, the plugin's MCP entrypoint/);
+});
+
 test("the launcher's closing report names every task with what ran it and what it cost", () => {
   const text = flat(launcher());
   assert.match(text, /\.cross-agent\/log\.md/);
   assertInOrder(text, ["role", "engine", "model", "effort", "duration", "outcome"], "the launcher's log line");
   assert.match(text, /not verified/, "the closing report says what nobody checked");
+});
+
+// @anchor narrationFromRoster
+test("every dispatch is narrated with the engine, model and effort the roster, the call or the task's record names, never a guess", () => {
+  // The narration is the user's one sight of what is paid for, so it names what the server
+  // said rather than what the host supposes (atc-s96.66).
+  const narration = launcher().split(/\n\s*\n/).map(flat).filter((paragraph) => paragraph.startsWith("Narrate every dispatch"));
+  assert.equal(narration.length, 1, "one paragraph says how a dispatch is narrated");
+  assert.match(narration[0], /from the roster's line for that role or seat, or from your call where it names them/);
+  assert.match(narration[0], /task you did not dispatch[^.]*its record in `list_tasks`/);
+  assert.match(narration[0], /never guess them/);
 });
 
 test("the dev-team loop runs the ten steps in the order design section 4 gives them", () => {
@@ -903,7 +950,7 @@ test("both dev-team loops name the journal step each of their git calls complete
 });
 
 // @anchor loopsNameHostConfig
-test("both dev-team loops name a host's project configuration wherever they say what step 6's commit and step 9's merge refuse", () => {
+test("both dev-team loops and the launcher's one-shot name a host's project configuration wherever they say what the commit and the merge refuse", () => {
   // The paths are the guard's own list (`src/gitmutate.ts#hostConfigPaths`), so the loop
   // text a lead reads before the refusal and the refusal itself cannot drift apart.
   for (const name of ["dev-team", "dev-team-engine"]) {
@@ -915,6 +962,14 @@ test("both dev-team loops name a host's project configuration wherever they say 
         assert.ok(found[0].includes("`" + entry), `${name}: the paragraph saying "${phrase}" names ${entry}`);
       }
     }
+  }
+  // The one-shot a host commits and merges under `host` placement meets the same two refusals
+  // (atc-s96.83).
+  const phrase = "the merge refuses a branch carrying either directory";
+  const found = launcher().split(/\n\s*\n/).map(flat).filter((text) => text.includes(phrase));
+  assert.equal(found.length, 1, `the launcher: one paragraph says "${phrase}"`);
+  for (const entry of hostConfigPaths) {
+    assert.ok(found[0].includes("`" + entry), `the launcher: the paragraph saying "${phrase}" names ${entry}`);
   }
 });
 

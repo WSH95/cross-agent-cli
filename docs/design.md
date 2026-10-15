@@ -4558,7 +4558,10 @@ from there: one 600 s `wait` completed at 600.004 s by Codex's own record, while
 declaring 60 s cut the same call at 60 s (`docs/probes.md#codexHostTimeout`). Grok gives an
 MCP call `tool_timeout_sec`, 6000 s by default, a project's plugin server included, and one
 600 s `wait` under a Grok host returned intact at 600.003 s by Grok's own record of the call
-(`docs/probes.md#grokToolTimeout`). `ask`
+(`docs/probes.md#grokToolTimeout`). Well inside its 28 hours, a Claude Code host moves a
+call still running at 120 s to the background: the call runs to its own end, its answer
+arrives later as a task notification, and it is neither a timeout nor a reason to call
+again (`docs/probes.md#claudeCodeBackground`). `ask`
 is bounded the same way and asked again by id. The clock silence is measured
 from advances on a Codex lead's MCP calls too, announced and completed, because
 those are the whole of what a lead that only calls this server's tools says

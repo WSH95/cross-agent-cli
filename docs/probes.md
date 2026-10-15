@@ -4159,3 +4159,37 @@ was refused by the proxy in both, exit 56 with the same `deny network-outbound` 
 layer with the same words ($0.055 and $0.053). The web tools change neither: a sandboxed
 role's shell still reaches no host, and a compound command carrying `$?` is refused under
 `dontAsk` with or without them.
+
+<!-- @anchor claudeCodeBackground -->
+## A Claude Code host moves a long MCP call to the background (2026-10-13, 2026-10-15)
+
+**The pilot (2026-10-13).** The dev-team pilot (`atc-s96.118`) ran on this repository
+under the installed 0.1.2 build, with the user's bindings and an interactive Claude Code
+host; its tasks are `VERIFY.md`'s `atc-s96.80` and `atc-s96.119` entries. Every
+`wait {timeout_seconds: 600}` and every `run_command` test run came back to the model
+after 120 s with "still running after 120s. It was moved to the background as task …",
+and the answer arrived later as a task notification. No call was cut: both tasks merged
+(`50fe5ba`, `7f5969b`).
+
+**This backlog run (2026-10-15).** Under the installed 0.1.8 build and an interactive
+Claude Code host, the host's `wait {timeout_seconds: 600}` on the planner task
+`8931950e0d07cc864b8cd2d6290c4c20ee1a` returned at 120 s with, verbatim:
+
+> still running after 120s. It was moved to the background as task k6km8pbdt and keeps running; you'll receive a notification with the result when it completes. You can keep working in the meantime. To stop it, use TaskStop with task_id "k6km8pbdt". Note: it does not survive exiting this session.
+
+Its answer (`status: "done"`, `elapsedSeconds: 320`) arrived as a task notification, and
+the record's `createdAt` to `updatedAt` is 320.2 s. The `wait` on the plan reviewer,
+`3401d00284a9e58fbf5d426044ae5518cbbc`, did the same and answered at 275 s (its record:
+275.0 s).
+
+**Reading.** Under this host, 120 s is not the MCP tool timeout: a call still running then
+keeps running, and its answer is delivered later. A backgrounded call belongs to the host
+session and ends when that session exits; the task it waits on is run by its detached
+runner and keeps running, and a later session waits on it by its id. The launcher's row
+and watching paragraph say this (`tests/skills.test.ts#budgetTable`, `#backgroundedCall`),
+and so does `docs/design.md`'s "Time limits".
+
+**Not recorded.** Either run's Claude Code version; the pilot's message text and its
+calls' durations; a host exiting while a call is in the background, which was not
+exercised — the message's last sentence is all there is; and whether `claude -p`, as a
+headless host or a Claude engine lead, backgrounds the same way.
