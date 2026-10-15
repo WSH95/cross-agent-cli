@@ -4183,13 +4183,14 @@ the record's `createdAt` to `updatedAt` is 320.2 s. The `wait` on the plan revie
 275.0 s).
 
 **Reading.** Under this host, 120 s is not the MCP tool timeout: a call still running then
-keeps running, and its answer is delivered later. A backgrounded call belongs to the host
-session and ends when that session exits; the task it waits on is run by its detached
-runner and keeps running, and a later session waits on it by its id. The launcher's row
-and watching paragraph say this (`tests/skills.test.ts#budgetTable`, `#backgroundedCall`),
-and so does `docs/design.md`'s "Time limits".
+keeps running, and its answer arrives later as a task notification. The launcher's row and
+watching paragraph say that, and that a backgrounded call is no reason to call again
+(`tests/skills.test.ts#budgetTable`, `#backgroundedCall`), and so does `docs/design.md`'s
+"Time limits". A backgrounded call belongs to the host session and ends when that session
+exits; the task it waits on is run by its detached runner and keeps running, and a later
+session waits on it by its id.
 
-**Not recorded.** Either run's Claude Code version; the pilot's message text and its
+**Not recorded.** Either run's Claude Code version; the pilot's full message text and its
 calls' durations; a host exiting while a call is in the background, which was not
 exercised — the message's last sentence is all there is; and whether `claude -p`, as a
 headless host or a Claude engine lead, backgrounds the same way.

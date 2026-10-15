@@ -148,9 +148,11 @@ Narrate every dispatch in one line before you wait on it: *delegating `<role>` �
 `<cwd>`*. The user is paying for these
 engines and cannot see them; a task nobody announced is a task nobody can stop.
 Take the engine, model and effort from the roster's line for that role or seat, or
-from your call where it names them, and name a task you did not dispatch — a lead's
-specialist — by the engine and model its record in `list_tasks` carries: never
-guess them.
+from your call where it names them; where neither the roster's line nor your call
+names a model — as when your call names another engine and no model — say that
+engine's default, as such, and the same for its effort. Name a task you did not
+dispatch — a lead's specialist — by the engine, model and effort its record in
+`list_tasks` carries, a `null` there being that engine's default: never guess them.
 
 A refusal is an answer, not an error to retry: a request identical to a live
 task — the same role, seat, cwd and brief — is refused with the id to wait on
@@ -214,8 +216,8 @@ only on one call about it. `timeout_seconds` defaults to the project's
 is `limits.stallMinutes`.
 
 Under a Claude Code host, a `wait` — or, under `host` placement, a `run_command` —
-still running at 120 s comes back at once saying it was moved to the background as a
-task. That is the call still running, not its answer: it runs to its own end, and its
+still running at 120 s comes back at that point saying it was moved to the background
+as a task. That is the call still running, not its answer: it runs to its own end, and its
 answer, the one it would have returned, arrives later as a task notification. A
 backgrounded call is neither a timeout nor a reason to issue the same `wait` or
 `run_command` again; wait for its notification and act on the answer it carries.

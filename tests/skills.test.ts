@@ -396,7 +396,8 @@ test("under a Claude Code host a call moved to the background at 120 s is waited
   // "moved to the background as task …" (atc-s96.122): that is the call still running, and
   // issuing it again starts a second call beside it.
   const watching = flat(sectionOf(launcher(), "Watching"));
-  assert.match(watching, /Claude Code host, a `wait`[^.]*`host` placement[^.]*`run_command`[^.]*120 s[^.]*moved to the background/);
+  // It comes back when 120 s have passed, not as soon as it is called.
+  assert.match(watching, /Claude Code host, a `wait`[^.]*`host` placement[^.]*`run_command`[^.]*120 s comes back at that point[^.]*moved to the background/);
   assert.match(watching, /answer[^.]*arrives later as a task notification/);
   assert.match(watching, /neither a timeout nor a reason to issue the same `wait` or `run_command` again/);
   assert.match(watching, /wait for its notification and act on the answer it carries/);
@@ -531,7 +532,10 @@ test("every dispatch is narrated with the engine, model and effort the roster, t
   const narration = launcher().split(/\n\s*\n/).map(flat).filter((paragraph) => paragraph.startsWith("Narrate every dispatch"));
   assert.equal(narration.length, 1, "one paragraph says how a dispatch is narrated");
   assert.match(narration[0], /from the roster's line for that role or seat, or from your call where it names them/);
-  assert.match(narration[0], /task you did not dispatch[^.]*its record in `list_tasks`/);
+  // A call that names another engine drops the bound model and effort, and `delegate` answers
+  // with the task id alone: what runs then is that engine's default, and the narration says so.
+  assert.match(narration[0], /where neither the roster's line nor your call names a model[^.]*say that engine's default, as such/);
+  assert.match(narration[0], /task you did not dispatch[^.]*by the engine, model and effort its record in `list_tasks` carries/);
   assert.match(narration[0], /never guess them/);
 });
 
