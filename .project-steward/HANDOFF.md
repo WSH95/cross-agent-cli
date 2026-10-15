@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T06:45:55Z
+updated_at: 2026-10-15T07:39:56Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -12,8 +12,9 @@ branch: main
 beads, several beads per task, on requirements only — rare, hard edge cases get a stated
 limitation.** Triage committed as `6a6077a`: `.60`, `.105`, `.85`, `.86` closed as accepted
 limitations; `.25`, `.26`, `.28`, `.48`, `.96`, `.99`, `.100`, `.110`, `.93` deferred with reasons.
-31 beads in 12 tasks: (1) launcher text `.122` `.82` `.83` `.66` — in flight, planner running;
-(2) docs `.125` `.126` `.127`; (3) EPIPE `.120` `.121`; (4) server answers `.95` `.102`;
+31 beads in 12 tasks: (1) launcher text `.122` `.82` `.83` `.66` — merged as `f395066`, closed;
+(2) docs `.125` `.126` `.127`, plus task 1's two Minor follow-ups (narration rule for a call naming
+another engine; the probe entry's attribution) — next; (3) EPIPE `.120` `.121`; (4) server answers `.95` `.102`;
 (5) tidy `.84` `.87` `.91` `.81`; (6) gitroot `.89` `.90` `.101`; (7) self-hosting authority
 `.123` `.74`; (8) verifier `.69` `.72` `.62` `.94`; (9) answer bounds `.79`; (10) hung git `.98`;
 (11) Grok specialist isolation `.77` `.92` `.78` `.76`; (12) Claude compound commands `.113`.

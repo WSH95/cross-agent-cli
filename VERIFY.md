@@ -99,6 +99,30 @@ merge was performed.
 `atc-2jl.5`'s `expect` type array against real Claude and Codex leads), which runs on the installed
 0.1.8.
 
+## Launcher text — `atc-s96.122`, `.82`, `.83`, `.66` (2026-10-15)
+
+Task 1 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`2fa1006` to `f395066` (slug `launcher-text`; commits `32b1571`, `f395066`). The launcher's Claude
+Code row and a new `## Watching` paragraph describe the 120 s backgrounding (the call keeps running,
+its answer arrives as a task notification, it is no reason to call again), cited to the new
+`docs/probes.md#claudeCodeBackground` (the pilot and this run, the message quoted verbatim) and one
+`docs/design.md` "Time limits" sentence. The launcher now says a host never starts `src/server.ts`
+itself, names `.claude/`, `.codex/`, `.grok/` and `.mcp.json` in the one-shot's commit step, takes
+the narration's engine, model and effort from the roster, the call or the task's record (a default
+named as such), and appends nothing to `.cross-agent/log.md` under engine placement. `.66`'s roster
+and `result` parts were already met and pinned.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, no findings.
+- **Code review:** round 1 (`32b1571`) all three seats `no major issues`, 4 Minor (fixed in a
+  wrap-up); round 2 (`f395066`) all three `no major issues`, 2 Minor left as follow-ups (N2-1: the
+  narration rule for a call that names another engine; N2-2: the probe entry credits the row with
+  "no reason to call again"), folded into task 2.
+- **Gate and root suite:** 1205 tests at `f395066`, 1203 pass, 0 fail, 2 guarded skips, in the
+  gate's checkout and at the root after the merge.
+- **Not verified:** the Claude Code version; whether `claude -p` backgrounds at 120 s
+  (`modes/dev-team-engine/roles/lead.md` still says about 28 hours, an accepted limitation).
+
 ## The flaky `#quietTaskWhose` — `atc-9w2` (2026-10-15)
 
 Went through the `dev-team` loop and merged as a fast-forward from `c867d3c` to `213dacf` (slug
