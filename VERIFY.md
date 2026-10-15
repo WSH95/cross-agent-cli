@@ -7,6 +7,59 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## What a specialist's engine is given — `atc-s96.77`, `.113`, `.92`, `.78`, `.76` (2026-10-15)
+
+Task 9 of the backlog run, its last (old tasks 11 and 12 combined). Went through the `dev-team`
+loop and merged as a fast-forward from `3f6327a` to `1696dad` (slug `specialist-env`; commits
+`5f331bf`, `1696dad`). No engine CLI was started for it: each bead was decided from the evidence
+already on disk — this repository's ledger (336 tasks, 2026-10-04 to 2026-10-15), the Grok sessions'
+own files, `docs/probes.md` and Grok's guide.
+- **`.77`:** `src/guard.ts#childEnv` now drops `GROK_SESSION_ID` (a Grok host's session id) and
+  `AI_AGENT` (the label a Claude Code host gives its server, carried by all 336 specs and handed to
+  every Codex and Grok child as its own). `GIT_EDITOR` passes on: it marks no host, and its `true`
+  keeps a headless git from waiting on an editor. `tools/probe.mjs` copies the list.
+- **`.113`:** every specialist prompt — the five shared role files in both dev-team modes, the built-in
+  consult and `modes/solo/roles/consult.md` — carries one plain-shell paragraph: run plain commands,
+  read a status with `echo "exit $?"`, and take a "don't ask mode" refusal as no result but a command
+  to split. The ledger read 174 refusals in 3,256 Claude `Bash` calls, clustered in loops, heredocs,
+  `$(…)`/`${…}`, subshells, `VAR=`/`env` prefixes, `awk` and `git -c`; plain commands and their
+  plain compounds ran (`docs/probes.md#specialistLedger`, stated there as text associations, not the
+  layer's rule). No permission rule is added: one wide enough to approve those shapes would also
+  approve what the deny list's prefix rules cannot read.
+- **`.92`, `.78`, `.76`:** stated limitations in design section 3's Grok bullet ("What the adapter does
+  not withhold"). A Grok specialist stays offered `spawn_subagent`, the `scheduler_*` tools and the
+  rest (52 specialists called none; `--disallowed-tools` is documented but unexercised, so it stays
+  off the spawn line). With the plugin installed in the operator's Claude Code (2026-10-13), every
+  Grok worktree seat (51 of 51) was offered the launcher skill and mounted this server on the
+  specialist row's five tools; the install guide's worktree bullet is now conditional. The operator's
+  Claude Code plugin hooks ran inside Grok specialists (548 runs, all `success`); keep the Codex
+  stop-review gate off while they run. Operator probes A–D for each are recorded in the plan and the
+  probes section's "Not recorded"; none were run.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, 4 Minor, all folded in the
+  planner's final pass (the shell advice qualified and the method disclosed, the install guide's
+  contradiction, the test pinning the whole paragraph, the probes' precision).
+- **Code review:** round 1 (`5f331bf`) all three seats `no major issues`. The wrap-up fixed five doc
+  rows (the `_agent` label, a remaining unconditional worktree sentence in the design, a stray word,
+  the 26-tool inits, the root mount marked as inference). The implementer rejected two with evidence:
+  117 calls do carry `echo "exit $?"` (the 96 with no other pattern all ran), and `lead.md` says the
+  lead runs no shell command. Round 2 (`1696dad`): all three `no major issues`, no Minor.
+- **Tests:** `tests/guard.test.ts#childEnvHostAgent` and `tests/skills.test.ts#specialistsPlainShell`
+  each failed first on what they pin. `describe_mode`'s stated sizes moved to 40,602 / 56,223 / 4,217
+  bytes (`dev-team` / `dev-team-engine` / `solo`).
+- **Gate and root suite:** 1233 tests at `1696dad`, 1231 pass, 0 fail, 2 guarded skips (gate at `5f331bf` the same).
+- **Accepted limitations:**
+  - None of the Grok switches (`--disallowed-tools`, `GROK_SUBAGENTS`, `GROK_CLAUDE_HOOKS_ENABLED`,
+    `GROK_CLAUDE_SKILLS_ENABLED`, `plugins.disabled`, `skills.disabled`) has been run; whether a Grok
+    subagent or a `durable` scheduled run outlives its task is unverified.
+  - A Claude specialist may still compose a refused shape; the refusal costs a call and is the safe
+    direction.
+  - A Claude lead is given `Bash` (the shared read-tool set) although `lead.md` says it runs no shell
+    command; its sandbox bounds it. The lead's prompt carries no plain-shell paragraph for that reason.
+  - The table's ` $?` row reads 24/161 or 23/160 depending on whether the quote must close; both are
+    regex readings, as the section says.
+
 ## Bounded `list_tasks` and a timeout on every git child — `atc-s96.79`, `.98` (2026-10-15)
 
 Task 8 of the backlog run (old tasks 9 and 10 combined). Went through the `dev-team` loop and merged as
