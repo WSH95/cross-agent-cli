@@ -412,6 +412,36 @@ test("a server that finds no project exits naming the reason", async (t) => {
     + `and ${empty} is in no git repository: without a config the project is the working directory's git toplevel\n`);
 });
 
+// @anchor serverClosedStdout
+test("a host that closes stdout before a reply ends the server quietly, with the exit code stdin's end gives it", { timeout: 20_000 }, async (t) => {
+  const root = await projectWithConfig(t, { roles: {} });
+  const start = () => {
+    const child = spawn(process.execPath, [serverEntry, "--project", root], { stdio: ["pipe", "pipe", "pipe"], env: suiteEnv });
+    t.after(() => child.kill());
+    const seen = { stderr: "" };
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => { seen.stderr += chunk; });
+    return { child, seen };
+  };
+
+  // The baseline: a host that closes stdin.
+  const ended = start();
+  ended.child.stdin!.end();
+  const [endCode, endSignal] = await once(ended.child, "close");
+  assert.equal(endSignal, null, ended.seen.stderr);
+  assert.equal(endCode, 0, ended.seen.stderr);
+
+  // A host gone from stdout while stdin stays open: only the reply's EPIPE can end it.
+  const left = start();
+  left.child.stdout!.destroy();
+  await once(left.child.stdout!, "close");
+  left.child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`);
+  const [code, signal] = await once(left.child, "close");
+  assert.equal(signal, null, left.seen.stderr);
+  assert.equal(code, endCode, left.seen.stderr);
+  assert.doesNotMatch(left.seen.stderr, /EPIPE|Unhandled 'error' event|^\s+at /m);
+});
+
 // A bounded test, because what it asserts is that the process **ends**: a server that
 // served instead would leave this waiting on a close that never comes.
 test("a server attached to a repository with no config writes nothing to it", async (t) => {

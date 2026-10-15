@@ -607,6 +607,38 @@ test("a reader that closes stdout early ends the command quietly with the verb's
   assert.equal(asks.code, 5);
 });
 
+/**
+ * The CLI as `cross-agent <args> 2>&1 | true` runs it: the reader leaves without reading, so
+ * once the pipe is full no later write can land, and the CLI's stderr is that same pipe. Its
+ * own stderr cannot be kept, so the exit code, kept in a file, is the only evidence.
+ */
+async function intoClosedReader(t: TestContext, args: string[], cwd: string): Promise<number> {
+  const code = path.join(scratch(t), "code");
+  await exec("sh", ["-c", '{ "$@" 2>&1; echo "$?" >"$CLI_CODE"; } | true', "sh", process.execPath, cli, ...args],
+    { cwd, env: { ...suiteEnv, CLI_CODE: code }, encoding: "utf8" });
+  return Number(fs.readFileSync(code, "utf8"));
+}
+
+// @anchor cliClosedStderr
+test("a reader that closes stderr with stdout ends report quietly with its own exit code, its invalid-record note dropped", { timeout: 30_000 }, async (t) => {
+  const root = await engineProject(t);
+  const { create } = await import("../src/ledger.ts");
+  // The same 4 MB as above: written first, it fills the pipe nobody drains, so the note
+  // written after it can never land.
+  const text = Array.from({ length: 50_000 }, (_, index) => `line ${index}`.padEnd(80, "x")).join("\n") + "\n";
+  const record = create(root, { role: "planner", brief: "plan", cwd: root, engine: "claude", depth: 2 });
+  fs.writeFileSync(record.resultPath, text);
+  const broken = path.join(root, ".cross-agent", "tasks", "broken.json");
+  fs.writeFileSync(broken, "{not a record");
+
+  // report writes the note on stderr, so the joined run below has a stderr write to make.
+  const kept = await intoHead(t, ["report", "--project", root], root);
+  assert.match(kept.stderr, new RegExp(`^cross-agent: invalid task record ${literally(broken)}: \\S`));
+  assert.equal(kept.code, 0);
+
+  assert.equal(await intoClosedReader(t, ["report", "--project", root], root), 0);
+});
+
 // @anchor cliSeatSpelling
 test("a seated record is spelled role#seat by tasks, show and report, and keeps role and seat apart in their JSON", async (t) => {
   const root = await engineProject(t);

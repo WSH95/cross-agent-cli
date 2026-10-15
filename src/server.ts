@@ -915,6 +915,15 @@ async function main(): Promise<void> {
 }
 
 if (isMainModule(import.meta.url)) {
+  // A host that leaves in the middle of a reply fails the next write with EPIPE. The server
+  // then ends as it does when its host closes stdin, with the same exit code and no stack,
+  // and does nothing else: detached runners keep running for the next server's
+  // reconciliation to settle, and a pending `wait` or `ask` ends with the process. Any other
+  // error on stdout still throws.
+  process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+    process.exit();
+  });
   main().catch((error) => {
     process.stderr.write(`cross-agent: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
