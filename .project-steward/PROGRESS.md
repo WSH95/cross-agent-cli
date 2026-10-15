@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T11:57:29Z — claude
+Backlog run task 5 (tidy: `atc-s96.84`, `.87`, `.91`, `.81`, `.89`, `.90`, `.101`) merged through the `dev-team` loop as `1dfad88`; root suite 1217 tests, 1215 pass, 0 fail, 2 skipped; beads closed; two round-1 leftovers folded into task 6.
+
 ### 2026-10-15T10:30:58Z — claude
 Backlog task 4 (server answers: atc-s96.95, .102) merged as `12709e0` through the dev-team loop; two review rounds clean; root suite 1213/1211/0 fail; beads closed.
 

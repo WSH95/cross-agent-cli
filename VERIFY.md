@@ -7,6 +7,45 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Tidy: one source per rule, case-blind state guards, git's branch names — `atc-s96.84`, `.87`, `.91`, `.81`, `.89`, `.90`, `.101` (2026-10-15)
+
+Task 5 of the backlog run (old tasks 5 and 6 combined). Went through the `dev-team` loop and merged
+as a fast-forward from `e8f87ae` to `1dfad88` (slug `tidy`; commits `a9bf039`, `1dfad88`).
+- **`.84`:** `src/ledger.ts` exports `activeStatuses`, `claimableStatuses` and `authoritativeStatuses`,
+  and the copies in `authority.ts`, `delegate.ts`, `guard.ts` and `tasks.ts` are gone.
+- **`.87`:** one byte-equal shared-prompts test (`tests/modes.test.ts#devTeamModes`); the
+  `tests/skills.test.ts` copy and the design's stale "until step 9 generates both" are gone.
+- **`.91`:** `src/mailbox.ts#printable` is the one renderer; `src/cli.ts#iso` is gone.
+- **`.81`:** `tests/authority.test.ts#engineEnvironmentUnreadable` pins `decide`'s "…but its
+  environment cannot be read" row.
+- **`.89`, `.90`:** `smuggled` and `trackedStateFault` match `.cross-agent` and the worktree
+  directory with `:(icase)`, `trackedStateFault` names every tracked path, and its repair advice is
+  `git rm -r --cached -- ':(icase).cross-agent'`, which a test runs through real git.
+- **`.101`:** `nameFault` accepts what `git check-ref-format --branch` accepts as written (still
+  refusing a leading `-`, `HEAD`, `@`, `@{`, revision syntax and path forms); a new branch from
+  `worktree add -b` keeps the slug alphabet (`newBranchFault`); `BRANCH_RULE` is the one sentence
+  the CLI and setup quote; a merge and delete of `task/a+b` is pinned.
+- The previous task's stale test title (`tests/tasks.test.ts#resultFinalMessage`) is fixed.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`: 1 Important (a setup test
+  pinned the old wording) and 2 Minor, folded by the planner with I5 (tracked-state `:(icase)`) and
+  I8 (`authoritativeStatuses`); round 2 `no major issues`, 1 Minor folded.
+- **Departure:** the setup skill writes `git check-ref-format --branch` as plain text, because two
+  `tests/skills.test.ts` guards read every code span there as a command the skill runs.
+- **Code review:** round 1 (`a9bf039`) all three seats `no major issues`; 5 Minor fixed in a
+  wrap-up (design "Three limits"; the operator guide's exact `HEAD`/`@`; repair advice that untracks
+  every case, failing first on the old advice; the new-branch rule in the design; the merge and
+  delete pin). Round 2 (`1dfad88`) all three `no major issues`, no Minor. Two round-1 leftovers
+  (the five-role list hard-coded in `#devTeamModes`, and the design calling the branch class "the
+  slug alphabet") are folded into task 6.
+- **Gate and root suite:** 1217 tests at `1dfad88`, 1215 pass, 0 fail, 2 guarded skips.
+- **Accepted limitations:** names git accepts that a person may not expect now pass (git is the
+  judge); a non-UTF-8 name reads back with U+FFFD; the case-blind match also refuses `.Cross-Agent/`
+  on a case-sensitive filesystem; the loops' `:(exclude)` pathspecs stay case-exact (the merge
+  refuses a staged cased directory); the `.cross-agent/` line the refusal suggests for `.gitignore`
+  is case-sensitive, and the `:(icase)` check still refuses whatever it lets through.
+
 ## The binding in the answers, and `projectWarning` — `atc-s96.95`, `.102` (2026-10-15)
 
 Task 4 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
