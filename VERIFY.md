@@ -7,6 +7,45 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The engine lead's run — `atc-2jl.4`, with `atc-s96.117` and `atc-2jl.8` (2026-10-14)
+
+Task 4 of epic `atc-2jl`, the last of its four. Went through the `dev-team` loop and merged as a
+fast-forward from `80a8381` to `5a78aec` (slug `2jl-4-run`; `1c7c448` the change, `b088cbe` the
+round-1 fix, `5a78aec` the round-2 wrap-up). Text and tests only, no server change.
+`modes/dev-team-engine/SKILL.md` gains `## The run` (R1 finding the run's place, R2 each item in
+dependency order — step 1, `track claim`, steps 2-9, `track file` for follow-ups, one `record`,
+`track close`, step 10 — R3 a goal clarified through `ask`, designed and broken down by the
+planner, approved in one `ask` and only then recorded and filed, R4 follow-ups filed and never
+worked, R5 the run's end), step 10's report deferred to R5 under `records`, and the `recorded` and
+`tracked` journal rows; `roles/lead.md` names the entry points, the bookkeeping rule and the
+report's additions. Every specialist prompt and the consultant's gain atc-s96.117's sentence (the
+project's task-tracking, handoff and commit instructions belong to the session that runs the
+loop); the planner's prompt gains one exception for a goal's design and breakdown. The launcher's
+engine-placement section adds `track` and `record` to what the host never calls and says the host
+does no bookkeeping of its own accord at any point of a records run. `AGENTS.md` (the "If
+cross-agent launched you" exception and the `modes/` Layout line), `docs/design.md` and
+`docs/operator-guide.md` follow; atc-2jl.8's rewrap is in it. Without a `records` block nothing
+changes but atc-s96.117's sentence.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`, one Important (two test pins
+  did not match the drafted text); round 2 `no major issues`; the planner's optimization pass.
+- **Code review:** round 1 (`1c7c448`) seats 1 (claude) and 3 (grok) `no major issues`, seat 2
+  (codex/gpt-6.1-sol) `major issues`: R3 asked the planner for a breakdown its prompt forbade
+  ("this plan is one task"), fixed by the planner exception, with four Minors (goal routing, a
+  stopped step 10, a test loop that could not fail, one scope for the host's ban). Round 2
+  (`b088cbe`) all three `no major issues`, three Minors fixed in the wrap-up (a rewrap, asking
+  before re-filing a goal whose filing began, telling the plan reviewer it reviews a breakdown).
+  Round 3 (`5a78aec`) all three `no major issues`; seat 1's cosmetic Minor (a ragged reflow in
+  `docs/design.md` around 3654 and 3661) goes to `atc-2jl.10`.
+- **Gate and root suite:** 1193, 1196 and 1197 tests at the three heads, 0 fail; the root suite at
+  `5a78aec` ran 1197: 1195 pass, 0 fail, 2 guarded skips. Citation check: 1802 citations, 0
+  misses, 0 drifted since `80a8381`, 0 not judged. `describe_mode` sizes: 36,747 (`dev-team`),
+  51,385 (`dev-team-engine`), 3,601 (`solo`) bytes.
+- **Not verified:** what a real engine lead does with this text; the pins hold the wording. That
+  is the epic's live acceptance trace, the operator's after a release, with `atc-2jl.5` (`record`'s
+  `expect` type array against real Claude and Codex leads).
+
 ## Setup proposes the records block — `atc-2jl.3`, with `atc-2jl.7` (2026-10-14)
 
 Task 3 of epic `atc-2jl`. Went through the `dev-team` loop and merged as a fast-forward from

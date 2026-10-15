@@ -1221,3 +1221,19 @@ Task 1 (`atc-2jl.1`, 2026-10-14): merged as `c1cb58c`. It edited two `AGENTS.md`
 under the user's allowance for this session: the `src/config.ts` line names the optional
 `records` block, its tracker verb table and path rules, and `src/records.ts` joins the
 one-file-per-concern list. No other user-owned text changed.
+
+Task 3 (`atc-2jl.3`, 2026-10-14): merged as `c6a6433`. It edited the `AGENTS.md` Layout line
+for `src/setup.ts` (the background team's `records` proposal) under the same allowance.
+
+Task 4 (`atc-2jl.4`, 2026-10-14): merged as `5a78aec`. Under the same allowance it edited
+two places in `AGENTS.md`: "If cross-agent launched you" gains one exception paragraph (a
+`dev-team-engine` lead whose `describe_mode` answers `records` keeps the beads and the
+`.project-steward/` files through `track` and `record` alone, still running no `bd` and no
+`project-steward`; what neither tool does, `bd remember`, a checkpoint or wrap, a sync, a
+push, is the user's, done by the user or on the user's explicit request; the host that
+started the lead does no bookkeeping of its own accord at any point of the run; specialists
+and a lead without `records` keep the old rule), and the `modes/` Layout line names
+`## The run`. Code review added one design choice: the planner's role prompt (both team
+modes) carries one exception, a brief asking for a goal's design and breakdown is answered
+with ordered items, each one task, and every other brief keeps the one-task plan. The
+limitations proposed in the plan stand open to the user's objection as before.

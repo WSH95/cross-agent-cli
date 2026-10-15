@@ -478,3 +478,6 @@ Set up Project Steward in this repository.
 - 2026-10-14T22:08:34Z — claude — atc-2jl.3 (+.7) merged as c6a6433 (setup proposes the records block; reconnect on a block added or removed); root suite 1182/1180/0 fail; closed. Follow-up atc-2jl.8 (into .4). Next: atc-2jl.4.
 - 2026-10-14T22:24:56Z — claude — [auto-checkpoint] atc-2jl.4: planned (human decision: no); plan review round 1 running.
 - 2026-10-14T22:36:39Z — claude — atc-2jl.4: plan approved (2 review rounds + optimization pass); follow-up atc-2jl.9 filed. Next: worktree and implementer.
+- 2026-10-14T23:09:53Z — claude — [auto-checkpoint] atc-2jl.4: committed 1c7c448, gate passed; code review round 1 in progress (seat 2 major: R3 vs the planner prompt).
+- 2026-10-14T23:47:34Z — claude — [auto-checkpoint] atc-2jl.4: round 1 fix committed b088cbe; round 2 all no major issues; wrap-up W1-W3 running. Follow-up atc-2jl.10 filed.
+- 2026-10-15T00:11:00Z — claude — atc-2jl.4 (+.8, atc-s96.117) merged as 5a78aec (the engine lead's run, prompts, launcher, docs, AGENTS.md); 3 review rounds; root suite 1197/1195/0 fail; closed. Follow-ups atc-2jl.9, .10. Next: atc-2jl.10.
