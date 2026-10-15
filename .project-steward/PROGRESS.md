@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T23:56:55.044738+00:00 — codex
+Started atc-s96.163 under the approved fix-and-retest scope. Reframed .155/.156/.157/.159/.160 without deleting original evidence; created atc-s96.161 for Codex plugin isolation and atc-s96.162 for missing resolved project settings. Current installed 0.1.9 dev-team roster confirmed; no live tasks, only root worktree. The four existing pending interaction entries are closures from completed verification runs and are included in preparation bookkeeping. First task .155/.160 is claimed.
+
 ### 2026-10-15T22:36:14Z — codex
 Completed the user-requested Codex-led variant `atc-s96.158` with exact model/effort changes,
 thirteen exit-0 records, correct lineage/depth, two clean three-engine review rounds and

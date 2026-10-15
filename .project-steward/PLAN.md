@@ -2,6 +2,10 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Acceptance fixes and frozen-candidate retest (active, 2026-10-15)
+
+User-approved work is tracked by atc-s96.163; Beads owns the detailed tasks and follow-ups. Current milestone: four reviewed fixes, then all-mode acceptance and restoration. Existing findings have corrected diagnoses while retaining original evidence. No push, release or remote sync.
+
 ## Codex-led engine variant (verification complete, 2026-10-15)
 
 `atc-s96.158` completed the additional installed 0.1.9 run with exact requested bindings:

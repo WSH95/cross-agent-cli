@@ -1,12 +1,14 @@
 ---
-updated_at: 2026-10-15T22:36:14Z
+updated_at: 2026-10-15T23:56:55.044738+00:00
 updated_by: codex
-session_status: closed
+session_status: active
 branch: main
 ---
 # Handoff
 
 ## Now
+
+**Acceptance-finding fixes and retest are authorized and active (atc-s96.163).** The user approved the four-task plan: verifier coverage (.155/.160), consultant scope (.156), Codex plugin isolation (atc-s96.161), and lead contract (.157/.159) plus configuration discovery (atc-s96.162). Run each through the current dev-team roster on installed 0.1.9, then retest a frozen candidate across all modes and both lead engines. Resolve follow-ups. Preserve historical evidence and restore sample/managed connection. Local commits authorized; no push, release or remote sync. Earlier diagnose-only instructions below are historical and superseded for these findings. Current task: verifier coverage; .155/.160 claimed.
 
 **Additional Codex-led variant is complete (`atc-s96.158`, user-requested).** Chat
 `01a1419a-d274-7eb1-b049-14a27a00bb0e` ran installed 0.1.9 with the exact changed bindings:
