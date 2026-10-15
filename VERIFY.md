@@ -7,6 +7,48 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The verifier learns its recorded Codex shapes and names every doubt — `atc-s96.69`, `.72`, `.62`, `.94` (2026-10-15)
+
+Task 7 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
+`7a953df` to `f6b89c2` (slug `verifier`; commits `6ac80f4`, `f6b89c2`). Only `tools/e2e-verify.mjs`,
+its tests and `docs/design.md` changed; nothing in `src/`.
+- **`.69`:** Codex's `--json` `file_change` item (an apply_patch edit) reads as a change that runs
+  no command, in exactly its recorded shape (`recordedFileChange`). Any other `file_change` answers
+  `?` ("file_change in a shape no archived run recorded").
+- **`.72`:** Codex's own `sleep` and `request_user_input_async` calls read as calls that run no
+  command, with the whole payload exact (`codexOwnCall`); any other shape stays `?`.
+- **Follow-up from the planner:** `codeModeWait` now requires the strings `function_call` and
+  `wait` themselves; an array name or type passed before.
+- **`.62`:** on the lead row, a `delegate` name the script reader cannot follow is no doubt.
+  Unfollowed command-tool names and computed `tools[…]` stay doubts. A record's row names every
+  doubt it holds, each once.
+- **`.94`:** `#claudeAdapterVocabulary` ties every tool the Claude adapter can grant, its lead
+  mount's included, to the verifier's vocabulary. `serverTools` gains `record` and `track`, which a
+  Claude lead calling them answered `?` before.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `major issues`: 1 Important (string identity
+  values) and 3 Minor, folded. Round 2 `no major issues`, with the `codeModeWait` follow-up taken in.
+- **Code review:** round 1 (`6ac80f4`) all three seats `no major issues`. Two Minor rows were fixed
+  in a wrap-up (a delegate-only string named as such; two `?` rows pin their reasons). Round 2
+  (`f6b89c2`): all three `no major issues`, no Minor.
+- **Archive checks:** condition 8 over fixtures built from `~/.cache/agent-team/probe-logs/`,
+  `main` → branch:
+  - E4: `? … (file_change)` → `pass … 6 transcripts`.
+  - E2 and E2c: `? … delegate: 1 occurrences but only 0 direct calls followed` →
+    `pass … 5 transcripts; judged by the lead row`.
+  - E5 `--read-rollout`: no `sleep` or `request_user_input_async` reason; the calls are still
+    listed.
+
+  The implementer ran E5. The controller ran E4, E2 and E2c outside the project, because the
+  implementer's sandbox refused the scratch repository's commit.
+- **Gate and root suite:** 1223 tests at `f6b89c2`, 1221 pass, 0 fail, 2 guarded skips.
+- **Accepted limitations:**
+  - Values no archive recorded (`kind: "delete"`, `status: "failed"`, another `sleep` namespace)
+    stay `?` until a person reads the first run that shows one.
+  - A record's row has no length bound when a rollout lacks many transcript commands.
+  - The row still shows at most three records.
+
 ## The CLI refuses writes by ancestry — `atc-s96.123`, `.74` (2026-10-15)
 
 Task 6 of the backlog run. Went through the `dev-team` loop and merged as a fast-forward from
