@@ -2773,7 +2773,7 @@ function scriptRead(source) {
       const text = token.kind === "string" ? token.value : token.kind === "template" ? token.parts.join(" ") : "";
       if (!keys.has(text) && !isDelegate(text)) {
         if (commandText.test(text)) read.computed.push("a string holding a command tool's name");
-        else if (delegateText.test(text)) read.unfollowed.push("a string holding a command tool's name");
+        else if (delegateText.test(text)) read.unfollowed.push("a string holding a delegate tool's name");
       }
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);

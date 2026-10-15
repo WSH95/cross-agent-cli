@@ -1985,22 +1985,24 @@ test("atc-s96.72: Codex's own sleep and request_user_input_async run no command,
 // Each names `delegate` in a regular expression, which the script reader cannot follow as a call.
 const e2Discovery = 'const hits = ALL_TOOLS.filter(x => /describe_mode|list_tasks|git_root|run_command|delegate|result|wait|ask|git_mutate|list_roles/i.test(x.name+" "+x.description));\ntext(hits);\n';
 const e2cDiscovery = String.raw`text(ALL_TOOLS.map(x=>x.name).filter(n=>/list_tasks|describe_mode|git_root|delegate|ask|run_command|git_mutate|roles/.test(n)).join("\n"))` + "\n";
-const leadDelegateNames = [
+const delegateString = 'text("call mcp__cross_agent__delegate next");';
+// Each row's script, its verdict on the lead row, and for a question the reason its row names.
+const leadDelegateNames: Array<[string, "pass" | "?" | "FAIL", RegExp?]> = [
   [e2Discovery, "pass"],
   [e2cDiscovery, "pass"],
   ['text("delegate");', "pass"],
   ['const d = tools.mcp__cross_agent__delegate;\nawait d({role: "implementer", brief: "x"});', "pass"],
-  ['text("call mcp__cross_agent__delegate next");', "pass"],
+  [delegateString, "pass"],
   // A command tool's name the reader cannot follow, and the tools object by a computed name.
-  ['const re=/exec_command/; await tools.exec_command({cmd:"ls"});', "?"],
-  ['const name = "list_roles";\nawait tools[name]({});', "?"],
+  ['const re=/exec_command/; await tools.exec_command({cmd:"ls"});', "?", /lead1: its rollout holds exec_command: 2 occurrences but only 1 direct calls followed/],
+  ['const name = "list_roles";\nawait tools[name]({});', "?", /lead1: its rollout holds the tools object used other than by a tool's name/],
   // And an engine launch, which the lead row does not carry.
   ['await tools.exec_command({cmd:"claude -p hi"});', "FAIL"],
-] as const;
+];
 test("atc-s96.62: on the lead row a delegate name the script reader cannot follow is no doubt, and a command tool's still is", async (t) => {
   // The lead row holds `delegate`, so a call of it the reader cannot see is no offence there, and
   // a name it cannot follow is no doubt; E2's and E2c's `?` were such names.
-  for (const [script, expected] of leadDelegateNames) {
+  for (const [script, expected, why] of leadDelegateNames) {
     const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006609";
     const { code, out } = await run(await project(t, { lead: {
       engine: "codex", id: "lead1", role: "lead", depth: 1, body: codexLog("/bin/bash -lc 'ls'"), sessionId,
@@ -2008,15 +2010,23 @@ test("atc-s96.62: on the lead row a delegate name the script reader cannot follo
     } }, { mode: "dev-team-engine", limits: { maxDepth: 2 } }));
     assert.equal(verdict(out, scan), expected, `${script}\n${out}`);
     assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+    if (why !== undefined) assert.match(row(out, scan), why, `${script}\n${out}`);
   }
-  // On a specialist the same script is still a question, named.
-  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006610";
-  const { code, out } = await run(await project(t, { codex: {
-    body: codexLog("/bin/bash -lc 'ls'"), sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script: e2Discovery }]),
-  } }));
-  assert.equal(verdict(out, scan), "?", out);
-  assert.match(row(out, scan), /delegate: 1 occurrences but only 0 direct calls followed/, out);
-  assert.equal(code, 2, out);
+  // On a specialist the same scripts are still questions, each named for the delegate name it
+  // holds, and a string holding one is named for that and not for a command tool's.
+  for (const [script, why] of [
+    [e2Discovery, /delegate: 1 occurrences but only 0 direct calls followed/],
+    [delegateString, /its rollout holds a string holding a delegate tool's name/],
+  ] as const) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006610";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]),
+    } }));
+    assert.equal(verdict(out, scan), "?", `${script}\n${out}`);
+    assert.match(row(out, scan), why, `${script}\n${out}`);
+    assert.doesNotMatch(row(out, scan), /command tool's name/, `${script}\n${out}`);
+    assert.equal(code, 2, out);
+  }
 });
 
 // @anchor everyDoubt
