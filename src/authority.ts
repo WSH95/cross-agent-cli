@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { readDepth } from "./guard.ts";
-import { currentBootId, readProcessStat, scan } from "./ledger.ts";
-import type { TaskRecord, TaskStatus } from "./ledger.ts";
+import { authoritativeStatuses, currentBootId, readProcessStat, scan } from "./ledger.ts";
+import type { TaskRecord } from "./ledger.ts";
 
 // Design, "The lead model": a server's authority is who spawned it, never a token it
 // could have copied. The walk climbs from this process towards the root, and the
@@ -33,7 +33,6 @@ export interface AuthorityOptions {
  * failure (the user's decision of 2026-09-30).
  */
 const maxHops = 32;
-const authoritative = new Set<TaskStatus>(["running", "stalled"]);
 const markers = ["CROSS_AGENT_TASK", "CROSS_AGENT_DEPTH", "CROSS_AGENT_LINEAGE"] as const;
 
 /** The nearest task id this server was seen to carry, and where. */
@@ -90,7 +89,7 @@ function decide(pid: number, claimants: TaskRecord[], environ: string[] | null, 
     };
   }
   const [record] = named;
-  const lead = authoritative.has(record.status) && leadRole !== undefined && record.role === leadRole;
+  const lead = authoritativeStatuses.has(record.status) && leadRole !== undefined && record.role === leadRole;
   // A process nearer than this engine carries another task — a specialist engine its
   // runner has not yet acknowledged, say — so this server is that task's, not the lead's.
   if (lead && carried !== undefined && carried.task !== record.id) {

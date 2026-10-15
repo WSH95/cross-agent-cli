@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 import { runCli } from "../src/cli.ts";
 import { boundDocument, CONFIG_PATH, effectiveMaxDepth, loadConfigWithMode } from "../src/config.ts";
 import type { CrossAgentConfig } from "../src/config.ts";
+import { BRANCH_RULE } from "../src/gitroot.ts";
 import type { TaskRecord } from "../src/ledger.ts";
 import { builtInModesDir, loadMode } from "../src/modes.ts";
 import { locateRepository, rootWriteFault } from "../src/worktree.ts";
@@ -1991,13 +1992,22 @@ test("init at a checkout whose git directory lies outside it writes the mode's d
   assert.match(await refusedInit([], other, other), /refuses/);
 });
 
-// @anchor initBranchOutsideAlphabetRefused
-test("init in a worktree on a branch git_root could not name is a 3 naming the branch and the rule", async (t) => {
+// @anchor initBranchNameRule
+test("init in a worktree takes any branch git names as written, and one git_root could not name is a 3 quoting the rule", async (t) => {
   const main = await initializedMain(t);
-  const linked = await linkedProject(t, main, "feature+one");
-  const reason = await refusedInit([], linked, linked);
-  assert.match(reason, /feature\+one/);
-  assert.match(reason, /letters, digits/);
+  for (const branch of ["feature+one", "feature/café"]) {
+    const linked = await linkedProject(t, main, branch);
+    const ran = await run(["init"], linked);
+    assert.equal(ran.code, 0, `${branch}: ${ran.stderr}`);
+    assert.equal(defaultBranchOf(linked), branch);
+  }
+  // Git's porcelain makes no branch starting with "-"; its plumbing does, as another tool might.
+  const misnamed = await linkedProject(t, main, "misnamed");
+  await git(misnamed, "update-ref", "refs/heads/-misnamed", "HEAD");
+  await git(misnamed, "symbolic-ref", "HEAD", "refs/heads/-misnamed");
+  const reason = await refusedInit([], misnamed, misnamed);
+  assert.match(reason, /-misnamed/);
+  assert.ok(reason.includes(BRANCH_RULE), reason);
 });
 
 // @anchor initSeparatedMainNeedsFrom
@@ -2360,7 +2370,9 @@ test("init --propose and --config refuse a folder that is no project, with a cod
   const detachedMain = await initializedMain(t);
   const detached = await linkedProject(t, detachedMain, "feature");
   await git(detached, "checkout", "--detach");
-  const misnamed = await linkedProject(t, detachedMain, "feature+one");
+  const misnamed = await linkedProject(t, detachedMain, "misnamed");
+  await git(misnamed, "update-ref", "refs/heads/-misnamed", "HEAD");
+  await git(misnamed, "symbolic-ref", "HEAD", "refs/heads/-misnamed");
   // A folder inside a repository is no root of one, and git init there would nest a repository in it.
   const nested = path.join(detachedMain, "packages", "web");
   fs.mkdirSync(nested, { recursive: true });
@@ -2385,7 +2397,7 @@ test("init --propose and --config refuse a folder that is no project, with a cod
     [umbrella.umbrella, umbrella.umbrella, "unsupported", /no work tree/],
     [bareDotGit.bare, bareDotGit.bare, "unsupported", /unsupported/],
     [detached, detachedMain, "detached-head", /detached HEAD/],
-    [misnamed, detachedMain, "branch-name", /feature\+one/],
+    [misnamed, detachedMain, "branch-name", /-misnamed/],
   ];
   for (const [root, watched, code, reason] of cases) {
     const before = snapshot(watched);

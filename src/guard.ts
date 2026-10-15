@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import type { CrossAgentConfig, EngineName, SandboxProfile } from "./config.ts";
-import type { TaskRecord, TaskStatus } from "./ledger.ts";
+import { activeStatuses } from "./ledger.ts";
+import type { TaskRecord } from "./ledger.ts";
 
 // Callers supply canonical absolute cwd values; guards never resolve paths through the filesystem.
 export interface LineageEntry {
@@ -35,8 +36,6 @@ export interface ResumeRequest {
 }
 
 type ResumeRecord = TaskRecord & { sandbox?: SandboxProfile };
-
-const activeStatuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling"]);
 
 export function readDepth(env: Readonly<NodeJS.ProcessEnv>): { depth: number; reason?: string } {
   const value = env.CROSS_AGENT_DEPTH;

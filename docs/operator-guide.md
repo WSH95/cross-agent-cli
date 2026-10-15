@@ -311,8 +311,9 @@ serves the main checkout, and the roster's first line says so. Where the reposit
 directory is separate from its checkout (`git init --separate-git-dir`), git records no
 path to the checkout, so name it: `cross-agent init --from <main checkout>`, or `--mode
 <name>` for the defaults. `init` refuses a worktree with a detached HEAD, one on a
-branch the mode's task pattern matches (`task/*`), and one on a branch outside the names
-the root tools take: letters, digits, `.`, `_`, `/` and `-`.
+branch the mode's task pattern matches (`task/*`), and one on a branch the root tools
+cannot name: one `git check-ref-format --branch` refuses, one starting with `-`, `HEAD`
+or `@`, or one holding `@{`.
 
 A worktree project may not lie inside another work tree of its repository: one under
 the main checkout, such as `my-project/branches/x`, is refused, as a task's worktree

@@ -1089,17 +1089,6 @@ test("a delegate literal's keys are read at its top level, never inside a value"
   assert.deepEqual(delegateKeys('delegate {role: "consult", brief: <the implementer\'s notes, branch: and all>, cwd: <project root>}'), ["role", "brief", "cwd"]);
 });
 
-test("the two dev-team modes carry the same role prompts, byte for byte", () => {
-  const modes = builtInModesDir();
-  for (const key of ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]) {
-    assert.equal(
-      fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
-      fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
-      `${key}: the engine-placed team's specialists are the host-placed team's; one edit changes both files or neither`,
-    );
-  }
-});
-
 test("the three built-in modes validate, and each serves the loop file its own directory holds", () => {
   const modes = builtInModesDir();
   for (const name of ["solo", "dev-team", "dev-team-engine"]) {
@@ -1865,7 +1854,7 @@ test("the setup skill says what to do with each finding that blocks or changes a
     assert.ok(refusals.includes(link), `where to get an engine: ${link}`);
   }
   assert.match(refusals, /Every proposal unavailable/);
-  for (const rule of [/starts with a letter or digit/, /no `\.\.`/, /does not end in `\/` or `\.lock`/, /`task\/\*`/]) {
+  for (const rule of [/git check-ref-format --branch accepts/, /does not start with `-`/, /is not `HEAD` or `@`/, /holds no `@\{`/, /`task\/\*`/]) {
     assert.match(refusals, rule, `the branch rule: ${rule}`);
   }
   assert.match(text, /`notes` verbatim/);

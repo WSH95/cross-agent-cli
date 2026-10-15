@@ -419,7 +419,7 @@ test("the two dev-team modes carry the same role prompts, byte for byte", () => 
     assert.equal(
       fs.readFileSync(path.join(modes, "dev-team-engine", "roles", `${key}.md`), "utf8"),
       fs.readFileSync(path.join(modes, "dev-team", "roles", `${key}.md`), "utf8"),
-      `${key}: the engine-placed team's specialists are the host-placed team's; step 9 generates both from one source`,
+      `${key}: the engine-placed team's specialists are the host-placed team's; one edit changes both files or neither`,
     );
   }
 });

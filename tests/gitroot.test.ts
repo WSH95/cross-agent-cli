@@ -233,6 +233,31 @@ test("a merge carrying the project's own state or its worktree directory is refu
   assert.equal(await git(root, "ls-files", "--", ".cross-agent"), "", "and the root tracks none of it");
 });
 
+// @anchor mergeProjectStateAnyCase
+test("a merge carrying the project's own state or its worktree directory in another case is refused, naming each path", async (t) => {
+  const { root } = await repository(t);
+  const directory = path.join(root, ".worktrees", "cased");
+  accepted(await gitRoot(root, { args: ["worktree", "add", "-b", "task/cased", directory, "main"], slug: "cased" }, { waitSeconds: 5 }));
+
+  // On a filesystem that ignores case, `.Cross-Agent/` is the project's own state and
+  // `.Worktrees/` its worktree directory. Committed by the harness's own git, as a branch
+  // that reached the root by another path.
+  fs.mkdirSync(path.join(directory, ".Cross-Agent"));
+  fs.writeFileSync(path.join(directory, ".Cross-Agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+  fs.mkdirSync(path.join(directory, ".Worktrees", "nested"), { recursive: true });
+  fs.writeFileSync(path.join(directory, ".Worktrees", "nested", "tree.txt"), "another task's tree\n");
+  await git(directory, "add", "-A");
+  await git(directory, "commit", "-m", "the project's own state, cased");
+
+  const before = await state(root);
+  const reason = refusal(await gitRoot(root, { args: ["merge", "--ff-only", "task/cased"], slug: "cased" }, { waitSeconds: 5 }));
+  assert.match(reason, /^git_root refuses to merge/);
+  assert.match(reason, /\.Cross-Agent\/config\.json/);
+  assert.match(reason, /\.Worktrees\/nested\/tree\.txt/);
+  assert.deepEqual(await state(root), before, "the default branch did not move");
+  assert.equal(readJournal(root, "cased")!.steps.some((step) => step.step === "merged"), false);
+});
+
 // @anchor mergeRefusesHostConfig
 test("a merge carrying a host's project configuration is refused before git runs, naming each path", async (t) => {
   const { root } = await repository(t);
@@ -546,6 +571,44 @@ test("git_root refuses a branch name ending in '.' before git runs, and still ta
   assert.match(await git(root, "branch", "--list", "task/*"), /task\/atc-2jl\.9/);
 });
 
+// @anchor nameFaultFollowsGit
+test("nameFault takes every branch name git check-ref-format --branch takes as written, and refuses what git expands or reads as an option", async (t) => {
+  const { root } = await repository(t);
+  // Git is the judge of a branch name: what it accepts as written, this takes.
+  for (const name of ["feature+one", "feature/café", "_x", "a@b", "a,b=c", "task/atc-2jl.9"]) {
+    assert.equal(nameFault(name), null, name);
+    assert.equal(await git(root, "check-ref-format", "--branch", name), name, name);
+  }
+  // What git refuses — a range, revision syntax, a path form — this refuses too.
+  for (const name of ["a..b", "a b", "a\tb", "a~1", "main^", "a:b", "a?b", "a*b", "a[b", "a\\b", "/x", "x/", "a//b", ".x", "a/.x", "x.", "x.lock", "a.lock/b"]) {
+    assert.equal(nameFault(name), `${JSON.stringify(name)} is not a branch name`, name);
+    await assert.rejects(git(root, "check-ref-format", "--branch", name), JSON.stringify(name));
+  }
+  // An option, the root's own HEAD, and the shorthand git expands rather than reads: refused
+  // here whatever git makes of them, which varies with the repository's history.
+  for (const name of ["-x", "--output=/tmp/x", "HEAD", "@", "@{-1}", "main@{1}"]) {
+    assert.equal(nameFault(name), `${JSON.stringify(name)} is not a branch name`, name);
+  }
+});
+
+// @anchor newTaskBranchAlphabet
+test("git_root reads a branch git names as written, and creates a task branch only in the alphabet a slug keeps to", async (t) => {
+  const { root } = await repository(t);
+  // A branch some other path made: every read names it as git does.
+  await git(root, "branch", "task/a+b", "main");
+  assert.equal(accepted(await gitRoot(root, { args: ["rev-parse", "task/a+b"] }, { waitSeconds: 5 })).stdout.trim(), await git(root, "rev-parse", "task/a+b"));
+
+  // A branch this tool creates is a task's, named after its slug.
+  const directory = path.join(root, ".worktrees", "cd");
+  const before = await state(root);
+  const refused = await gitRoot(root, { args: ["worktree", "add", "-b", "task/c+d", directory, "main"], slug: "cd" }, { waitSeconds: 5 });
+  assert.match(refusal(refused), /"task\/c\+d" is not a task branch name/);
+  assert.equal((refused as Extract<GitRootResult, { ok: false }>).exitCode, undefined, "refused before its git command runs");
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(readJournal(root, "cd"), null);
+  assert.deepEqual(await state(root), before);
+});
+
 test("a worktree lives directly under the mode's worktree directory, never inside another", async (t) => {
   const { root } = await repository(t);
   const directory = path.join(root, ".worktrees", "one");
@@ -684,6 +747,24 @@ test("a tracked .cross-agent/ is refused by every verb, naming .gitignore", asyn
   await git(root, "rm", "-r", "--cached", ".cross-agent");
   await git(root, "commit", "-m", "stop tracking it");
   accepted(await gitRoot(root, { args: ["status", "--porcelain", "--untracked-files=no"] }, { waitSeconds: 5 }));
+});
+
+// @anchor trackedStateNamesEveryPath
+test("a tracked .cross-agent/ in any case is refused naming every tracked path and .gitignore, however many", async (t) => {
+  const { root } = await repository(t);
+  // Five paths, one under the directory in another case, which a filesystem that ignores
+  // case reads as the project's own: the repair is whole only when every one is named.
+  for (const name of ["a.json", "b.json", "c.json"]) fs.writeFileSync(path.join(root, ".cross-agent", name), "{}");
+  fs.mkdirSync(path.join(root, ".Cross-Agent"));
+  fs.writeFileSync(path.join(root, ".Cross-Agent", "e.json"), "{}");
+  const tracked = [".cross-agent/config.json", ".cross-agent/a.json", ".cross-agent/b.json", ".cross-agent/c.json", ".Cross-Agent/e.json"];
+  await git(root, "add", "-f", "--", ...tracked);
+  await git(root, "commit", "-m", "track the project's own state");
+
+  const reason = refusal(await gitRoot(root, { args: ["status", "--porcelain"] }, { waitSeconds: 5 }));
+  for (const file of tracked) assert.ok(reason.includes(file), `${file}: ${reason}`);
+  assert.match(reason, /\.gitignore/);
+  assert.doesNotMatch(reason, /…/);
 });
 
 // @anchor linkedWorktreeRoot

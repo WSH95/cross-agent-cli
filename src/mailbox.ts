@@ -225,11 +225,11 @@ export type AnswerResult =
   | { applied: false; reason: string; ask: AskRecord | null };
 
 /**
- * A time as ISO-8601, or the number itself where no date can hold it, as `src/cli.ts#iso`
- * prints one: the readers bound a time by finiteness alone, and a refusal never throws on a
- * time a reader accepted.
+ * A time as ISO-8601, or the number itself where no date can hold it: the readers bound a
+ * time by finiteness alone, the mailbox's refusals and the operator CLI both render a time
+ * through it, and it never throws on a time a reader accepted.
  */
-function printable(at: number): string {
+export function printable(at: number): string {
   const date = new Date(at);
   return Number.isNaN(date.getTime()) ? String(at) : date.toISOString();
 }

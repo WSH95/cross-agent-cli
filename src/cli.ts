@@ -10,7 +10,7 @@ import type { BoundConfig, CrossAgentConfig, InitConfigResult } from "./config.t
 import type { SandboxProfile } from "./engines/registry.ts";
 import { gitMutate } from "./gitmutate.ts";
 import type { GitMutateRequest, GitMutateResult } from "./gitmutate.ts";
-import { gitRoot, matchesPattern, nameFault } from "./gitroot.ts";
+import { BRANCH_RULE, gitRoot, matchesPattern, nameFault } from "./gitroot.ts";
 import type { GitRootResult } from "./gitroot.ts";
 import { listJournals, readJournal } from "./journal.ts";
 import type { Journal } from "./journal.ts";
@@ -18,7 +18,7 @@ import { find, isProcessAlive, isTaskId, isTerminal, projectLock, readOutcome, r
 import type { TaskOutcome, TaskRecord, TaskStatus } from "./ledger.ts";
 import { configLockName, LockHeldError } from "./locks.ts";
 import type { Lock } from "./locks.ts";
-import { answerAsk, askStatuses, listAsks } from "./mailbox.ts";
+import { answerAsk, askStatuses, listAsks, printable } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
 import type { EffectiveGitPolicy, Mode, ModeLead, Workspace } from "./modes.ts";
@@ -154,18 +154,9 @@ async function project(parsed: Parsed, context: Context): Promise<{ root: string
   return discoverProject(named === undefined ? [] : ["--project", named], context.env, context.cwd);
 }
 
-/**
- * A time as ISO-8601, or the number itself where no date can stand for it: the readers bound
- * a time by finiteness alone, and a renderer never throws on a time it was handed.
- */
-function iso(at: number): string {
-  const date = new Date(at);
-  return Number.isNaN(date.getTime()) ? String(at) : date.toISOString();
-}
-
-/** A time as `iso` gives it, with how long ago it was where it is a date at all. */
+/** A time as `src/mailbox.ts#printable` gives it, with how long ago it was where it is a date at all. */
 function stamp(at: number, now: number): string {
-  return Number.isNaN(new Date(at).getTime()) ? iso(at) : `${iso(at)} (${Math.max(0, Math.round((now - at) / 1000))}s ago)`;
+  return Number.isNaN(new Date(at).getTime()) ? printable(at) : `${printable(at)} (${Math.max(0, Math.round((now - at) / 1000))}s ago)`;
 }
 
 /**
@@ -258,7 +249,7 @@ function askFault(file: string, reason: string): string {
 /** A journal's steps, one line each: when, which step, the SHAs around it, and what it ran. */
 function journalSteps(journal: Journal): string[] {
   return journal.steps.map((entry) => [
-    iso(entry.at), entry.step, `${entry.before ?? "-"}→${entry.after ?? "-"}`,
+    printable(entry.at), entry.step, `${entry.before ?? "-"}→${entry.after ?? "-"}`,
     ...(entry.defaultSha === undefined ? [] : [`defaultSha ${entry.defaultSha}`]),
     ...(entry.args === undefined ? [] : [`args ${entry.args.join(" ")}`]),
   ].join("  "));
@@ -328,7 +319,7 @@ function worktreeBranchRefusal(root: string, located: Repository): { code: strin
   if (nameFault(branch) !== null) {
     return {
       code: "branch-name",
-      reason: `${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing ".", "/" or ".lock"`,
+      reason: `${root} has ${branch} checked out, a name git_root would refuse in every read of the default branch: ${BRANCH_RULE}`,
     };
   }
   return null;
@@ -950,7 +941,7 @@ const showVerb: Verb = {
       : `\nlast activity:\n${document.lastActivity.map((line) => `  ${line}\n`).join("")}`);
     if (document.outcome !== null) {
       const { kind, exitCode, sessionId, reason, truncated, at } = document.outcome;
-      lines.push(`\noutcome: ${[kind, `exit ${exitCode ?? "-"}`, `session ${sessionId ?? "-"}`, `at ${iso(at)}`,
+      lines.push(`\noutcome: ${[kind, `exit ${exitCode ?? "-"}`, `session ${sessionId ?? "-"}`, `at ${printable(at)}`,
         ...(reason === undefined ? [] : [`reason ${reason}`]), ...(truncated === true ? ["truncated"] : [])].join(", ")}\n`);
     }
     if (document.journal !== null) {
@@ -1252,7 +1243,7 @@ const answerVerb: Verb = {
     const { ask } = answered;
     return {
       code: EXIT.ok, document: answered,
-      text: `cross-agent: answered ask ${ask.id} of task ${ask.taskId} at ${iso(ask.answeredAt!)}\n`
+      text: `cross-agent: answered ask ${ask.id} of task ${ask.taskId} at ${printable(ask.answeredAt!)}\n`
         + `  question: ${ask.question}\n  answer: ${ask.answer}\n`,
     };
   },

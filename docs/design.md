@@ -2695,10 +2695,12 @@ being "config only" is safe exactly while a specialist cannot commit a change to
 it. With `.cross-agent/` tracked, an implementer's own commit inside its
 worktree reaches the default branch through the lead's merge, and the lead then
 runs it at the root. The check is `git ls-files --error-unmatch --
-.cross-agent` at the root, and the refusal names `.gitignore`, because that is
-the repair. `cross-agent init` writes those entries — `.cross-agent/` and the
-worktree directory this mode's tasks use, its own where it declares one and this
-build's where it does not — appending only what the file lacks, so the verb
+:(icase).cross-agent` at the root, in any case, and the refusal names every
+tracked path and `.gitignore`, because that is the repair
+(`tests/gitroot.test.ts#trackedStateNamesEveryPath`). `cross-agent init` writes
+those entries — `.cross-agent/` and the worktree directory this mode's tasks use,
+its own where it declares one and this build's where it does not — appending
+only what the file lacks, so the verb
 that creates the state is the one that ignores it
 (`src/config.ts#ignoreProjectState`, `#initConfig`, `src/cli.ts`).
 `delegate` runs the same check at the launch boundary, because it reads that
@@ -2715,7 +2717,7 @@ is about to arrive — which is the one path a specialist has to the root. A
 `info/exclude`, so `git add -A` there stages `.cross-agent/`, the lead's commit
 carries it, and a fast-forward lands it at the root. So `merge --ff-only`
 refuses, before git merges anything, when `git diff --name-only
-<before>...<branchHead> -- .cross-agent <worktreeDir> :(icase).claude
+<before>...<branchHead> -- :(icase).cross-agent :(icase)<worktreeDir> :(icase).claude
 :(icase).codex :(icase).grok :(icase).mcp.json` — the default branch and the
 branch head as the merge resolved them — names any path — the last four
 are a host's project configuration, the next paragraph's — and the refusal lists
@@ -2743,7 +2745,7 @@ root merge is the gate: `merge --ff-only` diffs the four beside `.cross-agent`
 and the worktree directory, so whatever a branch carries, however it came to
 carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
 `tests/gitroot.test.ts#mergeRefusesHostConfig`, `#mergeHostConfigAnyCase`,
-`#mergeNamesEveryPath`). `git_mutate`'s refusal of a `commit` is the early
+`#mergeProjectStateAnyCase`, `#mergeNamesEveryPath`). `git_mutate`'s refusal of a `commit` is the early
 warning, where the lead can still have the file taken out:
 `git status --porcelain --untracked-files=all` over the four names anything in
 the worktree — staged, changed or untracked — and `git ls-files -v` any tracked
@@ -4215,7 +4217,7 @@ carries a verdict — 0, 4, 5 or 6 — is stdout's and a failure — 1, 2 or 3 �
 stderr's unless the verb says otherwise, as `modes` and `git` do below, and a
 warning beside either goes to stderr. A time a person reads is ISO-8601, or the
 number itself where no date can hold it, so a time the readers accept never
-crashes a renderer (`src/cli.ts#iso`). The `--flag <value>` pairs
+crashes a renderer (`src/mailbox.ts#printable`). The `--flag <value>` pairs
 go through the parser the server's own argv does, so adding one does not break
 the other (`src/project.ts#parseFlags`, `#discoverProject`); a verb may also
 take a flag with no value, an optional argument, or a tail after `--` that is
@@ -4250,10 +4252,11 @@ handler passes:
   (`#initUnsupportedWorkTreeDefaults`), and the umbrella, no work tree, is a 3
   (`#initUmbrellaWorktree`). At a linked worktree a detached HEAD is a 3
   (`#initDetachedRefused`). The worktree's branch becomes the default
-  branch, so it must be a name `git_root` takes in every read of it —
-  `src/gitroot.ts#nameFault`'s letters, digits, `.`, `_`, `/` and `-`, no `..`, no
-  trailing `.`, `/` or `.lock`, where `git check-ref-format` would take `feature+one`
-  (`tests/cli.test.ts#initBranchOutsideAlphabetRefused`) — and, once the mode is settled, a branch the
+  branch, so it must be a name `git_root` takes in every read of it — one
+  `git check-ref-format --branch` accepts that does not start with `-`, is not `HEAD`
+  or `@`, and holds no `@{` (`src/gitroot.ts#nameFault`, `#BRANCH_RULE`,
+  `tests/gitroot.test.ts#nameFaultFollowsGit`, `tests/cli.test.ts#initBranchNameRule`)
+  — and, once the mode is settled, a branch the
   mode's task pattern does not match, since every root verb, row 2 of the verifier and
   a sibling's journaled `branch -d` act on that pattern (`src/gitroot.ts#matchesPattern`,
   `tests/cli.test.ts#initTaskPatternBranchRefused`). The config is a copy, its default branch replaced
@@ -4607,9 +4610,6 @@ Four limits of worktree projects are deferred the same way, each for its reason:
 - **Cancelling a hung git child.** `gitMutate` holds `spawn.lock` for the whole call
   and `cancel` needs that lock, so cancelling one needs subprocess ownership that does
   not first take it; `docs/operator-guide.md` gives the operator's recovery by hand (section 4).
-- **A wider branch alphabet**, what `git check-ref-format --branch` accepts less
-  paths, ranges and options, where `src/gitroot.ts#nameFault` now refuses a name such
-  as `feature+one` that a worktree project's default branch could otherwise carry.
 
 One limit of the merge's guards is deferred with them (section 4):
 
@@ -5146,8 +5146,8 @@ binding, and the project follows its own path (Context).
   the same way rather than throwing (`tests/modes.test.ts#describemodeAnswersMissing`). The mode loader
   refuses each of its own rules by field (`tests/modes.test.ts#loadmodeRefusesMode`, `#loadmodeRefusesDocument`,
   `#loadmodeRefusesPrompt`, `#worktreeDirectoryProject`, `#enginePlacedLead`, `#loopFileContained`, `#promptFileDirectory`, `#modeDirectorySymlink`), the three built-in modes
-  validate (`#builtInModesValidate`), and the two dev-team modes' role prompts are pinned equal
-  until step 9 generates both (`#devTeamModes`). **No delegation starts a Grok engine as
+  validate (`#builtInModesValidate`), and the two dev-team modes' role prompts are pinned equal,
+  byte for byte, so one edit changes both files or neither (`#devTeamModes`). **No delegation starts a Grok engine as
   an engine-placed lead**, whether the config binds one or a single call names
   one, and a config edited after the server read it — a writable root role, a
   role the mode does not declare, a foreign profile, a mode swapped under a

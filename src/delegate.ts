@@ -11,7 +11,7 @@ import type { LineageEntry } from "./guard.ts";
 import { revision, run, uncommitted } from "./gitmutate.ts";
 import { gitRoot, trackedStateFault } from "./gitroot.ts";
 import { readJournal, removeJournal } from "./journal.ts";
-import { create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
+import { activeStatuses, authoritativeStatuses, create, newTaskId, projectLock, readSpec, scan, writeSpec } from "./ledger.ts";
 import type { LaunchSpec, TaskRecord, TaskWorktree } from "./ledger.ts";
 import { acquire, gitLockName, repositoryLockPath, spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
@@ -84,10 +84,6 @@ export type DelegateResult =
     /** A lock held while git made or discarded this task's worktree was lost: what git did is done, its exclusivity is not. */
     lockLost?: true;
   };
-
-const active = new Set(["launching", "running", "stalled", "orphaned", "cancelling"]);
-/** The statuses that carry authority, and so the only ones a lead may delegate under. */
-const authoritative = new Set(["running", "stalled"]);
 
 function refuse(reason: string, lockLost?: true): DelegateResult {
   return { ok: false, reason: `refused delegation: ${reason}`, ...(lockLost === undefined ? {} : { lockLost }) };
@@ -223,7 +219,7 @@ function resumeFault(
   const original = records.find((record) => record.id === id);
   if (!original) return `no task ${id}`;
   const chain = resumeChain(records, id);
-  const live = records.find((record) => chain.has(record.id) && active.has(record.status));
+  const live = records.find((record) => chain.has(record.id) && activeStatuses.has(record.status));
   if (live) return `${live.id} is ${live.status}; wait or cancel first`;
   const successor = records.find((record) => record.resumedFrom === id);
   if (successor) return `resume the latest: ${successor.id}`;
@@ -321,7 +317,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
     if (caller !== undefined) {
       const parent = records.find((record) => record.id === caller);
       if (!parent) return refuse(`no parent task ${caller}`);
-      if (!authoritative.has(parent.status)) return refuse(`parent task ${caller} is ${parent.status}`);
+      if (!authoritativeStatuses.has(parent.status)) return refuse(`parent task ${caller} is ${parent.status}`);
     }
 
     // 1. The role as the mode declares it and as config binds it, its engine, and the

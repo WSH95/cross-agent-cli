@@ -11,7 +11,7 @@ import { profileFault } from "./engines/registry.ts";
 import { engineNames } from "./engines/types.ts";
 import type { EngineName } from "./engines/types.ts";
 import { run } from "./gitmutate.ts";
-import { matchesPattern, nameFault, trackedStateFault } from "./gitroot.ts";
+import { BRANCH_RULE, matchesPattern, nameFault, trackedStateFault } from "./gitroot.ts";
 import { builtInModesDir, gitPolicy, loadMode } from "./modes.ts";
 import type { Mode, ModeRole } from "./modes.ts";
 
@@ -271,7 +271,7 @@ export function defaultBranchFault(mode: Mode, defaultBranch: string, worktreeBr
     return `${JSON.stringify(defaultBranch)} is not this worktree's own branch ${JSON.stringify(worktreeBranch)}: a branch project's default branch is the branch it has checked out`;
   }
   const name = nameFault(defaultBranch);
-  if (name !== null) return `${name}: a branch here is letters, digits, ".", "_", "/" and "-", with no ".." and no trailing ".", "/" or ".lock"`;
+  if (name !== null) return `${name}: ${BRANCH_RULE}`;
   const pattern = gitPolicy(mode).branchPattern;
   if (matchesPattern(defaultBranch, pattern)) {
     return `${JSON.stringify(defaultBranch)} matches mode ${mode.id}'s task branch pattern ${pattern}: a project's default branch is never a task's`;

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadConfig, lockWaitSeconds } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
-import { currentBootId, find, isProcessAlive, isTerminal, projectLock, read, scan, tailLines, update } from "./ledger.ts";
+import { activeStatuses, claimableStatuses, currentBootId, find, isProcessAlive, isTerminal, projectLock, read, scan, tailLines, update } from "./ledger.ts";
 import type { TaskPatch, TaskRecord, TaskStatus } from "./ledger.ts";
 import { spawnLockName } from "./locks.ts";
 import type { Lock } from "./locks.ts";
@@ -54,10 +54,6 @@ function generations(records: readonly TaskRecord[], leadId: string, taskId: str
 export function ownedBy(records: readonly TaskRecord[], leadId: string, taskId: string): boolean {
   return generations(records, leadId, taskId) !== null;
 }
-
-const activeStatuses = new Set<TaskStatus>(["launching", "running", "stalled", "orphaned", "cancelling"]);
-/** The statuses a cancel may claim; `orphaned` may only go to `failed | cancelled`. */
-const claimable = new Set<TaskStatus>(["launching", "running", "stalled"]);
 
 /** The tasks `taskId` owns, leaves first, so no task is settled while a child of it runs. */
 function descendants(records: readonly TaskRecord[], taskId: string): TaskRecord[] {
@@ -260,11 +256,11 @@ async function terminate(projectRoot: string, taskId: string, grace: number, wai
   let record = read(projectRoot, taskId);
   if (isTerminal(record.status)) return { id: taskId, outcome: `already ${record.status}` };
 
-  if (claimable.has(record.status)) {
+  if (claimableStatuses.has(record.status)) {
     // The claim comes first: from this moment `delegate` refuses a child of this task, and
     // the runner reads the status as its own cancel.
     const claimed = await update(projectRoot, taskId, { status: "cancelling" }, Date.now(), {
-      waitSeconds, expect: (current) => claimable.has(current.status),
+      waitSeconds, expect: (current) => claimableStatuses.has(current.status),
     });
     record = claimed.record;
     if (!claimed.applied && isTerminal(record.status)) return { id: taskId, outcome: `already ${record.status}` };
@@ -368,9 +364,9 @@ export async function cancel(projectRoot: string, taskId: string, options: Cance
       };
     }
     target = record;
-    if (claimable.has(record.status)) {
+    if (claimableStatuses.has(record.status)) {
       const claimed = await update(projectRoot, taskId, { status: "cancelling" }, Date.now(), {
-        waitSeconds, expect: (current) => claimable.has(current.status),
+        waitSeconds, expect: (current) => claimableStatuses.has(current.status),
       });
       target = claimed.record;
     }

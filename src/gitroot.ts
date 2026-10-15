@@ -173,17 +173,28 @@ export function matchesPattern(value: string, pattern: string): boolean {
   return value.length > prefix.length + suffix.length && value.startsWith(prefix) && value.endsWith(suffix);
 }
 
+/** `nameFault`'s rule in words, as every refusal of a default branch quotes it. */
+export const BRANCH_RULE = 'a branch here is a name git check-ref-format --branch accepts that does not start with "-", is not "HEAD" or "@", and holds no "@{"';
+
 /**
- * A branch argument is a branch name: never a path, a range, a revision or an option —
- * letters, digits, `.`, `_`, `/` and `-`, with no `..` and no trailing `.`, `/` or `.lock`.
- * `cross-agent init` holds a worktree project's default branch to it too, since every
- * read of that branch through this tool is judged by it.
+ * A branch argument is a branch name as git reads one literally: what `git check-ref-format
+ * --branch` accepts — which already refuses paths and ranges — less a leading `-` (an
+ * option), `HEAD` (the root's own HEAD, not a branch), and the shorthand that command
+ * expands rather than reads (`@`, `@{-1}`, `<branch>@{upstream}`). `cross-agent init` holds a
+ * worktree project's default branch to it too, since every read of that branch through this
+ * tool is judged by it.
  */
 export function nameFault(value: string): string | null {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes("..") || value.endsWith(".") || value.endsWith("/") || value.endsWith(".lock")) {
-    return `${JSON.stringify(value)} is not a branch name`;
-  }
-  return null;
+  const refused = value === "HEAD" || value === "@" || value.startsWith("-") || /[\x00-\x20\x7f~^:?*[\\]/.test(value)
+    || value.includes("..") || value.includes("@{") || value.endsWith(".")
+    || value.split("/").some((part) => part === "" || part.startsWith(".") || part.endsWith(".lock"));
+  return refused ? `${JSON.stringify(value)} is not a branch name` : null;
+}
+
+/** A branch `worktree add -b` creates: a name `nameFault` takes, in the alphabet a task's slug keeps to. */
+function newBranchFault(value: string): string | null {
+  return nameFault(value) ?? (/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) ? null
+    : `${JSON.stringify(value)} is not a task branch name: a new one is letters, digits, ".", "_", "/" and "-", starting with a letter or digit`);
 }
 
 /**
@@ -262,7 +273,7 @@ async function judge(
       continue;
     }
     if (kind !== "list-pattern") {
-      const fault = nameFault(value);
+      const fault = kind === "branch" ? newBranchFault(value) : nameFault(value);
       if (fault !== null) return { reason: `git_root ${call.verb.form}: ${fault}` };
     }
     if (kind === "branch") {
@@ -352,18 +363,18 @@ function reservationFault(projectRoot: string, target: string): string | null {
 }
 
 /**
- * Whether the project's own `.cross-agent/` is tracked by this repository, as a reason or
- * null. What a root tool runs and what it journals are read from files there, so tracking
- * them hands a specialist a way to reach the root: a change to `testCommand`, or a forged
- * journal, committed inside its own worktree and carried to the default branch by the
- * lead's own merge (design section 4). The refusal names `.gitignore`, because that is
- * the repair.
+ * Whether the project's own `.cross-agent/` is tracked by this repository, in any case, as a
+ * reason or null. What a root tool runs and what it journals are read from files there, so
+ * tracking them hands a specialist a way to reach the root: a change to `testCommand`, or a
+ * forged journal, committed inside its own worktree and carried to the default branch by the
+ * lead's own merge (design section 4). The refusal names every tracked path and `.gitignore`,
+ * because that is the repair.
  */
 export async function trackedStateFault(gitDir: string, workTree: string): Promise<string | null> {
-  const ran = await run(gitDir, workTree, ["ls-files", "--error-unmatch", "--", ".cross-agent"]);
+  const ran = await run(gitDir, workTree, ["ls-files", "--error-unmatch", "--", ":(icase).cross-agent"]);
   const tracked = ran.exitCode === 0 ? ran.stdout.split("\n").filter(Boolean) : [];
   if (tracked.length === 0) return null;
-  return `.cross-agent/ is tracked by this repository (${tracked.slice(0, 3).join(", ")}${tracked.length > 3 ? ", …" : ""}): a specialist could then commit what the lead runs at the root. Add .cross-agent/ to .gitignore and "git rm -r --cached .cross-agent" first`;
+  return `.cross-agent/ is tracked by this repository (${tracked.join(", ")}): a specialist could then commit what the lead runs at the root. Add .cross-agent/ to .gitignore and "git rm -r --cached .cross-agent" first`;
 }
 
 /**
@@ -505,9 +516,9 @@ interface Held {
  * `.cross-agent/` there and a fast-forward would carry the project's own config, journal
  * and ledger to the root, where `delegate` reads them on the next call. So the merge is
  * where the incoming tree is read, and the two directories the project keeps for itself
- * are refused by name (design section 4) — and so is a host's project configuration
- * (`src/gitmutate.ts#hostConfigPaths`, in any case), which the operator's own host session
- * would load, however the branch came to carry it: this is the gate, and `git_mutate`'s
+ * are refused by name, in any case (design section 4) — and so is a host's project
+ * configuration (`src/gitmutate.ts#hostConfigPaths`, in any case), which the operator's own
+ * host session would load, however the branch came to carry it: this is the gate, and `git_mutate`'s
  * refusal of a commit only the early warning. Any symbolic link among the four or below
  * them in the incoming tree is refused, even unchanged: host configuration must be regular
  * files. Only the four pathspecs are listed for links (`src/gitmutate.ts#hostTreeLinks`).
@@ -518,7 +529,7 @@ async function smuggled(
   gitDir: string, workTree: string, before: string, branchHead: string, ref: string, dir: string,
 ): Promise<string | null> {
   const links = await hostTreeLinks(gitDir, workTree, branchHead);
-  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${before}...${branchHead}`, "--", ".cross-agent", dir, ...hostConfigPathspecs]);
+  const ran = await run(gitDir, workTree, ["diff", "--name-only", `${before}...${branchHead}`, "--", ":(icase).cross-agent", `:(icase)${dir}`, ...hostConfigPathspecs]);
   if (ran.exitCode !== 0) return `git_root could not read what ${ref} would merge: ${ran.stderr.trim() || `git diff exited ${ran.exitCode}`}`;
   // A path that is both a change and a link is named once, as the link.
   const linkNames = new Set(links);

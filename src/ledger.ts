@@ -158,6 +158,13 @@ const terminalStatuses = new Set<TaskStatus>(["done", "failed", "cancelled"]);
 export function isTerminal(status: TaskStatus): boolean {
   return terminalStatuses.has(status);
 }
+/** Every status but the settled three. */
+export const activeStatuses: ReadonlySet<TaskStatus> = new Set(taskStatuses.filter((status) => !isTerminal(status)));
+/**
+ * The statuses whose record carries its engine's authority: the only ones under which a
+ * lead holds its row (`src/authority.ts`) or delegates (`src/delegate.ts`).
+ */
+export const authoritativeStatuses: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["running", "stalled"]);
 // Design section 2, E1. Every other status change is a bug in a writer, not a race to
 // tolerate, so update throws for it. A patch that keeps the status is not a transition.
 const transitions: Record<TaskStatus, TaskStatus[]> = {
@@ -176,6 +183,8 @@ const transitions: Record<TaskStatus, TaskStatus[]> = {
   failed: [],
   cancelled: [],
 };
+/** The statuses a cancel may claim: those the transition table lets become `cancelling`. */
+export const claimableStatuses: ReadonlySet<TaskStatus> = new Set(taskStatuses.filter((status) => transitions[status].includes("cancelling")));
 const patchFields = new Set<string>([
   "role", "briefHash", "cwd", "engine", "model", "effort", "status", "launchDeadline", "runnerIdentity", "engineIdentity",
   "lastEventAt", "exitCode", "resultPath", "logPath", "sessionId", "reason", "truncated",

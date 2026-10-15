@@ -233,7 +233,7 @@ test("check writes the stall its clock reads, and writes the task back when even
 });
 
 // @anchor resultFinalMessage
-test("result is the final message in full, and a task still running has only its status", async (t) => {
+test("result is the final message in full, and a running task's answer is its status with its engine, model and effort", async (t) => {
   const p = await projectWithRoles(t);
   const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root, model: "grok-4.6", effort: "high" }, {
     authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),

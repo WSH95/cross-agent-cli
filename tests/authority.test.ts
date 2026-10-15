@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveAuthority } from "../src/authority.ts";
 import type { Authority } from "../src/authority.ts";
-import { create, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
+import { create, currentBootId, readProcessStat, readSpec, update, writeSpec } from "../src/ledger.ts";
 import type { EngineIdentity, TaskRecord } from "../src/ledger.ts";
 import { identityOf } from "../src/process.ts";
 import { sandboxFor } from "../src/engines/registry.ts";
@@ -139,6 +139,21 @@ test("the walk fails closed on a stat it cannot read, a cycle, and a parent youn
     proc.mock.restore();
     assert.deepEqual(authority, { row: "specialist", reason, depth: 0 });
   }
+});
+
+// @anchor engineEnvironmentUnreadable
+test("an engine ancestor whose environment cannot be read grants nothing, even to a running lead, and says so", async (t) => {
+  const { project } = workspace(t);
+  // A Grok specialist's server on grok 1.0.46 runs inside the engine's bubblewrap and cannot
+  // read the engine's /proc/<pid>/environ (docs/probes.md, B4/B5). A pid above the kernel's
+  // ceiling has no environ to read either: environOf returns null on any failure alike.
+  const lead = task(project, "lead");
+  await update(project, lead.id, { status: "running", engineIdentity: { pid: first, startTime: "100", bootId: currentBootId, pgid: first } });
+  fakeProc(t, new Map([[process.pid, ownStatWithParent(first)], [first, statLine(first, 0, "100")]]));
+  assert.deepEqual(resolveAuthority(project, taskEnv(lead.id, 1), { leadRole: "lead", maxDepth: 2 }), {
+    row: "specialist", depth: 1,
+    reason: `specialist: ancestor ${first} holds the engine identity of task ${lead.id}, but its environment cannot be read`,
+  });
 });
 
 // ---- Real chains of processes ------------------------------------------------------

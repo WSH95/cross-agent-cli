@@ -364,11 +364,12 @@ test("defaultBranchFault gates every proposal", () => {
   const devTeam = modes["dev-team"];
   assert.equal(setup.defaultBranchFault(devTeam, "main", null), null);
   assert.equal(setup.defaultBranchFault(devTeam, "feature/one", "feature/one"), null);
+  assert.equal(setup.defaultBranchFault(devTeam, "feature+one", "feature+one"), null);
   // In order: another branch than a branch project's own, then a name git_root cannot read,
   // then a branch the mode's task pattern matches.
   assert.match(setup.defaultBranchFault(devTeam, "task/x", "feature")!, /^"task\/x" is not this worktree's own branch "feature"/);
   assert.match(setup.defaultBranchFault(devTeam, "task/../x", null)!, /^"task\/\.\.\/x" is not a branch name/);
-  assert.match(setup.defaultBranchFault(devTeam, "feature+one", "feature+one")!, /^"feature\+one" is not a branch name/);
+  assert.match(setup.defaultBranchFault(devTeam, "-x", "-x")!, /^"-x" is not a branch name: /);
   const pattern = setup.defaultBranchFault(devTeam, "task/x", null)!;
   assert.match(pattern, /^"task\/x" matches mode dev-team's task branch pattern task\/\*/);
   assert.match(pattern, /a project's default branch is never a task's/);
@@ -380,10 +381,9 @@ test("defaultBranchFault gates every proposal", () => {
   }
 });
 
-test("defaultBranchFault refuses a default branch ending in '.', naming the trailing '.' in its rule", () => {
+test("defaultBranchFault refuses a default branch ending in '.', quoting git's branch rule", () => {
   const fault = setup.defaultBranchFault(modes["dev-team"], "main.", null)!;
-  assert.match(fault, /^"main\." is not a branch name: /);
-  assert.match(fault, /no trailing "\.", "\/" or "\.lock"/);
+  assert.equal(fault, '"main." is not a branch name: a branch here is a name git check-ref-format --branch accepts that does not start with "-", is not "HEAD" or "@", and holds no "@{"');
 });
 
 /** `init`'s config for `mode` as an operator adjusted it: a main checkout's, a branch project's base. */

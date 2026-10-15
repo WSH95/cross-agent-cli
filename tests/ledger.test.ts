@@ -9,7 +9,7 @@ import { once } from "node:events";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { create, excludeLedger, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTaskId, isTerminal, readProcessStat, currentBootId, runnerLogPath, taskStatuses, writeAtomic } from "../src/ledger.ts";
+import { activeStatuses, authoritativeStatuses, claimableStatuses, create, excludeLedger, find, read, update, list, newTaskId, scan, InvalidRecordError, isProcessAlive, isTaskId, isTerminal, readProcessStat, currentBootId, runnerLogPath, taskStatuses, writeAtomic } from "../src/ledger.ts";
 import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
@@ -98,10 +98,14 @@ test("isTerminal names the three settled statuses, and nothing else", () => {
 });
 
 // @anchor taskStatusesOneSource
-test("the statuses, the id alphabet and the runner log path each have one exported source", (t) => {
+test("the statuses, the active, claimable and authoritative sets, the id alphabet and the runner log path each have one exported source", (t) => {
   // The eight statuses in the ledger's order, which this file's own list is.
   assert.deepEqual([...taskStatuses], statuses);
   assert.deepEqual(taskStatuses.filter(isTerminal), ["done", "failed", "cancelled"]);
+  // The sets the delegate, guard, authority and cancel paths read, in the same order.
+  assert.deepEqual([...activeStatuses], ["launching", "running", "stalled", "orphaned", "cancelling"]);
+  assert.deepEqual([...claimableStatuses], ["launching", "running", "stalled"]);
+  assert.deepEqual([...authoritativeStatuses], ["running", "stalled"]);
 
   // A record whose status is outside them is what `scan` names invalid: the set the reader
   // checks is the one exported.
