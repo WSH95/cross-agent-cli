@@ -230,10 +230,10 @@ test("a runner killed during a wait is settled by one reconciliation pass and re
   assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
   assert.equal(answer.ok && answer.hint, "settled: call result");
   // Which half of the pass ended the engine is genuinely a race, and both answers are
-  // right: this runner was SIGKILLed with the engine's stdout pipe open, so the engine
-  // may take SIGPIPE on its next write and be gone before the pass reaches it, or it may
-  // still be there and be killed by cleanup, which says so. Those two reasons are the
-  // whole set — anything else would be a third answer nobody expected.
+  // right: this runner was SIGKILLed with the engine's stdout pipe open, so the engine's
+  // next write may fail with an EPIPE it does not handle, ending it before the pass
+  // reaches it, or it may still be there and be killed by cleanup, which says so. Those
+  // two reasons are the whole set — anything else would be a third answer nobody expected.
   assert.match(p.record(task.id).reason!, /^runner lost(; engine group terminated)?$/);
   assert.equal(alive(task.engineIdentity), false, "the pass ended the engine the dead runner left");
 });
@@ -374,7 +374,11 @@ test("a quiet task whose runner has died is reconciled, not reported as stalled"
   const answer = await wait(p.root, task.id, { timeoutSeconds: 15, pollMs: 100 });
   assert.equal(answer.ok && answer.status, "failed", JSON.stringify(answer));
   assert.equal(answer.ok && answer.hint, "settled: call result");
-  assert.equal(p.record(task.id).reason, "runner lost");
+  // Either reason is right, as in the runner-killed case above: an engine whose startup
+  // lines were not all written when its runner was SIGKILLed dies of the unhandled EPIPE
+  // its next write meets and settles `runner lost`; one that had written them idles on and
+  // is ended by cleanup, which says so. Those two are the whole set.
+  assert.match(p.record(task.id).reason!, /^runner lost(; engine group terminated)?$/);
   assert.equal(alive(task.engineIdentity), false);
 });
 

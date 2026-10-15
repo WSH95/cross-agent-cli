@@ -989,7 +989,7 @@ test("a runner killed before it acknowledges leaves an engine reconciliation ado
     const [engine] = await poll(() => findByEnvironment(h.record.id, h.record.createdAt).found,
       (found) => found.length === 1);
     // The engine's first output must reach the runner's log before the runner dies: an
-    // engine still flushing into a pipe whose reader has gone takes SIGPIPE with it, and
+    // engine still flushing into a pipe whose reader has gone dies of an unhandled EPIPE, and
     // this test is about the engine that survives.
     await poll(() => (fs.existsSync(h.record.logPath) ? fs.readFileSync(h.record.logPath, "utf8") : ""),
       (log) => log.includes('"working"'));
