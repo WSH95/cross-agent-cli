@@ -413,7 +413,7 @@ value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
-36,906 bytes under `dev-team`, 52,527 under `dev-team-engine` and 3,601 under `solo`, and
+40,602 bytes under `dev-team`, 56,223 under `dev-team-engine` and 4,217 under `solo`, and
 the answer adds the project's root beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with
@@ -467,15 +467,20 @@ Four things hold for every Grok session attached this way:
 - **Grok is never a lead.** A `dev-team-engine` project binds its `lead` to Claude or
   Codex; the config refuses a Grok lead, and `delegate` refuses to launch one. Every other
   role may run on Grok.
-- **A Grok specialist working in a linked worktree reaches no server.** Grok reads a
-  project's `.grok/config.toml` from the session's directory up to its git root, and a
-  linked worktree is a root of its own, holding no `.grok/` while `.grok/` stays ignored,
-  so the attach is not there: `grok mcp doctor` run in one lists no project source, and a
-  Grok code reviewer in E6's worktree mounted no server (`docs/probes.md`, "A Grok
-  specialist in a linked worktree, B5"). Only a committed `.grok/config.toml`, which the
-  recipe keeps out, or a mount at user scope would change that, and neither is there. A
-  Grok specialist at the project root inherits the attach and gets the specialist row's
-  five read tools.
+- **A Grok specialist working in a linked worktree reaches no server, unless a mount at
+  user scope brings one.** Grok reads a project's `.grok/config.toml` from the session's
+  directory up to its git root, and a linked worktree is a root of its own, holding no
+  `.grok/` while `.grok/` stays ignored, so the attach is not there: `grok mcp doctor` run
+  in one lists no project source, and a Grok code reviewer in E6's worktree mounted no
+  server (`docs/probes.md`, "A Grok specialist in a linked worktree, B5"). Only a
+  committed `.grok/config.toml`, which the recipe keeps out, or a mount at user scope
+  would change that, and the recipe adds neither. Installing the plugin in Claude Code is
+  such a mount: Grok discovers your Claude Code plugins, so with it installed there every
+  Grok specialist, in a worktree as well as at the root, mounts the server, gets the
+  specialist row's five read tools and is offered the launcher skill (`docs/probes.md`,
+  "What specialists were given and refused, from this repository's ledger"). A Grok
+  specialist at the project root inherits the attach and gets the specialist row's five
+  read tools.
 - **A server Grok starts gets the session's environment**: the host's whole environment
   plus `GROK_SESSION_ID`, read from `/proc` while a host ran, and inside a task the task's
   `CROSS_AGENT_*` markers, as a Grok plan reviewer's server held them in S11's runs. So a

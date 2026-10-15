@@ -26,6 +26,14 @@ user can answer stated above it. Prefer no major issues when the plan would work
 rewrite the plan yourself — the planner is resumed with your findings and writes the next
 one.
 
+Run plain shell commands: a program with its arguments and redirections, joined to the
+next by `;`, `&&` or `|`, and read an exit status with `echo "exit $?"`. Some engines'
+permission layers may refuse, rather than run, a loop, a `$(…)` or `${…}` expansion, a
+heredoc, a `( … )` subshell, a leading `VAR=value` or `env`, or an `awk` program. Such a
+refusal says the permission was denied in "don't ask mode" and is not the command's
+result: split the command into plain ones — `sed -n` or `grep -n` in place of `awk`, one
+call per item in place of a loop — and report any that stays refused.
+
 The project's task-tracking, handoff and commit instructions belong to the session that
 runs the loop, never to a specialist. You write no files and you delegate nothing; your
 final message is the review, and its last line is the VERDICT.

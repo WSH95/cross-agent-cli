@@ -1927,7 +1927,19 @@ which is a property of the line, not of the pipeline.
   hook event of any kind (`docs/probes.md#claudeHooksIsolation`). The
   operator's plugins, and the skills and commands they bring, no longer load
   under `--setting-sources project`, and no role holds the `Skill` tool that
-  would run one (`docs/probes.md#t12Fix1`).
+  would run one (`docs/probes.md#t12Fix1`). **Some shell commands are refused, not
+  run.** Under `dontAsk` with `autoAllowBashIfSandboxed`, Claude Code ran a
+  sandboxed role's plain commands and their plain compounds — `;`, `&&`, `|` and
+  `$?` included — and refused a share of the calls carrying a loop, a heredoc, a
+  `$(…)` or `${…}` expansion, a subshell, a `VAR=` or `env` prefix, an `awk`
+  program or `git -c`, in its words "Permission to use Bash has been denied
+  because Claude Code is running in don't ask mode": 172 of 3,256 Bash calls in
+  this repository's ledger, an association between command text and refusal
+  rather than the layer's rule (`docs/probes.md#specialistLedger`,
+  `#claudeWebTools`). No permission rule approves them: none has been run, and
+  one wide enough to would also approve shapes the deny list's
+  `Bash(<target> *)` prefix rules cannot read, such as a launch through a
+  variable. The role prompts carry the workaround instead (section 8).
   `--append-system-prompt-file <role.md>` is **settled by P9**
   (`docs/probes.md#p9Mounts`, `#p9ClaudeInstructions`): `claude --help` documents that
   spelling only as the `[-file]` form of `--append-system-prompt`, but the
@@ -2111,6 +2123,32 @@ which is a property of the line, not of the pipeline.
   deliberately stricter than `grok-build-plugin-cc`'s write mode, which omits
   `--sandbox` entirely.
 
+  **What the adapter does not withhold**, each a stated limitation
+  (`docs/probes.md#specialistLedger`). *The built-in tools*: a Grok specialist is
+  offered `spawn_subagent`, the `scheduler_*` tools, `monitor`, `workflow`,
+  `ask_user_question`, `send_feedback` and the image tools beside the ones its
+  role needs, where a Claude role gets a `--tools` allowlist. Grok's guide
+  documents `--disallowed-tools` for headless runs, but no run has used it, so
+  the spawn line stays as recorded; 52 Grok specialists called none of those
+  tools; a scheduled run happens only while its session is open, though one made
+  `durable` fires once when a `resume` reopens it; and the runner ends the
+  engine's whole process group when the task settles
+  (`src/runner.ts#stopEngine`), which bounds what stays in that group and proves
+  nothing about a subagent Grok may host elsewhere. *The launcher skill and this
+  server*: with the plugin installed in the operator's Claude Code, which Grok
+  discovers, every Grok specialist, in a worktree as well as at the root, is
+  offered the `cross-agent` skill and mounts this server, which serves it the
+  specialist row's five read tools by ancestry (section 5); the row holds no
+  `delegate`. The keys that would drop either, `plugins.disabled` and
+  `skills.disabled`, are config-file keys, the operator's to set. *The
+  operator's Claude Code plugin hooks* run inside every Grok specialist, in its
+  sandbox and under its markers and ancestry, so a server one reached would
+  serve the specialist row; `GROK_CLAUDE_HOOKS_ENABLED` is documented for
+  `~/.claude/settings.json` hooks only, and no run has tried it on a plugin's.
+  Keep the Codex plugin's stop-review gate off while Grok specialists run: with
+  it on, a Grok specialist's `Stop` hook starts a Codex task no transcript
+  records.
+
 Deny list for Claude and Grok, rebuilt from config at spawn
 (`src/guard.ts#denyTargets`): the commands `claude`, `codex`, `grok`, each
 configured `engines.<e>.bin` path, `node <absolute path of src/server.ts>`,
@@ -2163,9 +2201,14 @@ flag.
 copies the parent environment and removes: the exact names `CLAUDECODE`,
 `CLAUDE_PID`, `CLAUDE_EFFORT`, `CLAUDE_PROJECT_DIR` — Claude Code sets that last
 one for every MCP server it starts, and a child inheriting it would be told it
-works where the operator does; anything starting with `CLAUDE_CODE_`,
-`CLAUDE_PLUGIN_`, `CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing`
-is `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
+works where the operator does; `GROK_SESSION_ID`, the session id a Grok host
+hands every server it starts, and `AI_AGENT`, the label a Claude Code host gives
+its server — every spec in this repository's ledger carried
+`claude-code_<version>_harness` — each naming the host's session or agent, which
+a child would carry as its own (`docs/probes.md#grokHostHops`,
+`#specialistLedger`); anything starting with `CLAUDE_CODE_`, `CLAUDE_PLUGIN_`,
+`CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing` is
+`subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
 sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, `CROSS_AGENT_LINEAGE`, and
 `CROSS_AGENT_PROJECT=<canonical root>`, the last so that a server started from
 inherited configuration inside the child finds the right ledger (the lead
@@ -2175,7 +2218,9 @@ allowlist would have to enumerate every variable an engine CLI needs to run,
 `PATH`, `HOME`, `XDG_*`, `CODEX_HOME`, terminal and locale settings, proxy
 settings, and would break silently on the next CLI release — but it means the
 blocklist grows when a new host marker appears, and a new marker is a change to
-this list.
+this list. `GIT_EDITOR` passes on: it marks no host, and the `true` a Claude Code
+shell sets keeps a headless git from waiting on an editor, which dropping it
+would hand back to `EDITOR` or `VISUAL` (`tests/guard.test.ts#childEnvHostAgent`).
 
 Provenance, stated once: every flag in this section is backed by a recorded run
 in `docs/probes.md` — P1, P2, P3, P3b, P5 and P7 on 2026-09-07, and P8, P9 and
@@ -3943,7 +3988,11 @@ beyond it as optional, and the plan reviewer asks for nothing beyond it. And one
 sentence runs through every specialist prompt, the consultant's included —
 **bookkeeping**: the project's task-tracking, handoff and commit instructions belong
 to the session that runs the loop, never to a specialist
-(`tests/skills.test.ts#specialistsLeaveBookkeeping`). Acceptance is
+(`tests/skills.test.ts#specialistsLeaveBookkeeping`). A paragraph runs through
+the same prompts — **plain shell**: run plain commands, read a status with
+`echo "exit $?"`, and take a permission layer's refusal as no result but a
+command to split into plain ones, because Claude's `dontAsk` layer may refuse the
+rest (section 3, `tests/skills.test.ts#specialistsPlainShell`). Acceptance is
 behavioural (the end-to-end runs). The devpack's text was carried over once by
 `tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
 code: it drops the sentences naming the devpack's own machinery, drops the git
@@ -4216,8 +4265,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 36,906 bytes under
-`dev-team`, 52,527 under `dev-team-engine` and 3,601 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 40,602 bytes under
+`dev-team`, 56,223 under `dev-team-engine` and 4,217 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

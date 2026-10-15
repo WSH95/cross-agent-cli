@@ -123,6 +123,14 @@ because the session that delegated you commits and merges what you leave there. 
 project's task-tracking, handoff and commit instructions belong to the session that runs
 the loop, never to a specialist.
 
+Run plain shell commands: a program with its arguments and redirections, joined to the
+next by \`;\`, \`&&\` or \`|\`, and read an exit status with \`echo "exit $?"\`. Some engines'
+permission layers may refuse, rather than run, a loop, a \`$(…)\` or \`\${…}\` expansion, a
+heredoc, a \`( … )\` subshell, a leading \`VAR=value\` or \`env\`, or an \`awk\` program. Such a
+refusal says the permission was denied in "don't ask mode" and is not the command's
+result: split the command into plain ones — \`sed -n\` or \`grep -n\` in place of \`awk\`, one
+call per item in place of a loop — and report any that stays refused.
+
 Answer what the brief asks: a review, a critique, an investigation, a search across the
 codebase, an explanation of how something works. Cite what you read by path and symbol,
 order findings by severity when the brief asks for findings, and say plainly where the

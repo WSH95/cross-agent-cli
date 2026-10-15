@@ -292,3 +292,18 @@ test("childEnv preserves API billing credentials and sets all CROSS_AGENT variab
     CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: "root-child", CROSS_AGENT_LINEAGE: "[]", CROSS_AGENT_PROJECT: "/projects/team",
   });
 });
+
+// @anchor childEnvHostAgent
+test("childEnv drops the host's GROK_SESSION_ID and AI_AGENT and passes GIT_EDITOR on", () => {
+  const parent = Object.freeze({
+    ...retainedEnv, GROK_SESSION_ID: "host-session", AI_AGENT: "claude-code_2-1-296_harness", GIT_EDITOR: "true",
+  });
+  const before = structuredClone(parent);
+  for (const billing of ["subscription", "api"] as const) {
+    const child = childEnv(parent, 0, "child", childEntries, billing, "/projects/team");
+    assert.equal(Object.hasOwn(child, "GROK_SESSION_ID"), false, billing);
+    assert.equal(Object.hasOwn(child, "AI_AGENT"), false, billing);
+    assert.equal(child.GIT_EDITOR, "true", billing);
+  }
+  assert.deepEqual(parent, before);
+});

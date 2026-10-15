@@ -2571,7 +2571,8 @@ A Grok specialist's inherited server (B0, B1, B2) carries the runner's child env
 the host server's names with the four markers, and Grok's own three: its session id, the
 runtime-socket deny list and `__GROK_INSIDE_BWRAP`. Every child under a Grok host also
 receives the host's `GROK_SESSION_ID`, and in these runs this task's shell's `AI_AGENT` and
-`GIT_EDITOR`, none of which `src/guard.ts#childEnv` scrubs; a Grok child replaces the session
+`GIT_EDITOR`, none of which `src/guard.ts#childEnv` then scrubbed (since `atc-s96.77` it
+drops the first two, `docs/probes.md#specialistLedger`); a Grok child replaces the session
 id with its own for its server, and no child behaved differently for any of them.
 
 <!-- @anchor grokWorktreeMount -->
@@ -2661,7 +2662,7 @@ and no engine launch in any specialist transcript, the Codex planner's judged fr
 rollout. The two worktree specs carry `protectedPaths`, the worktree's `.git` and the
 project's, and all four carry deny targets rooted at the worktree's server; every spec's
 environment also carries the host's `GROK_SESSION_ID` and this task's shell's `AI_AGENT` and
-`GIT_EDITOR`, which `src/guard.ts#childEnv` passes on.
+`GIT_EDITOR`, which `src/guard.ts#childEnv` then passed on.
 
 Nothing deviated from the loop: step 8's rebase ran, a no-op, and the plan was approved in
 one round, so no `resume` was needed (none was injected). The host's server was 4 processes
@@ -4216,3 +4217,103 @@ launcher's say so (`tests/packaging.test.ts#claudeReconnect`), and so does the s
 skill's Reconnect row.
 
 **Not recorded.** The Claude Code version.
+
+<!-- @anchor specialistLedger -->
+## What specialists were given and refused, from this repository's ledger (2026-10-15)
+
+**The snapshot.** This repository's own `.cross-agent/tasks/`, read on 2026-10-15 at
+`3f6327a`: the 336 tasks created from 2026-10-04T03:40:49Z to before 2026-10-15T16:38:01Z,
+every one settled (332 done, 2 failed, 2 cancelled) — 178 on Claude Code 2.1.289, 2.1.296
+and 2.1.299, 106 on Codex, 52 on `grok-4.7`. No engine was started for this reading; it
+reads the records, their event streams and specs, and the Grok sessions' own files under
+`~/.grok/sessions/`.
+
+**The environment every spec carried.** All 336 specs' `env` hold `AI_AGENT`: 329
+`claude-code_2-1-296_harness` and 7 `claude-code_2-1-289_agent`, the Claude Code host's
+label for the server it started, passed to every child, Codex and Grok specialists
+included. Seven hold `GIT_EDITOR=true`, from a host started in a Claude Code shell; none
+holds `GROK_SESSION_ID`, since no Grok host ran here. Since `atc-s96.77`
+`src/guard.ts#childEnv` drops `AI_AGENT` and `GROK_SESSION_ID` and passes `GIT_EDITOR` on.
+
+**Grok specialists.** 52: 51 code-reviewer seats, each read-only in a task's linked
+worktree, and one `consult` at the root. Each `system/init` offered 27 built-in tools,
+`spawn_subagent`, `scheduler_create`, `scheduler_delete`, `scheduler_list`, `monitor`,
+`workflow`, `ask_user_question`, `send_feedback` and four image tools among them. Their
+calls: `read_file` 1,197, `grep` 904, `run_terminal_command` 334, `list_dir` 20, `web_fetch`
+10, and nothing else — no subagent, scheduled task, monitor, workflow, question, image,
+`search_tool` or `use_tool`. The 51 worktree seats' init lines list the `cross-agent`
+skill, and each one's `events.jsonl` records `mcp_server_connected` for `cross-agent`
+with `tool_count: 5`, the specialist row's `describe_mode`, `list_roles`, `check`, `result`
+and `list_tasks`. That is wider than T15, where a worktree specialist mounted nothing
+(`docs/probes.md#grokWorktreeMount`): here the plugin is installed in the operator's
+Claude Code, and Grok discovers Claude Code plugins (A0's 75 skills from them), so the
+skill and the server reach a specialist in any directory. The sessions' `updates.jsonl`
+record 548 hook runs, every one `success`: 542 of `plugin/project-steward/hooks` on
+`post_tool_use`, `user_prompt_submit`, `stop` and `session_end`, 4 of `plugin/codex/hooks`
+and 2 of `plugin/grok-build/hooks`.
+
+**What Grok documents, unexercised.** Grok 1.0.52's guide, under
+`~/.grok/docs/user-guide/`: `--disallowed-tools <TOOLS>`, a headless-only denylist of
+built-in tools whose unknown entries remove nothing and report nothing, with `Agent`
+entries for subagents (`14-headless-mode.md`, "Tool Filtering"; the flag is also in
+1.0.46's `grok --help`); `subagents.enabled`, also `GROK_SUBAGENTS` or `--no-subagents`;
+`plugins.disabled` and `skills.disabled`, config-file keys (`26-config-reference.md`),
+which the `GROK_CONFIG` overlay cannot set, since it "cannot … add a discovery source"
+(`05-configuration.md`); and `GROK_CLAUDE_HOOKS_ENABLED` and `GROK_CLAUDE_SKILLS_ENABLED`,
+which by the guide's own comments scan `~/.claude/settings.json` hooks and
+`~/.claude/skills/`, not a plugin's. No run has used any of them. Grok's own
+`scheduler_create` (T15's archived `tool_definitions.json`): runs "happen only while this
+session is open"; `durable`, false by default, keeps a task "after this session is closed
+and reopened", and "an overdue durable task runs once"; `spawn_subagent` starts a
+background subagent that "has no time limit".
+
+**Claude specialists' shell.** 178 Claude tasks; 176 settled with a `result` line, and
+the two without, both cancelled, are left out. Refusals are read from each `result`
+line's `permission_denials`; calls from the `assistant` events, deduplicated by `tool_use`
+id. 3,256 `Bash` calls, 174 refused in 93 tasks: 172 with "Permission to use Bash has been
+denied because Claude Code is running in don't ask mode", and two by the deny list's
+rules, one of them a `codex --version` it should refuse. Six `Write` calls were refused
+too, each an implementer writing a scratch file under `$TMPDIR`, outside its workspace's
+`Edit` rule.
+
+The table counts calls whose command text matches each pattern. The patterns are regular
+expressions over the text, not a shell parse, and they overlap: a call counts under every
+pattern it matches, and an `awk` program's `$0` or a `$(` inside a quoted program counts
+where it appears.
+
+| pattern in the command text | refused / calls |
+|---|---|
+| `for`, `while` or `until`, then `do` on the same line | 54 / 60 |
+| `<<` | 14 / 22 |
+| `${` | 17 / 35 |
+| `$(`, a backtick or `<(` | 54 / 161 |
+| `env ` or an upper-case `NAME=` at the start or after `;`, `&` or `\|` | 31 / 52 |
+| a double-quoted string with `=$?` in it | 23 / 35 |
+| a double-quoted string with ` $?` and no `=` before it | 24 / 161 |
+| `awk` | 34 / 54 |
+| `(` at the start or after `;`, `&` or `\|` | 8 / 12 |
+| `git`, then ` -c ` before the next `;`, `&` or `\|` | 9 / 9 |
+| `flock` | 9 / 17 |
+| `node -e`, `python3 -c` or `python3 -I -c` | 27 / 94 |
+| `cd ` at the start or after `;`, `&` or `\|` | 19 / 65 |
+
+The calls matching none of the rows except the ` $?` one — every other row excluded,
+`flock`, the inline programs and `cd` included — number 2,808, and 8 were refused: 315
+single commands, none refused, and 2,493 joined by `;`, `&&`, `||`, `|` or a newline, 8
+refused, the deny list's `codex` among them. Calls beginning with `cd` and matching none
+of the other rows ran, 38 of 38. `npm test` appears in 102 calls, 5 refused, each also
+matching a loop, a subshell, a heredoc or `awk`. No identical command text was both run
+and refused.
+
+**Reading.** In this window Claude Code's `dontAsk` layer ran plain commands and their
+plain compounds, `$?` included, and refused a share of the calls matching the patterns
+above, most often loops, heredocs, subshells, `NAME=` and `env` prefixes, `awk` programs
+and `git -c`. The table associates command text with refusals; it does not show the
+layer's rule. `echo "exit $?"` is the form to use. The role prompts say so
+(`tests/skills.test.ts#specialistsPlainShell`), and no permission rule is added (design
+section 3).
+
+**Not recorded.** No live run of any Grok switch above; whether a Grok subagent or a
+durable scheduled task outlives its task or runs outside its sandbox; the grok version
+each run used (1.0.52 is installed since 2026-10-12); the cause of the 8 residual
+refusals; and Claude Code's own rule.

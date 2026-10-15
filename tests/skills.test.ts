@@ -944,18 +944,30 @@ test("under engine placement with records the host keeps nothing of its own acco
   assert.doesNotMatch(guide, /while the run is the lead's/, "the guide's narrower scope is gone");
 });
 
-// @anchor specialistsLeaveBookkeeping
-test("every specialist prompt leaves tracking, handoff and commit instructions to the session that runs the loop", () => {
-  const sentence = "The project's task-tracking, handoff and commit instructions belong to the session that runs the loop, never to a specialist.";
+/** Every specialist prompt text, by where it lives: the five shared roles in both dev-team modes and both consults. */
+function specialistPrompts(): Array<[string, string]> {
   const modes = builtInModesDir();
-  const prompts: Array<[string, string]> = [
+  return [
     ...["dev-team", "dev-team-engine"].flatMap((mode) => ["planner", "plan-reviewer", "implementer", "code-reviewer", "resolver"]
       .map((key) => [`${mode}'s ${key}`, fs.readFileSync(path.join(modes, mode, "roles", `${key}.md`), "utf8")] as [string, string])),
     ["the built-in consult role", findRole(loadMode(modes, "dev-team"), CONSULT_ROLE)?.prompt ?? ""],
     ["solo's consult.md", fs.readFileSync(path.join(modes, "solo", "roles", "consult.md"), "utf8")],
   ];
-  for (const [where, prompt] of prompts) assert.ok(flat(prompt).includes(sentence), `${where} leaves the bookkeeping to the loop`);
+}
+
+// @anchor specialistsLeaveBookkeeping
+test("every specialist prompt leaves tracking, handoff and commit instructions to the session that runs the loop", () => {
+  const sentence = "The project's task-tracking, handoff and commit instructions belong to the session that runs the loop, never to a specialist.";
+  for (const [where, prompt] of specialistPrompts()) assert.ok(flat(prompt).includes(sentence), `${where} leaves the bookkeeping to the loop`);
   assert.equal(flat(leadPrompt()).includes(sentence), false, "the lead runs the loop: the bookkeeping is its own with records");
+});
+
+// @anchor specialistsPlainShell
+test("every specialist prompt says to run plain shell commands and to split one a permission layer refuses", () => {
+  const paragraph = 'Run plain shell commands: a program with its arguments and redirections, joined to the next by `;`, `&&` or `|`, and read an exit status with `echo "exit $?"`. Some engines\' permission layers may refuse, rather than run, a loop, a `$(…)` or `${…}` expansion, a heredoc, a `( … )` subshell, a leading `VAR=value` or `env`, or an `awk` program. Such a refusal says the permission was denied in "don\'t ask mode" and is not the command\'s result: split the command into plain ones — `sed -n` or `grep -n` in place of `awk`, one call per item in place of a loop — and report any that stays refused.';
+  for (const [where, prompt] of specialistPrompts()) {
+    assert.ok(flat(prompt).includes(paragraph), `${where} carries the plain-shell paragraph`);
+  }
 });
 
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {

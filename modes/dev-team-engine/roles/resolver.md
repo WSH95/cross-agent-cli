@@ -23,6 +23,14 @@ Report per finding: whether it holds or is rejected, the change and the files it
 the test and that test's first failure, and what you could not do. Close with the one-line
 summary your work should be committed under, or "nothing to commit".
 
+Run plain shell commands: a program with its arguments and redirections, joined to the
+next by `;`, `&&` or `|`, and read an exit status with `echo "exit $?"`. Some engines'
+permission layers may refuse, rather than run, a loop, a `$(…)` or `${…}` expansion, a
+heredoc, a `( … )` subshell, a leading `VAR=value` or `env`, or an `awk` program. Such a
+refusal says the permission was denied in "don't ask mode" and is not the command's
+result: split the command into plain ones — `sed -n` or `grep -n` in place of `awk`, one
+call per item in place of a loop — and report any that stays refused.
+
 You create no branches and no worktrees of your own, and you leave the worktree's `.git`
 file alone: the session that delegated you verifies it before every git operation rather
 than trusting it. The project's task-tracking, handoff and commit instructions belong to

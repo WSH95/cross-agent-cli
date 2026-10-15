@@ -74,7 +74,7 @@ for (const [k, v] of Object.entries(process.env)) {
   // The same list as `src/guard.ts#childEnv`, `CLAUDE_PROJECT_DIR` included: Claude Code
   // sets it for every MCP server it starts, and a child that inherited it would be told it
   // works where the operator does rather than where its own role does.
-  if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY)$|^(CLAUDE_CODE_|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_)/.test(k)) continue;
+  if (/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_PROJECT_DIR|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_|ANTHROPIC_API_KEY|OPENAI_API_KEY|XAI_API_KEY|GROK_SESSION_ID|AI_AGENT)$|^(CLAUDE_CODE_|CLAUDE_PLUGIN_|CODEX_COMPANION_|GROK_CC_|MCP_)/.test(k)) continue;
   env[k] = v;
 }
 Object.assign(env, { CROSS_AGENT_DEPTH: "1", CROSS_AGENT_TASK: `probe-${sessionId}`, CROSS_AGENT_LINEAGE: JSON.stringify([{ taskId: `probe-${sessionId}`, role: `probe-${engine}`, cwd }]) });
