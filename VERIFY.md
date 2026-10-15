@@ -7,37 +7,77 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
-## Codex host acceptance preparation — `atc-s96.152` (2026-10-15)
+## Codex host acceptance — `atc-s96.152` (2026-10-15)
 
-The user approved one full host-placed `dev-team` run against installed 0.1.9, with all
-three reviewer engines, in a fresh Slugkit sample. Defects are to be diagnosed and reported,
-not repaired. The live workflow has not started.
+**Pass.** A new Codex desktop chat ran the full host-placed `dev-team` loop against installed
+cross-agent 0.1.9 in an independent Slugkit sample. Both the host's verifier and a separate
+coordinator run returned **8 pass, 0 fail, 0 without evidence**, exit 0. No cross-agent
+defects were found. The verification bead is closed.
 
 The initial chat had the launcher skill but no cross-agent MCP tools. The installed
 `codex-setup.mjs check`, retried outside the sandbox after Codex's runtime hit a read-only
 filesystem, reported that one-time setup was missing or incomplete. The approved `install`
 then succeeded; `check` now resolves `cross-agent@agent-plugins` 0.1.9 and its installed server
-under `~/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/`. This verifies configuration,
-not a live MCP handshake.
+under `~/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/`. After the user registered the
+sample as a Codex project, test chat `01a14126-c384-7c73-9be7-0a948bb701d7` called live
+`describe_mode` and `list_roles`: the canonical sample root, host placement, approved
+bindings, and no drift warnings. The test used the installed plugin's tools and served loop.
 
 The independent sample is `/home/wsh/Documents/cross-agent-codex-host-e2e-20261015`, exported
 from Slugkit `f9eaf26` and initialized on `main` at `ebbcaaf`. The released CLI wrote its
 `dev-team` config using this repository's model and effort bindings, three read-only reviewer
 seats (Claude, Codex, Grok), automatic merging, and depth limit 1. Its configured test command,
-`python3 -m unittest discover -s tests -t .`, passed all 116 baseline tests; its working tree
-is clean. Setup JSON, baseline output, fixture metadata, and the complete test-chat brief
-are retained in the sample's ignored `.cross-agent/host-e2e-evidence/` directory.
+`python3 -m unittest discover -s tests -t .`, passed all 116 baseline tests.
 
-Preparation checks also confirm that the sample's role bindings exactly match this
-repository's, the feature is absent, and the complete brief is present. The evidence-only
-root diff passes `git diff --check`; `node tools/check-citations.mjs --since 7ff96a3` checks
-1850 citations with no misses or drift. The product suite was not rerun for these record edits.
+Actual bindings, all at xhigh effort: planner and implementer on Claude `claude-opus-5-5`;
+plan reviewer on Codex `gpt-6-astra`; code review seats on Claude `claude-opus-5-5`, Codex
+`gpt-6.1-sol`, and Grok `grok-4.7`. No binding overrides, review waivers, resolver, or consult
+were needed. All 11 delegations finished at depth 1 with exit 0 and native logs preserved.
 
-Pending: the user adds that folder as a saved Codex project, since the chat-creation tool
-accepts saved project IDs and cannot register a folder. Then create the authorized test chat
-there, require live `describe_mode` and `list_roles`, and run `slug_reverse` through the
-served loop and all eight verifier checks. No delegation, feature implementation, live
-review, merge, or end-to-end verdict is claimed by this preparation.
+The team added `slug_reverse(text: str) -> str`, seven tests, and a README example. Native
+implementation log events record the missing-function import failure before the function
+was added, then all 123 tests passing. Plan review was clean, followed by the required
+planner revision. Code review round 1 covered `43d09c6`; all three seats returned
+`VERDICT: no major issues`. One Minor finding asked for explicit Unicode escapes in a test
+instead of literal combining characters. The implementer verified it and made the one-line
+wrap-up correction; both spellings have the same runtime value. Round 2 covered `22c0657`;
+all three seats marked the finding addressed, reported no new findings, and passed the suite.
+
+The host tested both committed heads through the gate, fast-forward merged `22c0657` to
+`main`, ran all 123 tests there, removed the task worktree, and deleted its branch. The
+coordinator independently checked the final clean tree, only the root worktree, no `task/*`
+branch, all 11 task records and native-log hashes, and all six review verdicts against their
+recorded commits. The scoped verifier command was:
+
+```sh
+node tools/e2e-verify.mjs --project /home/wsh/Documents/cross-agent-codex-host-e2e-20261015 --since 43dfa41eac1ea9d2a88ee1a419fb8238d63b --slug codex-host-20261015
+```
+
+It confirms every journal step and no delegation or engine launch in any of the 11 specialist
+transcripts. Final sample commit: `22c06576a430e393ec796cdce956f3ae72f97470`. First delegation:
+`43dfa41eac1ea9d2a88ee1a419fb8238d63b`; journal: `codex-host-20261015`.
+
+Observations retained with the pass:
+
+- The host made one extra read-only `git_root` query using `rev-parse HEAD`, which the
+  interface refused because it requires a branch name. It read `list_roles` before the
+  required reconciliation, then reconciled and used `rev-parse main`. No state changed and
+  no dispatch preceded reconciliation. This is a host deviation, not a product defect.
+- The Minor wrap-up included an intermediate escaping mistake and a sandbox-refused write
+  command. The implementer corrected them within the task; the tested and reviewed final
+  change is correct. No engine task failed or was silently retried.
+- The first verifier invocation inside the host sandbox exited 2 at its Git worktree query.
+  Its output is preserved. The same verifier outside the sandbox passed all eight checks,
+  as did the independent coordinator run.
+
+Evidence is retained in the sample's ignored `.cross-agent/host-e2e-evidence/`: the complete
+`host-run-summary.json` (task IDs, actual bindings, outcomes, review coverage, test history,
+observations, paths, and hashes), `coordinator-verifier.txt`, `coordinator-verification.json`,
+and the setup and native test-first evidence. Full task records, results, native logs, and
+the journal remain under the sample's `.cross-agent/`. Preparation was committed locally as
+`0a4edb7`. No push or remote sync was performed. Deliberate cancellation, failure injection,
+and engine-placed leadership were outside this run. The product suite was not rerun for
+these evidence-only repository edits; whitespace and citation checks cover the records.
 
 ## Release 0.1.9 — `atc-s96.151` (2026-10-15)
 

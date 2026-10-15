@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T19:53:25Z
+updated_at: 2026-10-15T20:20:50Z
 updated_by: codex
 session_status: closed
 branch: main
@@ -8,16 +8,18 @@ branch: main
 
 ## Now
 
-**Codex host acceptance (`atc-s96.152`, user-approved plan, 2026-10-15):** the managed
-Codex connection for installed cross-agent 0.1.9 is installed and its configuration check
-passes. The fresh independent Slugkit sample at
-`/home/wsh/Documents/cross-agent-codex-host-e2e-20261015` is clean at `ebbcaaf`, with the
-approved `dev-team` bindings and all three reviewer seats; 116 baseline tests pass. The
-complete test brief and setup evidence are in its ignored `.cross-agent/host-e2e-evidence/`.
-The user was asked to add this folder as a saved Codex project; the available tools cannot
-register folders. Then create the authorized test chat there and verify its live MCP
-connection before running the full loop. No engines have been dispatched. Diagnose and
-report cross-agent defects without fixing them; do not push.
+**Codex host acceptance passed (`atc-s96.152`, closed, 2026-10-15).** Installed 0.1.9 ran
+the full `dev-team` host loop in test chat `01a14126-c384-7c73-9be7-0a948bb701d7` on `local`,
+in `/home/wsh/Documents/cross-agent-codex-host-e2e-20261015`. Its live connection and roster
+matched; all 11 tasks finished with the configured bindings at depth 1. Claude, Codex, and
+Grok approved both review rounds; one Minor Unicode source-spelling finding was fixed and
+verified. Final sample `main` is `22c0657`, all 123 tests pass, tree clean, only the root
+worktree remains, task branch deleted. Both the host and independent coordinator verifier
+returned eight passes with no missing evidence. No cross-agent defects were found. The
+sample's ignored `.cross-agent/host-e2e-evidence/host-run-summary.json` and coordinator
+outputs retain the evidence and disclosed host/engine/sandbox observations. `VERIFY.md`
+records the result. Preparation commit: `0a4edb7`; final evidence is committed locally under
+this bead. No push or remote sync is authorized.
 
 **Backlog run through the `dev-team` loop (the user, 2026-10-15): finish the remaining `atc-s96`
 beads, several beads per task, on requirements only — rare, hard edge cases get a stated
@@ -236,10 +238,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-s96.152`: acceptance preparation is validated; the full workflow is pending saved
-  project registration. The root changes for this task are evidence and stewardship files
-  only. The sample's ignored evidence directory contains `test-brief.md`, `fixture.json`,
-  `setup.json`, `baseline-tests.txt`, `connection-check.txt`, and `preparation.json`.
+- `atc-s96.152` is complete and closed; no acceptance work remains. Its root changes are
+  evidence and stewardship files only. The sample and its ignored full evidence are retained.
+  Beads generated an entry in `.beads/interactions.jsonl`; that log remains uncommitted,
+  following the repository's standing warning.
 
 - `atc-2jl`: epic plan approved (3 rounds; the epic's design field holds it); tasks `.1`-`.4`,
   follow-ups `.5` (record's `expect` type array vs real hosts, at Task 4) and `.6` (round-2
@@ -396,12 +398,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. For `atc-s96.152`, after the user adds the prepared sample as a Codex project, find its
-   ID with `list_projects`. Create a local chat in that project using the entire sample
-   `.cross-agent/host-e2e-evidence/test-brief.md` as its prompt. Wait for its outcome with
-   `wait_threads`; independently verify the sample and scope the verifier to its first task
-   and journal slug `codex-host-20261015`. Record the actual verdict and any defects, then
-   make the authorized local evidence commit. No push is authorized.
+1. `atc-s96.152` is complete. Review `VERIFY.md` and the retained sample evidence if needed;
+   no test rerun or follow-up fix is pending. Ask before any push or new acceptance scope.
 
 0. **The backlog run is complete and released as 0.1.9 (see Now).** `main` is pushed to `439a8c8`;
    agent-plugins PR #24 is merged; Claude Code and Codex run 0.1.9, and Grok specialists load
@@ -479,9 +477,7 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-`atc-s96.152`: waiting for the prepared sample folder to become a saved Codex project.
-The app tools can create chats in saved projects but cannot register the folder. The current
-chat still has no cross-agent tools; a new sample chat must prove the live connection.
+None. The Codex host acceptance run completed and its live connection was verified.
 
 The `AGENTS.md` diff for `atc-s96.104` was approved and applied on 2026-10-03 (`c05671e`, Decision 0014).
 

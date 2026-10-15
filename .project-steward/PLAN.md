@@ -2,13 +2,13 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Codex host acceptance (in progress, 2026-10-15)
+## Codex host acceptance (complete, 2026-10-15)
 
-`atc-s96.152`: run the installed 0.1.9 `dev-team` workflow in an independent Slugkit sample,
-with Claude, Codex, and Grok review seats; diagnose and report defects without fixing them.
-Connection configuration and the sample's 116-test baseline pass. The user must register
-the prepared sample as a Codex project before its authorized host-test chat can be created.
-Beads and `VERIFY.md` hold the execution state and evidence.
+`atc-s96.152` is closed: installed 0.1.9 passed the full `dev-team` workflow in an independent
+Slugkit sample, with all three reviewer engines and one Minor wrap-up. Final `main` is
+`22c0657`, all 123 tests pass, all 11 tasks completed at depth 1, and cleanup is complete.
+Host and independent verifier runs both returned eight passes, no failures or missing
+evidence. No cross-agent defects were found. Beads and `VERIFY.md` retain the evidence.
 
 ## Release 0.1.5 (merged 2026-10-14)
 

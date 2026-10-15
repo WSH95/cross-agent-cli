@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T20:20:50Z — codex
+`atc-s96.152` closed: installed 0.1.9 passed the complete Codex-host `dev-team` acceptance
+run in the independent Slugkit sample. All 11 tasks finished at depth 1; Claude, Codex,
+and Grok approved the final head after one verified Minor wrap-up. Sample `main` is
+`22c0657`, all 123 tests pass, tree clean, root worktree only, task branch deleted. Host
+and independent verifier runs both returned eight passes with no missing evidence. The
+coordinator also checked native-log hashes and every review's commit coverage. No product
+defects found; corrected engine issues, a harmless refused host query, and the sandbox
+verifier retry are disclosed in `VERIFY.md` and retained sample evidence. No push or remote sync.
+The final evidence diff passes whitespace checks and all 1850 citations, with no misses or drift.
+
 ### 2026-10-15T19:53:25Z — codex
 `atc-s96.152`: prepared the approved Codex-host acceptance run. Installed the managed
 cross-agent 0.1.9 MCP connection; configuration check passes. Created the independent Slugkit
