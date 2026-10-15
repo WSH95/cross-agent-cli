@@ -7,6 +7,27 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## The flaky `#quietTaskWhose` — `atc-9w2` (2026-10-15)
+
+Went through the `dev-team` loop and merged as a fast-forward from `c867d3c` to `213dacf` (slug
+`9w2-flake`). Test only. The cause is a race in the test's setup, not in the product: the runner
+acknowledges right after spawning the `stall` engine, and the test SIGKILLs it at once, so whether the
+engine has finished writing its startup lines decides the reason. An engine that has not dies of the
+unhandled `EPIPE` its next write meets (Node ignores SIGPIPE), and the pass settles `runner lost`;
+one that has idles on and is ended by orphan cleanup, `runner lost; engine group terminated`. Both
+are correct, so `tests/wait.test.ts#quietTaskWhose` now accepts that closed pair, as
+`#runnerKilledDuring` already did, and still asserts `failed`, the settled hint and a dead engine.
+Two comments that blamed SIGPIPE now name the `EPIPE`.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`; the reviewer confirmed the
+  cause from the code and with a probe on Node 24 (`SigIgn` has SIGPIPE; exit 1 on `EPIPE` before
+  the output, exit 143 on SIGTERM after it).
+- **Code review:** round 1 (`213dacf`) all three seats `no major issues`, no findings.
+- **Gate and root suite:** 1201 tests at `213dacf`, 0 fail; the root suite there ran 1201: 1199
+  pass, 0 fail, 2 guarded skips.
+- **Not verified:** the race itself was not reproduced; the fix accepts the outcome it produced.
+
 ## `git_root` refuses a branch name ending in `.` — `atc-2jl.9` (2026-10-15)
 
 Follow-up of epic `atc-2jl` (from `atc-2jl.4`'s plan review). Went through the `dev-team` loop and

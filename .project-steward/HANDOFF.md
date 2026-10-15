@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T01:41:46Z
+updated_at: 2026-10-15T02:06:40Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -234,7 +234,10 @@ What stands is the project's own record. The operator conditions a release names
   lead prompt names the epic as no item; root suite 1199/1197/0 fail.
 - **`atc-2jl.9` merged as `4c2288e`** and closed: `nameFault` refuses a trailing `.`; the loops'
   slug sentence names `git_root`'s branch exclusions; root suite 1201/1199/0 fail.
-- **Then:** `atc-9w2` (flaky wait test); `atc-2jl.5` waits for the live trace after a release.
+- **`atc-9w2` merged as `213dacf`** and closed: the flaky test accepts both correct reasons of a
+  setup race; root suite 1201/1199/0 fail. `atc-2jl.5` waits for the live trace after a release.
+- **`main` is 28 commits ahead of `origin/main`, unpushed;** the plugin is still 0.1.7. A push and a
+  0.1.8 release wait for the user.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -361,8 +364,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **Last follow-up, through the dev-team loop:** `atc-9w2` (flaky wait test). Then ask the user about a push and a release; the epic's
-   live acceptance trace (`atc-2jl.5` with it) is the operator's after the release.
+0. **Ask the user about a push of `main` and a 0.1.8 release** (README, "Development"); nothing
+   is pushed. After a release, the epic's live acceptance trace (plan, "Live acceptance trace"),
+   with `atc-2jl.5`, is the operator's; then close `atc-2jl`.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:
    - `atc-s96.80` (EPIPE) merged as `50fe5ba`.
