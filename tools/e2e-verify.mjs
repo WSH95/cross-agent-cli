@@ -268,8 +268,11 @@ if (journals.length === 0) {
 // `item.completed` — whose `server` and `tool` are separate fields, `tool` being this
 // server's own name for it (`list_roles`, `delegate`); I1's tracked Codex row recorded it
 // (`docs/probes.md#i1CodexTracked`). Those items, `agent_message` and `command_execution`
-// are the whole of what an archived Codex transcript holds, so any other item type is
-// answered `?` rather than guessed at, and so is a tool call whose name is not a string.
+// are the whole of what an archived Codex transcript holds but for one, read by its whole
+// shape: codex-cli 0.159.3's `file_change`, an `apply_patch` edit, which names paths and no
+// command (`recordedFileChange`; E4, `docs/probes.md#e4`). Any other item type, or a
+// `file_change` in another shape, is answered `?` rather than guessed at, and so is a tool
+// call whose name is not a string.
 const codexItems = new Set(["agent_message", "command_execution", "mcp_tool_call"]);
 // Every non-item top-level `type` a recorded transcript holds, and where it was recorded:
 // `system`, `assistant`, `user` and `result` in Claude's stream-json and Grok's
@@ -303,7 +306,8 @@ const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id"
 // cannot read, whatever their input says (task 12, fix round 1).
 const contentBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
 const serverTools = new Set(["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel",
-  "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review", "list_asks", "answer", "ask"]);
+  "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review", "list_asks", "answer", "ask",
+  "record", "track"]);
 const engineTools = new Map([
   ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup", "WebSearch", "WebFetch"])],
   ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool"])],
@@ -311,6 +315,25 @@ const engineTools = new Map([
 const shellTools = new Map([["claude", "Bash"], ["grok", "run_terminal_command"]]);
 const claudeServerPrefix = "mcp__cross-agent__";
 const grokServerPrefix = "cross-agent__";
+/** Whether `value` is a plain object, not an array, holding exactly `keys`. */
+function exactKeys(value, keys) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+/**
+ * Whether a Codex `--json` item is codex-cli 0.159.3's `file_change` in the shape both runs
+ * that recorded one wrote it (E4's implementer, lines 7-10; t12Fix1's probe (c)): exactly the
+ * keys `id`, `type`, `changes` and `status`, `id` a string, `status` `in_progress` or
+ * `completed`, and `changes` a non-empty array of exactly `{path: string, kind: "add" |
+ * "update"}`. A key beside those, or a value of a kind no archive holds, is not this item.
+ */
+function recordedFileChange(item) {
+  if (!exactKeys(item, ["id", "type", "changes", "status"])) return false;
+  if (item.type !== "file_change" || typeof item.id !== "string") return false;
+  if (item.status !== "in_progress" && item.status !== "completed") return false;
+  return Array.isArray(item.changes) && item.changes.length > 0 && item.changes.every((change) =>
+    exactKeys(change, ["path", "kind"]) && typeof change.path === "string" && (change.kind === "add" || change.kind === "update"));
+}
 function recordedHeartbeat(event, calls) {
   const keys = Object.keys(event).sort();
   if (keys.length !== heartbeatKeys.length || keys.some((key, index) => key !== heartbeatKeys[index])) return false;
@@ -398,21 +421,26 @@ const launch = launcherFor(config);
 // holds there: a Codex record with no rollout to read, one whose rollout lacks a command
 // the transcript shows, and one whose rollout holds a tool call this reader does not
 // classify, including changed command-field shapes, are `?`, named. codex-cli 0.159.3's own
-// `wait` on a code-mode cell that yielded, a `function_call` whose arguments decode to exactly
-// `{cell_id, yield_time_ms}` or those and `max_tokens`, its payload carrying exactly the keys the
-// recorded ones do, is a call that runs no command (`codeModeWait`); a `wait` in any other
-// shape, or with any other field, is unclassified. An output carrying a
+// `wait` on a code-mode cell that yielded, a `function_call` of exactly that type and name whose
+// arguments decode to exactly `{cell_id, yield_time_ms}` or those and `max_tokens`, its payload
+// carrying exactly the keys the recorded ones do, is a call that runs no command
+// (`codeModeWait`); a `wait` in any other shape, or with any other field, is unclassified. So
+// are its `sleep` and `request_user_input_async` in the shapes E5's host rollout recorded
+// (`codexOwnCall`), and in no other. An output carrying a
 // command is judged like the call; any other unclassified item with a field naming a tool,
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
 // code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
 // direct call must give one object argument with a literal cmd/chars and no spread or
 // computed key. The raw source and decoded token text are also inventoried: more
 // occurrences of a command tool or delegate name than direct calls followed is `?`, even
-// in comments or regexes, whose escapes are decoded for it. Aliases, eval/Function/import,
+// in comments or regexes, whose escapes are decoded for it — but on the lead row, which
+// holds `delegate`, a delegate name the reader cannot follow is no doubt, while a command
+// tool's still is. Aliases, eval/Function/import,
 // legacy octal escapes, role-dependent slashes the reader cannot classify, and asides
 // naming launches also answer `?`; a word after `.` or `?.` is a property, never a control
 // keyword or one that opens a regular expression. This is a bounded reader, not
-// JavaScript execution; a positively read launch still takes precedence.
+// JavaScript execution; a positively read launch still takes precedence, and a record that
+// holds no launch is named with every doubt it holds, each once.
 const offences = [];
 const unreadable = [];
 const exempted = [];
@@ -486,6 +514,12 @@ for (const record of run) {
     // one thing this scan must not shrug at — it could be the very call it looks for.
     if (typeof event.type === "string" && event.type.startsWith("item.")) {
       const item = event.item ?? {};
+      // An `apply_patch` edit, which names paths and no command, in the shape it was recorded in.
+      if (item.type === "file_change") {
+        if (recordedFileChange(item)) understood++;
+        else unknownItems.push("file_change in a shape no archived run recorded");
+        continue;
+      }
       if (!codexItems.has(item.type)) { unknownItems.push(String(item.type)); continue; }
       if (item.type === "mcp_tool_call" && typeof item.tool !== "string") { unknownItems.push("mcp_tool_call without a tool"); continue; }
       understood++;
@@ -513,14 +547,15 @@ for (const record of run) {
   // A Codex record's rollout: the commands and calls it shows attempted join the
   // transcript's own; keystrokes a script wrote are judged as a command line too. Every
   // command the transcript shows has to be in it, or it is not this record's whole rollout.
-  let rolloutGap;
+  const gaps = [];
   const asides = [];
   const patterns = [];
   const stdin = [];
+  const unfollowed = [];
   if (record.engine === "codex") {
     const files = typeof record.sessionId === "string" && record.sessionId !== "" ? rolloutsOf(record.sessionId) : [];
     if (files.length === 0) {
-      rolloutGap = `no Codex session rollout for ${record.sessionId || "a record with no session id"} under ${path.join(codexHome, "sessions")}`;
+      gaps.push(`no Codex session rollout for ${record.sessionId || "a record with no session id"} under ${path.join(codexHome, "sessions")}`);
     }
     const transcript = [...commands];
     const shown = { lines: [], argvs: [] };
@@ -532,12 +567,15 @@ for (const record of run) {
       asides.push(...read.asides);
       patterns.push(...read.patterns);
       stdin.push(...read.stdin);
+      unfollowed.push(...read.unfollowed);
       shown.lines.push(...read.lines);
       shown.argvs.push(...read.argvs);
-      if (read.unreadable.length > 0 && rolloutGap === undefined) rolloutGap = `its rollout holds ${read.unreadable[0]}`;
+      gaps.push(...read.unreadable.map((entry) => `its rollout holds ${entry}`));
     }
-    const missing = files.length === 0 ? undefined : transcript.find((command) => !rolloutShows(shown, command));
-    if (missing !== undefined && rolloutGap === undefined) rolloutGap = `the transcript ran a command its rollout does not show (${missing.slice(0, 80)})`;
+    if (files.length > 0) {
+      gaps.push(...transcript.filter((command) => !rolloutShows(shown, command))
+        .map((command) => `the transcript ran a command its rollout does not show (${command.slice(0, 80)})`));
+    }
   }
   // What was read is judged first. An offence found has been read far enough to be an
   // offence, and an unread line beside it makes it no less true; `?` is for a transcript
@@ -559,7 +597,8 @@ for (const record of run) {
     else if (judged.verdict === "?") uncertain.push(`${judged.why} (${judged.at})`);
   }
   if (found.size > 0) { offences.push(...found.values()); scanned++; continue; }
-  // Then what could be an offence and cannot be read as one or as none, first named first.
+  // Then what could be an offence and cannot be read as one or as none, every one of them
+  // named, once, in this order: a record's row names all it holds, not the first alone.
   const doubts = [
     ...stdin.filter((chars) => launch.namesTarget(chars)).map((chars) =>
       `its rollout's script writes keystrokes naming an engine to a running process, and which program reads them the rollout does not say (${chars.trim().slice(0, 80)})`),
@@ -568,18 +607,19 @@ for (const record of run) {
       .map((judged) => `its rollout's script names a launch it does not run, which cannot be told from one it does (${judged.at})`),
     ...patterns.filter((text) => launch.names(text) || launch.judge(text).verdict === "launch")
       .map((text) => `its rollout's script holds a regular expression naming an engine, which cannot be told from a command (${text.slice(0, 80)})`),
+    // A `delegate` the reader cannot see called is the lead row's own tool, so on that row its
+    // name is no doubt; a command tool's name it cannot follow stays one on every row.
     ...(lead ? [] : asides.filter((text) => isDelegate(text)).map((text) =>
       `its rollout's script names ${text} in a string, which could be a call this reader cannot see`)),
-    ...(rolloutGap === undefined ? [] : [rolloutGap]),
+    ...(lead ? [] : unfollowed.map((reason) => `its rollout holds ${reason}`)),
+    ...gaps,
+    ...(unknownItems.length === 0 ? []
+      : [`event${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`]),
+    ...(unparsable > 0 || (understood === 0 && unknownItems.length === 0)
+      ? [`${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`] : []),
   ];
   if (doubts.length > 0) {
-    unreadable.push(`${record.id.slice(0, 8)}: ${doubts[0]}`);
-    continue;
-  }
-  if (understood === 0 || unparsable > 0 || unknownItems.length > 0) {
-    unreadable.push(unknownItems.length > 0
-      ? `${record.id.slice(0, 8)}: event${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`
-      : `${record.id.slice(0, 8)}: ${unparsable} line${unparsable === 1 ? "" : "s"} in no shape this reads`);
+    unreadable.push(`${record.id.slice(0, 8)}: ${[...new Set(doubts)].join("; ")}`);
     continue;
   }
   scanned++;
@@ -2328,7 +2368,9 @@ function rolloutsOf(sessionId) {
  * JSON document on stdout, and exit 0 — before any project is read, and judging nothing.
  * `files` is every rollout `rolloutsOf` finds for the id; `calls`, each tool call the rollout
  * shows, in order (`rolloutCalls`); `unreadable`, what `rolloutCommands` could not read, as a
- * verdict would name it, or that no rollout was found. A session id and nothing else.
+ * verdict would name it, or that no rollout was found — the `delegate` names it could not
+ * follow among them, since this mode judges no row and so spares no lead. A session id and
+ * nothing else.
  */
 async function readRollout(options) {
   const sessionId = options["read-rollout"];
@@ -2340,7 +2382,8 @@ async function readRollout(options) {
   if (files.length === 0) report.unreadable.push(`no Codex session rollout for ${sessionId} under ${path.join(codexHome, "sessions")}`);
   for (const file of files) {
     report.calls.push(...rolloutCalls(file));
-    report.unreadable.push(...rolloutCommands(file).unreadable);
+    const read = rolloutCommands(file);
+    report.unreadable.push(...read.unreadable, ...read.unfollowed);
   }
   // A report longer than a pipe's buffer is still being written when `write` returns, and an
   // exit then would cut it short; the module waits here, so nothing after this line runs.
@@ -2350,7 +2393,8 @@ async function readRollout(options) {
 
 /**
  * Each tool call a rollout file shows, by its 1-based line: a code-mode `exec` with the
- * commands `scriptRead` followed, decoded and in order, its `computed` reasons, whether its
+ * commands `scriptRead` followed, decoded and in order, its `computed` reasons and then its
+ * `unfollowed` ones, under `computed` as one list, whether its
  * script is the one shape whose printed exit is its command's own (`direct`, `directScript`),
  * and the one `custom_tool_call_output` of its `call_id` read for an `{exit_code, output}`
  * JSON — `output: null` with a `reason` when there is no output, more than one, or no single
@@ -2394,8 +2438,9 @@ function rolloutCalls(file) {
       return { ...call, kind: "function_call", name: payload.name ?? null, arguments: decoded };
     }
     if (payload.name !== "exec") return { ...call, kind: "custom_tool_call", name: payload.name ?? null };
-    const script = typeof payload.input === "string" ? scriptRead(payload.input) : { commands: [], computed: [], error: "exec input is not a script string" };
-    const read = { ...call, kind: "exec", commands: script.commands, computed: script.computed,
+    const script = typeof payload.input === "string" ? scriptRead(payload.input)
+      : { commands: [], computed: [], unfollowed: [], error: "exec input is not a script string" };
+    const read = { ...call, kind: "exec", commands: script.commands, computed: [...script.computed, ...script.unfollowed],
       direct: typeof payload.input === "string" && directScript(payload.input), ...(script.error === undefined ? {} : { error: script.error }) };
     const answers = typeof payload.call_id === "string" ? outputs.get(payload.call_id) ?? [] : [];
     const paired = typeof payload.call_id !== "string" ? { reason: "the call has no call_id" }
@@ -2472,16 +2517,19 @@ function rolloutShows(shown, command) {
  * keystrokes of a `write_stdin` call and the argv of a `local_shell_call`; the argv of every
  * `CommandExecution` item and `exec_command_begin` event; and the tool of every
  * `McpToolCall` item and `mcp__…` call. The tool calls of codex-cli 0.159.2's that run
- * nothing (`quietTools`) are classified as such, and so is 0.159.3's `wait` on a yielded
- * code-mode cell in the shapes recorded (`codeModeWait`). An output carrying a command is judged
+ * nothing (`quietTools`) are classified as such, and so are 0.159.3's `wait` on a yielded
+ * code-mode cell (`codeModeWait`) and its `sleep` and `request_user_input_async`
+ * (`codexOwnCall`), each in the shapes recorded. An output carrying a command is judged
  * like the call. Any other tool-call entry or item with a field naming a tool, its
  * arguments or a command, a line that is not JSON, a script that does not read and a
- * command a script computes are named, because each could be the one this scan looks for.
+ * command a script computes are named in `unreadable`, because each could be the one this
+ * scan looks for; a `delegate` name a script holds and the reader cannot follow is named in
+ * `unfollowed`, which the scan sets aside on the lead row alone.
  * No verdict reads a call's result: an attempt counts whether it ran, failed or was
  * refused, and the refused ones are the ones `--json` leaves out (A6).
  */
 function rolloutCommands(file) {
-  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [] };
+  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [], unfollowed: [] };
   let text;
   try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
   const unclassified = (what) => read.unreadable.push(`a tool call this reader does not classify (${what})`);
@@ -2523,10 +2571,12 @@ function rolloutCommands(file) {
       read.asides.push(...script.asides);
       read.patterns.push(...script.patterns);
       read.unreadable.push(...script.computed);
+      read.unfollowed.push(...script.unfollowed);
     } else if (entry?.type === "response_item" && type === "function_call") {
       if (name.startsWith("mcp__")) { read.calls.push(name); continue; }
       if (quietTools.has(name)) continue;
       if (name === "wait" && codeModeWait(payload)) continue;
+      if (codexOwnCall(payload)) continue;
       if (!commandTools.has(name) && name !== "write_stdin") { unclassified(`function_call ${name}`); continue; }
       let args;
       try {
@@ -2569,28 +2619,62 @@ function rolloutCommands(file) {
  * Whether a `function_call` payload is codex-cli 0.159.3's own `wait` on a code-mode cell that
  * yielded, in the shape every recorded one has (E2c's lead rollout, line 86; S11's B2, line 32;
  * the 36 in S11's and T14's archives): exactly the keys `type`, `id`, `name`, `arguments`,
- * `call_id` and `internal_chat_message_metadata_passthrough`, the last exactly `{turn_id,
- * create_time}`, and `arguments` a JSON string decoding to exactly `{cell_id: string,
- * yield_time_ms: number}`, with `max_tokens: number` beside them or not. It names a cell and no
- * command, and the cell is a script this reader reads in its own `exec` call. A payload with any
- * other key, at its top or in its passthrough, is not this call, whatever its arguments say.
+ * `call_id` and `internal_chat_message_metadata_passthrough`, `type` the string `function_call`
+ * and `name` the string `wait`, the passthrough exactly `{turn_id, create_time}`, and `arguments`
+ * a JSON string decoding to exactly `{cell_id: string, yield_time_ms: number}`, with
+ * `max_tokens: number` beside them or not. It names a cell and no command, and the cell is a
+ * script this reader reads in its own `exec` call. A payload with any other key, at its top or
+ * in its passthrough, is not this call, whatever its arguments say.
  */
 function codeModeWait(payload) {
-  const exactly = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value)
-    && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
-  if (!exactly(payload, ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"])) return false;
+  if (!exactKeys(payload, ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"])) return false;
+  if (payload.type !== "function_call" || payload.name !== "wait") return false;
   if (typeof payload.id !== "string" || typeof payload.call_id !== "string") return false;
   const passthrough = payload.internal_chat_message_metadata_passthrough;
-  if (!exactly(passthrough, ["turn_id", "create_time"]) || typeof passthrough.turn_id !== "string"
+  if (!exactKeys(passthrough, ["turn_id", "create_time"]) || typeof passthrough.turn_id !== "string"
     || !Number.isFinite(passthrough.create_time)) return false;
   if (typeof payload.arguments !== "string") return false;
   let value;
   try { value = JSON.parse(payload.arguments); } catch { return false; }
   const shape = value !== null && typeof value === "object" && Object.hasOwn(value, "max_tokens")
     ? ["cell_id", "yield_time_ms", "max_tokens"] : ["cell_id", "yield_time_ms"];
-  if (!exactly(value, shape)) return false;
+  if (!exactKeys(value, shape)) return false;
   return typeof value.cell_id === "string" && Number.isFinite(value.yield_time_ms)
     && (!Object.hasOwn(value, "max_tokens") || Number.isFinite(value.max_tokens));
+}
+
+/**
+ * Whether a `function_call` payload is one of codex-cli 0.159.3's own calls that name no
+ * command, in the shapes E5's host rollout recorded: `sleep` (line 139, and three more that
+ * differ only in their ids and time), and `request_user_input_async` (line 132, which Codex
+ * accepted, and line 126, which it refused for a field it does not know, so ran nothing).
+ * Each has exactly the keys `type`, `id`, `name`, `arguments`, `call_id` and
+ * `internal_chat_message_metadata_passthrough`, and `namespace` beside them for `sleep`;
+ * `type` the string `function_call` and `name` the string it is; `id` and `call_id` strings;
+ * the passthrough exactly `{turn_id: string, create_time: number}`; and `arguments` a JSON
+ * string. `sleep`'s namespace is `clock` and its arguments exactly `{duration_ms: number}`;
+ * `request_user_input_async`'s arguments are exactly `{questions}`, a non-empty array of
+ * `{title, options}` or `{title, options, question}`, the title and the question strings and the
+ * options an array of strings. Any other shape is a call this reader has not seen.
+ */
+function codexOwnCall(payload) {
+  if (payload?.type !== "function_call") return false;
+  const sleep = payload.name === "sleep";
+  if (!sleep && payload.name !== "request_user_input_async") return false;
+  const keys = ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"];
+  if (!exactKeys(payload, sleep ? [...keys, "namespace"] : keys)) return false;
+  if (typeof payload.id !== "string" || typeof payload.call_id !== "string") return false;
+  const passthrough = payload.internal_chat_message_metadata_passthrough;
+  if (!exactKeys(passthrough, ["turn_id", "create_time"]) || typeof passthrough.turn_id !== "string"
+    || !Number.isFinite(passthrough.create_time)) return false;
+  if (typeof payload.arguments !== "string") return false;
+  let value;
+  try { value = JSON.parse(payload.arguments); } catch { return false; }
+  if (sleep) return payload.namespace === "clock" && exactKeys(value, ["duration_ms"]) && Number.isFinite(value.duration_ms);
+  return exactKeys(value, ["questions"]) && Array.isArray(value.questions) && value.questions.length > 0
+    && value.questions.every((question) => (exactKeys(question, ["title", "options"]) || exactKeys(question, ["title", "options", "question"]))
+      && typeof question.title === "string" && (!Object.hasOwn(question, "question") || typeof question.question === "string")
+      && Array.isArray(question.options) && question.options.every((option) => typeof option === "string"));
 }
 
 /**
@@ -2601,13 +2685,18 @@ function codeModeWait(payload) {
  * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
  * `delegate` called is a call. Every other reference to those tools, `tools` used other than
  * by a name, `eval`, `Function`, `require` and `import` go in `computed`, as does any excess
- * of raw/decoded tool-name occurrences over the direct calls followed. The scan
- * answers with `?`; every other string, template text and comment is an aside, and every
+ * of raw/decoded tool-name occurrences over the direct calls followed — except where the name
+ * is a `delegate`'s, or a string holds one and no command tool's, which go in `unfollowed`,
+ * because on the lead row a `delegate` it cannot see called is no offence. The scan
+ * answers both with `?`, `unfollowed` on any other row alone; every other string, template
+ * text and comment is an aside, and every
  * regular expression a pattern, which the scan judges as well, because a launch written
  * there cannot be told from one the script assembles and runs.
  */
 function scriptRead(source) {
-  const read = { commands: [], stdin: [], calls: [], computed: [], asides: [], patterns: [] };
+  const read = { commands: [], stdin: [], calls: [], computed: [], unfollowed: [], asides: [], patterns: [] };
+  // A reason about a `delegate` name goes where the lead row can set it aside.
+  const doubt = (name, reason) => (isDelegate(name) ? read.unfollowed : read.computed).push(reason);
   let tokens;
   try { tokens = scriptTokens(source); } catch (error) { return { ...read, error: error.message }; }
   const keys = new Map([["exec_command", "cmd"], ["write_stdin", "chars"]]);
@@ -2660,9 +2749,9 @@ function scriptRead(source) {
       const name = token.kind === "name" ? token.text : token.kind === "string" ? token.value : undefined;
       if (name === undefined || (!keys.has(name) && !isDelegate(name))) return;
       const member = token.kind === "string" && list[k - 1]?.text === "[" && list[k + 1]?.text === "]";
-      if (token.kind === "string" && !member) { read.computed.push(`a string naming ${name}`); return; }
+      if (token.kind === "string" && !member) { doubt(name, `a string naming ${name}`); return; }
       const open = member ? k + 2 : k + 1;
-      if (list[open]?.text !== "(") { read.computed.push(`${name} used other than in a direct call`); return; }
+      if (list[open]?.text !== "(") { doubt(name, `${name} used other than in a direct call`); return; }
       if (isDelegate(name)) { follow(name); read.calls.push(name); return; }
       const argument = callArgument(list, open + 1, keys.get(name));
       if (argument === null) {
@@ -2676,12 +2765,16 @@ function scriptRead(source) {
   };
   visit(tokens);
   // A string that holds a command tool's name could be code the script evaluates later.
-  const toolText = /\b(?:exec_command|write_stdin)\b|__delegate\b/;
+  const commandText = /\b(?:exec_command|write_stdin)\b/;
+  const delegateText = /__delegate\b/;
   const aside = (list) => {
     for (const token of list) {
       if (taken.has(token)) continue;
       const text = token.kind === "string" ? token.value : token.kind === "template" ? token.parts.join(" ") : "";
-      if (toolText.test(text) && !keys.has(text) && !isDelegate(text)) read.computed.push("a string holding a command tool's name");
+      if (!keys.has(text) && !isDelegate(text)) {
+        if (commandText.test(text)) read.computed.push("a string holding a command tool's name");
+        else if (delegateText.test(text)) read.unfollowed.push("a string holding a command tool's name");
+      }
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
       else if (token.kind === "regex") {
@@ -2693,7 +2786,7 @@ function scriptRead(source) {
   };
   aside(tokens);
   for (const [name, count] of named) if (count > (followed.get(name) ?? 0)) {
-    read.computed.push(`${name}: ${count} occurrences but only ${followed.get(name) ?? 0} direct calls followed`);
+    doubt(name, `${name}: ${count} occurrences but only ${followed.get(name) ?? 0} direct calls followed`);
   }
   return read;
 }

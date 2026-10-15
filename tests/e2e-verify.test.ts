@@ -3,11 +3,15 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, mkdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import claude from "../src/engines/claude.ts";
+import { sandboxFor } from "../src/engines/registry.ts";
+import { builtInModesDir, loadMode } from "../src/modes.ts";
+import { projectTools } from "../src/server.ts";
 import { bareProject, separatedMainProject } from "./helpers/project.ts";
 
 // `tools/e2e-verify.mjs` is what every end-to-end run is judged by, so what it cannot read
@@ -1832,6 +1836,9 @@ const codexCodeModeWait = [
   [{ ...e2cWait, internal_chat_message_metadata_passthrough: { ...e2cWait.internal_chat_message_metadata_passthrough, command: "claude -p hidden" } }, "?"],
   [{ ...e2cWait, internal_chat_message_metadata_passthrough: { turn_id: "01a0f658-ae9d-78c0-9325-899bfcb9a5f6", create_time: "1790839480" } }, "?"],
   [{ type: "function_call", name: "wait", arguments: "{\"cell_id\":\"11\",\"yield_time_ms\":30000,\"max_tokens\":1000}", call_id: "call_x" }, "?"],
+  // A name or a type that only reads as the recorded one once it is made a string.
+  [{ ...e2cWait, name: ["wait"] }, "?"],
+  [{ ...e2cWait, type: ["function_call"] }, "?"],
 ] as const;
 test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no command, in exactly its recorded shapes", async (t) => {
   // codex-cli 0.159.3 waits on a code-mode cell that yielded with a `wait` function of its own,
@@ -1847,6 +1854,243 @@ test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no com
     assert.equal(code, { pass: 0, "?": 2 }[expected], out);
     if (expected === "?") assert.match(row(out, scan), /a tool call this reader does not classify \(function_call wait\)/, out);
   }
+});
+
+/** A copy of `value` without `key`: a recorded shape with one of its fields missing. */
+function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+}
+
+// @anchor codexFileChange
+// codex-cli 0.159.3's `--json` item for an `apply_patch` edit, announced and then completed, in the
+// two runs that recorded one: E4's implementer transcript, lines 7-10 (`docs/probes.md#e4`),
+// and t12Fix1's probe (c), verbatim.
+const fileChange = (id: unknown, file: unknown, kind: unknown, status: string) => ({ id, type: "file_change", changes: [{ path: file, kind }], status });
+const e4Worktree = "/home/wsh/.cache/agent-team/cross-agent-e2e/slugkit/.worktrees/t14-e4";
+const e4Patched = fileChange("item_2", `${e4Worktree}/slugkit/__init__.py`, "update", "completed");
+const e4Tests = fileChange("item_3", `${e4Worktree}/tests/test_slugkit.py`, "update", "completed");
+const probeAdded = fileChange("item_0", "/home/wsh/.cache/agent-team/cross-agent-e2e/slugkit/.worktrees/ec422228492d3325e306504fce76b6c8de21/PROBE-patch-inside.txt", "add", "completed");
+const e4Started = { ...e4Patched, status: "in_progress" };
+/** A Codex transcript that runs `ls` and then writes each item, `item.started` and `item.completed` in turn. */
+const fileChangeLog = (items: readonly unknown[]) => [
+  JSON.stringify({ type: "thread.started", thread_id: "t" }),
+  JSON.stringify({ type: "turn.started" }),
+  JSON.stringify({ type: "item.completed", item: { id: "item_1", type: "command_execution", command: "/bin/bash -lc 'ls'", aggregated_output: "", exit_code: 0, status: "completed" } }),
+  ...items.map((item, k) => JSON.stringify({ type: k % 2 === 0 ? "item.started" : "item.completed", item })),
+  JSON.stringify({ type: "turn.completed" }),
+].join("\n") + "\n";
+const codexFileChange = [
+  [[e4Started, e4Patched, { ...e4Tests, status: "in_progress" }, e4Tests], "pass"],
+  [[{ ...probeAdded, status: "in_progress" }, probeAdded], "pass"],
+  // Any other shape is one no archived run recorded: a key beside the item's four or a change's two,
+  [[e4Started, { ...e4Patched, command: "claude -p hi" }], "?"],
+  [[e4Started, { ...e4Patched, changes: [{ ...e4Patched.changes[0], command: "claude -p hi" }] }], "?"],
+  // a key missing,
+  [[e4Started, { ...e4Patched, changes: [{ path: e4Patched.changes[0].path }] }], "?"],
+  [[e4Started, without(e4Patched, "status")], "?"],
+  // the changes in the rollout's own shape, an object by path, or none,
+  [[e4Started, { ...e4Patched, changes: { [`${e4Worktree}/slugkit/__init__.py`]: { type: "update", unified_diff: "@@ -71,2 +71,7 @@\n \n+def unslugify(slug: str) -> str:\n" } } }], "?"],
+  [[e4Started, { ...e4Patched, changes: [] }], "?"],
+  // and a value no archive holds.
+  [[e4Started, fileChange("item_2", `${e4Worktree}/slugkit/__init__.py`, "delete", "completed")], "?"],
+  [[e4Started, { ...e4Patched, status: "failed" }], "?"],
+  [[e4Started, fileChange("item_2", 7, "update", "completed")], "?"],
+  [[e4Started, { ...e4Patched, id: 2 }], "?"],
+  [[e4Started, { ...e4Patched, id: { command: "claude -p hi" } }], "?"],
+] as const;
+test("atc-s96.69: Codex's file_change item, an apply_patch edit, runs no command, in exactly its recorded shapes", async (t) => {
+  // E4's `?` on condition 8 was two of these, which a person read as patches to files inside the
+  // task's worktree. The item names paths and no command; learned in the shapes recorded, and in
+  // no other.
+  for (const [items, expected] of codexFileChange) {
+    const { code, out } = await run(await project(t, { codex: fileChangeLog(items) }));
+    const label = `${JSON.stringify(items.at(-1))}\n${out}`;
+    assert.equal(verdict(out, scan), expected, label);
+    assert.equal(code, { pass: 0, "?": 2 }[expected], label);
+    if (expected === "?") assert.match(row(out, scan), /file_change in a shape no archived run recorded/, label);
+  }
+});
+
+// @anchor codexOwnCalls
+// codex-cli 0.159.3's own calls in E5's host rollout, verbatim: `sleep` at line 139 (lines 153,
+// 167 and 176 differ only in `id`, `call_id` and `create_time`), the `request_user_input_async`
+// Codex accepted at line 132, and the one it refused at line 126 for a `question` field it does
+// not know. Neither names a command.
+const e5Sleep = {
+  type: "function_call", id: "fc_0d6d655fe5cbac8e016abe52873a9887d280ee861282123279", name: "sleep", namespace: "clock",
+  arguments: "{\"duration_ms\":30000}", call_id: "call_cFQYMuURnRt0PaNUuFYlJlnw",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a0f768-cadf-7d43-81cf-4e9c80e63f91", create_time: 1790857862.391045 },
+};
+const e5Asked = {
+  type: "function_call", id: "fc_0d6d655fe5cbac8e016abe5284dd8487d290552df1dd02eb4f", name: "request_user_input_async",
+  arguments: "{\"questions\":[{\"title\":\"How should the lead handle the two remaining plan review findings?\",\"options\":[\"Include fixes in implementer brief (Recommended)\",\"Request another planner revision\"]}]}",
+  call_id: "call_0VJ9XKbAy8cWOZ0PJ9z3jZJH",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a0f768-cadf-7d43-81cf-4e9c80e63f91", create_time: 1790857859.42492 },
+};
+const e5Refused = {
+  type: "function_call", id: "fc_0d6d655fe5cbac8e016abe5280792887d2bd4f48875ec388d8", name: "request_user_input_async",
+  arguments: "{\"questions\":[{\"title\":\"Plan review\",\"options\":[\"Include fixes in implementer brief (Recommended)\",\"Request another planner revision\"],\"question\":\"How should the lead handle the two remaining plan review findings?\"}]}",
+  call_id: "call_QHwm9YbxvYUCbEM6mtHgxpp0",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a0f768-cadf-7d43-81cf-4e9c80e63f91", create_time: 1790857853.769255 },
+};
+const asked = { title: "Plan review", options: ["Include fixes in implementer brief (Recommended)", "Request another planner revision"] };
+const codexOwnCalls = [
+  [e5Sleep, "pass"],
+  [e5Asked, "pass"],
+  [e5Refused, "pass"],
+  // `sleep` in any other shape: its namespace missing or another, other arguments or none that read,
+  [without(e5Sleep, "namespace"), "?"],
+  [{ ...e5Sleep, namespace: "shell" }, "?"],
+  [{ ...e5Sleep, arguments: JSON.stringify({ duration_ms: 30000, cmd: "claude -p hi" }) }, "?"],
+  [{ ...e5Sleep, arguments: JSON.stringify({ duration_ms: "30000" }) }, "?"],
+  [{ ...e5Sleep, arguments: "{\"duration_ms\":" }, "?"],
+  [{ ...e5Sleep, arguments: { duration_ms: 30000 } }, "?"],
+  // a field beside the recorded ones, on the payload or in its passthrough, an identity of another
+  // type, and a name or a type that only reads as the recorded one once it is made a string;
+  [{ ...e5Sleep, command: "claude -p hidden" }, "?"],
+  [{ ...e5Sleep, internal_chat_message_metadata_passthrough: { ...e5Sleep.internal_chat_message_metadata_passthrough, command: "claude -p hidden" } }, "?"],
+  [{ ...e5Sleep, id: { command: "claude -p hi" } }, "?"],
+  [{ ...e5Sleep, call_id: 7 }, "?"],
+  [{ ...e5Sleep, name: ["sleep"] }, "?"],
+  [{ ...e5Sleep, type: ["function_call"] }, "?"],
+  // `request_user_input_async` in any other: a question's field or option no run recorded, no
+  // question, a field beside `questions`, a namespace, an identity of another type.
+  [{ ...e5Asked, arguments: JSON.stringify({ questions: [{ ...asked, cmd: "claude -p hi" }] }) }, "?"],
+  [{ ...e5Asked, arguments: JSON.stringify({ questions: [{ ...asked, options: [1] }] }) }, "?"],
+  [{ ...e5Asked, arguments: JSON.stringify({ questions: [] }) }, "?"],
+  [{ ...e5Asked, arguments: JSON.stringify({ questions: [asked], cmd: "claude -p hi" }) }, "?"],
+  [{ ...e5Asked, namespace: "clock" }, "?"],
+  [{ ...e5Asked, id: { command: "claude -p hi" } }, "?"],
+  [{ ...e5Asked, call_id: null }, "?"],
+] as const;
+test("atc-s96.72: Codex's own sleep and request_user_input_async run no command, in exactly their recorded shapes", async (t) => {
+  // E5's host rollout holds both, each a call the reader did not classify until a person read it.
+  // Learned in the shapes recorded, the refused one included, since a call Codex refused runs
+  // nothing; any other shape is a call this reader has not seen.
+  for (const [entry, expected] of codexOwnCalls) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006608";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { entry }]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${JSON.stringify(entry)}\n${out}`);
+    assert.equal(code, { pass: 0, "?": 2 }[expected], out);
+    // The reader routes on the name made a string, so an array of it is named as the name.
+    if (expected === "?") assert.ok(row(out, scan).includes(`a tool call this reader does not classify (function_call ${String(entry.name)})`), out);
+  }
+});
+
+// @anchor leadDelegateNames
+// S11's Codex lead discovery scripts, verbatim: E2's lead rollout, line 11, and E2c's, line 13.
+// Each names `delegate` in a regular expression, which the script reader cannot follow as a call.
+const e2Discovery = 'const hits = ALL_TOOLS.filter(x => /describe_mode|list_tasks|git_root|run_command|delegate|result|wait|ask|git_mutate|list_roles/i.test(x.name+" "+x.description));\ntext(hits);\n';
+const e2cDiscovery = String.raw`text(ALL_TOOLS.map(x=>x.name).filter(n=>/list_tasks|describe_mode|git_root|delegate|ask|run_command|git_mutate|roles/.test(n)).join("\n"))` + "\n";
+const leadDelegateNames = [
+  [e2Discovery, "pass"],
+  [e2cDiscovery, "pass"],
+  ['text("delegate");', "pass"],
+  ['const d = tools.mcp__cross_agent__delegate;\nawait d({role: "implementer", brief: "x"});', "pass"],
+  ['text("call mcp__cross_agent__delegate next");', "pass"],
+  // A command tool's name the reader cannot follow, and the tools object by a computed name.
+  ['const re=/exec_command/; await tools.exec_command({cmd:"ls"});', "?"],
+  ['const name = "list_roles";\nawait tools[name]({});', "?"],
+  // And an engine launch, which the lead row does not carry.
+  ['await tools.exec_command({cmd:"claude -p hi"});', "FAIL"],
+] as const;
+test("atc-s96.62: on the lead row a delegate name the script reader cannot follow is no doubt, and a command tool's still is", async (t) => {
+  // The lead row holds `delegate`, so a call of it the reader cannot see is no offence there, and
+  // a name it cannot follow is no doubt; E2's and E2c's `?` were such names.
+  for (const [script, expected] of leadDelegateNames) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006609";
+    const { code, out } = await run(await project(t, { lead: {
+      engine: "codex", id: "lead1", role: "lead", depth: 1, body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]),
+    } }, { mode: "dev-team-engine", limits: { maxDepth: 2 } }));
+    assert.equal(verdict(out, scan), expected, `${script}\n${out}`);
+    assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
+  }
+  // On a specialist the same script is still a question, named.
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006610";
+  const { code, out } = await run(await project(t, { codex: {
+    body: codexLog("/bin/bash -lc 'ls'"), sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script: e2Discovery }]),
+  } }));
+  assert.equal(verdict(out, scan), "?", out);
+  assert.match(row(out, scan), /delegate: 1 occurrences but only 0 direct calls followed/, out);
+  assert.equal(code, 2, out);
+});
+
+// @anchor everyDoubt
+test("atc-s96.62: a record's row names every doubt it holds, each once", async (t) => {
+  // A record held to `?` by its first doubt alone is read again for each of the others it hid.
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006611";
+  const body = [
+    JSON.stringify({ type: "thread.started", thread_id: "t" }),
+    JSON.stringify({ type: "turn.started" }),
+    ...["ls", "wc -l README.md", "git status --short"].map((command, k) => JSON.stringify({ type: "item.completed", item: {
+      id: `item_${k}`, type: "command_execution", command: `/bin/bash -lc '${command}'`, aggregated_output: "", exit_code: 0, status: "completed" } })),
+    JSON.stringify({ type: "item.completed", item: { id: "item_9", type: "tool_invocation", tool: "x" } }),
+    "not json",
+    JSON.stringify({ type: "turn.completed" }),
+  ].join("\n") + "\n";
+  const unclassified = (name: string, callId: string) => ({ entry: { type: "function_call", name, call_id: callId, arguments: "{}" } });
+  const { code, out } = await run(await project(t, { codex: { body, sessionId, rollout: rolloutOf(sessionId, [
+    { cmd: "ls", exit: 0 },
+    unclassified("brand_new_tool", "c1"), unclassified("brand_new_tool", "c2"), unclassified("other_new_tool", "c3"),
+    { script: 'text("delegate");' },
+  ]) } }));
+  const line = row(out, scan);
+  assert.equal(verdict(out, scan), "?", out);
+  assert.equal(code, 2, out);
+  for (const doubt of [
+    "function_call brand_new_tool",
+    "function_call other_new_tool",
+    "does not show (/bin/bash -lc 'wc -l README.md')",
+    "does not show (/bin/bash -lc 'git status --short')",
+    "a string naming delegate",
+    "delegate: 1 occurrences but only 0 direct calls followed",
+    "names delegate in a string",
+    "this build cannot read (tool_invocation)",
+    "1 line in no shape this reads",
+  ]) assert.ok(line.includes(doubt), `${doubt}\n${line}`);
+  assert.equal(line.split("function_call brand_new_tool").length - 1, 1, line);
+  assert.equal(line.split("task1:").length - 1, 1, line);
+});
+
+// @anchor claudeAdapterVocabulary
+test("atc-s96.94: every tool the Claude adapter can grant, built-in or its lead mount's, is in the verifier's Claude vocabulary", async (t) => {
+  // The verifier reads a Claude call only of a tool on its list, so a tool the adapter grants and
+  // the list lacks answers `?` on the first run that calls it: every `--tools` entry under every
+  // profile, with a lead mount and without, and every lead-row tool an engine-placed mode's mount
+  // brings, `record` and `track` among them where the config keeps records.
+  const scratchDir = path.join(tmpdir(), "e2e-verify-vocabulary");
+  const lead = { command: process.execPath, args: [path.join(repoRoot, "src", "server.ts")] };
+  const builtIn = new Set<string>();
+  for (const profile of Object.keys(claude.sandboxProfiles)) {
+    for (const mount of [undefined, lead]) {
+      const { argv } = claude.plan({
+        role: "lead", brief: "", rolePrompt: "", cwd: repoRoot, engine: "claude", sandbox: sandboxFor("claude", profile),
+        sessionId: "11111111-1111-4111-8111-111111111111", denyTargets: [], env: {}, scratchDir,
+        logPath: path.join(scratchDir, "task.ndjson"), resultPath: path.join(scratchDir, "task.out"),
+        ...(mount === undefined ? {} : { lead: mount }),
+      });
+      for (const tool of argv[argv.indexOf("--tools") + 1].split(",")) builtIn.add(tool);
+    }
+  }
+  const [server] = Object.keys(JSON.parse(claude.leadMount(lead, scratchDir).files![0].contents).mcpServers);
+  const mounted = new Set<string>();
+  for (const name of await readdir(builtInModesDir())) {
+    const mode = loadMode(builtInModesDir(), name);
+    if (mode.lead.placement !== "engine") continue;
+    for (const tool of projectTools(repoRoot, { mode, records: { files: [], tracker: { files: [] } } })) {
+      if (tool.rows.includes("lead")) mounted.add(`mcp__${server}__${tool.name}`);
+    }
+  }
+  const tools = [...builtIn, ...mounted];
+  const blocks = tools.map((name, k) => ({ type: "tool_use", id: `toolu_${k}`, name, input: name === "Bash" ? { command: "true" } : {} }));
+  const { code, out } = await run(await project(t, { lead: { engine: "claude", id: "lead1", role: "lead", depth: 1, body: turnOf(blocks) } },
+    { mode: "dev-team-engine", limits: { maxDepth: 2 } }));
+  assert.equal(verdict(out, scan), "pass", `${tools.join(", ")}\n${out}`);
+  assert.equal(code, 0, out);
 });
 
 /**

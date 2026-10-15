@@ -3965,16 +3965,24 @@ of its text — a Grok session's inherited slash commands include one called
 reads Claude's and Grok's `tool_use` blocks against each engine's own tool
 vocabulary, the names its archived transcripts call, Grok's `use_tool` dispatcher
 in the one shape a run recorded (`tool_name` naming this server's tool, `tool_input` an
-object, nothing else) — this server's tools one list, `waive_review` among them
-(`tools/e2e-verify.mjs#serverTools`) — and Codex's `agent_message`,
+object, nothing else) — this server's tools one list, `waive_review`, `record` and `track`
+among them (`tools/e2e-verify.mjs#serverTools`), and every tool the Claude adapter can
+grant, built-in or its lead mount's, in Claude's vocabulary
+(`tests/e2e-verify.test.ts#claudeAdapterVocabulary`) — and Codex's `agent_message`,
 `command_execution` and `mcp_tool_call` items, and **nothing else**: a tool outside
 its engine's list or a call with no name answers `?`
-(`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for one event it reads by its whole shape and passes as no
-call: Claude Code 2.1.286's heartbeat for a call still in flight, a `tool_progress`
+(`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for two shapes it reads whole and passes as no
+call. One is Claude Code 2.1.286's heartbeat for a call still in flight, a `tool_progress`
 with `heartbeat: true`, exactly the keys E3's lead recorded, an id that is its
 parent's `-heartbeat-<n>`, and a parent that is a call of the same transcript under
-the same tool name (`docs/probes.md#e3`, `tests/e2e-verify.test.ts#claudeHeartbeat`);
-any other `tool_progress` still answers `?`. I1's Codex row closed the last of those: a Codex MCP call is
+the same tool name (`docs/probes.md#e3`, `tests/e2e-verify.test.ts#claudeHeartbeat`).
+The other is codex-cli 0.159.3's `file_change` item, an `apply_patch` edit, which names
+paths and no command: exactly `id`, `type`, `changes` and `status`, the status
+`in_progress` or `completed`, and the changes a non-empty list of exactly `{path, kind}`,
+the kind `add` or `update`, as E4's implementer and t12Fix1's probe (c) recorded it
+(`docs/probes.md#e4`, `tools/e2e-verify.mjs#recordedFileChange`,
+`tests/e2e-verify.test.ts#codexFileChange`). Any other `tool_progress` or `file_change`
+still answers `?`. I1's Codex row closed the last of those: a Codex MCP call is
 an `mcp_tool_call` item whose `tool` field is this server's own name for the
 tool (`docs/probes.md#i1CodexTracked`, `tests/e2e-verify.test.ts#codexMcpItem`),
 and a Codex log carrying any other item type is still answered `?` rather than
@@ -3995,27 +4003,38 @@ attempted, denied ones included; a Codex record with no rollout to read answers
 rollout lacks a command the transcript shows, holds an unclassified tool-bearing
 item, or changes a known command field's shape (`#codexRolloutUnclassified`,
 `#rolloutItemShapes`). codex-cli 0.159.3's own `wait` on a code-mode cell that
-yielded — a `function_call` whose arguments decode to exactly `{cell_id,
+yielded — a `function_call` of exactly that type and name whose arguments decode to exactly `{cell_id,
 yield_time_ms}`, with `max_tokens` or without — names a cell and no command, and
 is classified as a call that runs none in those two recorded shapes and no other,
 its payload carrying exactly the keys every recorded one carries, so a field beside
-them or inside its passthrough leaves the call unclassified (`#codexCodeModeWait`). An output carrying a command is judged like the call, and a
+them or inside its passthrough leaves the call unclassified (`#codexCodeModeWait`). So are
+its own `sleep` and `request_user_input_async`, in the shapes E5's host rollout recorded
+and no other: `sleep` in the `clock` namespace with exactly `{duration_ms}`, and
+`request_user_input_async` with exactly `{questions}`, each question `{title, options}`
+or those and `question` — the shape Codex refused for that field, which ran nothing
+(`tools/e2e-verify.mjs#codexOwnCall`, `tests/e2e-verify.test.ts#codexOwnCalls`). An output carrying a command is judged like the call, and a
 tool-bearing item is one with a field naming a tool, its arguments or a command,
 by any spelling, on it or one object below (`#rolloutOutputs`). A code-mode
 script is tokenized as JavaScript: a direct `exec_command` or `write_stdin` call
 must give one object argument with a literal `cmd` or `chars`, without spread or
 computed keys. An independent inventory counts
 command-tool and delegate names in raw source and decoded token text; any excess
-over direct calls followed answers `?`, including names hidden by tokenization.
+over direct calls followed answers `?`, including names hidden by tokenization —
+but on the lead row, whose own tool `delegate` is, a delegate name the reader cannot
+follow is no doubt, while a command tool's, or the `tools` object by a computed name,
+still is (`tests/e2e-verify.test.ts#leadDelegateNames`).
 Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
 `#codexScriptFailClosed`, `#scriptNameAccounting`). A word after `.` or `?.` is a
 property, never a control keyword or one that opens a regular expression, and a
-regular expression's escapes are decoded for the inventory (`#memberNames`). Under a
-Codex host E4's Codex implementer showed a shape the table still answers `?`: codex-cli
-0.159.3's `--json` writes an `apply_patch` edit as a `file_change` item, which a person read
-as patches to files inside the task's worktree (`docs/probes.md#e4`).
+regular expression's escapes are decoded for the inventory (`#memberNames`). A record
+that offends nowhere and holds a doubt is named with every doubt it holds, each once,
+not the first alone (`tests/e2e-verify.test.ts#everyDoubt`). Under a Codex host E4's Codex
+implementer showed codex-cli 0.159.3's `--json` writing an `apply_patch` edit as a
+`file_change` item, which a person read as patches to files inside the task's worktree
+(`docs/probes.md#e4`), and which the table has since learned in that shape
+(`tests/e2e-verify.test.ts#codexFileChange`).
 `--read-rollout <session id>` prints what that reader makes of one session's
 rollout — each code-mode `exec` with the commands it decoded, the exit code its one
 output holds, paired by `call_id`, and whether its script is `direct` — and judges
@@ -5401,8 +5420,9 @@ binding, and the project follows its own path (Context).
   launch nor a `delegate` of a specialist: E3's lead transcript holds Claude Code's
   `tool_progress` heartbeats, which the verifier has since learned in the shape E3
   recorded (`tests/e2e-verify.test.ts#claudeHeartbeat`), and E2's lead rollout a
-  tool-discovery script naming `delegate` in a regular expression, which stays a
-  question by the verifier's contract (`docs/probes.md#e3`, `#e2`). E2's host ran two
+  tool-discovery script naming `delegate` in a regular expression, which the verifier
+  has since learned to set aside on the lead row, whose own tool `delegate` is
+  (`tests/e2e-verify.test.ts#leadDelegateNames`; `docs/probes.md#e3`, `#e2`). E2's host ran two
   read-only `git` commands of its own; once the launcher's host-loop paragraphs
   named `host` placement, E2b's host kept to the launcher's calls but closed on a
   list of its own, and E2c's, under the launcher's closing paragraph conditioned
