@@ -114,7 +114,8 @@ it to set up cross-agent. The setup skill proposes a team from the engines you h
 installed, writes `.cross-agent/config.json` and two `.gitignore` lines only once you
 confirm, offers to commit the `.gitignore` change, and tells you when to reconnect (`/mcp`,
 choose cross-agent, Reconnect, lighter than a new session; `/reload-plugins` does not
-restart the server). Ask it again to change the team later.
+restart the server, as `docs/probes.md#claudeReloadPlugins` records). Ask it again to
+change the team later.
 
 To remove it, `/plugin uninstall cross-agent@agent-plugins`. That leaves the agent-plugins
 marketplace registered for its other plugins; remove the marketplace too only if you use

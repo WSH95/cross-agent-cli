@@ -86,11 +86,12 @@ there; a write that adds or removes the block answers `reconnect: true`.
 
 The server reads the block once, when it starts, and registers the `record` and
 `track` tools for your session and an engine lead only where it found one; a
-specialist is refused both. After you add or remove the block, start a new session, or
-in Claude Code `/mcp`, choose cross-agent, Reconnect, since `/reload-plugins` does not
-restart the server: until then a removed block makes both refuse, and an added one is a `warning` in
-`describe_mode`, each naming the restart. `describe_mode` answers the block as `records` — the files, and each
-configured verb with its command and whether it writes.
+specialist is refused both. After you add or remove the block, start a new session, or,
+lighter, in Claude Code `/mcp`, choose cross-agent, Reconnect, since `/reload-plugins`
+does not restart the server: until then a removed block makes both refuse, and an added
+one is a `warning` in `describe_mode`, each naming the restart. `describe_mode` answers
+the block as `records` — the files, and each configured verb with its command and
+whether it writes.
 
 **`record`** reads or writes the files under `files`, and only those; the tracker's
 own files are not its to write. `{path}` reads one: its text and its `sha256`, up to

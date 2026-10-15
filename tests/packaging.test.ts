@@ -504,10 +504,29 @@ test("wherever the docs and the launcher have a Claude Code user restart the ser
     const next = text.indexOf("\n## ", start + 1);
     const section = text.slice(start, next < 0 ? text.length : next).replace(/\s+/g, " ");
     assert.match(section, reconnect, `${file}, ${heading}`);
+    // The operator guide offers both ways in each section, and says which is the lighter.
+    if (file === "docs/operator-guide.md") {
+      assert.match(section, /start a new session, or, lighter, in Claude Code `\/mcp`, choose cross-agent, Reconnect/, `${file}, ${heading}`);
+    }
   }
   // In the launcher, every paragraph or bullet that asks for a restart says how.
   const launcher = fs.readFileSync(path.join(repoRoot, "skills", "cross-agent", "SKILL.md"), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "");
   const units = launcher.split(/\n\s*\n|\n(?=[-*] )/).filter((unit) => /\brestart\b/.test(unit)).map((unit) => unit.replace(/\s+/g, " "));
   assert.ok(units.length >= 2, "the launcher's drift paragraph and its guardrail ask for a restart");
   for (const unit of units) assert.match(unit, reconnect, unit);
+});
+
+// @anchor sectionSixClaim
+test("the design's account of init --mode dev-team credits section 6 only with what section 6 says", () => {
+  // Section 6 says `init` writes `engines` with no `bin`; `init` binds `consult` too, which
+  // section 6's example leaves out (`tests/cli.test.ts#initModeDev`), so "as that section
+  // says" follows the one clause the section states.
+  const design = fs.readFileSync(path.join(repoRoot, "docs", "design.md"), "utf8");
+  const start = design.indexOf("### 6. Config and validation");
+  const end = design.indexOf("### 7. ", start);
+  assert.ok(start >= 0 && end > start, "the design has section 6");
+  const sectionSix = design.slice(start, end).replace(/\s+/g, " ");
+  assert.ok(sectionSix.includes("`cross-agent init` writes `engines` with an empty object per engine"), "section 6 says init writes no bin");
+  assert.ok(!sectionSix.includes("consult"), "section 6 says nothing of consult");
+  assert.match(design.replace(/\s+/g, " "), /writes the values of section 6's config — `engines` with no `bin`, as that section says, and `consult` bound as well —/);
 });

@@ -425,8 +425,8 @@ comes after it.
   between a merge's check of HEAD and the merge.
 - A mid-session change to `.cross-agent/config.json`'s `mode` needs a server
   restart — under a Claude Code host, `/mcp`, choose cross-agent, Reconnect, since
-  `/reload-plugins` does not restart the server. `list_roles` names that drift; the tools this server registered are
-  the ones its own mode declared.
+  `/reload-plugins` does not restart the server. `list_roles` names that drift; the
+  tools this server registered are the ones its own mode declared.
 
 ## Engine placement
 

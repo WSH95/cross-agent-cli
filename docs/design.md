@@ -5119,8 +5119,8 @@ binding, and the project follows its own path (Context).
   chunk with the call it cancels (`#cancellationSharingChunk`). `check` is the other writer of the two
   transitions, and writes both (`tests/tasks.test.ts#checkWritesStall`).
 - **Modes (recorded, except the hosts).** `init --mode dev-team` writes the values of
-  section 6's config — `consult` bound as well, and `engines` with no `bin`, as that
-  section says — and it loads against the built-in mode, whose roles
+  section 6's config — `engines` with no `bin`, as that section says, and `consult`
+  bound as well — and it loads against the built-in mode, whose roles
   default to read-only, read-only, `workspace-write`, read-only, `workspace-write`
   and read-only — the resolver beside the implementer, the consultant last — with
   the temporary-directory warning on stderr (`tests/cli.test.ts#initModeDev`); `--mode

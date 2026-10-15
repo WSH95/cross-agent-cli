@@ -4186,11 +4186,33 @@ the record's `createdAt` to `updatedAt` is 320.2 s. The `wait` on the plan revie
 keeps running, and its answer arrives later as a task notification. The launcher's row says
 that (`tests/skills.test.ts#budgetTable`); its watching paragraph says it too, and that a
 backgrounded call is no reason to call again (`tests/skills.test.ts#backgroundedCall`), and
-so does `docs/design.md`'s "Time limits". A backgrounded call belongs to the host session and ends when that session
-exits; the task it waits on is run by its detached runner and keeps running, and a later
-session waits on it by its id.
+so does `docs/design.md`'s "Time limits". A backgrounded call belongs to the host session
+and ends when that session exits; the task it waits on is run by its detached runner and
+keeps running, and a later session waits on it by its id.
 
 **Not recorded.** Either run's Claude Code version; the pilot's full message text and its
 calls' durations; a host exiting while a call is in the background, which was not
 exercised — the message's last sentence is all there is; and whether `claude -p`, as a
 headless host or a Claude engine lead, backgrounds the same way.
+
+<!-- @anchor claudeReloadPlugins -->
+## Claude Code's `/reload-plugins` does not restart the plugin's MCP server (2026-10-13)
+
+**The pilot (2026-10-13).** In the dev-team pilot (`atc-s96.118`), under the installed 0.1.2
+build and an interactive Claude Code host: after `init --mode dev-team`, `/reload-plugins`
+kept the same server process, which still served `solo` — `list_roles` warned to restart
+the server to change modes, and `git_root` refused every call. `/mcp`, choose cross-agent,
+Reconnect restarted it, and the warning cleared.
+
+**Corroboration.** A community report against Claude Code, its issue 57644,
+"reload-plugins reports MCP server reloaded but child process is not respawned",
+describes the same behaviour. That issue is marked closed, so a later Claude Code release
+may change the behaviour.
+
+**Reading.** Under this host, `/reload-plugins` leaves the running server, and the mode it
+read when it started, as they were; `/mcp`'s Reconnect starts it again. The README's quick
+start, the install guide's Claude Code section, the operator guide's two restarts and the
+launcher's say so (`tests/packaging.test.ts#claudeReconnect`), and so does the setup
+skill's Reconnect row.
+
+**Not recorded.** The Claude Code version.
