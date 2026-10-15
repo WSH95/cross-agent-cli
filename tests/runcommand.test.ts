@@ -10,7 +10,7 @@ import { gitMutate } from "../src/gitmutate.ts";
 import { gitRoot } from "../src/gitroot.ts";
 import { readJournal } from "../src/journal.ts";
 import { create, update } from "../src/ledger.ts";
-import { acquire, gitLockName, lockPath } from "../src/locks.ts";
+import { acquire, gitLockName, lockPath, repositoryLockPath } from "../src/locks.ts";
 import { groupAlive } from "../src/process.ts";
 import { setupMarkerPath } from "../src/review.ts";
 import { runCommand } from "../src/runcommand.ts";
@@ -541,6 +541,25 @@ test("the gate's checkout lives under the project's own .cross-agent/gate, and a
   assert.ok(reason.includes(gate) && reason.includes(outside), reason);
   assert.deepEqual(fs.readdirSync(outside), [], "nothing was checked out there");
   assert.equal(await git(root, "worktree", "list", "--porcelain"), registry);
+  assert.equal(readJournal(root, "x")!.steps.length, steps, "and nothing was journaled");
+});
+
+// @anchor gateCheckoutUnfinished
+test("a gate checkout whose git never finishes is refused, its directory removed and its locks free", async (t) => {
+  const { root } = await repository(t, { testCommand: "true" });
+  const directory = await committedTask(root, "x");
+  const steps = readJournal(root, "x")!.steps.length;
+  // A post-checkout hook that ends its own git: a checkout already made, and a git with no
+  // exit code, as a hook past the timeout leaves it.
+  fs.mkdirSync(path.join(root, ".git", "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".git", "hooks", "post-checkout"), '#!/bin/sh\nkill -TERM "$PPID"\n', { mode: 0o755 });
+
+  const reason = refusal(await runCommand(root, { which: "test", where: directory, slug: "x" }));
+  assert.match(reason, /^the gate could not check out [0-9a-f]+: git worktree add .* could not run/);
+  assert.deepEqual(fs.readdirSync(path.join(root, ".cross-agent", "gate")), [], "no checkout is left");
+  for (const file of [lockPath(root, gitLockName()), repositoryLockPath(path.join(root, ".git"))]) {
+    await (await acquire(file, { operation: "a probe", waitSeconds: 0 })).release();
+  }
   assert.equal(readJournal(root, "x")!.steps.length, steps, "and nothing was journaled");
 });
 

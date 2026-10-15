@@ -2519,12 +2519,17 @@ checkout — goes through `src/gitmutate.ts#run`, and has `src/gitmutate.ts#gitT
 minutes, hooks included. git leads a process group of its own; at the timeout the
 group gets SIGTERM, on which git removes its own `index.lock` and ref locks, and
 SIGKILL two seconds later whatever SIGTERM did, since a hook may ignore it after git
-has gone; only then does the call answer, `ok: false`, with a reason that names the
-timeout and says the command may have completed in part, and with no step journaled
+has gone; only then does `run` answer. `git_mutate` and `git_root`, the one-shot's
+`worktree add` included, answer `ok: false` with a reason that names the timeout and
+says the command may have completed in part, and journal no step
 (`tests/gitmutate.test.ts#gitTimeoutEndsGroup`, `#gitTimeoutEscalates`,
-`tests/gitroot.test.ts#gitRootTimeout`). Each caller's `finally` then frees every
-lock it took. A post-commit, post-merge or post-checkout hook runs after its command
-has landed, so the refusal is a reconciliation trigger like any other `ok: false`.
+`tests/gitroot.test.ts#gitRootTimeout`). `record` still decides by whether its commit
+landed, as for any commit that gave no answer: a branch that moved is verified and
+journaled, and one that did not is put back (`src/records.ts#landCommit`). The gate's
+checkout is refused with its directory removed (`tests/runcommand.test.ts#gateCheckoutUnfinished`).
+Each caller's `finally` then frees every lock it took. A post-commit, post-merge or
+post-checkout hook runs after its command has landed, so the refusal is a
+reconciliation trigger like any other `ok: false`.
 
 What residual remains is stated rather than hidden. Until the timeout, a command that
 hangs — a hook that never returns — holds `git.lock` and the repository lock. Every
@@ -2542,7 +2547,7 @@ A git that outlived its SIGTERM may leave `index.lock` behind, which the operato
 removes once no git runs there. Because git leads its own group, a terminal's Ctrl-C at
 the CLI's `git` or `git-root` verb, or a server killed with an engine's process group,
 ends the caller and frees its locks but no longer reaches git or its hooks, which run
-on unprotected. And the verifier's own `git -C` reads (`src/worktree.ts:50-53`), like
+on unprotected. And the verifier's own `git -C` reads (`src/worktree.ts#git`), like
 the ones that find a project, keep no timeout: they run no hook, short of a
 `core.fsmonitor` command.
 `docs/operator-guide.md` gives the operator's recovery: find the hung git by its command line —

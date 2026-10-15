@@ -873,7 +873,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
     },
     {
       name: "list_tasks",
-      description: "Every active task of this project and the 20 most recent settled ones, after a reconciliation pass, newest first, with the records no reader could judge; `limit` sets how many settled tasks are listed, and `omitted` counts those left out.",
+      description: `Every active task of this project and the ${defaultSettledLimit} most recent settled ones, after a reconciliation pass, newest first, with the records no reader could judge; \`limit\` sets how many settled tasks are listed, and \`omitted\` counts those left out.`,
       inputSchema: { type: "object", properties: { status: { type: "string", enum: [...taskStatuses] }, limit: { type: "number" } } },
       rows: ["operator", "lead", "specialist"],
       handler: async (args, context) => {

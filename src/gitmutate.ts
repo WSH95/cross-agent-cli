@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -206,7 +207,14 @@ async function rebasing(gitDir: string, branch: string): Promise<boolean> {
 export async function run(gitDir: string, workTree: string, args: string[], seconds = gitTimeoutSeconds): Promise<Ran> {
   const env = gitEnvironment();
   const argv = [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args];
-  const child = spawn("git", argv, { cwd: workTree, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  let child: ChildProcess;
+  try {
+    child = spawn("git", argv, { cwd: workTree, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  } catch (error) {
+    // An argument no process can be started with — a NUL in it, one past the kernel's
+    // length — is thrown here rather than emitted, and is as much a git that could not run.
+    throw new GitRunError(`git ${args.join(" ")} could not run in ${workTree}: ${message(error)}`);
+  }
   const signal = (value: NodeJS.Signals): void => {
     if (child.pid === undefined) return;
     try {

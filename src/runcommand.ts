@@ -5,7 +5,7 @@ import { constants } from "node:os";
 import path from "node:path";
 import { loadConfig, repositoryLockWait } from "./config.ts";
 import type { CrossAgentConfig } from "./config.ts";
-import { revision, run } from "./gitmutate.ts";
+import { GitRunError, revision, run } from "./gitmutate.ts";
 import { trackedStateFault } from "./gitroot.ts";
 import { childEnv } from "./guard.ts";
 import { appendStep, readJournal } from "./journal.ts";
@@ -432,9 +432,17 @@ async function gateRun(projectRoot: string, { located, verified, journal, slug, 
   const checkout = path.join(tmp, "tree");
   const waitSeconds = config.limits.lockWaitSeconds;
   const operation = `run_command test ${slug}`;
-  // The explicit form `git_root` creates worktrees with, on the commit resolved above.
-  const added = await underGitLocks(projectRoot, located.commonDir, waitSeconds, operation,
-    () => run(located.gitDir, located.workTree, ["worktree", "add", "--detach", checkout, head]));
+  // The explicit form `git_root` creates worktrees with, on the commit resolved above. A git
+  // with no exit code — past its timeout in a post-checkout hook, ended by a signal — is a
+  // checkout that failed too, so its directory goes the same way.
+  let added: { value: Awaited<ReturnType<typeof run>> } | { reason: string };
+  try {
+    added = await underGitLocks(projectRoot, located.commonDir, waitSeconds, operation,
+      () => run(located.gitDir, located.workTree, ["worktree", "add", "--detach", checkout, head]));
+  } catch (error) {
+    if (!(error instanceof GitRunError)) throw error;
+    added = { reason: error.message };
+  }
   if ("reason" in added || added.value.exitCode !== 0) {
     fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: false, reason: `the gate could not check out ${head}: ${"reason" in added ? added.reason : added.value.stderr.trim()}` };

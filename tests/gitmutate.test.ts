@@ -1244,3 +1244,21 @@ test("a git command whose output passes the cap on one stream is ended and refus
 
   await assert.rejects(run(path.join(root, ".git"), root, ["commit", "--allow-empty", "-m", "x"]), (error: Error) => error instanceof GitRunError && /could not run/.test(error.message));
 });
+
+// @anchor gitArgumentUnstartable
+test("an argument no process can be started with is a git that could not run, refused with every lock free", async (t) => {
+  const { root, add } = await repository(t);
+  await add("unstartable");
+  const head = await git(root, "rev-parse", "refs/heads/task/unstartable");
+  // Node refuses a NUL in an argument, and the kernel one argument past its length, before
+  // any child exists: neither is an exception for the lead to be thrown.
+  for (const text of ["a\0b", "x".repeat(200_000)]) {
+    const result = await gitMutate(root, { slug: "unstartable", args: ["commit", "--allow-empty", "-m", text] }, { waitSeconds: 5 });
+    assert.match(refusal(result), /could not run/, `${text.length} characters`);
+  }
+  for (const file of [lockPath(root, spawnLockName()), lockPath(root, gitLockName()), repositoryLockPath(path.join(root, ".git"))]) {
+    await (await acquire(file, { operation: "a probe", waitSeconds: 0 })).release();
+  }
+  assert.equal(await git(root, "rev-parse", "refs/heads/task/unstartable"), head);
+  assert.equal(readJournal(root, "unstartable"), null);
+});
