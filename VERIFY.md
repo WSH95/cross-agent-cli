@@ -7,6 +7,29 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## A finished run closes its epic — `atc-2jl.10` (2026-10-15)
+
+Follow-up of epic `atc-2jl` (from `atc-2jl.4`'s round-1 review). Went through the `dev-team`
+loop and merged as a fast-forward from `ebb09f6` to `c94ae09` (slug `2jl-10-epic`; `9b7232f` the
+change, `c94ae09` the wrap-up). Text and tests only. R5 in `modes/dev-team-engine/SKILL.md` gains
+a step: when every item of the set is closed and no stop ended the run, the run's epic (a goal's
+from R3, or the one the brief names) is closed with `track show` then `track close` once `show`
+reports every child closed, after the follow-ups and before the final handoff; a child not closed
+leaves it open and named; a list of ids has no epic; the report lists the close. `roles/lead.md`
+says the epic is no item and R5 closes it on its own conditions. `docs/design.md`'s run paragraph
+is rewrapped (atc-2jl.4's round-3 cosmetic Minor) and describes the step, as does the operator
+guide.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, two Minors folded.
+- **Code review:** round 1 (`9b7232f`) all three seats `no major issues`; seat 1's two Minors (the
+  lead prompt's item rule and report, a missing pin) fixed in the wrap-up. Round 2 (`c94ae09`) all
+  three `no major issues`, no findings.
+- **Gate and root suite:** 1198 and 1199 tests at the two heads, 0 fail; the root suite at
+  `c94ae09` ran 1199: 1197 pass, 0 fail, 2 guarded skips. Citation check: 1803 citations, 0
+  misses. `describe_mode` for `dev-team-engine`: 52,068 bytes.
+- **Not verified:** a real lead closing a real epic (the live trace after a release).
+
 ## The engine lead's run — `atc-2jl.4`, with `atc-s96.117` and `atc-2jl.8` (2026-10-14)
 
 Task 4 of epic `atc-2jl`, the last of its four. Went through the `dev-team` loop and merged as a

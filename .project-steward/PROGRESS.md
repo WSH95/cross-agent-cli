@@ -481,3 +481,5 @@ Set up Project Steward in this repository.
 - 2026-10-14T23:09:53Z — claude — [auto-checkpoint] atc-2jl.4: committed 1c7c448, gate passed; code review round 1 in progress (seat 2 major: R3 vs the planner prompt).
 - 2026-10-14T23:47:34Z — claude — [auto-checkpoint] atc-2jl.4: round 1 fix committed b088cbe; round 2 all no major issues; wrap-up W1-W3 running. Follow-up atc-2jl.10 filed.
 - 2026-10-15T00:11:00Z — claude — atc-2jl.4 (+.8, atc-s96.117) merged as 5a78aec (the engine lead's run, prompts, launcher, docs, AGENTS.md); 3 review rounds; root suite 1197/1195/0 fail; closed. Follow-ups atc-2jl.9, .10. Next: atc-2jl.10.
+- 2026-10-15T00:34:08Z — claude — [auto-checkpoint] atc-2jl.10: plan approved; committed 9b7232f; gate running.
+- 2026-10-15T01:03:12Z — claude — atc-2jl.10 merged as c94ae09 (a finished run closes its epic; the lead prompt names the epic as no item); 2 review rounds; root suite 1199/1197/0 fail; closed. Next: atc-2jl.9.
