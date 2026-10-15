@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T01:03:12Z
+updated_at: 2026-10-15T01:41:46Z
 updated_by: claude
 session_status: in-progress
 branch: main
@@ -232,8 +232,9 @@ What stands is the project's own record. The operator conditions a release names
   (recorded in Decision 0022); root suite 1197/1195/0 fail. All four tasks of `atc-2jl` are merged.
 - **`atc-2jl.10` merged as `c94ae09`** and closed: a finished run closes its epic at R5; the
   lead prompt names the epic as no item; root suite 1199/1197/0 fail.
-- **Left in the epic:** `atc-2jl.9` (`nameFault` and a trailing `.`), then `atc-9w2` (flaky wait
-  test), each through the dev-team loop; `atc-2jl.5` waits for the live trace after a release.
+- **`atc-2jl.9` merged as `4c2288e`** and closed: `nameFault` refuses a trailing `.`; the loops'
+  slug sentence names `git_root`'s branch exclusions; root suite 1201/1199/0 fail.
+- **Then:** `atc-9w2` (flaky wait test); `atc-2jl.5` waits for the live trace after a release.
 - No release work remains in flight. `atc-s96.111` is closed; PR #16 awaits the user.
   Its clean temporary target checkout and publication evidence remain under
   `/tmp/cross-agent-release-0.1.1-KbXLn0/`.
@@ -360,7 +361,7 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-0. **Follow-ups of `atc-2jl`, through the dev-team loop:** `atc-2jl.9`, then `atc-9w2`. Then ask the user about a push and a release; the epic's
+0. **Last follow-up, through the dev-team loop:** `atc-9w2` (flaky wait test). Then ask the user about a push and a release; the epic's
    live acceptance trace (`atc-2jl.5` with it) is the operator's after the release.
 1. **The pilot is done (`atc-s96.118`, closed).** Two beads went through the full
    `dev-team` loop on this repository under the user's bindings, both with no fix round:

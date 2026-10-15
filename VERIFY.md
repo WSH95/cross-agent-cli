@@ -7,6 +7,27 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## `git_root` refuses a branch name ending in `.` — `atc-2jl.9` (2026-10-15)
+
+Follow-up of epic `atc-2jl` (from `atc-2jl.4`'s plan review). Went through the `dev-team` loop and
+merged as a fast-forward from `fae2721` to `4c2288e` (slug `2jl-9-dot`). `src/gitroot.ts#nameFault`
+also refuses a name ending in `.`, which git refuses (`git check-ref-format --branch task/example.`
+fails), so a tracker id ending in `.` used as a slug is refused before `git_root`'s git command runs
+rather than failing in git with an exit code; every other name it accepted still passes. The
+refusal messages in `src/setup.ts#defaultBranchFault` and `src/cli.ts#worktreeBranchRefusal`,
+`docs/design.md` and the setup skill's branch rule state the trailing `.`; both dev-team loops' slug
+sentence now keeps the journal's alphabet apart from `git_root`'s branch exclusions (`..`, a
+trailing `.` or `.lock`), which the plan reviewer judged worth folding in.
+
+Verification:
+- **Plan review:** round 1 (codex/gpt-6-astra/xhigh) `no major issues`, three Minors folded.
+- **Code review:** round 1 (`4c2288e`) all three seats `no major issues`; seat 1's one Minor (an
+  unpinned message on an unreachable path) not taken, and git's other ref-format rules stay the
+  plan's stated limitation, already deferred in `docs/design.md`.
+- **Gate and root suite:** 1201 tests at `4c2288e`, 0 fail; the root suite there ran 1201: 1199
+  pass, 0 fail, 2 guarded skips. Citation check: 0 misses, 0 drifted since `fae2721`.
+  `describe_mode` sizes: 36,895 (`dev-team`), 52,216 (`dev-team-engine`), 3,601 (`solo`) bytes.
+
 ## A finished run closes its epic — `atc-2jl.10` (2026-10-15)
 
 Follow-up of epic `atc-2jl` (from `atc-2jl.4`'s round-1 review). Went through the `dev-team`

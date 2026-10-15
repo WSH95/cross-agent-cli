@@ -483,3 +483,5 @@ Set up Project Steward in this repository.
 - 2026-10-15T00:11:00Z — claude — atc-2jl.4 (+.8, atc-s96.117) merged as 5a78aec (the engine lead's run, prompts, launcher, docs, AGENTS.md); 3 review rounds; root suite 1197/1195/0 fail; closed. Follow-ups atc-2jl.9, .10. Next: atc-2jl.10.
 - 2026-10-15T00:34:08Z — claude — [auto-checkpoint] atc-2jl.10: plan approved; committed 9b7232f; gate running.
 - 2026-10-15T01:03:12Z — claude — atc-2jl.10 merged as c94ae09 (a finished run closes its epic; the lead prompt names the epic as no item); 2 review rounds; root suite 1199/1197/0 fail; closed. Next: atc-2jl.9.
+- 2026-10-15T01:35:31Z — claude — [auto-checkpoint] atc-2jl.9: committed 4c2288e, gate passed; code review round 1 in progress (seats 1, 2 no major issues).
+- 2026-10-15T01:41:46Z — claude — atc-2jl.9 merged as 4c2288e (nameFault refuses a trailing "."; the loops' slug sentence); 1 review round; root suite 1201/1199/0 fail; closed. Next: atc-9w2.
