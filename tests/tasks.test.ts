@@ -235,24 +235,32 @@ test("check writes the stall its clock reads, and writes the task back when even
 // @anchor resultFinalMessage
 test("result is the final message in full, and a task still running has only its status", async (t) => {
   const p = await projectWithRoles(t);
-  const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root }, {
+  const started = await delegate(p.root, { role: "planner", brief: "Say something.", cwd: p.root, model: "grok-4.6", effort: "high" }, {
     authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "stall" }),
   });
   assert.equal(started.ok, true);
   const id = started.ok ? started.taskId : "";
   const running = await waitForRecord(p, id, (value) => value.status === "running");
-  assert.deepEqual(result(p.root, id), { ok: true, id, status: "running", settled: false });
+  // Settled or not, the answer carries the engine, model and effort the record holds.
+  const binding = { engine: "grok", model: "grok-4.6", effort: "high" };
+  assert.deepEqual(result(p.root, id), { ok: true, id, status: "running", settled: false, ...binding });
 
   // The runner writes the final message itself, which is what `result` reads back.
   fs.writeFileSync(running.resultPath, "the final message, in full\nwith a second line\n");
   assert.equal((await update(p.root, id, { status: "done", sessionId: "fake-7" })).applied, true);
   assert.deepEqual(result(p.root, id), {
-    ok: true, id, status: "done", sessionId: "fake-7", result: "the final message, in full\nwith a second line\n",
+    ok: true, id, status: "done", sessionId: "fake-7", result: "the final message, in full\nwith a second line\n", ...binding,
   });
   // A settled task whose result file never arrived says so rather than inventing one.
   fs.rmSync(running.resultPath);
   assert.equal(result(p.root, id).ok && (result(p.root, id) as { result: string | null }).result, null);
   assert.deepEqual(result(p.root, "no-such-task"), { ok: false, reason: "no task no-such-task" });
+
+  // A record that names no model or effort, as one an older build wrote, answers null for each.
+  const seeded = create(p.root, { role: "planner", brief: "seeded", cwd: p.root, engine: "grok" });
+  assert.deepEqual(result(p.root, seeded.id), {
+    ok: true, id: seeded.id, status: "launching", settled: false, engine: "grok", model: null, effort: null,
+  });
 });
 
 // @anchor listTasksReconciles

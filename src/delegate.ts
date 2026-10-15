@@ -74,7 +74,11 @@ export interface DelegateOptions {
 }
 
 export type DelegateResult =
-  | { ok: true; taskId: string }
+  | {
+    ok: true; taskId: string;
+    /** What the launched task's record holds, `null` where none was named: what a report names it by. */
+    engine: string; model: string | null; effort: string | null;
+  }
   | {
     ok: false; reason: string;
     /** A lock held while git made or discarded this task's worktree was lost: what git did is done, its exclusivity is not. */
@@ -664,7 +668,7 @@ export async function delegate(projectRoot: string, request: DelegateRequest, op
       throw error;
     }
     startRunner(projectRoot, record.id, env);
-    return { ok: true, taskId: record.id };
+    return { ok: true, taskId: record.id, engine: record.engine, model: record.model ?? null, effort: record.effort ?? null };
   } finally {
     await claim.release();
   }

@@ -33,7 +33,8 @@ is `project.defaultBranch`, and `<worktree path>` is `<project root>/<git.worktr
 absolute. `describe_mode` gives you the policy those come from, and each role's own
 prompt — the text `delegate` launches that role with, so a brief below adds this
 task's own work to it and never repeats it; `list_roles` gives you the engine, model
-and effort behind each role name below, and you name each of them in your report.
+and effort each role name below is bound to, which step 1 checks; your report names
+each task's own, as the `delegate` that launched it answered them.
 
 ## 1. Root check
 

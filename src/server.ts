@@ -22,7 +22,8 @@ import { answerAsk, ask, askStatuses, lineageAsks, listAsks } from "./mailbox.ts
 import type { AskStatus } from "./mailbox.ts";
 import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
-import { discoverProject, isMainModule } from "./project.ts";
+import { discoverProject, holdsConfig, isMainModule } from "./project.ts";
+import type { Discovery } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
 import { cancel, check, lineageIds, listTasks, ownedBy, result } from "./tasks.ts";
 import { scan, taskStatuses } from "./ledger.ts";
@@ -288,6 +289,32 @@ export interface ToolOptions {
    * only with one, and a block added or removed since is a restart (`recordsDriftFault`).
    */
   records?: RecordsConfig;
+  /**
+   * The directory this server was started in: `describe_mode` warns where it lies in an
+   * initialized project other than the one served. Absent, as for a server built
+   * in-process, nothing is checked.
+   */
+  cwd?: string;
+}
+
+/**
+ * Where the directory this server was started in lies in an initialized project other than
+ * `projectRoot`, the sentence that says so, naming all three; null otherwise. The lookup is
+ * discovery's own walk with no flag and no environment, so it finds what the host's working
+ * directory would serve on its own. It reads no `realpath` of `projectRoot`: a root the walk
+ * finds by its config is already real, and the roots it returns that are not hold no config,
+ * which this rules out. A lookup that finds nothing, or fails, is no warning (atc-s96.102).
+ */
+async function cwdProjectWarning(projectRoot: string, cwd: string): Promise<string | null> {
+  let found: Discovery;
+  try {
+    found = await discoverProject([], {}, cwd);
+  } catch {
+    return null;
+  }
+  if ("reason" in found || found.root === projectRoot || !holdsConfig(found.root)) return null;
+  return `this server serves ${projectRoot}, but the directory it was started in, ${cwd}, lies in the initialized project ${found.root}: `
+    + `a --project, a CROSS_AGENT_PROJECT or an attach naming ${projectRoot} may be left from another session`;
 }
 
 /**
@@ -690,7 +717,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
       description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, and projectRoot, the root of the project this server serves. Call this first: it is how a launcher learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver.",
       inputSchema: { type: "object", properties: {} },
       rows: ["operator", "lead", "specialist"],
-      handler: () => {
+      handler: async () => {
         const config = loadConfig(projectRoot);
         const described = describeMode(modesDir, config.mode);
         // The project beside the mode's own text: what a launcher shows with the roster and
@@ -701,10 +728,13 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         // The project's records where its config keeps them, and a restart named where the
         // block has come or gone since `record` was registered or left out.
         const warning = recordsDrift(options.records !== undefined, config);
+        // A key of its own: a host reads `warning` as a restart to ask for, and this is none.
+        const projectWarning = options.cwd === undefined ? null : await cwdProjectWarning(projectRoot, options.cwd);
         return text({
           ...described, projectRoot, review,
           ...(config.records === undefined ? {} : { records: describeRecords(config.records) }),
           ...(warning === null ? {} : { warning }),
+          ...(projectWarning === null ? {} : { projectWarning }),
         });
       },
     },
@@ -770,7 +800,9 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
       handler: async (args, context) => {
         const request = delegateRequest(fields(args, "delegate"));
         const launched = await delegate(projectRoot, request, { authority: context.authority, mode });
-        return answer(launched.ok ? { ok: true, task_id: launched.taskId } : launched);
+        return answer(launched.ok
+          ? { ok: true, task_id: launched.taskId, engine: launched.engine, model: launched.model, effort: launched.effort }
+          : launched);
       },
     },
     {
@@ -910,7 +942,7 @@ async function main(): Promise<void> {
     return resolved;
   };
   createServer({
-    tools: projectTools(root, { mode, ...(config.records === undefined ? {} : { records: config.records }) }), authority,
+    tools: projectTools(root, { mode, ...(config.records === undefined ? {} : { records: config.records }), cwd: process.cwd() }), authority,
   }).connect(process.stdin, process.stdout);
 }
 

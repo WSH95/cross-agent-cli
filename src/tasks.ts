@@ -141,23 +141,27 @@ export async function check(projectRoot: string, taskId: string, options: { line
   };
 }
 
+/** What a task ran on, as its record holds it, `null` where none was named: what a report names it by. */
+interface Binding { engine: string; model: string | null; effort: string | null }
+
 export type ResultResult =
-  | { ok: true; id: string; status: TaskStatus; sessionId: string | null; result: string | null }
-  | { ok: true; id: string; status: TaskStatus; settled: false }
+  | ({ ok: true; id: string; status: TaskStatus; sessionId: string | null; result: string | null } & Binding)
+  | ({ ok: true; id: string; status: TaskStatus; settled: false } & Binding)
   | { ok: false; reason: string };
 
 /** The final message in full, once there is one. A task still running has only its status. */
 export function result(projectRoot: string, taskId: string): ResultResult {
   const record = find(projectRoot, taskId);
   if (record === null) return { ok: false, reason: `no task ${taskId}` };
-  if (!isTerminal(record.status)) return { ok: true, id: record.id, status: record.status, settled: false };
+  const binding: Binding = { engine: record.engine, model: record.model ?? null, effort: record.effort ?? null };
+  if (!isTerminal(record.status)) return { ok: true, id: record.id, status: record.status, settled: false, ...binding };
   let text: string | null = null;
   try {
     text = fs.readFileSync(record.resultPath, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  return { ok: true, id: record.id, status: record.status, sessionId: record.sessionId ?? null, result: text };
+  return { ok: true, id: record.id, status: record.status, sessionId: record.sessionId ?? null, result: text, ...binding };
 }
 
 export interface ListResult {

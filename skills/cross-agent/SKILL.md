@@ -92,7 +92,9 @@ does not restart the server.
 Judge `projectRoot` against the project the user works in before anything is
 dispatched. It is not always the directory you were started in: a worktree nobody
 initialized is served by its main project on purpose, and only setup run in it makes
-it a project of its own.
+it a project of its own. `describe_mode` answers `projectWarning` where the directory
+this server was started in lies in an initialized project other than `projectRoot`:
+show it to the user with the roster, and judge it as the first case below.
 
 - **Stop**, telling the user, when the working directory lies in an initialized
   project other than `projectRoot` — a worktree or checkout holding its own
@@ -155,7 +157,9 @@ line nor your call names is that engine's default: say so, as such. A call that 
 another engine than the roster's line is its own rule, because the server drops the
 line's model and effort with its binding: the model and the effort are your call's
 alone, and where your call names either not at all, say that engine's default for that
-one. Name a task you did not
+one. The delegation's answer carries the engine, model and effort the task's record
+holds, a `null` being that engine's default: where it differs from what the rules above
+give, narrate the answer's. Name a task you did not
 dispatch — a lead's specialist — by the engine, model and effort its record in
 `list_tasks` carries, a `null` there being that engine's default: never guess them.
 

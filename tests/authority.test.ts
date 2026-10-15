@@ -447,11 +447,20 @@ function leadOf(p: TestProject): { record: TaskRecord; env: NodeJS.ProcessEnv } 
   return { record, env: { ...p.env, PATH: process.env.PATH, HOME: process.env.HOME, ...markers } };
 }
 
-/** The child a mounted lead's `delegate` recorded, once its runner has settled it. */
+/**
+ * The child a mounted lead's `delegate` recorded, once its runner has settled it. The answer
+ * carries the engine, model and effort that record holds, `null` where none was named.
+ */
 async function delegated(p: TestProject, reply: NonNullable<Served["replies"]>[number]): Promise<TaskRecord> {
   const answered = body(reply);
   assert.equal(answered.ok, true, JSON.stringify(answered));
-  return waitForRecord(p, answered.task_id as string, (value) => ["done", "failed", "cancelled"].includes(value.status));
+  const child = await waitForRecord(p, answered.task_id as string, (value) => ["done", "failed", "cancelled"].includes(value.status));
+  assert.deepEqual(
+    { engine: answered.engine, model: answered.model, effort: answered.effort },
+    { engine: child.engine, model: child.model ?? null, effort: child.effort ?? null },
+    JSON.stringify(answered),
+  );
+  return child;
 }
 
 // @anchor mountedLeadRow
@@ -461,7 +470,7 @@ test("a mounted lead's server holds the lead row by ancestry: fifteen tools, the
   const served = await mounted(t, p, lead.record, lead.env, [
     ["list_asks", {}],
     ["answer", { ask_id: "x", text: "yes" }],
-    ["delegate", { role: "planner", cwd: p.root, brief: "A6 (i): plan nothing, answer OK." }],
+    ["delegate", { role: "planner", cwd: p.root, brief: "A6 (i): plan nothing, answer OK.", model: "gpt-6-luna", effort: "low" }],
   ], "everything");
   // P9's clause: a mounted lead resolves to the lead row, which is authority, not mounting.
   assert.deepEqual(served.tools, [...thirteen, "ask", "list_asks"]);
@@ -474,6 +483,9 @@ test("a mounted lead's server holds the lead row by ancestry: fifteen tools, the
   const child = await delegated(p, delegation);
   assert.equal(child.depth, 2);
   assert.equal(child.parentTaskId, lead.record.id);
+  // The model and effort the call named, which `delegated` found in the wire answer too.
+  assert.equal(child.model, "gpt-6-luna");
+  assert.equal(child.effort, "low");
   assert.deepEqual(JSON.parse(readSpec(p.root, child.id).env.CROSS_AGENT_LINEAGE!), [
     { taskId: lead.record.id, role: "lead", cwd: p.root }, { taskId: child.id, role: "planner", cwd: p.root },
   ]);

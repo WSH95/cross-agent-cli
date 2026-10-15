@@ -533,15 +533,26 @@ test("every dispatch is narrated with the engine, model and effort the roster, t
   assert.equal(narration.length, 1, "one paragraph says how a dispatch is narrated");
   assert.match(narration[0], /from the roster's line for that role or seat, or from your call where it names them/);
   // A field neither the line nor the call names runs at that engine's default, field by field.
-  // A call that names another engine drops the bound model and effort, and `delegate` answers
-  // with the task id alone: the call's model and effort are then all there is, and whichever
-  // it leaves out is that engine's default, so the switch is a rule of its own, not an example.
+  // A call that names another engine drops the bound model and effort: the call's model and
+  // effort are then all there is, and whichever it leaves out is that engine's default, so
+  // the switch is a rule of its own, not an example.
   assert.match(narration[0], /a model or an effort that neither the roster's line nor your call names is that engine's default[^.]*as such/);
   assert.match(narration[0], /call that names another engine than the roster's line is its own rule[^.]*drops the line's model and effort[^.]*your call's alone[^.]*where your call names either not at all, say that engine's default for that one/);
   assert.doesNotMatch(narration[0], /as when your call names another engine/);
   assert.doesNotMatch(narration[0], /the same for its effort/);
+  // The delegation answers with the three its record holds, which settles any doubt the
+  // rules above leave (atc-s96.95).
+  assert.match(narration[0], /delegation's answer carries the engine, model and effort the task's record holds[^.]*narrate the answer's/);
   assert.match(narration[0], /task you did not dispatch[^.]*by the engine, model and effort its record in `list_tasks` carries/);
   assert.match(narration[0], /never guess them/);
+});
+
+// @anchor rosterProjectWarning
+test("the launcher shows describe_mode's projectWarning and judges it as the stop case", () => {
+  // The server names the mismatch between the directory it was started in and the project
+  // it serves, so the host need not notice it on its own (atc-s96.102).
+  const before = flat(sectionOf(launcher(), "Before delegating"));
+  assert.match(before, /`projectWarning`[^.]*initialized project other than `projectRoot`[^.]*show it to the user[^.]*first case/);
 });
 
 test("the dev-team loop runs the ten steps in the order design section 4 gives them", () => {
@@ -657,6 +668,13 @@ test("the lead's report spells each specialist's line in cross-agent report's se
   assert.match(lead, /every field present on every line/);
   // A seat of a many-seat role is spelled as the command spells it.
   assert.match(lead, /`<role>#<seat>`/);
+  // A lead's report named engines and models it never read (atc-s96.95): each line's three
+  // come from the answers the loop already reads, as the task's record holds them.
+  assert.match(lead, /engine, model and effort on its line are those the `delegate` that launched it answered with[^.]*`wait` and `result`[^.]*`null` written `-`[^.]*never from memory/);
+  // The loop sends `list_roles` to step 1's binding check, and the report to those answers.
+  const engineLoop = flat(loop("dev-team-engine"));
+  assert.match(engineLoop, /`list_roles` gives you the engine, model and effort each role name below is bound to[^.;]*;[^.]*report names each task's own[^.]*`delegate` that launched it answered/);
+  assert.doesNotMatch(engineLoop, /you name each of them in your report/);
 });
 
 // The engine lead's run (design section 7, "The engine lead's run"): under `dev-team-engine`

@@ -27,6 +27,10 @@ export interface WaitReport {
   task_id: string;
   status: TaskStatus;
   stalled: boolean;
+  /** What the task ran on, as its record holds it, `null` where none was named: what a report names it by. */
+  engine: string;
+  model: string | null;
+  effort: string | null;
   elapsedSeconds: number;
   /** The last line of the engine's own event stream, as `check` reads it. */
   lastActivity: string | null;
@@ -151,6 +155,9 @@ function report(record: TaskRecord, answer: Answer = {}): WaitReport {
     task_id: record.id,
     status: record.status,
     stalled: record.status === "stalled",
+    engine: record.engine,
+    model: record.model ?? null,
+    effort: record.effort ?? null,
     elapsedSeconds: Math.max(0, Math.round((until - record.createdAt) / 1000)),
     lastActivity: tailLines(record.logPath, 1)[0] ?? null,
     resultTail: terminal ? resultTail(record.resultPath) : null,

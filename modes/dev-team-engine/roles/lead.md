@@ -44,8 +44,10 @@ with its decisions, each accepted row with the evidence it was accepted on, the
 convergence verdict where you gave one, every follow-up listed out of scope, the fix
 rounds run and whether the resolver ran, and every stop with its answer; what was cleaned
 up and what is still standing, and why; every question you asked and the answer you were
-given; and what nobody verified. With `records`, that report is written once, at the end
-of the run, and adds the set and each item's outcome; the follow-ups filed, with their
-ids, and every `track` or `record` refused, listed as unfiled with its reason; each record
-and tracker commit, the epic's close among them; and, for a goal, the epic and the
-breakdown the operator approved.
+given; and what nobody verified. Each specialist's engine, model and effort on its line
+are those the `delegate` that launched it answered with — `wait` and `result` answer the
+same — a `null` written `-` as `cross-agent report` writes it, never from memory. With
+`records`, that report is written once, at the end of the run, and adds the set and each
+item's outcome; the follow-ups filed, with their ids, and every `track` or `record`
+refused, listed as unfiled with its reason; each record and tracker commit, the epic's
+close among them; and, for a goal, the epic and the breakdown the operator approved.

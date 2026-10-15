@@ -207,6 +207,26 @@ test("a delegation launches its engine once, in the workspace, with the environm
   assert.equal(announced.length, 1, fs.readFileSync(done.logPath, "utf8"));
 });
 
+// @anchor delegateAnswersBinding
+test("delegate answers with the launched task's engine, model and effort as its record holds them, null where none was named", async (t) => {
+  // A lead names each specialist's engine, model and effort in its report, and an answer it
+  // already reads is where it takes them from rather than its memory (atc-s96.95).
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p, { FAKE_ENGINE_SCRIPT: "ok" }) };
+  const named = await delegate(p.root, request({ role: "planner", cwd: p.root, model: "grok-4.6", effort: "high" }), options);
+  const id = launched(named);
+  assert.deepEqual(named, { ok: true, taskId: id, engine: "grok", model: "grok-4.6", effort: "high" });
+  const record = p.record(id);
+  assert.deepEqual([record.engine, record.model, record.effort], ["grok", "grok-4.6", "high"]);
+
+  // The planner's binding names neither, so the record holds null for both and so does the answer.
+  const bare = await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), brief: "Plan with the engine's defaults." }, options);
+  const bareId = launched(bare);
+  assert.deepEqual(bare, { ok: true, taskId: bareId, engine: "grok", model: null, effort: null });
+  const bareRecord = p.record(bareId);
+  assert.deepEqual([bareRecord.engine, bareRecord.model ?? null, bareRecord.effort ?? null], ["grok", null, null]);
+});
+
 test("a configured binary that does not resolve fails the task at the adapter's own sandbox check", async (t) => {
   const p = await projectWithRoles(t);
   const missing = path.join(p.root, "no-such-grok");

@@ -18,6 +18,7 @@ import { createServer, projectTools } from "../src/server.ts";
 import type { ServerOptions, ToolContext } from "../src/server.ts";
 import { buildMode, modesRoot } from "./helpers/mode.ts";
 import type { RoleSpec } from "./helpers/mode.ts";
+import { linkedProject, mainCheckout } from "./helpers/project.ts";
 
 type Json = Record<string, unknown>;
 
@@ -671,8 +672,9 @@ test("notifications/cancelled ends the wait it names within 100ms, and the reply
   assert.equal(result.isError, undefined);
   const payload = JSON.parse((result.content as Json[])[0].text as string) as Json;
   const { elapsedSeconds, ...rest } = payload;
+  // A record that names no model or effort, as one an older build wrote, answers null for each.
   assert.deepEqual(rest, {
-    ok: true, task_id: record.id, status: "launching", stalled: false,
+    ok: true, task_id: record.id, status: "launching", stalled: false, engine: "grok", model: null, effort: null,
     lastActivity: null, resultTail: null, hint: "call wait again", cancelled: true,
   });
   assert.ok(typeof elapsedSeconds === "number" && elapsedSeconds >= 0 && elapsedSeconds < 30, `elapsed ${elapsedSeconds}`);
@@ -1319,6 +1321,44 @@ test("describe_mode's whole answer is the mode's text, 19 bytes more, projectRoo
   // A known root: a directory holding no config answers solo's defaults, and `"projectRoot":
   // "/x"` adds 23 bytes to them.
   assert.equal(await answered("/x", "solo"), textOf("solo") + 23 + reviewBytes);
+});
+
+// @anchor describeModeProjectWarning
+test("describe_mode warns when the directory the server was started in lies in another initialized project, and only then", async (t) => {
+  // A `--project` left from another session serves the main checkout to a host working in a
+  // sibling worktree of its own: the server names both rather than leave the host to notice
+  // (atc-s96.102).
+  const dir = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-cwd-")));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const main = await mainCheckout(dir, "M");
+  const initialized = await linkedProject(t, main, "initialized");
+  const uninitialized = await linkedProject(t, main, "uninitialized");
+  for (const root of [main, initialized]) {
+    await mkdir(path.join(root, ".cross-agent"), { recursive: true });
+    await writeFile(path.join(root, ".cross-agent", "config.json"), JSON.stringify({ roles: {} }));
+  }
+  const nowhere = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-nowhere-")));
+  t.after(() => rm(nowhere, { recursive: true, force: true }));
+  const described = async (cwd: string) => {
+    const client = stdioClient(cwd, { args: ["--project", main] });
+    t.after(() => client.close());
+    const reply = await client.request("tools/call", { name: "describe_mode", arguments: {} });
+    const result = reply.result as Json;
+    assert.equal(result.isError, undefined, JSON.stringify(reply));
+    return JSON.parse(((result.content as Json[])[0].text as string)) as Json;
+  };
+
+  const warned = await described(initialized);
+  assert.equal(warned.projectRoot, main);
+  assert.equal(typeof warned.projectWarning, "string", JSON.stringify(Object.keys(warned)));
+  assert.ok((warned.projectWarning as string).includes(main), warned.projectWarning as string);
+  assert.ok((warned.projectWarning as string).includes(initialized), warned.projectWarning as string);
+  assert.equal(Object.hasOwn(warned, "warning"), false, "the records drift's own key stays its own");
+
+  // A worktree nobody initialized is served by its main project on purpose.
+  assert.equal(Object.hasOwn(await described(uninitialized), "projectWarning"), false);
+  // A directory the lookup finds no project for is no warning and no error.
+  assert.equal(Object.hasOwn(await described(nowhere), "projectWarning"), false);
 });
 
 // @anchor describeModeReview

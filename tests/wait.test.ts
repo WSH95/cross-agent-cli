@@ -58,9 +58,9 @@ async function waitProject(t: TestContext, limits: Record<string, number> = {}):
   return created;
 }
 
-/** A real task of this project, returned once its runner has acknowledged it. */
-async function launch(p: TestProject, env: Record<string, string>): Promise<TaskRecord> {
-  const started = await delegate(p.root, { role: "planner", brief: "work for planner", cwd: p.root }, {
+/** A real task of this project, returned once its runner has acknowledged it, with any model or effort the request names. */
+async function launch(p: TestProject, env: Record<string, string>, fields: { model?: string; effort?: string } = {}): Promise<TaskRecord> {
+  const started = await delegate(p.root, { role: "planner", brief: "work for planner", cwd: p.root, ...fields }, {
     authority: operator, mode: p.mode, env: engineEnv(p, env),
   });
   assert.equal(started.ok, true, `delegate refused: ${JSON.stringify(started)}`);
@@ -136,7 +136,7 @@ test("a quiet engine stalls and keeps running; check revives it, a second wait s
 // @anchor settledTaskAnswered
 test("a settled task is answered on the first read, with the tail of its result", async (t) => {
   const p = await waitProject(t);
-  const task = await launch(p, { FAKE_ENGINE_SCRIPT: "ok" });
+  const task = await launch(p, { FAKE_ENGINE_SCRIPT: "ok" }, { model: "grok-4.6", effort: "high" });
   await poll(() => p.record(task.id).status, (status) => status === "done");
 
   const started = performance.now();
@@ -146,6 +146,10 @@ test("a settled task is answered on the first read, with the tail of its result"
   assert.equal(answer.ok && answer.stalled, false);
   assert.equal(answer.ok && answer.hint, "settled: call result");
   assert.equal(answer.ok && answer.task_id, task.id);
+  // The engine, model and effort the record holds, which a lead's report line names.
+  assert.equal(answer.ok && answer.engine, "grok");
+  assert.equal(answer.ok && answer.model, "grok-4.6");
+  assert.equal(answer.ok && answer.effort, "high");
   assert.equal(answer.ok && answer.resultTail, fs.readFileSync(p.record(task.id).resultPath, "utf8").slice(-2000));
   assert.ok(answer.ok && answer.resultTail?.startsWith("DONE"), JSON.stringify(answer));
   // The activity is the last line of the engine's own event stream, as `check` reads it.
