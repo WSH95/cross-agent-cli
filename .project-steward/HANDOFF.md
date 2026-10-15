@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T21:27:00Z
+updated_at: 2026-10-15T22:36:14Z
 updated_by: codex
 session_status: closed
 branch: main
@@ -8,7 +8,23 @@ branch: main
 
 ## Now
 
-**All three Codex-host modes have been exercised; diagnosis/reporting is complete.**
+**Additional Codex-led variant is complete (`atc-s96.158`, user-requested).** Chat
+`01a1419a-d274-7eb1-b049-14a27a00bb0e` ran installed 0.1.9 with the exact changed bindings:
+lead/planner/implementer Codex `gpt-6.1-sol` xhigh, plan reviewer Claude `claude-opus-5-5`
+xhigh. All thirteen records finished at correct depths/ownership with exit 0. Two clean
+three-seat review rounds cover `bf9a39d` then `a9b90d4`; all 139 tests pass, merge and
+cleanup are complete, and the original sample config is restored byte-for-byte. Native
+evidence confirms RED before implementation, mailbox chronology, no shell/file changes by
+the lead, one host lead delegation and full verbatim relay. However, the lead invented a
+specialist-test restriction and required factual operator correction, without waiver
+(`atc-s96.159`). The independent verifier twice returned 7 pass, 0 fail, 1 unresolved
+because its transcript reader cannot certify source reads/tool-discovery code (`atc-s96.160`).
+Functional success is not an unconditional pass. `VERIFY.md` and the sample's ignored
+`.cross-agent/codex-lead-e2e-evidence/` preserve all details, including the exact policy
+correction and premature "user-authorized fallback" claim. All 459 prior evidence files
+retain their hashes. Diagnose/report only; all findings remain open. No push or remote sync.
+
+**Earlier three-mode coverage is complete.**
 `atc-s96.154` finished in chat `01a14161-76ce-7ad2-9a39-d7cc9aa2cff0`: Claude Opus xhigh
 lead `57e921b11be115d34a10b59557c43208f163`, seven depth-2 specialists with correct parents
 and bindings, all three reviews clean on `8396e6e`, 131 tests passing, and independent
@@ -16,8 +32,8 @@ verifier 8/8. Its one read-only Bash call violated the no-shell rule after a 56.
 response overflow (`atc-s96.157`); functional success does not erase that compliance failure.
 The host launched only the lead and relayed its report verbatim, verified from the archived
 rollout. Native evidence independently confirms test-first execution and the scripted mailbox
-answer before planning. The sample is clean on main at `8396e6e`, root worktree only, no task
-branches, and its original dev-team config is restored byte-for-byte. Evidence is in
+answer before planning. That run ended with clean main at `8396e6e`, root worktree only,
+no task branches, and original dev-team config restored byte-for-byte. Evidence is in
 `.cross-agent/remaining-modes-evidence/` under the sample; `VERIFY.md` has the complete matrix.
 
 Solo verification (`atc-s96.153`) finished in chat `01a14151-6aba-7c13-b616-102793981539`:
@@ -262,9 +278,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-- `atc-s96.152`, `.153` and `.154` verification work is complete. The source changes are
-  evidence/stewardship only; the sample and ignored native evidence are retained. Findings
-  `.155`, `.156` and `.157` remain open, with no fixes authorized in this diagnosis scope.
+- `atc-s96.152`, `.153`, `.154` and `.158` verification work is complete. Source changes
+  are evidence/stewardship only; the sample and ignored native evidence are retained.
+  Findings `.155`, `.156`, `.157`, `.159` and `.160` remain open; no fixes are authorized
+  in this diagnosis scope.
   Beads generated `.beads/interactions.jsonl`; that log remains uncommitted under the
   repository's standing warning. No push or remote sync is authorized.
 
@@ -423,6 +440,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
+1. Review `VERIFY.md` and `bd show atc-s96.159` / `bd show atc-s96.160` for the additional
+   Codex-led variant's engine orchestration error and transcript-verifier blocker. The run,
+   independent audit and configuration restoration are complete; no rerun or fix is pending
+   in the approved scope. Earlier evidence is intact. Ask before a new fix scope or push.
+
 1. Review `VERIFY.md` and `bd show atc-s96.155`, `.156`, `.157` for the three reproducible
    findings. The verification is complete; no rerun or fix is pending in the approved scope.
    The original sample config is restored. Verifier snapshots retain each mode's depth cap;
@@ -507,6 +529,10 @@ Previous release and backlog pointers:
    - `.102`: `describe_mode` warns when the server's own working directory lies in another initialized project.
 
 ## Blockers
+
+The additional Codex-led variant cannot receive a strict pass: an invented specialist-test
+restriction needed operator correction (`atc-s96.159`), and row 8 of its verifier remains
+unresolved (`atc-s96.160`). Functional tests, reviews, merge and cleanup completed.
 
 Grok writable solo acceptance remains blocked by the verifier's unrecognized native
 `search_replace` tool (`atc-s96.155`). Both Codex solo tasks failed assigned-directory

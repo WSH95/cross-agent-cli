@@ -2,6 +2,17 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
+## Codex-led engine variant (verification complete, 2026-10-15)
+
+`atc-s96.158` completed the additional installed 0.1.9 run with exact requested bindings:
+lead/planner/implementer Codex `gpt-6.1-sol` xhigh, plan reviewer Claude `claude-opus-5-5`
+xhigh. All thirteen records completed, two review rounds passed, 139 tests pass, and clean
+sample main is `a9b90d4` with complete cleanup and original config restored. The lead's
+invented specialist-test restriction required factual correction (`atc-s96.159`); the
+coordinator granted no waiver. Independent verifier 7 pass/1 unresolved, reproduced, is
+blocked by transcript-reader coverage (`atc-s96.160`). Both findings stay open. Prior
+evidence is intact; no product fixes, push or remote sync.
+
 ## Remaining Codex host modes (verification complete, 2026-10-15)
 
 `atc-s96.153` finished the six solo scenarios: all functionally pass, Claude/Codex verifiers

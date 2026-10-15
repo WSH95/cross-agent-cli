@@ -3,6 +3,39 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-15T22:36:14Z — codex
+Completed the user-requested Codex-led variant `atc-s96.158` with exact model/effort changes,
+thirteen exit-0 records, correct lineage/depth, two clean three-engine review rounds and
+139 passing tests. Native evidence confirms local RED before function insertion, GREEN,
+mailbox chronology, no lead shell/file changes and full verbatim host relay. The lead's
+invented specialist-test restriction needed factual correction without waiver (`atc-s96.159`).
+Independent verifier twice returns 7 pass, 0 fail, 1 unresolved due to source-inspection and
+tool-discovery transcript-reader coverage (`atc-s96.160`); this remains blocked, not a pass.
+Final sample main is clean `a9b90d4`, root worktree only, task branch removed, original
+config restored byte-for-byte. All 459 earlier evidence files retain hashes. Results and
+reproducible findings are recorded in `VERIFY.md`, Beads and the separate ignored evidence
+bundle. No product fixes, engine-failure retries, push or remote sync. Whitespace checks and
+all 1850 citations pass, with no misses or drift. The validated local evidence commit follows.
+
+### 2026-10-15T22:20:00Z — codex
+`atc-s96.158`: the Codex lead successfully mounted MCP, asked the ordering checkpoint,
+delegated Codex planning and Claude plan review, but inserted a blanket specialist-test
+restriction absent from the served implementer role. It asked to continue without observed
+RED/GREEN; planner refinement had falsely called the fallback user-authorized. Filed
+`atc-s96.159` (engine instruction-scoping error). The coordinator supplied factual role
+clarification through the installed mailbox, without a waiver/new permission or product
+change. Lead accepted it and resumed the planner to correct the plan, keeping local
+RED/GREEN and all server gates. Exact exchange and briefs remain preserved for the audit.
+
+### 2026-10-15T22:07:00Z — codex
+Started additional user-requested `dev-team-engine` variant `atc-s96.158`: lead, planner and
+implementer Codex `gpt-6.1-sol` xhigh; plan reviewer Claude `claude-opus-5-5` xhigh. Baseline
+sample is clean `8396e6e`, all 131 tests pass, root worktree only and no active tasks. Saved
+original config and hashes for 459 earlier evidence files, applied config through installed
+0.1.9 CLI with hash protection and created fresh host chat `01a1419a-d274-7eb1-b049-14a27a00bb0e`.
+The sample-only fixture adds `slug_unique_sorted`; the coordinator audits after the lead
+settles, then restores config. Prior findings remain open; diagnose/report only, no push.
+
 ### 2026-10-15T21:27:00Z — codex
 Completed `atc-s96.154`: installed 0.1.9 engine-led workflow functionally passes, independent
 verifier 8/8, 131 tests green, eight exit-0 records with correct bindings/depth/ownership,

@@ -7,6 +7,112 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Codex-led engine variant — `atc-s96.158` (2026-10-15)
+
+**Functional pass; strict transcript verification blocked; engine orchestration failure
+recorded.** The additional installed 0.1.9 `dev-team-engine` run used every requested role
+binding. It added the sample helper `slug_unique_sorted`, passed all 139 tests, completed
+two review rounds and cleanup, but required factual operator correction of an invented
+specialist-test restriction (`atc-s96.159`). The independent verifier twice returned
+**7 pass, 0 fail, 1 without evidence**, exit 2 (`atc-s96.160`). The unresolved row is not a
+pass and was not waived. No cross-agent fixes were made.
+
+Fresh Codex host chat `01a1419a-d274-7eb1-b049-14a27a00bb0e` on `local` confirmed the sample
+root, engine placement, no records block and no warnings. The released setup CLI applied
+the exact changes with config hash protection and depth 2, preserving main, automatic
+merging, setup none and `python3 -m unittest discover -s tests -t .`. Baseline was clean
+`8396e6e`, 131 tests. Actual records confirm these bindings throughout:
+
+| Role | Engine / model / effort |
+| --- | --- |
+| Lead, planner, implementer | Codex / `gpt-6.1-sol` / xhigh |
+| Plan reviewer | Claude / `claude-opus-5-5` / xhigh |
+| Code reviewer #1 | Claude / `claude-opus-5-5` / xhigh |
+| Code reviewer #2 | Codex / `gpt-6.1-sol` / xhigh |
+| Code reviewer #3 | Grok / `grok-4.7` / xhigh |
+| Resolver, bound but unused | Codex / `gpt-6-astra` / max |
+
+Lead `b49d51f8fb220781c0c11cfd282788fa1af6` ran at depth 1. Its twelve specialist records
+ran at depth 2, all naming that lead as parent; all thirteen records finished with exit 0.
+Planner tasks were `a1d03130b4b8f44253463c898040ff1d0303`, optimization
+`e07f58043490d4a84f43236f0f8e53492d25`, and correction
+`4f253ae7c3257458fc70aa63f850dc95ae5e`. Plan reviewer:
+`21de8c77bb0775c15ff1886f4cd8efc94dc4`. Implementer:
+`cdaa81bc5c158d3e78da1183c5f81b445c74`, resumed for the Minor wrap-up as
+`58acfe6718fbafb90b6b8eff8c61d2d08d56`.
+
+The ordering ask `34c9abb0996b644ed8bdc3b8f4269c0d1514` was answered before the first
+planner with the fixture input `ascending Python string order; remove duplicate words`.
+Plan review ended `VERDICT: no major issues` with a Minor tests-first suggestion. However,
+the lead had added a blanket rule requiring every specialist test run to use the lead-only
+`run_command` tool. The planner consequently treated local RED/GREEN as unavailable, and
+its optimization incorrectly called an unverified fallback user-authorized. The lead then
+asked for actual approval in `5d4a49dad9801ed7507b8cee967efca62c95`, pausing unnecessarily.
+
+The coordinator checked the served implementer role and answered through the installed
+mailbox with factual clarification of existing permissions: the lead's no-shell restriction
+does not prohibit the implementer running the configured suite directly in its worktree.
+No new permission, fallback exception or waiver was granted. The lead accepted the
+correction, resumed planning and corrected the implementation brief. The exact false
+restriction, premature authorization claim, question and correction remain in task specs,
+results, the mailbox and `policy-clarification.json`. This is an engine instruction-scoping
+error, not a missing server capability (`atc-s96.159`).
+
+The implementer added eight tests before the function. Its native log records the test-file
+change at line 13, missing-helper `ImportError` at line 15, implementation at line 18, and
+139 passing tests at line 20. The RED is one discovery/import failure, not eight assertion
+failures; its output prints `exit 1`, although the shell wrapper's final echo returns 0.
+The independent audit verified this order and the mailbox chronology. The helper calls
+`slug_words`, deduplicates normalized words, sorts ascending and joins with hyphens. Only
+README usage, the helper module and its tests changed; all prior tests and solo docs remain.
+
+| Review round | Commit | Reviewer task IDs, seats 1 / 2 / 3 |
+| --- | --- | --- |
+| 1 | `bf9a39d69547ec359b0dbe62643172b97e9a806d` | `4778f3bce240e69d01f25dc6e456785dee67` / `f6916201517b333e6cb2db60265d29ec7581` / `f51a1d2bfa83f03ac7305b0071139aa9a4ae` |
+| 2 | `a9b90d4c579096696a18cae75d68e2d11644aa0b` | `79d3dde8525d0a399d6bcc2f3e53c5506b88` / `69cae6cc3cb016ed2c38e23a1e0160bccc01` / `481abf82471f752a4efb2b8b81f185558ba8` |
+
+All six reviews ended `VERDICT: no major issues` and passed 139 tests. Seat 1's Minor
+docstring wording finding in round 1 was verified and fixed by the implementer; all seats
+marked it addressed in round 2. Both committed-head gates and the post-merge root suite
+passed 139 tests. No major correction round, resolver or waiver was needed. The lead
+fast-forward merged the final head, removed the worktree and deleted
+`task/codex-lead-20261015`. The independent suite also passed all 139 tests.
+
+The independent verifier ran before configuration restoration:
+
+```sh
+node tools/e2e-verify.mjs --project /home/wsh/Documents/cross-agent-codex-host-e2e-20261015 --since b49d51f8fb220781c0c11cfd282788fa1af6 --slug codex-lead-20261015
+```
+
+Seven checks pass: cleanup, clean tree, root suite, native logs for all thirteen records,
+depth cap and journal. Row 8 remains unresolved in the initial/optimized planner and Claude
+plan-reviewer transcripts. The scanner cannot model some source-reading shell constructs
+beside engine names in installed paths, a tool-discovery regular expression, and a
+`delegate` occurrence in the literal `src/delegate.ts` filename. The saved Codex rollout
+reader identifies the exact calls, including source line 144, call
+`call_12791e1a81fa48c198e65db5b633243a`, which reads/greps source rather than delegating.
+An independent second invocation reproduced exit 2 with the same 7/0/1 result. This
+coverage gap is `atc-s96.160`; manual inspection does not certify the unknown row.
+
+The native Codex lead emitted no shell-command or file-change items. The host dispatched
+only one lead, called no loop tools, and relayed the full lead report verbatim; the archived
+rollout and prefix comparison verify this. Codex review transcripts also contain parent
+directory instruction-file searches, retained as scope observations. These observations do
+not turn the unresolved transcript check into a pass. A pre-worktree slugged baseline call
+was refused because its journal did not exist; the unjournaled root baseline passed. That
+documented precondition is not a product defect. No engine process failed or was retried.
+
+Evidence is under the sample's ignored `.cross-agent/codex-lead-e2e-evidence/`: exact config
+and brief, native task references/hashes, `coordinator-audit.json`, verifier and independent
+reproduction outputs, planner rollout/reader output, `host-audit.json`, mailbox and policy
+clarification, `lead-result-verbatim.md`, and `supplemental-proof.json`. All 459 earlier
+evidence files retain their hashes. After all tasks settled, the released CLI restored the
+original config byte-for-byte (SHA-256
+`6dc1f7e2ed4f2a73fdf94183b70210b940f5fa29caf94c2e83501f92c20ea192`). Final sample main is
+clean at `a9b90d4`, root worktree only, with no task branch. Verification work is complete;
+findings `.159` and `.160` remain open alongside the earlier findings. Source changes are
+records only; whitespace and citation checks validate them. No push, remote sync or product fix.
+
 ## Codex engine-led acceptance — `atc-s96.154` (2026-10-15)
 
 **Functional pass, lead no-shell compliance fail.** The complete `dev-team-engine` loop
