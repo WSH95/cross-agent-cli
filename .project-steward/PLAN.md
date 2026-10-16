@@ -10,8 +10,8 @@ Native controls, final code reviews, committed-head/root gates and cleanup pass 
 recorded bounds. Plugin top-level availability stays explicitly unknown; no final E2E check
 is waived. Separate test-fixture follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and
 closed, each with all three reviews, committed-head/root tests, audit and cleanup complete.
-Task 7 covers verifier findings .164/.166 and newly confirmed .172; its first review has
-two Important findings, verified/folded but awaiting re-review. No implementation yet.
+Task 7 covers .164/.166/.172. Plan review converged 2 → 1 → 0 Important; final planner
+c502dc7e verified/finalized once. Implementation/gates/three reviews/merge/root/cleanup are next.
 Then .165/.168 and the full mode matrix stay in this stream.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,

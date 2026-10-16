@@ -7,6 +7,23 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: verifier correction plan approved (2026-10-16)
+
+Task 7 (.164/.166/.172) plan reviews converged **2 → 1 → 0 Important**. Round 3,
+`96167d44`, has no findings and confirms all six prior findings addressed. Final planner
+`c502dc7e` verified there was nothing left to fold and finalized the plan without a scope
+change. No source/test/design change or task worktree exists at this checkpoint.
+
+The reviewer observed all eleven transformation cases and all six guarded routes plus the
+lead alias become synthetic row-8 questions, with recorded-event FAIL precedence retained.
+It also preserved 61 arithmetic, 32 source-read, 29 script-data and eight lead-delegate cases;
+eight notDirect cases remain non-direct. These are synthetic reader checks, not native
+execution, source-suite results or executed RED. Implementation must add the two regression
+tests first, record actual failing rows, then run the full gate/review/merge/root/cleanup loop.
+The documented nonliteral-operator and general dynamic-access limits remain bounded; no
+new native proof protocol or user acceptance is claimed. All 14 campaign beads remain open
+as recorded below. No push, release or remote sync.
+
 ## Acceptance fixes: verifier follow-up diagnosis and review (2026-10-16)
 
 Task 7 now covers `.164`, reframed `.166`, and new `.172`, within the authorized follow-up

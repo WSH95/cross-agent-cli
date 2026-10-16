@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T17:23:12.099730+00:00
+updated_at: 2026-10-16T17:45:40.714138+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -10,7 +10,7 @@ branch: main
 
 Acceptance campaign atc-s96.163 continues. No user decision or external blocker is pending.
 All four primary source tasks are merged: b5a5522, d012438, affcfc3, 4e065bb. Test-fixture
-follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and closed. Current main is 7767db4
+follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and closed. Current main is b5baa01
 before this records commit, root-only and clean before records updates. No task
 branches, task worktrees or live delegations remain. Source config is unchanged.
 
@@ -28,12 +28,12 @@ defect was confirmed. Original failed gate and ten trials stay RED; corrected hi
 commits and duplicate passing entries are documented in the approved plan and VERIFY.
 Source/sample configs, four original evidence files and all 582 old sample hashes match.
 
-Current task 7 covers .164/.166 and new .172. Planner 42f23b56 returned a plan; Astra
-reviewer 9307f27a found two Important/two Minor. Planner bf70e5d8 verified/folded all four;
-its full revised plan awaits fresh review. No source/test/design change or task worktree
-exists. Root is clean main 7767db4 before this records checkpoint. The checkpoint changes
-only records; code and tests stay byte-identical to 48b981c/7767db4. Use the new records
-commit as the task branch base after plan approval.
+Current task 7 covers .164/.166/.172. Plan review converged 2 → 1 → 0 Important:
+9307f27a, e80308a9, 96167d44. Final review has no findings; planner c502dc7e verified there
+was nothing to fold and finalized once without scope change. All tasks settled. No task
+worktree or source/test/design change exists yet. Root is clean main b5baa01 before this
+records checkpoint; use the new records commit as branch base. Code/tests/design remain
+unchanged from the approved plan's b5baa01 baseline.
 
 The revised .164 plan makes literal @P uncertainty independent of the engine-name gate,
 including split-name/unread values. .166 now describes unsupported aliased attempts without
@@ -47,9 +47,11 @@ automatic approval rejections. No more archive scan/native proof protocol is req
 
 Evidence: task7-acceptance-amended.md, task7-plan-r1/r2.json and .md,
 task7-plan-review-r1.json, task7-new-route-bead.json, plus native task logs and campaign.json.
-Next fresh plan review round 2 on the amended acceptance and revised plan, judging all four
-prior findings. Then the configured planner finalization/implementation/gates/three code
-reviews/merge/root/cleanup as the verdict directs. Main-flow limits still apply.
+Approved plan: task7-plan-approved.json/.md. Next create the task worktree and delegate the
+implementer with amended acceptance and the full approved plan. Add regression tests first,
+record actual RED rows, then implementation, exact-head gate, all three reviews, verified
+corrections, merge/root tests and cleanup. Synthetic checks are not executed source RED.
+Main-flow limits still apply.
 
 After task 7, investigate .165 and fix .168. Prepared briefs task8-acceptance-prepared.md
 and task9-acceptance-prepared.md need review/current base before dispatch. Never touch
@@ -354,11 +356,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: atc-s96.163 continues the approved source fixes and candidate retest. Task 7
-(.164/.166/.172) awaits fresh plan review after verified folds. No specialist, task branch
-or task worktree is live at this checkpoint. It records the diagnosis and cohesive scope.
-Historical diagnose-only limits below were superseded by the user's fix-and-retest plan.
-Existing Steward runtime ownership is untouched.
+Current: campaign atc-s96.163. Task 7 (.164/.166/.172) has an approved plan after three
+reviews and final planner optimization. No specialist, task branch or worktree is live at
+this checkpoint. Implementation through frozen installed 0.1.9 is next. Historical limits
+below are superseded by the fix-and-retest plan. Steward runtime ownership is untouched.
 
 Historical entries:
 
@@ -524,11 +525,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Fresh plan review round 2 for .164/.166/.172: amended acceptance, revised plan bf70e5d8,
-   prior review 9307f27a. Keep source settings/bindings and frozen installed 0.1.9. No source
-   implementation until the served review procedure permits it.
-2. Finish this cohesive task, then investigate .165 and fix .168 through the complete loop.
-   Confirmed follow-ups stay in scope; avoid general evaluators/race frameworks.
+1. Create task 7's worktree from current main and delegate Claude implementer with amended
+   acceptance and task7-plan-approved.md verbatim. Test first, then the exact-head gate,
+   all three reviews, verified corrections, merge, root tests and cleanup.
+2. Investigate .165 and fix .168 through the complete loop. Confirmed follow-ups stay in
+   scope; avoid general evaluators/race frameworks. Prepared briefs are in campaign evidence.
 3. Freeze/install the candidate, run the full sample matrix/independent audits, restore
    configs/connection, close findings only on acceptance, validate records and commit locally.
    No push, release or remote sync.
