@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T03:31:26.338606+00:00
+updated_at: 2026-10-16T04:48:47.054359+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -16,8 +16,17 @@ closed; .155/.156/.160 remain open for frozen-candidate acceptance. The consulta
 is misleading scope wording, not a filesystem read-sandbox escape; searches/history are
 preserved and the dated correction is in VERIFY.md. Its required doc-size amendment was
 planned and reviewed before implementation resumed; no test was weakened.
-Next: Codex per-launch plugin isolation (.161), then lead contract (.157/.159) and resolved
-project/summary metadata (.162). Also resolve .164 (Bash @P), .165 (unconfirmed ancestor-marker
+Codex per-launch plugin isolation (.161) is in its second planner revision: initial and
+round-2 reviews found 5 then 3 Important proof gaps. The adapter scope stays at two per-launch
+flags; no task-3 code or worktree exists yet. A current CLI 0.163.0 source-root review
+(d29a2519, native session 01a14211-869c-7c33-9272-360e263c77fc) leaks remote plugin skill
+catalogues, while another same-version/root review is clean. This is intermittent current
+behavior, not evidence of an upstream version fix. Remaining proof requirements distinguish
+persisted resume history from effective input, cover the complete runtime discovery surface,
+and reject shaped MCP outputs without a verified call. Latest planner 5c2c90e9 resumes
+c0e900f9 after fresh reviewer 4354db51; full results and the campaign record are under the
+ignored evidence directory. Native model probes have not run and no isolation claim is made.
+After .161: lead contract (.157/.159) and resolved project/summary metadata (.162). Also resolve .164 (Bash @P), .165 (unconfirmed ancestor-marker
 race) and .166 (indirect globalThis tool access) before candidate acceptance. Do each through
 the unchanged installed 0.1.9 dev-team. Full current state, task IDs/results/logs and hashes
 are under ignored .cross-agent/fix-acceptance-evidence/campaign.json and the task ledger.
