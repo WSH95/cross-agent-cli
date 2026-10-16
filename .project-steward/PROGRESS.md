@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T22:30:48Z — codex
+
+Candidate dev-team run settled: feature7ca2bb3,147 tests, all3 clean reviews,9 depth1/exit0
+records, cleanup complete. Frozen verifier7pass/1unresolved independently reproduced;
+filename01-planner-delegate.json in Python-JSON/cat read is the cited delegate occurrence.
+Further source work stays under existing .160; Task10 acceptance prepared, no plan/WT yet.
+Captured198 files with all197 original hashes and582 prior sample hashes matching. Nine
+beads remain; other modes held. Source MCP still published0.1.9, config/bindings unchanged.
+Approval-service timeout before independent launch was resolved by one permitted retry;
+no unsafe verdict/current blocker. No evidence mutation, waiver, push/release/sync.
+
 ### 2026-10-16T21:46:52Z — codex
 
 Frozen candidate24ea2d2 exported/installed as temporary cross-agent@cross-agent-cli0.1.9;

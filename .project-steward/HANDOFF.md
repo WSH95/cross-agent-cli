@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T21:46:52Z
+updated_at: 2026-10-16T22:30:48Z
 updated_by: codex
 session_status: active
 branch: main
@@ -8,30 +8,55 @@ branch: main
 
 ## Now
 
-Acceptance campaign atc-s96.163 continues. All source fixes are merged; Task9 .168 is
-closed. Source-completion records commit24ea2d285c7c12349dc41ba351dba1dab02fb5cd is the
-frozen candidate. Nine campaign beads remain: .155/.156/.157/.159/.160/.161/.162/.169 held
-for candidate acceptance, plus umbrella .163. No human decision or external blocker.
+Acceptance campaign atc-s96.163 continues. Nine beads remain: .160 needs an additional
+source pass after the candidate retest; .155/.156/.157/.159/.161/.162/.169 are merged but
+held for candidate acceptance; .163 is umbrella. Task9 .168 remains closed. No external
+blocker or human decision is pending. Current source main is a445e13 before this checkpoint.
 
-The candidate is installed as cross-agent@cross-agent-cli0.1.9 at
-/home/wsh/.codex/plugins/cache/cross-agent-cli/cross-agent/0.1.9. All173 exported files and
-executable bits match; no extra cache files. Supported helper remove/install/check selected
-it. Original cross-agent@agent-plugins remains installed/enabled; MCP policy entry equals
-original. Restoration snapshot is candidate-original-managed-connection.json. Restore the
-original owner through the helper after all runs settle; remove only the owned temporary
-plugin/marketplace. Never replace the entire operator config or unrelated preferences.
+Frozen candidate24ea2d285c7c12349dc41ba351dba1dab02fb5cd remains installed/selected as
+cross-agent@cross-agent-cli0.1.9. Its173 files/executable bits match the retained export;
+original plugin stays enabled and managed MCP policy equals the saved original. Source
+MCP independently still serves the published0.1.9 cache (full response has no project
+object and old staging), correct source root/host placement/roster/no warnings. That is
+the intentional frozen development bootstrap, not a new .162 failure. Source config
+68f88c... unchanged; main/npm test/no setup/auto/depth1 and exact bindings remain.
 
-Fresh dev-team test chat01a146a9-922d-7ca0-a358-3e5b91932980 (local, saved sample project
-574777e8-ebea-43e4-82c0-c7d93513ebc5) is active. Its live preflight reports the correct sample
-root/roster/config/no warnings and139 baseline tests passing via run_command. Its running
-server hashc4e30291e08da16f49988c3ba6c21874725f915e470e01c90d55ebbb6a526080 matches the
-frozen payload independently. Planner finished; Codex plan review is active. Planner's
-staging instruction conflicts with host-owned Git and is explicitly sent to review. No
-unauthorized staging or new product defect is claimed. Parent monitors; do not send a
-follow-up message to the chat without direct human authorization. No scenario/8-of-8 pass
-has been claimed yet. Sample configuration remains original dev-team; other modes not
-started. Actual installed versions: Claude2.1.302, Codex0.163.0, Grok1.0.52, Node24.11.0,
-Git2.43.0. Earlier native controls retain their own recorded versions and limitations.
+Fresh test chat01a146a9-922d-7ca0-a358-3e5b91932980 is settled. Dev-team functional workflow
+passed: slug_rotate merged7ca2bb36577d379e56e404c340ba27e7acbeb6c2,147 tests (139 original
+methods unchanged +8), all3 clean reviews, all9 depth1/parentnull/exit0, root-only/no task
+branches/clean. Formal acceptance remains BLOCKED: frozen verifier7pass0fail1? exit2.
+Parent independently reproduced the same result outside the workspace sandbox.
+
+Exact unresolved record: first Codex plan reviewer86afc77121886d7bdd92e4ce6f25a9ed99db,
+native session01a146ac-86a4-7e53-b6c1-26f841d567fa, rollout line50 custom exec. Its command
+uses Python JSON inspection and cat; delegate appears only in evidence filename
+01-planner-delegate.json. Child diagnosis says filename discount requires readsOnly for
+the whole combined command; Python prevents it. The source planner must verify the cause,
+choose the smallest bounded correction and preserve fail-closed behavior. Keep this
+under existing .160. No renamed evidence, edited transcript or manual waiver; old7/8
+remains preserved. Task10 acceptance task10-acceptance.md; no source plan/worktree yet.
+
+Full test-chat final/thread and parent reproduction retained. Captured directory
+candidate-dev-team-capture-v1 contains198 files; all197 original hash entries match.
+All582 original sample evidence hashes also match; config remains original dev-team hash
+6dc1f7... and no other mode has started. Full9-task metadata/results/native logs/three
+Codex rollouts/journal/replay data retained. Native audit is bounded: no unauthorized
+specialist delegation/real engine/project Git write observed; operator plugin markers
+absent in recorded Codex inputs; top-level skills.list/read availability remains unknown.
+Child host's extra rev-parse HEAD probe was refused and reconciled before delegation.
+
+A parent coordinator approval service timed out before launching a read-only verifier
+reproduction. Its explicitly permitted single direct retry ran and reproducedexit2.
+This was not an unsafe verdict, product defect or current blocker. Earlier install
+output-budget truncation and unsupported --mode/--propose combination remain recorded.
+
+Next save this reviewed records checkpoint, then source Task10 through published0.1.9
+MCP: planner/plan reviewer/final verification, worktree/test-first/commit/gate/all3 reviews/
+verified corrections/merge/root tests/cleanup. Keep implementation logs in TMPDIR and
+no ignored state under its WT so frozen old staging succeeds. Then freeze/install fixed
+candidate and rerun the affected verification with original cohort/config preserved;
+plan determines the narrow genuine rerun without gratuitous feature churn. Continue
+solo then both engine leads only after this scope passes8/8. No final check is waived.
 
 Task9 source commits are27d9f3c and the required Minor wrap746521e, seven planned files.
 All three served staging copies use paired bracketed exclusions; runtime/error handling,
@@ -69,20 +94,18 @@ round/seat labels although API seats/IDs/bindings and reviewed SHA distinguish e
 R2 briefs explicitly include round/seat. Shorter Conventional Commit subjects and the
 served correction commit are nonmaterial departures. No auto-review rejection occurred.
 
-Candidate freeze/install/preflight are complete; monitor the active dev-team chat first,
-then change modes using the installed candidate CLI with configuration hash protection.
-Frozen export .cross-agent/candidate-24ea2d285c7c and tar/hash/file manifest candidate-freeze.json
-are retained. Prepared configs candidate-config-*.json, original sample config and v2 brief
-template are in campaign evidence. Use the exact candidate launcher path in each fresh chat.
-The development payload and candidate export/cache are distinct; never hot-load this checkout.
+Candidate install/restoration snapshot and v2 prepared briefs/configs remain in campaign
+evidence. Original sample config is candidate-original-sample-config.json. Original
+managed owner/policy snapshot is candidate-original-managed-connection.json. Restore
+through the supported helper after all runs settle; remove only the owned temporary
+plugin/marketplace, preserve unrelated preferences. Never replace the entire config.
 
-After the active dev-team slug_rotate run, open fresh chats for six solo cases in order Claude
-Opus/Codex Sol/Grok4.7 with default effort; Claude-led slug_shortest_first; Codex-led
-slug_unique_reverse. Require live mode/roster/project metadata, scripted mailbox input,
-full verbatim lead reports, six scoped8/8 verifiers (--slug) and independent ownership/
-depth/lead-tools/specialist-local-tests/plugin/review/cleanup audits. Lead briefs must not
-supply resolved project settings, loop or role prompts. Restore original sample config
-and managed connection after runs settle. No tracker/Steward configuration in sample.
+After .160 acceptance, complete six solo paths Claude Opus/Codex Sol/Grok4.7 default effort,
+Claude-led shortest-first and Codex-led unique-reverse, with scripted mailbox answers,
+complete verbatim lead reports and all six scoped8/8 verifiers/independent audits. No
+tracker/Steward config in sample, no host loop/Git/test steps while engine lead is live.
+Use --slug. Candidate export/cache are frozen; never hot-load this checkout. Current
+captured engine versions Claude2.1.302/Codex0.163.0/Grok1.0.52, Node24.11.0, Git2.43.0.
 
 The .161 user-accepted top-level skills.list/read availability and backend-receipt unknowns
 remain; no final verifier check is waived. Task4 standalone mount proved specialist-row
@@ -368,9 +391,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign atc-s96.163. All source work including Task9 .168 is merged/closed.
-Frozen candidate24ea2d2; active sample dev-team chat01a146a9-922d-7ca0-a358-3e5b91932980.
-No source task worktree/branch. Nine beads remain, held for candidate acceptance. See Now.
+Current: campaign .163; Task10 additional .160 source pass prepared after candidate scope1
+7pass/1unresolved. No live source/sample delegation or task worktree/branch. Nine beads
+remain. Sample clean at7ca2bb3/147tests, original config; candidate still selected. See Now.
 
 Historical entries:
 
@@ -536,13 +559,12 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Monitor the active candidate dev-team chat with wait_threads and its cursor, retrieve
-   its complete result, independently verify/audit and preserve config/cohort/journal.
-2. Installed CLI mode changes with hash protection; fresh solo then Claude-led and Codex-led
-   chats. Complete all9 scenarios and6 scoped8/8 verifiers, preserve full lead reports and
-   independent audits, restore original sample config/managed owner, close findings on
-   acceptance, validate records and make local evidence commit. Fix confirmed retest
-   defects through a frozen dev-team payload. No push, release or remote sync.
+1. Commit this reviewed checkpoint, then complete Task10 .160 through the configured
+   frozen development team using task10-acceptance.md and captured exact native case.
+2. Freeze/install fixed candidate, verify the affected original scope without rewriting
+   old outcomes, then finish solo and both engine-led scenarios. Require all6 scopes8/8,
+   independent audits, original-config/managed-owner restoration, Beads closure on actual
+   acceptance and validated local evidence commit. No push/release/remote sync.
 
 Historical next-step entries below predate the approved fix campaign:
 

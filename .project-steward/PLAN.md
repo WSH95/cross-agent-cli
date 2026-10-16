@@ -13,13 +13,13 @@ closed, each with all three reviews, committed-head/root tests, audit and cleanu
 Task 7 (.164/.166/.172) merged as 602c479 plus the required wrap773807c; all three are closed.
 Both final gate/root suites pass1278/1275/0/3 and all3 fresh reviews say noMajor.
 Fifteen tasks, complete results, bounded audit, cleanup and preservation are recorded.
-Task8 .165 and Task9 .168 are merged/closed after their full dev-team workflows. Final
-Task9 head746521e passes gate/root1280/1277/0/3; all3 R2 reviews have no findings and
-cleanup/preservation/native audit is complete. All source milestones are complete.
-Nine campaign beads remain: eight merged findings awaiting candidate acceptance and
-umbrella .163. Freeze after this records checkpoint, then complete the full mode matrix.
-The new candidate matrix has not started. Preserve historical evidence, restore configuration
-and connection afterward, and close findings only on their acceptance evidence. No push,
+Task8 .165 and Task9 .168 are merged/closed after their full source workflows. Candidate
+24ea2d2 installed and first dev-team feature run functionally passes147 tests with complete
+reviews/cleanup. Formal verifier is7pass/1unresolved: additional evidence-filename case in
+existing .160 requires Task10 source work. Exact captures and original verdict preserved.
+Nine campaign beads remain: .160 source pass, seven merged findings awaiting acceptance
+and umbrella .163. Complete the source pass and affected rerun before remaining modes.
+Restore original sample configuration/managed connection after runs settle. No push,
 release or remote sync.
 
 ## Codex-led engine variant (verification complete, 2026-10-15)

@@ -7,6 +7,41 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Candidate dev-team: functional pass, verifier unresolved (2026-10-16)
+
+Candidate24ea2d2 completed the served dev-team workflow in test chat
+01a146a9-922d-7ca0-a358-3e5b91932980. `slug_rotate` merged7ca2bb3 froma9b90d4; all139 original
+test methods unchanged, eight added, implementation/gate/reviewer/root runs147 green.
+All3 reviewers noMajor/no findings on the merged head; all9 records done/depth1/parentnull/
+exit0. No correction/resolver/waiver. Root-only worktree, task branch deleted, clean sample,
+original config/candidate hashes unchanged. No source/product repair occurred in the sample.
+
+Acceptance is BLOCKED, not pass: frozen verifier returns7pass0fail1unresolved, exit2.
+The coordinator independently reproduced the exact scope with installed candidate outside
+the workspace sandbox, starting planner513019741df1420767fa45a4064b52e7a05e and journal
+codex-host-rotate-retest-20261016. Check8 cites first Codex plan reviewer86afc771, native
+rollout line50: delegate appears in `01-planner-delegate.json`, read by cat after Python
+JSON inspection. No delegation call is recorded there. The child traced this bounded
+coverage gap to whole-command readsOnly gating filename discounts; source Task10 must
+verify and repair the cause under existing .160, with real regression/fail-closed controls.
+Original exit2 and captures remain unchanged; independent reading is not substituted for8/8.
+
+The complete host final/thread, full results/native logs/specs/three Codex rollouts/config/
+journal are retained. Parent captured198 files; all197 original manifest entries and582
+prior sample hashes match. Seven other source findings stay held; nine campaign beads
+remain including .160 and umbrella .163. No later mode has started or config changed.
+Top-level skills.list/read availability remains accepted unknown; recorded native audit
+observed no unauthorized delegation/engine launch/project Git metadata write and no
+operator-plugin markers. It is not OS-wide history/backend-visibility proof.
+
+Host deviations remain separate: child extra rev-parse HEAD probe refused/reconciled;
+parent approval-service deadline prevented initial read-only reproduction launch, then
+one explicitly permitted direct retry completedexit2. No unsafe verdict or current external
+blocker. Source development MCP remains frozen published0.1.9 with expected source root/
+roster; its old full response is intentional bootstrap, not another configuration defect.
+Evidence: `.cross-agent/fix-acceptance-evidence/candidate-dev-team-*`; source follow-up
+acceptance `task10-acceptance.md`. No push, release, remote sync or retrospective pass claim.
+
 ## Frozen candidate retest started (2026-10-16)
 
 Candidate `24ea2d285c7c12349dc41ba351dba1dab02fb5cd` is installed temporarily as
