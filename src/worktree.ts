@@ -150,9 +150,10 @@ export interface Enclosure {
  * its own git and its own registry lists a worktree strictly under it that is or holds the
  * candidate. Nothing of the candidate's own `.git` is read, so ownership is proven by
  * registries a specialist confined to the candidate cannot write, whatever it did to its
- * pointer. A readable, empty `.git` directory holds no registry and is skipped. Other
- * entries still go through git, and any read or git failure refuses: even an unreadable
- * real repository can make git report "not a git repository".
+ * pointer. A readable, empty `.git` directory holds no registry and is skipped, and so is
+ * one already gone when it is listed, as if `lstat` had found none. Other entries still go
+ * through git, and any other read or git failure refuses: even an unreadable real
+ * repository can make git report "not a git repository".
  */
 export async function enclosingWorktree(candidate: string): Promise<Enclosure | { reason: string } | null> {
   const ancestors: string[] = [];
@@ -175,6 +176,8 @@ export async function enclosingWorktree(candidate: string): Promise<Enclosure | 
       try {
         if ((await readdir(pointer)).length === 0) continue;
       } catch (error) {
+        // Removed since the lstat above: no entry, as when lstat finds none.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
         return { reason: `cannot read ${pointer}: ${message(error)}` };
       }
     }

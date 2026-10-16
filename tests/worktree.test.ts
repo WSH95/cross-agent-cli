@@ -3,7 +3,9 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import fsPromises from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -510,6 +512,48 @@ test("skipping an empty ancestor .git still finds the repository that registers 
   nestedIn(refused(await locateRepository(task)), task, main);
   await rm(path.join(task, ".git"));
   nestedIn(refused(await locateRepository(task)), task, main);
+});
+
+/**
+ * Runs `act` with the empty directory `marker` removed at its first listing: after the walk's
+ * `lstat` saw it and before `readdir` reads it, as a concurrent removal leaves it, made exact.
+ */
+async function vanishingAtListing(t: TestContext, marker: string, act: () => Promise<void>): Promise<void> {
+  const list = fsPromises.readdir;
+  let removed = false;
+  const listing = t.mock.method(fsPromises, "readdir", async (...args: Parameters<typeof list>) => {
+    if (args[0] === marker && !removed) {
+      removed = true;
+      await rmdir(marker);
+    }
+    return list(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    await act();
+    assert.equal(removed, true, `${marker} was listed, and removed first`);
+  } finally {
+    listing.mock.restore();
+    syncBuiltinESMExports();
+  }
+}
+
+// @anchor locateRepositoryVanishedAncestorSkipped
+test("an ancestor .git removed between its lstat and its listing is skipped as a missing one is, and nesting is still found", async (t) => {
+  const temporary = await scratch(t);
+  const marker = path.join(temporary, ".git");
+  await mkdir(marker);
+  const main = await mainCheckout(temporary, "M");
+  await vanishingAtListing(t, marker, async () => {
+    const own = repositoryOf(await locateRepository(main));
+    assert.equal(own.kind, "main");
+    assert.equal(own.workTree, main);
+  });
+
+  const { main: enclosing, task } = await mainWithTask(t);
+  const above = path.join(path.dirname(enclosing), ".git");
+  await mkdir(above);
+  await vanishingAtListing(t, above, async () => nestedIn(refused(await locateRepository(task)), task, enclosing));
 });
 
 // @anchor locateRepositoryEmptyRootRefused

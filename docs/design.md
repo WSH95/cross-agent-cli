@@ -2353,7 +2353,9 @@ which a listing from a linked worktree does not read (`tests/worktree.test.ts#lo
 (`src/worktree.ts#enclosingWorktree`). An ancestor without a `.git` entry is skipped,
 as is one whose `.git` is an actual directory that can be read and is empty: it holds
 no registry (`tests/worktree.test.ts#locateRepositoryEmptyAncestorAllowed`,
-`#locateRepositoryEmptyAncestorConfigOnly`). The walk continues through the remaining
+`#locateRepositoryEmptyAncestorConfigOnly`). So is a `.git` already gone when it is
+listed, removed after its `lstat`
+(`tests/worktree.test.ts#locateRepositoryVanishedAncestorSkipped`). The walk continues through the remaining
 ancestors, so a registered task worktree still refuses, even with its pointer removed
 (`#locateRepositoryEmptyAncestorStillNested`). This exception does not apply to the
 candidate's own `.git` (`#locateRepositoryEmptyRootRefused`).
@@ -2365,7 +2367,7 @@ from its own `.git` (`src/worktree.ts#worktreeStanzas`), and the ancestor enclos
 a stanza strictly under it is or holds the candidate, the innermost one named. Every
 registration whose directory exists counts, whatever its pointer or its annotation:
 git marks one `prunable` only when its pointer fails `lstat`, and never marks a
-`locked` one. A directory read failure refuses; so does a git failure, naming the ancestor
+`locked` one. Any other directory read failure refuses; so does a git failure, naming the ancestor
 and git's own words. Git's "not a git repository" error is not grounds for a skip:
 unreadable real repositories can produce it too
 (`tests/worktree.test.ts#locateRepositoryPermissionDeniedAncestorRefused`,
