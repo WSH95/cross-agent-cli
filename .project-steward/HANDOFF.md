@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T20:30:46Z
+updated_at: 2026-10-16T21:32:45Z
 updated_by: codex
 session_status: active
 branch: main
@@ -8,99 +8,76 @@ branch: main
 
 ## Now
 
-Acceptance campaign atc-s96.163 continues. No human decision or external blocker is pending.
-Current main is00d2931 before this records-only checkpoint. Task9 .168 has an approved
-plan, no implementation/worktree/branch yet and no live delegation. All earlier source
-tasks and Task8 records are complete. Ten beads remain: .168, eight merged findings
-awaiting candidate acceptance, and .163 umbrella. Candidate matrix has not started.
+Acceptance campaign atc-s96.163 continues. All source fixes are merged. Task9 .168 is
+closed after the complete frozen installed 0.1.9 dev-team workflow. Current main is
+746521e before this records-only checkpoint. No task worktree, task branch, live task,
+human decision or external blocker remains. Nine campaign beads remain: eight merged
+findings (.155/.156/.157/.159/.160/.161/.162/.169) held for candidate acceptance, plus .163.
+The candidate matrix has not started; the sample and managed connection remain original.
 
-Task9 planner270be442 reproduced the Git2.43.0 ignored-pathspec failure in private Git
-fixtures: old command exits1 after staging, bracketed FormC exits0 with the same tested
-selection. Separate exclusions for each state path and everything below it preserve
-directories/contents and plain-file protection. Runtime validation/error propagation and
-commit/merge guards are correct; src stays unchanged. Three served copies, tests and
-current docs/sizes change, with no public-interface change. Rare custom-name/case bounds
-stay explicit nonblocking limits, not a general pathspec framework.
+Task9 source commits are27d9f3c and the required Minor wrap746521e, seven planned files.
+All three served staging copies use paired bracketed exclusions; runtime/error handling,
+commit/merge guards and public interfaces are unchanged. The real Git2.43.0 regression
+fails before the change. Actual RED1280/1262/5/13, local GREEN and wrap1280/1267/0/13;
+both committed-head gates and post-merge root npm test1280/1277/0/3. Logs retain raw skip
+names/reasons: three native opt-ins guarded, ten additional specialist sandbox limits.
+No invented RED for the documentation/test-only wrap. Current mode sizes41447/58274/4508.
 
-Astra5f7ff692 returned noMajor, two Minor: full preservation hashes and direct size
-calculation instead of redundant full-suite discovery. Final plannere2a9be84 verified
-and folded both and optimized once. No further plan review. Approved full plan:
-task9-plan-approved.md/.json; active acceptance task9-acceptance.md. Nine original full
-digests are in task9-original-evidence-manifest.json. Projections, not executed results:
-RED1280/1262/5/13, localGREEN1280/1267/0/13, hostgate/root1280/1277/0/3.
-Test first; log actual results/raw skips under TMPDIR. Keep task worktree state directories
-absent so frozen0.1.9's old staging command works for this task. Host owns Git/bookkeeping.
+Plan R1 noMajor/twoMinor were verified/folded. Code R1 all noMajor: Claude24358167 had
+three Minor documentation/coverage points, Codexce6e6512 and Grok3048c6cb none. Implementer
+57f75a2c verified/folded all three. Fresh R2 Claude0b82ff7a, Codex828e0128 and Grok9a720100
+all have no findings, reviewed746521e. Mandatory final rebase was a no-op; merge/root/
+cleanup succeeded. No new confirmed finding, further wrap, resolver or waiver.
 
-The native Claude permission layer refused planner fixture deletion (not host automatic
-approval). Host verified UID/real directory/private common dirs and worktree references,
-then removed only /tmp/claude-1000/atc168-plan-fixture after planning settled. Inspection
-and cleanup reports retained; no source/sample/task repository metadata changed.
-Optional upstream pages were inaccessible to parent web read; local Git proof remains
-primary and no merged-upstream-fix claim or blocker is made.
+Eleven full results, native specs/logs, actual bindings, journal and host-placed log lines
+are retained under task9-* evidence. All11 are done/depth1/parentnull/exit0. Native349
+recorded tool entries,224 command strings and21 edits were inspected: no unauthorized
+project Git metadata write, delegation or real-engine launch observed. Private diagnostic
+Git fixtures and npm-test fixtures are authorized test work. Edits are confined to the
+implementer tasks and the seven intended worktree files. This is a recorded-call audit,
+not OS-wide history or frozen0.1.9 plugin-isolation proof. Exact owned-spec/worktree process
+inspection found0 matches/0 unreadable entries/0 signals; test teardown remains primary.
 
-Next create Task9 worktree from the records commit after this checkpoint, implement the
-full plan, then host commit/rebase/exact-head gate/all3 reviews/verified corrections/
-merge/root tests/cleanup. Re-check original9 hashes and historical sample evidence.
-After .168 source acceptance, freeze/install candidate and run the full matrix below.
+All9 original staging artifacts,582 prior sample evidence files,140 Task7 and96 Task8
+hashes match. Both configs are unchanged. Sample remains clean/root-only maina9b90d4,
+139-test prior baseline. Planner private fixture was already inspected and removed by
+host; native permission refusal and host cleanup are retained separately. Rare custom-name
+(!/^/backslash) and case limits are accepted and explicitly stated; no new pathspec
+framework or universal merge-protection claim is made.
 
-Task8 closure context (completed before Task9):
+Two host deviations are recorded: read-only git_root status --short was refused before
+Git ran, immediately reconciled with consistent state; R1 brief prose omitted explicit
+round/seat labels although API seats/IDs/bindings and reviewed SHA distinguish each task.
+R2 briefs explicitly include round/seat. Shorter Conventional Commit subjects and the
+served correction commit are nonmaterial departures. No auto-review rejection occurred.
 
-Task8's narrow change skips only strict-ancestor readdir ENOENT, matching existing lstat
-absence handling. Other listing/git failures and candidate-root validation still refuse.
-The public two-leg regression checks successful main discovery and continued nesting
-refusal; fixture interception/restoration is scoped. Actual source RED1279/1265/1/13,
-GREEN1279/1266/0/13; exact-head and post-merge root npm test1279/1276/0/3 at33d010e.
-Full raw logs, SHA256 and raw skip names/reasons are archived; normalized skip lists
-are byte-identical. Guard opt-ins stayed disabled. Server tails omit individual skips.
+Next freeze the validated records commit as the candidate, export/install a temporary
+local plugin and select it through the supported Codex setup helper. Development remains
+frozen installed0.1.9; never hot-load this checkout. Preserve original connection policy
+and unrelated preferences. Snapshot is candidate-original-managed-connection.json;
+original sample config is candidate-original-sample-config.json. Prepared mode configs
+candidate-config-*.json and candidate-retest-brief-template-v2.json contain the exact
+bindings/tasks and require the actual candidate launcher skill path when dispatched.
 
-Plan reviews0a2959df and544f7b75 converge2→0 Important. Plannerccd14a76 verified/folded
-all3 findings (ownership/counts/evidence wording), and final003db4a2 optimized once.
-Initial85f67f0 rebased onto records-onlyad4f916 to33d010e before the gate. All3 code
-reviews have no findings and noMajor: Clauded1dc94ad, Codex919f7c9f, Grokd99cc789.
-No correction round or new defect. Nine tasks depth1/parentnull/exit0; all full results
-are retained. The recorded188-tool audit observed no unauthorized project Git writes,
-delegation or real-engine launch. Private diagnostic/suite Git fixtures are test work.
-This is not OS-wide history or frozen0.1.9 plugin-isolation proof.
+Open fresh saved-project chats for dev-team slug_rotate; six solo cases in order Claude
+Opus/Codex Sol/Grok4.7 with default effort; Claude-led slug_shortest_first; Codex-led
+slug_unique_reverse. Require live mode/roster/project metadata, scripted mailbox input,
+full verbatim lead reports, six scoped8/8 verifiers (--slug) and independent ownership/
+depth/lead-tools/specialist-local-tests/plugin/review/cleanup audits. Lead briefs must not
+supply resolved project settings, loop or role prompts. Restore original sample config
+and managed connection after runs settle. No tracker/Steward configuration in sample.
 
-Exact task-spec/worktree-argument process inspection found no matches/unreadable entries,
-sent no signals, and excludes generic TMPDIR children/suite parents. Existing teardown
-remains primary. Owned prototype/diagnostic directories are absent. No shared real
-/tmp/.git was changed. Historical actor/change remains inference; wider timing windows,
-ENOTDIR and junk-ancestor refusals stay explicit limits, not a new race/watch framework.
-Both configs, seven original failure artifacts, all582 old sample hashes and140 Task7
-evidence hashes match. Sample remains clean/root-only maina9b90d4,139-test baseline.
+The .161 user-accepted top-level skills.list/read availability and backend-receipt unknowns
+remain; no final verifier check is waived. Task4 standalone mount proved specialist-row
+transport, not actual lead ownership. Note any Claude saved-MCP-answer/Read occurrence in
+final engine runs without inventing coverage. The preparatory setup check passed outside
+the workspace sandbox after its SQLite startup failed inside it; owner remains original
+cross-agent@agent-plugins0.1.9. No plugin switch or sample change has occurred.
 
-Ten campaign beads remain: .168 needs source work; .155/.156/.157/.159/.160/.161/.162/.169
-have merged fixes pending candidate acceptance; .163 is umbrella. .165 is closed alongside
-.164/.166/.172/.170/.171/.167. Task9 prepared acceptance is task9-acceptance-prepared.md.
-Verify .168's ignored-evidence staging refusal with this Git version in a disposable
-fixture, then smallest coherent procedure fix with both exclusions/guards/errors intact.
-Preserve originals and unrelated logs; no blanket partial-add-success or silent retry.
-One initial Conventional Commit plus any served correction commits; host owns project
-Git metadata. Keep main-flow scope, no new machinery. Complete the full dev-team loop.
-
-Then freeze/install temporary candidate and open fresh saved-project chats: dev-team
-slug_rotate; six solo cases Claude Opus/Codex Sol/Grok4.7 at default effort; Claude-led
-slug_shortest_first; Codex-led slug_unique_reverse. Templates and six reference examples
-are in campaign evidence. Require live mode/roster/project config, scripted mailbox input,
-full verbatim lead reports, six scoped eight-check passes and independent depth/ownership/
-lead-tools/specialist-local-tests/plugin/review/cleanup audits. Use verifier --slug.
-The candidate matrix has not started. Restore sample config and managed connection
-afterwards; do not add tracker/Steward configuration to sample.
-
-Development remains frozen installed0.1.9, source dev-team/main/npm test/no setup/auto/
-depth1 with exact configured bindings. Never hot-load checkout. The .161 user-accepted
-top-level skills.list/read availability and backend-receipt unknowns remain; no final
-E2E check is waived. Task4 standalone mount proved specialist-row transport, not actual
-lead ownership. Note any Claude saved-MCP-answer/Read occurrence in final engine run.
-The preparatory supported setup check passed outside workspace sandbox after SQLite
-startup failed inside it. Owner still cross-agent@agent-plugins0.1.9, no plugin switch
-or project config change. Captures are distinct from product defects.
-
-Evidence .cross-agent/fix-acceptance-evidence/task8-* (including originals manifest,
-results/native inventory/preservation/journal), task7-*, campaign.json; native tasks/
-and journalfix-discovery-enoent-20261016. Steward CLI unavailable; manual records.
-Other-session runtime ownership remains untouched. No push, release or remote sync.
+Full records: root VERIFY.md, task9-* ignored evidence, campaign.json and journal
+fix-staging-exclusions-20261016. Task8 and earlier records/evidence remain intact.
+Steward CLI unavailable; manual records. Other-session runtime ownership untouched.
+No push, release or remote sync.
 
 ## Prior verification context
 
@@ -374,9 +351,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign atc-s96.163. Task9 .168 plan approved (R1 noMajor,2Minor verified/folded).
-No live task/worktree/branch yet. Main00d2931 before this records commit; create worktree
-from the new records commit. Full Task9 source loop then candidate matrix remains.
+Current: campaign atc-s96.163. All source work including Task9 .168 is merged/closed.
+Main746521e before this records commit; no live task/worktree/branch. Nine campaign
+beads remain, held for the candidate matrix and final restoration/evidence. See Now.
 
 Historical entries:
 
@@ -542,11 +519,12 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Create Task9 worktree from current main; delegate implementer with task9-plan-approved.md
-   and active acceptance verbatim. Test first, TMPDIR logs, frozen staging, gate/all3 reviews/
-   verified corrections/merge/root/cleanup. Preserve original9 hashes and prior evidence.
-2. Freeze/install candidate, full saved-sample matrix and independent audits; restore
-   configs/connection, close findings on acceptance, validate records and commit locally.
+1. Freeze/export/install this records commit as a temporary local candidate, select it
+   with the supported setup helper, and open fresh mode-specific saved-project chats.
+   Use prepared v2 briefs/configs and exact candidate skill/server provenance.
+2. Complete all9 scenarios and6 scoped8/8 verifiers plus independent audits; restore
+   sample config/managed connection, close findings on acceptance, validate records and
+   commit locally. Resolve confirmed retest defects through the frozen dev-team.
    No push, release or remote sync.
 
 Historical next-step entries below predate the approved fix campaign:
@@ -641,9 +619,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no external blocker or pending user decision. Source primary fixes are merged,
-reviewed and tested. Remaining verifier/discovery/staging follow-ups
-and the frozen-candidate mode matrix prevent campaign completion. See Now and Beads.
+Current: no external blocker or pending user decision. All source fixes and follow-ups
+are merged, reviewed and tested. The frozen-candidate mode matrix, restoration and final
+evidence remain before campaign completion. See Now and Beads.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

@@ -13,11 +13,11 @@ closed, each with all three reviews, committed-head/root tests, audit and cleanu
 Task 7 (.164/.166/.172) merged as 602c479 plus the required wrap773807c; all three are closed.
 Both final gate/root suites pass1278/1275/0/3 and all3 fresh reviews say noMajor.
 Fifteen tasks, complete results, bounded audit, cleanup and preservation are recorded.
-Task8 .165 merged33d010e and closed: actual RED/GREEN, all3 clean code reviews, final
-gate/root1279/1276/0/3, audit, cleanup and preservation complete. Ten campaign beads
-remain: .168 source work, eight merged findings awaiting acceptance and umbrella .163.
-Task9 .168 has an approved plan: R1 noMajor/twoMinor verified/folded, private fixture
-cleaned by host. No source implementation yet; full loop and candidate matrix remain.
+Task8 .165 and Task9 .168 are merged/closed after their full dev-team workflows. Final
+Task9 head746521e passes gate/root1280/1277/0/3; all3 R2 reviews have no findings and
+cleanup/preservation/native audit is complete. All source milestones are complete.
+Nine campaign beads remain: eight merged findings awaiting candidate acceptance and
+umbrella .163. Freeze after this records checkpoint, then complete the full mode matrix.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,
 release or remote sync.

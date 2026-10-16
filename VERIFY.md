@@ -7,6 +7,57 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: staging repair merged (2026-10-16)
+
+Task9 `atc-s96.168` is closed. Commits `27d9f3c` and the required Minor wrap `746521e`
+change the seven planned files (+147/-49). All three served commit procedures now use
+paired bracketed exclusions, avoiding Git2.43.0's ignored-directory error after partial
+staging. Both state paths and their contents stay excluded. Runtime, nonzero errors,
+reconciliation, host-configuration guards and public interfaces are unchanged. The
+current mode-response sizes are41,447 /58,274 /4,508 bytes; historical observations remain.
+
+Actual `npm test` results (total/pass/fail/skip): RED1280/1262/5/13, exactly the new Git
+regression and four served-text pins; local GREEN and documentation/test wrap1280/1267/0/13;
+committed-head gates at27d9f3c and746521e, and final root at746521e,1280/1277/0/3. Raw logs,
+SHA256 and raw skip names/reasons are retained. Three native opt-ins are guarded; the
+additional ten local skips are specialist sandbox limits. Server tails do not retain
+individual early test/skip lines. No RED was invented for already-correct coverage work.
+
+Plan R1 noMajor/twoMinor were verified/folded. Code R1 all noMajor: Claude24358167 had
+three Minor documentation/coverage points; Codexce6e6512 and Grok3048c6cb none. Resumed
+implementer57f75a2c verified/folded all three: accepted rare custom-name limit documented,
+launcher preservation coverage added, modified tracked state/deletions covered. Fresh R2
+Claude0b82ff7a, Codex828e0128 and Grok9a720100 each reviewed746521e with no findings/noMajor.
+Mandatory final rebase was a no-op; ff merge, root test, worktree removal and branch deletion
+succeeded. No unresolved finding, new bead, resolver or waiver. Custom-name/case limits
+stay accepted; the docs make no universal merge-protection claim for leading backslash.
+
+All11 delegations are done/depth1/parentnull/exit0; every complete result and actual binding,
+sandbox/spec, native log and journal are retained. The349 recorded native tool entries,
+224 command strings and21 edits were inspected; no unauthorized project Git metadata write,
+delegation or real-engine launch was observed. Private disposable Git diagnostics and test
+fixtures are authorized validation work. Edits are only the implementers' intended worktree
+files. This bounded recorded-call audit is not OS-wide history or source0.1.9 plugin-isolation
+proof. Exact owned-spec/worktree process audit0 matches/0 unreadable/0 signals; teardown is
+primary. Source is clean/root-only with no task branch or live task.
+
+Preservation checks after root tests/cleanup match all9 original staging artifacts,582 prior
+sample evidence files,140 Task7 and96 Task8 hashes. Both configs are unchanged; sample remains
+clean/root-only maina9b90d4,139-test prior baseline. The owned planner fixture was inspected
+and removed separately; no unrelated evidence was deleted to make staging succeed.
+
+Host deviations: read-only `git_root status --short` was refused before Git ran and immediately
+reconciled; R1 shared brief omitted explicit round/seat labels, while API seats, task IDs,
+returned bindings and reviewed SHA distinguish all three. R2 briefs explicitly label both.
+Both deviations are retained separately from product/engine defects. No auto-review rejection.
+Shorter Conventional subjects and the served correction commit are nonmaterial departures.
+
+Evidence: `.cross-agent/fix-acceptance-evidence/task9-*`, full native tasks, journal
+`fix-staging-exclusions-20261016`, and host-placed `.cross-agent/log.md`. Nine campaign beads
+remain: eight merged findings awaiting frozen-candidate acceptance, plus umbrella `.163`.
+The full candidate matrix has not started; sample config and managed connection are still
+original. No final8/8, new native-isolation result, release, push or remote sync is claimed.
+
 ## Acceptance fixes: staging plan approved (2026-10-16)
 
 Task9 .168 is planning-approved, not implemented. Planner270be442 established the local

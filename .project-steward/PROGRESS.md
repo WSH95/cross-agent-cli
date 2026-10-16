@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T21:32:45Z — codex
+
+Task9 .168 merged27d9f3c + required Minor wrap746521e and closed. Actual RED1280/1262/5/13;
+local GREEN/wrap1280/1267/0/13; both gates/root1280/1277/0/3. All3 final reviews clean,
+all three R1 Minor points verified/addressed. Eleven full results and native349 entries/
+224 command strings/21 edits inspected; no unauthorized project Git/delegation/real-engine
+launch observed. Cleanup/process audit/preservation complete; both configs unchanged.
+Two host deviations recorded and corrected (status argument, R1 brief metadata). Nine
+campaign beads remain; all source work complete, candidate matrix not started. No push,
+release, sync, human decision or external blocker.
+
 ### 2026-10-16T20:30:46Z — codex
 
 Task9 .168 approved: local Git2.43.0 failure and FormC selection proved in private
