@@ -2,7 +2,10 @@
 
 Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
-## Acceptance fixes and frozen-candidate retest (active, 2026-10-15)
+## Acceptance fixes and frozen-candidate retest (paused by user, 2026-10-16)
+
+Wait for explicit resume. Task10 planner was cancelled before delivering a final plan;
+no implementation worktree was created. Temporary candidate remains selected.
 
 User-approved work is tracked by atc-s96.163; Beads owns the detailed tasks and follow-ups.
 As of 2026-10-16, all four primary source tasks are merged: b5a5522, d012438, affcfc3, 4e065bb.

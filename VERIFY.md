@@ -7,6 +7,17 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## User pause (2026-10-16)
+
+The user paused the campaign. Read-only Task10 planner
+`8b8da25bfae124c3c270893ec502576b429d` was cancelled through the installed server
+(exit143, empty final result); no plan review, implementation worktree or task branch
+was created. Reconciliation found no active source tasks. Cancellation, task metadata,
+native logs/specs/scratch and their manifest are retained in `task10-paused-*` evidence.
+Nine beads remain open. Candidate24ea2d2 remains selected, sample is settled at7ca2bb3
+with147 tests and original dev-team configuration. Prior verifier7/8 remains unresolved.
+Further work and restoration await explicit resume; no push, release or remote sync.
+
 ## Candidate dev-team: functional pass, verifier unresolved (2026-10-16)
 
 Candidate24ea2d2 completed the served dev-team workflow in test chat
