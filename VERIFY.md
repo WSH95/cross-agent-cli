@@ -7,6 +7,50 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: third native probe reaches the coverage boundary (2026-10-16)
+
+Amendment 2 cleared plan review with no major findings. The planner verified and folded its
+two Minor findings before implementation. Task `80014a6d0d13dc1b998c00c03820fc213411`
+completed at depth 1, exit 0: RED 1265/1245/7/13, GREEN 1265/1252/0/13. The report identifies
+assertions not reached after earlier RED failures; all passed GREEN. A subsequent verified
+prose correction (`89760ba559ba1ee5a8492326309cf173888d`, 66 seconds) narrows connector
+claims to names and annotation flags. Citations: 1878, zero misses or drift. Logs are
+archived with hashes; only their owned duplicate worktree directory was removed.
+
+The single unmerged task commit is now `63b5f5a4b519ec327aa7a734c5c7f679d41ad465`.
+Its ordinary committed-head gate passed: 1265 tests, 1262 pass, zero failures, three guarded
+skips. Native r3 on that fixed head, Codex CLI 0.163.0 and `gpt-6.1-sol` default effort,
+returned 1265/1262/1/2. Only the native proof failed; the recorded outcome is UNRESOLVED.
+
+Stage 0 and the root control pass. The root treatment records zero plugin-origin skills
+versus three in the control, retains four system, three user and one project skill, the
+instructions marker, authentication, cwd/sandbox/model and correlated mounted `list_roles`.
+Annotation-based tool checks pass and the nested registry has neither identified interface
+by name. Unannotated descriptor mentions remain recorded with snippets.
+
+The only unresolved reasons are top-level `skills.list` and `skills.read` coverage. The
+strengthened Cell D was delivered first in R2's brief, but the complete rollout again has
+only two exec cells and no top-level function calls or outputs, including the deliberately
+absent control. Attempt r2 also made none. Non-use proves neither availability nor absence;
+these observations do not establish universal CLI impossibility. No resume, legacy or
+worktree native turn ran, so fresh-root evidence is not eight-turn acceptance.
+
+The approved amendment 2's Issue 1 now requires an acceptance-scope choice: accept an
+explicit boundary covering the recorded catalogue/context and nested registry while leaving
+top-level availability unresolved, plan a bounded credential-free custom-provider diagnostic
+that does not alone satisfy real-provider proof, or keep the strict gate and task open.
+No boundary has been accepted. Source findings remain open; code review, merge, remaining
+fixes and the complete candidate retest matrix have not run.
+
+Cleanup passed with unchanged operator-config bytes. Independent checks confirm fixture
+removal, clean task worktree, preserved sample baseline and all 582 historical evidence
+hashes. The sample remains clean at a9b90d4, root-only, with no task branches and original
+config; the managed plugin connection has not changed. Native exec session 88735 ended 1.
+Attempt r3's complete logs, source archive, binary patch, commit object and hash manifest
+are preserved beside r1/r2 under `.cross-agent/fix-acceptance-evidence/`. No push, release or
+remote sync. This is an evidence blocker requiring a user choice, not a diagnosed new
+cross-agent leak or permission rejection.
+
 ## Acceptance fixes: second native isolation attempt (2026-10-16)
 
 The focused harness amendment cleared two plan reviews (Important 1 → 0), then resumed

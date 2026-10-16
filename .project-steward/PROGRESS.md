@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T10:16:20.813318+00:00 — codex
+Native r3 on unmerged 63b5f5a reaches the approved coverage-boundary stop. Gate 1265/1262/0/3; native suite 1265/1262/1/2, only proof unresolved. Root control passes, treatment records 0 plugin skills versus 3, retained instructions/non-plugin catalogue/mount, nested identified names absent. Strengthened Cell D again produces no top-level calls or router output; availability remains unknown, not proven absent/impossible. Approved amendment Issue 1 requires user choice; no waiver. Cleanup/config/sample and all 582 old evidence hashes pass. Full r1–r3 source/log evidence retained. No live specialist or native process; task branch/worktree stand unmerged. Remaining fixes/retests preserved, no push/sync.
+
 ### 2026-10-16T09:34:41.444791+00:00 — codex
 .161 harness amendment reviewed clean after 1→0 Important; correction task a0eb0ed3 done, RED1260/1237/10/13 then GREEN1260/1247/0/13. Unmerged f2ad696 passes committed-head gate1260/1257/0/3. Native r2 suite1260/1257/1/2: Stage0/R1 pass, fresh-root treatment zero plugin skills and retained mount/instructions/fixture; stopped R2 for unannotated keyword classifications and missing top-level coverage calls. No resume/worktree proof or acceptance. Cleanup/operator config/sample baseline pass. Planner0d38a952 is verifying classification/coverage evidence, no user decision pending. Source snapshots and all logs retained; .168 staging mitigation was archive/remove owned duplicates, not a product fix.
 

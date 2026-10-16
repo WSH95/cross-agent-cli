@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T09:34:41.444791+00:00
+updated_at: 2026-10-16T10:16:20.813318+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,38 +8,44 @@ branch: main
 
 ## Now
 
-Acceptance fixes/retest remain active (`atc-s96.163`). Two primary tasks are merged:
-`.155`/`.160` verifier at b5a5522, `.156` consultant scope and `.167` doc-size at d012438.
-Only .167 is closed; original findings await candidate native acceptance.
+Acceptance fixes/retest (`atc-s96.163`) are waiting for a native-proof scope decision.
+Two primary tasks are merged: `.155`/`.160` at b5a5522; `.156` and doc-size `.167` at d012438.
+Only .167 is closed; original findings await native candidate acceptance.
 
-Task3 `.161` remains unmerged in
+Task 3 `.161` is unmerged in
 `/home/wsh/Documents/cross-agent-cli/.worktrees/fixes-codex-plugins-20261015`, branch
-`task/fixes-codex-plugins-20261015`, current head f2ad6965bc82fa7455408481a2577d2cc1d8d56a.
-Original plan cleared review7, harness amendment cleared review2 (1→0 Important), and
-implementer correction a0eb0ed3 settled correctly. RED1260/1237/10/13, GREEN1260/1247/0/13;
-ordinary committed-head gate1260/1257/0/3. Native r2 suite1260/1257/1/2, only native failure.
-Stage0/R1 pass; root treatment has zero plugin-origin skills, retained 4system/3user/1project,
-instructions/auth/sandbox and correlated MCP list_roles. Recorded FAILED for9 unannotated
-plugin-keyword descriptions; generic skill mentions make nested coverage PRESENT, and no
-control/skills.list/skills.read top-level calls leave coverage UNRESOLVED. No resume/worktree
-turn ran. This is not acceptance or yet a product failure diagnosis.
+`task/fixes-codex-plugins-20261015`, head 63b5f5a4b519ec327aa7a734c5c7f679d41ad465. It contains
+both plugin-disabling flags and the reviewed native harness. Original plan cleared review 7;
+amendment 1 cleared review 2; amendment 2 review e30c25fa has 0 Important / 2 Minor, verified/folded
+by planner ff52be3a. Implementer 80014a6d completed in 784 seconds, RED 1265/1245/7/13 then GREEN 1265/1252/0/13.
+Prose-only fix 89760ba5 completed in 66 seconds; citations 1878, zero misses/drift. All full reports retained.
 
-Planner `0d38a952b779a912d69b7ca44475deb1b37c` is active, verifying classification/coverage and
-all native call evidence. Retrieve its full result. A supported correction goes through fresh
-plan review/final optimization/resumed implementer, then fixed-artifact native r3. A concrete
-external proof boundary needing a user decision must be reported, with evidence; do not
-invent impossibility or waive gaps. Native exec session40542 is finished exit1. Cleanup passed,
-operator config byte-identical, fixture removed, sample baseline unchanged. All r1/r2 evidence
-and source tar/patch/object manifests are retained under .cross-agent/fix-acceptance-evidence.
+Ordinary gate on 63b5f5a passes 1265/1262/0/3. Native r3 (CLI 0.163.0/Sol/default) finishes
+1265/1262/1/2: only proof UNRESOLVED. Stage 0/R1 pass. Root treatment records 0 plugin-origin
+skills versus 3 in the control, retains 4 system / 3 user / 1 project skills, instructions/auth/sandbox and
+correlated MCP list_roles; nested identified names absent and other gates pass. Strengthened
+Cell D was delivered first but again made no top-level control/list/read calls, as in r2.
+Availability remains unknown; non-use is not absence or universal impossibility. No resume,
+legacy or worktree native turns ran. No native acceptance, code reviews or merge yet.
 
-Source main was905cdc3 before this records checkpoint; rebase task onto the new records head
-before any later gate/proof. Server is still frozen installed0.1.9. No code review/merge yet.
-20 settled planning records plus2 implementer records audited; current planner is live.
-New .168 staging issue remains open: archived/byte-checked8 log files then removed only owned
-duplicate worktree folders, allowing prescribed stage to pass; this is a mitigation, not fix.
-After .161: .157/.159/.162, follow-ups .164–.166/.168, freeze/install/retest/restore. Saved sample
-is a9b90d4 with139 baseline tests; 582 historical evidence files, original configs/managed
-connection preserved. No push/release/remote sync. Historical diagnose-only scope is superseded.
+Approved amendment 2 Issue 1 now requires a user choice: bounded catalogue/context/nested proof
+with top-level availability explicitly unresolved; a bounded credential-free custom-provider
+diagnostic (not real-provider proof by itself); or leave the strict gate/task open. No gap
+waived. Ask through the interactive picker after this checkpoint; do not continue dependent
+work before the answer. Current input authorizes all other campaign work, not a proof waiver.
+Native session 88735 is finished exit1; no specialist or native probe is live.
+
+All r1–r3 source tar/patch/commit-object manifests, raw logs/rollouts, results, gate/journal
+and independent cleanup are under .cross-agent/fix-acceptance-evidence. Config hash unchanged,
+fixture removed, sample baseline unchanged and all 582 old evidence hashes pass. Sample clean
+main a9b90d4, 139 baseline tests, root-only/no task branches, original config and managed
+connection preserved. Current source main was 81b357a before this records checkpoint; rebase
+task onto the new records head before later gates/proofs. Server stays frozen installed 0.1.9.
+
+After decision and .161: finish .157/.159/.162, follow-ups .164–.166/.168, freeze/install the
+candidate, run full dev-team/solo-all3/Claude-lead/Codex-lead matrix, restore and close only
+proved findings. .168 staging mitigation archived/removed owned duplicate logs; no product
+fix yet. No push/release/remote sync. Historical diagnose-only scope below is superseded.
 
 ## Prior verification context
 
@@ -590,9 +596,10 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: .161 native acceptance remains unresolved after r2's classification and missing-call
-coverage findings. Planner diagnosis is active, with no user choice pending. Worktree/branch
-stand; no resume/worktree native proof, code reviews or merge yet.
+Current: user decision required at the approved native-proof boundary. Both r2 and strengthened
+r3 make no top-level Cell D calls. Fresh-root catalogue/nested/mount evidence passes, but
+availability remains unresolved. Full eight-turn acceptance, reviews, merge and retests await
+that decision. Source task worktree/branch remain standing and clean; sample is preserved.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 
