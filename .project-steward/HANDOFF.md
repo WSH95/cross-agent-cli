@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T21:32:45Z
+updated_at: 2026-10-16T21:46:52Z
 updated_by: codex
 session_status: active
 branch: main
@@ -8,12 +8,30 @@ branch: main
 
 ## Now
 
-Acceptance campaign atc-s96.163 continues. All source fixes are merged. Task9 .168 is
-closed after the complete frozen installed 0.1.9 dev-team workflow. Current main is
-746521e before this records-only checkpoint. No task worktree, task branch, live task,
-human decision or external blocker remains. Nine campaign beads remain: eight merged
-findings (.155/.156/.157/.159/.160/.161/.162/.169) held for candidate acceptance, plus .163.
-The candidate matrix has not started; the sample and managed connection remain original.
+Acceptance campaign atc-s96.163 continues. All source fixes are merged; Task9 .168 is
+closed. Source-completion records commit24ea2d285c7c12349dc41ba351dba1dab02fb5cd is the
+frozen candidate. Nine campaign beads remain: .155/.156/.157/.159/.160/.161/.162/.169 held
+for candidate acceptance, plus umbrella .163. No human decision or external blocker.
+
+The candidate is installed as cross-agent@cross-agent-cli0.1.9 at
+/home/wsh/.codex/plugins/cache/cross-agent-cli/cross-agent/0.1.9. All173 exported files and
+executable bits match; no extra cache files. Supported helper remove/install/check selected
+it. Original cross-agent@agent-plugins remains installed/enabled; MCP policy entry equals
+original. Restoration snapshot is candidate-original-managed-connection.json. Restore the
+original owner through the helper after all runs settle; remove only the owned temporary
+plugin/marketplace. Never replace the entire operator config or unrelated preferences.
+
+Fresh dev-team test chat01a146a9-922d-7ca0-a358-3e5b91932980 (local, saved sample project
+574777e8-ebea-43e4-82c0-c7d93513ebc5) is active. Its live preflight reports the correct sample
+root/roster/config/no warnings and139 baseline tests passing via run_command. Its running
+server hashc4e30291e08da16f49988c3ba6c21874725f915e470e01c90d55ebbb6a526080 matches the
+frozen payload independently. Planner finished; Codex plan review is active. Planner's
+staging instruction conflicts with host-owned Git and is explicitly sent to review. No
+unauthorized staging or new product defect is claimed. Parent monitors; do not send a
+follow-up message to the chat without direct human authorization. No scenario/8-of-8 pass
+has been claimed yet. Sample configuration remains original dev-team; other modes not
+started. Actual installed versions: Claude2.1.302, Codex0.163.0, Grok1.0.52, Node24.11.0,
+Git2.43.0. Earlier native controls retain their own recorded versions and limitations.
 
 Task9 source commits are27d9f3c and the required Minor wrap746521e, seven planned files.
 All three served staging copies use paired bracketed exclusions; runtime/error handling,
@@ -51,15 +69,14 @@ round/seat labels although API seats/IDs/bindings and reviewed SHA distinguish e
 R2 briefs explicitly include round/seat. Shorter Conventional Commit subjects and the
 served correction commit are nonmaterial departures. No auto-review rejection occurred.
 
-Next freeze the validated records commit as the candidate, export/install a temporary
-local plugin and select it through the supported Codex setup helper. Development remains
-frozen installed0.1.9; never hot-load this checkout. Preserve original connection policy
-and unrelated preferences. Snapshot is candidate-original-managed-connection.json;
-original sample config is candidate-original-sample-config.json. Prepared mode configs
-candidate-config-*.json and candidate-retest-brief-template-v2.json contain the exact
-bindings/tasks and require the actual candidate launcher skill path when dispatched.
+Candidate freeze/install/preflight are complete; monitor the active dev-team chat first,
+then change modes using the installed candidate CLI with configuration hash protection.
+Frozen export .cross-agent/candidate-24ea2d285c7c and tar/hash/file manifest candidate-freeze.json
+are retained. Prepared configs candidate-config-*.json, original sample config and v2 brief
+template are in campaign evidence. Use the exact candidate launcher path in each fresh chat.
+The development payload and candidate export/cache are distinct; never hot-load this checkout.
 
-Open fresh saved-project chats for dev-team slug_rotate; six solo cases in order Claude
+After the active dev-team slug_rotate run, open fresh chats for six solo cases in order Claude
 Opus/Codex Sol/Grok4.7 with default effort; Claude-led slug_shortest_first; Codex-led
 slug_unique_reverse. Require live mode/roster/project metadata, scripted mailbox input,
 full verbatim lead reports, six scoped8/8 verifiers (--slug) and independent ownership/
@@ -71,8 +88,8 @@ The .161 user-accepted top-level skills.list/read availability and backend-recei
 remain; no final verifier check is waived. Task4 standalone mount proved specialist-row
 transport, not actual lead ownership. Note any Claude saved-MCP-answer/Read occurrence in
 final engine runs without inventing coverage. The preparatory setup check passed outside
-the workspace sandbox after its SQLite startup failed inside it; owner remains original
-cross-agent@agent-plugins0.1.9. No plugin switch or sample change has occurred.
+the workspace sandbox after its SQLite startup failed inside it. The temporary candidate
+owner is now selected; original owner/policy/config restoration evidence is retained.
 
 Full records: root VERIFY.md, task9-* ignored evidence, campaign.json and journal
 fix-staging-exclusions-20261016. Task8 and earlier records/evidence remain intact.
@@ -352,8 +369,8 @@ What stands is the project's own record. The operator conditions a release names
 ## In flight
 
 Current: campaign atc-s96.163. All source work including Task9 .168 is merged/closed.
-Main746521e before this records commit; no live task/worktree/branch. Nine campaign
-beads remain, held for the candidate matrix and final restoration/evidence. See Now.
+Frozen candidate24ea2d2; active sample dev-team chat01a146a9-922d-7ca0-a358-3e5b91932980.
+No source task worktree/branch. Nine beads remain, held for candidate acceptance. See Now.
 
 Historical entries:
 
@@ -519,13 +536,13 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Freeze/export/install this records commit as a temporary local candidate, select it
-   with the supported setup helper, and open fresh mode-specific saved-project chats.
-   Use prepared v2 briefs/configs and exact candidate skill/server provenance.
-2. Complete all9 scenarios and6 scoped8/8 verifiers plus independent audits; restore
-   sample config/managed connection, close findings on acceptance, validate records and
-   commit locally. Resolve confirmed retest defects through the frozen dev-team.
-   No push, release or remote sync.
+1. Monitor the active candidate dev-team chat with wait_threads and its cursor, retrieve
+   its complete result, independently verify/audit and preserve config/cohort/journal.
+2. Installed CLI mode changes with hash protection; fresh solo then Claude-led and Codex-led
+   chats. Complete all9 scenarios and6 scoped8/8 verifiers, preserve full lead reports and
+   independent audits, restore original sample config/managed owner, close findings on
+   acceptance, validate records and make local evidence commit. Fix confirmed retest
+   defects through a frozen dev-team payload. No push, release or remote sync.
 
 Historical next-step entries below predate the approved fix campaign:
 

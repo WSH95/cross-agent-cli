@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T21:46:52Z — codex
+
+Frozen candidate24ea2d2 exported/installed as temporary cross-agent@cross-agent-cli0.1.9;
+all173 files/executable bits match, original plugin enabled, managed MCP policy unchanged.
+Supported setup helper selected/checks candidate. Fresh saved-project dev-team chat
+01a146a9-922d-7ca0-a358-3e5b91932980 reports live preflight and139 baseline tests passing;
+planner complete, plan review active. No scenario acceptance yet. Nine beads remain.
+Actual versions Claude2.1.302/Codex0.163.0/Grok1.0.52. Host capture truncation and an unsupported
+--mode/--propose combination were corrected with raw evidence retained; no product defect,
+config write from the refused invocation or auto-review rejection. No push/release/sync.
+
 ### 2026-10-16T21:32:45Z — codex
 
 Task9 .168 merged27d9f3c + required Minor wrap746521e and closed. Actual RED1280/1262/5/13;

@@ -7,6 +7,34 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Frozen candidate retest started (2026-10-16)
+
+Candidate `24ea2d285c7c12349dc41ba351dba1dab02fb5cd` is installed temporarily as
+`cross-agent@cross-agent-cli` version0.1.9. Its173 files and executable bits match the
+frozen export; no extra cache files. Archive SHA256 is
+`5647bad2795d87810e9cc4347c1f968db7cf14a585680beac8c8d2ebd796370f`.
+Only six owned bookkeeping files differ from last tested code head746521e. The source
+completion commit does not change tested runtime/prompt/test code.
+
+The supported helper selected and checked the candidate cache server. The original plugin
+remains installed/enabled; managed MCP policy equals the saved original. No other plugin
+preference was intentionally changed. Native versions captured: Claude2.1.302, Codex0.163.0,
+Grok1.0.52 (0920c8169e27), Node24.11.0 and Git2.43.0. Earlier native proof keeps its own
+versions and accepted limits; this entry makes no new isolation or lead-ownership claim.
+
+Fresh test chat01a146a9-922d-7ca0-a358-3e5b91932980 reports candidate/sample live preflight,
+139 baseline tests passing through run_command and planner completion; plan review is
+active. Reported server SHA256c4e30291e08da16f49988c3ba6c21874725f915e470e01c90d55ebbb6a526080
+independently matches the frozen server. Planner staging wording is sent to plan review,
+not executed or silently accepted. No scenario or eight-check pass is claimed yet.
+
+One host CLI capture was truncated by the tool output budget and could not parse; complete
+stdout was recaptured to a file and is valid JSON. A proposal invocation combined --mode
+and --propose; it was refused with exit2 and no write, then the supported proposal succeeded.
+These are host setup deviations, not cross-agent/engine defects. Original sample config is
+unchanged. Nine findings/umbrella remain pending the full matrix, restoration and records.
+Evidence is under `.cross-agent/fix-acceptance-evidence/candidate-*`; no push/release/sync.
+
 ## Acceptance fixes: staging repair merged (2026-10-16)
 
 Task9 `atc-s96.168` is closed. Commits `27d9f3c` and the required Minor wrap `746521e`
