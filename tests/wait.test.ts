@@ -446,7 +446,9 @@ test("a record lock this project will not wait for refuses both readers by that 
   const p = await waitProject(t, { lockWaitSeconds: 0 });
   const task = await launch(p, { FAKE_ENGINE_SCRIPT: "stall" });
   const eventAt = await poll(() => p.record(task.id).lastEventAt, (value) => Boolean(value)) as number;
-  const held = await acquire(lockPath(p.root, recordLockName(task.id)), { operation: "hold for the test", waitSeconds: 0 });
+  // The runner renames that write into place before it lets the record lock go, so the
+  // test's own hold waits that release out; the project's zero is for the readers below.
+  const held = await acquire(lockPath(p.root, recordLockName(task.id)), { operation: "hold for the test", waitSeconds: 5 });
 
   try {
     const started = performance.now();
