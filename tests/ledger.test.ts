@@ -14,7 +14,7 @@ import { readJournal } from "../src/journal.ts";
 import type { CreateTask, EngineIdentity, TaskPatch, TaskRecord, TaskStatus, UpdateOptions } from "../src/ledger.ts";
 import { acquire, lockPath, recordLockName } from "../src/locks.ts";
 import { git } from "./helpers/git.ts";
-import { layoutRoot, mainCheckout, poll } from "./helpers/project.ts";
+import { layoutRoot, mainCheckout, poll, track } from "./helpers/project.ts";
 
 const now = 1_000_000;
 const statuses: TaskStatus[] = ["launching", "running", "stalled", "orphaned", "cancelling", "done", "failed", "cancelled"];
@@ -515,13 +515,14 @@ test("a zombie is dead however well its pid and start time match", async (t) => 
   const root = project(t);
   const marker = path.join(root, "zombie.pid");
   // The shell starts a background child, records its pid, then execs: nothing is left
-  // that will ever wait on it, so the kernel keeps the entry as a zombie.
-  const parent = spawn("sh", ["-c", `sleep 0 & echo $! > ${marker}; exec sleep 60`], { stdio: "ignore" });
-  t.after(async () => {
-    parent.kill("SIGKILL");
-    await once(parent, "close");
-  });
+  // that will ever wait on it, so the kernel keeps the entry as a zombie. dash reaps a
+  // child that has already ended whenever a builtin returns, so the child is ended only
+  // after the shell has exec'd. It shares the shell's process group, which track kills
+  // wherever the test stops.
+  const parent = track(t, spawn("sh", ["-c", `sleep 60 & echo $! > ${marker}; exec sleep 60`], { detached: true, stdio: "ignore" }));
   const pid = Number(await poll(() => (fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : ""), (text) => text.length > 0));
+  await poll(() => fs.readFileSync(`/proc/${parent.pid}/comm`, "utf8").trim(), (comm) => comm === "sleep");
+  process.kill(pid, "SIGKILL");
   const stat = await poll(() => readProcessStat(pid), (value) => value?.state === "Z");
   assert.equal(isProcessAlive({ pid, startTime: stat!.startTime, bootId: currentBootId }), false,
     "a process that has exited is dead even while its entry survives unreaped");
