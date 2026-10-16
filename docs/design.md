@@ -4289,8 +4289,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 40,602 bytes under
-`dev-team`, 56,223 under `dev-team-engine` and 4,217 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 40,893 bytes under
+`dev-team`, 56,514 under `dev-team-engine` and 4,508 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

@@ -1125,6 +1125,25 @@ test("the mode that declares the consultant says exactly what the built-in role 
   assert.equal(findRole(loadMode(modes, "dev-team"), CONSULT_ROLE)?.prompt, declared);
 });
 
+// @anchor consultScopeSentence
+test("the consultant looks for the project in the directory it was given, reads beyond it what the brief needs, and changes files in its own worktree alone", () => {
+  const modes = builtInModesDir();
+  // The profiles restrict writes, not reads (P2, design section 3), so the prompt scopes
+  // where the consultant looks for its project rather than claiming its reads are confined.
+  for (const [where, prompt] of [
+    ["the built-in consult role", findRole(loadMode(modes, "dev-team"), CONSULT_ROLE)?.prompt ?? ""],
+    ["solo's consult.md", fs.readFileSync(path.join(modes, "solo", "roles", "consult.md"), "utf8")],
+  ] as Array<[string, string]>) {
+    const text = flat(prompt);
+    assert.doesNotMatch(text, /You work in the directory you were given and nowhere else/, where);
+    assert.match(text, /look for its files, its instructions and its code there, and search no directory above or beside it for them/, where);
+    assert.match(text, /Read outside it only what the brief needs/, where);
+    assert.match(text, /You change files in a task worktree of your own and nowhere else/, where);
+    assert.match(text, /at the project root you are read-only/, where);
+    assert.match(text, /you never run git/, where);
+  }
+});
+
 // The role prompts came from the devpack package through `tools/from-openmaus.mjs`, a
 // one-off harness beside `tools/probe.mjs` (design section 8). The converter is tested on
 // a fixture package rather than on that package, which lives outside this repository: what
