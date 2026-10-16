@@ -7,6 +7,39 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: verifier follow-up diagnosis and review (2026-10-16)
+
+Task 7 now covers `.164`, reframed `.166`, and new `.172`, within the authorized follow-up
+stream. No source/test/design change or task worktree exists yet. Planner `42f23b56` and
+reviewer `9307f27a` distinguish these results:
+
+- `.164`: harmless native Bash 5.2.21 markers establish `@P` evaluation. Synthetic whole-row
+  verifier inputs expose false passes. The exact recorded two-external-cat redirection
+  text does not execute the stored substitution in that Bash version; it still requires
+  conservative uncertainty, and beforehand-set/builtin variants demonstrate the mechanism.
+- `.166`: unsupported aliased attempts without separate native items pass synthetic row 8.
+  Existing observed MCP/command items correctly produce FAIL. Historical B2/E2 recordings
+  support those observed cases, not a universal claim about a never-run alias.
+- `.172`: the reviewer independently confirms synthetic row-8 false passes for explicit
+  this/self/global/window access and a member-constructor route. This does not establish
+  native execution or availability of those globals. The correction stays in this task.
+
+Review 1 found two Important and two Minor issues. Planner `bf70e5d8` verified all four and
+folded them into the plan: literal `@P` uncertainty would apply without a named-engine gate;
+confirmed routes would get a bounded context guard; provenance and RED/ownership accounting
+are corrected. The revised plan is awaiting fresh review, not approved for implementation.
+The after-edit whole-row behavior remains inference until implementation tests run.
+No repository files changed during planning. Two temporary scratch files were created and
+removed; native Claude permission refusals are retained as such, not host auto-review
+rejections. Harmless native markers, synthetic fixtures and reader-only evidence remain
+separate. No new archive rescan or native proof protocol is required.
+
+Fourteen campaign beads are unclosed: five fixes/investigations `.164/.166/.172/.165/.168`,
+eight merged findings awaiting candidate acceptance, and umbrella `.163`. `.167`, `.170`
+and `.171` are closed. The frozen-candidate matrix has not started. Full plans, reviews,
+native logs and the acceptance amendment are retained under the ignored campaign evidence.
+No push, release or remote sync.
+
 ## Acceptance fixes: wait-holder fixture follow-up merged (2026-10-16)
 
 Task6 (`atc-s96.171`) is closed. Commit `48b981caad39851f71e8844b0890dcf719affd69`

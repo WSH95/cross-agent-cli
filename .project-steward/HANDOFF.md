@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T16:41:46.571872+00:00
+updated_at: 2026-10-16T17:23:12.099730+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -10,8 +10,8 @@ branch: main
 
 Acceptance campaign atc-s96.163 continues. No user decision or external blocker is pending.
 All four primary source tasks are merged: b5a5522, d012438, affcfc3, 4e065bb. Test-fixture
-follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and closed. Current main is 48b981c
-before this records commit, root-only and clean before closure/records updates. No task
+follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and closed. Current main is 7767db4
+before this records commit, root-only and clean before records updates. No task
 branches, task worktrees or live delegations remain. Source config is unchanged.
 
 Task 6 (.171) changed only one test's holder wait from 0 to 5 seconds, plus a comment.
@@ -28,15 +28,34 @@ defect was confirmed. Original failed gate and ten trials stay RED; corrected hi
 commits and duplicate passing entries are documented in the approved plan and VERIFY.
 Source/sample configs, four original evidence files and all 582 old sample hashes match.
 
-Next: .164/.166 together. A fresh planner verifies the confirmed Bash prompt-transformation
-false pass and investigates the indirect globalThis tools reader omission through harmless
-full-row fixtures before claiming a false pass. Unsupported execution stays unresolved;
-no general Bash/JS evaluator or real engine launches. Prepared task 7 acceptance is
-.cross-agent/fix-acceptance-evidence/task7-acceptance-prepared.md; review before dispatch.
-Then investigate .165 and fix .168 through the complete current dev-team loop. Confirmed
-follow-ups stay in this stream. Four fixes/investigations remain, plus eight merged findings
-awaiting candidate acceptance (.155/.156/.157/.159/.160/.161/.162/.169) and umbrella .163:
-13 unclosed beads.
+Current task 7 covers .164/.166 and new .172. Planner 42f23b56 returned a plan; Astra
+reviewer 9307f27a found two Important/two Minor. Planner bf70e5d8 verified/folded all four;
+its full revised plan awaits fresh review. No source/test/design change or task worktree
+exists. Root is clean main 7767db4 before this records checkpoint. The checkpoint changes
+only records; code and tests stay byte-identical to 48b981c/7767db4. Use the new records
+commit as the task branch base after plan approval.
+
+The revised .164 plan makes literal @P uncertainty independent of the engine-name gate,
+including split-name/unread values. .166 now describes unsupported aliased attempts without
+separate native items; observed native MCP/command items correctly fail. New .172 confirms
+synthetic full-row omissions for this/self/global/window/member-constructor routes, to be
+fixed cohesively with a small token/context guard, not an evaluator. Native availability of
+those globals/execution is not proved. Existing raw files stay unchanged. After-edit whole-row
+results remain inference until implementation tests run. Planning made/removed two scratch
+files and changed no repository files; native Claude permission refusals are not host
+automatic approval rejections. No more archive scan/native proof protocol is required.
+
+Evidence: task7-acceptance-amended.md, task7-plan-r1/r2.json and .md,
+task7-plan-review-r1.json, task7-new-route-bead.json, plus native task logs and campaign.json.
+Next fresh plan review round 2 on the amended acceptance and revised plan, judging all four
+prior findings. Then the configured planner finalization/implementation/gates/three code
+reviews/merge/root/cleanup as the verdict directs. Main-flow limits still apply.
+
+After task 7, investigate .165 and fix .168. Prepared briefs task8-acceptance-prepared.md
+and task9-acceptance-prepared.md need review/current base before dispatch. Never touch
+shared real /tmp/.git to reproduce .165. Preserve staging exclusions, guards and error
+handling for .168. Five fixes/investigations remain (.164/.166/.172/.165/.168), plus eight
+merged findings awaiting candidate acceptance and umbrella .163: 14 unclosed beads.
 
 Use frozen installed 0.1.9 for development, main/npm test/no setup/auto/depth 1 and exact
 current role bindings. Never hot-load this checkout as the development MCP. Planner or
@@ -335,10 +354,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: atc-s96.163 continues the approved source fixes and candidate retest. Task 6 (.171)
-is closed; .164/.166 are next. No specialist, task branch or worktree is live. This checkpoint
-records the .171 closure and validation. Historical diagnose-only limits below were
-superseded by the user's fix-and-retest plan. Existing Steward runtime ownership is untouched.
+Current: atc-s96.163 continues the approved source fixes and candidate retest. Task 7
+(.164/.166/.172) awaits fresh plan review after verified folds. No specialist, task branch
+or task worktree is live at this checkpoint. It records the diagnosis and cohesive scope.
+Historical diagnose-only limits below were superseded by the user's fix-and-retest plan.
+Existing Steward runtime ownership is untouched.
 
 Historical entries:
 
@@ -504,11 +524,12 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Resolve .164/.166 together through frozen installed 0.1.9 dev-team, verifying premises
-   and using harmless fixtures. Preserve all earlier fixes, evidence and .161 limits.
-2. Investigate .165 and fix .168 through the same complete workflow; confirmed follow-ups
-   stay in scope. Avoid general evaluators, race frameworks and new native proof protocols.
-3. Freeze/install the candidate, run the full sample matrix and independent audits, restore
+1. Fresh plan review round 2 for .164/.166/.172: amended acceptance, revised plan bf70e5d8,
+   prior review 9307f27a. Keep source settings/bindings and frozen installed 0.1.9. No source
+   implementation until the served review procedure permits it.
+2. Finish this cohesive task, then investigate .165 and fix .168 through the complete loop.
+   Confirmed follow-ups stay in scope; avoid general evaluators/race frameworks.
+3. Freeze/install the candidate, run the full sample matrix/independent audits, restore
    configs/connection, close findings only on acceptance, validate records and commit locally.
    No push, release or remote sync.
 

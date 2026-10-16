@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T17:23:12.099730+00:00 — codex
+
+Task 7 (.164/.166/.172) remains planning only. Review 9307f27a found two Important/two
+Minor; planner bf70e5d8 verified/folded all four. Fresh review follows; no source/test/design
+change, worktree or native proof protocol. .166 is reframed as unsupported-attempt
+certification, not native executed delegation; .172 tracks related explicit routes in this
+same change. Provenance corrections preserve original captures and distinguish markers,
+synthetic rows, reader-only results and after-edit inference. Fourteen campaign beads remain
+unclosed; source .171 is complete, candidate matrix not started. No user decision pending.
+Prepared scopes for .165/.168 follow. No push, release or remote sync.
+
 ### 2026-10-16T16:41:46.571872+00:00 — codex
 
 Task 6 (.171) merged as 48b981c and closed. One test's holder wait/comment changed;

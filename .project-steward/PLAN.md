@@ -10,7 +10,9 @@ Native controls, final code reviews, committed-head/root gates and cleanup pass 
 recorded bounds. Plugin top-level availability stays explicitly unknown; no final E2E check
 is waived. Separate test-fixture follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and
 closed, each with all three reviews, committed-head/root tests, audit and cleanup complete.
-Next are the verifier/discovery/staging follow-ups, then the full mode matrix in this stream.
+Task 7 covers verifier findings .164/.166 and newly confirmed .172; its first review has
+two Important findings, verified/folded but awaiting re-review. No implementation yet.
+Then .165/.168 and the full mode matrix stay in this stream.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,
 release or remote sync.
