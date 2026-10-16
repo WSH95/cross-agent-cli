@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T07:17:47.685196+00:00 — codex
+The user selected simplify after .161 review 5: reduce the proof protocol, preserve native acceptance requirements, and obtain a fresh review. I4/I7/M5 remain to resolve; no proof gap is accepted. The next planner resumes eb8028e3 with the full findings and the accepted I3 scope unchanged. This supersedes the pending choice recorded below.
+
+### 2026-10-16T07:16:38.651568+00:00 — codex
+User-authorized fifth .161 review returned 2 Important/1 Minor: carried I4 router-refusal provenance, introduced I7 self-rejection of the probe brief, and carried M5 unsupported authorization wording. Counts 5 → 3 → 2 → 1 → 2 are not converging; simplify recommended as the installed loop requires a new user choice. All ten planning tasks settled with correct bindings/profiles, depth 1 and exit 0. Complete results and native evidence retained. No task-3 code, native isolation probe or candidate retest has run; prior fixes/sample/connection remain preserved.
+
 ### 2026-10-16T06:49:53.133620+00:00 — codex
 The user-authorized fourth plan review of .161 reduced Important findings from two to one (5 → 3 → 2 → 1). I3 is addressed in scope; retained history does not establish effective input. Carried I4 requires evidence for relevant discovery interfaces outside ALL_TOOLS; Minor M5 narrows unsupported instrumentation claims. All eight planning tasks settled with expected bindings/profiles, depth 1 and exit 0. The installed loop requires another user choice; one more focused round recommended. No task-3 code, native probe or candidate retest has run. Source and sample remain unchanged apart from records.
 

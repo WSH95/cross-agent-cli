@@ -7,6 +7,28 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: authorized fifth plugin-isolation review (2026-10-16)
+
+The user's second extra round completed: planner `eb8028e3d30d461a7c9936cc439615d1330f`
+produced revision 4; fresh reviewer `bf3df2d360a507e78b4f549989af4c52b8e2` returned major
+issues (2 Important, 1 Minor). Counts 5 → 3 → 2 → 1 → 2 are no longer converging. Carried
+I4 requires trustworthy provenance for a top-level router-absence result; paired output
+with refusal-looking text alone cannot establish it. Introduced I7 requires distinguishing
+the harness's known probe brief from independently injected instructions: the new domain
+check would reject its own brief. M5 still removes unsupported observation/authorization
+claims; relevant native model validation is already authorized.
+
+The accepted in-scope I3 correction and earlier clean findings remain. All ten planning
+records settled at depth 1, exit 0, correct bindings and read-only profiles. Full results,
+logs and native reviewer session `01a14388-78d9-7b21-827d-3b74d270dcef` are retained under
+the ignored campaign evidence and source ledger. The installed loop requires another user
+choice; simplify is recommended because counts stopped falling. No proof gap is accepted.
+The user subsequently selected simplify: reduce the proof protocol, preserve native
+acceptance requirements, and obtain a fresh review. No finding was accepted.
+No task-3 code, native isolation probe or candidate retest has run. This records-only
+checkpoint adds no product test result. Source/sample configuration, prior observations,
+evidence and managed connection are preserved; no push, release or remote sync occurred.
+
 ## Acceptance fixes: authorized fourth plugin-isolation review (2026-10-16)
 
 The user's extra round completed: planner `8fb77040cb69fdaa8367aa1af94491c7d76d` produced

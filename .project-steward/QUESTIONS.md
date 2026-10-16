@@ -3,12 +3,23 @@
 Record questions that the repository does not answer instead of guessing.
 Add the answer to the item when it is resolved.
 
+2026-10-16 — `atc-s96.161`, after authorized review 5: 2 Important findings and 1 Minor
+remain. Counts 5 → 3 → 2 → 1 → 2 are not converging. I4 needs trustworthy router-absence
+provenance; I7 must exempt only the known probe instructions while retaining independent
+injection checks. M5 removes unsupported observation/authorization claims. The installed
+loop requires a new choice. Host recommends simplify and review; alternatives are one more
+round, proceed accepting the issues, or pause. Answered on 2026-10-16: the user selected
+simplify, preserving native acceptance requirements and obtaining a fresh review. No gap
+is accepted.
+Full result: `.cross-agent/fix-acceptance-evidence/task3-plan-review-r5.md`.
+
 2026-10-16 — `atc-s96.161`, after authorized review 4: one Important discovery-coverage
 gap remains, with counts 5 → 3 → 2 → 1. Local `skills.list`/`skills.read` interfaces are not
 covered by the enabled nested `ALL_TOOLS` evidence; availability under tested settings is
 unproved. The installed loop requires another choice. Host recommends one more focused
 round; alternatives presented are simplify and review, proceed accepting the gap, or pause.
-Await the user's answer. The prior extra-round authorization is consumed; no gap is accepted.
+Answered on 2026-10-16: the user authorized one more round, resolving the single gap and
+obtaining a fresh review. That authorization was consumed by review 5; no gap was accepted.
 Full result: `.cross-agent/fix-acceptance-evidence/task3-plan-review-r4.md`.
 
 2026-10-16 — `atc-s96.161`: the configured dev-team plan-review limit is reached.
