@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T02:32:08.382762+00:00
+updated_at: 2026-10-16T03:31:26.338606+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,24 +8,27 @@ branch: main
 
 ## Now
 
-**Acceptance-finding fixes and retest remain active (`atc-s96.163`).** The user approved
-four primary tasks and all findings discovered during fixes/retests. Task 1 (.155/.160)
-merged as `b5a5522`: three clean final code reviews, committed-head and root `npm test`
-both 1236 tests / 1234 pass / 0 fail / 2 guarded skips; branch and worktree removed.
-Exact archived fixtures, conservative negative controls and all three isolated replays pass.
-This is not final candidate acceptance; .155/.160 remain open until the fresh matrix passes.
-Next is task 2, consultant-scope wording (.156), through the same installed 0.1.9 dev-team.
-Then Codex plugin isolation (.161), lead contract (.157/.159) and project discovery (.162),
-plus follow-ups .164 (Bash prompt transformation), .165 (unconfirmed ancestor-marker race)
-and .166 (indirect globalThis tool access). No cross-agent fix is silently deferred.
-Preserve historical evidence; native logs/results and campaign state are under ignored
-`.cross-agent/fix-acceptance-evidence/` and the task ledger. The 582-file sample snapshot
-still matches. Sample remains clean at `a9b90d4` with 139 passing tests, original configuration,
-only its root worktree and no task branches. The managed plugin connection is unchanged.
-After fixes, freeze and temporarily install the candidate, open fresh test chats, retest
-all modes and both lead engines, restore sample configuration and managed connection, then
-close only findings whose criteria pass. Local validated commits authorized; no push,
-release or remote sync. Earlier diagnose-only instructions below are historical and superseded.
+**Acceptance-finding fixes and retest remain active (`atc-s96.163`).** Two primary tasks
+are merged and cleaned: verifier coverage .155/.160 (`b5a5522`, 1236 tests / 1234 pass / 0 fail /
+2 guarded skips) and consultant scope .156 plus doc-size follow-up .167 (`d012438`, 1237 /
+1235 / 0 / 2). Both had three clean final reviews and committed-head/root gates. .167 is
+closed; .155/.156/.160 remain open for frozen-candidate acceptance. The consultant finding
+is misleading scope wording, not a filesystem read-sandbox escape; searches/history are
+preserved and the dated correction is in VERIFY.md. Its required doc-size amendment was
+planned and reviewed before implementation resumed; no test was weakened.
+Next: Codex per-launch plugin isolation (.161), then lead contract (.157/.159) and resolved
+project/summary metadata (.162). Also resolve .164 (Bash @P), .165 (unconfirmed ancestor-marker
+race) and .166 (indirect globalThis tool access) before candidate acceptance. Do each through
+the unchanged installed 0.1.9 dev-team. Full current state, task IDs/results/logs and hashes
+are under ignored .cross-agent/fix-acceptance-evidence/campaign.json and the task ledger.
+The sample remains clean at a9b90d4 with 139 passing tests, original config, root-only worktree
+and no task branches; its 582-file historical preservation snapshot matches. Managed plugin
+connection remains original. Read-only Codex CLI 0.163.0 inventory confirms plugins and
+remote_plugin accept false per launch; this is not native context-isolation proof yet.
+After fixes, freeze/install the candidate temporarily, open fresh test chats, test all modes
+and both lead engines, restore sample config and managed connection, then close only findings
+whose criteria pass. Local validated commits authorized; no push, release or remote sync.
+Earlier diagnose-only instructions below are historical and superseded.
 
 **Additional Codex-led variant is complete (`atc-s96.158`, user-requested).** Chat
 `01a1419a-d274-7eb1-b049-14a27a00bb0e` ran installed 0.1.9 with the exact changed bindings:

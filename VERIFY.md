@@ -7,6 +7,63 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes — consultant scope, `atc-s96.156` / `atc-s96.167` (2026-10-15–16)
+
+**Implementation passes; native consultant acceptance remains pending.** The second primary
+fix merged as `d01243870942d62c305313f744ba7756c85a39b9` through installed 0.1.9 `dev-team`,
+with the unchanged requested bindings, depth 1, `main`, `npm test`, no setup and auto merge.
+Both consultant prompt copies now require discovery in the assigned directory, permit
+brief-relevant external reads and confine edits to the consultant's own writable worktree.
+Root read-only operation, no git, bookkeeping and plain-shell instructions are preserved.
+There is no filesystem read sandbox or adapter change. The regression is pinned by
+`tests/skills.test.ts#consultScopeSentence`; the existing equality test keeps the copies
+byte-identical across the built-in modes.
+
+**Corrected diagnosis of the earlier solo observation:** the searches recorded below remain
+real and their native files are preserved. The finding is misleading scope wording, not a
+filesystem sandbox escape. The old role text was byte-identical to the source and said
+"You work in the directory you were given and nowhere else", while the design and profiles
+restrict writes rather than reads. The read-only search's parent was `Documents`, listing
+sibling and nested projects; the writable search's parent was `.worktrees`, and it found
+no `AGENTS.md`. Earlier instruction-compliance wording is retained as the original diagnosis;
+this dated note records its reframing. Custom prompt overrides remain their owners' text.
+Wording tests alone do not prove subsequent engine compliance; the fresh solo runs will.
+
+The initial plan review caught and corrected a prohibited direct-test fallback (one
+Important), then a broad implementer no-git sentence (one Minor). The approved plan used
+`npm test` only and preserved the consultant's no-git rule. The implementation then stopped
+at its three-file scope boundary when the longer prompt made current payload-size claims
+stale. This became `atc-s96.167`. The host used the user's prior authorization to resolve
+follow-ups, obtained a revised plan, fresh clean review and optimization, then resumed the
+implementer. The amendment permitted only six number replacements across two current docs;
+no assertion was waived or relaxed, and no historical figure was rewritten.
+
+| Validation | Result |
+| --- | --- |
+| Scope regression RED, before prompt edits | 1237 tests, 1224 pass, 1 new failure, 12 sandbox skips |
+| Second RED, after prompt edits | Same totals; only existing `describeModeSizes` fails |
+| Five-file worktree GREEN | 1237 tests, 1225 pass, 0 fail, same 12 sandbox skips |
+| Exact committed-head gate and post-merge root gate | Both 1237 tests, 1235 pass, 0 fail, 2 guarded skips |
+| Code reviews on `d012438` | Claude, Codex and Grok: no major issues; no in-scope findings |
+| Cleanup | Only source root worktree remains; task branch removed; root clean before bookkeeping |
+
+The corrected live static mode sizes are 40,893 / 56,514 / 4,508 bytes in both current docs,
+independently recomputed by planner and reviewers. Earlier 40,602 / 56,223 / 4,217 figures
+and probe-time observations stay as history. The file named `consult-scope-156-green.log`
+records the second RED; the passing run has its own `consult-scope-156-167-green.log`.
+All three logs and SHA manifests are retained in the task evidence. Sandbox deny-mount
+character devices appeared only inside the engine's view; host status showed exactly the
+five intended files. No engine failed or unauthorized git write was found. Claude's
+optional out-of-scope citation suggestion is resolved by the test citation in this note.
+
+All 13 delegation IDs, actual bindings, native logs, complete results, plans, reviews,
+counts and journal evidence are indexed by `.cross-agent/fix-acceptance-evidence/campaign.json`
+and `.cross-agent/log.md`. The journal is
+`.cross-agent/journal/fixes-consult-scope-20261015.json`. `.167` is closed after its exact
+size assertions, three reviews, both gates and cleanup pass; `.156` stays open for the
+native retest. Plugin isolation, the lead-contract/configuration task and .164/.165/.166
+remain in the authorized campaign. Sample and managed plugin connection are unchanged.
+
 ## Acceptance fixes — verifier coverage, `atc-s96.155` / `atc-s96.160` (2026-10-15–16)
 
 **Implementation and isolated archive replay pass; fresh candidate acceptance remains pending.**

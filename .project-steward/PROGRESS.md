@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T03:31:26.338606+00:00 — codex
+Consultant scope .156 and doc-size follow-up .167 merged as d012438 after reviewed amendment and three clean code reviews. Committed-head and root gates both pass: 1237 tests, 1235 pass, 0 fail, 2 guarded skips. Worktree/branch removed. VERIFY.md adds the corrected diagnosis and optional test citation while preserving historical observations. .167 is closed; .156 awaits native retest. Next is Codex plugin isolation .161. Read-only CLI feature inventory is preliminary only; runtime context probes remain required. No sample or managed connection changes.
+
 ### 2026-10-16T02:32:08.382762+00:00 — codex
 Verifier coverage (.155/.160) merged as b5a5522 after correction and three clean round-2 reviews. Both final committed-head and root gates pass: 1236 tests, 1234 pass, 0 fail, 2 guarded skips. Source task worktree and branch removed; source root clean before these records. Complete evidence and corrected diagnoses recorded in VERIFY.md and campaign.json. Findings stay open for fresh candidate acceptance. Sample baseline recheck passes all 139 tests with original configuration and root-only cleanup. Next: consultant wording .156, then remaining primary tasks and follow-ups .164/.165/.166.
 
