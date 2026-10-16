@@ -7,6 +7,30 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: simplified sixth plugin-isolation review (2026-10-16)
+
+The user's simplification produced revision 5 (`676c446223dfb131578d6307964328c5ab5a`,
+227 seconds), reducing the native protocol from 11 to 8 turns. Fresh review
+`7999bd800b6a8a77a2a13f83fc07d1648edb` (395 seconds) accepts I4 in substance: same-turn
+canonical calls compared with a deliberately absent control support a bounded native
+interpretation; unknown evidence still stops unresolved. M5 is addressed and I3 stays resolved.
+
+Verdict remains major issues: carried I7 must handle the byte-equal native UserMessage
+mirror of the supplied brief, and introduced I8 must align R4's mount with its inventory
+control and correct the matched-pair claim. Minor M6 scopes the control's validity to the
+checked fixture/version; it is not a universally unregistrable name. These are narrow
+protocol corrections; eight turns remain sufficient. Counts 5 → 3 → 2 → 1 → 2 → 2 do not
+fall, so the installed loop requires another user choice. Narrow simplification is recommended.
+
+The user subsequently selected narrow simplification of message provenance and mount
+construction, preserving acceptance and obtaining a fresh review. No gap was accepted.
+
+All twelve planning records settled with correct bindings, depth 1, read-only profiles and
+exit 0. Full results/logs and native reviewer session `01a14398-92dc-76c1-a08c-91a5620fe092`
+are retained. No proof gap is accepted. No task-3 code, native isolation probe or candidate
+retest has run; this records checkpoint adds no product test result. Prior fixes, sample,
+configurations, evidence and managed connection remain preserved. No push or remote sync.
+
 ## Acceptance fixes: authorized fifth plugin-isolation review (2026-10-16)
 
 The user's second extra round completed: planner `eb8028e3d30d461a7c9936cc439615d1330f`

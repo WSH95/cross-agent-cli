@@ -3,6 +3,16 @@
 Record questions that the repository does not answer instead of guessing.
 Add the answer to the item when it is resolved.
 
+2026-10-16 — `atc-s96.161`, after simplified review 6: I4's bounded native control is
+accepted in substance and M5 is addressed. Two Important harness issues remain: I7 needs
+the exact native UserMessage mirror, and I8 needs consistent R4 mount/control expectations.
+M6 narrows the absence-control validity precondition. Counts 5 → 3 → 2 → 1 → 2 → 2 do not
+fall, so the loop requires another choice. Host recommends narrow simplification and review;
+alternatives presented are one more round, proceed with accepted issues, or pause. Answered
+on 2026-10-16: the user chose narrow simplification of message provenance and mount rule,
+preserving acceptance and obtaining a fresh review. No gap is accepted. Full
+`task3-plan-review-r6.md` is retained.
+
 2026-10-16 — `atc-s96.161`, after authorized review 5: 2 Important findings and 1 Minor
 remain. Counts 5 → 3 → 2 → 1 → 2 are not converging. I4 needs trustworthy router-absence
 provenance; I7 must exempt only the known probe instructions while retaining independent

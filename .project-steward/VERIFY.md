@@ -2,7 +2,7 @@
 
 Run the relevant checks before marking work as verified in `HANDOFF.md`.
 
-Last records-only check: 2026-10-16, authorized fifth plugin-isolation review checkpoint.
+Last records-only check: 2026-10-16, simplified sixth plugin-isolation review checkpoint.
 `git diff --check` passes; citation checker reports 1856 citations, 0 misses.
 No new product test result or native isolation claim is made.
 

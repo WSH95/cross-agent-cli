@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T07:17:47.685196+00:00
+updated_at: 2026-10-16T07:35:39.470669+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,27 +8,27 @@ branch: main
 
 ## Now
 
-Acceptance fixes and retest remain active (`atc-s96.163`). The user selected simplify
-after the fifth review of `.161`: reduce the proof protocol, preserve native acceptance
-requirements, and obtain a fresh review. Two primary fixes are merged and cleaned:
-verifier `.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and
-consultant scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both
-passed three clean final reviews and committed-head/root tests. Only `.167` is closed;
-native acceptance for the original findings remains pending. Task 3 has no code or
-worktree. Important counts are 5 → 3 → 2 → 1 → 2, now not converging. Fifth reviewer
-`bf3df2d3` found carried I4 (refusal-looking output does not establish top-level router
-provenance) and introduced I7 (SKC-3 rejects the known probe brief itself). Minor M5 still
-requires removal of unsupported observation/authorization claims. The accepted in-scope I3
-correction remains: retained history is not evidence of current backend input; only new
-injection is tested. Latest planner `eb8028e3` and reviewer `bf3df2d3` are done. All ten
-planning records settled with correct bindings, depth 1, read-only profiles and exit 0.
-The installed loop required another choice because the major count stopped falling. The
-user chose simplification and a fresh review; no further choice is pending. No proof gap is accepted and no native isolation probe has
-run. Main was clean at `b63ed0a` before this records checkpoint, root-only, no task branches.
-Sample `a9b90d4`, its passing 139-test baseline, 582 historical evidence hashes, original
-configurations and managed connection remain preserved. Complete plans, reviews, native
-logs and state are under `.cross-agent/fix-acceptance-evidence/`. After `.161`, implement
-`.157`/`.159`/`.162`, resolve `.164`–`.166`, then freeze/install/retest and restore. No push,
+Acceptance fixes and retest remain active (`atc-s96.163`). After review 6 the user chose
+narrow simplification of message provenance and mount construction, preserving acceptance
+and obtaining a fresh review. Two primary fixes are merged and cleaned: verifier
+`.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and consultant
+scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both passed three
+clean final reviews and committed-head/root tests. Only `.167` is closed; original findings
+await native acceptance. Task 3 has no code or worktree. The user-authorized simplification
+reduced the protocol from 11 to 8 turns. Review 6 accepts I4's bounded same-turn negative
+control approach and resolves M5; I3's record-level scope remains accepted. Two Important
+harness issues remain: I7 must recognize the native event mirror of the known supplied
+brief; introduced I8 must make R4's mount and inventory expectation consistent and correct
+the matched-pair claim. Minor M6 narrows the deliberately absent control's validity to the
+checked fixture/version. Counts 5 → 3 → 2 → 1 → 2 → 2 do not fall. Latest planner `676c4462`
+and reviewer `7999bd80` are done; all twelve planning records settled at depth 1, exit 0,
+correct bindings and read-only profiles. The loop required another choice; the user selected narrow simplification of these details
+and a fresh review, retaining the accepted eight-turn protocol. No gap
+is accepted; no native isolation probe has run. Main was clean at `303e72a` before this
+records checkpoint, root-only, no task branches. Sample `a9b90d4`, passing 139-test baseline,
+582 preserved evidence files, original configurations and managed connection remain intact.
+Full evidence is in `.cross-agent/fix-acceptance-evidence/`. After `.161`, implement
+`.157`/`.159`/`.162`, resolve `.164`–`.166`, freeze/install/retest and restore. No push,
 release or remote sync. Earlier diagnose-only instructions below are historical and
 superseded.
 
@@ -304,12 +304,13 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign `atc-s96.163` is simplifying the .161 proof after the user's choice.
+Current: campaign `atc-s96.163` is applying the user-authorized narrow simplification
+after review 6 on `.161`.
 All specialists are settled; no task worktree or branch exists. This checkpoint changes
 root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, `QUESTIONS.md`, and
-`VERIFY.md`. No product code or sample changes are pending. The user authorized the fixes
-and full retest; the older diagnose-only entries below describe prior completed runs.
-The existing Steward runtime claim belongs to another Claude session and is left unchanged.
+`VERIFY.md`. No product code or sample changes are pending. The user authorized fixes and
+full retest; historical diagnose-only entries below no longer limit this campaign. The
+existing Steward runtime claim belongs to another Claude session and is left unchanged.
 
 Historical entries:
 
@@ -475,11 +476,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. The user selected simplify after review 5: resume planner
-   `eb8028e3d30d461a7c9936cc439615d1330f` with full I4/I7/M5, reduce the proof protocol
-   while preserving native acceptance, then obtain a fresh configured Codex plan review.
-   Preserve accepted I3 scope and other clean findings. Latest launch IDs are in campaign
-   evidence. The user accepted no proof gap.
+1. The user selected narrow simplification after review 6: resume planner
+   `676c446223dfb131578d6307964328c5ab5a` with full I7/I8/M6, correct native message
+   provenance and use a consistent mount rule, preserve acceptance and obtain a fresh
+   configured Codex review. Preserve accepted I4/I3 and M5. Latest IDs are in campaign
+   evidence; the user accepted no proof gap.
 2. Once the plan is approved, follow its test-first worktree implementation, committed-head
    `npm test`, native proof, three-seat reviews, merge, root test and cleanup. Native stops
    remain unresolved; no proof gap has been accepted by the user.
@@ -580,10 +581,10 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: review 5 found 2 Important protocol issues and 1 Minor wording issue. The user
-selected simplification and a fresh review, preserving native acceptance requirements.
-No approval choice is pending while that work runs. No task-3 code, native isolation proof
-or candidate retest exists; no gap is accepted.
+Current: review 6 found two narrow harness inconsistencies and one Minor control wording
+issue. The user authorized narrow simplification and a fresh review, preserving acceptance.
+No choice is pending while this work runs. The discovery-control approach is accepted in
+substance. No task-3 code, native isolation proof or candidate retest exists; no gap is waived.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

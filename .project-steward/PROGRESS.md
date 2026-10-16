@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T07:35:39.470669+00:00 — codex
+User selected narrow simplification after .161 review6: correct message provenance and use a consistent mount rule, preserve acceptance, then obtain a fresh review. Next planner resumes676c4462 with full I7/I8/M6; accepted I4/I3 and M5 remain. This supersedes the pending choice below; no proof gap is accepted.
+
+### 2026-10-16T07:33:34.935306+00:00 — codex
+Simplified .161 plan reduced 11 to 8 turns. Fresh review6 accepts I4 in substance and addresses M5, but returns 2 Important/1 Minor: I7 native event mirror, introduced I8 inconsistent R4 mount/expectation, and M6 control-validity wording. Counts 5 → 3 → 2 → 1 → 2 → 2 do not fall; loop-required user choice requested, narrow simplification recommended. All twelve planning tasks settled with expected bindings/profiles, depth1 and exit0. No task-3 code or native isolation probe. Prior fixes/sample/connection preserved.
+
 ### 2026-10-16T07:17:47.685196+00:00 — codex
 The user selected simplify after .161 review 5: reduce the proof protocol, preserve native acceptance requirements, and obtain a fresh review. I4/I7/M5 remain to resolve; no proof gap is accepted. The next planner resumes eb8028e3 with the full findings and the accepted I3 scope unchanged. This supersedes the pending choice recorded below.
 
