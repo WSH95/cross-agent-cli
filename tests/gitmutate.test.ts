@@ -606,35 +606,44 @@ test("each served commit step stages the work beside ignored files under the pro
 });
 
 // @anchor commitStepExcludesState
-test("each dev-team loop's commit step stages the work and never the project's own state, as directories or as plain files", async (t) => {
+test("each served commit step stages the work and never the project's own state, tracked or not, as directories or as plain files", async (t) => {
   const { root, add } = await repository(t);
-  for (const mode of ["dev-team", "dev-team-engine"] as const) {
-    const slug = `guarded-${mode}`;
+  for (const where of ["dev-team", "dev-team-engine", "launcher"] as const) {
+    const slug = `guarded-${where}`;
     const worktree = await add(slug);
     const staged = async () => (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean).sort();
-    // What a specialist can do to its own worktree: re-include the two directories the
-    // repository's `info/exclude` keeps out, and fill them.
-    await writeFile(path.join(worktree, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
+    // A branch can already track a file in each directory, committed outside the loop.
     await mkdir(path.join(worktree, ".cross-agent"), { recursive: true });
-    await writeFile(path.join(worktree, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+    await writeFile(path.join(worktree, ".cross-agent", "journal.json"), "{}\n");
     await mkdir(path.join(worktree, ".worktrees", "nested"), { recursive: true });
+    await writeFile(path.join(worktree, ".worktrees", "nested", "tracked.txt"), "as the branch has it\n");
+    await git(worktree, "add", "-f", ".cross-agent/journal.json", ".worktrees/nested/tracked.txt");
+    await git(worktree, "commit", "-m", "state the branch tracks");
+    // What a specialist can do to its own worktree: re-include the two directories the
+    // repository's `info/exclude` keeps out, fill them, and change what the branch tracks there.
+    await writeFile(path.join(worktree, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
+    await writeFile(path.join(worktree, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
     await writeFile(path.join(worktree, ".worktrees", "nested", "tree.txt"), "another task's tree\n");
+    await writeFile(path.join(worktree, ".cross-agent", "journal.json"), '{"steps":[]}\n');
+    await writeFile(path.join(worktree, ".worktrees", "nested", "tracked.txt"), "changed in the task\n");
     await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+    assert.deepEqual((await git(worktree, "diff", "--name-only")).split("\n").sort(), [".cross-agent/journal.json", ".worktrees/nested/tracked.txt"], where);
 
     // The step the loop runs: pathspecs, which `git_mutate` accepts because none of them is
     // a global option.
-    accepted(await gitMutate(root, { slug, args: servedStaging(mode) }, { waitSeconds: 5 }));
-    assert.deepEqual(await staged(), [".gitignore", "work.txt"], mode);
+    accepted(await gitMutate(root, { slug, args: servedStaging(where) }, { waitSeconds: 5 }));
+    assert.deepEqual(await staged(), [".gitignore", "work.txt"], where);
 
     // A plain file of either name, which no rule for a directory ignores: excluding only what
-    // lies below each directory would stage it.
+    // lies below each directory would stage it. The tracked files are gone with the
+    // directories, a deletion that is not staged either.
     await git(worktree, "reset", "-q");
     await rm(path.join(worktree, ".cross-agent"), { recursive: true });
     await rm(path.join(worktree, ".worktrees"), { recursive: true });
     await writeFile(path.join(worktree, ".cross-agent"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
     await writeFile(path.join(worktree, ".worktrees"), "another task's tree\n");
-    accepted(await gitMutate(root, { slug, args: servedStaging(mode) }, { waitSeconds: 5 }));
-    assert.deepEqual(await staged(), [".gitignore", "work.txt"], `${mode}, plain files`);
+    accepted(await gitMutate(root, { slug, args: servedStaging(where) }, { waitSeconds: 5 }));
+    assert.deepEqual(await staged(), [".gitignore", "work.txt"], `${where}, plain files`);
   }
 });
 

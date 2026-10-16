@@ -2851,6 +2851,11 @@ staging everything else, as it does when the worktree keeps ignored files under
 `.cross-agent/`, while `[.]` matches the same dot without spelling the name, so the
 add exits 0 there and a nonzero exit still means the add failed (git 2.43;
 `tests/gitmutate.test.ts#stageBesideIgnoredState`, `#commitStepExcludesState`).
+A custom `git.worktreeDir` whose first character is `!`, `^` or `\` cannot be
+bracketed that way — `[!]`, `[^]` and `[\]` leave the class open, so the exclusion
+matches nothing — an accepted rare limit: the built-in modes use `.worktrees`, and
+the merge's refusal above still diffs the directory by its configured name
+(`src/gitroot.ts#smuggled`).
 
 **Nor does a host's project configuration.** `.claude/` and `.mcp.json` are
 where Claude Code reads a project's settings, hooks and MCP servers, `.codex/`
