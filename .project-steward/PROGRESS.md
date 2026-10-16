@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T02:32:08.382762+00:00 — codex
+Verifier coverage (.155/.160) merged as b5a5522 after correction and three clean round-2 reviews. Both final committed-head and root gates pass: 1236 tests, 1234 pass, 0 fail, 2 guarded skips. Source task worktree and branch removed; source root clean before these records. Complete evidence and corrected diagnoses recorded in VERIFY.md and campaign.json. Findings stay open for fresh candidate acceptance. Sample baseline recheck passes all 139 tests with original configuration and root-only cleanup. Next: consultant wording .156, then remaining primary tasks and follow-ups .164/.165/.166.
+
 ### 2026-10-16T01:57:17.357639+00:00 — codex
 Committed-head gate on 2de64899 passed: 1236 tests, 1234 pass, 0 fail, 2 guarded skips. Review round 1 returned clean Codex and Grok verdicts; Claude found two Important regression-coverage gaps and two Minor wording issues. Claude implementer is verifying the test and design findings in correction round 1; operator corrected this progress entry’s spacing. Indirect globalThis tool access is recorded as atc-s96.166 for investigation with the verifier follow-ups. No acceptance finding is closed before the frozen-candidate retests. Correction round 1 is complete: five added cases pin the verified guards, the verifier is unchanged, worktree npm test passes (1236 tests, 1224 pass, 0 fail, 12 sandbox skips), and the design wording is clarified. Mutation evidence is preserved with the separate temporary-location fixture failure disclosed.
 

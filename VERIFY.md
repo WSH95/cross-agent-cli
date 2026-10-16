@@ -7,6 +7,67 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes — verifier coverage, `atc-s96.155` / `atc-s96.160` (2026-10-15–16)
+
+**Implementation and isolated archive replay pass; fresh candidate acceptance remains pending.**
+The user authorized corrections to the acceptance findings, preserving the original observations.
+The first task ran through installed cross-agent 0.1.9 with the source repository's unchanged
+`dev-team` roster, host placement, depth 1, automatic merging, `main`, `npm test` and no setup.
+It merged as `b5a5522337dc62518c0f7897ff690ee41e99521b` after three clean final code reviews.
+
+The verifier recognizes Grok's exact archived `search_replace` and `web_fetch` input shapes,
+literal source-reading commands, delegate-named file operands and the recorded tool-discovery
+regular expressions. It retains eight checks and exit codes 0/1/2. Unsupported shapes and
+ambiguous execution remain `?`; real delegation and engine launches still fail. Three new tests
+cover 75 verdict cases from exact archived events and negative controls; existing assertions
+are unchanged. Isolated copies replayed with captured configurations changed row 8 from `?`
+to pass for R1 (four transcripts), R2 (two) and R3 (one). Rows 1–7 in these replay fixtures are
+synthetic; these results do not retroactively certify complete historical runs. The original
+files are untouched, and the 582-file preservation manifest has no mismatches.
+
+Planning converged from 3 Important findings to 1 to 0, followed by the required planner
+optimization. Code review round 1 found two missing regression controls and two wording
+issues. The implementer verified the guards and added five negative cases; no verifier behavior
+changed in that correction. All three round-2 reviews marked the in-scope findings addressed.
+The unpublished initial head `2de64899` was amended to keep one task commit; its Git object,
+complete patch, original gate and reviews are preserved.
+
+| Validation | Result |
+| --- | --- |
+| Root baseline | 1233 tests, 1231 pass, 0 fail, 2 guarded skips |
+| Test-first implementation | 1236 tests, 1221 pass, exactly 3 new tests fail, 12 sandbox skips |
+| Local implementation and correction suites | 1236 tests, 1224 pass, 0 fail, same 12 sandbox skips |
+| Initial committed head `2de64899` | 1236 tests, 1234 pass, 0 fail, 2 guarded skips |
+| Final committed head `b5a5522` and post-merge root gate | Both 1236 tests, 1234 pass, 0 fail, 2 guarded skips |
+| Guard mutation checks | Original verifier tests do not detect removed guards; corrected tests do |
+| Citation check | 1856 citations, 0 misses |
+| Cleanup | Only source root worktree remains; task branch removed; root clean before bookkeeping |
+
+The mutation copies under `/tmp` each also failed a configuration test whose premise expects
+a repository outside `/tmp`, and skipped one Git-dependent test. These are fixture-location
+observations, not production failures. An intermediate implementation run separately hit
+`cannot read /tmp/.git: ENOENT`; its cause is unconfirmed and tracked as `atc-s96.165`.
+The planner found a pre-existing Bash `@P` launch-judge gap (`atc-s96.164`), and a reviewer
+found unflagged indirect `globalThis` tool access (`atc-s96.166`); both enter separate dev-team
+work before candidate acceptance. A possible `GIT_EXEC_PATH`/`PATH` dependence on programs
+written earlier is unconfirmed and falls within the stated prior-call-program boundary;
+the follow-up investigation will assess it. No finding has been closed prematurely.
+
+Host deviation: the first gate call used `where: "worktree"` instead of the verified absolute
+path; the server refused before launching a command. The corrected call passed. No engine
+failed. Read-only reviewers did not run the filesystem-writing suite; they inspected the
+exact-head server gate. Development engines were Claude Code 2.1.299, Codex CLI 0.163.0 and
+Grok 1.0.52. The sample was independently rechecked: 139 passing tests, clean `main` at
+`a9b90d4`, only its root worktree, no task branches, original configuration hash unchanged.
+
+All 15 delegation records, actual bindings, sessions, native logs and full results remain in
+`.cross-agent/tasks/`. `.cross-agent/log.md` records roles and durations. The task journal is
+`.cross-agent/journal/fixes-verifier-20261015.json`; complete plans, findings, replay harnesses,
+source hashes, mutation copies, test output and gates are preserved under
+`.cross-agent/fix-acceptance-evidence/`. `campaign.json` maps every task ID to its stage and
+review round. The source configuration still hashes to
+`68f88c461c77e75b811a89462ebe104b8f669d8c3ca674732bcd989f612500ae`.
+
 ## Codex-led engine variant — `atc-s96.158` (2026-10-15)
 
 **Functional pass; strict transcript verification blocked; engine orchestration failure
