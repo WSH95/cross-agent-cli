@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T20:02:20Z
+updated_at: 2026-10-16T20:30:46Z
 updated_by: codex
 session_status: active
 branch: main
@@ -9,10 +9,41 @@ branch: main
 ## Now
 
 Acceptance campaign atc-s96.163 continues. No human decision or external blocker is pending.
-Task8 .165 is merged as33d010e and closed. Current main is33d010e before this records
-commit; source was clean/root-only before owned closure/records changes. No task branch,
-worktree or live delegation remains. The four primary source tasks, .170/.171 and
-Task7 .164/.166/.172 remain merged and recorded; Task7 records40627f9 are complete.
+Current main is00d2931 before this records-only checkpoint. Task9 .168 has an approved
+plan, no implementation/worktree/branch yet and no live delegation. All earlier source
+tasks and Task8 records are complete. Ten beads remain: .168, eight merged findings
+awaiting candidate acceptance, and .163 umbrella. Candidate matrix has not started.
+
+Task9 planner270be442 reproduced the Git2.43.0 ignored-pathspec failure in private Git
+fixtures: old command exits1 after staging, bracketed FormC exits0 with the same tested
+selection. Separate exclusions for each state path and everything below it preserve
+directories/contents and plain-file protection. Runtime validation/error propagation and
+commit/merge guards are correct; src stays unchanged. Three served copies, tests and
+current docs/sizes change, with no public-interface change. Rare custom-name/case bounds
+stay explicit nonblocking limits, not a general pathspec framework.
+
+Astra5f7ff692 returned noMajor, two Minor: full preservation hashes and direct size
+calculation instead of redundant full-suite discovery. Final plannere2a9be84 verified
+and folded both and optimized once. No further plan review. Approved full plan:
+task9-plan-approved.md/.json; active acceptance task9-acceptance.md. Nine original full
+digests are in task9-original-evidence-manifest.json. Projections, not executed results:
+RED1280/1262/5/13, localGREEN1280/1267/0/13, hostgate/root1280/1277/0/3.
+Test first; log actual results/raw skips under TMPDIR. Keep task worktree state directories
+absent so frozen0.1.9's old staging command works for this task. Host owns Git/bookkeeping.
+
+The native Claude permission layer refused planner fixture deletion (not host automatic
+approval). Host verified UID/real directory/private common dirs and worktree references,
+then removed only /tmp/claude-1000/atc168-plan-fixture after planning settled. Inspection
+and cleanup reports retained; no source/sample/task repository metadata changed.
+Optional upstream pages were inaccessible to parent web read; local Git proof remains
+primary and no merged-upstream-fix claim or blocker is made.
+
+Next create Task9 worktree from the records commit after this checkpoint, implement the
+full plan, then host commit/rebase/exact-head gate/all3 reviews/verified corrections/
+merge/root tests/cleanup. Re-check original9 hashes and historical sample evidence.
+After .168 source acceptance, freeze/install candidate and run the full matrix below.
+
+Task8 closure context (completed before Task9):
 
 Task8's narrow change skips only strict-ancestor readdir ENOENT, matching existing lstat
 absence handling. Other listing/git failures and candidate-root validation still refuse.
@@ -343,9 +374,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign atc-s96.163. Task8 .165 is merged/closed; no live task/worktree/branch.
-Main33d010e before this records commit. .168 is the last source follow-up, then candidate
-matrix. See Now and campaign.json; older limits are superseded by the approved plan.
+Current: campaign atc-s96.163. Task9 .168 plan approved (R1 noMajor,2Minor verified/folded).
+No live task/worktree/branch yet. Main00d2931 before this records commit; create worktree
+from the new records commit. Full Task9 source loop then candidate matrix remains.
 
 Historical entries:
 
@@ -511,8 +542,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Fix .168 through frozen0.1.9 dev-team after reviewing owned records and clean-root
-   preflight. Verify isolated Git premise, retain exclusions/guards/error reconciliation.
+1. Create Task9 worktree from current main; delegate implementer with task9-plan-approved.md
+   and active acceptance verbatim. Test first, TMPDIR logs, frozen staging, gate/all3 reviews/
+   verified corrections/merge/root/cleanup. Preserve original9 hashes and prior evidence.
 2. Freeze/install candidate, full saved-sample matrix and independent audits; restore
    configs/connection, close findings on acceptance, validate records and commit locally.
    No push, release or remote sync.

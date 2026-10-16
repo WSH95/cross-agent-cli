@@ -3,6 +3,15 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T20:30:46Z — codex
+
+Task9 .168 approved: local Git2.43.0 failure and FormC selection proved in private
+fixtures; runtime guards unchanged. Astra R1 noMajor/2Minor; final e2a9be84 verified/
+folded full hashes and direct size calculation, optimized once. No source change or
+suite RED/GREEN yet. Host verified and removed the owned private fixture after native
+permission refusal; no project metadata affected. Ten beads remain; full source loop
+and candidate matrix pending. No human decision, push/release/sync.
+
 ### 2026-10-16T20:02:20Z — codex
 
 Task8 .165 merged33d010e and closed. Narrow ancestor-listing ENOENT repair, three files.

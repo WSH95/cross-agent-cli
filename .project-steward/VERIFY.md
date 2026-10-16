@@ -2,11 +2,12 @@
 
 Run the relevant checks before marking work as verified in `HANDOFF.md`.
 
-Last records-only check: 2026-10-16, Task8 closure checkpoint.
+Last records-only check: 2026-10-16, Task9 approved-plan checkpoint.
 `git diff --check` passes; citation checker reports 1909 citations, 0 misses,
-0 drifted since ad4f916 and 0 not judged. Final Task8 exact-head/root `npm test`
+0 drifted since 00d2931 and 0 not judged. Final Task8 exact-head/root `npm test`
 passed 1279/1276/0/3 at 33d010e. All three code reviews have no findings; source
-acceptance/cleanup/preservation is complete. No extra suite run for records-only
+acceptance/cleanup/preservation is complete. Task9 .168 has an approved plan;
+its implementation, tests and reviews have not run. No extra suite run for records-only
 changes, native isolation claim or candidate-matrix acceptance is made.
 
 | Check | Command | Expected |

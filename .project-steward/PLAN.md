@@ -16,7 +16,8 @@ Fifteen tasks, complete results, bounded audit, cleanup and preservation are rec
 Task8 .165 merged33d010e and closed: actual RED/GREEN, all3 clean code reviews, final
 gate/root1279/1276/0/3, audit, cleanup and preservation complete. Ten campaign beads
 remain: .168 source work, eight merged findings awaiting acceptance and umbrella .163.
-The full candidate mode matrix stays in this stream, after .168.
+Task9 .168 has an approved plan: R1 noMajor/twoMinor verified/folded, private fixture
+cleaned by host. No source implementation yet; full loop and candidate matrix remain.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,
 release or remote sync.

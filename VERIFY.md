@@ -7,6 +7,25 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: staging plan approved (2026-10-16)
+
+Task9 .168 is planning-approved, not implemented. Planner270be442 established the local
+Git2.43.0 pathspec refusal, actual partial staging and the corrected FormC selection in
+private disposable repositories. Native `git_mutate`-form diagnostics and a real unreadable
+file retain nonzero errors. Runtime validation/guards need no change. Three served copies,
+their meaningful regression/preservation tests, and current docs/sizes are the scope.
+
+Astra5f7ff692 found noMajor/twoMinor. Final plannere2a9be84 verified/folded accurate full
+hashes and direct size calculation instead of an extra full-suite run, then optimized once.
+Nine original full digests are retained. Expected RED1280/1262/5/13, GREEN1280/1267/0/13
+and gate/root1280/1277/0/3 are projections; no source RED/GREEN/commit/acceptance is claimed.
+
+The host inspected real-directory/UID/private Git references and removed only the owned
+diagnostic fixture after all planning tasks settled. Native cleanup refusal and successful
+host cleanup remain separate from automatic approval review. Local proof is primary;
+optional upstream web pages were inaccessible, so no merged-upstream-fix claim is made.
+Ten campaign beads remain; candidate matrix not started. No push, release or remote sync.
+
 ## Acceptance fixes: ancestor ENOENT repair merged (2026-10-16)
 
 Task8 `atc-s96.165` is closed. Commit `33d010e` changes exactly three planned files,
