@@ -7,6 +7,49 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: wait-holder fixture follow-up merged (2026-10-16)
+
+Task6 (`atc-s96.171`) is closed. Commit `48b981caad39851f71e8844b0890dcf719affd69`
+changes only the holder acquisition in `tests/wait.test.ts` from zero to five seconds,
+with a two-line comment. Production, the test project's zero-wait limit, both refusal
+assertions, their timing assertion and the `finally` release are unchanged.
+
+Plan reviews `74b28a6c` and `d594f71c` converged from two Important findings to zero.
+Planner `41b8e0b2` verified and folded the remaining Minor wording corrections. The full
+approved plan records the corrections to the earlier diagnosis: line 449 dates to ac7ffeb,
+the nearby changes to 7ab8fc5, the runner timer to 2009868/11d5fd2, and acknowledgement to
+3e6703d. The 49 earlier passing log entries include duplicate captures. Original evidence
+files remain unchanged. The failed gate and ten controlled trials are the authorized RED;
+no deterministic suite RED, new diagnostic workload or native proof requirement was added.
+
+Claude implementer `ff25951b` ran `npm test`: **1276 tests, 1263 passed, 0 failed, 13 skipped**.
+The complete 1302-line log is retained with SHA256
+`674a043cae116e502e05b018939122fbbfbaba7d4e02242afde15cccf3ebf867`.
+Its full result preserves all skip lines verbatim and identifies the bare CODEX_SETUP_PROBE
+skip separately. No environment guard or opt-in was changed. The committed-head gate and
+post-merge root suite each passed **1276 tests, 1273 passed, 0 failed, 3 guarded skips**;
+the journal records `tested` and `tests-passed` for 48b981c.
+
+All three code reviewers returned `VERDICT: no major issues`, without findings, on that
+same head: Claude `3bf42a17`, Codex Sol `b876b995`, and Grok `606fc6e6`. No correction round
+was needed. All nine delegations finished at depth 1, parent null, exit 0. The host inspected
+169 recorded tool invocations and observed no unauthorized delegation or real-engine launch.
+That audit covers recorded role tools, not OS-wide activity or plugin isolation in the frozen
+development server. The existing .161 bounds and final E2E requirements are unchanged.
+
+The host's seven anchored fixture-process searches found no matches and sent no signals.
+Their limits remain explicit: shared TMPDIR matches would need attribution, and the holder
+shell child and suite parents are outside those signatures. Existing teardown remains the
+primary cleanup guarantee. The source task worktree and branch are removed; source and
+sample are clean/root-only before closure/records updates. Source/sample configs, the four
+original failure-evidence files, and all 582 historical sample hashes match. The sample
+remains at a9b90d4. Full results, native logs, inventory, a 56-file manifest, preservation
+record and final journal are retained under `.cross-agent/fix-acceptance-evidence/task6-*`.
+
+No new confirmed defect arose. Four fixes/investigations remain: `.164`, `.166`, `.165`,
+`.168`. Eight merged findings await candidate acceptance; umbrella `.163` is active.
+The frozen-candidate matrix has not started. No push, release or remote sync.
+
 ## Acceptance fixes: zombie fixture follow-up merged (2026-10-16)
 
 Task5 (`atc-s96.170`) is closed. Commit `dbaa8e8382884b21fe2221b29b64cb2bed6cff77`

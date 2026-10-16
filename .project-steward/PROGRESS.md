@@ -3,6 +3,19 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T16:41:46.571872+00:00 — codex
+
+Task 6 (.171) merged as 48b981c and closed. One test's holder wait/comment changed;
+production and product refusal assertions did not. Plan review: two Important findings to
+zero, with verified folds. All three code reviews have no findings. Local suite:
+1276/1263/0/13; exact-head and root: 1276/1273/0/3. All nine tasks finished at depth 1,
+parent null, exit 0. The host inspected 169 recorded tool invocations; no unauthorized
+launch/delegation was observed. Seven anchored host searches found no matches; no signals.
+Audit limits remain explicit. Cleanup, configs, original failure files, sample and all 582
+old hashes pass. No new defect was confirmed. Next: .164/.166, .165/.168, then candidate
+matrix. Thirteen campaign beads remain unclosed, including eight awaiting candidate
+acceptance and the umbrella. No push, release or remote sync.
+
 ### 2026-10-16T15:55:43.506392+00:00 — codex
 
 Task5 .170 merged dbaa8e8 and closed after all three code reviews, exact-head rerun and
