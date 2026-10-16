@@ -3,6 +3,19 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T19:03:56Z — codex
+
+Task7 .164/.166/.172 merged 602c479 + wrap773807c and all three are closed. Plan reviews
+2 → 1 → 0 Important; source RED1278/1263/2/13 then GREEN1278/1265/0/13. All3 R1 noMajor,
+three Minor verified/fixed; wrapRED1278/1264/1/13 then GREEN1278/1265/0/13. All3 fresh R2
+noMajor/all prior code findings addressed; only the two-commit process note is reported.
+Final exact-head and root npm test1278/1275/0/3. Fifteen tasks done depth1/parentnull/exit0,
+all full results retained. Bounded409-tool/process audit, cleanup, configs and582 old sample
+hashes pass under stated limits. Read-only host slug refusal was immediately reconciled
+after successful cleanup; no product defect. Eleven remain: .165/.168, eight merged findings
+awaiting candidate acceptance, .163. Candidate matrix not started. No user decision pending,
+push/release/remote sync.
+
 ### 2026-10-16T17:45:40.714138+00:00 — codex
 
 Task 7 plan approved after reviews 2 → 1 → 0 Important. Round 3 96167d44 has no findings;

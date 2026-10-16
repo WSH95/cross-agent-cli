@@ -2,9 +2,11 @@
 
 Run the relevant checks before marking work as verified in `HANDOFF.md`.
 
-Last records-only check: 2026-10-16, simplified sixth plugin-isolation review checkpoint.
-`git diff --check` passes; citation checker reports 1856 citations, 0 misses.
-No new product test result or native isolation claim is made.
+Last records-only check: 2026-10-16, Task7 verifier follow-up closure checkpoint.
+`git diff --check` passes; citation checker reports 1908 citations, 0 misses,
+0 drifted since c9c1c00 and 0 not judged. Final Task7 exact-head/root `npm test`
+passed 1278/1275/0/3 at 773807c. No extra suite run for records-only changes,
+new native isolation claim or candidate-matrix acceptance is made.
 
 | Check | Command | Expected |
 | --- | --- | --- |

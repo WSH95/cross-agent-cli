@@ -7,6 +7,64 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: verifier follow-ups merged (2026-10-16)
+
+Task 7 (`atc-s96.164/.166/.172`) is complete and those three beads are closed.
+Initial commit `602c479` and the required Minor wrap `773807c` change only
+`tools/e2e-verify.mjs`, `tests/e2e-verify.test.ts` and `docs/design.md` (+164/−18).
+Literal Bash `@P` transformations now remain unresolved independently of engine-name
+matching. Six specified global-object/member-constructor routes, including comments
+and optional chaining, remain unresolved too. Data controls and recorded-offence FAIL
+precedence hold; eight checks and exit codes are unchanged. This is a bounded reader,
+not an evaluator or evidence of native aliased execution.
+
+Plan review converged 2 → 1 → 0 Important, followed by final planner optimization.
+Actual synthetic source RED: **1278/1263/2/13**, with 11 A and 7 B mismatches; GREEN
+and final GREEN: **1278/1265/0/13**. All three R1 seats returned noMajor with three
+distinct Minor findings. The implementer verified all three before fixing them:
+comment/optional-chain routes, explicit parameter-head coverage, and the ineffective
+constructor uniqueness assertion. Wrap RED: **1278/1264/1/13**, one top-level Test B
+failure containing two route misses and the uniqueness negative control. Test A's added
+heads already passed: coverage, not a new behavior defect. Wrap GREEN:
+**1278/1265/0/13**. Raw logs and hashes remain unchanged in the campaign evidence.
+Specialist-only guards account for the difference from host counts.
+
+Both final committed-head gate and post-merge root `npm test` passed
+**1278 tests, 1275 passed, 0 failed, 3 skipped** at `773807c`. The server's returned
+tails omit individual skip lines. All three fresh R2 reviews cover that exact head:
+Claude `28b32309`, Codex `1987e6b8`, Grok `27151295`, each noMajor, with all prior
+code findings ADDRESSED. No reviewer reran the unchanged passing suite.
+
+Claude R2's remaining Minor N1 is reported as a process departure: the required wrap
+produced a second validated Conventional Commit; its shorter summary lacks bead IDs,
+which remain in the first commit and records. The served loop requires per-round
+commits and ff-only merge. The tested/reviewed history was retained, with no source
+repair or squash. A separate host status-read argument error after successful cleanup
+was refused as specified (slug on a read-only command); immediate reconciliation
+confirmed clean root-only main, no task branches/live tasks/rebase. Neither is an
+engine/product failure or an automatic approval rejection.
+
+All **15** delegations finished depth1/parentnull/exit0 and all complete results are
+archived. The 409-tool inventory and bounded host command/call-site/edit-scope audit
+show no observed unauthorized delegation or real-engine launch. This is not dynamic
+absence proof for every inline body, OS-wide history or frozen0.1.9 plugin isolation.
+Exact task-spec/worktree-argument process inspection found no matches or unreadable
+entries and sent no signals; it does not cover generic TMPDIR children. Existing test
+teardown remains primary. Worktree/branch cleanup is complete. Source/sample config
+hashes and all **582** old sample hashes match; sample stays clean/root-only
+`a9b90d4`, with its unchanged 139-test baseline.
+
+General dynamic-access routes and other Bash versions remain documented limits.
+Seat 1's harmless native Bash5.2.21 check found tested nonliteral-operator forms were bad
+substitutions, settling that question for that version only. Original planning/refusal,
+scratch-file, synthetic and native evidence remains distinguished and unmodified.
+Full results, raw logs, coverage, native inventory, triage and journal:
+`.cross-agent/fix-acceptance-evidence/task7-*`.
+
+Eleven campaign beads remain unclosed: source .165/.168, eight merged findings awaiting
+candidate acceptance, and umbrella .163. The frozen-candidate matrix has not started.
+No new confirmed source defect was deferred; no push, release or remote sync.
+
 ## Acceptance fixes: verifier correction plan approved (2026-10-16)
 
 Task 7 (.164/.166/.172) plan reviews converged **2 → 1 → 0 Important**. Round 3,

@@ -10,9 +10,11 @@ Native controls, final code reviews, committed-head/root gates and cleanup pass 
 recorded bounds. Plugin top-level availability stays explicitly unknown; no final E2E check
 is waived. Separate test-fixture follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and
 closed, each with all three reviews, committed-head/root tests, audit and cleanup complete.
-Task 7 covers .164/.166/.172. Plan review converged 2 → 1 → 0 Important; final planner
-c502dc7e verified/finalized once. Implementation/gates/three reviews/merge/root/cleanup are next.
-Then .165/.168 and the full mode matrix stay in this stream.
+Task 7 (.164/.166/.172) merged as 602c479 plus the required wrap773807c; all three are closed.
+Both final gate/root suites pass1278/1275/0/3 and all3 fresh reviews say noMajor.
+Fifteen tasks, complete results, bounded audit, cleanup and preservation are recorded.
+Eleven campaign beads remain: .165/.168 need source work, eight merged findings await
+candidate acceptance and .163 is the umbrella. The full mode matrix stays in this stream.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,
 release or remote sync.
