@@ -3,6 +3,13 @@
 Record questions that the repository does not answer instead of guessing.
 Add the answer to the item when it is resolved.
 
+2026-10-16 — `atc-s96.161`: the configured dev-team plan-review limit is reached.
+Fresh reviews found 5 → 3 → 2 Important findings, both remaining carried. The host recommends
+one more round to resolve the real-provider resume-input bridge and resumed discovery
+coverage. Alternatives presented: simplify and review; fold and proceed with the issues
+accepted; pause. Await the user's answer. Full findings are in
+`.cross-agent/fix-acceptance-evidence/task3-plan-review-r3.md`. No proof limitation is accepted.
+
 - [x] Is the bwrap AppArmor profile from Claude Code's sandboxing docs
       installed on this machine? **Yes** (2026-09-18: the docs' profile is
       loaded and Ubuntu's stock `bwrap-userns-restrict` is disabled). Probe

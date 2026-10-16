@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T04:48:47.054359+00:00
+updated_at: 2026-10-16T05:08:08.317984+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,36 +8,30 @@ branch: main
 
 ## Now
 
-**Acceptance-finding fixes and retest remain active (`atc-s96.163`).** Two primary tasks
-are merged and cleaned: verifier coverage .155/.160 (`b5a5522`, 1236 tests / 1234 pass / 0 fail /
-2 guarded skips) and consultant scope .156 plus doc-size follow-up .167 (`d012438`, 1237 /
-1235 / 0 / 2). Both had three clean final reviews and committed-head/root gates. .167 is
-closed; .155/.156/.160 remain open for frozen-candidate acceptance. The consultant finding
-is misleading scope wording, not a filesystem read-sandbox escape; searches/history are
-preserved and the dated correction is in VERIFY.md. Its required doc-size amendment was
-planned and reviewed before implementation resumed; no test was weakened.
-Codex per-launch plugin isolation (.161) is in its second planner revision: initial and
-round-2 reviews found 5 then 3 Important proof gaps. The adapter scope stays at two per-launch
-flags; no task-3 code or worktree exists yet. A current CLI 0.163.0 source-root review
-(d29a2519, native session 01a14211-869c-7c33-9272-360e263c77fc) leaks remote plugin skill
-catalogues, while another same-version/root review is clean. This is intermittent current
-behavior, not evidence of an upstream version fix. Remaining proof requirements distinguish
-persisted resume history from effective input, cover the complete runtime discovery surface,
-and reject shaped MCP outputs without a verified call. Latest planner 5c2c90e9 resumes
-c0e900f9 after fresh reviewer 4354db51; full results and the campaign record are under the
-ignored evidence directory. Native model probes have not run and no isolation claim is made.
-After .161: lead contract (.157/.159) and resolved project/summary metadata (.162). Also resolve .164 (Bash @P), .165 (unconfirmed ancestor-marker
-race) and .166 (indirect globalThis tool access) before candidate acceptance. Do each through
-the unchanged installed 0.1.9 dev-team. Full current state, task IDs/results/logs and hashes
-are under ignored .cross-agent/fix-acceptance-evidence/campaign.json and the task ledger.
-The sample remains clean at a9b90d4 with 139 passing tests, original config, root-only worktree
-and no task branches; its 582-file historical preservation snapshot matches. Managed plugin
-connection remains original. Read-only Codex CLI 0.163.0 inventory confirms plugins and
-remote_plugin accept false per launch; this is not native context-isolation proof yet.
-After fixes, freeze/install the candidate temporarily, open fresh test chats, test all modes
-and both lead engines, restore sample config and managed connection, then close only findings
-whose criteria pass. Local validated commits authorized; no push, release or remote sync.
+Acceptance fixes and retest remain active (`atc-s96.163`), waiting for the user's
+review-limit choice on `.161`. Two primary tasks are merged and cleaned: verifier coverage
+`.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and consultant
+scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both passed all
+three final reviews and committed-head/root tests. Only `.167` is closed; native acceptance
+for the original findings remains pending. Task 3 has no code or worktree: its three fresh
+plan reviews found 5, 3 and 2 Important findings, with both remaining carried. The installed
+loop's configured limit is three, so the host presented one more round (recommended),
+simplify, fold and proceed with accepted issues, or pause. Latest planner `5c2c90e9` and
+reviewer `86970e22` are done. Standing proof gaps: bridge diagnostic-provider captures to
+real-provider contaminated resume input, and cover discovery tools introduced on resume.
+No native model probe has run and no isolation claim is made. All six planning records
+finished at depth 1 with exit 0 and correct read-only bindings. Main was clean at `b4e274b`
+before this checkpoint, with only the root worktree and no task branches. Sample main
+`a9b90d4` remains untouched, its 139-test baseline passes, and all 582 historical evidence
+hashes still match. Original source/sample configuration and managed plugin connection
+remain in place. Current Codex CLI 0.163.0 has both leaking and clean source-root contexts;
+the cause is unknown. Full task results and current state are in
+`.cross-agent/fix-acceptance-evidence/campaign.json`. After `.161`, implement lead contract
+`.157`/`.159` and metadata `.162`, resolve `.164`–`.166`, then freeze/install/retest and
+restore. Local evidence commits are authorized; no push, release or remote sync.
 Earlier diagnose-only instructions below are historical and superseded.
+
+## Prior verification context
 
 **Additional Codex-led variant is complete (`atc-s96.158`, user-requested).** Chat
 `01a1419a-d274-7eb1-b049-14a27a00bb0e` ran installed 0.1.9 with the exact changed bindings:
@@ -309,6 +303,17 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
+Current: campaign `atc-s96.163` is waiting for the review-limit choice on `.161`. All
+specialists have settled; no task worktree or branch exists. This checkpoint changes only
+root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, `QUESTIONS.md`,
+and `VERIFY.md`. No product code or
+sample change is pending. The user authorized the fixes and full retest; the older
+"diagnose only" text below describes prior completed runs and does not limit this campaign.
+
+The existing Steward runtime claim belongs to another Claude session and is left unchanged.
+
+Historical entries:
+
 - `atc-s96.152`, `.153`, `.154` and `.158` verification work is complete. Source changes
   are evidence/stewardship only; the sample and ignored native evidence are retained.
   Findings `.155`, `.156`, `.157`, `.159` and `.160` remain open; no fixes are authorized
@@ -471,6 +476,21 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
+1. Read `bd show atc-s96.161` and the full `task3-plan-review-r3.md` under the ignored
+   evidence directory, then apply the user's review-limit choice. No answer means no
+   dependent implementation. "One more round" resumes planner `5c2c90e9bc0211efeba02748deb847b8581b`
+   with the full two findings, then uses a fresh configured Codex plan reviewer; a further
+   major verdict requires another choice under the installed loop.
+2. Once the plan is approved, follow its test-first worktree implementation, committed-head
+   `npm test`, native proof, three-seat reviews, merge, root test and cleanup. Native stops
+   remain unresolved; no proof gap has been accepted by the user.
+3. Continue the remaining approved source fixes through installed 0.1.9 `dev-team`, then
+   freeze/install the candidate and run the complete sample matrix from the user-approved
+   plan. Restore the original sample configuration and managed connection. Close findings
+   only when acceptance passes; retain prior evidence. Do not push, release or sync remotely.
+
+Historical next-step entries below predate the approved fix campaign:
+
 1. Review `VERIFY.md` and `bd show atc-s96.159` / `bd show atc-s96.160` for the additional
    Codex-led variant's engine orchestration error and transcript-verifier blocker. The run,
    independent audit and configuration restoration are complete; no rerun or fix is pending
@@ -560,6 +580,13 @@ Previous release and backlog pointers:
    - `.102`: `describe_mode` warns when the server's own working directory lies in another initialized project.
 
 ## Blockers
+
+Current: `.161` reached `review.planReviewRounds=3`; the installed dev-team loop requires a
+user choice. The two remaining Important findings concern the native proof design, not an
+observed failure of the proposed flags. No native model proof or candidate retest has run.
+No user acceptance of these gaps is recorded.
+
+Historical acceptance failures below are preserved; their fixes are now authorized:
 
 The additional Codex-led variant cannot receive a strict pass: an invented specialist-test
 restriction needed operator correction (`atc-s96.159`), and row 8 of its verifier remains

@@ -7,6 +7,30 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes — plugin-isolation planning checkpoint (2026-10-16)
+
+`atc-s96.161` has not reached implementation or native acceptance. Through installed 0.1.9
+`dev-team`, three fresh Codex `gpt-6-astra` xhigh plan reviews found 5 → 3 → 2 Important
+findings. The remaining two are carried: diagnostic-provider captures need an evidenced
+bridge to the real-provider resume input, and resumed tool surfaces need discovery coverage.
+The two-flag adapter change remains proposed. No native model probe, task worktree or
+candidate installation has occurred. The configured three-round limit requires the user's
+choice; one more round is recommended because the findings are converging. No gap has been
+accepted and no isolation pass is claimed.
+
+Planner tasks `ef13ed61`, `c0e900f9`, `5c2c90e9` and review tasks `8c482d07`, `4354db51`,
+`86970e22` all settled at depth 1, exit 0, with expected engine/model/effort and read-only
+profiles. Full IDs, results, native logs and session IDs remain in the source ledger and
+ignored `.cross-agent/fix-acceptance-evidence/`. The latest approved implementation remains
+`d012438`: root suite 1237 tests, 1235 pass, 0 fail, 2 guarded skips. This records-only
+checkpoint does not rerun or claim a new product test result.
+
+Independent archived-context inspection confirms both leaking and clean source-root
+sessions on Codex CLI 0.163.0; cause remains unknown. The official feature-key inventory
+only establishes recognition, not effect. Historical sample evidence was rehashed at
+2026-10-16T05:02:55Z: all 582 files match. Source configuration, sample configuration and the
+managed plugin connection are unchanged. No push, release or remote sync occurred.
+
 ## Acceptance fixes — consultant scope, `atc-s96.156` / `atc-s96.167` (2026-10-15–16)
 
 **Implementation passes; native consultant acceptance remains pending.** The second primary

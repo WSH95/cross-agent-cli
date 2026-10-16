@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T05:08:08.317984+00:00 — codex
+atc-s96.163/.161 reached the installed three-round plan-review limit; Important findings converge 5 → 3 → 2, both carried. User choice requested as the loop requires; one more round recommended. All six planning tasks settled at depth 1, correct bindings/profiles, exit 0; no code/worktree/native model probes. Earlier merged fixes and all 582 sample evidence files are preserved. Full state and findings saved for continuation.
+
+### 2026-10-16T04:48:47.054359+00:00 — codex
+atc-s96.163/.161 planning checkpoint: source main b3a325f is clean and root-only; plugin-isolation plan reviews reduced 5 to 3 Important proof gaps, latest planner 5c2c90e9 is revising before implementation. Same CLI 0.163.0 and source root have independently confirmed leaking and clean skill catalogues. Recognition of per-launch flags is not native context proof. No code, operator preferences or sample changed; full task results and evidence remain in .cross-agent/fix-acceptance-evidence/.
+
 ### 2026-10-16T03:31:26.338606+00:00 — codex
 Consultant scope .156 and doc-size follow-up .167 merged as d012438 after reviewed amendment and three clean code reviews. Committed-head and root gates both pass: 1237 tests, 1235 pass, 0 fail, 2 guarded skips. Worktree/branch removed. VERIFY.md adds the corrected diagnosis and optional test citation while preserving historical observations. .167 is closed; .156 awaits native retest. Next is Codex plugin isolation .161. Read-only CLI feature inventory is preliminary only; runtime context probes remain required. No sample or managed connection changes.
 
@@ -633,5 +639,3 @@ Set up Project Steward in this repository.
 - 2026-10-15T05:30:20Z — claude — Release 0.1.8 (atc-s96.150): 541bc98 pushed to main on the user's approval; agent-plugins PR #23 opened (53 files, MERGEABLE/CLEAN, payload equals dist, validation passes). Awaiting the user's merge; then the live acceptance trace.
 - 2026-10-15T05:45:39Z — claude — [auto-checkpoint] 0.1.8 merged by the user; Codex updated; live acceptance trace run 1 (epic kv-q15, Codex host, Claude lead) running in ~/.cache/agent-team/cross-agent-trace/kvtiny.
 - 2026-10-15T06:16:28Z — claude — Live acceptance trace of atc-2jl on 0.1.8 passed (run 1 epic/Claude lead, run 2 goal/Codex lead); atc-2jl.5 settled by a direct expect-null probe on Claude and Codex. Closed atc-2jl.5, atc-2jl, atc-s96.150.
-
-- 2026-10-16T04:48:47.054359+00:00 — codex — atc-s96.163/.161 planning checkpoint: source main b3a325f is clean and root-only; plugin-isolation plan reviews reduced 5 to 3 Important proof gaps, latest planner 5c2c90e9 is revising before implementation. Same CLI 0.163.0 and source root have independently confirmed leaking and clean skill catalogues. Recognition of per-launch flags is not native context proof. No code, operator preferences or sample changed; full task results and evidence remain in .cross-agent/fix-acceptance-evidence/.
