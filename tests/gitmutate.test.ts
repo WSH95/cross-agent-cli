@@ -90,6 +90,18 @@ function poison(t: TestContext, values: Record<string, string>): void {
   }
 }
 
+/**
+ * The commit step's `add` as a served copy spells it: step 6 of a dev-team loop, or the
+ * launcher's one-shot with the built-in worktree directory in place of its placeholder.
+ */
+function servedStaging(where: "dev-team" | "dev-team-engine" | "launcher"): string[] {
+  const file = where === "launcher" ? path.join(sources, "skills", "cross-agent", "SKILL.md") : path.join(sources, "modes", where, "SKILL.md");
+  const text = fs.readFileSync(file, "utf8").replace(/\s+/g, " ");
+  const spelled = /`git_mutate \{slug, args: (\["add", "-A", .*?"\])\}`/.exec(text);
+  assert.ok(spelled !== null, `${where} spells the commit step's add`);
+  return JSON.parse(where === "launcher" ? spelled[1].replaceAll("<bracketed git.worktreeDir>", "[.]worktrees") : spelled[1]);
+}
+
 // @anchor commitLandsBranch
 test("a commit through git_mutate lands on the task branch and is journaled with its SHAs", async (t) => {
   const { root, add } = await repository(t);
@@ -562,25 +574,68 @@ test("a lock lost while the command ran is reported, and the step is still journ
   assert.deepEqual(readJournal(root, "lost")!.steps.map((step) => step.at), [42, 43, 44]);
 });
 
-test("the loop's commit step stages the work and never the project's own state", async (t) => {
+// @anchor stageBesideIgnoredState
+test("each served commit step stages the work beside ignored files under the project's state directories, and exits zero", async (t) => {
   const { root, add } = await repository(t);
-  const worktree = await add("guarded");
-  // What a specialist can do to its own worktree: re-include the two directories the
-  // repository's `info/exclude` keeps out, and fill them.
-  await writeFile(path.join(worktree, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
-  await mkdir(path.join(worktree, ".cross-agent"), { recursive: true });
-  await writeFile(path.join(worktree, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+  // The project as `init` leaves it: a committed `.gitignore` naming both directories, and a
+  // file the branch tracks.
+  await writeFile(path.join(root, "tracked.txt"), "as the branch has it\n");
+  await git(root, "add", ".gitignore", "tracked.txt");
+  await git(root, "commit", "-m", "the project's ignore rules and a tracked file");
+  const worktree = await add("evidence");
+  // What a validation run can leave in a worktree beside the work: its evidence under
+  // `.cross-agent/`, and a tree under the worktree directory, both ignored.
+  await mkdir(path.join(worktree, ".cross-agent", "task-evidence"), { recursive: true });
+  await writeFile(path.join(worktree, ".cross-agent", "task-evidence", "red.log"), "the suite's output\n");
   await mkdir(path.join(worktree, ".worktrees", "nested"), { recursive: true });
   await writeFile(path.join(worktree, ".worktrees", "nested", "tree.txt"), "another task's tree\n");
-  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+  await writeFile(path.join(worktree, "tracked.txt"), "the change the brief asked for\n");
+  await writeFile(path.join(worktree, "new.txt"), "a file the brief asked for\n");
+  const status = (await git(worktree, "status", "--porcelain", "--ignored")).split("\n");
+  for (const directory of [".cross-agent/", ".worktrees/"]) assert.ok(status.includes(`!! ${directory}`), status.join("\n"));
 
-  // The step the loop runs (`modes/solo/SKILL.md`): pathspecs, which `git_mutate` accepts
-  // because none of them is a global option.
-  accepted(await gitMutate(root, {
-    slug: "guarded", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"],
-  }, { waitSeconds: 5 }));
-  const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
-  assert.deepEqual(staged.sort(), [".gitignore", "work.txt"]);
+  // An exclusion that spells an ignored directory's name makes git list that directory and
+  // exit 1 after staging everything else, which `git_mutate` answers `ok: false`.
+  for (const where of ["dev-team", "dev-team-engine", "launcher"] as const) {
+    await git(worktree, "reset", "-q");
+    assert.equal(accepted(await gitMutate(root, { slug: "evidence", args: servedStaging(where) }, { waitSeconds: 5 })).exitCode, 0, where);
+    const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
+    assert.deepEqual(staged.sort(), ["new.txt", "tracked.txt"], where);
+    assert.equal(await readFile(path.join(worktree, ".cross-agent", "task-evidence", "red.log"), "utf8"), "the suite's output\n", where);
+  }
+});
+
+// @anchor commitStepExcludesState
+test("each dev-team loop's commit step stages the work and never the project's own state, as directories or as plain files", async (t) => {
+  const { root, add } = await repository(t);
+  for (const mode of ["dev-team", "dev-team-engine"] as const) {
+    const slug = `guarded-${mode}`;
+    const worktree = await add(slug);
+    const staged = async () => (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean).sort();
+    // What a specialist can do to its own worktree: re-include the two directories the
+    // repository's `info/exclude` keeps out, and fill them.
+    await writeFile(path.join(worktree, ".gitignore"), "!.cross-agent/\n!.worktrees/\n");
+    await mkdir(path.join(worktree, ".cross-agent"), { recursive: true });
+    await writeFile(path.join(worktree, ".cross-agent", "config.json"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+    await mkdir(path.join(worktree, ".worktrees", "nested"), { recursive: true });
+    await writeFile(path.join(worktree, ".worktrees", "nested", "tree.txt"), "another task's tree\n");
+    await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+
+    // The step the loop runs: pathspecs, which `git_mutate` accepts because none of them is
+    // a global option.
+    accepted(await gitMutate(root, { slug, args: servedStaging(mode) }, { waitSeconds: 5 }));
+    assert.deepEqual(await staged(), [".gitignore", "work.txt"], mode);
+
+    // A plain file of either name, which no rule for a directory ignores: excluding only what
+    // lies below each directory would stage it.
+    await git(worktree, "reset", "-q");
+    await rm(path.join(worktree, ".cross-agent"), { recursive: true });
+    await rm(path.join(worktree, ".worktrees"), { recursive: true });
+    await writeFile(path.join(worktree, ".cross-agent"), '{"engines":{"codex":{"bin":"/tmp/not-codex"}}}');
+    await writeFile(path.join(worktree, ".worktrees"), "another task's tree\n");
+    accepted(await gitMutate(root, { slug, args: servedStaging(mode) }, { waitSeconds: 5 }));
+    assert.deepEqual(await staged(), [".gitignore", "work.txt"], `${mode}, plain files`);
+  }
 });
 
 // @anchor commitRefusesHostConfig
@@ -608,8 +663,7 @@ test("a commit carrying a host's project configuration is refused naming each pa
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
 
   // The loop's step 6, as it is spelled: the `add` is accepted and stages all five.
-  const step6 = ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"];
-  accepted(await gitMutate(root, { slug: "hosted", args: step6 }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "hosted", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
   const staged = (await git(worktree, "diff", "--cached", "--name-only")).split("\n").filter(Boolean);
   assert.deepEqual(staged.sort(), [".claude/settings.json", ".gitignore", ".grok/config.toml", ".mcp.json", "work.txt"]);
   const reason = refusal(await gitMutate(root, { slug: "hosted", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
@@ -622,7 +676,7 @@ test("a commit carrying a host's project configuration is refused naming each pa
   await rm(path.join(worktree, ".grok"), { recursive: true, force: true });
   await rm(path.join(worktree, ".claude"), { recursive: true, force: true });
   await git(worktree, "checkout", "HEAD", "--", ".mcp.json");
-  accepted(await gitMutate(root, { slug: "hosted", args: step6 }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "hosted", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
   const committed = accepted(await gitMutate(root, { slug: "hosted", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
   assert.equal(committed.journal.step, "committed");
   assert.deepEqual((await git(worktree, "ls-files")).split("\n").filter(Boolean).sort(), [".gitignore", ".mcp.json", "work.txt"]);
@@ -747,7 +801,7 @@ test("under core.ignoreStat a host file git marked assume-unchanged blocks a com
 
   // The loop's step 6 with the host file untouched: the mark alone carries nothing.
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
-  accepted(await gitMutate(root, { slug: "ignorestat", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"] }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "ignorestat", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
   assert.equal(accepted(await gitMutate(root, { slug: "ignorestat", args: ["commit", "-m", "work"] }, { waitSeconds: 5 })).journal.step, "committed");
 
   // The same file changed, which `git status` does not show under this setting: refused, named.
@@ -774,7 +828,7 @@ test("an unchanged marked host-configuration symlink is refused because the whol
 
   // The escalation closes the link class by rule: even unchanged links block unrelated work.
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
-  accepted(await gitMutate(root, { slug: "linked", args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"] }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "linked", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
   const unchanged = refusal(await gitMutate(root, { slug: "linked", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
   assert.match(unchanged, /\.mcp\.json.*symbolic link/);
   assert.match(unchanged, /replace.*regular files/i);
@@ -836,11 +890,10 @@ test("host-configuration links are refused at commit even with unchanged in-repo
   await git(root, "add", "servers.json", ".mcp.json", "config/claude.json", ".claude/settings.json");
   await git(root, "commit", "-m", "the project's servers and settings, through links");
   const worktree = await add("referent");
-  const step6 = ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"];
 
   // Unchanged referents used to allow the work; the regular-files rule refuses the links.
   await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
-  accepted(await gitMutate(root, { slug: "referent", args: step6 }, { waitSeconds: 5 }));
+  accepted(await gitMutate(root, { slug: "referent", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
   const unchanged = refusal(await gitMutate(root, { slug: "referent", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
   for (const link of [".mcp.json", ".claude/settings.json"]) assert.ok(unchanged.includes(`${link} (symbolic link)`), unchanged);
 

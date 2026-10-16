@@ -2838,11 +2838,19 @@ branch head as the merge resolved them — names any path — the last four
 are a host's project configuration, the next paragraph's — and the refusal lists
 every one (`src/gitroot.ts#smuggled`, `#execute`). Two rules back it
 up: the loop's own commit step is `git_mutate ["add", "-A", "--", ".",
-":(exclude).cross-agent", ":(exclude).worktrees"]`, so the ordinary case never
-stages either directory (`skills/cross-agent/SKILL.md` for a one-shot, with the
-mode's own `git.worktreeDir` in place of the literal, and
+":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)[.]worktrees",
+":(exclude)[.]worktrees/*"]`, so the ordinary case never stages either directory
+(`skills/cross-agent/SKILL.md` for a one-shot, with the mode's own
+`git.worktreeDir`, its first character bracketed, in place of `[.]worktrees`, and
 `modes/dev-team/SKILL.md` step 6; section 7); and `delegate`'s
 check above means a config that did reach the root is still never read as one.
+The commit step excludes each directory as itself and as everything below it, its
+leading `.` written `[.]`, because git treats an exclusion that spells an ignored
+directory's name as naming that directory: it lists it as ignored and exits 1 after
+staging everything else, as it does when the worktree keeps ignored files under
+`.cross-agent/`, while `[.]` matches the same dot without spelling the name, so the
+add exits 0 there and a nonzero exit still means the add failed (git 2.43;
+`tests/gitmutate.test.ts#stageBesideIgnoredState`, `#commitStepExcludesState`).
 
 **Nor does a host's project configuration.** `.claude/` and `.mcp.json` are
 where Claude Code reads a project's settings, hooks and MCP servers, `.codex/`
@@ -4337,8 +4345,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 40,893 bytes under
-`dev-team`, 57,720 under `dev-team-engine` and 4,508 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 41,447 bytes under
+`dev-team`, 58,274 under `dev-team-engine` and 4,508 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

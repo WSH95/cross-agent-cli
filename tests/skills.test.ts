@@ -408,9 +408,10 @@ test("the launcher carries the merge policy for every mode, in the order a one-s
   // The work is committed before anything merges it: a specialist writes no git metadata,
   // so what it left in the worktree is still uncommitted when its task settles.
   assertInOrder(text, [
-    // The launcher is mode-generic, so the second exclusion is the mode's own worktree
-    // directory; only `dev-team`'s own loop may spell `.worktrees`.
-    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude)<git.worktreeDir>"]}',
+    // The launcher is mode-generic, so the last two exclusions are the mode's own worktree
+    // directory with its first character bracketed; only a dev-team loop may spell
+    // `[.]worktrees`.
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)<bracketed git.worktreeDir>", ":(exclude)<bracketed git.worktreeDir>/*"]}',
     'git_mutate {slug, args: ["commit"',
     "project.mergePolicy",
     'run_command {which: "test", where: <worktree path>, slug}',
@@ -565,7 +566,7 @@ test("the dev-team loop runs the ten steps in the order design section 4 gives t
     "delegate {role: \"plan-reviewer\"",
     'git_root {args: ["worktree", "add", "-b", <branch>, <worktree path>, <default>], slug}',
     "delegate {role: \"implementer\"",
-    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)[.]worktrees", ":(exclude)[.]worktrees/*"]}',
     'git_mutate {slug, args: ["commit"',
     "delegate {role: \"code-reviewer\"",
     'git_mutate {slug, args: ["rebase", <default>]}',
@@ -597,7 +598,7 @@ test("the engine loop runs the same ten steps in the same order, asking where th
     "ask {question",
     'git_root {args: ["worktree", "add", "-b", <branch>, <worktree path>, <default>], slug}',
     "delegate {role: \"implementer\"",
-    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    'git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)[.]worktrees", ":(exclude)[.]worktrees/*"]}',
     'git_mutate {slug, args: ["commit"',
     "delegate {role: \"code-reviewer\"",
     'git_mutate {slug, args: ["rebase", <default>]}',
@@ -1429,7 +1430,7 @@ test("both dev-team loops name the merge's two guards where step 9 says what the
 test("both dev-team loops read the staged names before they commit, and skip a commit of nothing", () => {
   for (const mode of teamLoops) {
     const step = flat(sectionOf(loop(mode), "6. Commit what it left"));
-    assertInOrder(step, ['git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}',
+    assertInOrder(step, ['git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)[.]worktrees", ":(exclude)[.]worktrees/*"]}',
       'git_mutate {slug, args: ["diff", "--cached", "--name-only"]}', 'git_mutate {slug, args: ["commit", "-m", <the implementer\'s summary>]}'], mode);
     assert.match(step, /nothing printed is nothing to commit/, mode);
   }

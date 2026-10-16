@@ -148,7 +148,14 @@ The implementer — and the resolver, when step 7 delegates it — wrote no git
 metadata, so its work is uncommitted when the task settles. Commit it yourself, in
 three calls:
 
-`git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude).cross-agent", ":(exclude).worktrees"]}`
+`git_mutate {slug, args: ["add", "-A", "--", ".", ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*", ":(exclude)[.]worktrees", ":(exclude)[.]worktrees/*"]}`
+— each directory is excluded as itself and as everything below it, with its
+leading `.` written `[.]`. git treats an exclusion that spells an ignored
+directory's name as naming that directory: it lists it as ignored and exits 1
+after staging everything else, as it does when the worktree keeps ignored files
+under `.cross-agent/`. `[.]` matches the same dot without spelling the name, so
+the add exits 0 there, and an `ok: false` from it is still this file's
+reconciliation trigger.
 
 `git_mutate {slug, args: ["diff", "--cached", "--name-only"]}` — nothing printed is
 nothing to commit: a round whose every row was rejected leaves the tree as it was;
@@ -158,7 +165,7 @@ reconciliation trigger.
 
 `git_mutate {slug, args: ["commit", "-m", <the implementer's summary>]}`
 
-which journals the `committed` step. The two exclusions are not optional: a
+which journals the `committed` step. The exclusions are not optional: a
 `.gitignore` the specialist wrote in its own worktree outranks the repository's
 own, and step 9 refuses a branch that carries either directory at all, or a
 host's project configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` —

@@ -319,17 +319,25 @@ below is yours there.
 
 1. Commit what it left — the `host` session's commit, since no specialist makes
    one: `git_mutate {slug, args: ["add", "-A", "--", ".",
-   ":(exclude).cross-agent", ":(exclude)<git.worktreeDir>"]}` — the second
-   exclusion is the mode's own worktree directory, `.worktrees` unless
-   `describe_mode` says otherwise — then `git_mutate {slug, args: ["commit",
-   "-m", <message>]}`, with the specialist's own summary as the message. That is
-   the only path that writes a worktree's git metadata, and it
-   journals the `committed` step. The two exclusions are not optional: a
-   `.gitignore` the specialist wrote in its worktree outranks the repository's
-   own, and the project's state is never committed to a task branch — the merge
-   refuses a branch carrying either directory anyway, or a host's project
-   configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` — which the commit
-   above refuses first, naming the path; either refusal costs you the run.
+   ":(exclude)[.]cross-agent", ":(exclude)[.]cross-agent/*",
+   ":(exclude)<bracketed git.worktreeDir>", ":(exclude)<bracketed git.worktreeDir>/*"]}`
+   — the last two are the mode's own worktree directory with its first character
+   in brackets, `[.]worktrees` unless `describe_mode` says otherwise — then
+   `git_mutate {slug, args: ["commit", "-m", <message>]}`, with the specialist's
+   own summary as the message. That is the only path that writes a worktree's git
+   metadata, and it journals the `committed` step. The exclusions are not
+   optional, nor are their brackets: a `.gitignore` the specialist wrote in its
+   worktree outranks the repository's own, and the project's state is never
+   committed to a task branch — the merge refuses a branch carrying either
+   directory anyway, or a host's project configuration — `.claude/`, `.codex/`,
+   `.grok/`, `.mcp.json` — which the commit above refuses first, naming the path;
+   either refusal costs you the run. Each directory is excluded as itself and as
+   everything below it, with its first character bracketed, because git treats an
+   exclusion that spells an ignored directory's name as naming that directory: it
+   lists it as ignored and exits 1 after staging everything else, as it does when
+   the worktree keeps ignored files under `.cross-agent/`. The brackets match the
+   same character without spelling the name, so the add exits 0 there, and an
+   `ok: false` from the add is still a failure you reconcile.
 2. Then apply the project's `project.mergePolicy`. You apply it; nobody merges
    by hand under `auto`.
 
