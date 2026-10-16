@@ -4145,20 +4145,26 @@ tool-bearing item is one with a field naming a tool, its arguments or a command,
 by any spelling, on it or one object below (`#rolloutOutputs`). A code-mode
 script is tokenized as JavaScript: a direct `exec_command` or `write_stdin` call
 must give one object argument with a literal `cmd` or `chars`, without spread or
-computed keys. An independent inventory counts
-command-tool and delegate names in raw source and decoded token text; any excess
-over direct calls followed answers `?`, including names hidden by tokenization —
-but on the lead row, whose own tool `delegate` is, a delegate name the reader cannot
-follow is no doubt, while a command tool's, or the `tools` object by a computed name,
-still is (`tests/e2e-verify.test.ts#leadDelegateNames`). On any row, a delegate name inside
-the literal `cmd` of a followed `exec_command` that only reads — every simple command `cat`,
-`grep`, `echo` or `sed`'s print form, with no assignment before it, no substitution, function
-or arithmetic, and no `$` or backtick but the recorded `echo "exit $?"` — is a file's name,
-as in `src/delegate.ts`, and not counted; and a regular expression of literal alternatives
-that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern, though the
-names in it still count (`tools/e2e-verify.mjs#toolDiscoveryPatterns`,
+computed keys. An independent inventory counts command-tool names in raw source and
+decoded token text; any excess over the direct calls followed answers `?`, including
+names hidden by tokenization. A `delegate` name the reader cannot follow to a call — a
+mention, an alias, a file's name in a command — is no doubt on any row, because it is no
+evidence of a delegation. A specialist's process reaches no server that serves
+`delegate`: a server started under a specialist resolves to the specialist row
+(`src/authority.ts#resolveAuthority`) and neither lists nor serves a tool outside its row
+(`src/server.ts#createServer`), and `delegate`'s rows are the operator's and the lead's
+(`#projectTools`); a Codex specialist starts with no MCP server mounted at all
+(`src/engines/codex.ts#codex`, `docs/probes.md#codexPluginLeak`). A delegation that did
+run leaves a ledger record, and in the built-in teams a specialist runs at the depth cap,
+so its child's record fails row 6. An engine launched from a shell leaves no record, so
+launch judging stays as strict as it is. A delegate call the reader follows is still an
+offence off the lead row, whose own tool `delegate` is, and a command tool's name it
+cannot follow, or the `tools` object by a computed name, still answers `?` on every row
+(`tests/e2e-verify.test.ts#delegateMentions`, `#leadDelegateNames`). A regular expression of literal alternatives that
+`ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern, though the
+command-tool names in it still count (`tools/e2e-verify.mjs#toolDiscoveryPatterns`,
 `tests/e2e-verify.test.ts#scriptDataNames`).
-Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
+Aliases of a command tool, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
 `#codexScriptFailClosed`, `#scriptNameAccounting`). A script that reaches a value
@@ -5544,7 +5550,8 @@ binding, and the project follows its own path (Context).
   `main`; `.cross-agent/tasks/` holds one record per delegation with native
   logs; the journal shows every step; no record's `depth` exceeds the cap the
   server ran under, the lower of the mode's placement cap and `limits.maxDepth`;
-  the specialists' transcripts show no `delegate` and no engine launch. The eight are checked by `tools/e2e-verify.mjs`, which reads the
+  no specialist transcript shows a `delegate` call or an engine launch, read from what it
+  called rather than what it mentions. The eight are checked by `tools/e2e-verify.mjs`, which reads the
   project and its ledger and prints `pass`, `FAIL` or `?` — evidence missing is
   not evidence of a pass — so every host's run is judged the same way rather
   than by whatever a report greps that day. Its first two rows read the project's

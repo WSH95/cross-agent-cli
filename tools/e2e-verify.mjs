@@ -68,9 +68,6 @@ const quietTools = new Set(["apply_patch", "clock__curr_time", "create_goal", "g
   "image_gen__imagegen", "list_mcp_resource_templates", "list_mcp_resources", "read_mcp_resource",
   "request_plugin_install", "view_image", "web__run"]);
 let rolloutFiles;
-// The launcher judge with no project's bins, built on first use: the script reader asks it whether
-// a command's literal only reads (`readsOnly`) in both modes, so verdicts and `--read-rollout` agree.
-let plainLauncher;
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const args = parse(process.argv.slice(2));
 if (Object.hasOwn(args, "read-rollout")) await readRollout(args);
@@ -268,6 +265,17 @@ if (journals.length === 0) {
 // no run recorded, and Grok's `search_replace` or `web_fetch` in any shape but the one each
 // was recorded in (`grokShapes`) are `?`, whatever their input holds.
 //
+// A `delegate` name the reader cannot follow to a call — a mention, an alias, a file's name in
+// a command — is no doubt on any row, because it is no evidence of a delegation. A specialist's
+// process reaches no server that serves `delegate`: a server started under a specialist
+// resolves to the specialist row (`src/authority.ts#resolveAuthority`) and neither lists nor
+// serves a tool outside its row (`src/server.ts#createServer`), and `delegate`'s rows are the
+// operator's and the lead's (`#projectTools`); a Codex specialist starts with no MCP server
+// mounted at all (`src/engines/codex.ts#codex`). A delegation that did run leaves a ledger
+// record, and in the built-in teams a specialist runs at the depth cap, so its child's record
+// fails row 6. An engine launched from a shell leaves no record, so launch judging stays as
+// strict as it is.
+//
 // Codex writes an MCP call as an item of type `mcp_tool_call` — `item.started`, then
 // `item.completed` — whose `server` and `tool` are separate fields, `tool` being this
 // server's own name for it (`list_roles`, `delegate`); I1's tracked Codex row recorded it
@@ -452,14 +460,13 @@ const launch = launcherFor(config);
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
 // code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
 // direct call must give one object argument with a literal cmd/chars and no spread or
-// computed key. The raw source and decoded token text are also inventoried: more
-// occurrences of a command tool or delegate name than direct calls followed is `?`, even
-// in comments or regexes, whose escapes are decoded for it — but on the lead row, which
-// holds `delegate`, a delegate name the reader cannot follow is no doubt, while a command
-// tool's still is. On any row a delegate name inside a followed `exec_command`'s literal that
-// only reads (`readsOnly`) is a file's name and not counted, and a regular expression of literal
-// alternatives that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern,
-// its names still counted (`toolDiscoveryPatterns`). Aliases, eval/Function/import, the
+// computed key. The raw source and decoded token text are also inventoried for command-tool
+// names alone: more occurrences of one than direct calls followed is `?`, even in comments or
+// regexes, whose escapes are decoded for it. A `delegate` call the reader follows is still a
+// call, and an offence off the lead row; a `delegate` name it cannot follow is no doubt, as
+// above. A regular expression of literal alternatives that `ALL_TOOLS.filter(…)` tests with
+// `.test(` is a tool discovery, no pattern, though the command-tool names in it still count
+// (`toolDiscoveryPatterns`). Aliases of a command tool, eval/Function/import, the
 // global object reached through `globalThis`, `this`, `self`, `global` or `window` followed,
 // comments aside, by `.`, `?.` or `[`, a member named `constructor`, legacy octal escapes,
 // role-dependent slashes the reader cannot classify, and asides naming launches also answer
@@ -582,7 +589,6 @@ for (const record of run) {
   const asides = [];
   const patterns = [];
   const stdin = [];
-  const unfollowed = [];
   if (record.engine === "codex") {
     const files = typeof record.sessionId === "string" && record.sessionId !== "" ? rolloutsOf(record.sessionId) : [];
     if (files.length === 0) {
@@ -598,7 +604,6 @@ for (const record of run) {
       asides.push(...read.asides);
       patterns.push(...read.patterns);
       stdin.push(...read.stdin);
-      unfollowed.push(...read.unfollowed);
       shown.lines.push(...read.lines);
       shown.argvs.push(...read.argvs);
       gaps.push(...read.unreadable.map((entry) => `its rollout holds ${entry}`));
@@ -638,11 +643,6 @@ for (const record of run) {
       .map((judged) => `its rollout's script names a launch it does not run, which cannot be told from one it does (${judged.at})`),
     ...patterns.filter((text) => launch.names(text) || launch.judge(text).verdict === "launch")
       .map((text) => `its rollout's script holds a regular expression naming an engine, which cannot be told from a command (${text.slice(0, 80)})`),
-    // A `delegate` the reader cannot see called is the lead row's own tool, so on that row its
-    // name is no doubt; a command tool's name it cannot follow stays one on every row.
-    ...(lead ? [] : asides.filter((text) => isDelegate(text)).map((text) =>
-      `its rollout's script names ${text} in a string, which could be a call this reader cannot see`)),
-    ...(lead ? [] : unfollowed.map((reason) => `its rollout holds ${reason}`)),
     ...gaps,
     ...(unknownItems.length === 0 ? []
       : [`event${unknownItems.length === 1 ? "" : "s"} this build cannot read (${[...new Set(unknownItems)].join(", ")})`]),
@@ -744,9 +744,6 @@ function git(...argv) {
  * simple command already split into words (an argv an engine recorded); each answers
  * `{verdict, why, at}`: `launch`, `pass`, or `?` with `why` naming what could not be read
  * and `at` the text it was read from. The contract is the header's; the grammar is below.
- * `readsOnly(line)` judges nothing: it says whether a line holds no `$` or backtick but the
- * recorded `echo "exit $?"`, and only `cat`, `grep`, `echo` and `sed`'s print form, which the
- * script reader asks of a command's literal before it takes a delegate name there for a file's.
  *
  * A line is read as bash reads it: simple commands at `|`, `|&`, `||`, `&&`, `;`, `;;`,
  * `&`, newlines, a subshell's `(` and `)`, and a `{` or `}` standing as a command word;
@@ -2415,24 +2412,6 @@ function launcherFor(settings) {
     judge: (text) => judgeText(text, { depth: 0, named: false }),
     judgeArgv: (argv) => (argv.length === 0 ? pass
       : judgeWords(argv.map(asWord), { stdin: null, pipeFrom: null }, { depth: 0, named: argv.some(namesTarget) })),
-    // Whether a command line only reads, so a name in it is a file's and no call (atc-s96.160).
-    // First, with nothing interpreted: no `$` and no backtick anywhere, but in the recorded
-    // `echo "exit $?"`, which covers operands, redirection targets, assignments and heredocs alike.
-    // Then its structure: a line bash would run as written, with no substitution or arithmetic,
-    // whose every simple command is `cat`, `grep`, `echo` or the `sed` print form, with no
-    // assignment before it, no function, no `[[ … ]]` and no `{NAME}` redirection.
-    readsOnly: (text) => {
-      if (/[$`]/.test(String(text).split('echo "exit $?"').join(""))) return false;
-      const list = lexList(String(text), 0, null);
-      if (list.problems.length > 0 || list.nested.length > 0 || list.arithmetic
-        || list.arithTexts.length > 0 || list.indirections.length > 0) return false;
-      return list.commands.length > 0 && list.commands.every((command) => {
-        const [first] = command.words;
-        if (command.funcDef !== undefined || command.arith || command.cond || command.fdVars.length > 0) return false;
-        if (first === undefined || isAssignment(first) || first.expansions) return false;
-        return ["cat", "grep", "echo"].includes(first.value) || (first.value === "sed" && sedPrint(command.words));
-      });
-    },
     names,
     namesTarget,
   };
@@ -2457,9 +2436,7 @@ function rolloutsOf(sessionId) {
  * JSON document on stdout, and exit 0 — before any project is read, and judging nothing.
  * `files` is every rollout `rolloutsOf` finds for the id; `calls`, each tool call the rollout
  * shows, in order (`rolloutCalls`); `unreadable`, what `rolloutCommands` could not read, as a
- * verdict would name it, or that no rollout was found — the `delegate` names it could not
- * follow among them, since this mode judges no row and so spares no lead. A session id and
- * nothing else.
+ * verdict would name it, or that no rollout was found. A session id and nothing else.
  */
 async function readRollout(options) {
   const sessionId = options["read-rollout"];
@@ -2472,7 +2449,7 @@ async function readRollout(options) {
   for (const file of files) {
     report.calls.push(...rolloutCalls(file));
     const read = rolloutCommands(file);
-    report.unreadable.push(...read.unreadable, ...read.unfollowed);
+    report.unreadable.push(...read.unreadable);
   }
   // A report longer than a pipe's buffer is still being written when `write` returns, and an
   // exit then would cut it short; the module waits here, so nothing after this line runs.
@@ -2482,8 +2459,7 @@ async function readRollout(options) {
 
 /**
  * Each tool call a rollout file shows, by its 1-based line: a code-mode `exec` with the
- * commands `scriptRead` followed, decoded and in order, its `computed` reasons and then its
- * `unfollowed` ones, under `computed` as one list, whether its
+ * commands `scriptRead` followed, decoded and in order, its `computed` reasons, whether its
  * script is the one shape whose printed exit is its command's own (`direct`, `directScript`),
  * and the one `custom_tool_call_output` of its `call_id` read for an `{exit_code, output}`
  * JSON — `output: null` with a `reason` when there is no output, more than one, or no single
@@ -2528,8 +2504,8 @@ function rolloutCalls(file) {
     }
     if (payload.name !== "exec") return { ...call, kind: "custom_tool_call", name: payload.name ?? null };
     const script = typeof payload.input === "string" ? scriptRead(payload.input)
-      : { commands: [], computed: [], unfollowed: [], error: "exec input is not a script string" };
-    const read = { ...call, kind: "exec", commands: script.commands, computed: [...script.computed, ...script.unfollowed],
+      : { commands: [], computed: [], error: "exec input is not a script string" };
+    const read = { ...call, kind: "exec", commands: script.commands, computed: script.computed,
       direct: typeof payload.input === "string" && directScript(payload.input), ...(script.error === undefined ? {} : { error: script.error }) };
     const answers = typeof payload.call_id === "string" ? outputs.get(payload.call_id) ?? [] : [];
     const paired = typeof payload.call_id !== "string" ? { reason: "the call has no call_id" }
@@ -2612,13 +2588,12 @@ function rolloutShows(shown, command) {
  * like the call. Any other tool-call entry or item with a field naming a tool, its
  * arguments or a command, a line that is not JSON, a script that does not read and a
  * command a script computes are named in `unreadable`, because each could be the one this
- * scan looks for; a `delegate` name a script holds and the reader cannot follow is named in
- * `unfollowed`, which the scan sets aside on the lead row alone.
+ * scan looks for.
  * No verdict reads a call's result: an attempt counts whether it ran, failed or was
  * refused, and the refused ones are the ones `--json` leaves out (A6).
  */
 function rolloutCommands(file) {
-  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [], unfollowed: [] };
+  const read = { lines: [], argvs: [], calls: [], stdin: [], asides: [], patterns: [], unreadable: [] };
   let text;
   try { text = readFileSync(file, "utf8"); } catch (error) { read.unreadable.push(`an unreadable file (${error.code ?? error.message})`); return read; }
   const unclassified = (what) => read.unreadable.push(`a tool call this reader does not classify (${what})`);
@@ -2660,7 +2635,6 @@ function rolloutCommands(file) {
       read.asides.push(...script.asides);
       read.patterns.push(...script.patterns);
       read.unreadable.push(...script.computed);
-      read.unfollowed.push(...script.unfollowed);
     } else if (entry?.type === "response_item" && type === "function_call") {
       if (name.startsWith("mcp__")) { read.calls.push(name); continue; }
       if (quietTools.has(name)) continue;
@@ -2772,38 +2746,33 @@ function codexOwnCall(payload) {
  * `tools["NAME"](` — to `exec_command`, `write_stdin` or a `delegate`: the literal the one
  * object-literal argument of an `exec_command` gives `cmd`, or of a `write_stdin` gives
  * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
- * `delegate` called is a call. Every other reference to those tools, `tools` used other than
- * by a name, `eval`, `Function`, `require`, `import`, a `globalThis`, `this`, `self`,
+ * `delegate` called is a call. Every other reference to a command tool, `tools` used other
+ * than by a name, `eval`, `Function`, `require`, `import`, a `globalThis`, `this`, `self`,
  * `global` or `window` that is no property and is followed, comments aside, by `.`, `?.` or
- * `[`, and a property named `constructor` go in `computed`, as does any excess
- * of raw/decoded tool-name occurrences over the direct calls followed — except where the name
- * is a `delegate`'s, or a string holds one and no command tool's, which go in `unfollowed`,
- * because on the lead row a `delegate` it cannot see called is no offence. The scan
- * answers both with `?`, `unfollowed` on any other row alone; every other string, template
- * text and comment is an aside, and every
- * regular expression a pattern, which the scan judges as well, because a launch written
- * there cannot be told from one the script assembles and runs. Two are set aside
- * (atc-s96.160, `tests/e2e-verify.test.ts#scriptDataNames`): a delegate name inside a followed
- * `exec_command`'s literal that only reads (`readsOnly`), which names a file, is not counted,
- * the larger of its count in the literal's source and in its text; and a tool discovery's
- * pattern (`toolDiscoveryPatterns`) is no pattern, though the names in it are still counted.
+ * `[`, and a property named `constructor` go in `computed`, as does any excess of raw/decoded
+ * command-tool name occurrences over the direct calls followed. A `delegate` name the reader
+ * cannot follow to a call — in a string, a comment, a pattern, an alias or a command's
+ * literal — is counted nowhere and goes nowhere, because it is no evidence of a delegation
+ * (row 8, `tests/e2e-verify.test.ts#delegateMentions`). Every string, template text and
+ * comment not taken as a command is an aside, and every regular expression a pattern, which
+ * the scan judges as well, because a launch written there cannot be told from one the script
+ * assembles and runs; a tool discovery's pattern (`toolDiscoveryPatterns`, atc-s96.160) is no
+ * pattern, though the command-tool names in it are still counted.
  */
 function scriptRead(source) {
-  const read = { commands: [], stdin: [], calls: [], computed: [], unfollowed: [], asides: [], patterns: [] };
-  // A reason about a `delegate` name goes where the lead row can set it aside.
-  const doubt = (name, reason) => (isDelegate(name) ? read.unfollowed : read.computed).push(reason);
+  const read = { commands: [], stdin: [], calls: [], computed: [], asides: [], patterns: [] };
+  // A `delegate` name the reader cannot follow is no doubt (row 8).
+  const doubt = (name, reason) => { if (!isDelegate(name)) read.computed.push(reason); };
   let tokens;
   try { tokens = scriptTokens(source); } catch (error) { return { ...read, error: error.message }; }
   const keys = new Map([["exec_command", "cmd"], ["write_stdin", "chars"]]);
   const taken = new Set();
-  // The literals followed `exec_command` calls give as their `cmd`.
-  const commandLiterals = new Set();
   // Independent of token roles: a slash or another lexical mistake must not hide a
   // command-tool reference. Decode token text as well, counting each source occurrence
   // once (a quoted member name occurs in both the raw source and its decoded token).
   const toolCounts = (text) => {
     const counts = new Map();
-    for (const [name] of text.matchAll(/(?<![\w$])(?:exec_command|write_stdin|[\w$]+__delegate|delegate)(?![\w$])/g)) {
+    for (const [name] of text.matchAll(/(?<![\w$])(?:exec_command|write_stdin)(?![\w$])/g)) {
       counts.set(name, (counts.get(name) ?? 0) + 1);
     }
     return counts;
@@ -2863,44 +2832,26 @@ function scriptRead(source) {
       if (token.kind === "string" && !member) { doubt(name, `a string naming ${name}`); return; }
       const open = member ? k + 2 : k + 1;
       if (list[open]?.text !== "(") { doubt(name, `${name} used other than in a direct call`); return; }
-      if (isDelegate(name)) { follow(name); read.calls.push(name); return; }
+      if (isDelegate(name)) { read.calls.push(name); return; }
       const argument = callArgument(list, open + 1, keys.get(name));
       if (argument === null) {
         read.computed.push(`${name === "exec_command" ? "an" : "a"} ${name} call whose ${keys.get(name)} is not a literal in its one object argument`);
         return;
       }
       taken.add(argument);
-      if (name === "exec_command") commandLiterals.add(argument);
       follow(name);
       (name === "write_stdin" ? read.stdin : read.commands).push(argument.kind === "string" ? argument.value : argument.parts[0]);
     });
   };
   visit(tokens);
-  // A delegate name inside a command literal that only reads is a file's name — `src/delegate.ts`
-  // — and no call: the larger of its count in the literal's source and in its decoded text is set
-  // aside (atc-s96.160). Any other literal's names stay counted, and the command is judged anyway.
-  for (const literal of commandLiterals) {
-    const text = literal.kind === "string" ? literal.value : literal.parts[0];
-    if (!(plainLauncher ??= launcherFor({})).readsOnly(text)) continue;
-    const raw = toolCounts(source.slice(literal.start, literal.end));
-    const decoded = toolCounts(text);
-    for (const name of new Set([...raw.keys(), ...decoded.keys()])) {
-      if (!isDelegate(name)) continue;
-      named.set(name, Math.max(0, (named.get(name) ?? 0) - Math.max(raw.get(name) ?? 0, decoded.get(name) ?? 0)));
-    }
-  }
   const discovery = toolDiscoveryPatterns(tokens);
   // A string that holds a command tool's name could be code the script evaluates later.
   const commandText = /\b(?:exec_command|write_stdin)\b/;
-  const delegateText = /__delegate\b/;
   const aside = (list) => {
     for (const token of list) {
       if (taken.has(token)) continue;
       const text = token.kind === "string" ? token.value : token.kind === "template" ? token.parts.join(" ") : "";
-      if (!keys.has(text) && !isDelegate(text)) {
-        if (commandText.test(text)) read.computed.push("a string holding a command tool's name");
-        else if (delegateText.test(text)) read.unfollowed.push("a string holding a delegate tool's name");
-      }
+      if (!keys.has(text) && !isDelegate(text) && commandText.test(text)) read.computed.push("a string holding a command tool's name");
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
       else if (token.kind === "regex" && !discovery.has(token)) {
@@ -2923,7 +2874,8 @@ function scriptRead(source) {
  * inside `ALL_TOOLS.filter(…)`, `ALL_TOOLS` no property and the `)` its own by bracket depth, each
  * regular expression that is the receiver of `.test(` and whose text is literal alternatives,
  * `name|name|…` of word characters and hyphens. Such a pattern selects names from a list and runs
- * nothing, so it is no pattern the scan judges, though the inventory still counts the names in it.
+ * nothing, so it is no pattern the scan judges, though the inventory still counts the command-tool
+ * names in it.
  * Only the script's own top-level tokens are read; any other pattern stays one.
  */
 function toolDiscoveryPatterns(tokens) {

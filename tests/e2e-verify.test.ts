@@ -532,8 +532,8 @@ test("a code-mode script is read as JavaScript: an escaped launch fails, and one
     // A script that does not lex, and a command the script computes.
     ['await tools.exec_command({cmd: "claude -p hi});', /does not read as JavaScript/],
     ["const tool = ['cla', 'ude'].join('');\nawait tools.exec_command({cmd: tool + ' -p hi'});", /exec_command call whose cmd is not a literal/],
-    // This server's `delegate` named where no call of it can be seen.
-    ["const name = 'mcp__cross_agent__delegate';\nawait tools[name]({role: 'implementer', brief: 'x'});", /names mcp__cross_agent__delegate in a string/],
+    // A tool reached by a computed name.
+    ["const name = 'mcp__cross_agent__delegate';\nawait tools[name]({role: 'implementer', brief: 'x'});", /the tools object used other than by a tool's name/],
     // Keystrokes naming an engine, written to a process whose program the rollout does not say.
     ["await tools.write_stdin({session_id: 7, chars: \"import subprocess; subprocess.run(['claude'])\\n\"});", /which program reads them/],
   ] as const) {
@@ -559,9 +559,9 @@ test("a code-mode script is read as JavaScript: an escaped launch fails, and one
 
 // @anchor codexScriptFailClosed
 test("a script passes only when every call it makes to a command tool is one this reader can follow", async (t) => {
-  // `pass` needs every `exec_command`, `write_stdin` and `delegate` the script names to be a
-  // direct call whose one argument is an object literal with a literal `cmd` or `chars` and
-  // no spread or computed key. Anything else — an alias, `.call`, `?.(`, `eval`, `Function`,
+  // `pass` needs every `exec_command` and `write_stdin` the script names to be a direct call
+  // whose one argument is an object literal with a literal `cmd` or `chars` and no spread or
+  // computed key. Anything else — an alias, `.call`, `?.(`, `eval`, `Function`,
   // `import(`, a legacy octal escape, a `/` this reader cannot tell for a division or a
   // regular expression, a regular expression that names an engine — is `?` (6b-R2-5).
   const log = codexLog("/bin/bash -lc 'ls'");
@@ -583,7 +583,6 @@ test("a script passes only when every call it makes to a command tool is one thi
     "const run = tools.exec_command;\nawait run({cmd: \"ls\"});",
     'await tools.exec_command.call(null, {cmd: "ls"});',
     'await tools.exec_command?.({cmd: "ls"});',
-    "const d = tools.mcp__cross_agent__delegate;\nawait d({role: \"implementer\", brief: \"x\"});",
     "const name = \"exec\" + \"_command\";\nawait tools[name]({cmd: \"ls\"});",
     "eval(\"tools.exec_command({cmd: 'ls'})\");",
     'new Function("return 1")();',
@@ -602,6 +601,8 @@ test("a script passes only when every call it makes to a command tool is one thi
     'let i = 0; i++;\nconst half = i / 2;\nawait tools.exec_command({cmd: "ls"});',
     'const r = await tools.exec_command({cmd: "ls"});\nconst n = (r.output.length) / 2;\ntext(String(n));',
     'const r = await tools.exec_command({cmd: "ls"});\nif (r) { text("a"); }\ntext("x".replace(/a/g, "b"));',
+    // An alias of `delegate` is a name the reader cannot follow, which is no doubt.
+    "const d = tools.mcp__cross_agent__delegate;\nawait d({role: \"implementer\", brief: \"x\"});",
   ]) await expect(script, "pass");
 });
 
@@ -1658,7 +1659,7 @@ const scriptNameAccounting = [
   ['let i=0;\ni\n++ /tools.exec_command({cmd:"claude -p hi"})/.lastIndex;', "?"],
   ['const re=/exec_command/; await tools.exec_command({cmd:"ls"});', "?"],
   [String.raw`text("tools.\u0065xec_command"); await tools.exec_command({cmd:"ls"});`, "?"],
-  ['text("delegate");', "?"],
+  ['text("delegate");', "pass"],
   ['// write_stdin\nawait tools.exec_command({cmd:"ls"});', "?"],
   ['await tools["exec_command"]({cmd:"ls"});', "pass"],
   [String.raw`await tools.\u0065xec_command({cmd:"ls"});`, "pass"],
@@ -1999,7 +2000,7 @@ const leadDelegateNames: Array<[string, "pass" | "?" | "FAIL", RegExp?]> = [
   // And an engine launch, which the lead row does not carry.
   ['await tools.exec_command({cmd:"claude -p hi"});', "FAIL"],
 ];
-test("atc-s96.62: on the lead row a delegate name the script reader cannot follow is no doubt, and a command tool's still is", async (t) => {
+test("atc-s96.62: a delegate name the script reader cannot follow is no doubt on the lead row or a specialist's, and a command tool's still is", async (t) => {
   // The lead row holds `delegate`, so a call of it the reader cannot see is no offence there, and
   // a name it cannot follow is no doubt; E2's and E2c's `?` were such names.
   for (const [script, expected, why] of leadDelegateNames) {
@@ -2012,20 +2013,15 @@ test("atc-s96.62: on the lead row a delegate name the script reader cannot follo
     assert.equal(code, { FAIL: 1, pass: 0, "?": 2 }[expected], out);
     if (why !== undefined) assert.match(row(out, scan), why, `${script}\n${out}`);
   }
-  // On a specialist the same scripts are still questions, each named for the delegate name it
-  // holds, and a string holding one is named for that and not for a command tool's.
-  for (const [script, why] of [
-    [e2Discovery, /delegate: 1 occurrences but only 0 direct calls followed/],
-    [delegateString, /its rollout holds a string holding a delegate tool's name/],
-  ] as const) {
+  // On a specialist the same names are no doubt either: it reaches no server that serves
+  // `delegate`, so a name it cannot be seen to call is no evidence of a call.
+  for (const script of [e2Discovery, delegateString]) {
     const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006610";
     const { code, out } = await run(await project(t, { codex: {
       body: codexLog("/bin/bash -lc 'ls'"), sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }]),
     } }));
-    assert.equal(verdict(out, scan), "?", `${script}\n${out}`);
-    assert.match(row(out, scan), why, `${script}\n${out}`);
-    assert.doesNotMatch(row(out, scan), /command tool's name/, `${script}\n${out}`);
-    assert.equal(code, 2, out);
+    assert.equal(verdict(out, scan), "pass", `${script}\n${out}`);
+    assert.equal(code, 0, out);
   }
 });
 
@@ -2046,7 +2042,7 @@ test("atc-s96.62: a record's row names every doubt it holds, each once", async (
   const { code, out } = await run(await project(t, { codex: { body, sessionId, rollout: rolloutOf(sessionId, [
     { cmd: "ls", exit: 0 },
     unclassified("brand_new_tool", "c1"), unclassified("brand_new_tool", "c2"), unclassified("other_new_tool", "c3"),
-    { script: 'text("delegate");' },
+    { script: 'text("exec_command");' },
   ]) } }));
   const line = row(out, scan);
   assert.equal(verdict(out, scan), "?", out);
@@ -2056,9 +2052,8 @@ test("atc-s96.62: a record's row names every doubt it holds, each once", async (
     "function_call other_new_tool",
     "does not show (/bin/bash -lc 'wc -l README.md')",
     "does not show (/bin/bash -lc 'git status --short')",
-    "a string naming delegate",
-    "delegate: 1 occurrences but only 0 direct calls followed",
-    "names delegate in a string",
+    "a string naming exec_command",
+    "exec_command: 1 occurrences but only 0 direct calls followed",
     "this build cannot read (tool_invocation)",
     "1 line in no shape this reads",
   ]) assert.ok(line.includes(doubt), `${doubt}\n${line}`);
@@ -2392,7 +2387,6 @@ const planner166 = {"type":"custom_tool_call","id":"ctc_094e21c4ec6afec2016ad151
 /** A code-mode `exec` call of `input`, and one whose script runs `cmd` through one literal `exec_command` call. */
 const scriptCall = (input: string) => ({ type: "custom_tool_call", status: "completed", call_id: "call_s", name: "exec", input });
 const execOf = (cmd: string) => scriptCall(`await tools.exec_command({cmd: ${JSON.stringify(cmd)}});`);
-const unfollowed = /delegate: \d+ occurrences but only 0 direct calls followed/;
 const enginePattern = /regular expression naming an engine/;
 const scriptDataNames: Array<[Record<string, unknown>, "pass" | "?" | "FAIL", RegExp?]> = [
   [planner17, "pass"],
@@ -2401,24 +2395,24 @@ const scriptDataNames: Array<[Record<string, unknown>, "pass" | "?" | "FAIL", Re
   [planner166, "pass"],
   [execOf("cat src/delegate.ts"), "pass"],
   [execOf('cat src/delegate.ts; echo "exit $?"'), "pass"],
-  // A delegate name in a literal that runs more than a read, holds an expansion bash would read,
-  // or is no command at all: still a name the reader cannot follow.
-  [execOf(`node -e 'require("./launcher.cjs").delegate()'`), "?", unfollowed],
-  [execOf("cat src/delegate.ts | node"), "?", unfollowed],
-  [execOf("grep -n run src/delegate.ts; python3 tools/delegate.py"), "?", unfollowed],
-  [execOf("LD_PRELOAD=./x.so cat src/delegate.ts"), "?", unfollowed],
-  [execOf("cat $(echo src/delegate.ts)"), "?", unfollowed],
-  [execOf(`echo \${delegate:='$(claude -p hi)'}; echo "\${delegate@P}"`), "?", unfollowed],
-  [execOf(`cat src/delegate.ts > \${x:='$(claude -p hi)'}; cat src/delegate.ts > "\${x@P}"`), "?", unfollowed],
-  [execOf(`echo "exit $?"\${x@P}; cat src/delegate.ts`), "?", unfollowed],
-  [execOf("grep -n 'foo$' src/delegate.ts"), "?", unfollowed],
-  // A literal with no `$` the lexer reads and no reader is: a process substitution, a line bash
+  // A delegate name in any literal is no doubt, whatever the literal runs or holds: one that
+  // runs more than a read, holds an expansion bash would read, or is no command at all.
+  [execOf(`node -e 'require("./launcher.cjs").delegate()'`), "pass"],
+  [execOf("cat src/delegate.ts | node"), "pass"],
+  [execOf("grep -n run src/delegate.ts; python3 tools/delegate.py"), "pass"],
+  [execOf("LD_PRELOAD=./x.so cat src/delegate.ts"), "pass"],
+  [execOf("cat $(echo src/delegate.ts)"), "pass"],
+  [execOf(`echo \${delegate:='$(claude -p hi)'}; echo "\${delegate@P}"`), "?", /prompt transformation/],
+  [execOf(`cat src/delegate.ts > \${x:='$(claude -p hi)'}; cat src/delegate.ts > "\${x@P}"`), "?", /prompt transformation/],
+  [execOf(`echo "exit $?"\${x@P}; cat src/delegate.ts`), "?", /prompt transformation/],
+  [execOf("grep -n 'foo$' src/delegate.ts"), "pass"],
+  // So is one with no `$` the lexer reads that is no read: a process substitution, a line bash
   // would refuse, and a `{NAME}` redirection, each beside a reader that names the file.
-  [execOf(`cat <(node -e 'require("./launcher.cjs").delegate()') src/delegate.ts`), "?", unfollowed],
-  [execOf("cat src/delegate.ts 'x"), "?", unfollowed],
-  [execOf("cat src/delegate.ts {fd}>out"), "?", unfollowed],
-  [scriptCall('text("see src/delegate.ts");'), "?", unfollowed],
-  [scriptCall('await tools.write_stdin({session_id: 1, chars: "cat src/delegate.ts\\n"});'), "?", unfollowed],
+  [execOf(`cat <(node -e 'require("./launcher.cjs").delegate()') src/delegate.ts`), "pass"],
+  [execOf("cat src/delegate.ts 'x"), "pass"],
+  [execOf("cat src/delegate.ts {fd}>out"), "pass"],
+  [scriptCall('text("see src/delegate.ts");'), "pass"],
+  [scriptCall('await tools.write_stdin({session_id: 1, chars: "cat src/delegate.ts\\n"});'), "pass"],
   // A pattern naming an engine anywhere but as the literal alternatives `ALL_TOOLS.filter(…)` tests.
   [scriptCall('const re = /cross_agent|cross-agent|read_file/;\ntext(String(re.test("x")));'), "?", enginePattern],
   [scriptCall("text(ALL_TOOLS.filter(x => /claude -p hi/.test(x.name)));"), "?", enginePattern],
@@ -2447,6 +2441,40 @@ test("atc-s96.160: a tool-discovery pattern over ALL_TOOLS and a delegate-named 
   // The rollout reader every verdict uses says the same of line 144's call.
   const id = "01a0f44a-eb7a-7603-ae3a-000000007102";
   const { code, report, err } = await readRolloutOf(t, id, rolloutOf(id, [{ entry: planner144 }]));
+  assert.equal(code, 0, err);
+  assert.deepEqual(report.calls[0].computed, [], JSON.stringify(report.calls[0]));
+  assert.deepEqual(report.unreadable, []);
+});
+
+// @anchor delegateMentions
+// The Codex plan reviewer `86afc771…`'s session rollout, line 50, verbatim: a Python read and two
+// `cat`s, one of a file named `01-planner-delegate.json`, which row 8 answered `?` for on the
+// frozen-candidate retest.
+const reviewer50 = "text(await tools.exec_command({cmd:\"python3 -B -c 'import json; p=\\\".cross-agent/candidate-retest-evidence/dev-team/describe-mode.full.json\\\"; d=json.load(open(p)); print(list(d)); print(list(json.loads(d[\\\"content\\\"][0][\\\"text\\\"])))'; cat .cross-agent/tasks/513019741df1420767fa45a4064b52e7a05e.scratch/role.md; cat .cross-agent/candidate-retest-evidence/dev-team/01-planner-delegate.json; echo \\\"exit $?\\\"\",\"max_output_tokens\":5000}));\n";
+const delegateMentions: Array<[Record<string, unknown>, "pass" | "?" | "FAIL", RegExp?]> = [
+  [scriptCall(reviewer50), "pass"],
+  [execOf("head -n 5 .cross-agent/candidate-retest-evidence/dev-team/01-planner-delegate.json"), "pass"],
+  // A call the reader follows is still a call, by a member's name or a quoted one.
+  [scriptCall('await tools.mcp__cross_agent__delegate({role: "consult", brief: "x"});'), "FAIL", /called mcp__cross_agent__delegate/],
+  [scriptCall('await tools["delegate"]({role: "consult", brief: "x"});'), "FAIL", /called delegate/],
+  // A command tool's name the reader cannot follow is still a doubt.
+  [scriptCall('const re = /exec_command/; await tools.exec_command({cmd: "cat src/delegate.ts"});'), "?", /exec_command: 2 occurrences but only 1 direct calls followed/],
+];
+test("atc-s96.160: a delegate name the reader cannot follow to a call is no doubt on a specialist row, and a call it follows still fails", async (t) => {
+  // A specialist reaches no server that serves `delegate`, and a delegation that did run leaves a
+  // record rows 5 and 6 judge, so a name the reader cannot see called is no evidence of one.
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006614";
+  const misses = await misjudged(delegateMentions.map(([entry, expected, why]) => ({
+    label: String(entry.input), expected, why,
+    project: () => project(t, { reviewer: {
+      engine: "codex", role: "plan-reviewer", body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { entry }]),
+    } }),
+  })));
+  assert.deepEqual(misses, []);
+  // The rollout reader every verdict uses says the same of line 50's call.
+  const id = "01a0f44a-eb7a-7603-ae3a-000000007103";
+  const { code, report, err } = await readRolloutOf(t, id, rolloutOf(id, [{ entry: scriptCall(reviewer50) }]));
   assert.equal(code, 0, err);
   assert.deepEqual(report.calls[0].computed, [], JSON.stringify(report.calls[0]));
   assert.deepEqual(report.unreadable, []);
