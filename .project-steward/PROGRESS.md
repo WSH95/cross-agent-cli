@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T20:02:20Z — codex
+
+Task8 .165 merged33d010e and closed. Narrow ancestor-listing ENOENT repair, three files.
+Actual source RED1279/1265/1/13, GREEN1279/1266/0/13; gate/root1279/1276/0/3. All3 code
+reviews noMajor/no findings; no correction round. Nine tasks depth1/parentnull/exit0;
+all full results,188-tool audit and bounded process checks retained. Cleanup/configs/
+7originals/582 old sample hashes/140 Task7 hashes pass. Historical actor/change stays
+inferential; no shared marker change/watch/race framework. Ten remain: .168 source,
+eight awaiting candidate acceptance, .163. Matrix not started; no new defect or pending
+user decision, push/release/sync.
+
 ### 2026-10-16T19:29:54Z — codex
 
 Task8 .165 plan approved after2→0 Important. Reviewer accepted the isolated mechanism,

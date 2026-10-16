@@ -2,12 +2,12 @@
 
 Run the relevant checks before marking work as verified in `HANDOFF.md`.
 
-Last records-only check: 2026-10-16, Task8 approved-plan checkpoint.
-`git diff --check` passes; citation checker reports 1908 citations, 0 misses,
-0 drifted since 40627f9 and 0 not judged. Final Task7 exact-head/root `npm test`
-passed 1278/1275/0/3 at 773807c. Task8 implementation/RED/GREEN is pending at this
-checkpoint. No extra suite run for records-only changes, new source acceptance,
-native isolation claim or candidate-matrix acceptance is made.
+Last records-only check: 2026-10-16, Task8 closure checkpoint.
+`git diff --check` passes; citation checker reports 1909 citations, 0 misses,
+0 drifted since ad4f916 and 0 not judged. Final Task8 exact-head/root `npm test`
+passed 1279/1276/0/3 at 33d010e. All three code reviews have no findings; source
+acceptance/cleanup/preservation is complete. No extra suite run for records-only
+changes, native isolation claim or candidate-matrix acceptance is made.
 
 | Check | Command | Expected |
 | --- | --- | --- |

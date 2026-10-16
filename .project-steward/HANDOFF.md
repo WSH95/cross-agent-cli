@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T19:29:54Z
+updated_at: 2026-10-16T20:02:20Z
 updated_by: codex
 session_status: active
 branch: main
@@ -8,111 +8,68 @@ branch: main
 
 ## Now
 
-Acceptance campaign atc-s96.163 continues. No user decision or external blocker is pending.
-Task7 (.164/.166/.172) and its records are complete: source602c479 + wrap773807c,
-records40627f9. All three beads are closed. The four primary source tasks and fixture
-follow-ups .170/.171 remain merged as recorded below. Current main is 40627f9 before
-this records checkpoint; source code is unchanged during Task8 planning.
+Acceptance campaign atc-s96.163 continues. No human decision or external blocker is pending.
+Task8 .165 is merged as33d010e and closed. Current main is33d010e before this records
+commit; source was clean/root-only before owned closure/records changes. No task branch,
+worktree or live delegation remains. The four primary source tasks, .170/.171 and
+Task7 .164/.166/.172 remain merged and recorded; Task7 records40627f9 are complete.
 
-Task8 .165 is now implementing in .worktrees/fix-discovery-enoent-20261016 on
-task/fix-discovery-enoent-20261016, created from40627f9. Claude Opus/xhigh implementer
-ef85641d71b5c4b35b54d23b44349a4282d9 is live. It has no Git/bookkeeping authority.
-Local source RED/GREEN have not returned yet; the patch remains uncommitted in that
-worktree. Host will commit/rebase/gate/all3 review/correct/merge/root-test/clean up.
-Use the records commit after this checkpoint as main; it changes no source.
+Task8's narrow change skips only strict-ancestor readdir ENOENT, matching existing lstat
+absence handling. Other listing/git failures and candidate-root validation still refuse.
+The public two-leg regression checks successful main discovery and continued nesting
+refusal; fixture interception/restoration is scoped. Actual source RED1279/1265/1/13,
+GREEN1279/1266/0/13; exact-head and post-merge root npm test1279/1276/0/3 at33d010e.
+Full raw logs, SHA256 and raw skip names/reasons are archived; normalized skip lists
+are byte-identical. Guard opt-ins stayed disabled. Server tails omit individual skips.
 
-Planner0d71dc46 established the isolated ancestor-listing ENOENT mechanism; who created
-or changed historical /tmp/.git remains unknown. The narrow repair treats only ENOENT
-from listing a strict ancestor's .git as absence, as lstat already does. Other read/git
-refusals and candidate-root validation remain. Proposed regression exercises successful
-public locateRepository and continued nesting refusal, using fixture-local interception
-and restoration; no source hooks or shared /tmp/.git changes. Planning diagnostics and
-in-memory fixes are not source-suite RED/GREEN.
+Plan reviews0a2959df and544f7b75 converge2→0 Important. Plannerccd14a76 verified/folded
+all3 findings (ownership/counts/evidence wording), and final003db4a2 optimized once.
+Initial85f67f0 rebased onto records-onlyad4f916 to33d010e before the gate. All3 code
+reviews have no findings and noMajor: Clauded1dc94ad, Codex919f7c9f, Grokd99cc789.
+No correction round or new defect. Nine tasks depth1/parentnull/exit0; all full results
+are retained. The recorded188-tool audit observed no unauthorized project Git writes,
+delegation or real-engine launch. Private diagnostic/suite Git fixtures are test work.
+This is not OS-wide history or frozen0.1.9 plugin-isolation proof.
 
-Plan reviews0a2959df (2Important/1Minor) then544f7b75 (no findings) converge2→0.
-Plannerccd14a76 verified/folded commit ownership, current counts/skips and evidence
-wording, and corrected an abbreviated hash typo; all seven full original digests remain.
-Final planner003db4a2 verified no findings and optimized wording once, without scope
-change or a new diagnostic. No further plan review. Approved full plan is
-task8-plan-approved.md/.json; active acceptance task8-acceptance.md. Expected local
-RED1279/1265/1/13, localGREEN1279/1266/0/13, hostgate/root1279/1276/0/3; report actual
-counts, raw skip identities/reasons and TMPDIR log paths/hashes. Never set probe opt-ins.
-Three edit files only: src/worktree.ts, tests/worktree.test.ts, docs/design.md.
-Host owns all Git operations and rechecks the seven original evidence hashes at the end.
+Exact task-spec/worktree-argument process inspection found no matches/unreadable entries,
+sent no signals, and excludes generic TMPDIR children/suite parents. Existing teardown
+remains primary. Owned prototype/diagnostic directories are absent. No shared real
+/tmp/.git was changed. Historical actor/change remains inference; wider timing windows,
+ENOTDIR and junk-ancestor refusals stay explicit limits, not a new race/watch framework.
+Both configs, seven original failure artifacts, all582 old sample hashes and140 Task7
+evidence hashes match. Sample remains clean/root-only maina9b90d4,139-test baseline.
 
-Task8's original event/actor and wider extreme timing windows stay stated unknowns/limits,
-not reasons for a host watch, stress campaign or new race framework. No new defect was
-confirmed by plan review. .165 stays open until full source acceptance. .168 follows,
-then the frozen candidate matrix. Eleven campaign beads remain unclosed.
+Ten campaign beads remain: .168 needs source work; .155/.156/.157/.159/.160/.161/.162/.169
+have merged fixes pending candidate acceptance; .163 is umbrella. .165 is closed alongside
+.164/.166/.172/.170/.171/.167. Task9 prepared acceptance is task9-acceptance-prepared.md.
+Verify .168's ignored-evidence staging refusal with this Git version in a disposable
+fixture, then smallest coherent procedure fix with both exclusions/guards/errors intact.
+Preserve originals and unrelated logs; no blanket partial-add-success or silent retry.
+One initial Conventional Commit plus any served correction commits; host owns project
+Git metadata. Keep main-flow scope, no new machinery. Complete the full dev-team loop.
 
-A preparatory native setup check could not initialize Codex SQLite inside workspace
-sandbox; the supported check outside it passed and selects cross-agent@agent-plugins0.1.9.
-Only read-only inventory/check operations ran; no plugin switch or project config change.
-Sandbox warning/failed and successful captures are retained separately; this is no product
-defect or automatic approval rejection. The new candidate matrix has not started.
+Then freeze/install temporary candidate and open fresh saved-project chats: dev-team
+slug_rotate; six solo cases Claude Opus/Codex Sol/Grok4.7 at default effort; Claude-led
+slug_shortest_first; Codex-led slug_unique_reverse. Templates and six reference examples
+are in campaign evidence. Require live mode/roster/project config, scripted mailbox input,
+full verbatim lead reports, six scoped eight-check passes and independent depth/ownership/
+lead-tools/specialist-local-tests/plugin/review/cleanup audits. Use verifier --slug.
+The candidate matrix has not started. Restore sample config and managed connection
+afterwards; do not add tracker/Steward configuration to sample.
 
-Task7 closure evidence follows (state at that dated checkpoint):
+Development remains frozen installed0.1.9, source dev-team/main/npm test/no setup/auto/
+depth1 with exact configured bindings. Never hot-load checkout. The .161 user-accepted
+top-level skills.list/read availability and backend-receipt unknowns remain; no final
+E2E check is waived. Task4 standalone mount proved specialist-row transport, not actual
+lead ownership. Note any Claude saved-MCP-answer/Read occurrence in final engine run.
+The preparatory supported setup check passed outside workspace sandbox after SQLite
+startup failed inside it. Owner still cross-agent@agent-plugins0.1.9, no plugin switch
+or project config change. Captures are distinct from product defects.
 
-Task 7 added bounded uncertainty for literal Bash @P transformations independently of
-engine-name matching, and for six named global-object/member-constructor routes.
-Ordinary data controls and actual recorded-offence FAIL precedence remain. It is a verifier
-change, not a general Bash/JavaScript evaluator or a claim of native aliased execution.
-General dynamic routes and other Bash versions remain explicit limits. The tested
-nonliteral-operator forms are bad substitutions on Bash 5.2.21, per seat 1's marker evidence.
-
-Plan review converged 2 → 1 → 0 Important, then the planner finalized once. Implementer
-a1ba793f recorded actual synthetic RED: 1278/1263/2/13 (11 A and 7 B mismatches), then
-GREEN and final GREEN 1278/1265/0/13. All three R1 reviews said noMajor, with three distinct
-Minor findings. Resumed implementer 6c8f4cb8 verified all three before fixing them.
-Wrap RED: 1278/1264/1/13, two route misses and ineffective uniqueness control in Test B;
-Test A's new heads already passed (coverage only). Wrap GREEN: 1278/1265/0/13.
-Final exact-head gate and root npm test: 1278/1275/0/3, exit 0. Full raw local logs and
-hashes are archived; server gates retain their returned tail, which omits individual skips.
-
-All three fresh reviews cover 773807c: Claude28b32309, Codex1987e6b8, Grok27151295,
-each noMajor; all prior code findings addressed. Claude's sole remaining Minor N1 is a
-reported process departure: the mandatory wrap made a second Conventional Commit, whose
-shorter summary omits bead IDs; the first commit and records carry them. History was
-retained under the served per-round commit/ff-only loop; no source repair or squash.
-A host status read after successful cleanup was refused because it wrongly included slug.
-Immediate reconciliation confirmed clean root-only main, no task branches/tasks/rebase.
-Both host notes are retained; no product defect or automatic approval rejection occurred.
-
-All 15 delegations finished depth1/parentnull/exit0, and all 15 full results are archived.
-Inventory retains 409 tool invocations. The bounded host audit reviewed short commands,
-long-command headers and process/VM call sites, edit paths and role reports. It observed
-no unauthorized delegation or real-engine launch; it is not dynamic proof for every
-inline body, OS-wide history or plugin isolation under frozen development0.1.9.
-Exact task-spec/worktree-argument process inspection found no matches, no unreadable
-entries and sent no signals; generic TMPDIR children are outside that scope and existing
-test teardown remains primary. Source/sample config hashes and all 582 old sample hashes
-match. Sample remains clean/root-only main a9b90d4 with 139 unchanged baseline tests.
-
-Eleven campaign beads remain unclosed: .165 and .168 need source investigation/fix;
-.155/.156/.157/.159/.160/.161/.162/.169 have merged fixes pending candidate acceptance;
-.163 is the umbrella. Prepared task8/task9 briefs remain in campaign evidence.
-For .165 establish the observed ENOENT mechanism before prescribing a fix; do not touch
-shared real /tmp/.git. For .168 preserve staging exclusions, guards and reconciliation.
-User main-flow limits apply: simple fixes or stated rare limits, no new evaluator,
-race framework or proof machinery. Planner/implementer verifies review findings.
-
-After source follow-ups settle, freeze/install a temporary candidate and open fresh saved-
-project Codex chats for dev-team slug_rotate; six solo cases (Claude Opus, Codex Sol, Grok4.7,
-default effort); Claude-led slug_shortest_first; Codex-led slug_unique_reverse. Require
-live mode/roster, scripted mailbox answers, complete verbatim lead reports, six scoped
-eight-check verifier passes and independent ownership/tool/plugin/local-test/review/cleanup
-audits. Verifier selector is --slug. Matrix has not started. Keep tracker/Steward out of
-sample; parent owns source bookkeeping. Restore original sample config and managed
-cross-agent@agent-plugins connection afterward. No push, release or remote sync.
-
-Use frozen installed0.1.9, source dev-team/main/npm test/no setup/auto/depth1 and exact
-configured bindings throughout development; never hot-load this checkout. .161's accepted
-top-level skills.list/read availability and backend-receipt unknowns remain; no final E2E
-check is waived. Task4 standalone mount is specialist-row transport, not actual lead
-ownership. Note any saved-MCP-answer/Claude-Read occurrence during Claude-led E2E.
-Evidence: .cross-agent/fix-acceptance-evidence/task7-* and campaign.json, native tasks/,
-journal fix-verifier-execution-coverage-20261016. Steward CLI is unavailable; records are
-manual and other-session runtime ownership remains untouched.
+Evidence .cross-agent/fix-acceptance-evidence/task8-* (including originals manifest,
+results/native inventory/preservation/journal), task7-*, campaign.json; native tasks/
+and journalfix-discovery-enoent-20261016. Steward CLI unavailable; manual records.
+Other-session runtime ownership remains untouched. No push, release or remote sync.
 
 ## Prior verification context
 
@@ -386,10 +343,9 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign atc-s96.163. Task8 .165 has an approved plan after2→0 Important.
-Claude implementer ef85641d is live in its assigned task worktree; RED/GREEN pending.
-Main40627f9 before this records-only checkpoint. .168 and candidate matrix follow.
-See Now and campaign.json; historical limits below are superseded by the approved plan.
+Current: campaign atc-s96.163. Task8 .165 is merged/closed; no live task/worktree/branch.
+Main33d010e before this records commit. .168 is the last source follow-up, then candidate
+matrix. See Now and campaign.json; older limits are superseded by the approved plan.
 
 Historical entries:
 
@@ -555,12 +511,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Retrieve Task8 implementer's complete result and raw TMPDIR logs. Source suite only
-   npm test; then host commit/rebase/exact-head gate/all3 reviews/verified corrections/
-   merge/root tests/cleanup. Re-check seven original evidence hashes. No shared /tmp/.git.
-2. Fix .168 through full frozen0.1.9 dev-team, preserving exclusions/guards/reconciliation.
-3. Freeze/install candidate, full sample matrix/independent audits, restore configs/
-   connection, close findings on acceptance, validate records and commit locally.
+1. Fix .168 through frozen0.1.9 dev-team after reviewing owned records and clean-root
+   preflight. Verify isolated Git premise, retain exclusions/guards/error reconciliation.
+2. Freeze/install candidate, full saved-sample matrix and independent audits; restore
+   configs/connection, close findings on acceptance, validate records and commit locally.
    No push, release or remote sync.
 
 Historical next-step entries below predate the approved fix campaign:

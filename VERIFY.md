@@ -7,6 +7,46 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: ancestor ENOENT repair merged (2026-10-16)
+
+Task8 `atc-s96.165` is closed. Commit `33d010e` changes exactly three planned files,
++55/−6: strict-ancestor listing ENOENT now skips as lstat absence already does; other
+listing/git refusals and candidate-root validation are unchanged. The new public
+two-leg regression checks successful discovery and continued nesting refusal.
+
+Actual source RED: **1279/1265/1/13**, sole failure the new regression with the captured
+ENOENT/scandir shape. GREEN: **1279/1266/0/13**. Raw logs are retained with SHA256
+`699d2244eb5c6450587299c9474ee10fb29d1e2d9f74cfad2e1ab15bec54a5d1` and
+`1f3499ca3d196f940a013a3fa864f9c3fb4cd2dce45b47cc88e7fb04ae72e19b`.
+Normalized skip lists match byte-for-byte; raw provenance preserves complete skip lines.
+Guard opt-ins stayed disabled. Both committed-head gate and root `npm test` passed
+**1279 tests, 1276 passed, 0 failed, 3 skipped** at the exact reviewed head. Returned
+server tails omit individual skip lines.
+
+Plan review converged2→0 Important after verified ownership/count/evidence folds;
+final planner003db4a2 optimized once. Initial85f67f0 rebased onto records-onlyad4f916
+to33d010e before the gate. All three reviewers say noMajor with no findings:
+Clauded1dc94ad, Codex919f7c9f, Grokd99cc789. No correction round or new defect.
+
+All nine tasks finished depth1/parentnull/exit0 and all complete results are archived.
+The188 recorded-tool audit observed no unauthorized project Git write, delegation or
+real-engine launch; private diagnostic/suite Git fixtures are authorized test work.
+It is a recorded audit, not OS-wide history or frozen0.1.9 plugin-isolation proof.
+Exact task-spec/worktree-argument process checks found no matches/unreadable entries
+and sent no signals; generic TMPDIR children/suite parents are outside those signatures.
+Existing teardown remains primary. Owned prototype/diagnostic directories are absent.
+
+Worktree and branch are removed, source clean/root-only before records updates.
+Both configs, seven original failure artifacts, all582 historical sample hashes and140
+Task7 evidence hashes match. Sample stays clean/root-only a9b90d4 with139-test baseline.
+The actual historical actor/change is unobserved; the reproduced mechanism matches the
+failure. Wider windows, ENOTDIR and junk-ancestor refusals remain stated limits.
+No shared /tmp/.git change, host watch or new race framework. Full evidence:
+`.cross-agent/fix-acceptance-evidence/task8-*`.
+
+Ten beads remain: .168 source work, eight merged findings awaiting candidate acceptance,
+and umbrella .163. Candidate matrix has not started. No push, release or remote sync.
+
 ## Acceptance fixes: ancestor ENOENT plan approved (2026-10-16)
 
 Task8 .165 is implementing, not accepted yet. Planner0d71dc46 established the isolated
