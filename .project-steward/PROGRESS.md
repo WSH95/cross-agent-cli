@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T08:47:37.481800+00:00 — codex
+.161 implemented at unmerged af3f2c2 after test-first RED (1251/1226/12/13), GREEN (1251/1238/0/13) and ordinary committed-head gate (1251/1248/0/3). Native r1 on CLI0.163.0/Sol passed Stage0 and established 3 positive-control plugin skills, then stopped unresolved on multipart/truncated inventory; no treatment ran. Full native-enabled suite also exposed marker-fixture opt-in environment inheritance (1251/1247/2/2). Cleanup passed with byte-identical operator config and unchanged sample baseline. Planner a8fbb767 is verifying the focused correction; fresh review/r2 proof follow. New .168 records the staging pathspec refusal, fully reconciled. No acceptance claim, merge, candidate install, push or sync.
+
 ### 2026-10-16T07:46:11.158378+00:00 — codex
 .161 review 7 is clean (0 Important/0 Minor) after the user-authorized narrow simplification. I7/I8/M6 addressed; eight-turn protocol and accepted I3/I4 scope retained. Counts 5 → 3 → 2 → 1 → 2 → 2 → 0. Fourteen settled planning records audited at depth 1, read-only, exit 0 with expected bindings. Final planner optimization c7532b9b is running; no further plan review follows. No task-3 code or native proof yet; prior sample/evidence/configuration/connection preserved.
 

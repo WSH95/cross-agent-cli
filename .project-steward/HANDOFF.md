@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T07:46:11.158378+00:00
+updated_at: 2026-10-16T08:47:37.481800+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,26 +8,37 @@ branch: main
 
 ## Now
 
-Acceptance fixes and retest remain active (`atc-s96.163`). Two primary fixes are merged:
-verifier `.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and
-consultant scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2).
-Original findings await native candidate acceptance; only `.167` is closed.
+Acceptance fixes/retest remain active (`atc-s96.163`). Verifier `.155`/`.160` merged at
+`b5a5522`, consultant scope `.156` and doc-size `.167` at `d012438`; only `.167` is closed,
+original findings await candidate native acceptance.
 
-Task 3 `.161` plan review 7 is clean after the user's authorized narrow simplification.
-Planner `4a9c3f23` and reviewer `ac7830b5` settled correctly. I7/I8/M6 are addressed; accepted
-I3/I4 scope and the eight-turn protocol remain. Important counts: 5 → 3 → 2 → 1 → 2 → 2 → 0.
-All fourteen settled planning records have correct bindings, read-only profiles, depth 1,
-exit 0. Final planner optimization `c7532b9b567773b7ea2112918c2cfb0ebcd0` is running; retrieve
-its complete result, then implement without another plan review. No task-3 code, worktree,
-native proof or candidate retest exists. No gap was waived. Main is clean at `4347ef4`
-before this records checkpoint, root-only, no task branches. Full evidence is under
-`.cross-agent/fix-acceptance-evidence/` and in the source task ledger.
+Task 3 `.161` reached a clean seventh plan review and final optimization, then implementer
+`6a1cb426` settled correctly at depth 1, exit 0. Worktree
+`/home/wsh/Documents/cross-agent-cli/.worktrees/fixes-codex-plugins-20261015`, branch
+`task/fixes-codex-plugins-20261015`, unmerged commit `af3f2c2c3a1711fcbe61577393b20c85d8cea983`.
+Local RED1251/1226/12/13, GREEN1251/1238/0/13; ordinary server committed-head gate passed
+1251/1248/0/3. Native r1 used CLI0.163.0/Sol/default effort: Stage0 passed; R1 established
+3 plugin-origin skills but stopped unresolved because Cell A's multipart output was
+truncated from 66,715 tokens. No treatment ran. Full native suite 1251/1247/2/2: second
+failure is codex-setup's exact marker fixture inheriting new native opt-in variables.
+Cleanup passed, operator config hash byte-identical, fixture gone, sample baseline intact.
+No isolation acceptance is claimed.
 
-Continue the full approved loop, including native acceptance before merging `.161`, then
-`.157`/`.159`/`.162`, follow-ups `.164`–`.166`, freeze/install/retest and restore. Saved sample
-`a9b90d4`, 139-test baseline, 582 prior evidence files, original configurations and managed
-connection remain preserved. No push, release or remote sync. Historical diagnose-only
-instructions below are superseded by this fix-and-retest scope.
+Planner `a8fbb767de9e56e3dc2b308359ac6512d8d9` is running a focused amendment. Retrieve its
+full result, ensure it covers BOTH native output and the completed suite's marker fixture
+failure, then obtain a fresh plan review, final optimization and resumed implementer
+correction. The native run is settled (exec session69410 exited1). Preserve all r1 files;
+r2 needs a newly fixed commit. Evidence, source logs and results are under
+`.cross-agent/fix-acceptance-evidence/` and `.cross-agent/tasks/`. Original accepted eight-turn
+scope remains; no gap waived. Source main was 1d7f559 before this records checkpoint; rebase
+the task onto the new records head before its next gate/proof. Source task still standing.
+
+New follow-up `.168`: served git add exclusion pathspec returned1 for ignored validation
+logs AFTER staging intended six files. Full reconciliation completed before the task commit.
+Planner must reproduce before selecting repair. After `.161`, do `.157`/`.159`/`.162`,
+follow-ups `.164`–`.166` and `.168`, freeze/install/retest and restore. Saved sample a9b90d4,
+139 baseline tests, all582 prior evidence hashes, configs and managed connection remain
+preserved. No push/release/remote sync. Historical diagnose-only scope below is superseded.
 
 ## Prior verification context
 
@@ -578,9 +589,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no planning finding or user choice is pending. Review 7 is clean; final planner
-optimization is active. Native proof remains a mandatory gate and has not run. No gap is
-waived.
+Current: .161 native acceptance is unresolved on harness output framing/truncation and a
+native-opt-in test integration failure. Planner amendment is active; no user choice pending.
+No treatment or native effectiveness proof yet. Worktree/branch remain standing.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

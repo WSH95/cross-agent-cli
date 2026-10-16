@@ -7,6 +7,54 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: plugin isolation implemented, first native probe unresolved (2026-10-16)
+
+Task `.161` was implemented in linked worktree `fixes-codex-plugins-20261015` and committed
+as `af3f2c2c3a1711fcbe61577393b20c85d8cea983`; it is not merged. Implementer
+`6a1cb426461774301dbaffda3370361f7606` settled at depth 1, exit 0, on Claude Opus 5.5 xhigh,
+workspace-write. Both flags are emitted on fresh and resumed Codex children. Six files
+carry the adapter change, regressions, proof harness and historical/protocol documentation.
+
+| run | tests | pass | fail | skip |
+|---|---:|---:|---:|---:|
+| Local RED before adapter change | 1251 | 1226 | 12 | 13 |
+| Local GREEN after change | 1251 | 1238 | 0 | 13 |
+| Local GREEN after harness/doc checks | 1251 | 1238 | 0 | 13 |
+| Server committed-head gate on `af3f2c2` | 1251 | 1248 | 0 | 3 |
+| Host native-enabled full suite, attempt r1 | 1251 | 1247 | 2 | 2 |
+
+Local skips are three opt-in guards plus ten environment skips; all reasons and complete
+logs are retained. The ordinary server gate has only the three guards. Citation checks
+passed: 1872 citations, zero misses or drift from the task base.
+
+Native attempt r1 used fixed `af3f2c2`, Codex CLI 0.163.0 and `gpt-6.1-sol` with default
+effort. Stage 0 passed, including byte-preserving CAS cleanup rehearsal and preference
+subtree equivalence. R1 established three plugin-origin skills in the positive control,
+but stopped unresolved: its exact Cell A output is a multipart header plus an inventory
+truncated from 66,715 tokens. The reader found no JSON after the header. No treatment or
+resume turn ran; flag effectiveness remains unproved. The second suite failure is the
+existing launcher marker test inheriting the two newly enabled native-test environment
+variables, violating its exact four-marker assertion. These are harness/test integration
+findings requiring correction, not evidence of adapter effectiveness or an engine failure.
+
+Cleanup passed. The operator config SHA-256 remained
+`a165ac7e31f627ad5b3c8d56ff3f913be4d4cc2811a9ccb0e07b946f3b645fd5`; no top-level key changed.
+Independent checks confirm fixture removal and the sample's saved head, branch, clean tree,
+root-only worktree, no task branches and original configuration. A pre-run preservation
+check also confirmed all 582 historical sample evidence hashes.
+
+Planner `a8fbb767de9e56e3dc2b308359ac6512d8d9` is verifying a focused amendment, including
+compact complete inventory output and actual multipart framing; fresh plan review follows.
+The first native capture stays intact and reruns use new fixed commits and evidence paths.
+No gap is waived. Code reviews, merge, remaining fixes and candidate retests are pending.
+
+A separate normal-flow staging observation is `atc-s96.168`: the served exclusion pathspec
+returned exit 1 for the worktree's ignored validation evidence directory after staging the
+six intended files. Host reconciled journal, tasks, root, registry, branch and absence of a
+rebase, checked the exact index and continued without retry. The planner must reproduce its
+premise before selecting a repair in this campaign. Full task/native evidence is retained
+under `.cross-agent/fix-acceptance-evidence/`. No push, release or remote sync.
+
 ## Acceptance fixes: seventh plugin-isolation plan review clears (2026-10-16)
 
 The user's narrow simplification completed in planner `4a9c3f23ff4397964db03feaf03457f508d3`
