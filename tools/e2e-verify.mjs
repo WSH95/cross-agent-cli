@@ -460,10 +460,11 @@ const launch = launcherFor(config);
 // only reads (`readsOnly`) is a file's name and not counted, and a regular expression of literal
 // alternatives that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern,
 // its names still counted (`toolDiscoveryPatterns`). Aliases, eval/Function/import, the
-// global object reached through `globalThis`, `this`, `self`, `global` or `window` followed
-// by `.` or `[`, a member named `constructor`, legacy octal escapes, role-dependent slashes
-// the reader cannot classify, and asides naming launches also answer `?`; a word after `.`
-// or `?.` is a property, never a control keyword or one that opens a regular expression.
+// global object reached through `globalThis`, `this`, `self`, `global` or `window` followed,
+// comments aside, by `.`, `?.` or `[`, a member named `constructor`, legacy octal escapes,
+// role-dependent slashes the reader cannot classify, and asides naming launches also answer
+// `?`; a word after `.` or `?.` is a property, never a control keyword or one that opens a
+// regular expression.
 // This is a bounded reader, not JavaScript execution; a positively read launch still takes
 // precedence, and a record that holds no launch is named with every doubt it holds, each once.
 const offences = [];
@@ -2773,8 +2774,8 @@ function codexOwnCall(payload) {
  * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
  * `delegate` called is a call. Every other reference to those tools, `tools` used other than
  * by a name, `eval`, `Function`, `require`, `import`, a `globalThis`, `this`, `self`,
- * `global` or `window` that is no property and is followed by `.` or `[`, and a property
- * named `constructor` go in `computed`, as does any excess
+ * `global` or `window` that is no property and is followed, comments aside, by `.`, `?.` or
+ * `[`, and a property named `constructor` go in `computed`, as does any excess
  * of raw/decoded tool-name occurrences over the direct calls followed — except where the name
  * is a `delegate`'s, or a string holds one and no command tool's, which go in `unfollowed`,
  * because on the lead row a `delegate` it cannot see called is no offence. The scan
@@ -2835,9 +2836,12 @@ function scriptRead(source) {
     list.forEach((token, k) => {
       if (token.kind === "template") { token.inner.forEach(visit); return; }
       // The global object reaches `tools`, and a constructor builds a function, by names the
-      // script may assemble at run time, which leave no name here to follow or count.
+      // script may assemble at run time, which leave no name here to follow or count. The token
+      // after the name is read past comments, and `?.` reaches a value as `.` does.
+      let after = k + 1;
+      while (list[after]?.kind === "comment") after++;
       if (token.kind === "name" && !token.member && ["globalThis", "global", "self", "window", "this"].includes(token.text)
-        && list[k + 1]?.kind === "punct" && (list[k + 1].text === "." || list[k + 1].text === "[")) {
+        && list[after]?.kind === "punct" && [".", "?.", "["].includes(list[after].text)) {
         read.computed.push(`a script that reaches a value through ${token.text}, by a name this reader cannot read`);
         return;
       }

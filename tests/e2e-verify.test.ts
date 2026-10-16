@@ -2469,6 +2469,10 @@ const parameterTransformations: ReadonlyArray<readonly [string, "pass" | "?" | "
   ["echo \"${x@P}\"", "?"],
   ["set -- '$(claude -p hi)'; echo \"${1@P}\"", "?"],
   ["set -- '$(claude -p hi)'; echo \"${@@P}\"", "?"],
+  ["set -- '$(claude -p hi)'; echo \"${*@P}\"", "?"],
+  // An array's element and its whole list.
+  ["a=('$(claude -p hi)'); echo \"${a[0]@P}\"", "?"],
+  ["a=('$(claude -p hi)'); echo \"${a[@]@P}\"", "?"],
   // Inside an unquoted heredoc's body, and nested in another expansion's default.
   ["x='$(claude -p hi)'; cat <<EOF\n${x@P}\nEOF", "?"],
   ["x='$(claude -p hi)'; echo ${y:-${x@P}}", "?"],
@@ -2504,6 +2508,9 @@ const throughGlobal = (route: string) => `const t = ${route}["to"+"ols"];\n${spl
 const aliasedDelegate = 'const t = globalThis["to"+"ols"];\nawait t["mcp__cross_agent__"+"delegate"]({role: "consult", brief: "x"});\n';
 const viaConstructor = `const t = [].constructor.constructor("return to"+"ols")();\n${splitLaunch}\n`;
 const directLs = 'const r = await tools.exec_command({cmd:"ls"});\n';
+// The constructor row names its doubt once: no occurrence before it, and none after.
+const constructorDoubt = "a script that reaches a constructor, which can build a function this reader cannot read";
+const constructorOnce = /^(?:(?!reaches a constructor).)*reaches a constructor, which can build a function this reader cannot read(?!.*reaches a constructor)/;
 test("atc-s96.166/.172: a script reaching a value through the global object or a constructor is a question on every row, and a call Codex recorded still fails", async (t) => {
   const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006613";
   const specialist = (script: string, extra: RolloutStep[] = [], body = codexLog("/bin/bash -lc 'ls'")) => () => project(t, { codex: {
@@ -2520,8 +2527,12 @@ test("atc-s96.166/.172: a script reaching a value through the global object or a
       label: throughGlobal(route), expected: "?" as const, why: new RegExp(`reaches a value through ${route}, by a name this reader cannot read`),
       project: specialist(throughGlobal(route)),
     })),
-    { label: viaConstructor, expected: "?", project: specialist(viaConstructor),
-      why: /reaches a constructor, which can build a function this reader cannot read(?!.*reaches a constructor)/ },
+    // The same route through optional chaining, and with a comment before its bracket.
+    ...["globalThis?.", "globalThis /* a comment */ "].map((route) => ({
+      label: throughGlobal(route), expected: "?" as const, why: /reaches a value through globalThis, by a name this reader cannot read/,
+      project: specialist(throughGlobal(route)),
+    })),
+    { label: viaConstructor, expected: "?", project: specialist(viaConstructor), why: constructorOnce },
     { label: `lead: ${aliasedDelegate}`, expected: "?", why: /lead1: .*reaches a value through globalThis/,
       project: () => project(t, { lead: {
         engine: "codex", id: "lead1", role: "lead", depth: 1, body: codexLog("/bin/bash -lc 'ls'"), sessionId,
@@ -2530,6 +2541,7 @@ test("atc-s96.166/.172: a script reaching a value through the global object or a
     // Those names as an object literal's keys, as string data, as a binding and as a property.
     ...[
       `${directLs}text(JSON.stringify({ self: r.output, global: r.exit_code, window: 1 }));\n`,
+      `${directLs}text(JSON.stringify({ self /* a comment */ : r.output }));\n`,
       `${directLs}text("globalThis and self and window");\n`,
       `${directLs}const o = {};\nconst constructor = 5;\ntext(String(o.this) + constructor);\n`,
       `${directLs}text("globalThis");\n`,
@@ -2538,7 +2550,9 @@ test("atc-s96.166/.172: a script reaching a value through the global object or a
     { label: `recorded McpToolCall: ${aliasedDelegate}`, expected: "FAIL", project: specialist(aliasedDelegate, [mcpItem], codexMcpCall("delegate")) },
     { label: `recorded CommandExecution: ${throughGlobal("globalThis")}`, expected: "FAIL", project: specialist(throughGlobal("globalThis"), [launchItem]) },
   ]);
-  assert.deepEqual(misses, []);
+  // The pattern the constructor row is held to matches its doubt named once, and not named twice.
+  const once = [1, 2].map((n) => constructorOnce.test(`task1: ${Array(n).fill(constructorDoubt).join("; ")}`));
+  assert.deepEqual({ misses, once }, { misses: [], once: [true, false] });
 });
 
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {

@@ -4147,8 +4147,9 @@ Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
 `#codexScriptFailClosed`, `#scriptNameAccounting`). A script that reaches a value
-through `globalThis`, `this`, `self`, `global` or `window` followed by `.` or `[`,
-or through a member named `constructor`, answers `?` on every row as well: either
+through `globalThis`, `this`, `self`, `global` or `window` followed, comments
+aside, by `.`, `?.` or `[`, or through a member named `constructor`, answers `?`
+on every row as well: either
 route can reach `tools`, or build a function, by a name assembled at run time.
 Those six routes are the ones guarded; an object literal's keys and string data
 that spell them stay data (`#globalObjectAccess`). A word after `.` or `?.` is a
