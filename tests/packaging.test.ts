@@ -376,6 +376,28 @@ test("the install guide and design state the live mode text sizes without projec
   assert.ok(size("dev-team-engine") < 100_000, "and the cap the attach sets holds the larger");
 });
 
+// @anchor codexUpgradeGuide
+test("the operator guide tells an upgrading operator to start fresh Codex tasks, says retained history is not purged and its receipt unknown, and cites the native evidence", () => {
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "operator-guide.md"), "utf8");
+  const start = guide.indexOf("\n## Upgrading from 0.1.9");
+  assert.ok(start >= 0, "the operator guide has an upgrade section");
+  const end = guide.indexOf("\n## ", start + 1);
+  const section = guide.slice(start, end === -1 ? guide.length : end).replace(/\s+/g, " ");
+  // What changed, and what a thread begun before it keeps (atc-s96.169).
+  assert.match(section, /`-c features\.plugins=false -c features\.remote_plugin=false`/);
+  assert.match(section, /start fresh Codex tasks rather than resuming ones begun under 0\.1\.9/);
+  assert.match(section, /is not purged/);
+  assert.match(section, /unknown/);
+  // Cited to the native runs that established it.
+  assert.match(section, /`docs\/probes\.md#codexPluginIsolation`/);
+  assert.match(section, /`#codexPluginLeak`/);
+  // And no more than they established.
+  assert.match(section, /do not remove Codex's built-in connectors/);
+  assert.match(section, /no engine history is rewritten/);
+  assert.doesNotMatch(section, /unchanged/);
+  assert.doesNotMatch(section, /\berase/);
+});
+
 // @anchor readmeSeveralBranches
 test("the operator guide has a worktree project's .gitignore change committed first, and finds a hung git by either tool's command line", () => {
   const guide = fs.readFileSync(path.join(repoRoot, "docs", "operator-guide.md"), "utf8");

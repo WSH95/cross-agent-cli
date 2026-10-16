@@ -167,6 +167,13 @@ const codex = {
       // contract, not this file's implementation of it.
       argv.push(...mount.argv);
       files.push(...(mount.files ?? []));
+      // A lead runs no shell command — its loop reaches the root through the mount — so its
+      // shell tool is off (atc-s96.157). A `-c` setting belongs to the process, so it rides
+      // on both heads; a specialist keeps its command tools to run its tests. Code mode's
+      // `exec` was seen running commands through `exec_command` (`docs/probes.md#cliCodex159`),
+      // and with this setting 0.163.0's printed registry holds no command tool while `exec`
+      // stays (`docs/probes.md#leadToolSurface`).
+      argv.push("-c", "features.shell_tool=false");
     }
 
     // The prompt goes on stdin and `-` holds its place, last. Both heads document it:

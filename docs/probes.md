@@ -4570,3 +4570,244 @@ filtered environment (`tests/helpers/project.ts#suiteEnv`). That integration run
 evidence for a variable present from process start. The opt-in unit test sets its variable
 after `suiteEnv` is read, so it pins only that the fixture uses `suiteEnv`; a regression in
 `suiteEnv`'s own filter would not turn it red.
+
+<!-- @anchor leadToolSurface -->
+## The engine lead's tool surface and `describe_mode`'s summary, native (2026-10-16)
+
+For atc-s96.157 and .162, on the committed artifact `426047b`: does an engine-placed lead's
+line withhold the shell on each engine, and does its mount answer `describe_mode {view:
+"summary"}`? And does a specialist's line still run its tests? The lead line is
+`src/engines/claude.ts#claudeTools`'s `leadTools` and the `-c features.shell_tool=false`
+that `src/engines/codex.ts#codex` adds after the mount, pinned by
+`tests/engines/claude.test.ts#claudeLeadNoShell` and `tests/engines/codex.test.ts#codexLeadNoShell`.
+The summary is `src/modes.ts#describeModeSummary`, pinned by
+`tests/server.test.ts#describeModeSummaryView`.
+
+**Setup.**
+- **Source.** Every probe ran `tools/probe.mjs` from an export of `426047b` (`source.tar`), so
+  each line is that commit's adapter `plan`.
+- **Versions.** Claude Code 2.1.299 and codex-cli 0.163.0, on Node v24.11.0. They were
+  recorded at the start of every attempt and again at the end of attempts 1 and 3.
+- **Models.** `claude-opus-5-5` and `gpt-6.1-sol`, each at the engine's default effort: no
+  line carries an effort setting.
+- **Fixture.** A repository under `$HOME` (`$S/F`):
+  - `sum.mjs` (`a - b`) and `sum.test.mjs`, a `node:test` asserting `sum(2, 3) === 5`;
+  - the config `init --mode dev-team-engine` writes, whose `project` is `main`, `npm test`,
+    `none`, `auto`;
+  - linked worktrees `$S/F-claude` and `$S/F-codex` on `probe/claude` and `probe/codex`.
+- **Mount.** The lead probes mount the export's own `src/server.ts --project $S/F` through
+  `--mcp-config`, with no `env`.
+
+**What the mount is, and what it is not.** The child environment the harness builds
+(`tools/probe.mjs#env`) gives the child a task id and a lineage of its own,
+`probe-<session>`, which no ledger record holds. So the mounted server resolves the
+specialist row (`src/authority.ts#resolveAuthority`), and every lead
+probe lists its five read tools: `check`, `describe_mode`, `list_roles`, `list_tasks` and
+`result`. These probes show what the adapter's lead line offers the engine and that the
+summary travels through a real mount. They do not exercise a real lead's row, its ownership
+or its permissions; the final end-to-end runs audit those independently.
+
+**What was read.**
+- **Claude:** the `--log` stream: `system/init`'s `tools`, each `tool_use` with its
+  `tool_result` paired by `tool_use_id`, `system/permission_denied`, and the `result` line's
+  `permission_denials`.
+- **Codex:** the thread's rollout under `~/.codex/sessions/`:
+  - each code-mode `exec` `custom_tool_call` with its `custom_tool_call_output`, paired by
+    `call_id` and read only in the two-part frame (`tests/helpers/codex-isolation.ts#cellPrinted`,
+    `#execCells`);
+  - the `McpToolCall`, `CommandExecution` and `FileChange` items;
+  - `turn_context`;
+  - plus the `--json` log's `thread.started` for the thread id.
+- **Both:** each worktree's archived `git status --porcelain` and `git diff`.
+
+| Probe | Attempt | Line (`tools/probe.mjs` flags) | Result |
+|---|---|---|---|
+| P1 | 1 | claude, `--cwd $S/F --sandbox read-only --model claude-opus-5-5 --mcp-config` | pass |
+| P1b | 1 | as P1, `--resume ff5d2c77…` | pass |
+| P2 | 1 | claude, `--cwd $S/F-claude --sandbox workspace-write --model claude-opus-5-5`, no `--role-file` | UNVERIFIED |
+| P2 | 2 | as attempt 1, plus `--role-file` with the export's `modes/dev-team-engine/roles/implementer.md`, and a new brief | pass |
+| P3 | 2 | codex, `--cwd $S/F --sandbox read-only --model gpt-6.1-sol --mcp-config` | pass |
+| P3b | 2 | as P3, `--resume 01a144e4…` | pass |
+| P4 | 2 | codex, `--cwd $S/F-codex --sandbox workspace-write --model gpt-6.1-sol --role-file` implementer | control passed; UNVERIFIED |
+| P4r | 3 | as P4, the brief changed | pass |
+
+**The engine lines.**
+- **P1** became `claude -p --output-format stream-json --verbose --permission-mode dontAsk
+  --tools Read,WebSearch,WebFetch,ToolSearch --setting-sources project --strict-mcp-config
+  --mcp-config <scratch>/mcp-config.json --model claude-opus-5-5 --session-id <id> --settings
+  <…> --disallowedTools <the deny list>`.
+  - The settings are read-only: `denyWrite` on the fixture, and the allow rules `Read`,
+    `WebSearch`, `WebFetch` and `mcp__cross-agent`.
+  - It carries no role prompt.
+  - P1b's line carries `--resume` in place of `--session-id`.
+- **P2** keeps `--tools Bash,Read,Edit,Write,NotebookEdit,WebSearch,WebFetch,ToolSearch`.
+  - Its sandbox's only writable root is `F-claude`, and both `.git` paths are denied.
+  - Attempt 2 adds `--append-system-prompt-file`; its `role.md` is byte-equal to
+    `426047b`'s `implementer.md`.
+- **P3** became `codex exec --json -o <out> -C $S/F --sandbox read-only --ignore-user-config
+  -c features.plugins=false -c features.remote_plugin=false --skip-git-repo-check -m
+  gpt-6.1-sol <the five mcp_servers.cross-agent settings> -c features.shell_tool=false -`.
+  - P3b is `codex exec resume 01a144e4… …` with `-c sandbox_mode="read-only"` and the same
+    six settings.
+- **P4** is the launch head with `--sandbox workspace-write`, `-C $S/F-codex` and
+  `-c model_instructions_file="<scratch>/role.md"`, with no mount and no
+  `features.shell_tool`. P4r's dry-run line equals it flag for flag, except for the scratch
+  paths and session ids.
+
+**P1 and P1b (attempt 1): pass.**
+- **Init `tools`, fresh and resumed:** `Read`, `ToolSearch`, `WebFetch`, `WebSearch` and the
+  five `mcp__cross-agent__` tools, with no `Bash`. Session `ff5d2c77…` is resumed as itself.
+- **The summary.** Each turn's `mcp__cross-agent__describe_mode` `tool_use` carries
+  `{"view": "summary"}`; P1 first loaded the tool with `ToolSearch`. Each has its paired
+  `tool_result`, inline and not an error, 2,219 bytes, with:
+  - the keys `view`, `mode`, `roles`, `git`, `projectRoot`, `project` and `review`;
+  - `view: "summary"`;
+  - the fixture's four `project` values;
+  - no `loop`, and no role carrying a `prompt`.
+- **No `Bash`:** neither turn made a `Bash` `tool_use`, and `permission_denials` is empty.
+
+**P2, attempt 1: UNVERIFIED.**
+- **What happened.** The one `Bash` `tool_use` was
+  `node --test --test-isolation=none sum.test.mjs; echo "EXIT=$?"`. The brief named the plain
+  command; the model appended the `echo`. A `system/permission_denied` with
+  `decision_reason_type: "mode"` names that call. Its `tool_result` is an error, and the
+  `result` line lists it under `permission_denials`: it was refused before it ran.
+- **After the refusal.** A `Read` of `sum.mjs`, and no edit. The status and diff are empty.
+  The CLI's exit 0 is not a test result.
+- **No specialist-path regression is established.** The adapter change chooses `leadTools`
+  only for a request with a lead mount, and P2's line held the specialist's `--tools`,
+  sandbox and permission rules.
+- **The cause is inferred, not established.** The line had no role prompt: `--role-file`
+  was not passed, and the harness leaves the prompt empty without it
+  (`tools/probe.mjs#role`). So the model never saw the plain-shell paragraph every shipped
+  specialist prompt carries
+  (`tests/skills.test.ts#specialistsPlainShell`), and it wrote a command of the shape
+  `docs/probes.md#specialistLedger` associates with refusals. That table associates command
+  text with refusals; it does not show the layer's rule.
+
+**P2, attempt 2: pass.**
+- **Two inputs changed together:** the shipped implementer prompt went on the line, and a
+  brief said to run the command "as written, alone, with nothing appended".
+- **The run.** Init `tools` holds `Bash`. `Bash` ran `node --test --test-isolation=none
+  sum.test.mjs` twice:
+  - first: `Exit code 1`, `ℹ fail 1`, `-1 !== 5`, its `tool_result` an error;
+  - then one `Edit` of `sum.mjs`, `a - b` to `a + b`;
+  - then the same command: `ℹ fail 0`, not an error.
+- **Clean record.** No `permission_denied`, and an empty `permission_denials`. The archived
+  diff changes `sum.mjs` alone. The run's first `Bash` call was a read-only
+  `git branch --show-current`.
+- **Not isolated:** which of the two changes made the difference.
+
+**P3 and P3b (attempt 2): pass, read against P4's and P4r's controls.**
+- **The thread.** `01a144e4…`. P3b resumed it, so its rollout holds both turns.
+- **The inventory.** The cell ran once in each turn, in a code-mode `exec` call: P3 at lines
+  14/16, P3b's turn at 34/36. Each output is in the two-part frame and prints 108 names:
+  - 92 `mcp__codex_apps__` connectors;
+  - the five `mcp__cross_agent__` tools;
+  - `apply_patch`, `clock__curr_time`, `create_goal`, `get_goal`, `image_gen__imagegen`,
+    `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource`,
+    `update_goal`, `view_image` and `web__run`.
+- **No command tool:** none of `exec_command`, `write_stdin`, `shell`, `local_shell` or
+  `shell_command` is listed. Code mode's `exec` is still offered: both cells ran in it.
+- **The summary.** Each turn's `McpToolCall` (P3 at line 19, P3b at 39) has server
+  `cross-agent`, tool `describe_mode`, arguments `{view: "summary"}` and status `completed`.
+  Its 2,219-byte result has `view: "summary"`, the fixture's `project`, no `loop` and no role
+  `prompt`.
+- **Each `turn_context`:** `gpt-6.1-sol`, read-only, approval `never`.
+
+**P4, attempt 2: the control passed, and the specialist run is UNVERIFIED.**
+- **The thread.** `01a144e9…`, on the specialist line above.
+- **The control.** The inventory (lines 12/14) prints 105 names: P3's 92 connectors and 11
+  others, plus `exec_command` and `write_stdin`, without the five mount tools. This is the
+  positive control the leads' absence is read against.
+- **The RED.** Line 28 calls `exec_command` with exactly the test command; line 31 records
+  `exit_code: 1`, `ℹ fail 1` and `-1 !== 5`.
+- **No edit and no GREEN.** No tool call follows. The final message (line 34) reported:
+  "BLOCKED: Developer instructions prohibit changing files in the project root; `sum.mjs` is
+  there." The status and diff are empty.
+- **Write access was configured, not used.** The sandbox was workspace-write, with the
+  worktree among its writable roots, and no write was attempted.
+- **The cause is inferred.** The brief named the worktree but did not distinguish the main
+  project root from the linked worktree. That the model read the implementer prompt's
+  "change no file in the project root" as covering its worktree is an inference; its
+  reasoning is encrypted.
+- **The host's corrected reading.** The host first read the inventory as absent. That was
+  its reader's mistake, corrected from lines 12/14 before any reading counted.
+- **No workaround.** The approved brief ran unchanged, and nothing was worked around.
+
+**P4r, attempt 3: pass.**
+- **The run.** One fresh run on P4's line, thread `01a144fc-7aa0-7cd1-a667-7828acb72b3b`.
+- **The one changed input: the brief.** It names the project root `$S/F`, where nothing
+  changes, and the linked worktree `$S/F-codex` as the workspace where `sum.mjs` is edited.
+- **The control.** The inventory (lines 12/14) prints the same 105 names as P4's, with
+  `exec_command` and `write_stdin`.
+- **An incidental read.** A preliminary read at line 16, `cat .git; git branch
+  --show-current; ls -a; cat sum.mjs; cat AGENTS.md`, exited 1: the worktree has no
+  `AGENTS.md`. That is the missing file, not a refusal.
+- **RED** (lines 21/24): `exec_command` with exactly the test command, `exit_code: 1`,
+  `ℹ fail 1`, `-1 !== 5`.
+- **Edit** (lines 26–29): `apply_patch` on `sum.mjs`, a `completed` `FileChange` that only
+  replaces `a - b` with `a + b`.
+- **GREEN** (lines 31/34): the same command, `exit_code: 0`, `ℹ fail 0`.
+- **Nothing refused.** Sandbox and approval rejected none of these calls. `turn_context`
+  reads workspace-write, network off, approval `never`.
+- **Only `sum.mjs` changed.** The archived status and diff show `sum.mjs` alone, and the
+  fixture's `main` and `probe/codex` both stay at `425b9fc…`.
+- **The limit.** The clarified run succeeded. It does not show that the clarification removed
+  a proven cause.
+
+**The reading.**
+- **Claude Code 2.1.299.** The lead line starts with no `Bash`, fresh or resumed, and reads
+  the summary inline. The specialist line keeps `Bash`, and with the shipped prompt it ran
+  the test failing, then passing.
+- **codex-cli 0.163.0, the lead line.** `-c features.shell_tool=false` leaves `exec_command`
+  and `write_stdin` out of the registry the code-mode cell prints, fresh and resumed. It does
+  not remove code mode's `exec`, `apply_patch` (here under a read-only sandbox),
+  `view_image`, `web__run` or the connectors.
+- **codex-cli 0.163.0, the specialist line.** Without the setting it lists both command
+  tools. It ran the test, edited `sum.mjs` and reran the test.
+- **Not needed.** No command tool remained on the lead line, so `features.unified_exec` was
+  neither set nor measured.
+
+**Claim scope.**
+- **What it covers:** the recorded versions and models, one run per probe, the registry the
+  Codex cell printed, and the responses recorded.
+- **What it does not cover:** top-level tool availability, the transmitted request and
+  backend receipt. `#codexPluginIsolation`'s accepted bounds stand unchanged.
+- **The mount** is the specialist row above, not a real lead's.
+- **`Read` on a saved answer is not exercised.** `leadTools` keeps `Read` for an answer
+  Claude Code saved to a file, but no lead has read one with it:
+  - lead `57e921…` used `python3` on its saved `describe_mode` answer, and P1's and P1b's
+    summaries came back inline;
+  - the `Read` calls on saved results that the ledger records are specialists reading saved
+    `Bash` output (`.txt`, many short lines), not a saved MCP answer, which is one escaped
+    JSON line.
+
+  The final Claude-led end-to-end run is to note any saved answer its lead meets.
+- **The two UNVERIFIED readings stay as recorded:** attempt 1's P2 and attempt 2's P4. The
+  checks rest on the later runs: P1 and P1b from attempt 1, P2 from attempt 2, P3 and P3b
+  from attempt 2 against attempt 2's P4 control and P4r's, and P4r from attempt 3.
+- **Not waived:** none of the eight checks the final end-to-end runs are judged by
+  (`tools/e2e-verify.mjs`).
+
+**Cleanup.** After each attempt:
+- every fixture and process the run owned was removed;
+- the Codex config's sha256 (`a165ac7e…`) and Claude's settings hash (`8c6bd31b…`) matched
+  their values before the run;
+- the Codex host sample was at `a9b90d4` and clean, and its 582 earlier evidence files kept
+  their recorded hashes.
+
+Attempt 1 ran no Codex child and had no trust key to remove. Attempts 2 and 3 each removed
+the fixture's trust key by compare-and-swap, and each recorded the sample with only its root
+worktree. Attempt 3 also confirmed that the source export was unchanged and clean, and that
+the 62 files attempt 2's manifest lists, and the manifest itself, were unchanged.
+
+**The evidence.** It is kept in `task4-native-lead-tools/` under the campaign's ignored
+`.cross-agent/fix-acceptance-evidence/`:
+- attempt 1 at its top level, with `source.tar` (sha256 `d4106f9b…`) and `426047b`'s commit
+  object;
+- `attempt2/` and `attempt3/`;
+- a `manifest.json` of sha256s for each.
+
+The approved recipe and its two amendments are kept beside it, with the operator's own glue,
+`task4-native-control.mjs`, which is not product code.

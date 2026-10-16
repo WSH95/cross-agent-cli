@@ -414,3 +414,15 @@ window, and a resume that would change the task, and it hands every child its
 depth and lineage; and each engine's adapter puts the deny list and the
 exclusion flag its engine takes onto every spawn line it builds. A specialist
 that defeats its own CLI's permission rules is outside the guarantee.
+
+## Upgrading from 0.1.9
+
+Every Codex child now carries `-c features.plugins=false -c features.remote_plugin=false`,
+on a fresh launch and on a resume. A thread begun under 0.1.9 and resumed after the
+upgrade keeps in its history the plugin catalogue its earlier turns were given: the new
+turn injects a clean one, the retained catalogue is not purged, and whether Codex's
+backend still receives that retained part is unknown (`docs/probes.md#codexPluginIsolation`,
+the legacy thread R5; `#codexPluginLeak`, the sample implementer's resume). So for any run
+you accept after upgrading, start fresh Codex tasks rather than resuming ones begun under
+0.1.9. The switches do not remove Codex's built-in connectors, and no engine history is
+rewritten.

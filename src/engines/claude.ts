@@ -14,7 +14,7 @@ const sandboxFailure = /Sandbox disabled|apply-seccomp/;
 
 /**
  * The built-in tools a role keeps, as `--tools` names them: the shell, the file reader and
- * the two web tools for every role, the editing tools for one that may edit, and
+ * the two web tools for every specialist, the editing tools for one that may edit, and
  * `ToolSearch`, which loads a deferred tool's definition — an engine-placed lead's mount
  * tools arrive deferred. Nothing else Claude Code ships is offered. Probe t12Fix1 (b)
  * watched a read-only consult load `EnterWorktree` and create a worktree and a branch under
@@ -23,11 +23,15 @@ const sandboxFailure = /Sandbox disabled|apply-seccomp/;
  * kin) start work no record holds or act beyond this machine. `WebSearch` and `WebFetch`
  * read beyond it and start nothing, which a Codex or Grok specialist's own search already
  * does (`docs/probes.md#claudeWebTools`). Both run in the engine's process, not in the
- * sandbox, so they reach the web while the shell still reaches no host.
+ * sandbox, so they reach the web while the shell still reaches no host. An engine-placed
+ * lead runs no shell command — its loop reaches the root through this server's tools — so
+ * it is given no shell: Claude lead 57e921… held one and ran `python3` with it to read an
+ * answer its CLI had saved to a file, which `Read` reads (atc-s96.157).
  */
 // @anchor claudeTools
 const readTools = ["Bash", "Read", "WebSearch", "WebFetch", "ToolSearch"];
 const editTools = ["Bash", "Read", "Edit", "Write", "NotebookEdit", "WebSearch", "WebFetch", "ToolSearch"];
+const leadTools = ["Read", "WebSearch", "WebFetch", "ToolSearch"];
 
 /** The name `leadMount` gives this server, and so the prefix of every tool it brings. */
 const mountServer = "cross-agent";
@@ -172,7 +176,7 @@ const claude = {
     // strict one, which a lead's mount follows.
     const argv = [
       "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
-      "--tools", (editable ? editTools : readTools).join(","),
+      "--tools", (request.lead !== undefined ? leadTools : editable ? editTools : readTools).join(","),
       ...claude.exclusionArgs(),
     ];
     const files: NonNullable<SpawnPlan["files"]> = [];

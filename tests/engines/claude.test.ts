@@ -36,11 +36,14 @@ const someDeny = [
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
 // The built-in tools a role keeps (`--tools`): the shell, the reader and the two web tools
-// for every role, the editing tools for one that may edit, and `ToolSearch`, which loads a
-// deferred tool's definition. Probe t12Fix1 (b) watched a read-only consult load
+// for every specialist, the editing tools for one that may edit, and `ToolSearch`, which
+// loads a deferred tool's definition. Probe t12Fix1 (b) watched a read-only consult load
 // `EnterWorktree` that way and create a worktree and a branch under the project's `.git`.
 const readTools = "Bash,Read,WebSearch,WebFetch,ToolSearch";
 const editTools = "Bash,Read,Edit,Write,NotebookEdit,WebSearch,WebFetch,ToolSearch";
+// An engine-placed lead's: no shell, because its loop runs none (atc-s96.157), and the
+// reader for an answer its CLI saved to a file.
+const leadTools = "Read,WebSearch,WebFetch,ToolSearch";
 // What no role may hold, whatever its profile: tools that make git metadata, start work no
 // record holds, or act beyond this machine (the init lines of probe t12Fix1). The web tools
 // read beyond it and start nothing, and every role holds them (`claudeWebTools`).
@@ -363,7 +366,7 @@ test("every role holds an explicit list of built-in tools, and none that starts 
     ["read-only", { sandbox: sandboxFor("claude", "read-only") }, readTools],
     ["workspace-write", {}, editTools],
     ["off", { sandbox: sandboxFor("claude", "off") }, editTools],
-    ["a read-only lead", { role: "lead", sandbox: sandboxFor("claude", "read-only"), lead }, readTools],
+    ["a read-only lead", { role: "lead", sandbox: sandboxFor("claude", "read-only"), lead }, leadTools],
   ];
   for (const [name, patch, tools] of cases) {
     const { argv } = claude.plan(requestFor(dirs, patch));
@@ -373,6 +376,34 @@ test("every role holds an explicit list of built-in tools, and none that starts 
     for (const tool of withheld) assert.equal(listed.includes(tool), false, `${name}: ${tool}`);
     // `--tools` takes `<tools...>`: a flag has to follow it, or it would swallow the line.
     assert.match(argv[argv.indexOf("--tools") + 2], /^--/, name);
+  }
+});
+
+// @anchor claudeLeadNoShell
+test("an engine-placed lead is given no shell, fresh or resumed, and every specialist keeps its own", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const mount = path.join(dirs.task, "mcp-config.json");
+  const heads = [undefined, "138a9c9e-f573-45c5-80fc-fda76dddc834"];
+  // A lead whose loop runs no shell command is offered none: Claude lead 57e921… listed
+  // `Bash` and ran `python3` with it to read a saved answer (atc-s96.157). `Read` stays for that.
+  for (const resumeSessionId of heads) {
+    const what = resumeSessionId === undefined ? "a fresh lead" : "a resumed lead";
+    const { argv } = claude.plan(requestFor(dirs, {
+      role: "lead", cwd: dirs.root, sandbox: sandboxFor("claude", "read-only"), lead, resumeSessionId,
+    }));
+    assert.equal(argv[argv.indexOf("--tools") + 1], leadTools, what);
+    // The mount and the flag that makes it exclusive stay as they were.
+    const strict = argv.indexOf("--strict-mcp-config");
+    assert.deepEqual(argv.slice(strict, strict + 3), ["--strict-mcp-config", "--mcp-config", mount], what);
+  }
+  // Every specialist keeps its shell, whatever its profile and head: an implementer runs
+  // its tests in its worktree with it.
+  for (const resumeSessionId of heads) {
+    for (const profile of ["read-only", "workspace-write", "off"]) {
+      const { argv } = claude.plan(requestFor(dirs, { sandbox: sandboxFor("claude", profile), resumeSessionId }));
+      assert.ok(argv[argv.indexOf("--tools") + 1].split(",").includes("Bash"), `${profile}, ${resumeSessionId ?? "fresh"}`);
+    }
   }
 });
 
@@ -521,7 +552,7 @@ test("an engine-placed lead's argv mounts this server exclusively, and its confi
   // P9's order: the mount travels with the flag that makes it exclusive.
   assert.deepEqual(plan.argv, [
     "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
-    "--tools", readTools,
+    "--tools", leadTools,
     "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", mount,
     "--session-id", sessionId,
     "--append-system-prompt-file", dirs.role,

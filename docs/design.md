@@ -677,7 +677,11 @@ that declares them and on no other, and `git` is always there: the mode's own po
 or the implicit `{worktreeDir: ".worktrees", branchPattern: "task/*", implicit:
 true}` that a mode with no worktree role creates a `worktree: true` one-shot
 under, so a launcher can always name where a task's worktree will be
-(`src/modes.ts#describeMode`, `#gitPolicy`, `#ModeDescription`). It refuses,
+(`src/modes.ts#describeMode`, `#gitPolicy`, `#ModeDescription`). Under `view:
+"summary"` it returns `{view: "summary", mode, roles, git}`, each role without its
+`prompt` and no `loop`, reading neither file: what an engine-placed lead reads,
+whose loop and role prompt are its instructions already
+(`src/modes.ts#describeModeSummary`, `#ModeSummary`). It refuses,
 with a reason and never a throw, when the config's `mode` names no existing mode
 directory, when that directory holds no `SKILL.md`, or when the mode does not
 validate — the
@@ -726,7 +730,7 @@ engine`; **records** only where the config the server started with has a
 
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
-| `describe_mode` | — | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt — and `seats` and `gates` where a role declares them — its git policy, `projectRoot`, and `review`: the loop's two settings, `planReviewRounds` and `afterResolver` (section 6), and `projectWarning` where the directory the server was started in lies in an initialized project other than `projectRoot` (`src/server.ts#cwdProjectWarning`), which on Codex's bundled plugin mount never speaks for the host's project: that mount starts the server in its cache copy of the plugin (`cwd: "."`), so there the launcher's stop rule, judged against the host's own working directory, is the only check | core |
+| `describe_mode` | optional `view`: `full`, the default, or `summary` | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt — and `seats` and `gates` where a role declares them — its git policy, `projectRoot`, `project`: the config's `defaultBranch`, `testCommand`, `setupCommand` and `mergePolicy`, defaults filled (section 6), and `review`: the loop's two settings, `planReviewRounds` and `afterResolver` (section 6); under `summary`, the same with no `loop` and no role's `prompt`, marked `view: "summary"`, which an engine lead reads (`tests/server.test.ts#describeModeProject`, `#describeModeSummaryView`); and `projectWarning` where the directory the server was started in lies in an initialized project other than `projectRoot` (`src/server.ts#cwdProjectWarning`), which on Codex's bundled plugin mount never speaks for the host's project: that mount starts the server in its cache copy of the plugin (`cwd: "."`), so there the launcher's stop rule, judged against the host's own working directory, is the only check | core |
 | `list_roles` | — | each role **the mode has**: the workspace and the sandbox profile it gives that role, with the engine, model and effort config binds it to, or `binding: null` where config binds none — the engine a `delegate` call must then name itself; a role bound to a list answers `seats`, each with its `seat`, engine, model, effort and sandbox profile; plus a `warning` when the config now names a mode other than the one served | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `seat` (1-based, required for a role bound to a list and refused for any other), `worktree` (a task worktree of its own, for a role that works at the root), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, seat, workspace, reservation, a gating review's hold on a writable launch, running and recent duplicates, resume binding), refuses a role that gates the merge while its worktree holds uncommitted changes, marked or not, or while a setup command runs there, records the branch head such a role reviews as `underReview`, creates the task's worktree through `git_root` when `worktree: true`, writes the ledger record as `launching`, starts the runner, returns `task_id` with the `engine`, `model` and `effort` the record holds, `null` where none was named (section 4) | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, the task's `engine`, `model` and `effort`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
@@ -1845,6 +1849,11 @@ which is a property of the line, not of the pipeline.
   rest of the default set are offered to no role
   (`src/engines/claude.ts#claudeTools`,
   `tests/engines/claude.test.ts#fileToolsConfined`, `#claudeToolAllowlist`).
+  An engine-placed lead is given no shell, fresh or resumed: its loop runs no
+  shell command, and lead `57e921…` used the one it held to run `python3` on an
+  answer its CLI had saved to a file, which `Read` reads; every specialist keeps
+  its shell (`tests/engines/claude.test.ts#claudeLeadNoShell`; natively on
+  Claude Code 2.1.299, `docs/probes.md#leadToolSurface`).
   The two web tools are listed and pre-approved for every role, as a Codex or
   Grok specialist's own search already reaches the web: they run in the
   engine's process rather than the sandbox, read beyond this machine and start
@@ -1973,7 +1982,12 @@ which is a property of the line, not of the pipeline.
   --ignore-user-config -c features.plugins=false -c features.remote_plugin=false
   --skip-git-repo-check -m <m>
   -c model_reasoning_effort="<e>" -c model_instructions_file="<role.md>"` —
-  then, for an engine-placed lead only, the five `-c mcp_servers…` settings
+  then, for an engine-placed lead only, the five `-c mcp_servers…` settings and,
+  since its loop runs no shell command, `-c features.shell_tool=false` on both
+  heads, which no specialist line carries
+  (`tests/engines/codex.test.ts#codexLeadNoShell`; on codex-cli 0.163.0 it leaves
+  `exec_command` and `write_stdin` out of the registry a code-mode cell prints,
+  but not code mode's `exec`, `docs/probes.md#leadToolSurface`)
   — and last the positional `-`. **The brief goes on stdin and `-` holds its
   place** (`src/engines/codex.ts#codex`, `#codex`): a bare positional is
   misread as a flag the moment a brief begins with `-`, and a brief is prose a
@@ -4310,7 +4324,7 @@ as a regular file through no link, unless the file binds a project, and trusting
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
 20,000 bytes by default, and the mode's text, without `projectRoot`, is 40,893 bytes under
-`dev-team`, 56,514 under `dev-team-engine` and 4,508 under `solo`
+`dev-team`, 57,720 under `dev-team-engine` and 4,508 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

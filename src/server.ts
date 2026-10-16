@@ -20,7 +20,7 @@ import type { RunCommandRequest } from "./runcommand.ts";
 import { waiveReview } from "./review.ts";
 import { answerAsk, ask, askStatuses, lineageAsks, listAsks } from "./mailbox.ts";
 import type { AskStatus } from "./mailbox.ts";
-import { builtInModesDir, describeMode, gitPolicy } from "./modes.ts";
+import { builtInModesDir, describeMode, describeModeSummary, gitPolicy } from "./modes.ts";
 import type { Mode } from "./modes.ts";
 import { discoverProject, holdsConfig, isMainModule } from "./project.ts";
 import { reconcileAndCleanup } from "./reconcile.ts";
@@ -716,15 +716,22 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
   return [
     {
       name: "describe_mode",
-      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, and projectRoot, the root of the project this server serves. Call this first: it is how a launcher learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver.",
-      inputSchema: { type: "object", properties: {} },
+      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, projectRoot, the root of the project this server serves, and project, its defaultBranch, testCommand, setupCommand and mergePolicy. Call this first: it is how a launcher learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver. view is full, the default, or summary, which leaves out the loop and every role's prompt and keeps the rest; an engine lead reads the summary, its loop and role prompt being its instructions already.",
+      inputSchema: { type: "object", properties: { view: { type: "string", enum: ["full", "summary"] } } },
       rows: ["operator", "lead", "specialist"],
-      handler: async () => {
+      handler: async (args) => {
+        const view = optional(fields(args, "describe_mode"), "view", "string", "describe_mode");
+        if (view !== undefined && view !== "full" && view !== "summary") {
+          throw new RpcError(-32602, "describe_mode's view must be one of full, summary");
+        }
         const config = loadConfig(projectRoot);
-        const described = describeMode(modesDir, config.mode);
+        const described = view === "summary" ? describeModeSummary(modesDir, config.mode) : describeMode(modesDir, config.mode);
         // The project beside the mode's own text: what a launcher shows with the roster and
-        // judges against the project its user works in (design section 7). The loop's two
-        // settings are the config's, read where an engine lead that runs no shell reads them.
+        // judges against the project its user works in (design section 7). The project's
+        // settings and the loop's two are the config's, read where an engine lead that runs
+        // no shell reads them; each by name, so a key the config passes through is no setting.
+        const { defaultBranch, testCommand, setupCommand, mergePolicy } = config.project;
+        const project = { defaultBranch, testCommand, setupCommand, mergePolicy };
         const review = { planReviewRounds: config.limits.planReviewRounds, afterResolver: config.review.afterResolver };
         if ("reason" in described) return { ...text(described), isError: true };
         // The project's records where its config keeps them, and a restart named where the
@@ -733,7 +740,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
         // A key of its own: a host reads `warning` as a restart to ask for, and this is none.
         const projectWarning = options.cwd === undefined ? null : await cwdProjectWarning(projectRoot, options.cwd);
         return text({
-          ...described, projectRoot, review,
+          ...described, projectRoot, project, review,
           ...(config.records === undefined ? {} : { records: describeRecords(config.records) }),
           ...(warning === null ? {} : { warning }),
           ...(projectWarning === null ? {} : { projectWarning }),

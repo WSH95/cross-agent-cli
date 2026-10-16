@@ -659,6 +659,30 @@ test("the lead's role prompt states who it is, its report, what it may not do, a
   assert.match(lead, /Codex[^.]*3600/);
 });
 
+// @anchor engineLeadScope
+test("the engine loop has its lead read the summary, keeps run_command for its gates, and leaves the specialists' tests in their worktrees", () => {
+  const source = loop("dev-team-engine");
+  const text = flat(source);
+  // The loop and the lead's own prompt are its instructions already (atc-s96.162).
+  assert.ok(text.includes('describe_mode {view: "summary"}'), "the lead reads the summary view");
+  // `run_command` is the lead's route for the server's gates, and the limit is the lead's:
+  // a Codex lead once read it as a rule for every test (atc-s96.159).
+  assert.match(text, /your own test and setup runs[^.]*the server's gates[^.]*`run_command`/);
+  assert.match(text, /These limits are yours, not your specialists'/);
+  assert.match(text, /no specialist can call `run_command`/);
+  assert.match(text, /the implementer and the resolver run the test command in their own worktree/);
+  assert.match(text, /a brief never routes a specialist's tests through `run_command`/);
+  for (const step of ["2.", "5."]) {
+    assert.match(flat(sectionOf(source, step)), /the test command \(`project\.testCommand`\), which the implementer runs in its worktree/, `step ${step}`);
+  }
+  const lead = flat(fs.readFileSync(path.join(builtInModesDir(), "dev-team-engine", "roles", "lead.md"), "utf8"));
+  assert.match(lead, /These limits are yours, not your specialists'/);
+  assert.match(lead, /the implementer and the resolver run the test command in their own worktrees/);
+  for (const [where, prose] of [["the loop", text], ["the lead's prompt", lead]]) {
+    assert.doesNotMatch(prose, /every test and setup run through `run_command`/, where);
+  }
+});
+
 // @anchor leadReportLine
 test("the lead's report spells each specialist's line in cross-agent report's seven fields, a duration on every line", () => {
   // S11's E2, E2b and E2c Codex leads closed with each specialist's id and verdict and no

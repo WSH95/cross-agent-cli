@@ -1117,6 +1117,10 @@ test("describe_mode serves the active mode's loop and roles to every row, and re
   const missing = (await request("tools/call", { name: "describe_mode", arguments: {} })).result as Json;
   assert.equal(missing.isError, true);
   assert.match(JSON.parse(((missing.content as Json[])[0].text as string)).reason as string, /no mode "no-such-mode"/);
+  // An engine lead's first call is the summary, which refuses the same way.
+  const summary = (await request("tools/call", { name: "describe_mode", arguments: { view: "summary" } })).result as Json;
+  assert.equal(summary.isError, true);
+  assert.match(JSON.parse(((summary.content as Json[])[0].text as string)).reason as string, /no mode "no-such-mode"/);
 });
 
 test("list_roles reports the mode's workspace and the profile each role will actually run under", async (t) => {
@@ -1344,15 +1348,15 @@ test("describe_mode answers with projectRoot, the root this server serves, besid
     const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
     const answer = JSON.parse((((reply.result as Json).content as Json[])[0].text as string)) as Json;
     assert.equal(answer.projectRoot, root, mode);
-    // The mode's text is `describeMode`'s, unchanged: the handler adds the root and the
-    // loop's two settings beside it.
-    const { projectRoot: _, review: __, ...text } = answer;
+    // The mode's text is `describeMode`'s, unchanged: the handler adds the root, the
+    // project's settings and the loop's two settings beside it.
+    const { projectRoot: _, project: __, review: ___, ...text } = answer;
     assert.deepEqual(text, JSON.parse(JSON.stringify(describeMode(builtInModesDir(), mode))), mode);
   }
 });
 
 // @anchor describeModeAnswerSize
-test("describe_mode's whole answer is the mode's text, 19 bytes more, projectRoot's own JSON and the review settings", async (t) => {
+test("describe_mode's whole answer is the mode's text, 19 bytes more, projectRoot's own JSON, the project settings and the review settings", async (t) => {
   const answered = async (root: string, mode: string) => {
     const request = inProcess({ tools: projectTools(root, { mode: loadMode(builtInModesDir(), mode) }), authority: () => operator });
     const reply = await request("tools/call", { name: "describe_mode", arguments: {} });
@@ -1360,15 +1364,16 @@ test("describe_mode's whole answer is the mode's text, 19 bytes more, projectRoo
   };
   const textOf = (mode: string) => Buffer.byteLength(JSON.stringify(describeMode(builtInModesDir(), mode), null, 2));
   // The settings as the answer nests them, one level in, after `projectRoot`.
-  const review = { planReviewRounds: 3, afterResolver: "ask" };
-  const reviewBytes = Buffer.byteLength(',\n  "review": ' + JSON.stringify(review, null, 2).replace(/\n/g, "\n  "));
+  const nested = (key: string, value: Json) => Buffer.byteLength(`,\n  "${key}": ` + JSON.stringify(value, null, 2).replace(/\n/g, "\n  "));
+  const projectBytes = nested("project", { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" });
+  const reviewBytes = nested("review", { planReviewRounds: 3, afterResolver: "ask" });
   for (const mode of ["dev-team", "dev-team-engine", "solo"]) {
     const root = await realpath(await projectWithConfig(t, { mode, roles: {} }));
-    assert.equal(await answered(root, mode), textOf(mode) + 19 + Buffer.byteLength(JSON.stringify(root)) + reviewBytes, mode);
+    assert.equal(await answered(root, mode), textOf(mode) + 19 + Buffer.byteLength(JSON.stringify(root)) + projectBytes + reviewBytes, mode);
   }
   // A known root: a directory holding no config answers solo's defaults, and `"projectRoot":
   // "/x"` adds 23 bytes to them.
-  assert.equal(await answered("/x", "solo"), textOf("solo") + 23 + reviewBytes);
+  assert.equal(await answered("/x", "solo"), textOf("solo") + 23 + projectBytes + reviewBytes);
 });
 
 // @anchor describeModeProjectWarning
@@ -1387,16 +1392,17 @@ test("describe_mode warns when the directory the server was started in lies in a
   }
   const nowhere = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-nowhere-")));
   t.after(() => rm(nowhere, { recursive: true, force: true }));
-  const described = async (cwd: string) => {
+  const described = async (cwd: string, args: Json = {}) => {
     const client = stdioClient(cwd, { args: ["--project", main] });
     t.after(() => client.close());
-    const reply = await client.request("tools/call", { name: "describe_mode", arguments: {} });
+    const reply = await client.request("tools/call", { name: "describe_mode", arguments: args });
     const result = reply.result as Json;
     assert.equal(result.isError, undefined, JSON.stringify(reply));
     return JSON.parse(((result.content as Json[])[0].text as string)) as Json;
   };
 
-  const warned = await described(initialized);
+  // The summary an engine lead reads keeps the warning as the full answer does.
+  const warned = await described(initialized, { view: "summary" });
   assert.equal(warned.projectRoot, main);
   assert.equal(typeof warned.projectWarning, "string", JSON.stringify(Object.keys(warned)));
   assert.ok((warned.projectWarning as string).includes(main), warned.projectWarning as string);
@@ -1595,6 +1601,63 @@ test("a removed block refuses with a restart; an added one is a describe_mode wa
   assert.equal(((((await unserved("tools/list")).result as Json).tools as Json[]).map((tool) => tool.name)).includes("record"), false);
   assert.deepEqual((await unserved("tools/call", { name: "record", arguments: { path: ".project-steward/HANDOFF.md" } })).error,
     { code: -32602, message: "unknown tool: record" });
+});
+
+// @anchor describeModeProject
+test("describe_mode answers project, the four settings the server resolves, under both views and with no config", async (t) => {
+  const described = async (root: string, view?: string) => {
+    const request = inProcess({ tools: projectTools(root, { mode: devTeam }), authority: () => operator });
+    return payload(await request("tools/call", { name: "describe_mode", arguments: view === undefined ? {} : { view } })).body;
+  };
+  // The engine loop reads `<default>` and the test command here, where a lead that runs no
+  // shell reads them (atc-s96.162). A key config passes through unread is no setting.
+  const root = await projectWithConfig(t, {
+    roles: {},
+    project: { defaultBranch: "trunk", testCommand: "make check", setupCommand: "make deps", mergePolicy: "manual", extra: "not a setting" },
+  });
+  // A directory holding no config is answered the defaults `loadConfig` resolves.
+  const nowhere = await realpath(await mkdtemp(path.join(tmpdir(), "cross-agent-nowhere-")));
+  t.after(() => rm(nowhere, { recursive: true, force: true }));
+  for (const view of [undefined, "full", "summary"]) {
+    assert.deepEqual((await described(root, view)).project,
+      { defaultBranch: "trunk", testCommand: "make check", setupCommand: "make deps", mergePolicy: "manual" }, view);
+    assert.deepEqual((await described(nowhere, view)).project,
+      { defaultBranch: "main", testCommand: "npm test", setupCommand: "none", mergePolicy: "auto" }, view);
+  }
+});
+
+// @anchor describeModeSummaryView
+test("describe_mode's summary view leaves out the loop and the role prompts, keeps the settings and warnings, and full stays the default", async (t) => {
+  // Served without the records block its config has since gained, so both `records` and the
+  // drift `warning` are in the answer.
+  const root = await realpath(await projectWithConfig(t, { mode: "dev-team-engine", roles: {}, limits: { maxDepth: 2 }, records }));
+  const request = inProcess({ tools: projectTools(root, { mode: devTeamEngine }), authority: () => operator });
+  const call = (args: Json) => request("tools/call", { name: "describe_mode", arguments: args });
+  const full = payload(await call({})).body;
+  assert.deepEqual(payload(await call({ view: "full" })).body, full, "full is the default");
+  assert.equal(typeof full.loop, "string");
+  assert.ok((full.roles as Json[]).every((role) => typeof role.prompt === "string"));
+  assert.equal(Object.hasOwn(full, "view"), false, "the full answer is today's, with project");
+
+  // An engine lead's instructions are the loop and its own role prompt already, and each
+  // specialist launches with its own: the summary leaves those out and keeps the rest.
+  const reply = await call({ view: "summary" });
+  const summary = payload(reply).body;
+  assert.equal(Object.hasOwn(summary, "loop"), false, "the summary carries no loop");
+  assert.equal(summary.view, "summary");
+  assert.deepEqual(Object.keys(summary).sort(), ["git", "mode", "project", "projectRoot", "records", "review", "roles", "view", "warning"]);
+  assert.deepEqual(summary.roles, (full.roles as Json[]).map(({ prompt: _, ...role }) => role));
+  for (const key of ["mode", "git", "projectRoot", "project", "review", "records", "warning"]) {
+    assert.deepEqual(summary[key], full[key], key);
+  }
+  assert.match(summary.warning as string, /records was added/);
+  const bytes = Buffer.byteLength((((reply.result as Json).content as Json[])[0].text as string));
+  assert.ok(bytes < 20_000, `the summary is ${bytes} bytes, inside Grok's default cap`);
+
+  // Any other view is the caller's mistake, refused before anything is read.
+  for (const view of ["brief", 1]) {
+    assert.equal(((await call({ view })).error as Json)?.code, -32602, JSON.stringify(view));
+  }
 });
 
 test("record's arguments are checked as the wire spells them, before anything is read", async (t) => {

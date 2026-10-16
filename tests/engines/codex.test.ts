@@ -353,6 +353,7 @@ test("an engine-placed lead's argv carries P9's three -c settings, the tool time
     "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-c", instructions(dirs.role),
     ...mount,
+    "-c", "features.shell_tool=false",
     "-",
   ]);
   assert.equal(plan.stdin, "Run the loop.");
@@ -365,7 +366,8 @@ test("an engine-placed lead's argv carries P9's three -c settings, the tool time
   // A lead is resumed too, and the mount has to survive the different flag set.
   const resumed = codex.plan(requestFor(dirs, { role: "lead", rolePrompt: "You are the lead.\n", lead, resumeSessionId: threadId }));
   assert.equal(resumed.argv.filter((argument) => argument.startsWith("mcp_servers.")).length, 5);
-  assert.deepEqual(resumed.argv.slice(resumed.argv.indexOf("-c", resumed.argv.indexOf(instructions(dirs.role)) + 1), -1), mount);
+  assert.deepEqual(resumed.argv.slice(resumed.argv.indexOf("-c", resumed.argv.indexOf(instructions(dirs.role)) + 1), -1),
+    [...mount, "-c", "features.shell_tool=false"]);
   // `plan` folds the whole mount, files included; Codex's own carries none, so the plan's
   // files stay the two it names itself.
   assert.equal(codex.leadMount(lead, dirs.task).files, undefined);
@@ -399,6 +401,36 @@ test("every codex child, fresh or resumed, switches off plugins and remote plugi
           assert.equal(argv.at(-1), "-", what);
         }
       }
+    }
+  }
+});
+
+// @anchor codexLeadNoShell
+test("an engine-placed lead switches the shell tool off on both heads, keeping its mount and the plugin switches; no specialist does", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  const mount = codex.leadMount(lead, dirs.task).argv;
+  // A lead whose loop runs no shell command is offered none (atc-s96.157). A `-c` setting
+  // belongs to the process, so the resume carries it as the launch does.
+  for (const resumeSessionId of [undefined, threadId]) {
+    const what = resumeSessionId === undefined ? "launch" : "resume";
+    const { argv } = codex.plan(requestFor(dirs, {
+      role: "lead", rolePrompt: "You are the lead.\n", lead, cwd: dirs.root, sandbox: sandboxFor("codex", "read-only"), resumeSessionId,
+    }));
+    assert.deepEqual(argv.filter((argument) => argument.startsWith("features.shell_tool")), ["features.shell_tool=false"], what);
+    // After the five mount settings, which stay as they were, and before `-`.
+    const at = argv.indexOf("features.shell_tool=false") - 1;
+    assert.deepEqual(argv.slice(at - mount.length, at), mount, what);
+    assert.deepEqual(argv.slice(at), ["-c", "features.shell_tool=false", "-"], what);
+    const isolation = argv.indexOf("--ignore-user-config");
+    assert.deepEqual(argv.slice(isolation, isolation + pluginIsolation.length), pluginIsolation, what);
+  }
+  // Every specialist keeps its command tools, whatever its profile and head: an implementer
+  // runs its tests in its worktree with them.
+  for (const resumeSessionId of [undefined, threadId]) {
+    for (const profile of Object.keys(codex.sandboxProfiles)) {
+      const { argv } = codex.plan(requestFor(dirs, { resumeSessionId, sandbox: sandboxFor("codex", profile) }));
+      assert.equal(argv.some((argument) => argument.includes("shell_tool")), false, `${profile}, ${resumeSessionId ?? "launch"}`);
     }
   }
 });

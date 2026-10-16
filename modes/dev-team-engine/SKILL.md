@@ -8,11 +8,16 @@ on its own branch, every seat of the code reviewer reads what it committed there
 parallel, and the resolver writes there only when two fix rounds have left
 significant findings standing. No
 specialist runs a git command that writes, and neither do you: every root git step
-goes through `git_root`, every test and setup run through `run_command`, every
+goes through `git_root`, your own test and setup runs — the server's gates: step 4's
+setup, step 7's worktree gate and step 9's root suite — through `run_command`, every
 worktree's git metadata through `git_mutate`, and every question for the operator
 through `ask`. You run no shell command at all — not git, not the tests, not a file
 listing: those tools are the whole of your reach at the root, and the specialists
-read and write the code.
+read and write the code. These limits are yours, not your specialists': no
+specialist can call `run_command`; the implementer and the resolver run the test
+command in their own worktree, test first, before the gate runs it on the committed
+head; and a brief never routes a specialist's tests through `run_command`, and never
+tells it to skip them.
 
 Where `describe_mode` answers `records`, your brief is a run rather than one task —
 an epic, a list of tracker ids, or a goal — and `## The run`, after step 10, says how
@@ -30,11 +35,18 @@ or an underscore, or the journal refuses the call before any git runs. Because i
 names a branch, it also holds no `..` and ends in neither `.` nor `.lock`, or
 `git_root` refuses the call before its git command runs. `<default>`
 is `project.defaultBranch`, and `<worktree path>` is `<project root>/<git.worktreeDir>/<slug>`,
-absolute. `describe_mode` gives you the policy those come from, and each role's own
-prompt — the text `delegate` launches that role with, so a brief below adds this
-task's own work to it and never repeats it; `list_roles` gives you the engine, model
-and effort each role name below is bound to, which step 1 checks; your report names
-each task's own, as the `delegate` that launched it answered them.
+absolute.
+
+Your first call, before step 1, is `describe_mode {view: "summary"}`. This loop and
+your role prompt are your instructions already, so the summary leaves them out, and
+every role's prompt with them. It answers `project` — `defaultBranch`, `testCommand`,
+`setupCommand` and `mergePolicy` — the `git` policy and the `review` settings the
+steps below name, each role's workspace and seats, `records` where the project keeps
+them, and any `warning`. Each specialist launches with its own role prompt, so a
+brief below adds this task's own work to it and restates no role's rules.
+`list_roles` gives you the engine, model and effort each role name below is bound to,
+which step 1 checks; your report names each task's own, as the `delegate` that
+launched it answered them.
 
 ## 1. Root check
 
@@ -83,7 +95,8 @@ same way.
 ## 2. Plan
 
 `delegate {role: "planner", cwd: <project root>, brief}`, with the task text and
-its acceptance criteria verbatim, `<default>`, the test command, and the
+its acceptance criteria verbatim, `<default>`, the test command
+(`project.testCommand`), which the implementer runs in its worktree, and the
 instruction to check the task's claims about the repository before planning
 anything. `wait`, then `result`. A planner that answers `Premise fails: …` has
 found the task wrong about the repository: `ask {question}` the operator with the
@@ -151,7 +164,8 @@ run the project's setup command in it unless the config says `none`:
 ## 5. Implement
 
 `delegate {role: "implementer", cwd: <worktree path>, branch: <branch>, brief}`.
-The brief carries the task text, the approved plan verbatim, the test command,
+The brief carries the task text, the approved plan verbatim, the test command
+(`project.testCommand`), which the implementer runs in its worktree, test first,
 `<default>`, the branch and the worktree path, and the closing report you need
 back: what changed, what ran, what the result was, and the one-line summary you
 will commit under. `wait`, then `result`. A `BLOCKED` report caused by a plan

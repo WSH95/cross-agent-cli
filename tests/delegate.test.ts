@@ -583,6 +583,8 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
   const leadSettings = JSON.parse(claude.argv[claude.argv.indexOf("--settings") + 1]) as { permissions: { allow: string[] } };
   assert.deepEqual(leadSettings.permissions.allow, ["Read", "WebSearch", "WebFetch", "mcp__cross-agent"]);
   assert.equal(claude.argv[claude.argv.indexOf("--permission-mode") + 1], "dontAsk");
+  // And no shell, which its loop never runs (`tests/engines/claude.test.ts#claudeLeadNoShell`).
+  assert.equal(claude.argv[claude.argv.indexOf("--tools") + 1].split(",").includes("Bash"), false, claude.argv.join(" "));
 
   // Codex: the five `-c` settings, under the flag that removes the operator's own servers.
   const codex = await argvOf("codex", "S11: a Codex lead's brief.");
@@ -598,6 +600,10 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
   // And the switches that keep the account's plugins out of the lead (`docs/probes.md#codexPluginLeak`).
   assert.deepEqual(codex.argv.slice(codex.argv.indexOf("--ignore-user-config"), codex.argv.indexOf("--ignore-user-config") + 5),
     ["--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"]);
+  // And the shell tool switched off, after the mount (`tests/engines/codex.test.ts#codexLeadNoShell`).
+  const shellOff = codex.argv.indexOf("features.shell_tool=false");
+  assert.ok(shellOff > codex.argv.findLastIndex((value) => value.startsWith("mcp_servers.")), codex.argv.join(" "));
+  assert.equal(codex.argv[shellOff - 1], "-c");
 });
 
 // @anchor inheritedMountRefused

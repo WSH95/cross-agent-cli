@@ -42,7 +42,8 @@ rest — the mode's `loop`, its `roles` — each with its workspace, sandbox def
 and prompt, and `seats: "many"` or `gates: "merge"` where the mode declares them —
 its `git` policy: `worktreeDir`, `branchPattern`, and `implicit: true` where those
 two are this build's defaults rather than the mode's own — and `projectRoot`, the
-canonical root of the project this server serves, and `review`, the loop's two
+canonical root of the project this server serves, `project`, its `defaultBranch`,
+`testCommand`, `setupCommand` and `mergePolicy`, and `review`, the loop's two
 settings: `planReviewRounds` and `afterResolver`.
 
 `mode.lead.placement` decides who runs that loop. Under `host` — `dev-team`,

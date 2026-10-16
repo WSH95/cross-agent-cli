@@ -101,6 +101,14 @@ export interface ModeDescription {
   git: EffectiveGitPolicy;
 }
 
+/** `describe_mode {view: "summary"}`: the mode's facts without its loop or any role's prompt. */
+export interface ModeSummary {
+  view: "summary";
+  mode: ModeDescription["mode"];
+  roles: Array<Omit<ModeDescription["roles"][number], "prompt">>;
+  git: EffectiveGitPolicy;
+}
+
 /** The role every mode carries, whether or not it declares one (design, "Modes"). */
 export const CONSULT_ROLE = "consult";
 
@@ -468,11 +476,7 @@ export function describeMode(modesDir: string, name: string): ModeDescription | 
   }
   try {
     const loop = readFileSync(mode.loopFile, "utf8");
-    const roles = mode.roles.map((role) => ({
-      key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault,
-      ...(role.seats === undefined ? {} : { seats: role.seats }), ...(role.gates === undefined ? {} : { gates: role.gates }),
-      prompt: rolePrompt(mode, role),
-    }));
+    const roles = mode.roles.map((role) => ({ ...roleFields(role), prompt: rolePrompt(mode, role) }));
     return {
       mode: { id: mode.id, release: mode.release, name: mode.name, summary: mode.summary, lead: mode.lead },
       loop,
@@ -482,4 +486,33 @@ export function describeMode(modesDir: string, name: string): ModeDescription | 
   } catch (error) {
     return { reason: `mode ${JSON.stringify(name)}: ${message(error)}` };
   }
+}
+
+/**
+ * The active mode without its text: what an engine-placed lead reads, whose instructions are
+ * the loop and its own role prompt already, and whose specialists each launch with their own
+ * (atc-s96.162). It reads no loop or prompt file, and a mode that cannot be read is a reason,
+ * as `describeMode` answers it.
+ */
+export function describeModeSummary(modesDir: string, name: string): ModeSummary | { reason: string } {
+  let mode: Mode;
+  try {
+    mode = loadMode(modesDir, name);
+  } catch (error) {
+    return { reason: message(error) };
+  }
+  return {
+    view: "summary",
+    mode: { id: mode.id, release: mode.release, name: mode.name, summary: mode.summary, lead: mode.lead },
+    roles: mode.roles.map(roleFields),
+    git: gitPolicy(mode),
+  };
+}
+
+/** A role as `describe_mode` answers it, but its prompt: `seats` and `gates` only where the mode declares them. */
+function roleFields(role: ModeRole): Omit<ModeDescription["roles"][number], "prompt"> {
+  return {
+    key: role.key, title: role.title, workspace: role.workspace, sandboxDefault: role.sandboxDefault,
+    ...(role.seats === undefined ? {} : { seats: role.seats }), ...(role.gates === undefined ? {} : { gates: role.gates }),
+  };
 }
