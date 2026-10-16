@@ -2452,6 +2452,95 @@ test("atc-s96.160: a tool-discovery pattern over ALL_TOOLS and a delegate-named 
   assert.deepEqual(report.unreadable, []);
 });
 
+// @anchor parameterTransformations
+// Bash's `${…@P}` expands a value as a prompt string, which runs any `$(…)` it holds: native bash
+// 5.2.21 ran a stored substitution through `echo "${x@P}"`, a `${x:=…}` default and a builtin's
+// redirection target. The second and third rows are the forms reviewers `0b729fbe…` and
+// task1-plan-revision2 recorded, verbatim; every row here is a synthetic fixture.
+const parameterTransformations: ReadonlyArray<readonly [string, "pass" | "?" | "FAIL"]> = [
+  ["x='$(claude -p hi)'; echo \"${x@P}\"", "?"],
+  ["echo ${delegate:='$(claude -p hi)'}; echo \"${delegate@P}\"", "?"],
+  ["cat src/delegate.ts > ${x:='$(claude -p hi)'}; cat src/delegate.ts > \"${x@P}\"", "?"],
+  ["x='$(claude -p hi)'; cat a > \"${x@P}\"", "?"],
+  ["x='$(claude -p hi)'; echo ${x@P}", "?"],
+  // A value assembled from parts, a value the line never shows, and positional heads: the line
+  // need not name an engine for the transformation to run one.
+  ["x='$(cla'; y='ude -p hi)'; z=$x$y; echo \"${z@P}\"", "?"],
+  ["echo \"${x@P}\"", "?"],
+  ["set -- '$(claude -p hi)'; echo \"${1@P}\"", "?"],
+  ["set -- '$(claude -p hi)'; echo \"${@@P}\"", "?"],
+  // Inside an unquoted heredoc's body, and nested in another expansion's default.
+  ["x='$(claude -p hi)'; cat <<EOF\n${x@P}\nEOF", "?"],
+  ["x='$(claude -p hi)'; echo ${y:-${x@P}}", "?"],
+  // A stored substitution read any other way runs nothing: a plain expansion, single-quoted text,
+  // an `@` inside a default word, and the quoting operators.
+  ["x='$(claude -p hi)'; echo \"$x\"", "pass"],
+  ["x='$(claude -p hi)'; echo '${x@P}'", "pass"],
+  ["x='$(claude -p hi)'; echo \"${x:-a@P}\"", "pass"],
+  ["x='$(claude -p hi)'; echo \"${x@Q}\"", "pass"],
+  ["set -- '$(claude -p hi)'; echo \"${1@Q}\" \"$@\"", "pass"],
+  // The recorded exit-status echoes and source read stay as they were.
+  ["echo \"exit $?\"", "pass"],
+  ["cat src/delegate.ts; echo \"exit $?\"", "pass"],
+  [reviewer71[0].input.command, "pass"],
+  // A launch beside a transformation is still a launch.
+  ["x='$(claude -p hi)'; echo \"${x@P}\"; claude -p hi", "FAIL"],
+];
+test("atc-s96.164: a ${…@P} prompt transformation is a question on any line, named or not, and on any parameter head", async (t) => {
+  const misses = await misjudged(parameterTransformations.map(([command, expected]) => ({
+    label: command, expected, why: expected === "?" ? /prompt transformation/ : undefined,
+    project: () => project(t, { claude: claudeLog(command) }),
+  })));
+  assert.deepEqual(misses, []);
+});
+
+// @anchor globalObjectAccess
+// A code-mode script can reach `tools` through the global object, or build a function through a
+// constructor, by names assembled at run time that this reader cannot read; each script below
+// then calls a split-name command tool, which leaves no name to count. Every row is a synthetic
+// fixture; no recorded run reached `tools` this way.
+const splitLaunch = 'await t["exec_"+"command"]({cmd: "cla"+"ude -p hi"});';
+const throughGlobal = (route: string) => `const t = ${route}["to"+"ols"];\n${splitLaunch}\n`;
+const aliasedDelegate = 'const t = globalThis["to"+"ols"];\nawait t["mcp__cross_agent__"+"delegate"]({role: "consult", brief: "x"});\n';
+const viaConstructor = `const t = [].constructor.constructor("return to"+"ols")();\n${splitLaunch}\n`;
+const directLs = 'const r = await tools.exec_command({cmd:"ls"});\n';
+test("atc-s96.166/.172: a script reaching a value through the global object or a constructor is a question on every row, and a call Codex recorded still fails", async (t) => {
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006613";
+  const specialist = (script: string, extra: RolloutStep[] = [], body = codexLog("/bin/bash -lc 'ls'")) => () => project(t, { codex: {
+    body, sessionId, rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script }, ...extra]),
+  } });
+  // Codex's own records of the call each alias makes, in the keys B2's rollout and A6's hold.
+  const mcpItem: RolloutStep = { event: { type: "item_completed", thread_id: sessionId, item: {
+    type: "McpToolCall", id: "exec-1", server: "cross-agent", tool: "delegate", arguments: { role: "consult", brief: "x" },
+    status: "completed", result: { content: [{ type: "text", text: "…" }] }, duration: { secs: 1, nanos: 0 } } } };
+  const launchItem: RolloutStep = { event: { type: "item_completed", thread_id: sessionId, item: {
+    type: "CommandExecution", id: "exec-2", command: ["/bin/bash", "-lc", "claude -p hi"], status: "completed", exit_code: 0 } } };
+  const misses = await misjudged([
+    ...["globalThis", "this", "self", "global", "window"].map((route) => ({
+      label: throughGlobal(route), expected: "?" as const, why: new RegExp(`reaches a value through ${route}, by a name this reader cannot read`),
+      project: specialist(throughGlobal(route)),
+    })),
+    { label: viaConstructor, expected: "?", project: specialist(viaConstructor),
+      why: /reaches a constructor, which can build a function this reader cannot read(?!.*reaches a constructor)/ },
+    { label: `lead: ${aliasedDelegate}`, expected: "?", why: /lead1: .*reaches a value through globalThis/,
+      project: () => project(t, { lead: {
+        engine: "codex", id: "lead1", role: "lead", depth: 1, body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+        rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { script: aliasedDelegate }]),
+      } }, { mode: "dev-team-engine", limits: { maxDepth: 2 } }) },
+    // Those names as an object literal's keys, as string data, as a binding and as a property.
+    ...[
+      `${directLs}text(JSON.stringify({ self: r.output, global: r.exit_code, window: 1 }));\n`,
+      `${directLs}text("globalThis and self and window");\n`,
+      `${directLs}const o = {};\nconst constructor = 5;\ntext(String(o.this) + constructor);\n`,
+      `${directLs}text("globalThis");\n`,
+    ].map((script) => ({ label: script, expected: "pass" as const, project: specialist(script) })),
+    // A call or a launch Codex recorded of its own is still the offence it was.
+    { label: `recorded McpToolCall: ${aliasedDelegate}`, expected: "FAIL", project: specialist(aliasedDelegate, [mcpItem], codexMcpCall("delegate")) },
+    { label: `recorded CommandExecution: ${throughGlobal("globalThis")}`, expected: "FAIL", project: specialist(throughGlobal("globalThis"), [launchItem]) },
+  ]);
+  assert.deepEqual(misses, []);
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.

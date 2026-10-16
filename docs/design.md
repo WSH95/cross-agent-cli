@@ -4146,7 +4146,12 @@ names in it still count (`tools/e2e-verify.mjs#toolDiscoveryPatterns`,
 Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
-`#codexScriptFailClosed`, `#scriptNameAccounting`). A word after `.` or `?.` is a
+`#codexScriptFailClosed`, `#scriptNameAccounting`). A script that reaches a value
+through `globalThis`, `this`, `self`, `global` or `window` followed by `.` or `[`,
+or through a member named `constructor`, answers `?` on every row as well: either
+route can reach `tools`, or build a function, by a name assembled at run time.
+Those six routes are the ones guarded; an object literal's keys and string data
+that spell them stay data (`#globalObjectAccess`). A word after `.` or `?.` is a
 property, never a control keyword or one that opens a regular expression, and a
 regular expression's escapes are decoded for the inventory (`#memberNames`). A record
 that offends nowhere and holds a doubt is named with every doubt it holds, each once,
@@ -4220,6 +4225,11 @@ indirect `${!name}`, whose name's value may carry a subscript, answers `?` too,
 and so does any `-i` declaration whatever its operands, as `-n` does. Numbers and
 operators alone, and a literal number assigned to an ordinary name (`(( i = 0 ))`,
 `a[0]=1`, `${a[1]}`, `${x:0:2}`), stay as they are (`#arithmeticContexts`).
+A `${…@P}` prompt transformation, its operator a literal `P` and its head any
+parameter — a name, a subscripted name, a positional parameter, `@` or `*` —
+expands its value as a prompt and runs any substitution in it, so it answers `?`
+on every line, named or not, wherever the value came from
+(`#parameterTransformations`).
 The data readers account for stdin and arguments as data except for execution
 options, code assignments and deferred arithmetic/subscript evaluation; quoted
 substitutions at those readers, including values carried into arithmetic on the
@@ -4246,8 +4256,9 @@ interpreter's program only when it has no script or its script is stdin (`-`,
 `/dev/stdin`); given to inline code, a module or a script file it is input the code
 may read and run, which no modeled reader consumes, so it answers `?` when it
 names a target or judges as a launch (`#interpreterStdin`). Unnamed lines pass
-unless a modeled launch or the recursion limit decides them; names assembled
-beyond the supported decoding are outside this transcript audit.
+unless a modeled launch, the recursion limit or a `${…@P}` prompt transformation
+decides them; names assembled beyond the supported decoding are outside this
+transcript audit.
 
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three

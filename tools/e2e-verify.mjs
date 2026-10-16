@@ -397,6 +397,9 @@ function recordedHeartbeat(event, calls) {
 //   variable can assign any other — or when it assigns a name in the sets; an indirect
 //   `${!name}` is `?` too. Numbers and operators alone, and a literal number assigned to an
 //   ordinary name, stay as they are.
+// - A `${…@P}` prompt transformation, its operator a literal `P` and its head any parameter —
+//   a name, a subscripted name, a positional parameter, `@` or `*` — expands its value as a
+//   prompt and runs any substitution in it, so it is `?` on every line, named or not.
 // - Node module-loading options and data-URL scripts are unread code: `?` on named lines,
 //   except this repository's own server/CLI entries, which are launches. An option that
 //   reads a file as code or as options that load code is unread too — --env-file(-if-exists),
@@ -422,9 +425,9 @@ function recordedHeartbeat(event, calls) {
 //   Script files are not read. Stdin is an interpreter's program only with no script or a
 //   script that is stdin (`-`, `/dev/stdin`); given to inline code, a module or a script
 //   file it is input the code may read and run, consumed by nobody, so it is `?` when it
-//   names a target or judges as a launch. Unnamed lines pass unless a modeled launch or the
-//   recursion limit decides them; names assembled beyond the supported decoding are
-//   outside this transcript audit.
+//   names a target or judges as a launch. Unnamed lines pass unless a modeled launch, the
+//   recursion limit or a `${…@P}` prompt transformation decides them; names assembled beyond
+//   the supported decoding are outside this transcript audit.
 //
 // It is stricter than the deny list, on purpose. A deny rule is matched by the engine
 // against the command it is asked to run (`Bash(claude *)`), by that engine's own matcher;
@@ -456,12 +459,13 @@ const launch = launcherFor(config);
 // tool's still is. On any row a delegate name inside a followed `exec_command`'s literal that
 // only reads (`readsOnly`) is a file's name and not counted, and a regular expression of literal
 // alternatives that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern,
-// its names still counted (`toolDiscoveryPatterns`). Aliases, eval/Function/import,
-// legacy octal escapes, role-dependent slashes the reader cannot classify, and asides
-// naming launches also answer `?`; a word after `.` or `?.` is a property, never a control
-// keyword or one that opens a regular expression. This is a bounded reader, not
-// JavaScript execution; a positively read launch still takes precedence, and a record that
-// holds no launch is named with every doubt it holds, each once.
+// its names still counted (`toolDiscoveryPatterns`). Aliases, eval/Function/import, the
+// global object reached through `globalThis`, `this`, `self`, `global` or `window` followed
+// by `.` or `[`, a member named `constructor`, legacy octal escapes, role-dependent slashes
+// the reader cannot classify, and asides naming launches also answer `?`; a word after `.`
+// or `?.` is a property, never a control keyword or one that opens a regular expression.
+// This is a bounded reader, not JavaScript execution; a positively read launch still takes
+// precedence, and a record that holds no launch is named with every doubt it holds, each once.
 const offences = [];
 const unreadable = [];
 const exempted = [];
@@ -814,8 +818,9 @@ function git(...argv) {
  * unmodeled command word, a command word an expansion or a glob supplies, an option a walk
  * does not know, stdin of unknown content read as a script — is `?` on a line that names
  * a target anywhere in its raw text or decoded words (`namesInList`), unless the line
- * holds a launch. An unnamed line is outside the names gate, not proof that an engine
- * name could not have been assembled. Unconsumed named stdin is a doubt (`unreadInput`).
+ * holds a launch. An unnamed line is outside the names gate, but for a `${…@P}` prompt
+ * transformation, which is `?` on any line; it is not proof that an engine name could not
+ * have been assembled. Unconsumed named stdin is a doubt (`unreadInput`).
  * The recursion stops at eight levels, with `?`.
  */
 function launcherFor(settings) {
@@ -1070,7 +1075,7 @@ function launcherFor(settings) {
    */
   function lexList(text, start, closer) {
     const list = { text: "", commands: [], nested: [], problems: [], end: text.length, closed: closer === null,
-      named: false, arithmetic: false, deferred: false, arithTexts: [], indirections: [] };
+      named: false, arithmetic: false, deferred: false, arithTexts: [], indirections: [], transformations: [] };
     // A `{ … }` or `( … )` group a pipe feeds: every command in it reads that pipe, the
     // first one exactly, the rest after whatever came before them may have read.
     const groups = [];
@@ -1258,6 +1263,7 @@ function launcherFor(settings) {
           const found = parameterArithmetic(text.slice(k, end));
           list.arithTexts.push(...found.texts);
           if (found.indirect) list.indirections.push(text.slice(k, end));
+          if (found.transformation !== undefined) list.transformations.push({ raw: text.slice(k, end), op: found.transformation });
         }
         return end;
       }
@@ -1356,6 +1362,7 @@ function launcherFor(settings) {
           // A builtin reading the heredoc has the current shell expand its arithmetic.
           list.arithTexts.push(...inner.arithTexts);
           list.indirections.push(...inner.indirections);
+          list.transformations.push(...inner.transformations);
           doc.stdin.exact = !/[$`\\]/.test(body);
         }
       }
@@ -1535,6 +1542,9 @@ function launcherFor(settings) {
     };
     const arithmetic = list.arithmetic || list.commands.some((command) => command.arith || conditional(command.words));
     if (named && deferred && arithmetic) verdict = doubt("arithmetic may evaluate a quoted substitution or subscript", list.text);
+    // A `${…@P}` expands its value as a prompt, running any substitution the value holds, so it
+    // is a doubt on any line: the value may be assembled, or set where this line does not show.
+    for (const t of list.transformations) if (t.op === "P") verdict = worse(verdict, doubt("a `${…@P}` prompt transformation, which expands the value as a prompt and runs any substitution in it", t.raw));
     // Every arithmetic text bash evaluates on this line — `(( ))`, `$(( ))`, `$[ ]`, an
     // indexed subscript in a `${…}` or a compound array's key, a substring's offset and
     // length — and every indirect expansion, whose name may carry a subscript (W-2).
@@ -1789,11 +1799,14 @@ function launcherFor(settings) {
    * `*`), and a substring's offset and length (`${x:off:len}`; `:-`, `:=`, `:?` and `:+` are
    * other operators). `indirect` is a `${!name…}`, which reads the variable its name's value
    * names, a subscript bash evaluates included; `${!name*}`, `${!name@}` and `${!name[@]}`
-   * only list names or keys.
+   * only list names or keys. `transformation` is the operator letter of a `${…@X}`, on a
+   * name, a subscripted name, a positional parameter, `@` or `*`.
    */
   function parameterArithmetic(raw) {
     const body = raw.slice(2, -1);
-    const found = { texts: [], indirect: false };
+    const found = { texts: [], indirect: false, transformation: undefined };
+    const positional = /^(?:\d+|[@*])@([A-Za-z])$/.exec(body);
+    if (positional !== null) { found.transformation = positional[1]; return found; }
     const head = /^([#!]?)([A-Za-z_]\w*)/.exec(body);
     if (head === null) return found;
     let k = head[0].length;
@@ -1806,6 +1819,7 @@ function launcherFor(settings) {
       if (subscript !== undefined && subscript !== "@" && subscript !== "*") found.texts.push(subscript);
     }
     if (head[1] === "!" && !/^[*@]$/.test(body.slice(k)) && subscript !== "@" && subscript !== "*") found.indirect = true;
+    if (body[k] === "@" && /^[A-Za-z]$/.test(body[k + 1] ?? "") && k + 2 === body.length) found.transformation = body[k + 1];
     if (head[1] === "" && body[k] === ":" && !/[-=?+]/.test(body[k + 1] ?? "")) {
       const rest = body.slice(k + 1);
       let split = -1;
@@ -2758,7 +2772,9 @@ function codexOwnCall(payload) {
  * object-literal argument of an `exec_command` gives `cmd`, or of a `write_stdin` gives
  * `chars`, with no spread or computed key beside it, is the command, escapes decoded, and a
  * `delegate` called is a call. Every other reference to those tools, `tools` used other than
- * by a name, `eval`, `Function`, `require` and `import` go in `computed`, as does any excess
+ * by a name, `eval`, `Function`, `require`, `import`, a `globalThis`, `this`, `self`,
+ * `global` or `window` that is no property and is followed by `.` or `[`, and a property
+ * named `constructor` go in `computed`, as does any excess
  * of raw/decoded tool-name occurrences over the direct calls followed — except where the name
  * is a `delegate`'s, or a string holds one and no command tool's, which go in `unfollowed`,
  * because on the lead row a `delegate` it cannot see called is no offence. The scan
@@ -2818,6 +2834,17 @@ function scriptRead(source) {
   const visit = (list) => {
     list.forEach((token, k) => {
       if (token.kind === "template") { token.inner.forEach(visit); return; }
+      // The global object reaches `tools`, and a constructor builds a function, by names the
+      // script may assemble at run time, which leave no name here to follow or count.
+      if (token.kind === "name" && !token.member && ["globalThis", "global", "self", "window", "this"].includes(token.text)
+        && list[k + 1]?.kind === "punct" && (list[k + 1].text === "." || list[k + 1].text === "[")) {
+        read.computed.push(`a script that reaches a value through ${token.text}, by a name this reader cannot read`);
+        return;
+      }
+      if (token.kind === "name" && token.member && token.text === "constructor") {
+        read.computed.push("a script that reaches a constructor, which can build a function this reader cannot read");
+        return;
+      }
       if (token.kind === "name" && ["eval", "Function", "require"].includes(token.text)) { read.computed.push(`a script that uses ${token.text}`); return; }
       if (token.kind === "name" && token.text === "import" && list[k + 1]?.text !== ".") { read.computed.push("a script that imports a module"); return; }
       if (token.kind === "name" && token.text === "tools") {
