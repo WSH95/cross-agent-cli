@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T12:12:11.957721+00:00
+updated_at: 2026-10-16T14:56:29.150070+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,41 +8,51 @@ branch: main
 
 ## Now
 
-Acceptance fixes/retest `atc-s96.163` continue; no user decision is pending.
-Three primary source tasks are merged: `.155/.160` b5a5522, `.156/.167` d012438,
-and `.161` affcfc3. Only `.167` is closed; native candidate acceptance remains.
+Acceptance campaign atc-s96.163 continues. No user decision is pending.
+All four primary source tasks are merged: verifier b5a5522, scope wording d012438,
+plugin isolation affcfc3, and lead contract/project discovery/upgrade guidance 4e065bb.
+Only .167 is closed; original findings await the frozen-candidate E2E criteria.
 
-Codex plugin-isolation source fix .161 merged as affcfc3 after the user accepted top-level availability as an explicit unknown limitation. Native r4 on7c0d273/CLI0.163.0/Sol/default passed Stage0 and all8turns (bounded,10unknownlimitations), fullsuite1270/1268/0/2, unchanged operator config and clean fixture/sample/all582oldhashes. Final docs-only head passed gate/root1270/1267/0/3. All3 code reviews clean in R1 except2Minor; verified docs-only wrap then all3R2 clean with no findings. Worktree/branch removed; root-only/clean. Complete plans/results/logs/source archives/proof/journal retained. .161 stays open for frozen-candidate E2E, as do earlier findings. New verified docs follow-up .169 will be fixed with lead-contract guidance. Other scope notes are limitations or non-defects, not silent deferrals. Next .157/.159/.162/.169 through current frozen installed0.1.9 dev-team, then .164-.166/.168, candidate full mode matrix, restore configs/connection. No push/release/sync.
+Task4 finished planning, test-first implementation, committed-head tests, host-only native
+controls, two three-seat code reviews, one verified minor wrap, merge, root tests and cleanup.
+Final head 4e065bb has no in-scope review findings. Final-head explicit rerun and root suite
+pass 1276/1273/0/3. Source is main at 4e065bb before this records commit, clean/root-only,
+with no task branches or live tasks. All 21 task4 records are done, depth 1/parent null/exit 0.
+Native source export 426047b and complete results/logs/manifests are archived. All required
+standalone controls passed; original failed P2/P4 probes stay UNVERIFIED and causes inferred.
+The mount proves specialist-row read transport, not actual lead ownership. Claude Read of
+saved MCP answers stays unexercised; watch and record any saved answer in final Claude-led E2E.
+Task3 passed Stage0 and all eight native turns under the user-accepted bound. Top-level
+skills.list/read availability and backend receipt remain unproven. The decision and exact
+limits are in DECISIONS and task3-native-scope-choice.txt; no final verifier check is waived.
 
-The user-accepted boundary is recorded in DECISIONS and task3-native-scope-choice.txt.
-It changes only the native proof's absent-call coverage; no final E2E verifier check is waived.
-Final task3 head affcfc3 differs from proved7c0d273 only in docs/probes.md. Both final gate
-and root tests pass1270/1267/0/3; all8native1270/1268/0/2, bounded10unknownlimitations.
-No live task/probe; source root-only/notaskbranches/clean before this records checkpoint.
+New confirmed test-only follow-up .170 is claimed. One final-head gate timed out polling
+for a zombie. Implementer5968bded verified dash can reap sleep 0 before parent exec, reproducing
+16/400 original failures versus 0/400 proposed synchronized trials under load. No source
+change was made. Keep this fixture fix separate from task4: fresh planner/review/worktree,
+verified failure evidence, smallest justified test-only change, npm test, all three reviews, merge,
+root tests and cleanup. Full diagnosis task4-zombie-gate-diagnosis.json and load logs are
+archived. The explicit unchanged-head rerun passed; original failure remains preserved.
 
-Task4 .157/.159/.162/.169 is claimed. Planreview R1 a6dd91f5 returned3Important/3Minor;
-planner5381b8bd verified/folded them; fresh R2 980d7397 is clean (3 ->0). Finalplanner
-b57ea1d7 is active. No task4 worktree/code/native yet. After finalresult, archive it and
-create slug fixes-lead-contract-20261016 from current main (this checkpoint is records-only).
-Acceptance task4-acceptance.md, revisedplan task4-plan-r2.md, reviews task4-plan-review-r1/r2.md
-under campaign evidence. Use complete approved plan for implementer; all native probes host-only.
-Any required UNVERIFIED result is not native acceptance; .161 bounds stay unchanged.
+Then resolve remaining .164/.166 verifier uncertainty, verify .165's premise, and fix .168
+staging. Confirmed follow-ups stay in this stream. Use current main/npm test/no setup/auto/
+depth 1 and exact bindings through frozen installed 0.1.9; never hot-load this checkout as the
+development MCP. Avoid new proof machinery; main-flow focus and accepted bounds stand.
 
-Then resolve .164/.166 verifier uncertainty, investigate .165 premise, and fix .168 staging.
-Do not use source as development MCP: installed0.1.9 stays frozen. Main/npm test/no setup/
-auto/depth1 and exact bindings remain unchanged. No direct host implementation.
+After all source fixes settle, freeze/install a temporary candidate and use fresh saved-project
+Codex chats for dev-team slug_rotate, six solo consultations/docs (Claude Opus, Codex Sol,
+Grok 4.7 at default effort), Claude-led slug_shortest_first and Codex-led slug_unique_reverse.
+Require live mode/roster, scripted mailbox inputs, full verbatim lead reports, all eight verifier
+checks per scope, and independent ownership/tool/plugin/localtest/review/cleanup audits.
+No new candidate E2E has started. Restore original sample config and managed connection at end.
+Sample is unchanged clean main a9b90d4, root-only, original config, 139 baseline tests; all 582
+historical evidence hashes match. Original managed plugin remains cross-agent@agent-plugins.
 
-After source fixes: freeze/install temporary candidate, fresh saved-project Codex chats for
-dev-team slug_rotate, sixsolo (Claude Opus/Sol/Grok default effort), Claude lead
-slug_shortest_first and Codex lead slug_unique_reverse, scripted mailbox answers, all8E2E
-checks per scope plus independent ownership/tool/plugin/localtest/cleanup audits. Retrieve
-and relay full lead reports. Restore original sample config and managed plugin connection.
-Sample remains clean maina9b90d4/139baseline/root-only/originalconfig; all582oldhashes match.
-
-Evidence: .cross-agent/fix-acceptance-evidence/campaign.json, task3-final-ledger-audit.json,
-task3-native-plugin-isolation-r1 through-r4, sourcearchives/patches/manifests, everyresult,
-and journal fixes-codex-plugins-20261015. .168 mitigation only archived/removed owned duplicate
-logs; the product/procedure defect remains open. Source HEAD before this records commitaffcfc3.
+Evidence root .cross-agent/fix-acceptance-evidence/: campaign.json, task4-final-ledger-audit.json,
+task4-final-preservation.json, task4-native-lead-tools/ plus attempt2/attempt3, all results,
+source archives/manifests, gate records and fixes-lead-contract-20261016 journal. The failed
+gate has no tested journal; task4-failed-gate-provenance.json records its clean-head context.
+Steward CLI remains unavailable; manual records are used. No push/release/remote sync.
 
 ## Prior verification context
 
@@ -593,10 +603,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: user decision required at the approved native-proof boundary. Both r2 and strengthened
-r3 make no top-level Cell D calls. Fresh-root catalogue/nested/mount evidence passes, but
-availability remains unresolved. Full eight-turn acceptance, reviews, merge and retests await
-that decision. Source task worktree/branch remain standing and clean; sample is preserved.
+Current: no external blocker or pending user decision. Source primary fixes are merged,
+reviewed and tested. Remaining confirmed follow-ups, including .170's test fixture race,
+and the frozen-candidate mode matrix prevent campaign completion. See Now and Beads.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

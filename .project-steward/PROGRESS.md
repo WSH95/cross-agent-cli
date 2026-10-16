@@ -3,6 +3,19 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T14:56:29.150070+00:00 — codex
+
+Task4 (.157/.159/.162/.169) merged 4e065bb after native controls on 426047b, two review rounds
+and one verified minor wrap. Final all three reviews have no in-scope findings; explicit final-head
+rerun and root npm test pass 1276/1273/0/3. A preceding gate exposed the unchanged zombie-fixture
+race, verified by implementer 5968bded and tracked separately as .170; failure and load evidence
+are preserved, with no task4 behavior change. All 21 delegations depth 1/parent null/exit 0.
+Worktree/branch removed, source root-only/clean; configs and all 582 old sample hashes unchanged.
+All four primary source tasks are merged. Original findings remain open pending candidate E2E.
+Next .170 and remaining follow-ups through frozen 0.1.9 dev-team, then full mode matrix and
+configuration/connection restoration. No external blocker, pending human decision or new
+native proof protocol. No push/release/sync.
+
 ### 2026-10-16T12:12:11.957721+00:00 — codex
 Lead-contract task4 (.157/.159/.162/.169) is claimed and plan review converged3 ->0 Important: a6dd91f5 (3Important/3Minor), then980d7397 (no findings). Planner5381b8bd verified/folded all6 before freshreview; finaloptimizationb57ea1d7 is active. Required native evidence remains unaccepted until recorded inventory/successful summary responses/current-artifact specialistRED/GREEN and cleanup pass. No source change/worktree/nativeprobe yet. Current source075b49c clean/root-only before this recordscheckpoint; frozen installed0.1.9 and exact config remain. After finalplan: worktree, testfirst implementation, commit/gate/nativeproof/all3reviews/merge/root/cleanup, then remaining followups and candidatefullmatrix. No pending human decision, push/release/sync.
 

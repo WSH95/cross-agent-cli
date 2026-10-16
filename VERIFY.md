@@ -7,6 +7,78 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: lead contract and project discovery merged (2026-10-16)
+
+Task4 (`.157`, `.159`, `.162`, `.169`) merged as
+`4e065bbbf69746e81b3eceec7675e8212e08ea2c`, one Conventional Commit through the frozen
+installed 0.1.9 dev-team. Claude leads no longer receive Bash; fresh and resumed Codex
+leads receive `features.shell_tool=false`. Specialists retain their command tools.
+The engine loop distinguishes server test gates from specialists' local worktree tests.
+`describe_mode` reports the four resolved project settings and accepts summary view,
+which omits loop and role-prompt bodies. Upgrade and launcher guidance match those changes.
+
+The implementer recorded test-first stages: behavior RED 1276/1256/7/13, compatibility
+RED 1276/1252/11/13, size-guard RED 1276/1261/2/13, then GREEN 1276/1263/0/13. Its full
+report distinguishes assertions reached in RED from later assertions reached only in GREEN.
+The final wrap added missing-mode summary coverage of existing behavior and claims no RED
+for that assertion. Citation checks report 1906 citations, zero misses.
+
+Native proof used committed export `426047bc093097389b8d1bb5890fd6171db2b9dc`, Claude Code
+2.1.299 and codex-cli 0.163.0, models claude-opus-5-5 and gpt-6.1-sol at default effort.
+All required controls pass under two reviewed amendments:
+
+| Case | Recorded result |
+|---|---|
+| Claude lead fresh/resume P1/P1b | No Bash in either tool list; successful paired summary answers with project settings, inline, without loop or prompts. |
+| Claude specialist P2 | Attempt2 ran RED exit 1, changed only sum.mjs, then GREEN exit 0. Attempt1's permission refusal remains UNVERIFIED. |
+| Codex lead fresh/resume P3/P3b | Each printed 108 names without command tools and completed a correlated summary call. Code-mode exec itself remains available. |
+| Codex specialist P4/P4r | P4's 105-name positive control and RED passed, but no edit/GREEN; it remains UNVERIFIED. Fresh clarified P4r printed the same command tools, ran RED exit 1, changed only sum.mjs, then GREEN exit 0. |
+
+The host initially misread P4's inventory as absent; raw rollout lines 12/14 corrected that
+reading before acceptance. The approved recipe ran unchanged. P4r explicitly distinguished
+the main checkout from its writable linked worktree. Its success does not establish the
+internal cause of P4's reported conflict. P2's amendment changed two inputs together, so
+its success also does not isolate a cause. Attempt2 omitted its final version recheck;
+attempt3 checked matching versions again. Original logs remain unchanged.
+
+The standalone mount answers the specialist read row because its probe task has no ledger
+record. It proves adapter tool restrictions and mounted read transport, not real lead
+ownership or permissions. Saved MCP-answer reading with Claude Read remains unexercised;
+the final Claude-led run must note any saved answer. The user-accepted .161 availability
+and backend-receipt limits remain. No final E2E verifier check is waived.
+
+| Review round | Head | Claude Opus xhigh | Codex Sol xhigh | Grok 4.7 xhigh |
+|---|---|---|---|---|
+| 1 | 172d115 | 51856b67: no major, 4 Minor | 71327fc8: no findings | 0d7fd78d: no findings |
+| 2 | 4e065bb | e651bcf5: no in-scope findings | cf6713e3: no in-scope findings | 0adecfc2: no in-scope findings |
+
+The implementer verified each row before the single minor wrap. Native executable behavior
+is unchanged since 426047b; only documentation, a comment, launcher wording and added test
+coverage differ. Existing non-command Codex tools are recorded as a scope limit, with no
+confirmed defect or broader restriction.
+
+Final committed-head rerun and root gates pass: **1276 tests, 1273 passed, 0 failed, 3 guarded
+skips**. The preceding same-head gate failed one existing zombie-fixture setup poll. The
+implementer reproduced dash reaping the child before exec: 16/400 original load trials
+lost the child, versus 0/400 with the proposed synchronized setup. This test-only race is
+tracked separately as `.170` and is not folded into task4. The failed gate is preserved;
+it has no tested journal, and its head provenance is recorded separately. The explicit
+unchanged-head rerun and root pass do not erase it. The fixture correction remains required
+in this campaign.
+
+All 21 task4 delegations settled at depth 1, parent null, exit 0. Every full result, actual
+binding, native log, manifest and journal is retained under
+`.cross-agent/fix-acceptance-evidence/` and `.cross-agent/tasks/`; the journal is
+`fixes-lead-contract-20261016`. The three native manifests cover 125 files. Fixture/process
+cleanup and configuration restoration passed. The source task worktree and branch are
+removed, leaving clean main and only its root worktree. Source and sample configs are
+unchanged, the sample remains at a9b90d4, and all 582 historical sample hashes match.
+
+All four primary source tasks are now merged. Original findings stay open for candidate
+acceptance. Next are `.170` and the remaining follow-ups, then the frozen candidate's full
+dev-team, six solo scenarios and both engine-led variants. That new matrix has not started.
+No candidate install, push, release or remote sync has occurred.
+
 ## Acceptance fixes: lead-contract plan reviewed (2026-10-16)
 
 Task4 (`.157`, `.159`, `.162`, `.169`) has no implementation yet. Plan reviewer

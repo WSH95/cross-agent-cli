@@ -4,16 +4,15 @@ Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
 ## Acceptance fixes and frozen-candidate retest (active, 2026-10-15)
 
-User-approved work is tracked by `atc-s96.163`; Beads owns the detailed tasks and follow-ups.
-As of 2026-10-16, three primary source fixes are merged (`b5a5522`, `d012438`, `affcfc3`).
-`.167` is closed. Plugin isolation passed all eight native turns under the user-accepted
-bounded scope; top-level availability remains explicitly unknown. Final code reviews,
-exact-head/root tests and cleanup pass. Original findings await frozen-candidate acceptance.
-Lead contract/metadata and upgrade-guidance planning cleared review (Important 3 ->0);
-implementation, other verified follow-ups, and the complete
-all-mode retest remain in the same stream. Beads owns their detailed list. Preserve all
-historical evidence and restore test configuration/connection afterward. No push, release
-or remote sync.
+User-approved work is tracked by atc-s96.163; Beads owns the detailed tasks and follow-ups.
+As of 2026-10-16, all four primary source tasks are merged: b5a5522, d012438, affcfc3, 4e065bb.
+Native controls, final code reviews, committed-head/root gates and cleanup pass under the
+recorded bounds. Plugin top-level availability stays explicitly unknown; no final E2E check
+is waived. A separate test-only zombie-fixture race is tracked as .170 and will be fixed
+before the candidate. Remaining follow-ups and the full mode matrix stay in this stream.
+The new candidate matrix has not started. Preserve historical evidence, restore configuration
+and connection afterward, and close findings only on their acceptance evidence. No push,
+release or remote sync.
 
 ## Codex-led engine variant (verification complete, 2026-10-15)
 
