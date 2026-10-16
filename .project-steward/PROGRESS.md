@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T09:34:41.444791+00:00 — codex
+.161 harness amendment reviewed clean after 1→0 Important; correction task a0eb0ed3 done, RED1260/1237/10/13 then GREEN1260/1247/0/13. Unmerged f2ad696 passes committed-head gate1260/1257/0/3. Native r2 suite1260/1257/1/2: Stage0/R1 pass, fresh-root treatment zero plugin skills and retained mount/instructions/fixture; stopped R2 for unannotated keyword classifications and missing top-level coverage calls. No resume/worktree proof or acceptance. Cleanup/operator config/sample baseline pass. Planner0d38a952 is verifying classification/coverage evidence, no user decision pending. Source snapshots and all logs retained; .168 staging mitigation was archive/remove owned duplicates, not a product fix.
+
 ### 2026-10-16T08:47:37.481800+00:00 — codex
 .161 implemented at unmerged af3f2c2 after test-first RED (1251/1226/12/13), GREEN (1251/1238/0/13) and ordinary committed-head gate (1251/1248/0/3). Native r1 on CLI0.163.0/Sol passed Stage0 and established 3 positive-control plugin skills, then stopped unresolved on multipart/truncated inventory; no treatment ran. Full native-enabled suite also exposed marker-fixture opt-in environment inheritance (1251/1247/2/2). Cleanup passed with byte-identical operator config and unchanged sample baseline. Planner a8fbb767 is verifying the focused correction; fresh review/r2 proof follow. New .168 records the staging pathspec refusal, fully reconciled. No acceptance claim, merge, candidate install, push or sync.
 

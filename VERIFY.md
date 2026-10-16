@@ -7,6 +7,42 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: second native isolation attempt (2026-10-16)
+
+The focused harness amendment cleared two plan reviews (Important 1 → 0), then resumed
+implementer `a0eb0ed3801ecbe216ac81f81d65e17e3608` completed at depth 1, exit 0. Four approved
+test/doc files changed, with no adapter change. Correction RED: 1260 tests, 1237 pass,
+10 expected failures, 13 skips. Both GREEN runs: 1260/1247/0/13. The report identifies the
+two assertions not reached after an earlier assertion failed in their RED subtests; all
+assertions executed GREEN. Citations: 1874, zero misses or drift.
+
+The task was amended to `f2ad6965bc82fa7455408481a2577d2cc1d8d56a`, still unmerged. Its
+ordinary committed-head gate passed 1260/1257/0/3. Native attempt r2 on that fixed head,
+Codex CLI 0.163.0 and Sol/default effort, returned 1260/1257/1/2: only the native probe
+failed. The prior launcher environment failure is resolved.
+
+Stage 0 and R1 passed. The root control has three plugin-origin skills; R2's root treatment
+has zero, while preserving four system, three user and one fixture-project skill, the
+instructions marker, authentication, sandbox/cwd/model and correlated mounted `list_roles`
+access. No resume or worktree turn ran. This is fresh-root evidence, not eight-turn acceptance.
+
+R2's recorded verdict is FAILED for nine unannotated tool descriptions mentioning plugins;
+the nested skill keyword test also flags Pages/Sites/plugin-management descriptions.
+There are no recorded top-level calls to the deliberately absent control or `skills.list`
+and `skills.read`, leaving their required coverage unresolved. The approved procedure
+returns unannotated mentions to classification planning; it does not establish a product
+failure or allow a pass. Planner `0d38a952b779a912d69b7ca44475deb1b37c` is verifying these
+classifications and all call evidence before selecting a correction or reporting a concrete
+external boundary. No gap is waived and no new user decision is pending yet.
+
+Cleanup passed with the same operator-config hash as r1. Independent checks confirm fixture
+removal, unchanged operator-config bytes and the preserved sample baseline. Both native
+attempts now have source archives, binary patches, commit objects and hash manifests.
+Eight log files were archived byte-for-byte before removing their owned duplicate worktree
+folders; the prescribed staging command then succeeded. `.168` remains open for a real fix.
+Full results and evidence stay in `.cross-agent/fix-acceptance-evidence/`. Code reviews,
+merge, remaining source fixes and candidate retests remain pending; no push or sync.
+
 ## Acceptance fixes: plugin isolation implemented, first native probe unresolved (2026-10-16)
 
 Task `.161` was implemented in linked worktree `fixes-codex-plugins-20261015` and committed
