@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-15T23:56:55.044738+00:00
+updated_at: 2026-10-16T00:29:34.840543+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,7 +8,7 @@ branch: main
 
 ## Now
 
-**Acceptance-finding fixes and retest are authorized and active (atc-s96.163).** The user approved the four-task plan: verifier coverage (.155/.160), consultant scope (.156), Codex plugin isolation (atc-s96.161), and lead contract (.157/.159) plus configuration discovery (atc-s96.162). Run each through the current dev-team roster on installed 0.1.9, then retest a frozen candidate across all modes and both lead engines. Resolve follow-ups. Preserve historical evidence and restore sample/managed connection. Local commits authorized; no push, release or remote sync. Earlier diagnose-only instructions below are historical and superseded for these findings. Current task: verifier coverage; .155/.160 claimed.
+**Acceptance-finding fixes and retest are authorized and active (atc-s96.163).** The user approved the four-task plan: verifier coverage (.155/.160), consultant scope (.156), Codex plugin isolation (atc-s96.161), and lead contract (.157/.159) plus configuration discovery (atc-s96.162). Run each through the current dev-team roster on installed 0.1.9, then retest a frozen candidate across all modes and both lead engines. Resolve follow-ups. Preserve historical evidence and restore sample/managed connection. Local commits authorized; no push, release or remote sync. Earlier diagnose-only instructions below are historical and superseded for these findings. Current task: verifier coverage .155/.160. Planner 561600aacc68382def8e38e7df3b98aacfa5 completed; plan review d29a2519951718d48adc9254aeac472b7cee returned three Important and two Minor findings. Planner resumed as a0dc15dc147762c6b29f58d6ec98d4986fd5 to verify and fold them; no implementation yet. Campaign evidence is under ignored .cross-agent/fix-acceptance-evidence/. Original 459-file manifest matches; preservation snapshot covers 582 files.
 
 **Additional Codex-led variant is complete (`atc-s96.158`, user-requested).** Chat
 `01a1419a-d274-7eb1-b049-14a27a00bb0e` ran installed 0.1.9 with the exact changed bindings:

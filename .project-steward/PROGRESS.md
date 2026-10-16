@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T00:29:34.840543+00:00 — codex
+Verifier task .155/.160 reached plan review. Planner confirmed the original events and found another task sharing the affected rollout plus additional Git reads hidden behind the first reported doubt. Review round 1 returned three Important findings: sed option injection, overly broad delegate-name discount, and unsupported user-acceptance/replay claims; two Minor fixture/negative-test gaps accompany them. The same planner is verifying and revising all five before round 2. No implementation yet. Native task IDs and complete results remain in the ledger and campaign evidence.
+
 ### 2026-10-15T23:56:55.044738+00:00 — codex
 Started atc-s96.163 under the approved fix-and-retest scope. Reframed .155/.156/.157/.159/.160 without deleting original evidence; created atc-s96.161 for Codex plugin isolation and atc-s96.162 for missing resolved project settings. Current installed 0.1.9 dev-team roster confirmed; no live tasks, only root worktree. The four existing pending interaction entries are closures from completed verification runs and are included in preparation bookkeeping. First task .155/.160 is claimed.
 
