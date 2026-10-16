@@ -8,7 +8,7 @@ import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveAuthority } from "../src/authority.ts";
-import { engineEnv, project } from "./helpers/project.ts";
+import { engineEnv, project, suiteEnv } from "./helpers/project.ts";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const scripts = "skills/cross-agent/scripts";
@@ -22,8 +22,7 @@ function fixture(t: any) {
   fs.chmodSync(codex, 0o755);
   const file = path.join(home, "fixture.json");
   const pluginId = "cross-agent@fixture-market";
-  const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: home };
-  for (const name of markers) delete env[name];
+  const env: NodeJS.ProcessEnv = { ...suiteEnv, CODEX_HOME: home };
   const state = () => JSON.parse(fs.readFileSync(file, "utf8"));
   const write = (value: any) => fs.writeFileSync(file, JSON.stringify(value));
   write({ version: 0, config: { model: "untouched", mcp_servers: { other: { command: "unchanged" } } }, plugins: [] });
@@ -199,6 +198,23 @@ test("task markers survive the launcher and prevent setup mutations even when em
     }
   }
   assert.equal(f.state().writes, 1);
+});
+
+// A suite run with an opt-in of its own, as the native plugin-isolation proof's is
+// (`tests/engines/codex.test.ts#codexPluginIsolationReal`), hands the launcher none of it.
+test("a suite carrying its own CROSS_AGENT_ opt-in leaves the launcher's markers exactly the task's", (t) => {
+  const previous = process.env.CROSS_AGENT_PROBE_OPT_IN;
+  process.env.CROSS_AGENT_PROBE_OPT_IN = "1";
+  t.after(() => {
+    if (previous === undefined) delete process.env.CROSS_AGENT_PROBE_OPT_IN;
+    else process.env.CROSS_AGENT_PROBE_OPT_IN = previous;
+  });
+  const f = fixture(t);
+  assert.equal(f.run("install").status, 0);
+  const env = Object.fromEntries(markers.map((name, i) => [name, String(i)]));
+  const launched = f.launch(f.home, env);
+  assert.equal(launched.status, 0, launched.stderr);
+  assert.deepEqual(JSON.parse(launched.stdout).markers, env);
 });
 
 test("setup refuses missing, disabled, ambiguous, or malformed installed plugin identities", (t) => {

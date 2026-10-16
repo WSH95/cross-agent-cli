@@ -595,6 +595,9 @@ test("the lead's mount reaches the engine's own argv through the real runner, on
     'mcp_servers.cross-agent.env_vars=["CROSS_AGENT_DEPTH","CROSS_AGENT_TASK","CROSS_AGENT_LINEAGE","CROSS_AGENT_PROJECT"]',
   ]);
   assert.ok(codex.argv.includes("--ignore-user-config"));
+  // And the switches that keep the account's plugins out of the lead (`docs/probes.md#codexPluginLeak`).
+  assert.deepEqual(codex.argv.slice(codex.argv.indexOf("--ignore-user-config"), codex.argv.indexOf("--ignore-user-config") + 5),
+    ["--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"]);
 });
 
 // @anchor inheritedMountRefused

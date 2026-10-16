@@ -78,9 +78,12 @@ const codex = {
     return [];
   },
 
-  // Keeps auth, raises no trust prompt, and removes the operator's MCP servers (P5).
+  // `--ignore-user-config` keeps auth, raises no trust prompt and drops the user's MCP servers
+  // (P5), but not the account's remote plugins (`docs/probes.md#codexPluginLeak`). So both
+  // plugin switches are set off per process, on both heads, and never left to the CLI's
+  // defaults, which enable both.
   exclusionArgs(): string[] {
-    return ["--ignore-user-config"];
+    return ["--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"];
   },
 
   /**

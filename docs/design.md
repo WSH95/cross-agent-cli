@@ -406,8 +406,12 @@ that spelling, so nothing in the matrix depends on it.
 
    **Codex.** `-c mcp_servers.cross-agent.command`, `…args` and
    `…default_tools_approval_mode="approve"`, all three under
-   `--ignore-user-config`, mount this server plus Codex's built-in
-   `codex_apps` and nothing of the operator's. The third setting is not
+   `--ignore-user-config`, mounted this server plus Codex's built-in
+   `codex_apps` and nothing of the operator's in P9; a lead's line now carries
+   `-c features.plugins=false -c features.remote_plugin=false` beside the flag too, as
+   every Codex child's does (below, `docs/probes.md#codexPluginLeak`), and the native
+   protocol checks that a lead still reaches its mount under them
+   (`docs/probes.md#codexPluginIsolation`). The third setting is not
    optional: `codex exec` runs with approval policy `never`, so without it the
    lead sees the tools and every call is refused
    (`docs/probes.md#p9Mounts`, `#p9CodexMount`). S11 adds two more, so a lead's
@@ -1637,7 +1641,8 @@ points at the contract instead (`src/guard.ts#adapterOwnsFlags`) — and on
 - `denyArgs(targets)` and `exclusionArgs()`
   (`src/engines/types.ts#EngineAdapter`), each engine's own: Claude both deny
   forms in one appendable `--disallowedTools` array and `--strict-mcp-config`
-  for exclusion, Codex an empty deny list and `--ignore-user-config`, Grok one
+  for exclusion, Codex an empty deny list and `--ignore-user-config` with
+  `-c features.plugins=false -c features.remote_plugin=false`, Grok one
   `--deny` per target and no exclusion flag at all. Every `plan` spreads both
   into its argv whatever its own engine answers today
   (`src/engines/claude.ts#claude`, `#claude`, `src/engines/codex.ts#codex`,
@@ -1965,7 +1970,8 @@ which is a property of the line, not of the pipeline.
   sandbox can work (`docs/probes.md#p1ProfileShadowed`).
 - **Codex** (`src/engines/codex.ts#codex`): `codex exec --json -o <out> -C
   <cwd> --sandbox <read-only|workspace-write|danger-full-access>
-  --ignore-user-config --skip-git-repo-check -m <m>
+  --ignore-user-config -c features.plugins=false -c features.remote_plugin=false
+  --skip-git-repo-check -m <m>
   -c model_reasoning_effort="<e>" -c model_instructions_file="<role.md>"` —
   then, for an engine-placed lead only, the five `-c mcp_servers…` settings
   — and last the positional `-`. **The brief goes on stdin and `-` holds its
@@ -1978,7 +1984,8 @@ which is a property of the line, not of the pipeline.
   `tests/engines/codex.test.ts#fileEmptiedRun`). The lines are pinned byte for
   byte: the launch line (`tests/engines/codex.test.ts#readOnlyRole`), a writable role's
   (`#writeRoleArgv`), `off`'s (`#offProfileLaunches`), the resume (`#resumedRunExec`), an
-  `off` resume (`#offRoleResumes`), and a lead's five settings (`#enginePlacedLead`). Resume is a **different flag set**: `codex
+  `off` resume (`#offRoleResumes`), a lead's five settings (`#enginePlacedLead`), and the
+  plugin switches on every head, profile, prompt and mount (`#codexPluginIsolation`). Resume is a **different flag set**: `codex
   exec resume <thread id>` accepts `-c/--config`, `--last`, `--all`,
   `--enable`, `--disable`, `-i/--image`, `--strict-config`, `-m/--model`,
   `--dangerously-bypass-approvals-and-sandbox`,
@@ -1988,7 +1995,8 @@ which is a property of the line, not of the pipeline.
   `-o/--output-last-message`, and **neither `-C` nor `--sandbox`** (`codex exec
   resume --help`, 0.153.4, read 2026-09-09 and recorded at
   `docs/probes.md#cliCodex`). So the resume line is `codex exec resume <thread
-  id> --json -o <out> --ignore-user-config --skip-git-repo-check -m <m> -c
+  id> --json -o <out> --ignore-user-config -c features.plugins=false -c
+  features.remote_plugin=false --skip-git-repo-check -m <m> -c
   model_reasoning_effort="<e>" -c sandbox_mode="<the role's Codex profile>" -c
   model_instructions_file="<role.md>" -`, spawned with the **resuming
   process's** cwd set to the role's workspace
@@ -2011,10 +2019,21 @@ which is a property of the line, not of the pipeline.
   keeps auth and raises no trust prompt — though the run still writes a trust entry
   for its repository into the operator's `~/.codex/config.toml`, as each guarded
   `codexI2Real` run did (`docs/probes.md#i2Codex`) — and removes the user's MCP servers,
-  leaving only Codex's built-in `codex_apps` (P5) — and the user's plugins with
-  them: a delegated Codex `consult`, with this repository's plugin enabled in the
-  operator's configuration, listed no plugin skill root and no tool of this server
-  (`docs/probes.md#i1CodexHost`). Codex carries **no deny list**: probe P3 showed that
+  leaving only Codex's built-in `codex_apps` (P5). At T14, on 0.159.3, it dropped a
+  plugin enabled in the operator's configuration too: a delegated Codex `consult`, with
+  this repository's plugin enabled there, listed no plugin skill root and no tool of this
+  server (`docs/probes.md#i1CodexHost`). It does not keep out the account's remote
+  plugins. On 0.162.1 a read-only `consult` at a sample's root listed remote plugin roots
+  and read a plugin skill, a workspace-write `consult` in its worktree listed none, and an
+  implementer's resume in a worktree re-injected them into a thread whose fresh catalogue
+  was clean; on 0.163.0 some of this repository's read-only plan reviews at its root leaked
+  and others did not, and a resume in a worktree wrote no new skills block. Each case is
+  bounded by its version, its cwd and its head, and none has a known cause
+  (`docs/probes.md#codexPluginLeak`). So both plugin switches, `-c features.plugins=false
+  -c features.remote_plugin=false`, ride beside the flag on both heads, on every Codex
+  child, and are never left to the CLI's defaults, which enable both
+  (`src/engines/codex.ts#codex`, `tests/engines/codex.test.ts#codexPluginIsolation`,
+  `docs/probes.md#codexPluginIsolation`). Codex carries **no deny list**: probe P3 showed that
   execpolicy rules files are not honoured by `codex exec`, so its sandbox's
   network denial is the layer that holds instead, and a launched engine cannot
   reach its API (P3b). `codex exec` is chosen over `codex app-server` — the
@@ -3327,7 +3346,8 @@ each with its own unit test:
    depth-only tool list that used to approximate it.
 2. **No self-mount**: `--strict-mcp-config` without this server, beside
    `--setting-sources project`, for Claude,
-   `--ignore-user-config` for Codex, and nothing for Grok, whose headless CLI has
+   `--ignore-user-config` with `-c features.plugins=false -c features.remote_plugin=false`
+   for Codex (`docs/probes.md#codexPluginLeak`), and nothing for Grok, whose headless CLI has
    no `--plugin-dir` at all — only `grok agent` does (`docs/probes.md#t15Attach`). Grok
    specialists **do** reach a server, because Grok has no per-invocation
    exclusion flag (`src/engines/grok.ts#exclusionArgs` returns an empty list),
@@ -5164,7 +5184,7 @@ binding, and the project follows its own path (Context).
   are recorded per adapter: the profile map, `denyArgs`, `exclusionArgs` and
   `leadMount` byte for byte against P9
   (`tests/engines/claude.test.ts#claudeDeclaresOwn`, `#claudeDenyargsAppendable`, `#claudeExclusionargsFlag`, `#claudeLeadmountReturns`,
-  `tests/engines/codex.test.ts#codexDeclaresOwn`, `#codexCarriesDeny`, `#codexExclusionargsRemoves`, `#codexLeadmountSettings`,
+  `tests/engines/codex.test.ts#codexDeclaresOwn`, `#codexCarriesDeny`, `#codexExclusionargsRemoves`, `#codexPluginIsolation`, `#codexLeadmountSettings`,
   `tests/engines/grok.test.ts#grokDeclaresFour`, `#grokDenyargsDeny`, `#grokPerInvocation`, `#grokLeadmountInherits`), and the
   pipeline's half of `finish` — called once with the whole raw stdout, nothing
   buffered for an adapter that declares none, a throwing one reported without

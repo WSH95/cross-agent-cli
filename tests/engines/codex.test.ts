@@ -2,18 +2,32 @@ import "../child-check.mjs";
 import test from "node:test";
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import codex from "../../src/engines/codex.ts";
 import { adapterFor, sandboxFor } from "../../src/engines/registry.ts";
 import { commandPath } from "../../src/engines/binaries.ts";
 import { canonicalPath } from "../../src/reservation.ts";
 import { spawnEngine } from "../../src/engines/spawn.ts";
+import { childEnv } from "../../src/guard.ts";
+import { loadConfigWithMode } from "../../src/config.ts";
+import { builtInModesDir } from "../../src/modes.ts";
+import { discoverProject } from "../../src/project.ts";
 import type { EngineAdapter, EngineEvent, SpawnRequest } from "../../src/engines/types.ts";
+import { configClient } from "../../skills/cross-agent/scripts/codex-config.mjs";
+import {
+  absentControl, acceptanceOf, armFailures, armsFor, armsFrom, briefFor, canonical, carriersOf, cellA, cellB, cellD, commandsOf, coverageLimitations, coverageTargets,
+  expectedInventoryControl, forcedPlugins, isolationArgs, judgeTurn, originOf, ownedProjectKeys, parseRollout, preferenceSubtrees,
+  skillsBlocks,
+} from "../helpers/codex-isolation.ts";
+import type { Arms, TurnEvidence, TurnSpec, TurnVerdict } from "../helpers/codex-isolation.ts";
 
 const fake = fileURLToPath(new URL("../fixtures/fake-engine.mjs", import.meta.url));
 
@@ -107,8 +121,10 @@ test("codex carries no deny list: its sandbox's network denial is that layer (P3
 });
 
 // @anchor codexExclusionargsRemoves
-test("codex's exclusionArgs removes the operator's own configuration", () => {
-  assert.deepEqual(codex.exclusionArgs(), ["--ignore-user-config"]);
+test("codex's exclusionArgs removes the operator's own configuration and switches off plugins and remote plugins", () => {
+  // The flag drops the user's MCP servers but not the account's remote plugins
+  // (`docs/probes.md#codexPluginLeak`), and the CLI's defaults enable both switches.
+  assert.deepEqual(codex.exclusionArgs(), ["--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"]);
 });
 
 // @anchor codexLeadmountSettings
@@ -186,7 +202,7 @@ test("a read-only role's argv is P2's exec line, and the -o file is the pipeline
   assert.equal(plan.env, request.env);
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.root, "--sandbox", "read-only",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-m", "gpt-6-astra",
     "-c", instructions(dirs.role),
     "-",
@@ -206,7 +222,7 @@ test("a write role's argv names its worktree as the cwd and workspace-write as t
   assert.equal(plan.cwd, dirs.worktree);
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-m", "gpt-6-astra",
     "-c", 'model_reasoning_effort="high"',
     "-c", instructions(dirs.role),
@@ -223,7 +239,7 @@ test("the off profile launches as danger-full-access, the name Codex gives no sa
   const plan = codex.plan(requestFor(dirs, { sandbox: sandboxFor("codex", "off") }));
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "danger-full-access",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-c", instructions(dirs.role),
     "-",
   ]);
@@ -238,7 +254,7 @@ test("a resumed run is exec resume: no -C, no --sandbox, and the profile restore
   const plan = codex.plan(request);
   assert.deepEqual(plan.argv, [
     "exec", "resume", threadId, "--json", "-o", dirs.result,
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-m", "gpt-6-astra",
     "-c", 'model_reasoning_effort="high"',
     "-c", 'sandbox_mode="workspace-write"',
@@ -265,7 +281,7 @@ test("an off role resumes as sandbox_mode=danger-full-access, never by omission 
   const plan = codex.plan(requestFor(dirs, { resumeSessionId: threadId, sandbox: sandboxFor("codex", "off") }));
   assert.deepEqual(plan.argv, [
     "exec", "resume", threadId, "--json", "-o", dirs.result,
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-c", 'sandbox_mode="danger-full-access"',
     "-c", instructions(dirs.role),
     "-",
@@ -273,7 +289,7 @@ test("an off role resumes as sandbox_mode=danger-full-access, never by omission 
   // A read-only role resumes read-only, which is what a thread does on its own; saying it
   // is still the adapter's job, because the thread is not what it was launched as.
   const readOnly = codex.plan(requestFor(dirs, { resumeSessionId: threadId, sandbox: sandboxFor("codex", "read-only") }));
-  assert.equal(readOnly.argv[readOnly.argv.indexOf("-c") + 1], 'sandbox_mode="read-only"');
+  assert.equal(readOnly.argv.find((argument) => argument.startsWith("sandbox_mode=")), 'sandbox_mode="read-only"');
 });
 
 // @anchor rolePromptTravels
@@ -282,7 +298,7 @@ test("the role prompt travels as a file under scratchDir, pointed at by -c (P9)"
   const plan = codex.plan(requestFor(dirs));
   // The role file is the task's own, never inside the worktree the role may edit.
   assert.equal(path.dirname(dirs.role), dirs.task);
-  assert.equal(plan.argv[plan.argv.indexOf("-c") + 1], instructions(dirs.role));
+  assert.equal(plan.argv.find((argument) => argument.startsWith("model_instructions_file=")), instructions(dirs.role));
   const role = plan.files?.find((file) => file.path === dirs.role);
   assert.deepEqual(role, { path: dirs.role, contents: "You are the implementer.\n" });
   // The adapter names the files; the pipeline is what puts them on disk.
@@ -293,7 +309,7 @@ test("the role prompt travels as a file under scratchDir, pointed at by -c (P9)"
   const odd = path.join(dirs.root, 'a "task"\\dir');
   const quoted = codex.plan(requestFor(dirs, { scratchDir: odd }));
   const escaped = path.join(odd, "role.md").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  assert.equal(quoted.argv[quoted.argv.indexOf("-c") + 1], `model_instructions_file="${escaped}"`);
+  assert.equal(quoted.argv.find((argument) => argument.startsWith("model_instructions_file=")), `model_instructions_file="${escaped}"`);
   assert.ok(escaped.includes('\\"') && escaped.includes("\\\\"), escaped);
 });
 
@@ -302,7 +318,7 @@ test("a role with no prompt of its own is pointed at no instructions file at all
   const plan = codex.plan(requestFor(dirs, { rolePrompt: "" }));
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-",
   ]);
   assert.equal(plan.files?.some((file) => file.path === dirs.role), false);
@@ -334,7 +350,7 @@ test("an engine-placed lead's argv carries P9's three -c settings, the tool time
   const plan = codex.plan(requestFor(dirs, { role: "lead", brief: "Run the loop.", rolePrompt: "You are the lead.\n", lead }));
   assert.deepEqual(plan.argv, [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-c", instructions(dirs.role),
     ...mount,
     "-",
@@ -354,6 +370,56 @@ test("an engine-placed lead's argv carries P9's three -c settings, the tool time
   // files stay the two it names itself.
   assert.equal(codex.leadMount(lead, dirs.task).files, undefined);
   assert.deepEqual(plan.files?.map((file) => file.path), [dirs.result, dirs.role]);
+});
+
+/** What every Codex child carries: the flag, then both plugin switches, off (`docs/probes.md#codexPluginLeak`). */
+const pluginIsolation = ["--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false"];
+
+// @anchor codexPluginIsolation
+test("every codex child, fresh or resumed, switches off plugins and remote plugins once, beside --ignore-user-config", (t) => {
+  const dirs = layout(t);
+  const lead = { command: process.execPath, args: ["/projects/team/src/server.ts", "--project", "/projects/team"] };
+  for (const resumeSessionId of [undefined, threadId]) {
+    for (const profile of Object.keys(codex.sandboxProfiles)) {
+      for (const rolePrompt of ["You are the implementer.\n", ""]) {
+        for (const mounted of [false, true]) {
+          const what = JSON.stringify({ resumeSessionId, profile, rolePrompt, mounted });
+          const { argv } = codex.plan(requestFor(dirs, {
+            resumeSessionId, sandbox: sandboxFor("codex", profile), rolePrompt, ...(mounted ? { role: "lead", lead } : {}),
+          }));
+          // The five together, once, and no other value for either switch: the CLI's defaults
+          // enable both, so a setting left out or overridden later would be the default's.
+          const at = argv.indexOf("--ignore-user-config");
+          assert.deepEqual(argv.slice(at, at + pluginIsolation.length), pluginIsolation, what);
+          assert.equal(argv.filter((argument) => argument === "--ignore-user-config").length, 1, what);
+          assert.deepEqual(argv.filter((argument) => /^features\.(plugins|remote_plugin)\b/.test(argument)),
+            ["features.plugins=false", "features.remote_plugin=false"], what);
+          // No plugin is named, so none is enabled one by one either.
+          assert.equal(argv.some((argument) => argument.startsWith("plugins.")), false, what);
+          assert.equal(argv.at(-1), "-", what);
+        }
+      }
+    }
+  }
+});
+
+// @anchor codexPluginIsolationPipeline
+test("the pipeline delivers the plugin switches to a resumed codex child", async (t) => {
+  const dirs = layout(t);
+  const record = path.join(dirs.task, "record.json");
+  const request = requestFor(dirs, {
+    resumeSessionId: threadId,
+    env: { FAKE_ENGINE_FORMAT: "codex", FAKE_ENGINE_SCRIPT: "ok", FAKE_ENGINE_RECORD: record, CROSS_AGENT_CODEX_BIN: shim(dirs.root) },
+  });
+  const handle = spawnEngine(codex, request, {});
+  t.after(() => { handle.kill("SIGKILL"); });
+  const result = await handle.result;
+  assert.equal(result.ok, true, JSON.stringify(result.events));
+  // The argv the child itself received, not the plan's.
+  const { argv } = JSON.parse(readFileSync(record, "utf8")) as { argv: string[] };
+  assert.deepEqual(argv.slice(0, 3), ["exec", "resume", threadId]);
+  const at = argv.indexOf("--ignore-user-config");
+  assert.deepEqual(argv.slice(at, at + pluginIsolation.length), pluginIsolation);
 });
 
 test("the -C cwd is the request's cwd exactly, and that cwd is already canonical", (t) => {
@@ -541,7 +607,7 @@ test("a fake codex run through the pipeline yields the thread id, the activity a
   });
   const argv = [
     "exec", "--json", "-o", dirs.result, "-C", dirs.worktree, "--sandbox", "workspace-write",
-    "--ignore-user-config", "--skip-git-repo-check",
+    "--ignore-user-config", "-c", "features.plugins=false", "-c", "features.remote_plugin=false", "--skip-git-repo-check",
     "-m", "gpt-6-astra",
     "-c", 'model_reasoning_effort="high"',
     "-c", instructions(dirs.role),
@@ -888,4 +954,1029 @@ test("I2: a real Codex run reads the prompt from stdin on both heads and is deni
   ]) {
     assert.equal(existsSync(denied), false, `${denied} was written on a resumed session`);
   }
+});
+
+// The synthetic world `codexPluginProofShape` judges, in the shapes a 0.163.0 rollout records:
+// `task_started` opening each turn, the skills block as a developer item, the brief as a user
+// item with its `UserMessage` mirror, code-mode `exec` cells, and top-level function calls.
+const world = {
+  where: { codexHome: "/probe-home/.codex", home: "/probe-home", projectDirs: ["/probe-home/probe-root"] },
+  root: "/probe-home/probe-root",
+  roleFile: "You are a probe for a test harness. Do exactly what the brief says, nothing more.\n",
+  agents: "PLUGIN-PROBE-AGENTS-0000",
+  marker: "PLUGIN-PROBE-R2-0000",
+  fixture: "/probe-home/probe-root/.agents/skills/plugin-probe-fixture/SKILL.md",
+  pluginSkills: "/probe-home/.codex/plugins/cache/openai-curated-remote/superpowers/1.0.0/skills",
+};
+
+function skillsBlock(roots: Readonly<Record<string, string>>, entries: ReadonlyArray<readonly [string, string]>): string {
+  return [
+    "<skills_instructions>", "## Skills",
+    "A skill is a set of local instructions to follow that is stored in a `SKILL.md` file.",
+    "### Skill roots", ...Object.entries(roots).map(([alias, root]) => `- \`${alias}\` = \`${root}\``),
+    "### Available skills", ...entries.map(([name, locator]) => `- ${name}: A skill. (file: ${locator})`),
+    "</skills_instructions>",
+  ].join("\n");
+}
+
+const cleanRoots = { r0: "/probe-home/.agents/skills", r1: "/probe-home/.codex/skills/.system", r2: "/probe-home/probe-root/.agents/skills" };
+const cleanEntries = [["grilling", "r0/grilling/SKILL.md"], ["imagegen", "r1/imagegen/SKILL.md"], ["plugin-probe-fixture", "r2/plugin-probe-fixture/SKILL.md"]] as const;
+const cleanBlock = skillsBlock(cleanRoots, cleanEntries);
+const leakingBlock = skillsBlock({ ...cleanRoots, r3: world.pluginSkills }, [...cleanEntries, ["superpowers:using-superpowers", "r3/using-superpowers/SKILL.md"]]);
+const controlFiles = ["/probe-home/.agents/skills/grilling/SKILL.md", "/probe-home/.codex/skills/.system/imagegen/SKILL.md", world.fixture];
+const rolesContent = [{ type: "text", text: '{\n  "roles": {}\n}' }];
+const listRoles = { type: "McpToolCall", id: "exec-1", server: "cross-agent", tool: "list_roles", arguments: {}, status: "completed", result: { content: rolesContent } };
+
+/** A cell's call and output; `output`, when given, is the output's parts as Codex recorded them, in place of the usual two. */
+interface SynthCell { script: string; printed: unknown; output?: unknown[]; mcp?: Record<string, unknown>; mcpAfterOutput?: boolean }
+interface SynthTurn {
+  B?: boolean;
+  D?: boolean;
+  brief?: string;
+  block?: string;
+  briefContent?: unknown[];
+  mirror?: unknown[] | null;
+  cells?: SynthCell[];
+  calls?: Array<{ name: string; namespace?: string; outputs: unknown[] }>;
+  extra?: Array<Record<string, unknown>>;
+  context?: Record<string, unknown>;
+}
+
+const briefOf = (turn: SynthTurn) => turn.brief ?? briefFor(world.marker, { B: turn.B === true, D: turn.D === true });
+/** What the compact Cell A prints for these tools, each by Cell A's own regular expressions and snippet rule. */
+const compactPrinted = (tools: ReadonlyArray<readonly [string, string]>) => ({
+  count: tools.length,
+  tools: tools.map(([name, description]) => {
+    const at = description.search(/skill|plugin/i);
+    const annotated = /part of plugin/i.test(description);
+    return [name, /skill/i.test(`${name} ${description}`), /plugin/i.test(description), annotated,
+      annotated || at < 0 ? null : description.slice(Math.max(0, at - 80), at + 120)];
+  }),
+});
+/** Cell A's print for these names, the flagged ones with their descriptions (which win), in the compact form. */
+const inventoryPrinted = (names = ["exec_command", "mcp__cross_agent__list_roles", "wait"], flagged: unknown[] = []) => {
+  const described = new Map<string, string>(names.map((name) => [name, ""]));
+  for (const tool of flagged as Array<{ name: string; description: string }>) described.set(tool.name, tool.description);
+  return compactPrinted([...described]);
+};
+const cleanTools = [["exec_command", "Runs a command"], ["mcp__cross_agent__list_roles", "The roles of the active mode"], ["wait", "Waits for a cell"]] as const;
+/** R1's recorded framing of a cell's output (attempt 1, rollout line 14), and the warning Codex put before a truncated one. */
+const nativeHeader = "Script completed\nWall time 0.0 seconds\nOutput:\n";
+const truncation = "Warning: truncated output (original token count: 66715)\nTotal output lines: 1\n\n";
+const textParts = (...texts: string[]) => texts.map((text) => ({ type: "input_text", text }));
+const defaultCells = (turn: SynthTurn): SynthCell[] => [
+  { script: cellA, printed: inventoryPrinted() },
+  ...(turn.B ? [{ script: cellB, printed: { content: rolesContent }, mcp: listRoles }] : []),
+];
+const defaultCalls = (turn: SynthTurn) => (turn.D ? [absentControl, ...coverageTargets].map((name) => ({ name, outputs: [`unsupported call: ${name}`] })) : []);
+const message = (role: string, text: string, type = "input_text") => ({ type: "response_item", payload: { type: "message", role, content: [{ type, text }] } });
+
+/** A thread's rollout, one turn per entry, every turn completing with the marker. */
+function rolloutText(turns: readonly SynthTurn[], thread = "01a1f000-0000-7000-8000-000000000001"): string {
+  let calls = 0;
+  const lines: Array<Record<string, unknown>> = [
+    { type: "session_meta", payload: { id: thread, cwd: world.root, cli_version: "0.163.0", base_instructions: { text: world.roleFile } } },
+  ];
+  turns.forEach((turn, k) => {
+    const turnId = `turn-${k}`;
+    lines.push({ type: "event_msg", payload: { type: "task_started", turn_attribution: { turn_id: turnId } } });
+    if (turn.block !== undefined) lines.push(message("developer", turn.block));
+    if (k === 0) lines.push(message("user", `# AGENTS.md instructions for ${world.root}\n\n<INSTRUCTIONS>\n${world.agents}\n</INSTRUCTIONS>`));
+    lines.push({ type: "turn_context", payload: {
+      turn_id: turnId, cwd: world.root, approval_policy: "never", sandbox_policy: { type: "read-only" }, model: "gpt-6.1-sol",
+      effort: null, disabled_plugin_ids: [], ...turn.context } });
+    lines.push({ type: "response_item", payload: { type: "message", role: "user", content: turn.briefContent ?? [{ type: "input_text", text: briefOf(turn) }] } });
+    if (turn.mirror !== null) {
+      lines.push({ type: "event_msg", payload: { type: "item_completed", thread_id: thread, turn_id: turnId,
+        item: { type: "UserMessage", id: `user-${k}`, content: turn.mirror ?? [{ type: "text", text: briefOf(turn), text_elements: [] }] } } });
+    }
+    for (const cell of turn.cells ?? defaultCells(turn)) {
+      const callId = `call_${++calls}`;
+      const record = cell.mcp === undefined ? [] : [{ type: "event_msg", payload: { type: "item_completed", thread_id: thread, turn_id: turnId, item: cell.mcp } }];
+      lines.push({ type: "response_item", payload: { type: "custom_tool_call", status: "completed", call_id: callId, name: "exec", input: cell.script } });
+      if (!cell.mcpAfterOutput) lines.push(...record);
+      lines.push({ type: "response_item", payload: { type: "custom_tool_call_output", call_id: callId, output: cell.output ?? [
+        { type: "input_text", text: "Script completed\nWall time 0.1 seconds\nOutput:\n" }, { type: "input_text", text: JSON.stringify(cell.printed) }] } });
+      if (cell.mcpAfterOutput) lines.push(...record);
+    }
+    for (const call of turn.calls ?? defaultCalls(turn)) {
+      const callId = `call_${++calls}`;
+      lines.push({ type: "response_item", payload: { type: "function_call", name: call.name, ...(call.namespace === undefined ? {} : { namespace: call.namespace }), arguments: "{}", call_id: callId } });
+      for (const output of call.outputs) lines.push({ type: "response_item", payload: { type: "function_call_output", call_id: callId, output } });
+    }
+    lines.push(...(turn.extra ?? []));
+    lines.push(message("assistant", world.marker, "output_text"));
+    lines.push({ type: "event_msg", payload: { type: "task_complete", turn_id: turnId } });
+  });
+  return lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
+}
+
+/** The last turn of a synthetic thread through `judgeTurn`, as a mounted root treatment unless told otherwise. */
+function judged(turns: readonly SynthTurn[], spec: Partial<TurnSpec> = {}, patch: Partial<TurnEvidence> = {}): TurnVerdict {
+  const last = turns.at(-1)!;
+  return judgeTurn({ id: "T", class: "treatment", fresh: turns.length === 1, mounted: true, cellB: last.B === true, cellD: last.D === true, ...spec }, {
+    rollout: parseRollout(rolloutText(turns)),
+    briefs: turns.map(briefOf),
+    roleFile: world.roleFile,
+    agentsMarker: world.agents,
+    replyMarker: world.marker,
+    run: { exitCode: 0, completed: true, finalMessage: world.marker },
+    expect: { model: "gpt-6.1-sol", cwd: world.root, sandbox: "read-only", approval: "never" },
+    where: world.where,
+    commands: [],
+    fixtureFiles: [world.fixture],
+    controlFiles: null,
+    inventoryControl: "mcp__cross_agent__list_roles",
+    facts: { literalAbsent: true, fixtureClean: true },
+    ...patch,
+  });
+}
+
+const treatmentTurn = (patch: SynthTurn = {}): SynthTurn => ({ B: true, D: true, block: cleanBlock, ...patch });
+const controlTurn = (patch: SynthTurn = {}): SynthTurn => ({ block: leakingBlock, ...patch });
+const shows = (verdict: TurnVerdict) => JSON.stringify({ outcome: verdict.outcome, failed: verdict.failed, unresolved: verdict.unresolved, limitations: verdict.limitations });
+const assertOutcome = (verdict: TurnVerdict, outcome: TurnVerdict["outcome"], pattern?: RegExp) => {
+  assert.equal(verdict.outcome, outcome, shows(verdict));
+  if (pattern) assert.ok([...verdict.failed, ...verdict.unresolved].some((reason) => pattern.test(reason)), shows(verdict));
+};
+/** The accepted limitation a turn records for a target it made no top-level call to. */
+const notCalledLimitation = (target: string) => `top-level ${target} availability unknown (accepted limitation): no top-level call to ${target}`;
+const stateOf = (verdict: TurnVerdict, target: string) => {
+  const reading = verdict.coverage?.topLevel[target] as { state?: string; notCalled?: boolean } | undefined;
+  return { state: reading?.state, notCalled: reading?.notCalled };
+};
+
+// @anchor codexPluginProofShape
+test("plugin isolation's proof judges a rollout by origin, thread, fixture, rule E, coverage, inventory, lead and arms", async (t) => {
+  await t.test("a clean mounted treatment passes every gate, and a clean control is what it is compared with", () => {
+    const verdict = judged([treatmentTurn()]);
+    assertOutcome(verdict, "pass");
+    assert.equal(verdict.coverage?.nested, "ABSENT");
+    for (const target of coverageTargets) assert.equal(verdict.coverage?.topLevel[target].state, "ABSENT", target);
+    const control = judged([controlTurn()], { class: "control" });
+    assertOutcome(control, "pass");
+    assert.deepEqual(control.recorded.pluginSkills, [`${world.pluginSkills}/using-superpowers/SKILL.md`]);
+    assert.deepEqual(control.recorded.nonPluginFiles, controlFiles);
+  });
+
+  await t.test("origin: by the resolved file, never the name", () => {
+    const named = skillsBlock({ ...cleanRoots }, [...cleanEntries, ["cross-agent:beads", "r2/beads/SKILL.md"], ["cross-agent:grill", "r0/grill/SKILL.md"]]);
+    assertOutcome(judged([treatmentTurn({ block: named })]), "pass");
+    assert.equal(originOf("/probe-home/probe-root/.agents/skills/beads/SKILL.md", world.where), "project");
+    assert.equal(originOf("/probe-home/.agents/skills/grill/SKILL.md", world.where), "user");
+    // A plugin's skill under an innocent name, and one under a marketplace-level root.
+    const renamed = skillsBlock({ ...cleanRoots, r3: world.pluginSkills }, [...cleanEntries, ["imagegen", "r3/imagegen/SKILL.md"]]);
+    assertOutcome(judged([treatmentTurn({ block: renamed })]), "fail", /plugin-origin skill "imagegen"/);
+    const market = skillsBlock({ ...cleanRoots, r3: "/probe-home/.codex/plugins/cache/openai-curated-remote" },
+      [...cleanEntries, ["brainstorming", "r3/superpowers/1.0.0/skills/brainstorming/SKILL.md"]]);
+    assertOutcome(judged([treatmentTurn({ block: market })]), "fail", /plugin-origin skill "brainstorming"/);
+    // Each block resolves through its own roots: r2 is the project in one block and the system in the next.
+    const first = skillsBlock({ r2: "/probe-home/probe-root/.agents/skills" }, [["plugin-probe-fixture", "r2/plugin-probe-fixture/SKILL.md"]]);
+    const second = skillsBlock({ r2: "/probe-home/.codex/skills/.system", r7: "/probe-home/probe-root/.agents/skills" },
+      [["imagegen", "r2/imagegen/SKILL.md"], ["plugin-probe-fixture", "r7/plugin-probe-fixture/SKILL.md"]]);
+    const blocks = skillsBlocks(carriersOf(parseRollout(rolloutText([treatmentTurn({ block: first }), treatmentTurn({ block: second })]))), world.where);
+    assert.deepEqual(blocks.map((block) => block.entries.map((entry) => [entry.file, entry.origin])), [
+      [[world.fixture, "project"]],
+      [["/probe-home/.codex/skills/.system/imagegen/SKILL.md", "system"], [world.fixture, "project"]],
+    ]);
+    assertOutcome(judged([treatmentTurn({ block: first }), treatmentTurn({ block: second })]), "pass");
+  });
+
+  await t.test("thread: a clean thread is clean from its first line through the turn's end", async () => {
+    assertOutcome(judged([treatmentTurn({ block: leakingBlock }), treatmentTurn({ block: undefined })]), "fail", /line \d+: plugin-origin skill/);
+    assertOutcome(judged([treatmentTurn(), treatmentTurn({ block: leakingBlock })]), "fail", /plugin-origin skill/);
+    const pluginFile = `${world.pluginSkills}/using-superpowers/SKILL.md`;
+    const toolOutput = [
+      { type: "response_item", payload: { type: "function_call", name: "exec_command", arguments: '{"cmd":"ls"}', call_id: "call_ls" } },
+      { type: "response_item", payload: { type: "function_call_output", call_id: "call_ls", output: pluginFile } },
+    ];
+    assertOutcome(judged([treatmentTurn({ extra: toolOutput })]), "fail", /path under .*plugins in a output/);
+    assertOutcome(judged([treatmentTurn({ extra: [message("developer", `Read ${pluginFile} first.`)] })]), "fail", /path under .*plugins in a message \(developer\)/);
+    // A command on a plugin path, read as the verifier's reader reads it: the script is no
+    // carrier, so without the reading the turn would pass.
+    const home = scratch(t);
+    const thread = "01a1f000-0000-7000-8000-00000000c0de";
+    const stray = { script: stepScript(`cat ${pluginFile}`), printed: { exit_code: 0, output: "a skill" } };
+    const turns = [treatmentTurn({ cells: [...defaultCells({ B: true }), stray] })];
+    const directory = path.join(home, "sessions", "2026", "10", "16");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, `rollout-2026-10-16T00-00-00-${thread}.jsonl`), rolloutText(turns, thread));
+    const commands = commandsOf(await readThread(thread, home));
+    assertOutcome(judged(turns), "pass");
+    assert.ok(judged(turns).recorded.deviations && (judged(turns).recorded.deviations as string[]).length === 1, "the stray cell is recorded");
+    assertOutcome(judged(turns, {}, { commands }), "fail", /a command on a path under/);
+    // A legacy thread: the retained block is a recorded fact, a new plugin-origin item a failure.
+    const legacy = { class: "legacy" as const, fresh: false };
+    const facts = { controlFiles, prefixUnchanged: true };
+    const retained = judged([controlTurn(), { D: true }], legacy, facts);
+    assertOutcome(retained, "pass");
+    assert.deepEqual(retained.recorded.retainedPluginOrigin, [pluginFile]);
+    assert.equal(retained.recorded.newBlock, false);
+    assert.equal(retained.recorded.backendReceipt, "unknown");
+    assertOutcome(judged([controlTurn(), { D: true, block: leakingBlock }], legacy, facts), "fail", /plugin-origin skill/);
+    assertOutcome(judged([controlTurn(), { D: true }], legacy, { ...facts, prefixUnchanged: false }), "unresolved", /earlier lines changed/);
+    // The same turn_context and inventory, a different catalogue: the catalogue decides.
+    assertOutcome(judged([treatmentTurn()]), "pass");
+    assertOutcome(judged([treatmentTurn({ block: leakingBlock })]), "fail", /plugin-origin skill/);
+  });
+
+  await t.test("fixture: established in the fresh control, then required", () => {
+    const without = skillsBlock({ ...cleanRoots, r3: world.pluginSkills }, [cleanEntries[0], cleanEntries[1], ["superpowers:using-superpowers", "r3/using-superpowers/SKILL.md"]]);
+    assertOutcome(judged([controlTurn({ block: without })], { class: "control" }), "unresolved", /fixture skill .*not established/);
+    const bare = skillsBlock(cleanRoots, [cleanEntries[0], cleanEntries[1]]);
+    assertOutcome(judged([treatmentTurn({ block: bare })]), "fail", /fixture skill is not in the catalogue$/);
+    assertOutcome(judged([treatmentTurn({ block: bare })], {}, { controlFiles: controlFiles.slice(0, 2) }), "fail", /fixture skill/);
+    // The control's other non-plugin files are kept too.
+    assertOutcome(judged([treatmentTurn({ block: skillsBlock(cleanRoots, [cleanEntries[1], cleanEntries[2]]) })], {}, { controlFiles }), "fail", /grilling/);
+  });
+
+  await t.test("rule E: the canonical carriers name no engine-added interface", () => {
+    // The brief names both, and its own mirror repeats it: left out item by item.
+    assertOutcome(judged([treatmentTurn()]), "pass");
+    assertOutcome(judged([treatmentTurn({ extra: [message("developer", "Use skills.read to open a skill.")] })]), "unresolved", /developer\) names skills\.read/);
+    const brief = briefOf(treatmentTurn());
+    assertOutcome(judged([treatmentTurn({ briefContent: [{ type: "input_text", text: brief }, { type: "input_text", text: "Then call skills.list." }] })]),
+      "unresolved", /user\) names skills\.list/);
+    assertOutcome(judged([treatmentTurn({ mirror: [{ type: "text", text: "another brief", text_elements: [] }] })]), "unresolved", /UserMessage mirror/);
+    const appended = `${brief}\nAlso call skills.read.`;
+    assertOutcome(judged([treatmentTurn({ briefContent: [{ type: "input_text", text: appended }], mirror: [{ type: "text", text: appended, text_elements: [] }] })]),
+      "unresolved", /user\) names skills\.list, skills\.read/);
+    assertOutcome(judged([treatmentTurn({ block: skillsBlock(cleanRoots, [...cleanEntries, ["remote", "plugin://superpowers/remote"]]) })]),
+      "unresolved", /resolves to no file/);
+    assertOutcome(judged([treatmentTurn({ block: skillsBlock(cleanRoots, [...cleanEntries, ["aliased", "r9/aliased/SKILL.md"]]) })]),
+      "unresolved", /resolves to no file/);
+    // Cell A's own output is its gate's, not rule E's: a skill tool there is the nested surface.
+    const listing = judged([treatmentTurn({ cells: [{ script: cellA, printed: inventoryPrinted(undefined, [{ name: "skills_reader", description: "Reads skills.read" }]) },
+      defaultCells({ B: true })[1]] })]);
+    assert.equal(listing.unresolved.some((reason) => /names skills/.test(reason)), false, shows(listing));
+    assert.equal(listing.coverage?.nested, "PRESENT");
+  });
+
+  await t.test("coverage: ABSENT only against a valid same-turn control", () => {
+    const calls = (outputs: Record<string, unknown[]>) => [absentControl, ...coverageTargets].map((name) => ({ name, outputs: outputs[name] ?? [`unsupported call: ${name}`] }));
+    const state = (turn: SynthTurn, patch: Partial<TurnEvidence> = {}) => judged([treatmentTurn(turn)], {}, patch).coverage!.topLevel["skills.list"];
+    assert.equal(state({}).state, "ABSENT");
+    assert.equal(state({ calls: [{ name: "list", namespace: "crossagentabsent", outputs: ["unsupported call: crossagentabsent.list"] },
+      { name: "list", namespace: "skills", outputs: ["unsupported call: skills.list"] }, { name: "skills.read", outputs: ["unsupported call: skills.read"] }] }).state, "ABSENT");
+    assert.equal(state({ calls: calls({ "skills.list": ["unsupported call: skills.list\n"] }) }).state, "PRESENT");
+    assert.equal(state({ calls: calls({ "skills.list": [{ content: "a list of skills", success: true }] }) }).state, "PRESENT");
+    const refusalAlone = state({ calls: [{ name: "skills.list", outputs: ["unsupported call: skills.list"] }, { name: "skills.read", outputs: ["unsupported call: skills.read"] }] });
+    assert.equal(refusalAlone.state, "UNRESOLVED");
+    assert.match(refusalAlone.reason, /controlCalled/);
+    assert.match(state({ calls: calls({}).filter((call) => call.name !== "skills.list") }).reason, /no top-level call/);
+    const inExec = { cells: [...defaultCells({ B: true }), { script: "const r = await tools.skills.list({});\ntext(JSON.stringify(r));", printed: {} }] };
+    assert.match(state(inExec).reason, /inside exec/);
+    assert.match(state({ calls: calls({ "skills.list": ["one", "two"] }) }).reason, /unknown shape/);
+    const listed = { cells: [{ script: cellA, printed: inventoryPrinted(["exec_command", "mcp__cross_agent__list_roles", absentControl]) }, defaultCells({ B: true })[1]] };
+    assert.match(state(listed).reason, /notListed/);
+    assert.match(state({ calls: calls({ [absentControl]: [] }) }).reason, /controlCalled/);
+    assert.match(state({ calls: calls({ [absentControl]: [""] }) }).reason, /controlCalled/);
+    assert.match(state({}, { facts: { literalAbsent: false, fixtureClean: true } }).reason, /literalAbsent/);
+    assert.match(state({}, { facts: { literalAbsent: true, fixtureClean: false } }).reason, /fixtureClean/);
+    // A fresh turn ABSENT does not carry its resume: a resumed turn without the calls reads
+    // not-called on its own, the accepted limitation, never the fresh turn's ABSENT.
+    const resumed = judged([treatmentTurn(), treatmentTurn({ block: undefined, calls: [] })], { fresh: false });
+    assertOutcome(resumed, "pass");
+    assert.deepEqual(stateOf(resumed, "skills.list"), { state: "UNRESOLVED", notCalled: true }, shows(resumed));
+    assert.deepEqual(resumed.limitations, coverageTargets.map(notCalledLimitation), shows(resumed));
+  });
+
+  await t.test("inventory: the control tool says whose inventory it is", () => {
+    const dirs = { root: "/r", task: "/r/t", worktree: "/r/w", role: "/r/t/role.md", result: "/r/t/task.out" };
+    assert.equal(expectedInventoryControl(requestFor(dirs, { role: "lead" })), "exec_command");
+    assert.equal(expectedInventoryControl(requestFor(dirs, { lead: { command: "node", args: [] } })), "mcp__cross_agent__list_roles");
+    const unmounted = { cells: [{ script: cellA, printed: inventoryPrinted(["exec_command", "wait"]) }, defaultCells({ B: true })[1]] };
+    assertOutcome(judged([treatmentTurn(unmounted)]), "unresolved", /lack the inventory control mcp__cross_agent__list_roles/);
+    const mounted = { B: false, cells: [{ script: cellA, printed: inventoryPrinted(["mcp__cross_agent__list_roles", "wait"]) }] };
+    assertOutcome(judged([treatmentTurn(mounted)], { mounted: false }, { inventoryControl: "exec_command" }), "unresolved", /lack the inventory control exec_command/);
+    // A tool Codex annotates as part of a plugin fails a treatment; the mount's own server
+    // does not.
+    const tools = [{ name: "mcp__cross_agent__list_roles", description: "Roles; part of the cross-agent plugin" }, { name: "visualize", description: "Charts, from the visualize plugin" }];
+    const annotated = [tools[0], { name: "visualize", description: "Charts. This tool is part of plugin `Visualize`" }];
+    const marked = judged([treatmentTurn({ cells: [{ script: cellA, printed: inventoryPrinted(undefined, annotated) }, defaultCells({ B: true })[1]] })]);
+    assertOutcome(marked, "fail", /plugin tools offered: visualize \(part of a plugin\)$/);
+    // One that only mentions plugins, unannotated, is recorded with the words that mention them.
+    const offered = judged([treatmentTurn({ cells: [{ script: cellA, printed: inventoryPrinted(undefined, tools) }, defaultCells({ B: true })[1]] })]);
+    assertOutcome(offered, "pass");
+    assert.deepEqual(offered.recorded.pluginMentions, [{ name: "visualize", snippet: "Charts, from the visualize plugin" }], shows(offered));
+  });
+
+  await t.test("lead: Cell B's printed result is the mount's only through an in-span completed record", () => {
+    const withB = (cell: Partial<SynthCell>) => treatmentTurn({ cells: [defaultCells({})[0], { ...defaultCells({ B: true })[1], ...cell }] });
+    assertOutcome(judged([withB({})]), "pass");
+    assertOutcome(judged([withB({ script: "const r = await tools.mcp__cross_agent__list_roles({});\nconst n = 1;\ntext(JSON.stringify(r));" })]), "fail", /Cell B did not run exactly/);
+    const { mcp: _record, ...unrecorded } = defaultCells({ B: true })[1];
+    assertOutcome(judged([treatmentTurn({ cells: [defaultCells({})[0], unrecorded] })]), "fail", /no McpToolCall/);
+    assertOutcome(judged([withB({ mcp: { ...listRoles, result: { content: [{ type: "text", text: "other" }] } } })]), "fail", /not completed with the printed content/);
+    assertOutcome(judged([withB({ mcp: { ...listRoles, status: "failed" } })]), "fail", /not completed/);
+    assertOutcome(judged([withB({ mcp: { ...listRoles, server: "other" } })]), "fail", /no McpToolCall/);
+    assertOutcome(judged([withB({ mcp: { ...listRoles, tool: "describe_mode" } })]), "fail", /no McpToolCall/);
+    assertOutcome(judged([withB({ mcpAfterOutput: true })]), "fail", /no McpToolCall/);
+  });
+
+  await t.test("arms: control and treatment differ by the isolation alone, and treatment by the forced pair from exact", () => {
+    // The adapter's own line in the shape the root base and the worktree base give it.
+    const mount = codex.leadMount({ command: "node", args: ["/c/src/server.ts", "--project", "/r"] }, "/t").argv;
+    const line = (mounted: boolean, isolated = true) => [
+      "exec", "--json", "-o", "/t/out", "-C", "/r", "--sandbox", "read-only",
+      "--ignore-user-config", ...(isolated ? isolationArgs : []), "--skip-git-repo-check", "-m", "gpt-6.1-sol",
+      "-c", 'model_instructions_file="/t/role.md"', ...(mounted ? mount : []), "-",
+    ];
+    for (const mounted of [true, false]) {
+      const arms = armsFrom(line(mounted));
+      assert.deepEqual(armFailures(arms, mounted), [], String(mounted));
+      for (const argv of Object.values(arms)) {
+        assert.equal(argv.filter((value) => value.startsWith("mcp_servers.cross-agent.")).length, mounted ? 5 : 0);
+      }
+      assert.deepEqual(arms.treatment.slice(-5), [...forcedPlugins, "-"]);
+      assert.equal(arms.control.includes("features.plugins=false"), false);
+      assert.ok(armFailures(arms, !mounted).length > 0, "the mount is counted");
+    }
+    // A line without the isolation cannot yield a control that differs by it.
+    assert.ok(armFailures(armsFrom(line(true, false)), true).some((failure) => /isolation elements are not there/.test(failure)));
+    const arms = armsFrom(line(true));
+    assert.ok(armFailures({ ...arms, control: arms.control.filter((value) => value !== "--skip-git-repo-check") }, true).length > 0);
+  });
+
+  // Attempt 1's native shapes (`docs/probes.md#codexPluginIsolation`): a cell's output read
+  // only in its recorded frame, Cell A in the compact form, and the fixture's root a project.
+  const withCellA = (cell: Partial<SynthCell>) => treatmentTurn({ cells: [{ script: cellA, printed: null, ...cell }, defaultCells({ B: true })[1]] });
+
+  await t.test("(a) a Cell A output Codex truncated is unresolved as truncated", () => {
+    for (const tail of ['{"count":106,"tools":[["exec_command",false,false,false],["wa', JSON.stringify(compactPrinted(cleanTools))]) {
+      const verdict = judged([withCellA({ output: textParts(nativeHeader, truncation + tail) })]);
+      assertOutcome(verdict, "unresolved", /truncated/);
+      assert.equal(verdict.unresolved.some((reason) => /prints no JSON/.test(reason)), false, shows(verdict));
+    }
+  });
+
+  await t.test("(b) a clean mounted treatment whose Cell A prints the compact inventory passes", () => {
+    assertOutcome(judged([withCellA({ printed: compactPrinted(cleanTools) })]), "pass");
+  });
+
+  await t.test("(c) a treatment offering a tool annotated as a plugin's fails, an unannotated mention is recorded, the mount's own left out", () => {
+    const verdict = judged([withCellA({ printed: compactPrinted([
+      ["exec_command", "Runs a command"], ["skills_reader", "Reads skills"], ["pages_publish", "Publishes a page. This tool is part of plugin `Pages`."],
+      ["request_plugin_install", "Request installing a plugin"], ["mcp__cross_agent__list_roles", "Roles; part of the cross-agent plugin"],
+    ]) })]);
+    assertOutcome(verdict, "fail");
+    assert.equal(verdict.coverage?.nested, "PRESENT");
+    assert.deepEqual(verdict.failed.filter((reason) => reason.startsWith("plugin tools offered:")),
+      ["plugin tools offered: pages_publish (part of a plugin)"], shows(verdict));
+    assert.deepEqual(verdict.recorded.pluginMentions, [{ name: "request_plugin_install", snippet: "Request installing a plugin" }], shows(verdict));
+  });
+
+  await t.test("(d) a Cell B output the reader cannot read is unresolved, not a failed mount", () => {
+    const verdict = judged([treatmentTurn({ cells: [defaultCells({})[0],
+      { ...defaultCells({ B: true })[1], output: textParts(nativeHeader, `${truncation}{"content":[{"type":"te`) }] })]);
+    assertOutcome(verdict, "unresolved", /truncated/);
+    assert.deepEqual(verdict.failed, [], shows(verdict));
+    assert.equal(verdict.unresolved.some((reason) => /Cell B did not run exactly/.test(reason)), false, shows(verdict));
+  });
+
+  await t.test("(e) only a complete compact inventory is one", () => {
+    const good = compactPrinted(cleanTools);
+    const cases: Array<[string, unknown]> = [
+      ["a count that is not the tools'", { ...good, count: good.count + 1 }],
+      ["a field that is not a boolean", { ...good, tools: good.tools.map((tool, k) => (k === 0 ? [tool[0], "false", ...tool.slice(2)] : tool)) }],
+      ["a name twice", { count: good.count + 1, tools: [...good.tools, good.tools[0]] }],
+      ["the old form", { names: cleanTools.map(([name]) => name), flagged: [] }],
+    ];
+    for (const [what, printed] of cases) {
+      const verdict = judged([withCellA({ printed })]);
+      assert.equal(verdict.outcome, "unresolved", `${what}: ${shows(verdict)}`);
+      assert.ok(verdict.unresolved.some((reason) => /Cell A printed something other than the/.test(reason)), `${what}: ${shows(verdict)}`);
+    }
+  });
+
+  await t.test("(f) a Cell A output in an unfamiliar frame is unresolved, whatever JSON it holds", () => {
+    const json = JSON.stringify(inventoryPrinted());
+    assertOutcome(judged([withCellA({ output: textParts("Script failed\nOutput:\n", json) })]), "unresolved", /unfamiliar output header/);
+    assertOutcome(judged([withCellA({ output: textParts(`${nativeHeader}${json}`) })]), "unresolved", /unfamiliar output shape/);
+  });
+
+  await t.test("(g) a forged Cell B is still a failed mount", () => {
+    const forged = { ...defaultCells({ B: true })[1], script: "const r = await tools.mcp__cross_agent__list_roles({});\nconst n = 1;\ntext(JSON.stringify(r));" };
+    assertOutcome(judged([treatmentTurn({ cells: [defaultCells({})[0], forged] })]), "fail", /Cell B did not run exactly/);
+  });
+
+  await t.test("(h) the native fixture's root is a project its mounted server serves, with its config ignored", async (h) => {
+    const root = path.join(scratch(h), "fixture");
+    await buildFixture(root, path.join(root, "worktrees", "probe"), "PLUGIN-PROBE-AGENTS-FIXTURE");
+    assert.deepEqual(await discoverProject(["--project", root], {}, root), { root: realpathSync(root) });
+    assert.equal(loadConfigWithMode(root, builtInModesDir()).mode.id, "solo");
+    const git = (...args: string[]) => promisify(execFile)("git", ["-C", root, ...args], { encoding: "utf8" });
+    assert.equal((await git("ls-files", "--", ".cross-agent")).stdout, "");
+    await git("check-ignore", "-q", ".cross-agent/config.json");
+  });
+
+  // Attempt 2's shapes: Codex's own `codex_apps` connector tools, whose names it listed under
+  // both arms. Under the treatment these two mention skills or plugins with the annotation flag
+  // false; under the control it was true.
+  const sites = "Get a site's details. Use Sites skills for local implementation, source preparation, and artifact packaging.";
+  const attemptTwo: Array<readonly [string, string]> = [
+    ["exec_command", "Runs a command"],
+    ...["describe_mode", "list_roles", "check", "result", "list_tasks"].map((name) => [`mcp__cross_agent__${name}`, `This server's ${name}`] as const),
+    ["mcp__codex_apps__sites_get_site", sites],
+  ];
+
+  await t.test("N1: a connector whose description mentions skills leaves the nested surface absent, the mention recorded", () => {
+    const verdict = judged([withCellA({ printed: compactPrinted(attemptTwo) })]);
+    assert.equal(verdict.coverage?.nested, "ABSENT", shows(verdict));
+    const mentions = verdict.recorded.skillMentions as Array<{ name: string; snippet: string | null }> | undefined;
+    assert.deepEqual(mentions?.map((mention) => mention.name), ["mcp__codex_apps__sites_get_site"], shows(verdict));
+    assert.match(mentions![0].snippet ?? "", /Sites skills/);
+    assertOutcome(verdict, "pass");
+  });
+
+  await t.test("N2: a tool whose name says skills makes the nested surface present", () => {
+    const verdict = judged([withCellA({ printed: compactPrinted([...cleanTools, ["skills__list", ""]]) })]);
+    assert.equal(verdict.coverage?.nested, "PRESENT", shows(verdict));
+  });
+
+  await t.test("N3: attempt 2's R2, connector mentions and no Cell D call, passes under the bounded scope, its top-level availability unknown", () => {
+    const tools = [...attemptTwo, ["mcp__codex_apps__plugin_management_search_plugins", "Search plugins available to install"] as const];
+    const verdict = judged([treatmentTurn({ cells: [{ script: cellA, printed: compactPrinted(tools) }, defaultCells({ B: true })[1]], calls: [] })]);
+    assert.equal(verdict.outcome, "pass", shows(verdict));
+    assert.deepEqual(verdict.failed, [], shows(verdict));
+    assert.deepEqual(verdict.unresolved, [], shows(verdict));
+    assert.deepEqual(verdict.limitations, [
+      "top-level skills.list availability unknown (accepted limitation): no top-level call to skills.list",
+      "top-level skills.read availability unknown (accepted limitation): no top-level call to skills.read",
+    ], shows(verdict));
+  });
+
+  await t.test("N4: Cell D comes first in the brief and says a refusal is the result it records", () => {
+    const expected = "First, before any exec cell, make three direct top-level tool calls — function calls in your response, the way you call "
+      + "exec, never code inside exec — each exactly once with arguments `{}`, in this order: `crossagentabsent.list`, `skills.list`, "
+      + "`skills.read`. These names may not appear among your tools; call them by these exact names anyway. A refusal or an error is "
+      + "the expected result and is what this probe records, so do not skip a call because a tool seems unavailable. This turn is "
+      + "incomplete until all three calls have been made.";
+    assert.equal(cellD, expected);
+    const brief = briefFor(world.marker, { B: true, D: true });
+    assert.ok(brief.includes(expected) && brief.indexOf(expected) < brief.indexOf("Cell A:"), brief);
+    assert.match(brief, /may not appear among your tools/);
+    assert.match(brief, /A refusal or an error is the expected result/);
+  });
+
+  await t.test("N5: only five-element entries, the fifth a string or null, are the inventory", () => {
+    const cases: Array<[string, unknown]> = [
+      ["a snippet that is neither a string nor null", { count: 3, tools: [
+        ["exec_command", false, false, false, 42], ["mcp__cross_agent__list_roles", false, false, false, null], ["wait", false, false, false, null]] }],
+      ["attempt 2's four-element entries", { count: 3, tools: [
+        ["exec_command", false, false, false], ["mcp__cross_agent__list_roles", false, false, false], ["wait", false, false, false]] }],
+    ];
+    for (const [what, printed] of cases) {
+      const verdict = judged([withCellA({ printed })]);
+      assert.equal(verdict.outcome, "unresolved", `${what}: ${shows(verdict)}`);
+      assert.ok(verdict.unresolved.some((reason) => /Cell A printed something other than the complete inventory/.test(reason)), `${what}: ${shows(verdict)}`);
+    }
+  });
+
+  // The bounded scope the user accepted after attempt 3: a target the turn made no top-level
+  // call to is recorded as availability unknown and does not stop the run; every other
+  // reading, and every other gate, is as strict as before.
+  const refusal = (name: string) => ({ name, outputs: [`unsupported call: ${name}`] });
+
+  await t.test("L1: a turn that made no top-level call passes under the bounded scope, each target's availability unknown", () => {
+    const verdict = judged([treatmentTurn({ calls: [] })]);
+    assertOutcome(verdict, "pass");
+    assert.deepEqual(verdict.failed, [], shows(verdict));
+    assert.deepEqual(verdict.unresolved, [], shows(verdict));
+    assert.deepEqual(verdict.limitations, coverageTargets.map(notCalledLimitation), shows(verdict));
+    assert.deepEqual(coverageLimitations(verdict.coverage!), verdict.limitations);
+    for (const target of coverageTargets) assert.deepEqual(stateOf(verdict, target), { state: "UNRESOLVED", notCalled: true }, target);
+  });
+
+  await t.test("L2: a turn that called only the control passes, both targets' availability unknown", () => {
+    const verdict = judged([treatmentTurn({ calls: [refusal(absentControl)] })]);
+    assertOutcome(verdict, "pass");
+    assert.deepEqual(verdict.limitations, coverageTargets.map(notCalledLimitation), shows(verdict));
+  });
+
+  await t.test("L3: a target the turn called and matched to the control is ABSENT, the other one's availability unknown", () => {
+    const verdict = judged([treatmentTurn({ calls: [refusal(absentControl), refusal("skills.list")] })]);
+    assertOutcome(verdict, "pass");
+    assert.equal(verdict.coverage?.topLevel["skills.list"].state, "ABSENT", shows(verdict));
+    assert.deepEqual(verdict.limitations, [notCalledLimitation("skills.read")], shows(verdict));
+  });
+
+  await t.test("L4: outside the boundary every reading and gate stays strict, the limitation recorded beside it", () => {
+    const withB = defaultCells({ B: true })[1];
+    const cases: Array<[string, SynthTurn, TurnVerdict["outcome"], RegExp, string[]]> = [
+      ["(a) a plugin-origin skill", { block: leakingBlock, calls: [] }, "fail", /plugin-origin skill/, coverageTargets.map(notCalledLimitation)],
+      ["(b) a tool named for skills", { cells: [{ script: cellA, printed: compactPrinted([...cleanTools, ["skills__list", ""]]) }, withB], calls: [] },
+        "unresolved", /nested surface PRESENT/, coverageTargets.map(notCalledLimitation)],
+      ["(c) a target called inside exec", { cells: [...defaultCells({ B: true }), { script: "const r = await tools.skills.list({});\ntext(JSON.stringify(r));", printed: {} }], calls: [] },
+        "unresolved", /inside exec/, [notCalledLimitation("skills.read")]],
+      ["(d) a target called with no control call", { calls: [refusal("skills.list")] }, "unresolved", /controlCalled/, [notCalledLimitation("skills.read")]],
+      ["(e) a target's output unlike the control's", { calls: [refusal(absentControl), { name: "skills.list", outputs: [{ content: "a list of skills", success: true }] }, refusal("skills.read")] },
+        "unresolved", /PRESENT/, []],
+      ["(f) a target called twice", { calls: [refusal(absentControl), refusal("skills.list"), refusal("skills.list"), refusal("skills.read")] },
+        "unresolved", /unknown shape/, []],
+      ["(g) a truncated Cell A", { cells: [{ script: cellA, printed: null, output: textParts(nativeHeader, `${truncation}{`) }, withB], calls: [] },
+        "unresolved", /truncated/, coverageTargets.map(notCalledLimitation)],
+    ];
+    const verdicts = cases.map(([, turn]) => judged([treatmentTurn(turn)]));
+    cases.forEach(([what, , outcome, pattern], k) => {
+      assert.equal(verdicts[k].outcome, outcome, `${what}: ${shows(verdicts[k])}`);
+      assert.ok([...verdicts[k].failed, ...verdicts[k].unresolved].some((reason) => pattern.test(reason)), `${what}: ${shows(verdicts[k])}`);
+    });
+    cases.forEach(([what, , , , limitations], k) => assert.deepEqual(verdicts[k].limitations, limitations, `${what}: ${shows(verdicts[k])}`));
+  });
+
+  await t.test("L5: a run is accepted only when every turn passes, bounded where any recorded a limitation", () => {
+    const ids = ["R1", "R2", "R3", "R4", "R5", "W1", "W2", "W3"];
+    const turn = (outcome: TurnVerdict["outcome"], limitations: string[] = []) =>
+      ({ outcome, failed: [], unresolved: outcome === "unresolved" ? ["a reason"] : [], coverage: null, recorded: {}, limitations }) as TurnVerdict;
+    const limited = coverageTargets.map(notCalledLimitation);
+    const listed = ["R2", "W2"].flatMap((id) => limited.map((reason) => ({ turn: id, reason })));
+    const bounded = Object.fromEntries(ids.map((id) => [id, turn("pass", ["R2", "W2"].includes(id) ? limited : [])]));
+    assert.deepEqual(acceptanceOf(bounded, ids), { acceptance: "bounded", limitations: listed });
+    assert.deepEqual(acceptanceOf(Object.fromEntries(ids.map((id) => [id, turn("pass")])), ids), { acceptance: "full", limitations: [] });
+    assert.deepEqual(acceptanceOf({ ...bounded, R3: turn("unresolved") }, ids), { acceptance: null, limitations: listed });
+    const { W3: _missing, ...partial } = bounded;
+    assert.deepEqual(acceptanceOf(partial, ids), { acceptance: null, limitations: listed });
+  });
+});
+
+// @anchor codexPluginConfigHelpers
+test("plugin isolation's config helpers: preference subtrees compare by value, and the fixture owns only the keys it added", () => {
+  const layer = {
+    model: "gpt-6.1-sol",
+    plugins: { "a@m": { enabled: true }, "b@m": { enabled: false } },
+    marketplaces: { m: { source_type: "local", source: "/m" } },
+    features: { plugins: true },
+  };
+  const reordered = {
+    features: { plugins: true }, projects: { "/x": { trust_level: "trusted" } },
+    marketplaces: { m: { source: "/m", source_type: "local" } },
+    plugins: { "b@m": { enabled: false }, "a@m": { enabled: true } },
+  };
+  assert.equal(preferenceSubtrees(layer), preferenceSubtrees(reordered));
+  assert.notEqual(preferenceSubtrees(layer), preferenceSubtrees({ ...layer, plugins: { ...layer.plugins, "a@m": { enabled: false } } }));
+  assert.notEqual(preferenceSubtrees(layer), preferenceSubtrees({ ...layer, features: { plugins: true, remote_plugin: false } }));
+  assert.notEqual(preferenceSubtrees(layer), preferenceSubtrees({ plugins: layer.plugins, features: layer.features }));
+  assert.equal(preferenceSubtrees(undefined), preferenceSubtrees({ projects: {} }));
+
+  const before = ["/elsewhere", "/x/probe-1/kept"];
+  const after = [...before, "/x/probe-1", "/x/probe-1/worktrees/probe", "/x/probe-10", "/x/probe-1-other", "/y"];
+  assert.deepEqual(ownedProjectKeys(before, after, "/x/probe-1"), ["/x/probe-1", "/x/probe-1/worktrees/probe"]);
+  assert.deepEqual(ownedProjectKeys(after, after, "/x/probe-1"), []);
+});
+
+// Plugin isolation, native (`docs/probes.md#codexPluginIsolation`): eight real turns of the
+// committed head, fresh and resumed, at a fixture's root under a mounted lead and in its linked
+// worktree under an implementer, each judged by `judgeTurn` as it settles, the first non-pass
+// stopping the run. Written and guarded: it runs only under `CROSS_AGENT_REAL_CODEX_PLUGINS=1`
+// with an absolute evidence directory that does not exist yet, and on one model it names itself.
+const realPlugins = process.env.CROSS_AGENT_REAL_CODEX_PLUGINS === "1";
+const probeModel = "gpt-6.1-sol";
+const checkout = fileURLToPath(new URL("../../", import.meta.url));
+const probeRole = "You are a probe for a test harness. Do exactly what the brief says, nothing more.\n";
+
+interface ProbeTurn {
+  id: string; at: "root" | "worktree"; thread: "X" | "Y" | "Z" | "V"; head: "fresh" | "resume"; arm: keyof Arms;
+  class: TurnSpec["class"]; cellB: boolean; cellD: boolean;
+}
+const probeTurns: readonly ProbeTurn[] = [
+  { id: "R1", at: "root", thread: "X", head: "fresh", arm: "control", class: "control", cellB: false, cellD: false },
+  { id: "R2", at: "root", thread: "Y", head: "fresh", arm: "treatment", class: "treatment", cellB: true, cellD: true },
+  { id: "R3", at: "root", thread: "Y", head: "resume", arm: "treatment", class: "treatment", cellB: true, cellD: true },
+  { id: "R4", at: "root", thread: "Y", head: "resume", arm: "control", class: "control", cellB: false, cellD: false },
+  { id: "R5", at: "root", thread: "X", head: "resume", arm: "exact", class: "legacy", cellB: false, cellD: true },
+  { id: "W1", at: "worktree", thread: "Z", head: "fresh", arm: "control", class: "control", cellB: false, cellD: false },
+  { id: "W2", at: "worktree", thread: "V", head: "fresh", arm: "treatment", class: "treatment", cellB: false, cellD: true },
+  { id: "W3", at: "worktree", thread: "V", head: "resume", arm: "treatment", class: "treatment", cellB: false, cellD: true },
+];
+
+const sha256Of = (file: string) => (existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : null);
+
+function writeJson(file: string, value: unknown): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+interface UserLayer { file: string; version: string; config: Record<string, any> }
+
+/** The user layer of a `config/read` answer: `<home>/config.toml`'s, with no profile. */
+function userLayerOf(snapshot: any, home: string): UserLayer {
+  const file = path.join(home, "config.toml");
+  const layer = (snapshot?.layers ?? []).find((each: any) => each?.name?.type === "user" && each.name.file === file && each.name.profile == null);
+  if (layer === undefined || typeof layer.version !== "string") throw new Error(`config/read returned no versioned user layer for ${file}`);
+  return { file, version: layer.version, config: layer.config ?? {} };
+}
+
+async function readUserLayer(bin: string, home: string): Promise<UserLayer> {
+  const client = await configClient(bin, home);
+  try { return userLayerOf(await client.call("config/read", { includeLayers: true }), home); } finally { await client.close(); }
+}
+
+/** A temporary Codex home holding `text` as its whole config. */
+function homeWith(parent: string, name: string, text: string): string {
+  const home = path.join(parent, name);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, "config.toml"), text);
+  return home;
+}
+
+type KeySpelling = "bare" | "quoted";
+const keyPaths: Record<KeySpelling, (key: string) => string> = {
+  bare: (key) => `projects.${key}`,
+  quoted: (key) => `projects.${JSON.stringify(key)}`,
+};
+
+/**
+ * Stage 0's cleanup rehearsal, in temporary homes: the two trust tables the run may add,
+ * removed by compare-and-swap, must leave the file byte for byte what it was without them and
+ * its parsed rest unchanged, and a stale version must be refused. The first key spelling that
+ * does all of it is the one cleanup uses.
+ */
+async function rehearseCleanup(bin: string, parent: string, owned: readonly [string, string]): Promise<{ spelling: KeySpelling | null; attempts: Record<string, unknown> }> {
+  const base = [
+    "# kept by the rehearsal", "", '[projects."/elsewhere"]', 'trust_level = "trusted"', "",
+    "[mcp_servers.unrelated]", 'command = "true"', "enabled = false", "",
+    '[plugins."probe-plugin@probe-market"]', "enabled = false", "",
+    "[marketplaces.probe-market]", 'source_type = "local"', 'source = "/elsewhere/probe-market"', "",
+    "[features]", "remote_plugin = false", "",
+  ].join("\n");
+  const full = base + owned.map((key) => `\n[projects.${JSON.stringify(key)}]\ntrust_level = "trusted"\n`).join("");
+  const expected = JSON.stringify(canonical((await readUserLayer(bin, homeWith(parent, "reference", base))).config));
+  const attempts: Record<string, unknown> = {};
+  for (const spelling of Object.keys(keyPaths) as KeySpelling[]) {
+    const home = homeWith(parent, `rehearse-${spelling}`, full);
+    const attempt = { removed: false, staleRefused: false, bytesEqual: false, parsedEqual: false, error: null as string | null };
+    attempts[spelling] = attempt;
+    try {
+      const client = await configClient(bin, home);
+      try {
+        const read = async () => userLayerOf(await client.call("config/read", { includeLayers: true }), home);
+        const remove = (layer: UserLayer, key: string, version: string) => client.call("config/batchWrite",
+          { filePath: layer.file, expectedVersion: version, edits: [{ keyPath: keyPaths[spelling](key), value: null, mergeStrategy: "replace" }] });
+        const first = await read();
+        await remove(first, owned[0], first.version);
+        attempt.staleRefused = await remove(first, owned[1], first.version).then(() => false, () => true);
+        const second = await read();
+        await remove(second, owned[1], second.version);
+        const last = await read();
+        attempt.removed = !Object.keys(last.config.projects ?? {}).some((key) => owned.includes(key));
+        attempt.bytesEqual = readFileSync(last.file, "utf8") === base;
+        attempt.parsedEqual = JSON.stringify(canonical(last.config)) === expected;
+      } finally {
+        await client.close();
+      }
+    } catch (error) {
+      attempt.error = String(error);
+    }
+    if (attempt.removed && attempt.staleRefused && attempt.bytesEqual && attempt.parsedEqual) return { spelling, attempts };
+  }
+  return { spelling: null, attempts };
+}
+
+/** Stage 0's equivalence: one set of entries spelled as tables, dotted keys and inline tables reads as one value, and a changed value does not. */
+async function preferenceEquivalence(bin: string, parent: string): Promise<{ ok: boolean; subtrees: Record<string, unknown> }> {
+  const tables = '[plugins."probe-plugin@probe-market"]\nenabled = false\n\n[marketplaces.probe-market]\nsource_type = "local"\n'
+    + 'source = "/elsewhere/probe-market"\n\n[features]\nplugins = true\nremote_plugin = false\n';
+  const spellings: Record<string, string> = {
+    tables,
+    dotted: 'plugins."probe-plugin@probe-market".enabled = false\nmarketplaces.probe-market.source_type = "local"\n'
+      + 'marketplaces.probe-market.source = "/elsewhere/probe-market"\nfeatures.plugins = true\nfeatures.remote_plugin = false\n',
+    inline: 'plugins = { "probe-plugin@probe-market" = { enabled = false } }\n'
+      + 'marketplaces = { probe-market = { source_type = "local", source = "/elsewhere/probe-market" } }\n'
+      + "features = { plugins = true, remote_plugin = false }\n",
+    changed: tables.replace("enabled = false", "enabled = true"),
+  };
+  const subtrees: Record<string, string> = {};
+  for (const [name, text] of Object.entries(spellings)) subtrees[name] = preferenceSubtrees((await readUserLayer(bin, homeWith(parent, `equivalence-${name}`, text))).config);
+  const ok = subtrees.tables === subtrees.dotted && subtrees.dotted === subtrees.inline && subtrees.changed !== subtrees.tables;
+  return { ok, subtrees: Object.fromEntries(Object.entries(subtrees).map(([name, value]) => [name, JSON.parse(value)])) };
+}
+
+/** Precondition (a): the control's name is a literal in neither the binary nor a code-mode host beside it. */
+function literalScan(binary: string): { files: string[]; found: string[] } {
+  const real = realpathSync(binary);
+  const files = [real, path.join(path.dirname(real), "codex-code-mode-host")].filter((file) => existsSync(file));
+  const needle = Buffer.from(absentControl);
+  return { files, found: files.filter((file) => readFileSync(file).includes(needle)) };
+}
+
+/** The plugin cache's install markers: each `<marketplace>/<plugin>/<version>` directory, by its mtime. */
+function cacheMarkers(codexHome: string): Array<{ path: string; mtimeMs: number }> {
+  const cache = path.join(codexHome, "plugins", "cache");
+  const list = (directory: string) => { try { return readdirSync(directory); } catch { return []; } };
+  return list(cache).flatMap((market) => list(path.join(cache, market)).flatMap((plugin) => list(path.join(cache, market, plugin)).map((version) => {
+    const directory = path.join(cache, market, plugin, version);
+    return { path: path.relative(codexHome, directory), mtimeMs: statSync(directory).mtimeMs };
+  })));
+}
+
+function rolloutFiles(codexHome: string, thread: string): string[] {
+  const root = path.join(codexHome, "sessions");
+  try {
+    return readdirSync(root, { recursive: true }).map((name) => path.join(root, String(name)))
+      .filter((file) => path.basename(file).startsWith("rollout-") && file.endsWith(`-${thread}.jsonl`));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The fixture: a repository on `main` with one commit, and a linked worktree on `task/probe`.
+ * Its root holds an ignored `.cross-agent/config.json`, because the root turns' mount names it
+ * with `--project` and the server refuses a named root without one (attempt 1's R1).
+ */
+async function buildFixture(root: string, worktree: string, agentsMarker: string): Promise<void> {
+  const git = (...args: string[]) => promisify(execFile)("git", ["-C", root, ...args], { encoding: "utf8" });
+  const files: Record<string, string> = {
+    ".gitignore": ".cross-agent/\n",
+    ".cross-agent/config.json": `${JSON.stringify({ mode: "solo", roles: {} })}\n`,
+    "AGENTS.md": `# Plugin-isolation probe fixture\n\nThis repository exists for one probe run. Its marker is ${agentsMarker}.\n`,
+    ".agents/skills/plugin-probe-fixture/SKILL.md": "---\nname: plugin-probe-fixture\ndescription: A fixture skill a probe lists; never use it.\n---\n\nThis skill exists only to be listed. Never use it.\n",
+    ".codex-plugin/plugin.json": `${JSON.stringify({ name: "plugin-probe-fixture", version: "0.0.0", description: "A probe fixture that declares no skills, tools or servers." }, null, 2)}\n`,
+    ".agents/plugins/marketplace.json": `${JSON.stringify({ name: "plugin-probe-fixture", plugins: [{ name: "plugin-probe-fixture",
+      source: { source: "local", path: "./" }, policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" }, category: "Developer Tools" }] }, null, 2)}\n`,
+  };
+  for (const [name, text] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    writeFileSync(path.join(root, name), text);
+  }
+  await git("init", "-b", "main");
+  await git("add", "-A");
+  await git("-c", "user.name=Cross Agent Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgSign=false", "commit", "-m", "plugin-isolation probe fixture");
+  await git("worktree", "add", "-b", "task/probe", worktree);
+}
+
+/** Precondition (c): the fixture's manifests declare no tools, it has no MCP server, and the arm adds no plugin but the forced pair. */
+function fixtureAddsNothing(root: string, argv: readonly string[]): boolean {
+  const manifest = JSON.parse(readFileSync(path.join(root, ".codex-plugin", "plugin.json"), "utf8"));
+  const market = JSON.parse(readFileSync(path.join(root, ".agents", "plugins", "marketplace.json"), "utf8"));
+  const settings = argv.filter((_value, k) => argv[k - 1] === "-c");
+  return Object.keys(manifest).every((key) => ["name", "version", "description"].includes(key))
+    && market.plugins.every((plugin: object) => Object.keys(plugin).every((key) => ["name", "source", "policy", "category"].includes(key)))
+    && !existsSync(path.join(root, ".mcp.json"))
+    && settings.every((value) => !value.startsWith("plugins.") || (forcedPlugins as readonly string[]).includes(value))
+    && settings.every((value) => !value.startsWith("mcp_servers.") || value.startsWith("mcp_servers.cross-agent."));
+}
+
+function killGroup(handle: ReturnType<typeof spawnEngine>): void {
+  try { if (handle.pid !== undefined) process.kill(-handle.pid, "SIGKILL"); } catch { /* already gone */ }
+  handle.kill("SIGKILL");
+}
+
+// @anchor codexPluginIsolationReal
+test("plugin isolation, native: a real Codex child, fresh or resumed, at a root or in a worktree, lists no plugin and keeps what it should", async (t) => {
+  if (!realPlugins) return t.skip("set CROSS_AGENT_REAL_CODEX_PLUGINS=1 and CROSS_AGENT_REAL_CODEX_PLUGINS_EVIDENCE=<a new absolute directory> to run this against the real binary");
+  // Every guard holds before anything is written or launched.
+  assert.equal(process.env.CROSS_AGENT_REAL_CODEX, undefined, "CROSS_AGENT_REAL_CODEX is set: run this proof on its own");
+  assert.equal(process.env.CODEX_SETUP_PROBE, undefined, "CODEX_SETUP_PROBE is set: run this proof on its own");
+  const evidence = process.env.CROSS_AGENT_REAL_CODEX_PLUGINS_EVIDENCE ?? "";
+  assert.notEqual(evidence, "", "CROSS_AGENT_REAL_CODEX_PLUGINS_EVIDENCE is unset");
+  assert.ok(path.isAbsolute(evidence), `the evidence directory ${evidence} is relative`);
+  assert.equal(existsSync(evidence), false, `the evidence directory ${evidence} exists already: name a new one`);
+  const resolved = commandPath(codexBinary, process.env);
+  assert.ok(resolved !== null, `${codexBinary} does not resolve`);
+  const codexHome = realpathSync(process.env.CODEX_HOME ?? path.join(homedir(), ".codex"));
+  // Real paths throughout, since `turn_context` reports the cwd Codex resolved.
+  const home = realpathSync(homedir());
+  const short = randomUUID();
+  const root = path.join(home, `cross-agent-plugin-probe-${short}`);
+  assert.equal(/[."\\]/.test(root), false, `the fixture path ${root} holds a character its trust key cannot carry`);
+  const worktree = path.join(root, "worktrees", "probe");
+  mkdirSync(evidence, { recursive: true });
+  const homes = realpathSync(mkdtempSync(path.join(tmpdir(), "cross-agent-plugin-stage0-")));
+  const versionOf = async () => (await promisify(execFile)(resolved, ["--version"], { encoding: "utf8" })).stdout.trim();
+
+  const live = new Set<ReturnType<typeof spawnEngine>>();
+  let launched = 0;
+  let version: string | null = null;
+  let spelling: KeySpelling | null = null;
+  let snapshot: (UserLayer & { subtrees: string; projects: string[]; sha256: string | null }) | null = null;
+  const markers: Record<string, unknown> = {};
+  const verdict: {
+    ok: boolean; head: string | null; version: string | null; stage0: Record<string, unknown>; turns: Record<string, TurnVerdict>;
+    stop: { turn: string; kind: "failed" | "unresolved"; reasons: string[] } | null; legacy: unknown;
+    acceptance: ReturnType<typeof acceptanceOf>["acceptance"]; limitations: ReturnType<typeof acceptanceOf>["limitations"];
+  } = { ok: false, head: null, version: null, stage0: {}, turns: {}, stop: null, legacy: null, acceptance: null, limitations: [] };
+  const stop = (turn: string, kind: "failed" | "unresolved", reasons: string[]) => { verdict.stop = { turn, kind, reasons }; };
+
+  // Cleanup, once, from the `finally` below and from `t.after`: the engines and the fixture
+  // go, the CLI is the one Stage 0 recorded, and only the trust keys the fixture owns leave
+  // the operator's file, each by compare-and-swap.
+  let cleanupResult: Record<string, unknown> & { ok: boolean } = { ok: false };
+  let cleaning: Promise<void> | undefined;
+  const cleanup = () => (cleaning ??= (async () => {
+    const record: Record<string, unknown> & { ok: boolean } = { ok: false };
+    const problems: string[] = [];
+    for (const handle of live) killGroup(handle);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(homes, { recursive: true, force: true });
+    if (existsSync(root)) problems.push(`the fixture ${root} is still there`);
+    try {
+      if (version !== null) {
+        record.version = await versionOf();
+        if (record.version !== version) problems.push(`codex --version reads ${record.version}, not Stage 0's ${version}`);
+      }
+      if (snapshot === null || spelling === null) {
+        record.config = "not read: no snapshot or no rehearsed spelling, so no engine was launched";
+        if (launched > 0) problems.push("engines ran without a snapshot and a rehearsed spelling");
+      } else {
+        const keyPath = keyPaths[spelling];
+        const owned = ownedProjectKeys(snapshot.projects, Object.keys((await readUserLayer(resolved, codexHome)).config.projects ?? {}), root);
+        record.owned = owned;
+        for (const key of owned) {
+          let removed = false;
+          for (let attempt = 0; attempt < 3 && !removed; attempt++) {
+            const client = await configClient(resolved, codexHome);
+            try {
+              const current = userLayerOf(await client.call("config/read", { includeLayers: true }), codexHome);
+              if (Object.hasOwn(current.config.projects ?? {}, key)) {
+                await client.call("config/batchWrite", { filePath: current.file, expectedVersion: current.version,
+                  edits: [{ keyPath: keyPath(key), value: null, mergeStrategy: "replace" }] });
+              }
+              removed = true;
+            } catch (error) {
+              record.lastError = String(error);
+            } finally {
+              await client.close();
+            }
+          }
+          if (!removed) problems.push(`${key} could not be removed in three attempts`);
+        }
+        const final = await readUserLayer(resolved, codexHome);
+        const keys = Object.keys(final.config.projects ?? {});
+        if (owned.some((key) => keys.includes(key))) problems.push("a fixture-owned key remains");
+        if (snapshot.projects.some((key) => !keys.includes(key))) problems.push("a project key the snapshot held is gone");
+        if (preferenceSubtrees(final.config) !== snapshot.subtrees) problems.push("plugins, marketplaces or features differ from the snapshot");
+        record.sha256 = { before: snapshot.sha256, after: sha256Of(final.file) };
+        const before = snapshot.config;
+        record.changedTopLevelKeys = [...new Set([...Object.keys(before), ...Object.keys(final.config)])]
+          .filter((key) => JSON.stringify(canonical(before[key])) !== JSON.stringify(canonical(final.config[key])));
+        markers.after = cacheMarkers(codexHome);
+      }
+    } catch (error) {
+      problems.push(`cleanup: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    record.problems = problems;
+    record.ok = problems.length === 0;
+    cleanupResult = record;
+    writeJson(path.join(evidence, "cleanup.json"), record);
+    writeJson(path.join(evidence, "plugin-cache-markers.json"), markers);
+  })());
+  t.after(cleanup);
+
+  const main = async () => {
+    verdict.head = (await promisify(execFile)("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" })).stdout.trim();
+    version = await versionOf();
+    verdict.version = version;
+    writeJson(path.join(evidence, "manifest.json"), {
+      head: verdict.head, checkout, binary: resolved, real: realpathSync(resolved), version, model: probeModel, codexHome,
+      fixture: root, worktree, turns: probeTurns, node: process.version, startedAt: new Date().toISOString(),
+    });
+
+    // Stage 0, with no model: the version, the cleanup rehearsal, the subtrees' equivalence,
+    // the operator's snapshot read only, and the control literal's byte scan.
+    writeJson(path.join(evidence, "stage0", "version.json"), { binary: resolved, real: realpathSync(resolved), version });
+    const rehearsal = await rehearseCleanup(resolved, homes, [root, worktree]);
+    writeJson(path.join(evidence, "stage0", "rehearsal.json"), rehearsal);
+    const equivalence = await preferenceEquivalence(resolved, homes);
+    writeJson(path.join(evidence, "stage0", "equivalence.json"), equivalence);
+    const layer = await readUserLayer(resolved, codexHome);
+    const taken = { ...layer, subtrees: preferenceSubtrees(layer.config), projects: Object.keys(layer.config.projects ?? {}), sha256: sha256Of(layer.file) };
+    markers.before = cacheMarkers(codexHome);
+    writeJson(path.join(evidence, "operator-config.json"), { version: taken.version, sha256: taken.sha256, subtrees: JSON.parse(taken.subtrees) });
+    writeJson(path.join(evidence, "cleanup-plan.json"), {
+      configFile: taken.file, version: taken.version, fixture: root, worktree, spelling: rehearsal.spelling,
+      keyPath: rehearsal.spelling === null ? null : keyPaths[rehearsal.spelling]("<owned key>"),
+      rule: "remove only the project keys absent from the snapshot and equal to or inside the fixture, each by compare-and-swap, retrying a conflict at most three times",
+    });
+    const scan = literalScan(resolved);
+    writeJson(path.join(evidence, "stage0", "literal-scan.json"), scan);
+    const problems = [
+      ...(rehearsal.spelling === null ? ["no key spelling removed the owned keys byte for byte, refused a stale version and kept the rest"] : []),
+      ...(equivalence.ok ? [] : ["the preference subtrees do not compare by value"]),
+      ...(scan.files.length === 0 ? ["no binary was scanned for the control literal"] : []),
+      ...(scan.found.length > 0 ? [`the control literal is in ${scan.found.join(", ")}`] : []),
+    ];
+    verdict.stage0 = { spelling: rehearsal.spelling, equivalence: equivalence.ok, scanned: scan.files, literalAbsent: scan.found.length === 0, problems };
+    if (problems.length > 0) return stop("stage0", "unresolved", problems);
+    spelling = rehearsal.spelling;
+    snapshot = taken;
+
+    const agentsMarker = `PLUGIN-PROBE-AGENTS-${short}`;
+    await buildFixture(root, worktree, agentsMarker);
+    const bases = {
+      root: {
+        role: "lead", rolePrompt: probeRole, cwd: root, engine: "codex", sandbox: sandboxFor("codex", "read-only"), model: probeModel, denyTargets: [],
+        lead: { command: process.execPath, args: [path.join(checkout, "src", "server.ts"), "--project", root] },
+      },
+      worktree: {
+        role: "implementer", rolePrompt: probeRole, cwd: worktree, engine: "codex", sandbox: sandboxFor("codex", "workspace-write"), model: probeModel, denyTargets: [],
+        protectedPaths: [path.join(worktree, ".git"), path.join(root, ".git")],
+      },
+    } satisfies Record<string, Omit<SpawnRequest, "brief" | "sessionId" | "env" | "scratchDir" | "logPath" | "resultPath">>;
+    const threads: Record<string, string> = {};
+    const briefs: Record<string, string[]> = { X: [], Y: [], Z: [], V: [] };
+    const prefixes: Record<string, string> = {};
+    const controls: Record<string, string[]> = {};
+    mkdirSync(path.join(evidence, "rollouts"), { recursive: true });
+
+    for (const turn of probeTurns) {
+      const dir = path.join(evidence, "turns", turn.id);
+      mkdirSync(dir, { recursive: true });
+      const base: Omit<SpawnRequest, "brief" | "sessionId" | "env" | "scratchDir" | "logPath" | "resultPath"> = bases[turn.at];
+      const marker = `PLUGIN-PROBE-${turn.id}-${short.slice(0, 8)}`;
+      const brief = briefFor(marker, { B: turn.cellB, D: turn.cellD });
+      const taskId = `plugin-probe-${short.slice(0, 8)}-${turn.id}`;
+      if (turn.head === "resume" && threads[turn.thread] === undefined) return stop(turn.id, "unresolved", [`no thread ${turn.thread} to resume`]);
+      const request: SpawnRequest = {
+        ...base, brief, sessionId: taskId,
+        env: { ...childEnv(process.env, 0, taskId, [{ taskId, role: base.role, cwd: base.cwd }], "subscription", root), CROSS_AGENT_CODEX_BIN: resolved },
+        scratchDir: dir, logPath: path.join(dir, "events.ndjson"), resultPath: path.join(dir, "final.txt"),
+        ...(turn.head === "resume" ? { resumeSessionId: threads[turn.thread] } : {}),
+      };
+      const mounted = request.lead !== undefined;
+      const arms = armsFor(request);
+      const argv = arms[turn.arm];
+      const armProblems = armFailures(arms, mounted);
+      writeJson(path.join(dir, "argv.json"), { arm: turn.arm, argv, ...arms, problems: armProblems });
+      if (armProblems.length > 0) return stop(turn.id, "unresolved", armProblems);
+
+      launched++;
+      const handle = spawnEngine(codex, request, {
+        spawn(bin, args, options) {
+          if (JSON.stringify(args) !== JSON.stringify(arms.exact)) throw new Error(`the pipeline's argv is not the exact arm: ${JSON.stringify(args)}`);
+          return spawn(bin, argv, options);
+        },
+      });
+      live.add(handle);
+      let result: Awaited<typeof handle.result>;
+      try {
+        result = await settled(handle, turn.id);
+      } catch (error) {
+        killGroup(handle);
+        return stop(turn.id, "unresolved", [String(error)]);
+      } finally {
+        live.delete(handle);
+      }
+
+      const thread = result.sessionId;
+      writeFileSync(path.join(dir, "thread.txt"), `${thread ?? ""}\n`);
+      if (thread === null) return stop(turn.id, "unresolved", [`the turn reported no thread: exit ${result.exitCode}, ${result.events.at(-1)?.text ?? ""}`]);
+      if (turn.head === "fresh") threads[turn.thread] = thread;
+      else if (thread !== threads[turn.thread]) return stop(turn.id, "unresolved", [`resumed ${threads[turn.thread]} but reported ${thread}`]);
+      const files = rolloutFiles(codexHome, thread);
+      if (files.length !== 1) return stop(turn.id, "unresolved", [`${files.length} rollout files for ${thread}: ${JSON.stringify(files)}`]);
+      const text = readFileSync(files[0], "utf8");
+      copyFileSync(files[0], path.join(evidence, "rollouts", path.basename(files[0])));
+      briefs[turn.thread].push(brief);
+      const reading = await readThread(thread, codexHome);
+      const projectDirs = turn.at === "root" ? [root] : [worktree, root];
+      const judgement = judgeTurn({ id: turn.id, class: turn.class, fresh: turn.head === "fresh", mounted, cellB: turn.cellB, cellD: turn.cellD }, {
+        rollout: parseRollout(text),
+        briefs: briefs[turn.thread],
+        roleFile: probeRole,
+        agentsMarker,
+        replyMarker: marker,
+        run: { exitCode: result.exitCode, completed: result.events.some((event) => event.kind === "result"), finalMessage: result.finalMessage },
+        expect: { model: probeModel, cwd: base.cwd, sandbox: base.sandbox.profile, approval: "never" },
+        where: { codexHome, home, projectDirs },
+        commands: commandsOf(reading),
+        fixtureFiles: projectDirs.map((directory) => path.join(directory, ".agents", "skills", "plugin-probe-fixture", "SKILL.md")),
+        controlFiles: turn.class === "control" && turn.head === "fresh" ? null : controls[turn.at] ?? [],
+        inventoryControl: expectedInventoryControl(request),
+        facts: { literalAbsent: scan.found.length === 0, fixtureClean: fixtureAddsNothing(root, argv) },
+        ...(turn.class === "legacy" ? { prefixUnchanged: prefixes[turn.thread] !== undefined && text.startsWith(prefixes[turn.thread]) } : {}),
+      });
+      prefixes[turn.thread] = text;
+      if (turn.class === "control" && turn.head === "fresh") controls[turn.at] = judgement.recorded.nonPluginFiles as string[];
+      // Every turn leaves the operator's plugin preferences as the snapshot found them.
+      if (preferenceSubtrees((await readUserLayer(resolved, codexHome)).config) !== taken.subtrees) {
+        judgement.failed.push("the operator's plugins, marketplaces or features changed during the turn");
+        judgement.outcome = "fail";
+      }
+      writeJson(path.join(dir, "reading.json"), { thread, rollout: files[0], verdict: judgement, reading });
+      verdict.turns[turn.id] = judgement;
+      if (turn.class === "legacy") {
+        verdict.legacy = { newBlock: judgement.recorded.newBlock, retainedPluginOrigin: judgement.recorded.retainedPluginOrigin, backendReceipt: judgement.recorded.backendReceipt };
+      }
+      if (judgement.outcome !== "pass") return stop(turn.id, judgement.outcome === "fail" ? "failed" : "unresolved", [...judgement.failed, ...judgement.unresolved]);
+    }
+  };
+
+  try {
+    await main();
+  } catch (error) {
+    verdict.stop ??= { turn: "harness", kind: "unresolved", reasons: [error instanceof Error ? error.stack ?? error.message : String(error)] };
+  } finally {
+    await cleanup();
+  }
+  // Accepted only when all eight turns passed: `bounded` where a turn recorded the accepted
+  // limitation, `full` where none did. Written on every exit path, the limitations included.
+  const accepted = acceptanceOf(verdict.turns, probeTurns.map((turn) => turn.id));
+  verdict.acceptance = accepted.acceptance;
+  verdict.limitations = accepted.limitations;
+  verdict.ok = verdict.acceptance !== null;
+  writeJson(path.join(evidence, "verdict.json"), { ...verdict, cleanup: { ok: cleanupResult.ok } });
+  assert.equal(verdict.ok, true, JSON.stringify(verdict.stop));
+  assert.equal(cleanupResult.ok, true, JSON.stringify(cleanupResult));
 });

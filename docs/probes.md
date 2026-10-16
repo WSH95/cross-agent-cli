@@ -2008,7 +2008,9 @@ read from the child's own log:
   `~/.agents/skills` and `~/.codex/skills/.system` alone, with no plugin cache, and its
   tool inventory holds `codex_apps` and nothing of this server's; no `McpToolCall`. The
   flag drops the user's plugins as it drops the user's MCP servers — the fact P5 did not
-  cover. Its turn ran `approval_policy: never`, read-only.
+  cover. Its turn ran `approval_policy: never`, read-only. That held for a plugin enabled
+  in the operator's file on 0.159.3; later runs found the flag does not keep out the
+  account's remote plugins (`docs/probes.md#codexPluginLeak`).
 - **Grok** (`d8a689c5…`): `system/init` lists exactly the five specialist tools as
   `cross-agent__<tool>`, through the sample's `.grok/config.toml`, beside the user's own
   servers; it searched for `delegate`, found none, and called nothing, so its
@@ -4320,3 +4322,251 @@ section 3).
 durable scheduled task outlives its task or runs outside its sandbox; the grok version
 each run used (1.0.52 is installed since 2026-10-12); the cause of the 8 residual
 refusals; and Claude Code's own rule.
+
+<!-- @anchor codexPluginLeak -->
+## Codex children and the account's remote plugins (2026-10-15–16)
+
+`--ignore-user-config` drops a plugin the operator's file enables (`docs/probes.md#i1CodexHost`, 0.159.3),
+but not the plugins the account brings from its marketplaces. Each case below is a Codex
+child launched by the adapter's line of the time, `--ignore-user-config` and no plugin
+setting, read from its own rollout under `~/.codex/sessions/`; each holds for its version,
+its cwd and its head only, and none says why one run leaked and another did not.
+
+- **Sample root consult** (0.162.1): task `08956a56…`, thread `01a14155…`, a read-only
+  `consult` at the root of the Codex host sample `cross-agent-codex-host-e2e-20261015`. Its
+  skills block lists remote plugin roots, superpowers among them, and line 11 of the rollout
+  reads `using-superpowers/SKILL.md`.
+- **Sample worktree consult** (0.162.1): task `4e67856c…`, thread `01a14156…`, a
+  workspace-write `consult` in a worktree of the same sample. Its skill roots are
+  `~/.agents/skills` and `~/.codex/skills/.system` alone.
+- **Sample implementer resume** (0.162.1): task `cdaa81bc…`, resumed as `58acfe67…`, both on
+  thread `01a141a7…`, in a worktree. The fresh turn's catalogue is clean; the resume
+  re-injects a skills block with the remote plugin roots at line 75, and line 82 reads
+  `using-superpowers`.
+- **Source root plan reviews** (0.163.0): this repository's own read-only plan reviewers at
+  its root. Threads `01a14211…`, `01a14222…` and `01a1422d…` leaked plugin skills into
+  their context; threads `01a14293…`, `01a14297…` and `01a142a9…` were clean.
+- **Source worktree resume** (0.163.0): thread `01a1425b…`, resumed in a worktree, wrote no
+  new skills block on its second turn.
+
+**Observation method.** The rollout is what was recorded, not what reached the model. A
+custom model provider shows only its own request assembly, and the considered
+`openai_base_url` route would hand the operator's credentials to whatever listens there; no
+verified credential-safe way to observe the transmitted request was established.
+
+**Reading.** The flag is not isolation from plugins on these versions, and whether a child
+leaks varies with the cwd and the head. The adapter therefore sets both plugin switches off
+on every launch and every resume (`src/engines/codex.ts#codex`); their effect is what
+`docs/probes.md#codexPluginIsolation` measures.
+
+<!-- @anchor codexPluginIsolation -->
+## Plugin isolation, the native protocol (2026-10-16)
+
+`tests/engines/codex.test.ts#codexPluginIsolationReal`, run on a committed head under
+`CROSS_AGENT_REAL_CODEX_PLUGINS=1` with an evidence directory of its own, judged by
+`tests/helpers/codex-isolation.ts#judgeTurn` and held to its rules by
+`tests/engines/codex.test.ts#codexPluginProofShape`. It answers whether
+`-c features.plugins=false -c features.remote_plugin=false` keep plugin skills out of a
+Codex child's context; that the official configuration schema declares both switches says
+only that Codex recognizes them.
+
+**Stage 0**, with no model: the CLI's version, recorded again before cleanup; a rehearsal in
+temporary homes that the fixture's two trust tables come out of a config by compare-and-swap
+byte for byte, with a stale version refused; one set of `plugins`, `marketplaces` and
+`features` entries spelled as tables, dotted keys and inline tables reading as one value; the
+operator's user layer snapshotted, read only; and a byte scan of the binary, and of a
+`codex-code-mode-host` beside it, for the control name `crossagentabsent.list`.
+
+**The fixture**: a repository under `$HOME` with `AGENTS.md` carrying a marker, a project
+skill `plugin-probe-fixture`, a plugin manifest and a marketplace that declare no tools, and
+no MCP server; and a linked worktree of it. Its root also holds a git-ignored
+`.cross-agent/config.json` naming `solo`, because the root turns' mount names the root with
+`--project` and the server refuses a named root without a config (`src/project.ts#named`).
+The root turns run as a mounted lead, read-only; the worktree turns as an implementer,
+workspace-write; every turn on `gpt-6.1-sol`.
+
+**The cells.** Cell A prints the tool count and one compact entry per tool, `[name, skill,
+plugin, annotated, snippet]`: whether its name or description says skill, whether its
+description says plugin, whether it carries Codex's "part of plugin" annotation, and, for an
+unannotated tool whose description mentions a skill or a plugin, at most 200 characters around
+the mention. The compact form keeps the inventory inside 0.163.0's 10,000-token `exec` output
+budget. A cell's output is read only in the frame 0.163.0 records
+(`tests/helpers/codex-isolation.ts#cellPrinted`): exactly two `input_text` parts, the first
+`Script completed\nWall time <s> seconds\nOutput:\n` and the second the printed JSON. A
+truncation warning, another frame, or text that is not JSON leaves the turn unresolved, for
+Cell B as for Cell A. A Cell B that is missing, altered, or not tied to the mount's record of
+the call fails the turn. Cell D comes first in the brief of every turn that runs it: three
+direct top-level calls, before any `exec` cell, to `crossagentabsent.list`, `skills.list` and
+`skills.read`, by those names even if no tool carries them, a refusal or an error being the
+result it records. A turn with no call to them leaves the top-level surface unresolved: not
+calling a name is not its absence. Under the bounded acceptance below, that reading is
+recorded as a limitation and does not stop the run.
+
+**What the inventory decides.** A treatment fails on a tool Codex annotates as part of a
+plugin (`tests/helpers/codex-isolation.ts#pluginTools`), the mount's own server excepted. A
+tool whose description mentions plugins without the annotation is recorded with its snippet
+and not gated (`#pluginMentions`). In attempt 2 those were Codex's own `codex_apps` connector
+tools: the same 92 connector names were listed under both arms, and the nine that mention
+plugins carried the annotation flag under the control and not under the treatment. Cell A
+records names and flags, not whether a description or a tool's behaviour is otherwise the
+same. The nested surface is present when a tool's name says skill, as
+`skills.list` and `skills.read` would (`#nestedCoverage`); a tool whose description alone
+mentions skills is recorded with its snippet (`#skillMentions`), outside the claim, which
+covers those two interfaces.
+
+**The arms**, each built from the adapter's own line: *exact* is that line; *treatment* adds
+`plugins.frontend-design-premium@openai-curated-remote.enabled=true` and
+`plugins.visualize@openai-bundled.enabled=true` before `-`; *control* is the treatment
+without the four isolation elements.
+
+| Turn | Where | Thread | Head | Arm |
+|---|---|---|---|---|
+| R1 | root | X | fresh | control |
+| R2 | root | Y | fresh | treatment |
+| R3 | root | Y | resume | treatment |
+| R4 | root | Y | resume | control |
+| R5 | root | X | resume | exact |
+| W1 | worktree | Z | fresh | control |
+| W2 | worktree | V | fresh | treatment |
+| W3 | worktree | V | resume | treatment |
+
+**The gates**, after each turn, the first that does not pass stopping the run: every turn
+completes with its marker, on the model, cwd, sandbox and approval it was given, with the
+`AGENTS.md` marker, the fixture skill and the control's non-plugin skill files in its
+context, an exact inventory cell, no engine-added interface named outside the brief, and the
+operator's `plugins`, `marketplaces` and `features` as the snapshot found them. A control
+must list a plugin skill of its own. A treatment must hold no plugin-origin item from its
+thread's first line through its own end, offer no tool annotated as part of a plugin, and
+leave `skills.list` and `skills.read` absent on the nested surface by name, and on the
+top-level surface ABSENT against the same-turn control call or, only where the turn made no
+top-level call to the name, UNRESOLVED as the accepted limitation; any other top-level reading
+stops the run. R5, resuming the control's thread on the exact line, must add no plugin-origin
+item of its own. R2 and R3 tie a printed `list_roles` result to the mount's own record of the
+call.
+
+**Bounded acceptance (2026-10-16).** Attempt 3's R2 made no top-level call to either name, so
+its top-level surface stayed unresolved. The user then chose: "Bounded proof (Recommended):
+accept top-level availability as an explicit limitation, then complete all eight native turns
+and the remaining fixes and E2E checks." The judge reads each of `skills.list` and
+`skills.read` on the top-level surface as follows (`tests/helpers/codex-isolation.ts#coverageGaps`,
+`#coverageLimitations`):
+
+| Reading | Outcome |
+|---|---|
+| ABSENT: the control comparison, all preconditions met | passes |
+| UNRESOLVED because the turn made no top-level call to the name, reached only after the name was found neither called inside `exec` nor in an item of an unknown shape | the accepted limitation: recorded per turn as availability unknown, and no stop |
+| PRESENT | stops, unresolved |
+| Called inside `exec`; an unknown shape; several calls or outputs; a call made but a control precondition unmet | stops, unresolved |
+
+A run is accepted only when all eight turns pass (`#acceptanceOf`). It is `full` where no turn
+recorded the limitation and `bounded` where any did, and its verdict lists every limitation by
+turn. The limitation says only "unknown": it certifies no absence and relabels no earlier
+attempt's outcome. Every other gate still holds in every turn: nested coverage, the leak scan,
+the plugin-tool gate, rule E and the mirrors, retention, Cells A and B, the mount correlation,
+the controls, the legacy prefix, the config gate and cleanup. The claim scope below covers the
+top-level surface only for a name a turn called.
+
+**Claim scope.** The claim holds for the recorded version, codex-cli 0.163.0. It covers each
+checked turn's persisted record, its nested tool registry, and the two identified interfaces.
+On the nested surface they are covered by name. On the top-level surface they are covered only
+for a name a turn called, and no turn in attempt 4 called either.
+
+- **The two switches together.** The effect shown is that of both switches; which of them
+  does the work is not measured.
+- **Not covered:** the transmitted request, other top-level tools, and whether the backend
+  receives a legacy thread's retained catalogue.
+- **What the reader reads.** Its carriers are the session's base instructions, every message
+  and every tool output. 0.163.0 also writes a `world_state` item holding a copy of the skills
+  catalogue (`host_skills`), which the reader does not read. In attempt 4, a raw scan of every
+  line, `world_state` included, found plugin paths only in the control turns R1, R4 and W1. A
+  carrier that a later version adds is not covered.
+- **How a call is matched.** A top-level call counts under its exact name, or under its
+  namespace and name joined by a dot. A call under another spelling would read as no call.
+- **The exact line.** It runs fresh only with the forced settings; R5 runs it on the resume
+  head.
+
+**Results (2026-10-16).** Four attempts ran, each on its own fixed committed head with its own
+evidence directory (`task3-native-plugin-isolation-r1` to `-r4` under the campaign's ignored
+`.cross-agent/fix-acceptance-evidence/`). All ran codex-cli 0.163.0 on `gpt-6.1-sol` at the
+default effort, and the earlier attempts' records stand as they were written.
+
+- **Attempt 1** (`af3f2c2`) stopped at R1, unresolved. Codex truncated Cell A's
+  full-description inventory (original token count 66,715). The root mount never started,
+  because the fixture's root held no `.cross-agent/config.json` for `--project`. Both were
+  harness faults, corrected before attempt 2 by the compact Cell A, the framed reader and the
+  fixture's config.
+- **Attempt 2** (`f2ad696`): R1 passed and R2 stopped, failed. Its plugin-tool gate matched any
+  description that says plugin, which is wider than the approved "part of a plugin". It caught
+  nine `codex_apps` connector tools that carried the annotation flag under the control and not
+  under the treatment. Its nested surface read PRESENT from 31 tools whose descriptions, not
+  names, mention skills. R2 also made no Cell D call. Corrected before attempt 3 by the
+  annotation gate, the name-based nested rule and Cell D placed first.
+- **Attempt 3** (`63b5f5a`): R1 passed. R2 stopped, unresolved, on exactly the two "no
+  top-level call" readings, with nested ABSENT and nothing failed. The user then chose the
+  bounded acceptance above.
+- **Attempt 4** (`7c0d273`) was accepted as `bounded`. All eight turns passed with no stop, and
+  the native-enabled `npm test` exited 0: 1,270 tests, 1,268 passed, and the two unrelated
+  guarded tests skipped.
+
+Attempt 4, turn by turn. The inventory column gives Cell A's entry count, how many entries
+carry the plugin annotation, and whether `request_plugin_install` is listed.
+
+| Turn | Arm | Plugin-origin skills in its own catalogue | Inventory | Top-level `skills.list`, `skills.read` |
+|---|---|---|---|---|
+| R1, root, fresh | control | 3: `frontend-design-premium` (2), `visualize` | 111, 82, listed | not asked |
+| R2, root, fresh | treatment | 0 | 110, 0, absent | no call: unknown |
+| R3, root, resume | treatment | 0 | 110, 0, absent | no call: unknown |
+| R4, root, resume | control | 27 across 7 plugins, superpowers 15 of them | 111, 82, listed | not asked |
+| R5, root, resume of R1's thread | exact | 0, in a new block of its own | 110, 0, absent | no call: unknown |
+| W1, worktree, fresh | control | 3, as R1 | 106, 82, listed | not asked |
+| W2, worktree, fresh | treatment | 0 | 105, 0, absent | no call: unknown |
+| W3, worktree, resume | treatment | 0 | 105, 0, absent | no call: unknown |
+
+**What the treatments kept out.** In R2, R3, W2 and W3 the leak scan found no plugin-origin
+skill, no path under `~/.codex/plugins/`, and no command on one, from each thread's first line
+through the turn's end. No tool carried Codex's plugin annotation, `<recommended_plugins>` was
+absent, and no tool name says skill, so the nested surface was ABSENT. The controls R1, W1 and
+R4 differ from the treatments by the two switches alone. They listed plugin-origin skills and
+82 annotated tools, at the root and in the worktree, on the fresh head and on the resume.
+
+**What every turn kept.** Each turn completed under the account, so authentication held. Each
+ran on `gpt-6.1-sol`, with the cwd, sandbox (read-only at the root, workspace-write in the
+worktree) and approval `never` it was given. Each kept in its context the fixture's
+`AGENTS.md` marker, its project skill, and the same-cwd control's other non-plugin skill files.
+Every root turn listed the mounted lead's five `cross-agent` tools. In R2 and R3, Cell B's
+printed `list_roles` result matched the mount's own completed record of the call. The
+operator's `plugins`, `marketplaces` and `features` read the same after every turn.
+
+**The legacy thread (R5).** R5 resumed R1's thread on the exact line, and its own turn added no
+plugin-origin item. It wrote a new skills block that names no plugin root, and none of its
+lines holds a path under `~/.codex/plugins/`. R1's block, with its three plugin-origin skills
+and its `<recommended_plugins>`, stays in the thread's history. Whether the backend still
+receives those retained bytes is unknown.
+
+**Recorded, not gated.** Every turn's inventory listed 92 `codex_apps` connector names. In the
+treatment and exact turns, nine of them mention plugins without the annotation. In every turn,
+31 mention skills in their descriptions and not their names. Both kinds are recorded with
+snippets. These are names and flags only: they do not show that a tool's description or
+behaviour is otherwise unchanged.
+
+**The bounded limitation.** No turn made a top-level call to any Cell D name. The run records
+ten limitation entries, two for each turn that ran Cell D (R2, R3, R5, W2 and W3): `skills.list`
+and `skills.read` availability unknown, because the turn made no top-level call. Neither
+interface is certified ABSENT on the top-level surface. On the nested surface both are absent
+by name in every treatment and exact turn.
+
+**Cleanup.** The CLI read 0.163.0 at the start and at cleanup. The one trust key the run added,
+the fixture's root, was removed by compare-and-swap. The operator's `config.toml` hashed the
+same before and after (`a165ac7e…`), with no top-level key changed. The fixture and its
+processes are gone. The Codex host sample is unchanged at `a9b90d4`: it has only its root
+worktree, no task branch, and its original configuration. The 582 earlier evidence files still
+match their recorded hashes.
+
+**The suite's own opt-ins.** The native-enabled `npm test` has both opt-in variables in its
+environment from the start. Attempt 1's run failed the setup launcher's marker test in
+`tests/codex-setup.test.ts`, because both variables reached the launched server. Attempt 4's
+run passed that test, and the opt-in test beside it, once the setup fixture took the suite's
+filtered environment (`tests/helpers/project.ts#suiteEnv`). That integration run is the
+evidence for a variable present from process start. The opt-in unit test sets its variable
+after `suiteEnv` is read, so it pins only that the fixture uses `suiteEnv`; a regression in
+`suiteEnv`'s own filter would not turn it red.
