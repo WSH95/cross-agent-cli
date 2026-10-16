@@ -7,6 +7,37 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: zombie fixture follow-up merged (2026-10-16)
+
+Task5 (`atc-s96.170`) is closed. Commit `dbaa8e8382884b21fe2221b29b64cb2bed6cff77`
+changes only `tests/ledger.test.ts`: the fixture observes the parent's exec before killing
+its child and uses existing process-group cleanup. The real zombie/PID/start-time assertion
+and production code are unchanged. The original failed gate and reproduction remain the
+recorded RED evidence; no deterministic suite RED is claimed.
+
+Local `npm test` passed 1276/1263/0/13. The explicit committed-head rerun and post-merge root
+suite each passed **1276 tests, 1273 passed, 0 failed, 3 guarded skips**. The first gate on
+the same head failed a separate wait-test fixture setup; implementer `e73a953b` verified
+that publishing the record can precede releasing its lock. That follow-up is `.171`, with
+the failed gate and diagnostic evidence preserved. The later pass does not erase it.
+
+All three code reviewers returned `VERDICT: no major issues` on dbaa8e8: Claude `fde873aa`,
+Codex `2d70a85b`, and Grok `8e63b4c5`. No committed-code findings remain. A Minor error in
+the approved plan's failure-path description was verified by planner `8bc5c9bc` and saved
+as a separate erratum; the original plan and tested/reviewed head remain unchanged.
+
+All nine delegations settled at depth 1, parent null, exit 0. The host's three anchored
+process searches found no surviving reproduction processes. The owned temporary marker
+was removed after its archived hash matched. Worktree and task branch are removed;
+source is root-only and clean before this records update. Configs and all 582 historical
+sample evidence hashes are unchanged. Full results, logs, audits and the
+`fix-ledger-zombie-fixture-20261016` journal remain in `.cross-agent/`.
+
+Five fix/investigation beads remain: `.171`, `.164`, `.166`, `.165`, `.168`. Eight merged
+findings await candidate acceptance: `.155`, `.156`, `.157`, `.159`, `.160`, `.161`, `.162`,
+`.169`. Umbrella `.163` remains active. The new frozen-candidate matrix has not started.
+No push, release or remote sync.
+
 ## Acceptance fixes: lead contract and project discovery merged (2026-10-16)
 
 Task4 (`.157`, `.159`, `.162`, `.169`) merged as

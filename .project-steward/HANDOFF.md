@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T14:56:29.150070+00:00
+updated_at: 2026-10-16T15:55:43.506392+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,51 +8,48 @@ branch: main
 
 ## Now
 
-Acceptance campaign atc-s96.163 continues. No user decision is pending.
-All four primary source tasks are merged: verifier b5a5522, scope wording d012438,
-plugin isolation affcfc3, and lead contract/project discovery/upgrade guidance 4e065bb.
-Only .167 is closed; original findings await the frozen-candidate E2E criteria.
+Acceptance campaign atc-s96.163 continues. No user decision or external blocker is pending.
+All four primary source tasks are merged: b5a5522, d012438, affcfc3 and 4e065bb. The separate
+zombie-fixture fix .170 merged as dbaa8e8 and is closed. Only one ledger test changed;
+production and the real zombie assertion are unchanged. All three code reviews have no code
+findings. The optional plan Risk1 wording was verified and corrected in an archived erratum,
+with the original plan preserved. Exact-head explicit rerun and root npm test passed
+1276/1273/0/3. All nine tasks settled at depth1/parent null/exit0. Host process audit passed,
+owned marker removed after archive hash check, worktree/branch removed, root-only/clean.
 
-Task4 finished planning, test-first implementation, committed-head tests, host-only native
-controls, two three-seat code reviews, one verified minor wrap, merge, root tests and cleanup.
-Final head 4e065bb has no in-scope review findings. Final-head explicit rerun and root suite
-pass 1276/1273/0/3. Source is main at 4e065bb before this records commit, clean/root-only,
-with no task branches or live tasks. All 21 task4 records are done, depth 1/parent null/exit 0.
-Native source export 426047b and complete results/logs/manifests are archived. All required
-standalone controls passed; original failed P2/P4 probes stay UNVERIFIED and causes inferred.
-The mount proves specialist-row read transport, not actual lead ownership. Claude Read of
-saved MCP answers stays unexercised; watch and record any saved answer in final Claude-led E2E.
-Task3 passed Stage0 and all eight native turns under the user-accepted bound. Top-level
-skills.list/read availability and backend receipt remain unproven. The decision and exact
-limits are in DECISIONS and task3-native-scope-choice.txt; no final verifier check is waived.
+Next is separate .171: the wait-test's zero-budget holder can see a published record before
+the runner releases its record lock. Implementer e73a953b verified the window (10/10 bounded
+trials), with no source change. Keep project lockWaitSeconds=0 and both product refusal
+assertions. Fresh dev-team planner/reviewer must verify the premise, then the smallest
+justified fixture-only change, npm test, committed-head gate, all three reviews, merge,
+root tests and cleanup. The original failed gate and diagnostic are retained under task5-*.
+Then resolve .164/.166, investigate .165 and fix .168. Confirmed follow-ups stay in scope.
 
-New confirmed test-only follow-up .170 is claimed. One final-head gate timed out polling
-for a zombie. Implementer5968bded verified dash can reap sleep 0 before parent exec, reproducing
-16/400 original failures versus 0/400 proposed synchronized trials under load. No source
-change was made. Keep this fixture fix separate from task4: fresh planner/review/worktree,
-verified failure evidence, smallest justified test-only change, npm test, all three reviews, merge,
-root tests and cleanup. Full diagnosis task4-zombie-gate-diagnosis.json and load logs are
-archived. The explicit unchanged-head rerun passed; original failure remains preserved.
+Eight merged findings .155/.156/.157/.159/.160/.161/.162/.169 await candidate acceptance;
+.163 is the umbrella. The user-accepted .161 bounds remain: top-level skills.list/read
+availability and backend receipt are unknown. All eight native turns passed under that
+bound; no final E2E verifier check is waived. Task4 standalone native proof shows adapter
+tool restrictions and specialist-row read transport, not actual lead ownership. Saved MCP
+answers via Claude Read remain unexercised; record any occurrence in final Claude-led E2E.
 
-Then resolve remaining .164/.166 verifier uncertainty, verify .165's premise, and fix .168
-staging. Confirmed follow-ups stay in this stream. Use current main/npm test/no setup/auto/
-depth 1 and exact bindings through frozen installed 0.1.9; never hot-load this checkout as the
-development MCP. Avoid new proof machinery; main-flow focus and accepted bounds stand.
+Use current main/npm test/no setup/auto/depth1 and exact bindings through frozen installed
+0.1.9. Never hot-load this checkout as the development MCP. The source config is unchanged.
+No new proof protocol or general race framework is authorized. Planner/implementer verifies
+review findings; host does not duplicate that diagnosis. Preserve unrelated work.
 
-After all source fixes settle, freeze/install a temporary candidate and use fresh saved-project
-Codex chats for dev-team slug_rotate, six solo consultations/docs (Claude Opus, Codex Sol,
-Grok 4.7 at default effort), Claude-led slug_shortest_first and Codex-led slug_unique_reverse.
-Require live mode/roster, scripted mailbox inputs, full verbatim lead reports, all eight verifier
-checks per scope, and independent ownership/tool/plugin/localtest/review/cleanup audits.
-No new candidate E2E has started. Restore original sample config and managed connection at end.
-Sample is unchanged clean main a9b90d4, root-only, original config, 139 baseline tests; all 582
-historical evidence hashes match. Original managed plugin remains cross-agent@agent-plugins.
+After all source fixes settle, freeze/install a temporary candidate and open fresh saved-project
+Codex chats for dev-team slug_rotate, six solo cases (Claude Opus, Codex Sol, Grok4.7 at default
+effort), Claude-led slug_shortest_first and Codex-led slug_unique_reverse. Require live mode/
+roster, scripted mailbox answers, complete verbatim lead reports, eight verifier passes per
+scope, and independent ownership/tool/plugin/local-test/review/cleanup audits. The new matrix
+has not started. Restore original sample config and managed connection afterward.
+Sample remains clean/root-only main a9b90d4, original config, 139 baseline tests, with all582
+historical evidence hashes matching. Managed plugin remains cross-agent@agent-plugins.
 
-Evidence root .cross-agent/fix-acceptance-evidence/: campaign.json, task4-final-ledger-audit.json,
-task4-final-preservation.json, task4-native-lead-tools/ plus attempt2/attempt3, all results,
-source archives/manifests, gate records and fixes-lead-contract-20261016 journal. The failed
-gate has no tested journal; task4-failed-gate-provenance.json records its clean-head context.
-Steward CLI remains unavailable; manual records are used. No push/release/remote sync.
+Evidence: .cross-agent/fix-acceptance-evidence/, task5-final-ledger-audit.json,
+task5-final-preservation.json, task5-plan-risk-erratum.md, and task5-* results/logs. Original
+native/task/journal records remain unchanged. Steward CLI is unavailable; manual records.
+No push, release or remote sync.
 
 ## Prior verification context
 
@@ -326,13 +323,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign `atc-s96.163` is applying the user-authorized narrow simplification
-after review 6 on `.161`.
-All specialists are settled; no task worktree or branch exists. This checkpoint changes
-root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, `QUESTIONS.md`, and
-`VERIFY.md`. No product code or sample changes are pending. The user authorized fixes and
-full retest; historical diagnose-only entries below no longer limit this campaign. The
-existing Steward runtime claim belongs to another Claude session and is left unchanged.
+Current: atc-s96.163 is continuing the approved source fixes and full candidate retest.
+Task5 .170 is closed; .171 is next. All specialists are settled and no task branch/worktree
+remains. This records checkpoint includes the owned .170 Beads closure log and VERIFY/Steward
+updates. Existing Steward runtime ownership is untouched. Historical diagnose-only limits
+below were superseded by the user's fix-and-retest plan.
 
 Historical entries:
 
@@ -498,18 +493,12 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. The user selected narrow simplification after review 6: resume planner
-   `676c446223dfb131578d6307964328c5ab5a` with full I7/I8/M6, correct native message
-   provenance and use a consistent mount rule, preserve acceptance and obtain a fresh
-   configured Codex review. Preserve accepted I4/I3 and M5. Latest IDs are in campaign
-   evidence; the user accepted no proof gap.
-2. Once the plan is approved, follow its test-first worktree implementation, committed-head
-   `npm test`, native proof, three-seat reviews, merge, root test and cleanup. Native stops
-   remain unresolved; no proof gap has been accepted by the user.
-3. Continue the remaining approved source fixes through installed 0.1.9 `dev-team`, then
-   freeze/install the candidate and run the complete sample matrix from the user-approved
-   plan. Restore the original sample configuration and managed connection. Close findings
-   only when acceptance passes; retain prior evidence. Do not push, release or sync remotely.
+1. Run .171 through the frozen installed dev-team as a separate test-only task. Preserve
+   the failed gate, diagnostic, original assertions and source/sample configuration.
+2. Resolve .164/.166, investigate .165, and fix .168 through the same complete workflow.
+3. Freeze/install the candidate, run the full sample matrix and independent audits, restore
+   configuration/connection, update and close findings only on acceptance evidence, validate
+   records and commit locally. No push, release or remote sync.
 
 Historical next-step entries below predate the approved fix campaign:
 
@@ -604,7 +593,7 @@ Previous release and backlog pointers:
 ## Blockers
 
 Current: no external blocker or pending user decision. Source primary fixes are merged,
-reviewed and tested. Remaining confirmed follow-ups, including .170's test fixture race,
+reviewed and tested. Remaining follow-ups, including .171's test fixture lock setup,
 and the frozen-candidate mode matrix prevent campaign completion. See Now and Beads.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:

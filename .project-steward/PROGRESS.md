@@ -3,6 +3,16 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T15:55:43.506392+00:00 — codex
+
+Task5 .170 merged dbaa8e8 and closed after all three code reviews, exact-head rerun and
+root npm test (1276/1273/0/3), host process audit and cleanup. Nine tasks settled at depth1,
+parent null, exit0. The first gate's separate wait-fixture setup race is .171; evidence and
+failed gate are preserved. Only ledger test setup changed; production and real zombie
+assertion unchanged. Configs/sample/all582 old hashes unchanged. Next .171, then remaining
+.164/.166/.165/.168, then frozen-candidate full matrix. Eight source findings await candidate
+acceptance; .163 remains active. No pending user decision or external blocker. No push/sync.
+
 ### 2026-10-16T14:56:29.150070+00:00 — codex
 
 Task4 (.157/.159/.162/.169) merged 4e065bb after native controls on 426047b, two review rounds
