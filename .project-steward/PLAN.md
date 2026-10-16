@@ -9,7 +9,8 @@ As of 2026-10-16, three primary source fixes are merged (`b5a5522`, `d012438`, `
 `.167` is closed. Plugin isolation passed all eight native turns under the user-accepted
 bounded scope; top-level availability remains explicitly unknown. Final code reviews,
 exact-head/root tests and cleanup pass. Original findings await frozen-candidate acceptance.
-Lead contract/metadata, verified follow-ups (including upgrade guidance), and the complete
+Lead contract/metadata and upgrade-guidance planning cleared review (Important 3 ->0);
+implementation, other verified follow-ups, and the complete
 all-mode retest remain in the same stream. Beads owns their detailed list. Preserve all
 historical evidence and restore test configuration/connection afterward. No push, release
 or remote sync.

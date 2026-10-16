@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T11:39:35.690686+00:00
+updated_at: 2026-10-16T12:12:11.957721+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -20,9 +20,14 @@ Final task3 head affcfc3 differs from proved7c0d273 only in docs/probes.md. Both
 and root tests pass1270/1267/0/3; all8native1270/1268/0/2, bounded10unknownlimitations.
 No live task/probe; source root-only/notaskbranches/clean before this records checkpoint.
 
-Next: claim/read .157/.159/.162/.169 and run lead-contract task4 through planning, review,
-worktree, implementation, commit/gate/all3reviews/corrections/merge/root/cleanup. Prepared
-acceptance is .cross-agent/fix-acceptance-evidence/task4-acceptance-prepared.txt; append .169.
+Task4 .157/.159/.162/.169 is claimed. Planreview R1 a6dd91f5 returned3Important/3Minor;
+planner5381b8bd verified/folded them; fresh R2 980d7397 is clean (3 ->0). Finalplanner
+b57ea1d7 is active. No task4 worktree/code/native yet. After finalresult, archive it and
+create slug fixes-lead-contract-20261016 from current main (this checkpoint is records-only).
+Acceptance task4-acceptance.md, revisedplan task4-plan-r2.md, reviews task4-plan-review-r1/r2.md
+under campaign evidence. Use complete approved plan for implementer; all native probes host-only.
+Any required UNVERIFIED result is not native acceptance; .161 bounds stay unchanged.
+
 Then resolve .164/.166 verifier uncertainty, investigate .165 premise, and fix .168 staging.
 Do not use source as development MCP: installed0.1.9 stays frozen. Main/npm test/no setup/
 auto/depth1 and exact bindings remain unchanged. No direct host implementation.

@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T12:12:11.957721+00:00 — codex
+Lead-contract task4 (.157/.159/.162/.169) is claimed and plan review converged3 ->0 Important: a6dd91f5 (3Important/3Minor), then980d7397 (no findings). Planner5381b8bd verified/folded all6 before freshreview; finaloptimizationb57ea1d7 is active. Required native evidence remains unaccepted until recorded inventory/successful summary responses/current-artifact specialistRED/GREEN and cleanup pass. No source change/worktree/nativeprobe yet. Current source075b49c clean/root-only before this recordscheckpoint; frozen installed0.1.9 and exact config remain. After finalplan: worktree, testfirst implementation, commit/gate/nativeproof/all3reviews/merge/root/cleanup, then remaining followups and candidatefullmatrix. No pending human decision, push/release/sync.
+
 ### 2026-10-16T11:39:35.690686+00:00 — codex
 Codex plugin-isolation source fix .161 merged as affcfc3 after the user accepted top-level availability as an explicit unknown limitation. Native r4 on7c0d273/CLI0.163.0/Sol/default passed Stage0 and all8turns (bounded,10unknownlimitations), fullsuite1270/1268/0/2, unchanged operator config and clean fixture/sample/all582oldhashes. Final docs-only head passed gate/root1270/1267/0/3. All3 code reviews clean in R1 except2Minor; verified docs-only wrap then all3R2 clean with no findings. Worktree/branch removed; root-only/clean. Complete plans/results/logs/source archives/proof/journal retained. .161 stays open for frozen-candidate E2E, as do earlier findings. New verified docs follow-up .169 will be fixed with lead-contract guidance. Other scope notes are limitations or non-defects, not silent deferrals. Next .157/.159/.162/.169 through current frozen installed0.1.9 dev-team, then .164-.166/.168, candidate full mode matrix, restore configs/connection. No push/release/sync.
 

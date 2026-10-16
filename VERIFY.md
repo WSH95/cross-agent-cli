@@ -7,6 +7,17 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: lead-contract plan reviewed (2026-10-16)
+
+Task4 (`.157`, `.159`, `.162`, `.169`) has no implementation yet. Plan reviewer
+`a6dd91f5a27bf89604be1d4d152f6af51f44` returned 3 Important / 3 Minor. Planner
+`5381b8bd6e27ce129d09fa7353b0255990ca` verified and folded all six; fresh review
+`980d739737ad030df9a27c4c634d0978a1fa` returned no findings. Final planner optimization
+`b57ea1d7a496085b8dfaee234a7fdc218848` is active. Full reports are preserved in the campaign
+evidence. Native tool restrictions, summary discovery and current-artifact specialist
+RED/GREEN remain required, with any required UNVERIFIED check not counted as accepted.
+No task4 source change, worktree or native probe exists yet; no decision is pending.
+
 ## Acceptance fixes: Codex plugin isolation merged with bounded native proof (2026-10-16)
 
 Source task `.161` merged as `affcfc3ea89da582994d57246805dd9bf9fe76db`, one Conventional
