@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T05:08:08.317984+00:00
+updated_at: 2026-10-16T06:33:11.250858+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,16 +8,18 @@ branch: main
 
 ## Now
 
-Acceptance fixes and retest remain active (`atc-s96.163`), waiting for the user's
-review-limit choice on `.161`. Two primary tasks are merged and cleaned: verifier coverage
+Acceptance fixes and retest remain active (`atc-s96.163`). The user authorized one more
+revision and fresh plan review on `.161` after the three-round limit. Two primary tasks
+are merged and cleaned: verifier coverage
 `.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and consultant
 scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both passed all
 three final reviews and committed-head/root tests. Only `.167` is closed; native acceptance
 for the original findings remains pending. Task 3 has no code or worktree: its three fresh
 plan reviews found 5, 3 and 2 Important findings, with both remaining carried. The installed
 loop's configured limit is three, so the host presented one more round (recommended),
-simplify, fold and proceed with accepted issues, or pause. Latest planner `5c2c90e9` and
-reviewer `86970e22` are done. Standing proof gaps: bridge diagnostic-provider captures to
+simplify, fold and proceed with accepted issues, or pause. Planner `8fb77040` is revising
+from `5c2c90e9`; reviewer `86970e22` is done. Standing proof gaps: bridge diagnostic-provider
+captures to
 real-provider contaminated resume input, and cover discovery tools introduced on resume.
 No native model probe has run and no isolation claim is made. All six planning records
 finished at depth 1 with exit 0 and correct read-only bindings. Main was clean at `b4e274b`
@@ -303,10 +305,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign `atc-s96.163` is waiting for the review-limit choice on `.161`. All
-specialists have settled; no task worktree or branch exists. This checkpoint changes only
-root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, `QUESTIONS.md`,
-and `VERIFY.md`. No product code or
+Current: campaign `atc-s96.163` is in the user-authorized extra planning round on `.161`.
+Planner `8fb77040` is running; no task worktree or branch exists. This checkpoint changes only
+root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, and `QUESTIONS.md`.
+No product code or
 sample change is pending. The user authorized the fixes and full retest; the older
 "diagnose only" text below describes prior completed runs and does not limit this campaign.
 
@@ -476,11 +478,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Read `bd show atc-s96.161` and the full `task3-plan-review-r3.md` under the ignored
-   evidence directory, then apply the user's review-limit choice. No answer means no
-   dependent implementation. "One more round" resumes planner `5c2c90e9bc0211efeba02748deb847b8581b`
-   with the full two findings, then uses a fresh configured Codex plan reviewer; a further
-   major verdict requires another choice under the installed loop.
+1. Wait for planner `8fb77040cb69fdaa8367aa1af94491c7d76d` and retrieve its full result.
+   The user authorized one more revision and fresh review, without accepting proof gaps.
+   Send the revised plan and full round-3 findings to a fresh configured Codex reviewer.
+   A fourth major verdict requires another user choice under the installed loop.
 2. Once the plan is approved, follow its test-first worktree implementation, committed-head
    `npm test`, native proof, three-seat reviews, merge, root test and cleanup. Native stops
    remain unresolved; no proof gap has been accepted by the user.
@@ -581,8 +582,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: `.161` reached `review.planReviewRounds=3`; the installed dev-team loop requires a
-user choice. The two remaining Important findings concern the native proof design, not an
+Current: `.161` reached `review.planReviewRounds=3`; the user then authorized one extra
+revision and fresh review. No plan-approval blocker remains while that round runs. The two
+remaining Important findings concern the native proof design, not an
 observed failure of the proposed flags. No native model proof or candidate retest has run.
 No user acceptance of these gaps is recorded.
 

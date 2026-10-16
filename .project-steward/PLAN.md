@@ -6,8 +6,9 @@ Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 
 User-approved work is tracked by `atc-s96.163`; Beads owns the detailed tasks and follow-ups.
 As of 2026-10-16, two primary fixes are merged (`b5a5522`, `d012438`), with fresh native
-acceptance pending. `.167` is closed. Plugin isolation `.161` awaits the user's choice at
-the three-round review limit (Important findings 5 → 3 → 2). Lead contract/metadata,
+acceptance pending. `.167` is closed. The user authorized one extra revision and fresh
+review for plugin isolation `.161` after the three-round limit (Important 5 → 3 → 2).
+Lead contract/metadata,
 implementation follow-ups and the frozen-candidate all-mode retest remain. Existing
 observations and corrected diagnoses are retained. No push, release or remote sync.
 

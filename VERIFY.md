@@ -17,6 +17,8 @@ The two-flag adapter change remains proposed. No native model probe, task worktr
 candidate installation has occurred. The configured three-round limit requires the user's
 choice; one more round is recommended because the findings are converging. No gap has been
 accepted and no isolation pass is claimed.
+The user subsequently selected one more revision and fresh review on 2026-10-16.
+Planner `8fb77040` is running; this accepts neither standing finding.
 
 Planner tasks `ef13ed61`, `c0e900f9`, `5c2c90e9` and review tasks `8c482d07`, `4354db51`,
 `86970e22` all settled at depth 1, exit 0, with expected engine/model/effort and read-only
