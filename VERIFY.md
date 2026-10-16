@@ -7,6 +7,29 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: ancestor ENOENT plan approved (2026-10-16)
+
+Task8 .165 is implementing, not accepted yet. Planner0d71dc46 established the isolated
+ancestor-listing ENOENT inconsistency and in-memory repair. The historical actor/change
+behind the captured CLI error remains inferential. Reviewer0a2959df accepted the narrow
+three-file repair, two-leg public-behavior regression and nesting argument, but returned
+2 Important plan corrections (host Git ownership, current count/skip expectations) and
+1 Minor evidence-wording correction. Plannerccd14a76 verified/folded all3 and corrected
+an abbreviated hash typo. Fresh review544f7b75 has no findings; final003db4a2 optimized
+wording once without scope change. All seven full original evidence digests are retained.
+
+Accepted diagnostics are not source-suite RED/GREEN. Claude implementeref85641d is live
+in the task worktree from40627f9. Expected local RED1279/1265/1/13, GREEN1279/1266/0/13
+and host gate/root1279/1276/0/3 are expectations, not executed results. No source commit,
+gate/review/merge/cleanup or .165 acceptance is claimed. No shared /tmp/.git change,
+host watch, stress campaign or general race framework is authorized by this task.
+
+A preparatory supported Codex connection check failed to initialize SQLite inside the
+workspace sandbox; the check outside that sandbox passed on installed0.1.9. Original
+managed owner remains cross-agent@agent-plugins; only inventory/check operations ran.
+No plugin switch or sample/config change. Captures are separate from product defects.
+Eleven beads remain; candidate matrix not started. No push, release or remote sync.
+
 ## Acceptance fixes: verifier follow-ups merged (2026-10-16)
 
 Task 7 (`atc-s96.164/.166/.172`) is complete and those three beads are closed.

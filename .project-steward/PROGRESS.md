@@ -3,6 +3,17 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T19:29:54Z — codex
+
+Task8 .165 plan approved after2→0 Important. Reviewer accepted the isolated mechanism,
+three-file repair and public two-leg regression. Planner verified/folded all3 findings;
+final003db4a2 optimized once. Historical actor/change remains inference; data-only
+diagnostics are not source-suite RED/GREEN. Claude implementer ef85641d is live in
+task/fix-discovery-enoent-20261016 from40627f9. Full source gates/reviews/merge/cleanup
+remain pending. Eleven campaign beads remain. Setup check's sandbox SQLite failure
+is preserved; supported check outside passed on original installed0.1.9. No plugin
+switch, sample change, candidate matrix, push/release/sync or user decision pending.
+
 ### 2026-10-16T19:03:56Z — codex
 
 Task7 .164/.166/.172 merged 602c479 + wrap773807c and all three are closed. Plan reviews

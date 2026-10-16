@@ -14,7 +14,9 @@ Task 7 (.164/.166/.172) merged as 602c479 plus the required wrap773807c; all thr
 Both final gate/root suites pass1278/1275/0/3 and all3 fresh reviews say noMajor.
 Fifteen tasks, complete results, bounded audit, cleanup and preservation are recorded.
 Eleven campaign beads remain: .165/.168 need source work, eight merged findings await
-candidate acceptance and .163 is the umbrella. The full mode matrix stays in this stream.
+candidate acceptance and .163 is the umbrella. Task8 .165 is implementing its approved
+three-file plan after2→0 Important; full validation/review/merge/cleanup remains.
+The full mode matrix stays in this stream, after .168.
 The new candidate matrix has not started. Preserve historical evidence, restore configuration
 and connection afterward, and close findings only on their acceptance evidence. No push,
 release or remote sync.

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T19:03:56Z
+updated_at: 2026-10-16T19:29:54Z
 updated_by: codex
 session_status: active
 branch: main
@@ -9,11 +9,49 @@ branch: main
 ## Now
 
 Acceptance campaign atc-s96.163 continues. No user decision or external blocker is pending.
-All four primary source tasks are merged: b5a5522, d012438, affcfc3, 4e065bb. Fixture
-follow-ups .170 (dbaa8e8) and .171 (48b981c) are merged and closed. Task 7
-(.164/.166/.172) is now merged as 602c479 plus wrap 773807c and all three beads are closed.
-Current main is 773807c before this records commit. Source is root-only and was clean
-before these owned bookkeeping changes; no task branch, worktree or live delegation remains.
+Task7 (.164/.166/.172) and its records are complete: source602c479 + wrap773807c,
+records40627f9. All three beads are closed. The four primary source tasks and fixture
+follow-ups .170/.171 remain merged as recorded below. Current main is 40627f9 before
+this records checkpoint; source code is unchanged during Task8 planning.
+
+Task8 .165 is now implementing in .worktrees/fix-discovery-enoent-20261016 on
+task/fix-discovery-enoent-20261016, created from40627f9. Claude Opus/xhigh implementer
+ef85641d71b5c4b35b54d23b44349a4282d9 is live. It has no Git/bookkeeping authority.
+Local source RED/GREEN have not returned yet; the patch remains uncommitted in that
+worktree. Host will commit/rebase/gate/all3 review/correct/merge/root-test/clean up.
+Use the records commit after this checkpoint as main; it changes no source.
+
+Planner0d71dc46 established the isolated ancestor-listing ENOENT mechanism; who created
+or changed historical /tmp/.git remains unknown. The narrow repair treats only ENOENT
+from listing a strict ancestor's .git as absence, as lstat already does. Other read/git
+refusals and candidate-root validation remain. Proposed regression exercises successful
+public locateRepository and continued nesting refusal, using fixture-local interception
+and restoration; no source hooks or shared /tmp/.git changes. Planning diagnostics and
+in-memory fixes are not source-suite RED/GREEN.
+
+Plan reviews0a2959df (2Important/1Minor) then544f7b75 (no findings) converge2→0.
+Plannerccd14a76 verified/folded commit ownership, current counts/skips and evidence
+wording, and corrected an abbreviated hash typo; all seven full original digests remain.
+Final planner003db4a2 verified no findings and optimized wording once, without scope
+change or a new diagnostic. No further plan review. Approved full plan is
+task8-plan-approved.md/.json; active acceptance task8-acceptance.md. Expected local
+RED1279/1265/1/13, localGREEN1279/1266/0/13, hostgate/root1279/1276/0/3; report actual
+counts, raw skip identities/reasons and TMPDIR log paths/hashes. Never set probe opt-ins.
+Three edit files only: src/worktree.ts, tests/worktree.test.ts, docs/design.md.
+Host owns all Git operations and rechecks the seven original evidence hashes at the end.
+
+Task8's original event/actor and wider extreme timing windows stay stated unknowns/limits,
+not reasons for a host watch, stress campaign or new race framework. No new defect was
+confirmed by plan review. .165 stays open until full source acceptance. .168 follows,
+then the frozen candidate matrix. Eleven campaign beads remain unclosed.
+
+A preparatory native setup check could not initialize Codex SQLite inside workspace
+sandbox; the supported check outside it passed and selects cross-agent@agent-plugins0.1.9.
+Only read-only inventory/check operations ran; no plugin switch or project config change.
+Sandbox warning/failed and successful captures are retained separately; this is no product
+defect or automatic approval rejection. The new candidate matrix has not started.
+
+Task7 closure evidence follows (state at that dated checkpoint):
 
 Task 7 added bounded uncertainty for literal Bash @P transformations independently of
 engine-name matching, and for six named global-object/member-constructor routes.
@@ -348,10 +386,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign atc-s96.163. Task7 is merged/closed; no specialist/task branch/worktree
-is live. .165 investigation is next, then .168 and candidate matrix. See Now for counts,
-evidence, process notes and bounds. Historical limits below are superseded by the approved
-fix-and-retest plan. Steward runtime ownership is untouched.
+Current: campaign atc-s96.163. Task8 .165 has an approved plan after2→0 Important.
+Claude implementer ef85641d is live in its assigned task worktree; RED/GREEN pending.
+Main40627f9 before this records-only checkpoint. .168 and candidate matrix follow.
+See Now and campaign.json; historical limits below are superseded by the approved plan.
 
 Historical entries:
 
@@ -517,11 +555,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Investigate .165 through frozen0.1.9 dev-team, establish mechanism in an isolated
-   fixture without touching shared /tmp/.git, then full validated workflow if justified.
-2. Fix .168 through the complete loop, preserving exclusions/guards/error reconciliation.
-   Prepared task8/task9 briefs are in campaign evidence; use current main as base.
-3. Freeze/install candidate, run full sample matrix/independent audits, restore configs/
+1. Retrieve Task8 implementer's complete result and raw TMPDIR logs. Source suite only
+   npm test; then host commit/rebase/exact-head gate/all3 reviews/verified corrections/
+   merge/root tests/cleanup. Re-check seven original evidence hashes. No shared /tmp/.git.
+2. Fix .168 through full frozen0.1.9 dev-team, preserving exclusions/guards/reconciliation.
+3. Freeze/install candidate, full sample matrix/independent audits, restore configs/
    connection, close findings on acceptance, validate records and commit locally.
    No push, release or remote sync.
 
