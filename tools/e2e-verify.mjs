@@ -270,11 +270,11 @@ if (journals.length === 0) {
 // process reaches no server that serves `delegate`: a server started under a specialist
 // resolves to the specialist row (`src/authority.ts#resolveAuthority`) and neither lists nor
 // serves a tool outside its row (`src/server.ts#createServer`), and `delegate`'s rows are the
-// operator's and the lead's (`#projectTools`); a Codex specialist starts with no MCP server
-// mounted at all (`src/engines/codex.ts#codex`). A delegation that did run leaves a ledger
-// record, and in the built-in teams a specialist runs at the depth cap, so its child's record
-// fails row 6. An engine launched from a shell leaves no record, so launch judging stays as
-// strict as it is.
+// operator's and the lead's (`#projectTools`); a Codex specialist starts with no mount of this
+// server, and its only MCP server is Codex's built-in `codex_apps` (`src/engines/codex.ts#codex`,
+// `docs/probes.md#p9Mounts`). A delegation that did run leaves a ledger record, and in the
+// built-in teams a specialist runs at the depth cap, so its child's record fails row 6. An
+// engine launched from a shell leaves no record, so launch judging stays as strict as it is.
 //
 // Codex writes an MCP call as an item of type `mcp_tool_call` — `item.started`, then
 // `item.completed` — whose `server` and `tool` are separate fields, `tool` being this
