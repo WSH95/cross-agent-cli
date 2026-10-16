@@ -1237,3 +1237,7 @@ and a lead without `records` keep the old rule), and the `modes/` Layout line na
 modes) carries one exception, a brief asking for a goal's design and breakdown is answered
 with ordered items, each one task, and every other brief keeps the one-task plan. The
 limitations proposed in the plan stand open to the user's objection as before.
+
+## 0023 — 2026-10-16T10:25:58.229476+00:00 — Bound native plugin-discovery proof
+
+The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.

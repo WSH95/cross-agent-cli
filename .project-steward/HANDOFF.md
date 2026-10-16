@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T10:16:20.813318+00:00
+updated_at: 2026-10-16T10:25:58.229476+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,7 +8,7 @@ branch: main
 
 ## Now
 
-Acceptance fixes/retest (`atc-s96.163`) are waiting for a native-proof scope decision.
+Acceptance fixes/retest (`atc-s96.163`) continue under the user-accepted bounded native proof scope.
 Two primary tasks are merged: `.155`/`.160` at b5a5522; `.156` and doc-size `.167` at d012438.
 Only .167 is closed; original findings await native candidate acceptance.
 
@@ -28,11 +28,8 @@ Cell D was delivered first but again made no top-level control/list/read calls, 
 Availability remains unknown; non-use is not absence or universal impossibility. No resume,
 legacy or worktree native turns ran. No native acceptance, code reviews or merge yet.
 
-Approved amendment 2 Issue 1 now requires a user choice: bounded catalogue/context/nested proof
-with top-level availability explicitly unresolved; a bounded credential-free custom-provider
-diagnostic (not real-provider proof by itself); or leave the strict gate/task open. No gap
-waived. Ask through the interactive picker after this checkpoint; do not continue dependent
-work before the answer. Current input authorizes all other campaign work, not a proof waiver.
+The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.
+
 Native session 88735 is finished exit1; no specialist or native probe is live.
 
 All r1–r3 source tar/patch/commit-object manifests, raw logs/rollouts, results, gate/journal
@@ -42,7 +39,7 @@ main a9b90d4, 139 baseline tests, root-only/no task branches, original config an
 connection preserved. Current source main was 81b357a before this records checkpoint; rebase
 task onto the new records head before later gates/proofs. Server stays frozen installed 0.1.9.
 
-After decision and .161: finish .157/.159/.162, follow-ups .164–.166/.168, freeze/install the
+After .161: finish .157/.159/.162, follow-ups .164–.166/.168, freeze/install the
 candidate, run full dev-team/solo-all3/Claude-lead/Codex-lead matrix, restore and close only
 proved findings. .168 staging mitigation archived/removed owned duplicate logs; no product
 fix yet. No push/release/remote sync. Historical diagnose-only scope below is superseded.

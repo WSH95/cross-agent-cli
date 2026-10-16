@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T10:25:58.229476+00:00 — codex
+The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.
+
 ### 2026-10-16T10:16:20.813318+00:00 — codex
 Native r3 on unmerged 63b5f5a reaches the approved coverage-boundary stop. Gate 1265/1262/0/3; native suite 1265/1262/1/2, only proof unresolved. Root control passes, treatment records 0 plugin skills versus 3, retained instructions/non-plugin catalogue/mount, nested identified names absent. Strengthened Cell D again produces no top-level calls or router output; availability remains unknown, not proven absent/impossible. Approved amendment Issue 1 requires user choice; no waiver. Cleanup/config/sample and all 582 old evidence hashes pass. Full r1–r3 source/log evidence retained. No live specialist or native process; task branch/worktree stand unmerged. Remaining fixes/retests preserved, no push/sync.
 
