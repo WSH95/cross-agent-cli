@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T06:33:11.250858+00:00
+updated_at: 2026-10-16T06:49:53.133620+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,29 +8,27 @@ branch: main
 
 ## Now
 
-Acceptance fixes and retest remain active (`atc-s96.163`). The user authorized one more
-revision and fresh plan review on `.161` after the three-round limit. Two primary tasks
-are merged and cleaned: verifier coverage
-`.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and consultant
-scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both passed all
-three final reviews and committed-head/root tests. Only `.167` is closed; native acceptance
-for the original findings remains pending. Task 3 has no code or worktree: its three fresh
-plan reviews found 5, 3 and 2 Important findings, with both remaining carried. The installed
-loop's configured limit is three, so the host presented one more round (recommended),
-simplify, fold and proceed with accepted issues, or pause. Planner `8fb77040` is revising
-from `5c2c90e9`; reviewer `86970e22` is done. Standing proof gaps: bridge diagnostic-provider
-captures to
-real-provider contaminated resume input, and cover discovery tools introduced on resume.
-No native model probe has run and no isolation claim is made. All six planning records
-finished at depth 1 with exit 0 and correct read-only bindings. Main was clean at `b4e274b`
-before this checkpoint, with only the root worktree and no task branches. Sample main
-`a9b90d4` remains untouched, its 139-test baseline passes, and all 582 historical evidence
-hashes still match. Original source/sample configuration and managed plugin connection
-remain in place. Current Codex CLI 0.163.0 has both leaking and clean source-root contexts;
-the cause is unknown. Full task results and current state are in
-`.cross-agent/fix-acceptance-evidence/campaign.json`. After `.161`, implement lead contract
-`.157`/`.159` and metadata `.162`, resolve `.164`–`.166`, then freeze/install/retest and
-restore. Local evidence commits are authorized; no push, release or remote sync.
+Acceptance fixes and retest remain active (`atc-s96.163`), waiting for a new review-limit
+choice after the user-authorized fourth round on `.161`. Two primary fixes are merged and
+cleaned: verifier coverage `.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded
+skips), and consultant scope `.156` plus doc-size follow-up `.167` at `d012438`
+(1237/1235/0/2). Both passed all three final reviews and committed-head/root tests. Only
+`.167` is closed; the original findings await native acceptance. Task 3 has no code or
+worktree. Fresh plan reviews found 5 → 3 → 2 → 1 Important findings. The fourth review
+`42f7d227` accepts the record-level I3 scope correction, but carried I4 remains: the local
+0.163.0 binary contains concrete `skills.list`/`skills.read` interfaces whose availability
+outside the enabled nested `ALL_TOOLS` registry is unproved. Unknown relevant coverage
+must remain unresolved. Minor M5 requires narrower wording about instrumentation and
+legacy history; no universal impossibility was established. Planner `8fb77040` and reviewer
+`42f7d227` are done. All eight planning records settled at depth 1, exit 0, correct bindings
+and read-only profiles. The installed loop requires a fresh user choice after every later
+major verdict; the host recommended one more focused round. No gap is accepted, no native
+model proof has run, and no isolation pass is claimed. Main was clean at `e6ac9e4` before
+this records checkpoint, root-only, no task branches. Sample `a9b90d4`, its passing 139-test
+baseline, all 582 historical evidence hashes, original configurations and the managed
+connection are preserved. Complete results and state are under
+`.cross-agent/fix-acceptance-evidence/`. After `.161`, implement `.157`/`.159`/`.162`, resolve
+`.164`–`.166`, then freeze/install/retest and restore. No push, release or remote sync.
 Earlier diagnose-only instructions below are historical and superseded.
 
 ## Prior verification context
@@ -305,13 +303,11 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign `atc-s96.163` is in the user-authorized extra planning round on `.161`.
-Planner `8fb77040` is running; no task worktree or branch exists. This checkpoint changes only
-root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, and `QUESTIONS.md`.
-No product code or
-sample change is pending. The user authorized the fixes and full retest; the older
-"diagnose only" text below describes prior completed runs and does not limit this campaign.
-
+Current: campaign `atc-s96.163` awaits the next user choice after review 4 on `.161`.
+All specialists are settled; no task worktree or branch exists. This checkpoint changes
+root `VERIFY.md` and Steward `HANDOFF.md`, `PLAN.md`, `PROGRESS.md`, `QUESTIONS.md`, and
+`VERIFY.md`. No product code or sample changes are pending. The user authorized the fixes
+and full retest; the older diagnose-only entries below describe prior completed runs.
 The existing Steward runtime claim belongs to another Claude session and is left unchanged.
 
 Historical entries:
@@ -478,10 +474,11 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Wait for planner `8fb77040cb69fdaa8367aa1af94491c7d76d` and retrieve its full result.
-   The user authorized one more revision and fresh review, without accepting proof gaps.
-   Send the revised plan and full round-3 findings to a fresh configured Codex reviewer.
-   A fourth major verdict requires another user choice under the installed loop.
+1. Read `bd show atc-s96.161` and the full `task3-plan-review-r4.md` in the ignored evidence
+   directory, then apply the user's new choice. The prior one-more-round authorization was
+   consumed by review 4; no answer means no dependent implementation. Another round resumes
+   planner `8fb77040cb69fdaa8367aa1af94491c7d76d` with carried I4 and Minor M5, then uses a
+   fresh configured Codex plan reviewer. Preserve the accepted in-scope I3 correction.
 2. Once the plan is approved, follow its test-first worktree implementation, committed-head
    `npm test`, native proof, three-seat reviews, merge, root test and cleanup. Native stops
    remain unresolved; no proof gap has been accepted by the user.
@@ -582,11 +579,10 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: `.161` reached `review.planReviewRounds=3`; the user then authorized one extra
-revision and fresh review. No plan-approval blocker remains while that round runs. The two
-remaining Important findings concern the native proof design, not an
-observed failure of the proposed flags. No native model proof or candidate retest has run.
-No user acceptance of these gaps is recorded.
+Current: the user-authorized extra review ended `major issues`, so the installed dev-team
+loop requires another user choice. One Important proof gap remains (I4); it is not an
+observed plugin leak or engine failure. No task-3 code, native proof or candidate retest
+exists. The user has accepted no proof gap.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

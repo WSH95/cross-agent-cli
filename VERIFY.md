@@ -7,6 +7,29 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: authorized fourth plugin-isolation review (2026-10-16)
+
+The user's extra round completed: planner `8fb77040cb69fdaa8367aa1af94491c7d76d` produced
+revision 3 and fresh reviewer `42f7d2270ea555a8d4deabe1e537b5d39bd9` returned major issues
+(1 Important, 1 Minor). Counts converge 5 → 3 → 2 → 1. I3 is addressed for the original
+record-level finding: new launch/resume injection is distinct from retained historical
+bytes, and no claim about real-provider effective input follows from those bytes.
+
+Carried I4 remains: the CLI 0.163.0 binary contains dotted `skills.list`/`skills.read`
+interfaces, while `ALL_TOOLS` documents enabled nested tools. Their availability under the
+tested settings is unknown; a clean nested inventory and non-use cannot certify relevant
+surface coverage. Minor M5 corrects unproved universal claims about safe instrumentation
+and history handling. The considered routes did not establish a verified safe observation
+method; that does not establish impossibility.
+
+All eight planning tasks are settled at depth 1, exit 0, with correct bindings and read-only
+profiles. The complete review and native session `01a14370-22fa-7963-af0f-cbd57f7d5157` are
+retained. The installed loop requires a new choice after this later major verdict; one more
+focused round is recommended. No proof gap is accepted. No task-3 code, native model proof
+or candidate retest has run. Prior fixes, observations, sample and managed connection are
+preserved. This records-only checkpoint adds no product test result. Full evidence remains
+under `.cross-agent/fix-acceptance-evidence/` and the source ledger.
+
 ## Acceptance fixes — plugin-isolation planning checkpoint (2026-10-16)
 
 `atc-s96.161` has not reached implementation or native acceptance. Through installed 0.1.9
@@ -18,7 +41,8 @@ candidate installation has occurred. The configured three-round limit requires t
 choice; one more round is recommended because the findings are converging. No gap has been
 accepted and no isolation pass is claimed.
 The user subsequently selected one more revision and fresh review on 2026-10-16.
-Planner `8fb77040` is running; this accepts neither standing finding.
+Planner `8fb77040` subsequently returned revision 3; this authorization accepted neither
+standing finding. Its fourth review is recorded above.
 
 Planner tasks `ef13ed61`, `c0e900f9`, `5c2c90e9` and review tasks `8c482d07`, `4354db51`,
 `86970e22` all settled at depth 1, exit 0, with expected engine/model/effort and read-only

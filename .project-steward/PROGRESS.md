@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T06:49:53.133620+00:00 — codex
+The user-authorized fourth plan review of .161 reduced Important findings from two to one (5 → 3 → 2 → 1). I3 is addressed in scope; retained history does not establish effective input. Carried I4 requires evidence for relevant discovery interfaces outside ALL_TOOLS; Minor M5 narrows unsupported instrumentation claims. All eight planning tasks settled with expected bindings/profiles, depth 1 and exit 0. The installed loop requires another user choice; one more focused round recommended. No task-3 code, native probe or candidate retest has run. Source and sample remain unchanged apart from records.
+
 ### 2026-10-16T06:33:11.250858+00:00 — codex
 The user authorized one more plugin-isolation planning round after the configured limit. Planner 8fb77040 resumes 5c2c90e9 with both full remaining findings and the repository main-flow scope guidance; a fresh configured reviewer follows. Neither proof gap is accepted. Live dev-team source root and roster are unchanged without warnings; source main 6abff1a was clean and root-only at dispatch.
 

@@ -3,6 +3,14 @@
 Record questions that the repository does not answer instead of guessing.
 Add the answer to the item when it is resolved.
 
+2026-10-16 — `atc-s96.161`, after authorized review 4: one Important discovery-coverage
+gap remains, with counts 5 → 3 → 2 → 1. Local `skills.list`/`skills.read` interfaces are not
+covered by the enabled nested `ALL_TOOLS` evidence; availability under tested settings is
+unproved. The installed loop requires another choice. Host recommends one more focused
+round; alternatives presented are simplify and review, proceed accepting the gap, or pause.
+Await the user's answer. The prior extra-round authorization is consumed; no gap is accepted.
+Full result: `.cross-agent/fix-acceptance-evidence/task3-plan-review-r4.md`.
+
 2026-10-16 — `atc-s96.161`: the configured dev-team plan-review limit is reached.
 Fresh reviews found 5 → 3 → 2 Important findings, both remaining carried. The host recommends
 one more round to resolve the real-provider resume-input bridge and resumed discovery
