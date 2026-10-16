@@ -7,6 +7,54 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: Codex plugin isolation merged with bounded native proof (2026-10-16)
+
+Source task `.161` merged as `affcfc3ea89da582994d57246805dd9bf9fe76db`, one Conventional
+Commit, after the complete installed 0.1.9 `dev-team` loop. Fresh and resumed Codex children
+carry both per-launch plugin switches. The operator's global plugin preferences are unchanged.
+
+The user directly accepted unknown top-level `skills.list/read` availability as a limitation.
+Amendment 3 review `b223d4d6` had 0 Important / 1 Minor; planner `feb4ee92` verified and folded
+the gate clarification. Implementer `a6ff9510` observed RED 1270/1249/8/13, then GREEN
+1270/1257/0/13, and reports which assertions RED did not reach. The 13 skips separate three
+guarded probes from ten specialist-environment skips. Complete reports and logs are retained.
+
+Native attempt 4 ran against committed `7c0d2734ea8d343c1d1d5da89dfcb0c8637f3d73`, Codex CLI
+0.163.0, `gpt-6.1-sol`, default effort. Stage 0 and **all eight turns pass**: root fresh control,
+fresh treatment, resumed treatment, resume control, exact legacy resume; then writable-worktree
+fresh control, fresh treatment and resumed treatment. Full native-enabled `npm test` exits 0:
+1270 tests, 1268 pass, no failures, two guarded skips. Acceptance is **bounded**, with ten
+explicit availability-unknown limitations, never top-level ABSENT. Every other native gate
+passes. The pair of switches is the measured treatment; individual causation is not measured.
+
+Controls list plugin-origin skills: three each in R1/W1 and 27 in R4. Treatment threads and
+R5's new segment list none. Authentication, project instructions, project skill, cwd/sandbox,
+root MCP mount and correlated calls remain. Legacy history retains the old catalogue;
+backend receipt stays unknown. Raw scans include `world_state` and find plugin paths only
+in control segments; the helper's carrier and call-name coverage limits are documented.
+No claim extends that native evidence to older CLIs. Attempts 1–3 keep their strict outcomes.
+
+Only documentation differs from the native-proved commit. The final code reviews are:
+
+| Round | Head | Claude Opus xhigh | Codex Sol xhigh | Grok 4.7 xhigh |
+|---|---|---|---|---|
+| 1 | e084a49 | cc220b66: no major, 2 Minor | b40f0aea: no findings | 695eb191: no findings |
+| 2 | affcfc3 | 45d9d6d6: no findings | 4814ea53: no findings | 210779fe: no findings |
+
+Implementer `48fa5722` verified all review rows before a docs-only wrap. Claim scope is
+qualified; the unit-test coverage limit is recorded separately from native-enabled
+process-start integration evidence. New guide gap `.169` is tracked for this fix stream.
+Selective AGENTS Layout, retained built-in connectors and unclaimed old-version behavior
+are not classified as new product defects. No user-owned instruction file changed.
+
+Final committed-head and root gates both pass: **1270 tests / 1267 pass / 0 fail / 3 guarded
+skips**. Worktree and task branch removed; source root clean and root-only. The full ledger
+audit, journal and every result remain under `.cross-agent/fix-acceptance-evidence/` and
+`.cross-agent/tasks/`. Native cleanup and independent checks show no fixture/process,
+byte-identical operator configuration, untouched sample baseline/configuration and all
+582 historical evidence hashes unchanged. `.161` remains open for the frozen-candidate
+mode matrix; those E2E runs still require all eight verifier checks, without waiver.
+
 ## Acceptance fixes: bounded native scope accepted (2026-10-16)
 
 The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T10:25:58.229476+00:00
+updated_at: 2026-10-16T11:39:35.690686+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,41 +8,36 @@ branch: main
 
 ## Now
 
-Acceptance fixes/retest (`atc-s96.163`) continue under the user-accepted bounded native proof scope.
-Two primary tasks are merged: `.155`/`.160` at b5a5522; `.156` and doc-size `.167` at d012438.
-Only .167 is closed; original findings await native candidate acceptance.
+Acceptance fixes/retest `atc-s96.163` continue; no user decision is pending.
+Three primary source tasks are merged: `.155/.160` b5a5522, `.156/.167` d012438,
+and `.161` affcfc3. Only `.167` is closed; native candidate acceptance remains.
 
-Task 3 `.161` is unmerged in
-`/home/wsh/Documents/cross-agent-cli/.worktrees/fixes-codex-plugins-20261015`, branch
-`task/fixes-codex-plugins-20261015`, head 63b5f5a4b519ec327aa7a734c5c7f679d41ad465. It contains
-both plugin-disabling flags and the reviewed native harness. Original plan cleared review 7;
-amendment 1 cleared review 2; amendment 2 review e30c25fa has 0 Important / 2 Minor, verified/folded
-by planner ff52be3a. Implementer 80014a6d completed in 784 seconds, RED 1265/1245/7/13 then GREEN 1265/1252/0/13.
-Prose-only fix 89760ba5 completed in 66 seconds; citations 1878, zero misses/drift. All full reports retained.
+Codex plugin-isolation source fix .161 merged as affcfc3 after the user accepted top-level availability as an explicit unknown limitation. Native r4 on7c0d273/CLI0.163.0/Sol/default passed Stage0 and all8turns (bounded,10unknownlimitations), fullsuite1270/1268/0/2, unchanged operator config and clean fixture/sample/all582oldhashes. Final docs-only head passed gate/root1270/1267/0/3. All3 code reviews clean in R1 except2Minor; verified docs-only wrap then all3R2 clean with no findings. Worktree/branch removed; root-only/clean. Complete plans/results/logs/source archives/proof/journal retained. .161 stays open for frozen-candidate E2E, as do earlier findings. New verified docs follow-up .169 will be fixed with lead-contract guidance. Other scope notes are limitations or non-defects, not silent deferrals. Next .157/.159/.162/.169 through current frozen installed0.1.9 dev-team, then .164-.166/.168, candidate full mode matrix, restore configs/connection. No push/release/sync.
 
-Ordinary gate on 63b5f5a passes 1265/1262/0/3. Native r3 (CLI 0.163.0/Sol/default) finishes
-1265/1262/1/2: only proof UNRESOLVED. Stage 0/R1 pass. Root treatment records 0 plugin-origin
-skills versus 3 in the control, retains 4 system / 3 user / 1 project skills, instructions/auth/sandbox and
-correlated MCP list_roles; nested identified names absent and other gates pass. Strengthened
-Cell D was delivered first but again made no top-level control/list/read calls, as in r2.
-Availability remains unknown; non-use is not absence or universal impossibility. No resume,
-legacy or worktree native turns ran. No native acceptance, code reviews or merge yet.
+The user-accepted boundary is recorded in DECISIONS and task3-native-scope-choice.txt.
+It changes only the native proof's absent-call coverage; no final E2E verifier check is waived.
+Final task3 head affcfc3 differs from proved7c0d273 only in docs/probes.md. Both final gate
+and root tests pass1270/1267/0/3; all8native1270/1268/0/2, bounded10unknownlimitations.
+No live task/probe; source root-only/notaskbranches/clean before this records checkpoint.
 
-The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.
+Next: claim/read .157/.159/.162/.169 and run lead-contract task4 through planning, review,
+worktree, implementation, commit/gate/all3reviews/corrections/merge/root/cleanup. Prepared
+acceptance is .cross-agent/fix-acceptance-evidence/task4-acceptance-prepared.txt; append .169.
+Then resolve .164/.166 verifier uncertainty, investigate .165 premise, and fix .168 staging.
+Do not use source as development MCP: installed0.1.9 stays frozen. Main/npm test/no setup/
+auto/depth1 and exact bindings remain unchanged. No direct host implementation.
 
-Native session 88735 is finished exit1; no specialist or native probe is live.
+After source fixes: freeze/install temporary candidate, fresh saved-project Codex chats for
+dev-team slug_rotate, sixsolo (Claude Opus/Sol/Grok default effort), Claude lead
+slug_shortest_first and Codex lead slug_unique_reverse, scripted mailbox answers, all8E2E
+checks per scope plus independent ownership/tool/plugin/localtest/cleanup audits. Retrieve
+and relay full lead reports. Restore original sample config and managed plugin connection.
+Sample remains clean maina9b90d4/139baseline/root-only/originalconfig; all582oldhashes match.
 
-All r1–r3 source tar/patch/commit-object manifests, raw logs/rollouts, results, gate/journal
-and independent cleanup are under .cross-agent/fix-acceptance-evidence. Config hash unchanged,
-fixture removed, sample baseline unchanged and all 582 old evidence hashes pass. Sample clean
-main a9b90d4, 139 baseline tests, root-only/no task branches, original config and managed
-connection preserved. Current source main was 81b357a before this records checkpoint; rebase
-task onto the new records head before later gates/proofs. Server stays frozen installed 0.1.9.
-
-After .161: finish .157/.159/.162, follow-ups .164–.166/.168, freeze/install the
-candidate, run full dev-team/solo-all3/Claude-lead/Codex-lead matrix, restore and close only
-proved findings. .168 staging mitigation archived/removed owned duplicate logs; no product
-fix yet. No push/release/remote sync. Historical diagnose-only scope below is superseded.
+Evidence: .cross-agent/fix-acceptance-evidence/campaign.json, task3-final-ledger-audit.json,
+task3-native-plugin-isolation-r1 through-r4, sourcearchives/patches/manifests, everyresult,
+and journal fixes-codex-plugins-20261015. .168 mitigation only archived/removed owned duplicate
+logs; the product/procedure defect remains open. Source HEAD before this records commitaffcfc3.
 
 ## Prior verification context
 

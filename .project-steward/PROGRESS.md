@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T11:39:35.690686+00:00 — codex
+Codex plugin-isolation source fix .161 merged as affcfc3 after the user accepted top-level availability as an explicit unknown limitation. Native r4 on7c0d273/CLI0.163.0/Sol/default passed Stage0 and all8turns (bounded,10unknownlimitations), fullsuite1270/1268/0/2, unchanged operator config and clean fixture/sample/all582oldhashes. Final docs-only head passed gate/root1270/1267/0/3. All3 code reviews clean in R1 except2Minor; verified docs-only wrap then all3R2 clean with no findings. Worktree/branch removed; root-only/clean. Complete plans/results/logs/source archives/proof/journal retained. .161 stays open for frozen-candidate E2E, as do earlier findings. New verified docs follow-up .169 will be fixed with lead-contract guidance. Other scope notes are limitations or non-defects, not silent deferrals. Next .157/.159/.162/.169 through current frozen installed0.1.9 dev-team, then .164-.166/.168, candidate full mode matrix, restore configs/connection. No push/release/sync.
+
 ### 2026-10-16T10:25:58.229476+00:00 — codex
 The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.
 

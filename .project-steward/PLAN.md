@@ -5,14 +5,14 @@ Milestones only. Beads owns the tasks: epic `atc-s96`, `bd ready`.
 ## Acceptance fixes and frozen-candidate retest (active, 2026-10-15)
 
 User-approved work is tracked by `atc-s96.163`; Beads owns the detailed tasks and follow-ups.
-As of 2026-10-16, two primary fixes are merged (`b5a5522`, `d012438`), with fresh native
-acceptance pending. `.167` is closed. User-authorized simplification reduced the .161 proof
-to eight turns. Review 6 accepts its discovery-control approach but retains 2 Important
-harness issues (counts 5 → 3 → 2 → 1 → 2 → 2). The user selected narrow simplification
-of message provenance/mount construction, preserving acceptance, then fresh review.
-Lead contract/metadata,
-implementation follow-ups and the frozen-candidate all-mode retest remain. Existing
-observations and corrected diagnoses are retained. No push, release or remote sync.
+As of 2026-10-16, three primary source fixes are merged (`b5a5522`, `d012438`, `affcfc3`).
+`.167` is closed. Plugin isolation passed all eight native turns under the user-accepted
+bounded scope; top-level availability remains explicitly unknown. Final code reviews,
+exact-head/root tests and cleanup pass. Original findings await frozen-candidate acceptance.
+Lead contract/metadata, verified follow-ups (including upgrade guidance), and the complete
+all-mode retest remain in the same stream. Beads owns their detailed list. Preserve all
+historical evidence and restore test configuration/connection afterward. No push, release
+or remote sync.
 
 ## Codex-led engine variant (verification complete, 2026-10-15)
 
