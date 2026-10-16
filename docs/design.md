@@ -4045,24 +4045,29 @@ grant, built-in or its lead mount's, in Claude's vocabulary
 (`tests/e2e-verify.test.ts#claudeAdapterVocabulary`) — and Codex's `agent_message`,
 `command_execution` and `mcp_tool_call` items, and **nothing else**: a tool outside
 its engine's list or a call with no name answers `?`
-(`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for two shapes it reads whole and passes as no
+(`tests/e2e-verify.test.ts#closedToolVocabulary`) — but for four shapes it reads whole and passes as no
 call. One is Claude Code 2.1.286's heartbeat for a call still in flight, a `tool_progress`
 with `heartbeat: true`, exactly the keys E3's lead recorded, an id that is its
 parent's `-heartbeat-<n>`, and a parent that is a call of the same transcript under
 the same tool name (`docs/probes.md#e3`, `tests/e2e-verify.test.ts#claudeHeartbeat`).
-The other is codex-cli 0.159.3's `file_change` item, an `apply_patch` edit, which names
+Another is codex-cli 0.159.3's `file_change` item, an `apply_patch` edit, which names
 paths and no command: exactly `id`, `type`, `changes` and `status`, the status
 `in_progress` or `completed`, and the changes a non-empty list of exactly `{path, kind}`,
 the kind `add` or `update`, as E4's implementer and t12Fix1's probe (c) recorded it
 (`docs/probes.md#e4`, `tools/e2e-verify.mjs#recordedFileChange`,
-`tests/e2e-verify.test.ts#codexFileChange`). Any other `tool_progress` or `file_change`
-still answers `?`. I1's Codex row closed the last of those: a Codex MCP call is
-an `mcp_tool_call` item whose `tool` field is this server's own name for the
-tool (`docs/probes.md#i1CodexTracked`, `tests/e2e-verify.test.ts#codexMcpItem`),
-and a Codex log carrying any other item type is still answered `?` rather than
-guessed at. Under an engine-placed lead the lead's own records below the
-effective depth cap are judged by the lead row, whose `delegate` is no offence,
-and the depth condition uses that cap — the lower of the mode's placement cap
+`tests/e2e-verify.test.ts#codexFileChange`). The last two are Grok's own: `search_replace`,
+as exactly `{file_path, old_string, new_string}`, and `web_fetch`, as exactly `{url}`, every
+value a string, as the solo Grok writable run and a Grok code reviewer seat recorded them; each
+names a file or a page and no command (`tools/e2e-verify.mjs#grokShapes`,
+`tests/e2e-verify.test.ts#grokEditFetch`). Any other `tool_progress`, `file_change`,
+`search_replace` or `web_fetch`, and either Grok tool in a Claude transcript, still
+answers `?`. Of Codex's three items, the MCP call is the one I1's Codex row added: a
+Codex MCP call is an `mcp_tool_call` item whose `tool` field is this server's own name
+for the tool (`docs/probes.md#i1CodexTracked`,
+`tests/e2e-verify.test.ts#codexMcpItem`), and a Codex log carrying any other item type
+is still answered `?` rather than guessed at. Under an engine-placed lead the lead's
+own records below the effective depth cap are judged by the lead row, whose `delegate`
+is no offence, and the depth condition uses that cap — the lower of the mode's placement cap
 and `limits.maxDepth`, which is 1 when the file omits it
 (`tests/e2e-verify.test.ts#engineLeadRow`, `#effectiveCap`, `#unshippedMode`); `--lead-role`
 renames that lead and never changes a shipped mode's placement or cap
@@ -4096,7 +4101,14 @@ command-tool and delegate names in raw source and decoded token text; any excess
 over direct calls followed answers `?`, including names hidden by tokenization —
 but on the lead row, whose own tool `delegate` is, a delegate name the reader cannot
 follow is no doubt, while a command tool's, or the `tools` object by a computed name,
-still is (`tests/e2e-verify.test.ts#leadDelegateNames`).
+still is (`tests/e2e-verify.test.ts#leadDelegateNames`). On any row, a delegate name inside
+the literal `cmd` of a followed `exec_command` that only reads — every simple command `cat`,
+`grep`, `echo` or `sed`'s print form, with no assignment before it, no substitution, function
+or arithmetic, and no `$` or backtick but the recorded `echo "exit $?"` — is a file's name,
+as in `src/delegate.ts`, and not counted; and a regular expression of literal alternatives
+that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern, though the
+names in it still count (`tools/e2e-verify.mjs#toolDiscoveryPatterns`,
+`tests/e2e-verify.test.ts#scriptDataNames`).
 Aliases, `eval`, `Function`, `import`, legacy octal escapes, slashes whose token
 roles the reader cannot determine, and strings, comments or regexes naming
 launches also answer `?` (`tests/e2e-verify.test.ts#codexScriptRead`,
@@ -4147,7 +4159,11 @@ code like a module loader, and its own code-loading environment variables
 (`OPENSSL_CONF`, `OPENSSL_MODULES`, `NODE_REPL_EXTERNAL_MODULE`, `NODE_PATH`)
 join the unread set; under `--entry-url` the script is read as a URL — query and
 fragment dropped, path percent-decoded, a `file:` URL reduced to its path —
-before the entry test (`#nodeConfigFilesUnread`, `#nodeEntryUrlScript`). Beyond
+before the entry test (`#nodeConfigFilesUnread`, `#nodeEntryUrlScript`). Git's
+configuration variables (`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_SYSTEM`, `GIT_DIR`, `GIT_COMMON_DIR`, `XDG_CONFIG_HOME`) join it as well, since a
+modeled git read runs what its configuration names — a `core.fsmonitor` hook, a clean
+filter (`#recordedSourceReads`). Beyond
 `NODE_OPTIONS` and the modeled builtins, every way bash writes a variable is an
 assignment of unknown value, `?` on a named line when the name is unread
 environment or code, when an expansion hides which name it is, or when a nameref
@@ -4180,10 +4196,17 @@ same line, answer `?` (`#deferredArithmetic`), and a `[[ … ]]` or `(( … ))` 
 stdin at a shell, wrapper or remote command answers `?` on a named line
 (`#unreadStdin`). A pipe into a `{ … }` or `( … )` group feeds every command in
 it; a later command reads what the earlier ones left, so a launch it reads is
-`?` (`#groupStdin`). Other unmodeled constructs on named lines are also `?`
-(`#commandWordsModeled`); malformed syntax (`#nestedSubstitutions`), `case`
-statements and engine-named functions cap the line at `?`. Otherwise a modeled
-launch takes precedence over a doubt. Inline interpreter code naming a target
+`?` (`#groupStdin`). Beside git's literal `show` and `grep` reads, two reads the recorded
+runs made are modeled: `sed -n <N>[,<M>]p` over at least one operand, none of them an
+option, and exactly git's `status --porcelain`, `branch --show-current`, `rev-parse HEAD`
+and `worktree list --porcelain`, every word after the command free of expansions and of an
+unquoted `*?[{}`, which a glob or a brace expansion could make an option or a script; any
+other form of either stays `?` on a named line. A git read's configuration from a file, from
+`.gitattributes`, or from a variable an earlier call exported is not read, the boundary its
+`show` and `grep` reads share (`#recordedSourceReads`). Other unmodeled constructs on
+named lines are also `?` (`#commandWordsModeled`); malformed syntax
+(`#nestedSubstitutions`), `case` statements and engine-named functions cap the line at `?`.
+Otherwise a modeled launch takes precedence over a doubt. Inline interpreter code naming a target
 is `?` (`#inlineCodeUnjudged`). Script files remain unread. Stdin is an
 interpreter's program only when it has no script or its script is stdin (`-`,
 `/dev/stdin`); given to inline code, a module or a script file it is input the code

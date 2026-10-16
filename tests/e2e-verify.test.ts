@@ -2261,6 +2261,197 @@ test("--read-rollout marks direct only an exec whose script prints its one liter
   assert.deepEqual(execs[0].computed, []);
 });
 
+/**
+ * Each row's answer, four verifiers at a time, and every row that answered other than it should:
+ * its verdict, its exit status, and for a question the reason its row names. Empty when all held.
+ */
+async function misjudged(rows: ReadonlyArray<{ label: string; project: () => Promise<string>; expected: "pass" | "?" | "FAIL"; why?: RegExp }>) {
+  const answers: Array<{ verdict: string; line: string; code: number }> = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const k = next++;
+      const { code, out } = await run(await rows[k].project());
+      answers[k] = { verdict: verdict(out, scan), line: row(out, scan), code };
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  return rows.flatMap(({ label, expected, why }, k) => {
+    const { verdict: answered, line, code } = answers[k];
+    const held = answered === expected && code === { FAIL: 1, pass: 0, "?": 2 }[expected] && (why === undefined || why.test(line));
+    return held ? [] : [`expected ${expected}${why === undefined ? "" : ` naming ${why}`}, got ${answered} (exit ${code}): ${label}\n${line}`];
+  });
+}
+
+// @anchor grokEditFetch
+// Grok's own file edit and web fetch, verbatim: `search_replace` at lines 10, 14 (both blocks) and
+// 18 of `a83d88f8…`, the solo Grok writable run's native log, and `web_fetch` beside a `read_file`
+// at line 30 of `1ac10766…`, a Grok code reviewer seat's. Neither names a command.
+const grokCreate = [{"type":"tool_use","id":"call-e8fc85df-16b0-4b0c-9dec-6371ab068fad-10","name":"search_replace","input":{"file_path":"/home/wsh/Documents/cross-agent-codex-host-e2e-20261015/.worktrees/a83d88f8e73118be440a0f6c5eaddd790ae8/docs/solo-grok.md","new_string":"# slug_reverse\n\n`slug_reverse(text: str) -> str` in `slugkit/__init__.py` reverses the word list from `slug_words` and joins it with hyphens. It reverses word order. A one-word result is unchanged, and an empty word list returns `\"\"`. `slug_reverse` takes no normalization options.\n\n## Implementation\n\nFile: `slugkit/__init__.py`.\n\n- `slug_reverse` — `return \"-\".join(reversed(slug_words(text)))`.\n- `slug_words` — calls `slugify` once, splits that slug on the separator, and returns `[]` when the slug is empty.\n- `slugify` — builds the slug that `slug_words` splits.\n- `_CYRILLIC_TO_LATIN` — lowercase Cyrillic-to-Latin map applied inside `slugify`.\n- `_NON_WORD` — `re.compile(r\"[^a-z0-9]+\")`, the splitter inside `slugify`.\n\n`slug_reverse` calls `slug_words(text)` with no extra arguments, so `max_words` stays `None` and `slugify` keeps its defaults: `sep=\"-\"`, `max_length=None`, `stopwords=None`, `min_word_length=1`, `replacements=None`.\n\n## Normalization through slug_words\n\n`slug_words` computes `slug = slugify(text)`, returns `[]` when `slug` is empty, and otherwise returns `slug.split(\"-\")`. With the defaults above, `slugify` does the following:\n\n1. Skip `replacements` because none were passed.\n2. Normalize with `unicodedata.normalize(\"NFC\", text)`.\n3. Map each character through `_CYRILLIC_TO_LATIN`, looking up `char.lower()` and leaving unmapped characters unchanged.\n4. Decompose with `unicodedata.normalize(\"NFKD\", text)` and drop characters for which `unicodedata.combining` is true, which removes accents.\n5. Lowercase.\n6. Split on `_NON_WORD` and discard empty pieces. Punctuation, spaces, tabs, and newlines are separators, and a run of them is one boundary.\n7. Keep words of length at least `min_word_length` (`1`). No `stopwords` are removed on this path.\n8. Join the words with `\"-\"` and return them, because `max_length` is `None`.\n\n`slug_reverse` then reverses that list and joins it with `\"-\"`.\n\n## Examples\n\nEach pair is `[input, slug_reverse(input)]`, in JSON string syntax. Whitespace inside strings is preserved, and control characters use JSON escapes.\n\n```json\n[[\"Hello World\",\"world-hello\"],[\"Hello\",\"hello\"],[\"\",\"\"],[\"Hello, World!!!\",\"world-hello\"],[\"  Hello \\t World \\n Again  \",\"again-world-hello\"],[\"Café déjà vu\",\"vu-deja-cafe\"]]\n```\n\nChecked against `slug_reverse` and `slug_words` in `slugkit/__init__.py`:\n\n| Input | `slug_words` | `slug_reverse` |\n| --- | --- | --- |\n| `Hello World` | `hello`, `world` | `world-hello` |\n| `Hello` | `hello` | `hello` |\n| empty string | empty list | `\"\"` |\n| `Hello, World!!!` | `hello`, `world` | `world-hello` |\n| two spaces, `Hello`, space, tab, space, `World`, space, newline, space, `Again`, two spaces | `hello`, `world`, `again` | `again-world-hello` |\n| `Café déjà vu` | `cafe`, `deja`, `vu` | `vu-deja-cafe` |\n","old_string":""}}];
+const grokEdits = [{"type":"tool_use","id":"call-04d1ad3d-b648-4b4e-b300-9496f7a25879-13","name":"search_replace","input":{"file_path":"/home/wsh/Documents/cross-agent-codex-host-e2e-20261015/.worktrees/a83d88f8e73118be440a0f6c5eaddd790ae8/docs/solo-grok.md","old_string":"`slug_words` computes `slug = slugify(text)`, returns `[]` when `slug` is empty, and otherwise returns `slug.split(\"-\")`. With the defaults above, `slugify` does the following:","new_string":"On this path `slug_words` computes `slug = slugify(text)`, returns `[]` when `slug` is empty, and otherwise returns `slug.split(sep)` with `sep` taken from options, which is `\"-\"` here. `slugify` then:"}},{"type":"tool_use","id":"call-04d1ad3d-b648-4b4e-b300-9496f7a25879-14","name":"search_replace","input":{"file_path":"/home/wsh/Documents/cross-agent-codex-host-e2e-20261015/.worktrees/a83d88f8e73118be440a0f6c5eaddd790ae8/docs/solo-grok.md","old_string":"8. Join the words with `\"-\"` and return them, because `max_length` is `None`.","new_string":"8. Join the remaining words with `\"-\"` and return that slug. `max_length` is `None`, so the slug is not cut. `slug_words` splits it back into the word list."}}];
+const grokEdit = [{"type":"tool_use","id":"call-15094041-d356-4260-b412-60a6ded1e892-16","name":"search_replace","input":{"file_path":"/home/wsh/Documents/cross-agent-codex-host-e2e-20261015/.worktrees/a83d88f8e73118be440a0f6c5eaddd790ae8/docs/solo-grok.md","old_string":"`slug_reverse(text: str) -> str` in `slugkit/__init__.py` reverses the word list from `slug_words` and joins it with hyphens. It reverses word order. A one-word result is unchanged, and an empty word list returns `\"\"`. `slug_reverse` takes no normalization options.","new_string":"`slug_reverse(text: str) -> str` in `slugkit/__init__.py` takes the word list from `slug_words(text)`, reverses that list, and joins it with hyphens. A one-word result is unchanged, and an empty word list returns `\"\"`. `slug_reverse` takes no normalization options."}}];
+const grokFetch = [{"type":"tool_use","id":"call-0c8783e7-cad6-4c6b-9e53-8c871d9ff572-31","name":"web_fetch","input":{"url":"https://nodejs.org/docs/latest-v24.x/api/test.html"}},{"type":"tool_use","id":"call-0c8783e7-cad6-4c6b-9e53-8c871d9ff572-32","name":"read_file","input":{"target_file":"/home/wsh/Documents/cross-agent-cli/.worktrees/s96-134-setup-cli/tests/fixtures/run-setup.mjs","limit":80}}];
+const shapeless = (tool: string) => new RegExp(`${tool} in a shape no archived run recorded`);
+const grokEditFetch: Array<[string, unknown[], "pass" | "?" | "FAIL", RegExp?]> = [
+  ["grok", grokCreate, "pass"],
+  ["grok", grokEdits, "pass"],
+  ["grok", grokEdit, "pass"],
+  ["grok", grokFetch, "pass"],
+  // Any other shape is one no run recorded: a key beside the recorded ones, one missing, a value
+  // that is not a string.
+  ["grok", [{ ...grokEdit[0], input: { ...grokEdit[0].input, command: "claude -p hi" } }], "?", shapeless("search_replace")],
+  ["grok", [{ ...grokEdit[0], input: { ...grokEdit[0].input, replace_all: true } }], "?", shapeless("search_replace")],
+  ["grok", [{ ...grokEdit[0], input: without(grokEdit[0].input, "old_string") }], "?", shapeless("search_replace")],
+  ["grok", [{ ...grokEdit[0], input: { ...grokEdit[0].input, file_path: ["x"] } }], "?", shapeless("search_replace")],
+  ["grok", [{ ...grokFetch[0], input: { ...grokFetch[0].input, prompt: "The first entry's version?" } }], "?", shapeless("web_fetch")],
+  ["grok", [{ ...grokFetch[0], input: { url: { href: "https://nodejs.org/docs/latest-v24.x/api/test.html" } } }], "?", shapeless("web_fetch")],
+  // Both are Grok's own: no Claude run called either.
+  ["claude", grokEdit, "?", /claude tool search_replace/],
+  ["claude", [grokFetch[0]], "?", /claude tool web_fetch/],
+  // What was read is still judged first.
+  ["grok", [...grokEdit, toolCall("run_terminal_command", { command: "claude -p hi" })], "FAIL"],
+  ["grok", [grokFetch[0], toolCall("use_tool", { tool_name: "cross-agent__delegate", tool_input: { role: "consult" } })], "FAIL"],
+];
+test("atc-s96.155: Grok's search_replace and web_fetch run no command, in exactly their recorded shapes", async (t) => {
+  // Two Grok runs answered `?` on condition 8 for these alone, each read by a person as an edit
+  // inside the task's worktree and a fetch of a documentation page. Learned in the shapes recorded,
+  // and in no other.
+  const misses = await misjudged(grokEditFetch.map(([engine, blocks, expected, why]) => ({
+    label: `${engine} ${JSON.stringify(blocks).slice(0, 200)}`, expected, why,
+    project: () => project(t, { task: { engine, body: turnOf(blocks) } }),
+  })));
+  assert.deepEqual(misses, []);
+});
+
+// @anchor recordedSourceReads
+// The source reads two recorded runs made beside an installed plugin's path, whose directory
+// `cross-agent` names the CLI: the Claude plan reviewer `21de8c77…`'s `sed` reads at lines 71 and
+// 73, and the commands the Codex planners' session rollout `01a1419c…` decoded at lines 86, 144
+// and 166, verbatim.
+const reviewer71 = [{"type":"tool_use","id":"toolu_0134xZFU2XmjRFne29rFTmNd","name":"Bash","input":{"command":"sed -n '1,40p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/modes/dev-team-engine/roles/implementer.md","description":"Read implementer role test-first rule"},"caller":{"type":"direct"}}];
+const reviewer73 = [{"type":"tool_use","id":"toolu_01RzATK1fQND1prAgD447HE6","name":"Bash","input":{"command":"sed -n '1,40p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/modes/dev-team-engine/roles/planner.md","description":"Read planner role requirements"},"caller":{"type":"direct"}}];
+const decoded86 = "sed -n '1,245p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/runcommand.ts; sed -n '1,150p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/journal.ts; echo \"exit $?\"";
+const decoded144 = "sed -n '80,180p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/engines/codex.ts; grep -n 'leadMount\\|mcp\\|CROSS_AGENT_PROJECT' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/delegate.ts /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/guard.ts; sed -n '250,267p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/worktree.ts; sed -n '390,413p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/worktree.ts; grep -n -i 'test.first\\|add tests\\|test command' TODO.md; sed -n '135,167p' slugkit/__init__.py; echo \"exit $?\"";
+const decoded166 = "pwd; git status --porcelain; git branch --show-current; git rev-parse HEAD; git worktree list --porcelain; echo \"exit $?\"; cat /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/modes/dev-team-engine/roles/implementer.md; echo \"exit $?\"; cat .cross-agent/asks/5d4a49dad9801ed7507b8cee967efca62c95.json; cat .cross-agent/asks/34c9abb0996b644ed8bdc3b8f4269c0d1514.json; echo \"exit $?\"";
+const recordedSourceReads: ReadonlyArray<readonly [string, "FAIL" | "pass" | "?"]> = [
+  [reviewer71[0].input.command, "pass"],
+  [reviewer73[0].input.command, "pass"],
+  [decoded86, "pass"],
+  [decoded144, "pass"],
+  [decoded166, "pass"],
+  // A quoted brace is the word's own text.
+  ["sed -n '1,40p' 'skills/cross-agent/{a,b}.md'", "pass"],
+  // A launch beside a read, or inside its script, is still a launch.
+  ["sed -n '1,40p' skills/cross-agent/SKILL.md && claude -p hi", "FAIL"],
+  ['sed -n "$(claude -p hi)p" README.md', "FAIL"],
+  ["git status --porcelain; codex exec hi", "FAIL"],
+  // An unquoted brace or glob, which may spell an option or a script; too few words;
+  ["sed -n 1p {README.md,-e,'1e claude'}", "?"],
+  ["sed -n 1p *; echo claude", "?"],
+  ["git status --porcelain *; cat skills/cross-agent/SKILL.md", "?"],
+  ["sed -n; echo claude", "?"],
+  ["sed; echo claude", "?"],
+  ["git; echo claude", "?"],
+  ["sed -n '1,40p'; echo claude", "?"],
+  // a script other than one print, an operand that is an option, stdin, an expansion as the script;
+  ["sed -n '1e claude' README.md", "?"],
+  ["sed -n '1,40w skills/cross-agent/out' README.md", "?"],
+  ["sed -n '1,40p' -i skills/cross-agent/SKILL.md", "?"],
+  ["sed -n 1p -- skills/cross-agent/SKILL.md", "?"],
+  ["echo claude | sed -n 1p", "?"],
+  ['sed -n "$P" skills/cross-agent/SKILL.md', "?"],
+  // an expansion as an operand, which the script check never sees: split, `$F` hands sed
+  // `-e 1eclaude`, so GNU sed reads `1p` as a file and its `e` command starts `claude`;
+  ['F="-e 1eclaude"; sed -n 1p $F skills/cross-agent/SKILL.md', "?"],
+  ['sed -n 1p "$F" skills/cross-agent/SKILL.md', "?"],
+  // a git read's words joined, git's options, its configuration from the environment, and any
+  // other git form.
+  ["git 'status --porcelain'; echo claude", "?"],
+  ["git -c core.fsmonitor=claude status --porcelain", "?"],
+  ["GIT_CONFIG_PARAMETERS=\"'core.fsmonitor=claude'\" git status --porcelain", "?"],
+  ["export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=claude; git status --porcelain", "?"],
+  ["env GIT_CONFIG_GLOBAL=/tmp/x.cfg git status --porcelain; echo claude", "?"],
+  ["GIT_DIR=/tmp/x/.git git status --porcelain; cat skills/cross-agent/SKILL.md", "?"],
+  ["git status --porcelain --ignored skills/cross-agent", "?"],
+  ["git branch --list 'cross-agent*'", "?"],
+];
+test("atc-s96.160: a recorded sed or git read beside an installed cross-agent path is read, and any other form of either stays a question", async (t) => {
+  // Each answered `?` because `cross-agent` in the path names the CLI and neither command was
+  // modeled; a person read them as reads of the plugin's own sources and the task's repository.
+  await judgedAs(t, recordedSourceReads);
+});
+
+// @anchor scriptDataNames
+// The Codex planners' session rollout `01a1419c…`, verbatim: line 17's tool discovery over
+// `ALL_TOOLS`, whose pattern names the CLI, and the source reads at lines 86, 144 and 166, line
+// 144's naming `src/delegate.ts`.
+const planner17 = {"type":"custom_tool_call","id":"ctc_0eab1b7efced08f7016ad14ef861288195b3256e471d403840","status":"completed","call_id":"call_e29a64e56f3444c69915732f6ab78c63","name":"exec","input":"text(ALL_TOOLS.filter(x => /cross_agent|cross-agent|read_file|list_directory|mailbox|run_command/.test(x.name+\" \"+x.description)).map(x => ({name:x.name, description:x.description.substring(0,160)})));\ntext(await tools.exec_command({cmd:\"pwd; ls -la; echo \\\"exit $?\\\"\",\"max_output_tokens\":5000}));\n","internal_chat_message_metadata_passthrough":{"turn_id":"01a1419c-9216-7f10-a099-e18c63727379","create_time":1792102136.382164}};
+const planner86 = {"type":"custom_tool_call","id":"ctc_0eab1b7efced08f7016ad14f3fe8b4819592c7cc33e8a59c62","status":"completed","call_id":"call_954e4a304e864a70acb564ee1b644d57","name":"exec","input":"text(await tools.exec_command({cmd:\"sed -n '1,245p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/runcommand.ts; sed -n '1,150p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/journal.ts; echo \\\"exit $?\\\"\",\"max_output_tokens\":11000}));\n","internal_chat_message_metadata_passthrough":{"turn_id":"01a1419c-9216-7f10-a099-e18c63727379","create_time":1792102207.9118083}};
+const planner144 = {"type":"custom_tool_call","id":"ctc_0b89442202c0c087016ad150411cc8819485665c16c87e7179","status":"completed","call_id":"call_12791e1a81fa48c198e65db5b633243a","name":"exec","input":"text(await tools.exec_command({cmd:\"sed -n '80,180p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/engines/codex.ts; grep -n 'leadMount\\\\|mcp\\\\|CROSS_AGENT_PROJECT' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/delegate.ts /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/guard.ts; sed -n '250,267p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/worktree.ts; sed -n '390,413p' /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/src/worktree.ts; grep -n -i 'test.first\\\\|add tests\\\\|test command' TODO.md; sed -n '135,167p' slugkit/__init__.py; echo \\\"exit $?\\\"\",\"max_output_tokens\":6500}));\n","internal_chat_message_metadata_passthrough":{"turn_id":"01a141a1-008f-72f1-8145-48b72f7496ae","create_time":1792102465.122572}};
+const planner166 = {"type":"custom_tool_call","id":"ctc_094e21c4ec6afec2016ad1517c3c3c8195a8f83d43a9d609f9","status":"completed","call_id":"call_bb79f89525fa4dabbe98d2f2e313aa1d","name":"exec","input":"text(await tools.exec_command({cmd:\"pwd; git status --porcelain; git branch --show-current; git rev-parse HEAD; git worktree list --porcelain; echo \\\"exit $?\\\"; cat /home/wsh/.codex/plugins/cache/agent-plugins/cross-agent/0.1.9/modes/dev-team-engine/roles/implementer.md; echo \\\"exit $?\\\"; cat .cross-agent/asks/5d4a49dad9801ed7507b8cee967efca62c95.json; cat .cross-agent/asks/34c9abb0996b644ed8bdc3b8f4269c0d1514.json; echo \\\"exit $?\\\"\",\"max_output_tokens\":8000}));\ntext(await tools.exec_command({cmd:\"sed -n '1,36p' README.md; sed -n '75,100p' slugkit/__init__.py; sed -n '148,165p' slugkit/__init__.py; sed -n '1,26p' tests/test_slugkit.py; sed -n '450,497p' tests/test_slugkit.py; grep -c '^    def test_' tests/test_slugkit.py; grep -R -n '__all__\\\\|slug_unique_sorted' slugkit tests; echo \\\"exit $?\\\"; ls -l docs/solo-claude.md docs/solo-codex.md docs/solo-grok.md; cat .cross-agent/codex-lead-e2e-evidence/baseline-tests.txt; echo \\\"exit $?\\\"\",\"max_output_tokens\":6000}));\n","internal_chat_message_metadata_passthrough":{"turn_id":"01a141a6-6c9d-7140-bf1e-f8c218e36c57","create_time":1792102780.249291}};
+/** A code-mode `exec` call of `input`, and one whose script runs `cmd` through one literal `exec_command` call. */
+const scriptCall = (input: string) => ({ type: "custom_tool_call", status: "completed", call_id: "call_s", name: "exec", input });
+const execOf = (cmd: string) => scriptCall(`await tools.exec_command({cmd: ${JSON.stringify(cmd)}});`);
+const unfollowed = /delegate: \d+ occurrences but only 0 direct calls followed/;
+const enginePattern = /regular expression naming an engine/;
+const scriptDataNames: Array<[Record<string, unknown>, "pass" | "?" | "FAIL", RegExp?]> = [
+  [planner17, "pass"],
+  [planner86, "pass"],
+  [planner144, "pass"],
+  [planner166, "pass"],
+  [execOf("cat src/delegate.ts"), "pass"],
+  [execOf('cat src/delegate.ts; echo "exit $?"'), "pass"],
+  // A delegate name in a literal that runs more than a read, holds an expansion bash would read,
+  // or is no command at all: still a name the reader cannot follow.
+  [execOf(`node -e 'require("./launcher.cjs").delegate()'`), "?", unfollowed],
+  [execOf("cat src/delegate.ts | node"), "?", unfollowed],
+  [execOf("grep -n run src/delegate.ts; python3 tools/delegate.py"), "?", unfollowed],
+  [execOf("LD_PRELOAD=./x.so cat src/delegate.ts"), "?", unfollowed],
+  [execOf("cat $(echo src/delegate.ts)"), "?", unfollowed],
+  [execOf(`echo \${delegate:='$(claude -p hi)'}; echo "\${delegate@P}"`), "?", unfollowed],
+  [execOf(`cat src/delegate.ts > \${x:='$(claude -p hi)'}; cat src/delegate.ts > "\${x@P}"`), "?", unfollowed],
+  [execOf(`echo "exit $?"\${x@P}; cat src/delegate.ts`), "?", unfollowed],
+  [execOf("grep -n 'foo$' src/delegate.ts"), "?", unfollowed],
+  // A literal with no `$` the lexer reads and no reader is: a process substitution, a line bash
+  // would refuse, and a `{NAME}` redirection, each beside a reader that names the file.
+  [execOf(`cat <(node -e 'require("./launcher.cjs").delegate()') src/delegate.ts`), "?", unfollowed],
+  [execOf("cat src/delegate.ts 'x"), "?", unfollowed],
+  [execOf("cat src/delegate.ts {fd}>out"), "?", unfollowed],
+  [scriptCall('text("see src/delegate.ts");'), "?", unfollowed],
+  [scriptCall('await tools.write_stdin({session_id: 1, chars: "cat src/delegate.ts\\n"});'), "?", unfollowed],
+  // A pattern naming an engine anywhere but as the literal alternatives `ALL_TOOLS.filter(…)` tests.
+  [scriptCall('const re = /cross_agent|cross-agent|read_file/;\ntext(String(re.test("x")));'), "?", enginePattern],
+  [scriptCall("text(ALL_TOOLS.filter(x => /claude -p hi/.test(x.name)));"), "?", enginePattern],
+  [scriptCall("text(ALL_TOOLS.map(x => x.name).filter(n => /cross-agent/.test(n)));"), "?", enginePattern],
+  [scriptCall("text(ALL_TOOLS.filter(x => /cross-agent/.exec(x.name)));"), "?", enginePattern],
+  // A command tool's name inside an exempt pattern still counts.
+  [scriptCall("text(ALL_TOOLS.filter(x => /exec_command|cross-agent/.test(x.name)));"), "?", /exec_command: 1 occurrences but only 0 direct calls followed/],
+  // A call or a launch beside them is still read.
+  [{ ...planner144, input: `${planner144.input}\nawait tools.mcp__cross_agent__delegate({role: "consult", brief: "x"});` }, "FAIL", /called mcp__cross_agent__delegate/],
+  [execOf("claude -p 'read src/delegate.ts'"), "FAIL"],
+  [{ ...planner17, input: `${planner17.input}await tools.exec_command({cmd: "codex exec hi"});` }, "FAIL"],
+  [scriptCall('text(ALL_TOOLS.filter(x => /cross-agent/.test(tools.exec_command({cmd: "claude -p hi"}))));'), "FAIL"],
+];
+test("atc-s96.160: a tool-discovery pattern over ALL_TOOLS and a delegate-named file read by a command's literal are data, and calls beside them are still read", async (t) => {
+  // Three Codex planners of one session answered `?` for these: a discovery filter whose pattern
+  // names the CLI, and a source read whose literal names `src/delegate.ts`, which no call follows.
+  const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006612";
+  const misses = await misjudged(scriptDataNames.map(([entry, expected, why]) => ({
+    label: String(entry.input), expected, why,
+    project: () => project(t, { planner: {
+      engine: "codex", role: "planner", body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { entry }]),
+    } }),
+  })));
+  assert.deepEqual(misses, []);
+  // The rollout reader every verdict uses says the same of line 144's call.
+  const id = "01a0f44a-eb7a-7603-ae3a-000000007102";
+  const { code, report, err } = await readRolloutOf(t, id, rolloutOf(id, [{ entry: planner144 }]));
+  assert.equal(code, 0, err);
+  assert.deepEqual(report.calls[0].computed, [], JSON.stringify(report.calls[0]));
+  assert.deepEqual(report.unreadable, []);
+});
+
 test("a transcript the parser cannot read is answered with a question mark, never a pass", async (t) => {
   // The rule this tool exists for: evidence missing is not evidence of a pass. A log in a
   // shape no adapter writes, or a record whose log is gone, has nothing to say either way.

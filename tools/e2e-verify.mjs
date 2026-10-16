@@ -68,6 +68,9 @@ const quietTools = new Set(["apply_patch", "clock__curr_time", "create_goal", "g
   "image_gen__imagegen", "list_mcp_resource_templates", "list_mcp_resources", "read_mcp_resource",
   "request_plugin_install", "view_image", "web__run"]);
 let rolloutFiles;
+// The launcher judge with no project's bins, built on first use: the script reader asks it whether
+// a command's literal only reads (`readsOnly`) in both modes, so verdicts and `--read-rollout` agree.
+let plainLauncher;
 const isDelegate = (name) => typeof name === "string" && (name === "delegate" || name.endsWith("__delegate"));
 const args = parse(process.argv.slice(2));
 if (Object.hasOwn(args, "read-rollout")) await readRollout(args);
@@ -261,8 +264,9 @@ if (journals.length === 0) {
 // an engine launch is an offence there too. A log no parser here understands is evidence
 // of nothing, and evidence of nothing is never a pass. So a Claude or Grok record's tool
 // calls are read against its own engine's vocabulary (`engineTools`, below): a tool its
-// engine's archived transcripts never called, a call with no name and `use_tool` in a shape
-// no run recorded are `?`, whatever their input holds.
+// engine's archived transcripts never called, a call with no name, `use_tool` in a shape
+// no run recorded, and Grok's `search_replace` or `web_fetch` in any shape but the one each
+// was recorded in (`grokShapes`) are `?`, whatever their input holds.
 //
 // Codex writes an MCP call as an item of type `mcp_tool_call` — `item.started`, then
 // `item.completed` — whose `server` and `tool` are separate fields, `tool` being this
@@ -297,21 +301,30 @@ const knownEvents = new Set([
 // seen, and answers `?` as any unknown event does.
 const heartbeatKeys = ["elapsed_time_seconds", "heartbeat", "parent_tool_use_id", "session_id", "tool_name", "tool_use_id", "type", "uuid"];
 // The tools each engine's archived transcripts call — every Claude and Grok record E1 to E7,
-// the integration probes, t12Fix1's rerun (`docs/probes.md#t12Fix1`) and the web tools' two
-// runs (`docs/probes.md#claudeWebTools`) left — and the one shape Grok's dispatcher was
-// recorded in: `use_tool` as exactly `{tool_name, tool_input}`, naming one of this server's
-// tools, with or without the `cross-agent__` prefix Grok gives them. A tool call outside its
-// own engine's list, one with no name, a shell call with no command, a content block of a
-// type no archived turn holds and `use_tool` in any other shape are evidence this build
-// cannot read, whatever their input says (task 12, fix round 1).
+// the integration probes, t12Fix1's rerun (`docs/probes.md#t12Fix1`), the web tools' two
+// runs (`docs/probes.md#claudeWebTools`), and the solo Grok writable run and Grok code reviewer
+// seat whose `search_replace` and `web_fetch` atc-s96.155 read, left — and the one shape Grok's
+// dispatcher was recorded in: `use_tool` as exactly `{tool_name, tool_input}`, naming one of this
+// server's tools, with or without the `cross-agent__` prefix Grok gives them. A tool call outside
+// its own engine's list, one with no name, a shell call with no command, a content block of a
+// type no archived turn holds, `use_tool` in any other shape, and `search_replace` or `web_fetch`
+// in any shape but `grokShapes`' are evidence this build cannot read, whatever their input says
+// (task 12, fix round 1).
 const contentBlocks = new Set(["text", "thinking", "tool_use", "tool_result"]);
 const serverTools = new Set(["describe_mode", "list_roles", "delegate", "wait", "check", "result", "cancel",
   "list_tasks", "verify_worktree", "git_mutate", "git_root", "run_command", "waive_review", "list_asks", "answer", "ask",
   "record", "track"]);
 const engineTools = new Map([
   ["claude", new Set(["Bash", "Read", "Edit", "Write", "NotebookEdit", "ToolSearch", "ScheduleWakeup", "WebSearch", "WebFetch"])],
-  ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool"])],
+  ["grok", new Set(["run_terminal_command", "read_file", "grep", "list_dir", "search_tool", "use_tool", "search_replace", "web_fetch"])],
 ]);
+// Grok's own file edit and web fetch, read by their whole shape: `search_replace` as exactly
+// `{file_path, old_string, new_string}`, as the solo Grok writable run `a83d88f8…` recorded it four
+// times (native lines 10, 14 and 18), and `web_fetch` as exactly `{url}`, as the Grok code reviewer
+// seat `1ac10766…` recorded it (line 30), every value a string. Either names a file or a page and no
+// command; in any other shape it is a call no archived run recorded (atc-s96.155,
+// `tests/e2e-verify.test.ts#grokEditFetch`).
+const grokShapes = new Map([["search_replace", ["file_path", "old_string", "new_string"]], ["web_fetch", ["url"]]]);
 const shellTools = new Map([["claude", "Bash"], ["grok", "run_terminal_command"]]);
 const claudeServerPrefix = "mcp__cross-agent__";
 const grokServerPrefix = "cross-agent__";
@@ -396,6 +409,11 @@ function recordedHeartbeat(event, calls) {
 //   remote command is `?` on a named line; xargs builds argv rather than forwarding stdin.
 //   A pipe into a `{ … }` or `( … )` group feeds every command in it; a later command reads
 //   what the earlier ones left, so a launch it reads is `?`.
+// - Two literal reads the recorded runs made are modeled (`recordedSourceReads`): `sed -n
+//   <N>[,<M>]p` over operands none of which is an option, and git's `status --porcelain`,
+//   `branch --show-current`, `rev-parse HEAD` and `worktree list --porcelain`, each word after
+//   the command free of expansions and unquoted `*?[{}`; any other form of either is unmodeled.
+//   Git's configuration variables are unread environment, as a git read runs what they name.
 // - Unmodeled commands, expansions where a literal is needed, unknown options, malformed
 //   syntax and other unsupported constructs are `?` on named lines. Malformed syntax,
 //   case statements and engine-named functions cap the line at `?`; otherwise a modeled
@@ -435,7 +453,10 @@ const launch = launcherFor(config);
 // occurrences of a command tool or delegate name than direct calls followed is `?`, even
 // in comments or regexes, whose escapes are decoded for it — but on the lead row, which
 // holds `delegate`, a delegate name the reader cannot follow is no doubt, while a command
-// tool's still is. Aliases, eval/Function/import,
+// tool's still is. On any row a delegate name inside a followed `exec_command`'s literal that
+// only reads (`readsOnly`) is a file's name and not counted, and a regular expression of literal
+// alternatives that `ALL_TOOLS.filter(…)` tests with `.test(` is a tool discovery, no pattern,
+// its names still counted (`toolDiscoveryPatterns`). Aliases, eval/Function/import,
 // legacy octal escapes, role-dependent slashes the reader cannot classify, and asides
 // naming launches also answer `?`; a word after `.` or `?.` is a property, never a control
 // keyword or one that opens a regular expression. This is a bounded reader, not
@@ -487,6 +508,11 @@ for (const record of run) {
         const serverTool = record.engine === "claude" && name.startsWith(claudeServerPrefix)
           && serverTools.has(name.slice(claudeServerPrefix.length));
         if (!ownTool && !serverTool) { unknownItems.push(`${record.engine} tool ${name}`); continue; }
+        const shape = record.engine === "grok" ? grokShapes.get(name) : undefined;
+        if (shape !== undefined && !(exactKeys(block.input, shape) && shape.every((key) => typeof block.input[key] === "string"))) {
+          unknownItems.push(`${name} in a shape no archived run recorded`);
+          continue;
+        }
         if (name === "use_tool") {
           // Grok's dispatcher: the tool it dispatches to is the call, in the one recorded shape.
           const input = block.input;
@@ -713,6 +739,9 @@ function git(...argv) {
  * simple command already split into words (an argv an engine recorded); each answers
  * `{verdict, why, at}`: `launch`, `pass`, or `?` with `why` naming what could not be read
  * and `at` the text it was read from. The contract is the header's; the grammar is below.
+ * `readsOnly(line)` judges nothing: it says whether a line holds no `$` or backtick but the
+ * recorded `echo "exit $?"`, and only `cat`, `grep`, `echo` and `sed`'s print form, which the
+ * script reader asks of a command's literal before it takes a delegate name there for a file's.
  *
  * A line is read as bash reads it: simple commands at `|`, `|&`, `||`, `&&`, `;`, `;;`,
  * `&`, newlines, a subshell's `(` and `)`, and a `{` or `}` standing as a command word;
@@ -742,6 +771,10 @@ function git(...argv) {
  *   wget's askpass program, given by `--use-askpass` or a `use_askpass` command `-e` runs
  *   (`wgetRun`), with a wgetrc file it would read unmodeled;
  * - literal `git show <revision>:<path>` and `git grep` without options: object/path reads;
+ *   exactly `git status --porcelain`, `git branch --show-current`, `git rev-parse HEAD` and
+ *   `git worktree list --porcelain`: state reads; `sed -n <N>[,<M>]p` over at least one
+ *   operand, none an option: a print; for these two, every word after the command plain, with
+ *   no expansion and no unquoted `*?[{}` (`recordedSourceReads`);
  * - an exec wrapper (`sudo`, `doas`, `env`, `exec`, `nohup`, `setsid`, `time`, `timeout`,
  *   `nice`, `command`, `stdbuf`, `xargs`): its options walked letter by letter, each operand
  *   an option takes consumed, and the command after them judged; `command -v` and `-V` only
@@ -833,6 +866,19 @@ function launcherFor(settings) {
     "iconv", "tput", "clear", "getopts", "shopt", "ulimit", "umask", "curl", "wget", "lsof", "ss",
     "netstat", "sync", "gzip", "gunzip", "zcat", "bzip2", "bunzip2", "xz", "unxz", "zstd", "unalias",
   ]);
+  // @anchor recordedSourceReads
+  // The literal source reads the recorded runs made beside an installed plugin's path (atc-s96.160,
+  // `tests/e2e-verify.test.ts#recordedSourceReads`): `sed -n <N>[,<M>]p` over at least one operand,
+  // none of them an option, and exactly git's `status --porcelain`, `branch --show-current`,
+  // `rev-parse HEAD` and `worktree list --porcelain`, compared word by word. Every word after the
+  // command word is plain: no expansion, and none of `*?[{}` unquoted, which a glob or a brace
+  // expansion could turn into an option or a script (the lexer keeps unquoted characters in `shape`).
+  const plainOperand = (word) => !word.expansions && !/[*?[{}]/.test(word.shape);
+  const gitStateReads = [["status", "--porcelain"], ["branch", "--show-current"], ["rev-parse", "HEAD"], ["worktree", "list", "--porcelain"]];
+  const sedPrint = (words) => words.length >= 4 && words[1].value === "-n" && /^\d+(?:,\d+)?p$/.test(words[2].value)
+    && words.slice(1).every(plainOperand) && words.slice(3).every((word) => !word.value.startsWith("-"));
+  const gitRead = (words) => words.slice(1).every(plainOperand)
+    && gitStateReads.some((form) => form.length === words.length - 1 && form.every((value, k) => words[k + 1].value === value));
   const shells = new Set(["sh", "bash", "dash", "zsh", "ksh", "ash", "mksh", "hush"]);
   const declarations = new Set(["export", "declare", "typeset", "local", "readonly"]);
   const shellCodeVariables = new Set(["BASH_ENV", "ENV", "PROMPT_COMMAND", "PS0", "PS1", "PS2", "PS4"]);
@@ -843,10 +889,15 @@ function launcherFor(settings) {
   // among them; iconv's module path, whose modules are shared objects it loads; and the
   // dynamic loader's own, which reach every command here. Node's own that load code join them
   // (task 12 wrap-up, W-1): OpenSSL's config and modules (shared objects), the module the REPL
-  // loads in its place, and the module search path (the loader's own analog). None is read.
+  // loads in its place, and the module search path (the loader's own analog). Git's configuration
+  // joins them with its modeled reads (atc-s96.160): a read runs whatever its configuration names —
+  // a `core.fsmonitor` hook, a clean or process filter — and the configuration, the files that hold
+  // it and the repository it is read from come from these. None is read.
   const unreadEnvironment = new Set(["WGETRC", "SYSTEM_WGETRC", "HOME", "WGET_ASKPASS", "SSH_ASKPASS",
     "RIPGREP_CONFIG_PATH", "GCONV_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH",
-    "OPENSSL_CONF", "OPENSSL_MODULES", "NODE_REPL_EXTERNAL_MODULE", "NODE_PATH"]);
+    "OPENSSL_CONF", "OPENSSL_MODULES", "NODE_REPL_EXTERNAL_MODULE", "NODE_PATH",
+    "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_DIR", "GIT_COMMON_DIR",
+    "XDG_CONFIG_HOME"]);
   const substitutionsIn = (text) => /\$\(|`/.test(text);
   const shellFlags = "abefhiklmnprtuvxBCDEHPT";
   const shellLong = new Set(["--login", "--noprofile", "--norc", "--posix", "--restricted", "--verbose", "--version",
@@ -1623,6 +1674,11 @@ function launcherFor(settings) {
       command.stdinRead = true;
       return pass;
     }
+    // The recorded runs' literal source and state reads (`recordedSourceReads`, above).
+    if ((name === "sed" && sedPrint(words)) || (name === "git" && gitRead(words))) {
+      command.stdinRead = true;
+      return pass;
+    }
     if (dataOnly.has(name)) return dataCommand(name, words, command, context);
     if (name === "busybox") {
       if (words.length < 2 || words[1].value.startsWith("-")) return pass;
@@ -2344,6 +2400,24 @@ function launcherFor(settings) {
     judge: (text) => judgeText(text, { depth: 0, named: false }),
     judgeArgv: (argv) => (argv.length === 0 ? pass
       : judgeWords(argv.map(asWord), { stdin: null, pipeFrom: null }, { depth: 0, named: argv.some(namesTarget) })),
+    // Whether a command line only reads, so a name in it is a file's and no call (atc-s96.160).
+    // First, with nothing interpreted: no `$` and no backtick anywhere, but in the recorded
+    // `echo "exit $?"`, which covers operands, redirection targets, assignments and heredocs alike.
+    // Then its structure: a line bash would run as written, with no substitution or arithmetic,
+    // whose every simple command is `cat`, `grep`, `echo` or the `sed` print form, with no
+    // assignment before it, no function, no `[[ … ]]` and no `{NAME}` redirection.
+    readsOnly: (text) => {
+      if (/[$`]/.test(String(text).split('echo "exit $?"').join(""))) return false;
+      const list = lexList(String(text), 0, null);
+      if (list.problems.length > 0 || list.nested.length > 0 || list.arithmetic
+        || list.arithTexts.length > 0 || list.indirections.length > 0) return false;
+      return list.commands.length > 0 && list.commands.every((command) => {
+        const [first] = command.words;
+        if (command.funcDef !== undefined || command.arith || command.cond || command.fdVars.length > 0) return false;
+        if (first === undefined || isAssignment(first) || first.expansions) return false;
+        return ["cat", "grep", "echo"].includes(first.value) || (first.value === "sed" && sedPrint(command.words));
+      });
+    },
     names,
     namesTarget,
   };
@@ -2691,7 +2765,11 @@ function codexOwnCall(payload) {
  * answers both with `?`, `unfollowed` on any other row alone; every other string, template
  * text and comment is an aside, and every
  * regular expression a pattern, which the scan judges as well, because a launch written
- * there cannot be told from one the script assembles and runs.
+ * there cannot be told from one the script assembles and runs. Two are set aside
+ * (atc-s96.160, `tests/e2e-verify.test.ts#scriptDataNames`): a delegate name inside a followed
+ * `exec_command`'s literal that only reads (`readsOnly`), which names a file, is not counted,
+ * the larger of its count in the literal's source and in its text; and a tool discovery's
+ * pattern (`toolDiscoveryPatterns`) is no pattern, though the names in it are still counted.
  */
 function scriptRead(source) {
   const read = { commands: [], stdin: [], calls: [], computed: [], unfollowed: [], asides: [], patterns: [] };
@@ -2701,6 +2779,8 @@ function scriptRead(source) {
   try { tokens = scriptTokens(source); } catch (error) { return { ...read, error: error.message }; }
   const keys = new Map([["exec_command", "cmd"], ["write_stdin", "chars"]]);
   const taken = new Set();
+  // The literals followed `exec_command` calls give as their `cmd`.
+  const commandLiterals = new Set();
   // Independent of token roles: a slash or another lexical mistake must not hide a
   // command-tool reference. Decode token text as well, counting each source occurrence
   // once (a quoted member name occurs in both the raw source and its decoded token).
@@ -2759,11 +2839,26 @@ function scriptRead(source) {
         return;
       }
       taken.add(argument);
+      if (name === "exec_command") commandLiterals.add(argument);
       follow(name);
       (name === "write_stdin" ? read.stdin : read.commands).push(argument.kind === "string" ? argument.value : argument.parts[0]);
     });
   };
   visit(tokens);
+  // A delegate name inside a command literal that only reads is a file's name — `src/delegate.ts`
+  // — and no call: the larger of its count in the literal's source and in its decoded text is set
+  // aside (atc-s96.160). Any other literal's names stay counted, and the command is judged anyway.
+  for (const literal of commandLiterals) {
+    const text = literal.kind === "string" ? literal.value : literal.parts[0];
+    if (!(plainLauncher ??= launcherFor({})).readsOnly(text)) continue;
+    const raw = toolCounts(source.slice(literal.start, literal.end));
+    const decoded = toolCounts(text);
+    for (const name of new Set([...raw.keys(), ...decoded.keys()])) {
+      if (!isDelegate(name)) continue;
+      named.set(name, Math.max(0, (named.get(name) ?? 0) - Math.max(raw.get(name) ?? 0, decoded.get(name) ?? 0)));
+    }
+  }
+  const discovery = toolDiscoveryPatterns(tokens);
   // A string that holds a command tool's name could be code the script evaluates later.
   const commandText = /\b(?:exec_command|write_stdin)\b/;
   const delegateText = /__delegate\b/;
@@ -2777,7 +2872,7 @@ function scriptRead(source) {
       }
       if (token.kind === "string") read.asides.push(token.value);
       else if (token.kind === "comment") read.asides.push(token.text);
-      else if (token.kind === "regex") {
+      else if (token.kind === "regex" && !discovery.has(token)) {
         read.patterns.push(token.text);
         if (decodeEscapes(token.text) !== token.text) read.patterns.push(decodeEscapes(token.text));
       }
@@ -2789,6 +2884,35 @@ function scriptRead(source) {
     doubt(name, `${name}: ${count} occurrences but only ${followed.get(name) ?? 0} direct calls followed`);
   }
   return read;
+}
+
+/**
+ * The regular expressions a script's tool discovery tests tool names with, as the Codex planners'
+ * rollout `01a1419c…` recorded one at line 17 (atc-s96.160, `tests/e2e-verify.test.ts#scriptDataNames`):
+ * inside `ALL_TOOLS.filter(…)`, `ALL_TOOLS` no property and the `)` its own by bracket depth, each
+ * regular expression that is the receiver of `.test(` and whose text is literal alternatives,
+ * `name|name|…` of word characters and hyphens. Such a pattern selects names from a list and runs
+ * nothing, so it is no pattern the scan judges, though the inventory still counts the names in it.
+ * Only the script's own top-level tokens are read; any other pattern stays one.
+ */
+function toolDiscoveryPatterns(tokens) {
+  const found = new Set();
+  const punct = (token, text) => token?.kind === "punct" && token.text === text;
+  const word = (token, text) => token?.kind === "name" && token.text === text;
+  tokens.forEach((token, k) => {
+    if (!word(token, "ALL_TOOLS") || token.member) return;
+    if (!punct(tokens[k + 1], ".") || !word(tokens[k + 2], "filter") || !punct(tokens[k + 3], "(")) return;
+    const inside = [];
+    for (let j = k + 3, depth = 0; j < tokens.length; j++) {
+      const each = tokens[j];
+      if (each.kind === "punct" && ["(", "[", "{"].includes(each.text)) depth++;
+      else if (each.kind === "punct" && [")", "]", "}"].includes(each.text)) {
+        if (--depth === 0) { inside.forEach((pattern) => found.add(pattern)); return; }
+      } else if (each.kind === "regex" && /^[\w-]+(?:\|[\w-]+)*$/.test(each.text)
+        && punct(tokens[j + 1], ".") && word(tokens[j + 2], "test") && punct(tokens[j + 3], "(")) inside.push(each);
+    }
+  });
+  return found;
 }
 
 /**

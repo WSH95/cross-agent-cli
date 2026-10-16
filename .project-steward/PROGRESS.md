@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T01:57:17.357639+00:00 — codex
+Committed-head gate on 2de64899 passed: 1236 tests, 1234 pass, 0 fail, 2 guarded skips. Review round 1 returned clean Codex and Grok verdicts; Claude found two Important regression-coverage gaps and two Minor wording issues. Claude implementer is verifying the test and design findings in correction round 1; operator corrected this progress entry’s spacing. Indirect globalThis tool access is recorded as atc-s96.166 for investigation with the verifier follow-ups. No acceptance finding is closed before the frozen-candidate retests. Correction round 1 is complete: five added cases pin the verified guards, the verifier is unchanged, worktree npm test passes (1236 tests, 1224 pass, 0 fail, 12 sandbox skips), and the design wording is clarified. Mutation evidence is preserved with the separate temporary-location fixture failure disclosed.
+
+### 2026-10-16T01:29:43.905587+00:00 — codex
+Implemented verifier coverage .155/.160 in the task worktree after plan review converged Important 3 → 1 → 0. Three new tests cover 70 verdict cases; observed RED: 1236 tests, 1221 pass, 3 fail, 12 skips, then GREEN: 1236 tests, 1224 pass, 0 fail, 12 skips with identical sandbox skip sets. All three byte-preserving isolated archive replays moved from ? to pass (4,2,1 transcripts); copied-rollout reader also clears. Committed-head gate and all three code reviews are pending. Root baseline was 1233 tests, 1231 pass, 0 fail, 2 guarded skips. Pre-existing Bash prompt-transformation gap is .164; an intermittent CLI ancestor-marker failure is atc-s96.165 (cause unconfirmed). Both are queued for separate fixes before candidate retest. Operator preserved validation files and original evidence.
+
 ### 2026-10-16T00:29:34.840543+00:00 — codex
 Verifier task .155/.160 reached plan review. Planner confirmed the original events and found another task sharing the affected rollout plus additional Git reads hidden behind the first reported doubt. Review round 1 returned three Important findings: sed option injection, overly broad delegate-name discount, and unsupported user-acceptance/replay claims; two Minor fixture/negative-test gaps accompany them. The same planner is verifying and revising all five before round 2. No implementation yet. Native task IDs and complete results remain in the ledger and campaign evidence.
 
