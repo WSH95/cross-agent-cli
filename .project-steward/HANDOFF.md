@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-16T07:35:39.470669+00:00
+updated_at: 2026-10-16T07:46:11.158378+00:00
 updated_by: codex
 session_status: active
 branch: main
@@ -8,29 +8,26 @@ branch: main
 
 ## Now
 
-Acceptance fixes and retest remain active (`atc-s96.163`). After review 6 the user chose
-narrow simplification of message provenance and mount construction, preserving acceptance
-and obtaining a fresh review. Two primary fixes are merged and cleaned: verifier
-`.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and consultant
-scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2). Both passed three
-clean final reviews and committed-head/root tests. Only `.167` is closed; original findings
-await native acceptance. Task 3 has no code or worktree. The user-authorized simplification
-reduced the protocol from 11 to 8 turns. Review 6 accepts I4's bounded same-turn negative
-control approach and resolves M5; I3's record-level scope remains accepted. Two Important
-harness issues remain: I7 must recognize the native event mirror of the known supplied
-brief; introduced I8 must make R4's mount and inventory expectation consistent and correct
-the matched-pair claim. Minor M6 narrows the deliberately absent control's validity to the
-checked fixture/version. Counts 5 → 3 → 2 → 1 → 2 → 2 do not fall. Latest planner `676c4462`
-and reviewer `7999bd80` are done; all twelve planning records settled at depth 1, exit 0,
-correct bindings and read-only profiles. The loop required another choice; the user selected narrow simplification of these details
-and a fresh review, retaining the accepted eight-turn protocol. No gap
-is accepted; no native isolation probe has run. Main was clean at `303e72a` before this
-records checkpoint, root-only, no task branches. Sample `a9b90d4`, passing 139-test baseline,
-582 preserved evidence files, original configurations and managed connection remain intact.
-Full evidence is in `.cross-agent/fix-acceptance-evidence/`. After `.161`, implement
-`.157`/`.159`/`.162`, resolve `.164`–`.166`, freeze/install/retest and restore. No push,
-release or remote sync. Earlier diagnose-only instructions below are historical and
-superseded.
+Acceptance fixes and retest remain active (`atc-s96.163`). Two primary fixes are merged:
+verifier `.155`/`.160` at `b5a5522` (1236 tests, 1234 pass, 0 fail, 2 guarded skips), and
+consultant scope `.156` plus doc-size follow-up `.167` at `d012438` (1237/1235/0/2).
+Original findings await native candidate acceptance; only `.167` is closed.
+
+Task 3 `.161` plan review 7 is clean after the user's authorized narrow simplification.
+Planner `4a9c3f23` and reviewer `ac7830b5` settled correctly. I7/I8/M6 are addressed; accepted
+I3/I4 scope and the eight-turn protocol remain. Important counts: 5 → 3 → 2 → 1 → 2 → 2 → 0.
+All fourteen settled planning records have correct bindings, read-only profiles, depth 1,
+exit 0. Final planner optimization `c7532b9b567773b7ea2112918c2cfb0ebcd0` is running; retrieve
+its complete result, then implement without another plan review. No task-3 code, worktree,
+native proof or candidate retest exists. No gap was waived. Main is clean at `4347ef4`
+before this records checkpoint, root-only, no task branches. Full evidence is under
+`.cross-agent/fix-acceptance-evidence/` and in the source task ledger.
+
+Continue the full approved loop, including native acceptance before merging `.161`, then
+`.157`/`.159`/`.162`, follow-ups `.164`–`.166`, freeze/install/retest and restore. Saved sample
+`a9b90d4`, 139-test baseline, 582 prior evidence files, original configurations and managed
+connection remain preserved. No push, release or remote sync. Historical diagnose-only
+instructions below are superseded by this fix-and-retest scope.
 
 ## Prior verification context
 
@@ -581,10 +578,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: review 6 found two narrow harness inconsistencies and one Minor control wording
-issue. The user authorized narrow simplification and a fresh review, preserving acceptance.
-No choice is pending while this work runs. The discovery-control approach is accepted in
-substance. No task-3 code, native isolation proof or candidate retest exists; no gap is waived.
+Current: no planning finding or user choice is pending. Review 7 is clean; final planner
+optimization is active. Native proof remains a mandatory gate and has not run. No gap is
+waived.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

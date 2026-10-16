@@ -3,6 +3,9 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-16T07:46:11.158378+00:00 — codex
+.161 review 7 is clean (0 Important/0 Minor) after the user-authorized narrow simplification. I7/I8/M6 addressed; eight-turn protocol and accepted I3/I4 scope retained. Counts 5 → 3 → 2 → 1 → 2 → 2 → 0. Fourteen settled planning records audited at depth 1, read-only, exit 0 with expected bindings. Final planner optimization c7532b9b is running; no further plan review follows. No task-3 code or native proof yet; prior sample/evidence/configuration/connection preserved.
+
 ### 2026-10-16T07:35:39.470669+00:00 — codex
 User selected narrow simplification after .161 review6: correct message provenance and use a consistent mount rule, preserve acceptance, then obtain a fresh review. Next planner resumes676c4462 with full I7/I8/M6; accepted I4/I3 and M5 remain. This supersedes the pending choice below; no proof gap is accepted.
 

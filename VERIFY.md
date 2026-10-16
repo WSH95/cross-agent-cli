@@ -7,6 +7,23 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Acceptance fixes: seventh plugin-isolation plan review clears (2026-10-16)
+
+The user's narrow simplification completed in planner `4a9c3f23ff4397964db03feaf03457f508d3`
+(193 seconds). Fresh reviewer `ac7830b51fef3f0c03169adaae20c754a79d` (286 seconds) returned
+`VERDICT: no major issues`, with no Minor requiring change. I7's canonical-message and
+mirror handling, I8's consistent root mount and inventory rule, and M6's bounded control
+preconditions are addressed. Accepted I3/I4 scope and the eight-turn protocol remain.
+Important counts are 5 → 3 → 2 → 1 → 2 → 2 → 0. The planner is performing the loop's one
+final optimization, after which implementation may begin without another plan review.
+
+All fourteen settled planning records have expected bindings, read-only profiles, depth 1
+and exit 0; complete results and native logs are retained. Review session:
+`01a143a7-d50b-7702-87e3-4c48773d090e`. No task-3 code, native isolation proof or candidate
+retest exists yet. This records-only checkpoint adds no product test result. Source/sample
+configuration, earlier evidence and the managed connection remain preserved. No push,
+release or remote sync.
+
 ## Acceptance fixes: simplified sixth plugin-isolation review (2026-10-16)
 
 The user's simplification produced revision 5 (`676c446223dfb131578d6307964328c5ab5a`,
