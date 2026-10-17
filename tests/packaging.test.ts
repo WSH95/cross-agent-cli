@@ -525,8 +525,24 @@ test("the install guide installs OpenClaw's plugin from the git marketplace and 
     // A build of a clone attaches the same way without the plugin, for development.
     "node tools/build-dist.mjs", "skills.load.extraDirs",
     "`.openclaw/`", "built-in runtime",
+    // An uninstall leaves the plugin disabled, which a later install keeps.
+    "openclaw plugins enable cross-agent --accept-capabilities",
+    // The update was not run; what an update needs is said rather than assumed.
+    "with no task running", "not run",
   ].filter((words) => !section.includes(words));
   assert.deepEqual(missing, [], "the OpenClaw section names each of these");
+  // The plugin is the install: no clone, and the build's skills directory only in its own paragraph.
+  assert.doesNotMatch(section, /git clone/, "no clone in the OpenClaw section");
+  const build = section.indexOf("**From a build instead of the plugin**");
+  assert.ok(build > 0 && section.indexOf("skills.load.extraDirs") > build, "skills.load.extraDirs belongs to the build's paragraph alone");
+  // A named profile is chosen before the install, which it changes the directory of.
+  assert.ok(section.indexOf("--profile <name>") < section.indexOf("openclaw plugins install cross-agent"), "the profile comes first");
+  assert.ok(section.includes("P=$HOME/.openclaw-<name>/extensions/cross-agent"), "and the profile's own directory");
+  // The copies of the install command elsewhere are the guide's own.
+  const install = "openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities";
+  for (const file of ["README.md", "docs/design.md"]) {
+    assert.ok(fs.readFileSync(path.join(repoRoot, file), "utf8").replace(/\s+/g, " ").includes(install), `${file} gives the guide's install command`);
+  }
 });
 
 // @anchor readmeInitThenCommit

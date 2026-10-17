@@ -22,8 +22,9 @@ cross-agent@agent-plugins` (0.1.10 → 0.1.11; the cache equals the Claude paylo
 Claude Code's own `.in_use` marker). Codex, `codex plugin marketplace upgrade` and `codex plugin
 add cross-agent@agent-plugins` (0.1.11, installed and enabled; the cache equals the Codex
 payload); the managed connection's helper `check` resolves the 0.1.11 server. Running servers keep
-the code they started with until their host reconnects them. The user's own OpenClaw is not
-attached yet.
+the code they started with until their host reconnects them. The user's own OpenClaw was
+attached afterwards, at the user's request, as a plugin from the marketplace's git source
+(`docs/probes.md#ocPluginInstall`).
 
 ## OpenClaw host, `solo` and `dev-team-engine` — `atc-uzf` (2026-10-17)
 

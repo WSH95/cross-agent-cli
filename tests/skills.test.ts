@@ -2021,12 +2021,15 @@ test("the launcher and the Codex setup guide send setting up or changing a team 
 // @anchor openclawSetupGuide
 test("the OpenClaw setup guide registers one complete server entry pinned by cwd, writes only on the user's answer, and removes without deleting the payload", () => {
   // OpenClaw starts two copies of a registered server, its own and its Codex runtime's, each
-  // in the entry's cwd, and a same-name entry replaces a plugin's rather than merging with it
-  // (docs/probes.md#ocAttach): the entry is the whole attach, and its cwd is the project.
+  // in the entry's cwd (docs/probes.md#ocAttach), and a same-name entry replaces the plugin's own
+  // server rather than merging with it (docs/probes.md#ocPluginInstall): the entry is complete,
+  // and its cwd is the project.
   const file = path.join(launcherDir, "references", "openclaw-setup.md");
   const guide = flat(fs.readFileSync(file, "utf8"));
   assert.match(guide, /Resolve `<skill-dir>` to the cross-agent skill's directory/);
   assert.match(guide, /setup skill/, "a team is set up through the setup skill");
+  assert.doesNotMatch(guide, /install guide's first step adds/, "the skills come from the plugin, not a list the guide fills");
+  assert.doesNotMatch(guide, /openclaw plugins uninstall cross-agent(?! --force)/, "every uninstall the agent runs carries --force");
   assert.doesNotMatch(guide, /init --mode/);
   for (const pin of [
     /openclaw mcp add cross-agent --command node --arg "<payload>\/src\/server\.ts" --cwd "<project root>" --timeout 3600 --connect-timeout 30 --approval approve/,
@@ -2039,8 +2042,11 @@ test("the OpenClaw setup guide registers one complete server entry pinned by cwd
     // An installed plugin's skills are links under OpenClaw's plugin-skills/, so the plugin's own
     // directory is two levels above the skill's real directory, not above the link
     // (docs/probes.md#ocPluginInstall).
-    /`realpath "<skill-dir>\/\.\.\/\.\."`/, /`plugin-skills\/`/, /~\/\.openclaw\/extensions\/cross-agent/,
-    /openclaw plugins uninstall cross-agent/,
+    /`realpath "<skill-dir>\/\.\.\/\.\."`/, /`plugin-skills\/`/, /`\$HOME\/\.openclaw\/extensions\/cross-agent`/,
+    // An agent's shell has no terminal for the uninstall's confirmation prompt.
+    /openclaw plugins uninstall cross-agent --force/,
+    // A `~` inside the quoted path does not expand.
+    /`\$HOME`/,
   ]) {
     assert.match(guide, pin, `the OpenClaw setup guide: ${pin}`);
   }

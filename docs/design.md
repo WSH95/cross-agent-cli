@@ -4331,8 +4331,8 @@ transcript audit.
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three
 manifests below are examples of satisfying that contract, not the contract
-itself; OpenClaw, the fourth host, satisfies it with no manifest at all (below). Repo root
-is the plugin root for the three plugin hosts:
+itself; OpenClaw, the fourth host, satisfies it with no manifest of its own, installing the
+Claude bundle (below). Repo root is the plugin root for Claude Code, Codex and Grok:
 `.claude-plugin/plugin.json` (manifest and `mcpServers` in one) + `skills/` for Claude Code
 (`claude --plugin-dir ~/Documents/cross-agent-cli` in development);
 `.codex-plugin/plugin.json` with `skills: "./skills/"` and the server inline under

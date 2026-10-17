@@ -502,10 +502,16 @@ An OpenClaw host runs two of the three modes, `solo` and `dev-team-engine`: the 
 team's loop runs in a lead the server launches, and OpenClaw only starts, watches and answers
 it. `dev-team`, whose loop runs in the host session itself, is not offered there: setup does
 not propose it, and the launcher stops on a project bound to it before it starts anything.
-These steps were run against OpenClaw 2026.10.2 with its agent on the Codex runtime
-(`docs/probes.md`, "OpenClaw as a host"); OpenClaw's built-in runtime was not run.
+On OpenClaw 2026.10.2 with its agent on the Codex runtime, the plugin's install, its skills
+and the server entry were run as written here, and the agent sessions — a setup, a solo run, a
+background team — ran with the same skills from a development build (`docs/probes.md`, "OpenClaw
+as a host" and "ocPluginInstall"); `openclaw plugins update` and OpenClaw's built-in runtime were
+not run.
 
-**The plugin.** OpenClaw installs it from this marketplace's git source, as a Claude bundle:
+**The plugin.** OpenClaw installs it from this marketplace's git source, as a Claude bundle.
+Where your OpenClaw runs under a named profile, every `openclaw` command here carries
+`--profile <name>`, this install among them, and the plugin's directory is that profile's: set
+`P=$HOME/.openclaw-<name>/extensions/cross-agent` instead of the line below.
 
 ```
 openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities
@@ -516,9 +522,10 @@ P=$HOME/.openclaw/extensions/cross-agent
 `--accept-capabilities` the server and the skills the plugin declares. The plugin lands in
 `~/.openclaw/extensions/cross-agent`, a directory with no version in its name, and the running
 gateway applies it without a restart: the `cross-agent` and `setup` skills show in `openclaw
-skills list`. `openclaw plugins update cross-agent` brings a later release to the same
-directory. Where your OpenClaw runs under a named profile, every `openclaw` command below carries
-`--profile <name>`, and the plugin's directory is `~/.openclaw-<name>/extensions/cross-agent`.
+skills list`. A later release comes with `openclaw plugins update cross-agent`, not run yet: it
+replaces that one directory in place, so update with no task running and start a new session
+after it, and add `--accept-capabilities` if the release declares a capability this one did not.
+Under a named profile that directory is `~/.openclaw-<name>/extensions/cross-agent`.
 
 **The project.** OpenClaw's agent works in its own workspace, never in your project, so set the
 project up where it is: ask OpenClaw to set up cross-agent for it (`/skill setup`, or `/setup`,
@@ -584,7 +591,9 @@ What holds for every OpenClaw session attached this way:
 
 To remove it, on the gateway's host: `openclaw mcp unset cross-agent` for the server entry,
 then `openclaw plugins uninstall cross-agent` for the plugin and its skills. A running session
-keeps the server it started until it ends.
+keeps the server it started until it ends. An uninstall leaves the plugin marked disabled, which
+a later install keeps, so to install it again follow the install with `openclaw plugins enable
+cross-agent --accept-capabilities`.
 
 **From a build instead of the plugin**, for development: `node tools/build-dist.mjs --out <dir>`
 in a clone of this repository builds the payload at `<dir>/claude/plugins/cross-agent`. List its

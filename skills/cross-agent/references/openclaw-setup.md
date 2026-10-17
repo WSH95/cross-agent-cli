@@ -6,14 +6,15 @@ Use on the local Linux host where the OpenClaw gateway runs, with Node 24+, Git,
 
 Resolve `<skill-dir>` to the cross-agent skill's directory, the one holding this file's
 `references/`, also when the setup skill sent you here, and resolve `<payload>` with
-`realpath "<skill-dir>/../.."`: the plugin's own copy, holding `src/server.ts`, `bin/` and
-`skills/`. OpenClaw links an installed plugin's skills into its `plugin-skills/` directory,
+`realpath "<skill-dir>/../.."`, `<skill-dir>` written out whole with a leading `~` as `$HOME`,
+since a `~` inside the quotes does not expand; `<payload>` is the absolute path it prints: the
+plugin's own copy, holding `src/server.ts`, `bin/` and `skills/`. OpenClaw links an installed plugin's skills into its `plugin-skills/` directory,
 so the path it shows you for this skill is a link, and `<skill-dir>/../..` read as text names
 the wrong directory; `realpath` follows the link. For the plugin installed from the
-marketplace, as the install guide says, `<payload>` is `~/.openclaw/extensions/cross-agent`;
+marketplace, as the install guide says, `<payload>` is `$HOME/.openclaw/extensions/cross-agent`;
 for a development build listed in `skills.load.extraDirs`, it is that build's directory. Where
 the user's OpenClaw runs under a named profile, every `openclaw` command below carries
-`--profile <name>`, and the plugin's directory is `~/.openclaw-<name>/extensions/cross-agent`;
+`--profile <name>`, and the plugin's directory is `$HOME/.openclaw-<name>/extensions/cross-agent`;
 otherwise none does.
 
 ## What it registers
@@ -80,7 +81,8 @@ For an explicitly requested removal, after the backup above, and each step check
 
 - The server: `openclaw mcp unset cross-agent`. A running chat keeps the copy it started
   until its session ends.
-- The plugin and its skills: `openclaw plugins uninstall cross-agent`.
+- The plugin and its skills: `openclaw plugins uninstall cross-agent --force`, `--force` because
+  your shell has no terminal for its confirmation prompt; the user's answer is the confirmation.
 - For a development build instead: read the list with `openclaw config get
   skills.load.extraDirs --json` and write it back without this payload's `skills` directory,
   keeping every other entry, with `openclaw config set skills.load.extraDirs '<the remaining

@@ -4837,7 +4837,7 @@ config and state under `~/.openclaw-cross-agent-probe`, its gateway installed wi
 `openclaw-gateway-cross-agent-probe.service` — the same unit template as the operator's own
 gateway, `KillMode=mixed` — no channel, and the operator's own profile and gateway untouched.
 The payload was `node tools/build-dist.mjs --ref 291f339`'s `claude/plugins/cross-agent/`,
-attached by the route the install guide gives: its `skills/` under
+attached by the route the install guide gave then, now its development-build route: its `skills/` under
 `skills.load.extraDirs`, and one `mcp.servers.cross-agent` entry made by `openclaw mcp add
 cross-agent --command node --arg <payload>/src/server.ts --cwd <project> --timeout 3600
 --connect-timeout 30 --approval approve`. The projects were three samples under
@@ -5069,11 +5069,17 @@ entry made with `openclaw mcp add cross-agent --command node --arg
 <…>/extensions/cross-agent/src/server.ts --cwd <the solo sample> --timeout 3600
 --connect-timeout 30 --approval approve` probed at 13 tools, the operator row under `solo`. The
 same install in the user's own profile, at the user's request, printed "Applied in Gateway
-generation 3": the running gateway took the plugin without a restart.
+generation 3": the running gateway took the plugin without a restart. The listings of both
+profiles after the install are archived as `plugin-install/listings.txt`; the install commands'
+own output is transcribed here, not archived.
 
 **Reading.** The marketplace's git source is the install, with `openclaw plugins update
 cross-agent` for a later release to the same directory, so no clone is kept. The plugin's skills
-are links, so a reader of `<skill-dir>/../..` follows the link first (`realpath`), and the
-server's entry stays complete, since it replaces the plugin's own server of the same name. Not
+are links, and the skill list names the link — OpenClaw adds the link records after the
+plugin's own and keeps the later one (`openclaw/dist/plugin-skills-*.mjs`,
+`loadWorkspaceSkillSourceEntries`) — so a reader of `<skill-dir>/../..` follows the link first
+(`realpath`); and the server's entry stays complete, since a configured server replaces the
+plugin's own of the same name rather than merging with it (`openclaw/dist/bundle-mcp-config-*.mjs`,
+`loadMergedBundleMcpConfig`, `{...enabledBundleMcp, ...enabledConfiguredMcp}`). Not
 run: an agent session on this route (the probe profile's credential had been removed) and an
 update through `openclaw plugins update`.
