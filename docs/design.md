@@ -2241,7 +2241,9 @@ its server — every spec in this repository's ledger carried one,
 `claude-code_<version>_harness` or `_agent` — each naming the host's session or
 agent, which a child would carry as its own (`docs/probes.md#grokHostHops`,
 `#specialistLedger`); anything starting with `CLAUDE_CODE_`, `CLAUDE_PLUGIN_`,
-`CODEX_COMPANION_`, `GROK_CC_`, or `MCP_`; and, when `billing` is
+`CODEX_COMPANION_`, `GROK_CC_`, `MCP_`, or `OPENCLAW_` — an OpenClaw gateway's
+namespace, which carries its own credentials, `OPENCLAW_GATEWAY_TOKEN` among them, and
+which its children inherit (section 9, "OpenClaw"); and, when `billing` is
 `subscription`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `XAI_API_KEY`. It then
 sets `CROSS_AGENT_DEPTH`, `CROSS_AGENT_TASK`, `CROSS_AGENT_LINEAGE`, and
 `CROSS_AGENT_PROJECT=<canonical root>`, the last so that a server started from

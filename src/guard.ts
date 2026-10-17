@@ -148,8 +148,9 @@ export function childEnv(
   // `GROK_SESSION_ID` is the session a Grok host hands every server it starts, and
   // `AI_AGENT` the label a Claude Code host gives its own: each names the host's session or
   // agent, which a child would carry as its own. `GIT_EDITOR` marks no host and passes on.
+  // `OPENCLAW_` is an OpenClaw gateway's namespace, its credentials among it.
   const exactMarkers = ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_PROJECT_DIR", "GROK_SESSION_ID", "AI_AGENT"];
-  const prefixes = ["CLAUDE_CODE_", "CLAUDE_PLUGIN_", "CODEX_COMPANION_", "GROK_CC_", "MCP_"];
+  const prefixes = ["CLAUDE_CODE_", "CLAUDE_PLUGIN_", "CODEX_COMPANION_", "GROK_CC_", "MCP_", "OPENCLAW_"];
   const apiKeys = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"];
   const env = Object.fromEntries(Object.entries(parentEnv).filter(([key]) =>
     !exactMarkers.includes(key) && !prefixes.some((prefix) => key.startsWith(prefix))

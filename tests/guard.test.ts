@@ -246,7 +246,7 @@ const retainedEnv = Object.freeze({
   CODEX_HOME: "/home/test/.codex", LANG: "en_US.UTF-8", OTHER: "keep", UNSET: undefined,
   CLAUDECODE_EXTRA: "keep", CLAUDE_PID_EXTRA: "keep", CLAUDE_EFFORT_EXTRA: "keep",
   CLAUDE_CODE: "keep", CLAUDE_PLUGIN: "keep", CLAUDE_PROJECT_DIR_EXTRA: "keep", CODEX_COMPANION: "keep", GROK_CC: "keep", MCP: "keep",
-  OTHER_MCP_SERVER: "keep", OPENAI_API_KEY_BACKUP: "keep",
+  OTHER_MCP_SERVER: "keep", OPENAI_API_KEY_BACKUP: "keep", OPENCLAW: "keep", NOT_OPENCLAW_X: "keep",
 });
 const strippedEnv = Object.freeze({
   CLAUDECODE: "nested", CLAUDE_PID: "123", CLAUDE_EFFORT: "high",
@@ -258,6 +258,9 @@ const strippedEnv = Object.freeze({
   CODEX_COMPANION_: "marker", CODEX_COMPANION_SESSION: "session", CODEX_COMPANION_OTHER: "other",
   GROK_CC_: "marker", GROK_CC_SESSION: "session", GROK_CC_OTHER: "other",
   MCP_: "marker", MCP_SERVER: "server", MCP_OTHER: "other",
+  // An OpenClaw gateway's own variables, some of them its credentials: a child that
+  // inherited them would hold the gateway's token and be told it runs as the gateway.
+  OPENCLAW_: "marker", OPENCLAW_GATEWAY_TOKEN: "secret", OPENCLAW_SHELL: "exec", OPENCLAW_SERVICE_KIND: "gateway",
 });
 const apiKeys = Object.freeze({ ANTHROPIC_API_KEY: "anthropic-test", OPENAI_API_KEY: "openai-test", XAI_API_KEY: "xai-test" });
 const childEntries = Object.freeze([Object.freeze({ taskId: "child", role: request.role, cwd: request.cwd })]);
