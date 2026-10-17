@@ -4050,9 +4050,12 @@ code reviewer and the resolver, is the project it works on, where it looks for
 the project's files, instructions and code, searching no directory above or
 beside it — from a worktree, the project root and its `.cross-agent/` included —
 and reading beyond it only what the brief needs; the profiles restrict writes,
-not reads (P2), so this is the prompt's rule
-and no sandbox's (`tests/skills.test.ts#consultScopeSentence`,
-`#specialistsProjectDiscovery`). Acceptance is
+not reads (P2), so this is the prompt's rule and no sandbox's
+(`tests/skills.test.ts#consultScopeSentence`, `#specialistsProjectDiscovery`).
+Inside its own root the rule names nothing, so the project's `.cross-agent/` and
+its worktree directory stay readable to a root role: a Codex planner was seen
+listing the first and reading the lead's mailbox question there (atc-s96.175, accepted as
+a limitation, since it reads inside the project and writes nothing). Acceptance is
 behavioural (the end-to-end runs). The devpack's text was carried over once by
 `tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
 code: it drops the sentences naming the devpack's own machinery, drops the git

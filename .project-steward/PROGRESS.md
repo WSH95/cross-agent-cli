@@ -3,6 +3,10 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T11:08:07Z — claude
+
+On the user's decision, recorded `atc-s96.175` as a limitation in `docs/design.md` section 8 and closed it; suite 1283/1280/0/3.
+
 ### 2026-10-17T10:56:09Z — claude
 
 Froze candidate `d9f92524c899` (carrying `.173` and `.174`), installed and selected it in Codex,

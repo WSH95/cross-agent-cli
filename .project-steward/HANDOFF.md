@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T10:56:09Z
+updated_at: 2026-10-17T11:08:07Z
 updated_by: claude
 session_status: paused
 branch: main
@@ -15,8 +15,9 @@ accepted, and `.174` (verifier: codex-cli 0.163.0's `wait` with `status`) and `.
 dev-team specialist prompt carries the project-discovery rule) were fixed through the dev-team,
 merged as `9bb7365` and `320be3a`, frozen as candidate `d9f92524c899` and rerun: Claude-led 8/8,
 Codex-led 7 pass and the accepted computed-name `?`; no Codex specialist read outside the
-sample. Every campaign bead is closed. One new P3, `atc-s96.175`: a root-placed Codex planner
-read the sample's own `.cross-agent/` (inside the root, which the new rule does not name).
+sample. Every campaign bead is closed. `atc-s96.175` (a root-placed Codex planner read the sample's
+own `.cross-agent/`, inside the root the new rule does not name) is recorded as a limitation in
+`docs/design.md` section 8 on the user's decision and closed.
 Everything is restored: the sample on its original config, clean at `34fccd1`; Codex on
 `cross-agent@agent-plugins` with its config byte-identical to before; the temporary candidate
 removed. Mode payloads are now 43,160 / 59,987 / 4,508 bytes. `VERIFY.md` has the full record.
@@ -595,9 +596,7 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Ask the user whether `atc-s96.175` (root roles reading the root's own `.cross-agent/` and
-   worktree directory) is fixed, which needs a prompt change, a new freeze and an engine-led
-   rerun, or recorded as a limitation and closed.
+1. Nothing is pending from the campaign. Run `bd ready` for the next work; ask before a push or release.
 2. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
    "on the lead row".
 3. No push, release or remote sync without approval.
@@ -694,7 +693,7 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no technical blocker. One user decision is pending: `atc-s96.175` (Next steps 1). See Now.
+Current: no technical blocker and no decision pending. See Now.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 
