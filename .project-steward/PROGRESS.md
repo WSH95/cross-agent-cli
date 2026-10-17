@@ -3,6 +3,12 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T11:37:10Z — claude
+
+Released cross-agent 0.1.10 at the user's request: E2 wording fixed, version bumped, `main` pushed,
+agent-plugins#25 published and squash-merged (`59d08d5`), the plugin updated in Claude Code and
+Codex and checked against the built payloads.
+
 ### 2026-10-17T11:08:07Z — claude
 
 On the user's decision, recorded `atc-s96.175` as a limitation in `docs/design.md` section 8 and closed it; suite 1283/1280/0/3.

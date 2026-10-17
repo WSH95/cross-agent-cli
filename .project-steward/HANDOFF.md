@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T11:08:07Z
+updated_at: 2026-10-17T11:37:10Z
 updated_by: claude
 session_status: paused
 branch: main
@@ -7,6 +7,13 @@ branch: main
 # Handoff
 
 ## Now
+
+**cross-agent 0.1.10 is released (2026-10-17).** At the user's request the E2 wording was fixed
+(`5576c66`), the version bumped (`4da1a9b`), `main` pushed, WSH95/agent-plugins#25 opened by the
+publisher and squash-merged (`59d08d5`), and the plugin updated in Claude Code (0.1.9 → 0.1.10)
+and Codex (0.1.10; the managed connection resolves the new server). Both caches equal their
+payloads. A host's running server keeps its old code until reconnected (Claude Code: `/mcp`,
+cross-agent, Reconnect). `VERIFY.md`, "Release 0.1.10".
 
 **The acceptance campaign `atc-s96.163` is complete (2026-10-17, Claude Code host).** The
 remaining matrix ran on candidate `24ea2d2` (solo 6/6 with three 8/8 verifiers; both engine-led
@@ -596,9 +603,8 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Nothing is pending from the campaign. Run `bd ready` for the next work; ask before a push or release.
-2. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
-   "on the lead row".
+1. Reconnect cross-agent in open hosts so they serve 0.1.10, then run `bd ready` for the next work.
+   Ask before another push or release.
 3. No push, release or remote sync without approval.
 
 Historical next-step entries below predate the approved fix campaign:

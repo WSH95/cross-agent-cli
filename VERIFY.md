@@ -7,6 +7,24 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.10 (2026-10-17)
+
+At the user's request: `docs/design.md`'s E2 history now says unfollowed `delegate` names are set
+aside on every row (`5576c66`); the version went to 0.1.10 in `package.json` and both manifests
+(`4da1a9b`, suite 1283 tests, 1280 pass, 0 fail, 3 skipped); `main` was pushed
+(`cb3ddb8..4da1a9b`). `tools/publish_agent_artifact_pr.py` built both payloads from `4da1a9b` and
+opened WSH95/agent-plugins#25 (45 files, all under `cross-agent/`), which was squash-merged as
+`59d08d5`, as #24 was.
+
+Installed: Claude Code, `claude plugin marketplace update agent-plugins` and `claude plugin update
+cross-agent@agent-plugins` (0.1.9 → 0.1.10, `installed_plugins.json` naming `59d08d5`; the cache
+equals the Claude payload apart from Claude Code's own `.in_use` marker). Codex, `codex plugin
+marketplace upgrade` and `codex plugin add cross-agent@agent-plugins` (0.1.10, installed and
+enabled; the cache equals the Codex payload); the managed connection's helper `check` resolves the
+0.1.10 server, with the state and the `mcp_servers` entry unchanged. Grok holds no copy of its own
+and follows Claude Code's install. Running servers keep the code they started with until their
+host reconnects them; no live task has run on 0.1.10 yet.
+
 ## atc-s96.174 and atc-s96.173: fixed, frozen as d9f92524c899, rerun (2026-10-17)
 
 On the user's decisions after the matrix (fix `.174` and accept the row-8 readings; fix
