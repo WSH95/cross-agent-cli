@@ -4941,3 +4941,46 @@ worktree of the project. It joins `src/gitmutate.ts#hostConfigPaths`
 not added: they are ordinary project directories — this repository's own `skills/` is its
 product — loaded only when the operator binds a session to the repository, and a change to
 them is a team edit the code reviewers read in the diff, as `AGENTS.md` is.
+
+<!-- @anchor ocToolTimeout -->
+### ocToolTimeout: a 600-second `wait` returns whole under the entry's 3600-second budget
+
+With the entry made as above (`--timeout 3600`, so `requestTimeoutMs: 3600000`, which
+OpenClaw hands the Codex runtime as `tool_timeout_sec = 3600`), the host of the solo sample was
+asked to have Codex run `sleep 650` and then return a file. The host's first
+`wait {timeout_seconds: 600}` answered after 600.045 s with `status: "running"` and the hint to
+wait again, and its second after 289.460 s with `done` (`turn-solo.json`'s probe notes;
+`solo-rollout.jsonl`). The call ran inside a code-mode cell, which Codex's own `wait` on the
+cell polled in 60-second yields, eleven of them across the first call; neither the MCP call
+nor the agent turn, run with `openclaw agent --timeout 2400`, was cut. Run again with the
+entry's two timeouts removed, so that OpenClaw sets no `tool_timeout_sec` at all
+(`openclaw/dist/codex-mcp-config-*.mjs`, `normalizeCodexMcpServerConfig`), a
+`wait {timeout_seconds: 150}` answered after 150.039 s with `running`, and the next after
+53.097 s with `done` (`turn-default-timeout.json`).
+
+**Reading.** Under the recipe's budget a `wait` of 600 seconds returns whole, so OpenClaw's row
+in the launcher's budget table is 600, as every other host's is. Without the budget the
+runtime's own default held 150 seconds; no run measured it at 600, which is why the recipe
+keeps `--timeout 3600`, the value Codex's own plugin mount carries.
+
+<!-- @anchor ocAsk -->
+### ocAsk: a lead's question reaches the user through the host's question tool, the answer through the chat
+
+The host of the `dev-team-engine` sample was asked to run a lead whose brief was to ask the
+operator one question and wait (`msg-ask.txt`). The lead asked at 16:41:10 (ask
+`a4ff6391…`); the host, polling `list_asks {status: "open"}` from a code-mode script beside its
+`wait`, found it at 16:41:42 and put it to the user with the Codex runtime's
+`request_user_input_async` (`{"questions":[{"title":"Probe: which colour should the sample use,
+red or blue?"}]}`, answered `{"accepted":true}`), tried OpenClaw's `sessions_yield` to pause
+for a message ("nothing_pending": it did not pause), and ended its turn with "The lead is
+waiting for your answer." — not the question, nor its id. A chat message to the same
+session, "blue", started the next turn: the host called `answer {ask_id, text: "blue"}`,
+which answered `status: "answered"`, waited on the lead, read its `result` and opened its
+reply with the lead's report verbatim (`ask-rollout.jsonl`, `turn-ask-reply.json`). OpenClaw's
+own `ask_user` was offered beside it; the host did not use it here, and no question timed out.
+
+**Reading.** The relay works through the chat: the question goes out through a question tool
+and the answer comes back as the user's next message, which the host passes on in their own
+words. A chat with no question panel sees only the host's closing message, so the launcher has
+the host quote the question and its id there, and holds `ask_user`'s `status: "no_answer"` to
+what it is, no answer (`skills/cross-agent/SKILL.md`, "Engine placement").

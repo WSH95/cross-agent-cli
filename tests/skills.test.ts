@@ -85,7 +85,9 @@ const hostManifestKeys = new Set(["tool_timeout_sec"]);
 // A host's own tools, which this server never registers: Grok reaches an MCP server's tools
 // through `search_tool` and `use_tool`, and the launcher tells a Grok host to search before it
 // concludes this server's are missing.
-const hostOwnTools = new Set(["search_tool", "use_tool"]);
+// OpenClaw's own question tool is `ask_user`, and its Codex runtime offers Codex's
+// `request_user_input_async` beside it (docs/probes.md#ocAsk).
+const hostOwnTools = new Set(["search_tool", "use_tool", "ask_user", "request_user_input_async"]);
 
 // The calls a loop's own steps are made of, besides delegating its specialists: under
 // engine placement they are the lead's while a lead is live.
@@ -321,6 +323,11 @@ test("a host offered none of this server's tools tells the user the server did n
   assert.match(setup, /ordinary delegation with missing tools does not authorize/);
   // Grok's half: the attach is a trusted project's own file naming this checkout.
   assert.match(before, /Grok it starts only in a trusted project whose `\.grok\/config\.toml` names this checkout/);
+  // OpenClaw's: an entry in the gateway's own configuration, whose cwd is the project, which
+  // only a requested setup registers (docs/probes.md#ocAttach).
+  assert.match(before, /Under OpenClaw it starts only from an `mcp\.servers` entry[^.]*`cwd` is the project/);
+  assert.match(before, /`references\/openclaw-setup\.md`[^.]*requested setup or check/);
+  assert.match(setup, /OpenClaw host is not this section's, even on OpenClaw's Codex runtime/);
   // And Grok lists an MCP server's tools behind its own search: a Grok host that sees none in
   // its tool list has not yet looked (T15: nine of ten Grok hosts' first lines listed none). The
   // search comes before the instruction to stop, which a host reading in order would follow first.
@@ -338,6 +345,34 @@ test("under engine placement the host shows the roster before it starts the lead
   // With the project it serves on its first line, judged before the lead starts.
   const served = section.indexOf("`projectRoot`");
   assert.ok(served >= 0 && served < section.indexOf("`delegate {role: <lead.role>"), "and projectRoot with it, before the lead starts");
+});
+
+// @anchor openclawHostCommands
+test("an OpenClaw host runs its commands and writes its log at projectRoot, and reads a cut answer from what its script stored", () => {
+  // The agent's shell starts in its own workspace, and OpenClaw puts no plugin bin/ on its PATH
+  // (docs/probes.md#ocAttach); the Codex runtime shows a model about 10,000 tokens of one tool
+  // answer while the code-mode script holds it whole (docs/probes.md#ocResultCap).
+  const engine = flat(engineSection().section);
+  assert.match(engine, /Under OpenClaw[^.]*`"<skill-dir>\/\.\.\/\.\.\/bin\/cross-agent" report`[^.]*`projectRoot`/);
+  const reporting = flat(sectionOf(launcher(), "Reporting"));
+  assert.match(reporting, /Under OpenClaw[^.]*`<projectRoot>\/\.cross-agent\/log\.md`/);
+  const watching = flat(sectionOf(launcher(), "Watching"));
+  assert.match(watching, /Under OpenClaw[^.]*cut[^.]*script[^.]*whole/);
+  assert.match(watching, /never call `result` again for it/);
+  assert.match(flat(engineSection().section), /as a Codex or an OpenClaw host has/);
+});
+
+// @anchor openclawHostAsks
+test("an OpenClaw host puts the lead's question with its own question tool, quotes it when it ends its turn, and answers only with the user's own words", () => {
+  // OpenClaw's probe host asked through `request_user_input_async`, ended its turn saying only
+  // that the lead was waiting, and answered on the user's chat reply (docs/probes.md#ocAsk).
+  const paragraphs = engineSection().section.split(/\n\s*\n/).map(flat).filter((paragraph) => /^Under OpenClaw/.test(paragraph) && /`list_asks`|lead's question/.test(paragraph));
+  assert.equal(paragraphs.length, 1, "one paragraph says what an OpenClaw host does with an open ask");
+  const [paragraph] = paragraphs;
+  for (const pin of [/`ask_user`/, /`request_user_input_async`/, /question verbatim[^.]*id/, /`answer \{ask_id, text\}`[^.]*the user's own words/,
+    /`status: "no_answer"`[^.]*never authorizes an `answer`, a waiver or a write/, /leave the ask open/, /arrives only when (the|that) call returns/]) {
+    assert.match(paragraph, pin, `the OpenClaw ask paragraph: ${pin}`);
+  }
 });
 
 // @anchor headlessHostOpenAsk
@@ -387,6 +422,15 @@ test("the launcher's budget table gives every host a wait that fits inside its t
   // Grok's per-server key, its default, and the run that held a 600 s `wait` inside it (T15's B3).
   assert.match(text, /Grok[^|]*\|[^|]*`tool_timeout_sec`[^|]*6000[^|]*`docs\/probes\.md#grokToolTimeout`[^|]*\|\s*600\s*\|/,
     "Grok's row names the per-server key and its default, and cites the measured wait");
+  // OpenClaw's per-entry key, the setup guide's value, and the run that held a 600 s `wait`.
+  assert.match(text, /OpenClaw[^|]*\|[^|]*`requestTimeoutMs`[^|]*3600000[^|]*`docs\/probes\.md#ocToolTimeout`[^|]*\|\s*600\s*\|/,
+    "OpenClaw's row names the entry's key and the guide's value, and cites the measured wait");
+  // The launcher's citations are outside the checker's reach (docs/*.md only), so the anchors
+  // the table names are checked here.
+  const probes = fs.readFileSync(path.join(repoRoot, "docs", "probes.md"), "utf8");
+  for (const [, anchor] of text.matchAll(/`docs\/probes\.md#(\w+)`/g)) {
+    assert.ok(probes.includes(`<!-- @anchor ${anchor} -->`), `docs/probes.md has no anchor ${anchor}`);
+  }
   assert.match(text, /Time limits/, "the table is the design's own budget, cited");
 });
 
@@ -1367,6 +1411,9 @@ test("the roster's first line is projectRoot, judged against the project the use
   assert.match(before, /`CROSS_AGENT_PROJECT` found only in the environment[^.]*confirms nothing/);
   // Inside a task's worktree the line serves its root, and setup there refuses (`task-worktree`).
   assert.match(before, /[Ll]eave the setup advice out when the working directory lies under `projectRoot`'s `git\.worktreeDir`/);
+  // An OpenClaw agent works in its own workspace, never a project: its server entry's cwd is
+  // the binding, which the operator registered, so it proceeds unless the user named another.
+  assert.match(before, /\*\*Proceed, under OpenClaw,\*\*[^*]*own workspace[^*]*server entry's `cwd`[^*]*unless the user named another project/);
   // Any start the cases above leave open is confirmed before anything is dispatched.
   assert.match(before, /\*\*[Oo]therwise\*\*[^*]*show `projectRoot` and ask the user to confirm it before you dispatch anything/);
 });
