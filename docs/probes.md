@@ -5017,3 +5017,36 @@ recovery is the one the launcher gives for any lead that failed — reconcile, t
 it needed the session the log holds: the settlement now keeps it
 (`src/process.ts#lostSession`). Moving runners out of the gateway's service, so they outlive it,
 is not built (design "Not built").
+
+**After the fix (2026-10-17, candidate `9f7dbb6`).** The same case again on the frozen candidate,
+from the same profile: a lead (`3f007f56…`, Claude) asked "Probe: which colour, red or blue?",
+its host put the question with `ask_user` at a 30-second timeout and, on `no_answer`, left the ask
+open and ended its turn quoting it with its id (`acc-life-1.json`); the lead's log held its
+session, `1ef272e4-…`. `systemctl --user stop` then took five minutes, the gateway draining its
+own active work first ("draining active work before stop … rootRequests=1 cronRuns=1"), and ended
+the runner and the engine with no outcome written (`gateway-stop-2-journal.txt`). A new host
+session asked to answer and resume it called `list_tasks`, which settled the lead `failed`,
+`runner lost`, with `sessionId` `1ef272e4-…` read from its log; it answered the ask and resumed the
+lead. The continuation (`0a9b94d7…`) carried `resumedFrom` the killed lead, `resumeSessionId`
+`1ef272e4-…` and the `## Asks so far` section, picked up its own conversation — "my first `ask`
+call was cut off when the session ended" — asked again by the ask's id, read `answered`, and
+finished, quoting "blue" (`acc-life-2.json`, `engine-tasks/`). The fix holds live.
+
+<!-- @anchor ocSandbox -->
+### ocSandbox: setup and a solo run through OpenClaw's agent, at the project's root
+
+On the frozen candidate, a request to set up cross-agent for an uninitialized repository
+(`oc-fresh`) "as the background team" went through the setup skill from OpenClaw's agent: it ran
+the payload's own `bin/cross-agent init --propose --json --project <root>` with the repository as
+its working directory, showed the proposal with `dev-team` named unavailable on OpenClaw, asked
+"Does this look right?" as numbered choices and ended its turn, since its session takes no answer
+through a question tool there; on "1" it wrote the config with `init --config -` and asked two
+questions more, the `.gitignore` commit and the server entry's change; on "both" it committed
+`.gitignore` in the repository, backed `openclaw.json` up and moved the entry's `cwd` there, and
+on a new session its check called `describe_mode {view: "summary"}` and `list_roles` and found the
+project and `dev-team-engine` (`acceptance/acc-setup-*.json`). Nothing was written in OpenClaw's
+own workspace, whose only new file over the whole acceptance was OpenClaw's session memory
+note. A solo run there committed, tested and merged a one-shot through the tools and wrote its
+`log.md` lines in the project's own `.cross-agent/` (`acceptance/acc-solo-1.json`). No command
+asked for an approval in this profile, whose exec approvals are OpenClaw's defaults; a profile
+with `tools.exec.mode: "ask"` would ask before each, which this probe did not exercise.

@@ -7,6 +7,55 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## OpenClaw host, `solo` and `dev-team-engine` — `atc-uzf` (2026-10-17)
+
+At the user's request OpenClaw became a fourth host, for `solo` and `dev-team-engine` only.
+Plan reviewed by gpt-6-astra/xhigh (`bf98aa1c` rework, `98ad0432` approve with changes, and
+`13d4705c` approve with changes for the resume fix the lifetime probe forced); code implemented
+in this Claude Code session (`291f339`..`ab65142`), diff reviewed by gpt-6.1-sol/xhigh
+(`07dc65ce`) and claude-opus-5-5/xhigh (`85217d46`), both approve with changes, every finding
+judged and all but one fixed (`81078cd`, `9f7dbb6`). Suite at `9f7dbb6`: 1295 tests, 1292
+pass, 0 fail, 3 skipped. Probes: `docs/probes.md`, "OpenClaw as a host" and the rows after it.
+
+**Acceptance on the frozen candidate `9f7dbb6`**, built with `tools/build-dist.mjs --ref
+9f7dbb6`, its `src/process.ts`, `src/guard.ts` and both skills hash-identical to the commit, in
+the isolated profile `openclaw --profile cross-agent-probe` (OpenClaw 2026.10.2, Codex runtime,
+`openai/gpt-6.1-sol`; its own gateway unit; the operator's own profile untouched). Evidence:
+`~/.cache/agent-team/probe-logs/openclaw-2026-10-17/acceptance/`.
+
+- **Fresh-project setup through OpenClaw:** pass — the setup skill took the root from the
+  request, ran the CLI there with `--project`, offered the background team with `dev-team`
+  unavailable, wrote on the user's answers, committed `.gitignore` (`7e331c9`), backed the config
+  up and moved the server entry; the new session's check read the summary and `list_roles`.
+- **`dev-team-engine` end to end** on that project, Claude lead `bd45daa5…`: roster first, one
+  lead `delegate`, the lead's question relayed through `request_user_input_async` and quoted with
+  its id, answered by a chat reply, two plan rounds, three clean review seats, merged as
+  `77eabfb`; the host's closing message is the lead's report word for word, blank lines aside.
+  `tools/e2e-verify.mjs`: 8 pass, 0 fail.
+- **`solo` end to end** (`oc-solo`): a consult and a `worktree: true` one-shot merged under `auto`
+  through `git_mutate`, `run_command` and `git_root`, `log.md` written at the project's root.
+  `e2e-verify`: 8 pass, 0 fail. OpenClaw's own workspace gained only its session memory note.
+- **Refusal:** a `dev-team` project stopped after the summary — no full `describe_mode`, no
+  `delegate` — and setup was offered.
+- **A question left unanswered and a gateway stop:** `ask_user` at 30 s came back `no_answer`
+  and the ask stayed open; the gateway's stop ended the lead; `list_tasks` settled it `failed`,
+  `runner lost`, with its session from its log, and the resumed lead continued its own
+  conversation and finished.
+- **Specialists:** Claude and Codex seats started with no cross-agent tools; the Grok seat
+  mounted the operator's Claude Code plugin, as recorded for Grok, and `e2e-verify`'s row 8
+  found no `delegate` in any specialist transcript. P2's write and network checks were not
+  rerun: no adapter changed.
+- **The existing hosts after summary-first:** Claude Code (`--plugin-dir` the candidate), Codex
+  (`codex exec` with the candidate's server and skill file) and Grok (the candidate's skill file;
+  Grok's own load of the operator's Claude Code plugin shadowed a project attach) each read
+  `describe_mode`'s summary first in `solo`, `dev-team-engine` and `dev-team`, and the full view
+  only in the two host-placed modes.
+
+Cleanup: the probe profile's imported OpenAI credential was removed (`models auth logout`; the
+Codex CLI is still signed in), its gateway unit uninstalled, and Grok's trusted folders restored
+byte for byte. Nothing was pushed or released: the marketplace still serves 0.1.10, which has
+none of this.
+
 ## Release 0.1.10 (2026-10-17)
 
 At the user's request: `docs/design.md`'s E2 history now says unfollowed `delegate` names are set
