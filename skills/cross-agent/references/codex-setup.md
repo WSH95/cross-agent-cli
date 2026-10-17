@@ -27,7 +27,8 @@ mount; leave the marketplace plugin enabled so its skills and updates remain ava
 After a successful install, restart Codex's MCP servers using the host's restart
 control, or open a new session. If no restart control is available to you, report
 this remaining step; do not claim the current chat has tools yet. Then call
-`describe_mode`, verify `projectRoot` against the user's project, and call `list_roles`.
+`describe_mode` with `view: "summary"`, verify `projectRoot` against the user's project,
+and call `list_roles`.
 A Git repository without a config runs `solo` on defaults. For a team, or to change one,
 follow the setup skill beside this one (`<skill-dir>/../setup/SKILL.md`): it proposes a
 team, writes the config once the user confirms, and says when to reconnect, because the

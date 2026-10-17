@@ -716,7 +716,7 @@ export function projectTools(projectRoot: string, options: ToolOptions): ToolDef
   return [
     {
       name: "describe_mode",
-      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, projectRoot, the root of the project this server serves, and project, its defaultBranch, testCommand, setupCommand and mergePolicy. Call this first: it is how a launcher learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver. view is full, the default, or summary, which leaves out the loop and every role's prompt and keeps the rest; an engine lead reads the summary, its loop and role prompt being its instructions already.",
+      description: "The active mode's loop text, its roles with their workspace, sandbox default and prompt, its git policy, projectRoot, the root of the project this server serves, and project, its defaultBranch, testCommand, setupCommand and mergePolicy. A launcher calls it first with view summary, which says who runs the loop, and reads the full view only when its own session runs it: that is how it learns the loop, which is served rather than copied. review carries the loop's two settings, limits.planReviewRounds and review.afterResolver. view is full, the default, or summary, which leaves out the loop and every role's prompt and keeps the rest; an engine lead reads the summary, its loop and role prompt being its instructions already.",
       inputSchema: { type: "object", properties: { view: { type: "string", enum: ["full", "summary"] } } },
       rows: ["operator", "lead", "specialist"],
       handler: async (args) => {

@@ -466,10 +466,16 @@ written for each of the three. Hosts discover only `skills/`,
 and Codex's documented fallback copies that one directory (section 9), so a
 mode's loop cannot be found by convention on any host. The server serves it
 instead: `describe_mode` returns the active mode's loop text, its roles, and its
-workspace and git policy, and the launcher's first step is to call it
-(`src/modes.ts#describeMode`). The launcher routes on `mode.lead.placement`
-right after that call: under `host` the loop is the host session's own
-instructions; under `engine` the host starts the lead with one `delegate`,
+workspace and git policy, and the launcher's first step is to call it in its summary
+view, which leaves the loop and the role prompts out (`src/modes.ts#describeModeSummary`):
+the full answer runs to some 60,000 characters under `dev-team-engine`, more than an
+OpenClaw host's Codex runtime shows a model of one tool answer (section 9, "OpenClaw"),
+and a host that does not run the loop has no use for it. The launcher routes on
+`mode.lead.placement` right after that call: under `host` the loop is the host session's
+own instructions, read with a second, full call (`src/modes.ts#describeMode`) once the
+launcher's OpenClaw check lets the mode run there — an OpenClaw host runs `solo` and
+`dev-team-engine` and stops on any other host-placed mode before that read
+(`tests/skills.test.ts#launcherSummaryFirst`); under `engine` the host starts the lead with one `delegate`,
 watches it with `wait` and `check`, answers it through `list_asks` and `answer`,
 cancels or resumes it, and reads its closing report through `result`, and never
 runs a step of the loop itself (`skills/cross-agent/SKILL.md`, "Engine
@@ -680,7 +686,8 @@ under, so a launcher can always name where a task's worktree will be
 (`src/modes.ts#describeMode`, `#gitPolicy`, `#ModeDescription`). Under `view:
 "summary"` it returns `{view: "summary", mode, roles, git}`, each role without its
 `prompt` and no `loop`, reading neither file: what an engine-placed lead reads,
-whose loop and role prompt are its instructions already
+whose loop and role prompt are its instructions already, and what every launcher reads
+first, before it knows whether its own session runs the loop (section 7)
 (`src/modes.ts#describeModeSummary`, `#ModeSummary`). It refuses,
 with a reason and never a throw, when the config's `mode` names no existing mode
 directory, when that directory holds no `SKILL.md`, or when the mode does not
@@ -730,7 +737,7 @@ engine`; **records** only where the config the server started with has a
 
 | Tool | Input | Behaviour | Registered by |
 |---|---|---|---|
-| `describe_mode` | optional `view`: `full`, the default, or `summary` | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt — and `seats` and `gates` where a role declares them — its git policy, `projectRoot`, `project`: the config's `defaultBranch`, `testCommand`, `setupCommand` and `mergePolicy`, defaults filled (section 6), and `review`: the loop's two settings, `planReviewRounds` and `afterResolver` (section 6); under `summary`, the same with no `loop` and no role's `prompt`, marked `view: "summary"`, which an engine lead reads (`tests/server.test.ts#describeModeProject`, `#describeModeSummaryView`); and `projectWarning` where the directory the server was started in lies in an initialized project other than `projectRoot` (`src/server.ts#cwdProjectWarning`), which on Codex's bundled plugin mount never speaks for the host's project: that mount starts the server in its cache copy of the plugin (`cwd: "."`), so there the launcher's stop rule, judged against the host's own working directory, is the only check | core |
+| `describe_mode` | optional `view`: `full`, the default, or `summary` | the active mode's loop text verbatim, its roles with workspace, sandbox default and prompt — and `seats` and `gates` where a role declares them — its git policy, `projectRoot`, `project`: the config's `defaultBranch`, `testCommand`, `setupCommand` and `mergePolicy`, defaults filled (section 6), and `review`: the loop's two settings, `planReviewRounds` and `afterResolver` (section 6); under `summary`, the same with no `loop` and no role's `prompt`, marked `view: "summary"`, which an engine lead reads and every launcher reads first (`tests/server.test.ts#describeModeProject`, `#describeModeSummaryView`); and `projectWarning` where the directory the server was started in lies in an initialized project other than `projectRoot` (`src/server.ts#cwdProjectWarning`), which on Codex's bundled plugin mount never speaks for the host's project: that mount starts the server in its cache copy of the plugin (`cwd: "."`), so there the launcher's stop rule, judged against the host's own working directory, is the only check | core |
 | `list_roles` | — | each role **the mode has**: the workspace and the sandbox profile it gives that role, with the engine, model and effort config binds it to, or `binding: null` where config binds none — the engine a `delegate` call must then name itself; a role bound to a list answers `seats`, each with its `seat`, engine, model, effort and sandbox profile; plus a `warning` when the config now names a mode other than the one served | core |
 | `delegate` | `role`, `brief`, `cwd`, optional `branch` (required for a worktree role), `seat` (1-based, required for a role bound to a list and refused for any other), `worktree` (a task worktree of its own, for a role that works at the root), `engine`, `model`, `effort`, `resume` (task id), `force` | under the spawn lock: validates (authority, role, seat, workspace, reservation, a gating review's hold on a writable launch, running and recent duplicates, resume binding), refuses a role that gates the merge while its worktree holds uncommitted changes, marked or not, or while a setup command runs there, records the branch head such a role reviews as `underReview`, creates the task's worktree through `git_root` when `worktree: true`, writes the ledger record as `launching`, starts the runner, returns `task_id` with the `engine`, `model` and `effort` the record holds, `null` where none was named (section 4) | core |
 | `wait` | `task_id`, `timeout_seconds` (default `limits.waitDefaultSeconds`) | returns when the task settles, the timeout passes, or this call observes the stall threshold crossed: `status`, `stalled`, the task's `engine`, `model` and `effort`, elapsed, last activity line, result tail, and the `hint` naming the call to make next | core |
@@ -3671,9 +3678,10 @@ writing verb takes, with its `message` — and both tools to the lead row where 
 block is configured (`tests/skills.test.ts#engineRunToolsOffered`).
 
 `skills/cross-agent/SKILL.md` is the launcher, and it is the only skill a host
-loads to run a team: read the config, call `describe_mode` **first** to get the active
-mode's loop and roles, then start, watch, answer, cancel, reconcile, report.
-It is short and identical on all three hosts.
+loads to run a team: read the config, call `describe_mode` **first**, in its summary
+view, to learn the active mode's roles and who runs its loop, and again in full for the
+loop only where the host session runs it, then start, watch, answer, cancel, reconcile,
+report. It is identical on every host.
 
 `skills/setup/SKILL.md` is the plugin's second skill, which sets a project up and changes
 its setup. It runs the plugin's own CLI by its path from the skill's directory,
@@ -3682,7 +3690,7 @@ its setup. It runs the plugin's own CLI by its path from the skill's directory,
 for a change. It asks through each host's question tool — or, when that tool fails or the
 session cannot take an answer, in chat as numbered choices, ending its turn — gives each
 refusal code its next step (`tests/skills.test.ts#setupRefusalCodes`), and after a first
-setup or a reconnect checks the connection with `describe_mode` and `list_roles`. It
+setup or a reconnect checks the connection with `describe_mode`'s summary and `list_roles`. It
 shows a proposal's `records` before it asks, and its connection check reads
 `describe_mode`'s `warning` (`tests/skills.test.ts#setupShowsRecords`,
 `#setupChecksRecordsWarning`).
@@ -4384,7 +4392,9 @@ raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP to
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
-600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`).
+600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`). Since the
+launcher reads `describe_mode`'s summary first (section 7), the cap still matters to a Grok
+host only where its own session runs a team loop and reads the full view: `dev-team`'s.
 
 The plugin root also carries `bin/cross-agent`, the operator CLI's launcher. Claude Code
 puts a plugin's `bin/` on its Bash tool's PATH while the plugin is enabled, so a host

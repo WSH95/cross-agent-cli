@@ -452,6 +452,31 @@ test("the launcher's reconciliation pass reads every source design section 7 nam
   }
 });
 
+// @anchor launcherSummaryFirst
+test("the launcher reads describe_mode's summary first, stops a team host loop on OpenClaw before any full read, and reads the full view only under host", () => {
+  // OpenClaw's Codex runtime shows a model about 10,000 tokens of one tool answer, and the
+  // full answer under dev-team-engine is some 60,000 characters of a loop no host session
+  // there runs (docs/probes.md#ocResultCap). The summary says who runs the loop; only a host
+  // session that runs it reads the full view, and only once the OpenClaw check let it.
+  const paragraphs = sectionOf(launcher(), "Before delegating").split(/\n\s*\n/).map(flat);
+  const first = paragraphs.findIndex((paragraph) => paragraph.includes("Call `describe_mode`"));
+  assert.ok(first >= 0, "the launcher opens on describe_mode");
+  assert.match(paragraphs[first], /Call `describe_mode` with `view: "summary"`/);
+  const routing = first + 1;
+  assert.match(paragraphs[routing], /`mode\.lead\.placement`/);
+  const fullReads = paragraphs.filter((paragraph) => /`describe_mode` again|full `describe_mode`/.test(paragraph));
+  assert.ok(fullReads.length > 0, "a host session that runs the loop reads the full view");
+  for (const paragraph of fullReads) assert.match(paragraph, /`host`/, "the full view is read under host placement only");
+  const openclaw = paragraphs.findIndex((paragraph) => /OpenClaw host/.test(paragraph));
+  assert.ok(openclaw > routing, "the OpenClaw check comes after the routing paragraph");
+  for (const pin of [/`solo`/, /`dev-team-engine`/, /`host`/, /setup skill/, /no full `describe_mode`/, /no `delegate`/]) {
+    assert.match(paragraphs[openclaw], pin, `the OpenClaw check: ${pin}`);
+  }
+  for (const paragraph of paragraphs.slice(0, openclaw)) {
+    if (/`describe_mode` again/.test(paragraph)) assert.match(paragraph, /check below/, "a full read ordered before the check waits for it");
+  }
+});
+
 // @anchor launcherRoutesPlacement
 test("the launcher routes on placement and names the mailbox tools and the report verb", () => {
   const text = launcher();

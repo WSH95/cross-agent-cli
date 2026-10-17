@@ -37,23 +37,35 @@ says when to reconnect. Do not edit the config for the user.
 
 ## Before delegating
 
-Call `describe_mode`. It answers with the active mode — its `lead` among the
-rest — the mode's `loop`, its `roles` — each with its workspace, sandbox default
-and prompt, and `seats: "many"` or `gates: "merge"` where the mode declares them —
-its `git` policy: `worktreeDir`, `branchPattern`, and `implicit: true` where those
-two are this build's defaults rather than the mode's own — and `projectRoot`, the
-canonical root of the project this server serves, `project`, its `defaultBranch`,
-`testCommand`, `setupCommand` and `mergePolicy`, and `review`, the loop's two
-settings: `planReviewRounds` and `afterResolver`.
+Call `describe_mode` with `view: "summary"` first. It answers with the active mode —
+its `lead` among the rest — its `roles`, each with its workspace and sandbox default,
+and `seats: "many"` or `gates: "merge"` where the mode declares them — its `git`
+policy: `worktreeDir`, `branchPattern`, and `implicit: true` where those two are this
+build's defaults rather than the mode's own — and `projectRoot`, the canonical root of
+the project this server serves, `project`, its `defaultBranch`, `testCommand`,
+`setupCommand` and `mergePolicy`, and `review`, the loop's two settings:
+`planReviewRounds` and `afterResolver`. The summary leaves out the mode's `loop` and
+each role's `prompt`, which only a session that runs the loop reads, and which under a
+team mode run to tens of thousands of characters.
 
 `mode.lead.placement` decides who runs that loop. Under `host` — `dev-team`,
-`solo` — **the `loop` it returns is your instructions for this project.** It is
-served rather than copied into a skill directory, so it is current for the mode
-this server actually loaded; where it spells a step differently from this skill,
-follow it. Under `engine` — `dev-team-engine` — the loop is the lead's and not
-yours: a spawned Claude or Codex session runs it, and your part is to start that
-lead, watch it and answer it, as the `## Engine placement` section below says.
-No step of an engine-placed loop is yours to run.
+`solo` — **the mode's `loop` is your instructions for this project**: once the host
+check below lets the mode run here, call `describe_mode` again with no `view` for the
+`loop` and each role's `prompt`. The loop is served rather than copied into a skill
+directory, so it is current for the mode this server actually loaded; where it spells a
+step differently from this skill, follow it. Under `engine` — `dev-team-engine` — the
+loop is the lead's and not yours: a spawned Claude or Codex session runs it, and your
+part is to start that lead, watch it and answer it, as the `## Engine placement` section
+below says. No step of an engine-placed loop is yours to run, and the summary is all of
+`describe_mode` you read.
+
+An OpenClaw host runs `solo` and `dev-team-engine` and no other mode: a team loop under
+`host` placement is a long session of reviews, waits and git steps, and its text is more
+than OpenClaw shows a model of one tool answer. So when your host is OpenClaw and the
+mode's `lead.placement` is `host` but the mode is not `solo`, stop here: tell the user
+that this project's mode does not run from OpenClaw, that `solo` and `dev-team-engine`
+do, and offer the setup skill to change it. Make no full `describe_mode` call and no
+`delegate`.
 
 If `describe_mode` refuses, tell the user the reason and stop. A project with no
 `.cross-agent/config.json` is not that case — it runs the built-in `solo` mode
@@ -143,11 +155,12 @@ The brief is the whole of what the specialist knows about *this* task: what to
 do, where, what counts as done, and the shape of the closing report you will
 read back. It is not where the role's standing duties go — `delegate` launches each
 task with the mode's own prompt for its role, a specialist's under `host` placement
-and the lead's under `engine`, the same text `describe_mode`
-serves you under `roles[].prompt`, or with the `prompt` bound in
-`.cross-agent/config.json` where a project sets one. Read that text before you
-write the brief: what the role is already told is what your brief need not
-repeat, and what it does not cover is what your brief has to.
+and the lead's under `engine`, the same text the full `describe_mode` serves under
+`roles[].prompt`, or with the `prompt` bound in `.cross-agent/config.json` where a
+project sets one. Under `host` placement read that text before you write the brief:
+what the role is already told is what your brief need not repeat, and what it does not
+cover is what your brief has to. Under `engine` placement the lead's prompt is its own,
+and the brief is the task text `## Engine placement` describes.
 
 Narrate every dispatch in one line before you wait on it: *delegating `<role>` —
 `<role>#<seat>` for a seated role — to `<engine>`/`<model>` at `<effort>` in

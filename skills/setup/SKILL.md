@@ -249,7 +249,7 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
   reconnect.
 - **Reconnect first** when `reconnect` is true, or when this setup ran `git init`: give the
   host's reconnect step and wait for the user.
-- **Check:** call `describe_mode` and `list_roles`. It is connected when both answer
+- **Check:** call `describe_mode` with `view: "summary"`, and `list_roles`. It is connected when both answer
   without error, `projectRoot` is `root`, the mode is the one written, and both answers
   carry no `warning`. A `list_roles` `warning` means the server still serves its old mode:
   give the reconnect step and check again. A `describe_mode` `warning` means the server
