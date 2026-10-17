@@ -511,7 +511,8 @@ test("the install guide installs OpenClaw's plugin from the git marketplace and 
   const missing = [
     "`solo` and `dev-team-engine`", "`dev-team`",
     "openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities",
-    "~/.openclaw/extensions/cross-agent", "openclaw plugins update cross-agent",
+    // An update from a source outside ClawHub asks for the plugin's capabilities each time.
+    "~/.openclaw/extensions/cross-agent", "openclaw plugins update cross-agent --accept-capabilities",
     "P=$HOME/.openclaw/extensions/cross-agent",
     "$P/bin/cross-agent init --mode dev-team-engine",
     'openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve',
@@ -527,7 +528,7 @@ test("the install guide installs OpenClaw's plugin from the git marketplace and 
     "`.openclaw/`", "built-in runtime",
     // An uninstall leaves the plugin disabled, which a later install keeps.
     "openclaw plugins enable cross-agent --accept-capabilities",
-    // The update was not run; what an update needs is said rather than assumed.
+    // An update replaces the one directory in place; the built-in runtime was never run.
     "with no task running", "not run",
   ].filter((words) => !section.includes(words));
   assert.deepEqual(missing, [], "the OpenClaw section names each of these");

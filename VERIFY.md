@@ -7,6 +7,24 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.12 (2026-10-17)
+
+At the user's request, after the OpenClaw attach moved to a plugin install from the marketplace's
+git source (`atc-uzf.16`: `950917f`, and the gpt-6.1-sol `a5ea61c7` and claude-opus-5-5 `9ceeac6c`
+review fixes in `bfca597`): the version went to 0.1.12 (`71e2646`, suite 1295 tests, 1292 pass, 0
+fail, 3 skipped) and `main` was pushed. `tools/publish_agent_artifact_pr.py --build` opened
+WSH95/agent-plugins#27 (7 files under `cross-agent/`, equal to `dist/cross-agent`); a second commit
+moved the marketplace README's OpenClaw entries to the plugin install; #27 was squash-merged as
+`995d42b`, and #28, the README's update command with `--accept-capabilities`, as `14b2b16`.
+
+Installed: Claude Code 0.1.11 → 0.1.12 (the cache equals the Claude payload apart from `.in_use`);
+Codex 0.1.12 (the cache equals the Codex payload; the managed connection's `check` resolves the
+0.1.12 server); the user's OpenClaw, `openclaw plugins update cross-agent --accept-capabilities`
+(0.1.11 → 0.1.12 in `~/.openclaw/extensions/cross-agent`, equal to the Claude payload, applied
+without a gateway restart; the plain update stopped for capability consent, as
+`docs/probes.md#ocPluginInstall` records). The user's OpenClaw has no server entry yet: the user
+chose to set a project up from chat.
+
 ## Release 0.1.11 (2026-10-17)
 
 At the user's request, after the OpenClaw host's acceptance: the version went to 0.1.11 in

@@ -505,8 +505,8 @@ not propose it, and the launcher stops on a project bound to it before it starts
 On OpenClaw 2026.10.2 with its agent on the Codex runtime, the plugin's install, its skills
 and the server entry were run as written here, and the agent sessions — a setup, a solo run, a
 background team — ran with the same skills from a development build (`docs/probes.md`, "OpenClaw
-as a host" and "ocPluginInstall"); `openclaw plugins update` and OpenClaw's built-in runtime were
-not run.
+as a host" and "ocPluginInstall"), and so was an update, 0.1.11 to 0.1.12; OpenClaw's built-in
+runtime was not run.
 
 **The plugin.** OpenClaw installs it from this marketplace's git source, as a Claude bundle.
 Where your OpenClaw runs under a named profile, every `openclaw` command here carries
@@ -522,9 +522,9 @@ P=$HOME/.openclaw/extensions/cross-agent
 `--accept-capabilities` the server and the skills the plugin declares. The plugin lands in
 `~/.openclaw/extensions/cross-agent`, a directory with no version in its name, and the running
 gateway applies it without a restart: the `cross-agent` and `setup` skills show in `openclaw
-skills list`. A later release comes with `openclaw plugins update cross-agent`, not run yet: it
-replaces that one directory in place, so update with no task running and start a new session
-after it, and add `--accept-capabilities` if the release declares a capability this one did not.
+skills list`. A later release comes with `openclaw plugins update cross-agent
+--accept-capabilities`, which asks for the plugin's capabilities again each time; it replaces
+that one directory in place, so update with no task running and start a new session after it.
 Under a named profile that directory is `~/.openclaw-<name>/extensions/cross-agent`.
 
 **The project.** OpenClaw's agent works in its own workspace, never in your project, so set the

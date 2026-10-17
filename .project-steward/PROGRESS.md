@@ -888,3 +888,4 @@ Set up Project Steward in this repository.
 - 2026-10-17T18:10:17Z — claude — atc-uzf accepted on frozen 9f7dbb6 (VERIFY.md "OpenClaw host"); probes and acceptance recorded; probe credential removed and probe gateway uninstalled. Next: the user decides on a release.
 - 2026-10-17T18:22:41Z — claude — Release 0.1.11 (atc-uzf.15): 9cc70ae pushed; agent-plugins#26 (payload + README OpenClaw entries) squash-merged as 5392081; Claude Code and Codex on 0.1.11, caches equal the payloads.
 - 2026-10-17T18:49:43Z — claude — [auto-checkpoint] cross-agent installed in the user's OpenClaw as a git-marketplace plugin (no entry yet); docs moved to the plugin route (950917f, atc-uzf.16), under review.
+- 2026-10-17T19:17:46Z — claude — Release 0.1.12 (atc-uzf.17): OpenClaw installs as a git-marketplace plugin; 71e2646 pushed; agent-plugins #27 (995d42b) and README #28 (14b2b16) merged; Claude Code, Codex and the user's OpenClaw on 0.1.12.

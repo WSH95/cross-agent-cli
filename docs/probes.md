@@ -5081,5 +5081,12 @@ plugin's own and keeps the later one (`openclaw/dist/plugin-skills-*.mjs`,
 (`realpath`); and the server's entry stays complete, since a configured server replaces the
 plugin's own of the same name rather than merging with it (`openclaw/dist/bundle-mcp-config-*.mjs`,
 `loadMergedBundleMcpConfig`, `{...enabledBundleMcp, ...enabledConfiguredMcp}`). Not
-run: an agent session on this route (the probe profile's credential had been removed) and an
-update through `openclaw plugins update`.
+run: an agent session on this route (the probe profile's credential had been removed).
+
+**The update (2026-10-17, 0.1.12).** In the user's profile, with no cross-agent server entry and
+so no task, `openclaw plugins update cross-agent` cloned the marketplace and stopped: “Plugin
+"cross-agent" requires capability consent. The plugin was not updated”, though 0.1.12 declares
+nothing 0.1.11 did not. With `--accept-capabilities` it printed "Updated cross-agent: 0.1.11 ->
+0.1.12." and "Applied plugin updates in Gateway generation 4": the same directory, now equal to the
+0.1.12 payload file for file, the two skill links unchanged, and no gateway restart. So an update
+carries `--accept-capabilities` every time.
