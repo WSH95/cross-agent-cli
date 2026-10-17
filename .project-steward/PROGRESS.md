@@ -3,6 +3,13 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T10:21:01Z — claude
+
+On the user's decisions, fixed `.174` (verifier: codex-cli 0.163.0's `wait` with `status`) and
+`.173` (dev-team role prompts carry the project-discovery rule) through the configured
+dev-team as two parallel tasks; merged `320be3a` and `9bb7365`, root suite 1283/1280/0/3.
+Next: freeze a new candidate and rerun both engine-led scenarios.
+
 ### 2026-10-17T08:50:09Z — claude
 
 Ran the remaining candidate matrix on the user's go-ahead, on installed `24ea2d2` (no new

@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-17T08:50:09Z
+updated_at: 2026-10-17T10:21:01Z
 updated_by: claude
-session_status: paused
+session_status: active
 branch: main
 ---
 # Handoff
@@ -414,12 +414,15 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: nothing in flight. The remaining candidate matrix ran on the user's go-ahead
-(2026-10-17) and is restored: solo 6/6 with three 8/8 verifiers; both engine-led runs merged
-with 7 pass and a row-8 `?` each, resolved only by recorded readings. Eight held beads are
-closed; `.163` stays open on two user decisions (Next steps 1). Sample at `8872514`, original
-config, clean; Codex's managed owner is `cross-agent@agent-plugins` again and the temporary
-candidate plugin is removed. See `VERIFY.md`, "Candidate 24ea2d2: remaining matrix".
+Current: on the user's decisions (fix `.174`, accept the row-8 readings; fix `.173`, rerun the
+engine-led scenarios), both fixes are merged through the dev-team: `.173` as `320be3a`, `.174`
+as `7391736`/`9bb7365`; root 1283 / 1280 / 0 / 3; no task worktree or branch. Next: freeze the
+records commit as a new candidate, install and select it in Codex, rerun the Claude-led and
+Codex-led `dev-team-engine` scenarios with new tasks (`slug_longest_first`,
+`slug_unique_rotate`), rerun the old Codex-led scope's verifier with the sample on its matrix
+config (`.174`'s criterion 5), then restore the sample config and Codex's managed owner.
+The sample is restored and clean at `8872514`; Codex is on `cross-agent@agent-plugins`.
+`VERIFY.md`, "atc-s96.174 and atc-s96.173 merged".
 
 Historical entries:
 
@@ -585,12 +588,10 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Ask the user two decisions before `.163` closes. (a) Whether the two engine-led row-8 `?`
-   count as passes on their recorded readings (`candidate-matrix-20261017/*/verify-reading-row8.md`;
-   E3/E2 precedent), with `atc-s96.174` (the reader's codex-cli 0.163.0 `wait` shape, a
-   verifier-only fix) either way. (b) Whether to fix `atc-s96.173` (the dev-team role prompts
-   lack the project-discovery sentence; all six Codex dev-team specialists read outside the
-   sample): a prompt change ships, so it needs a new freeze and the two engine-led reruns.
+1. Freeze the records commit, install it as `cross-agent@cross-agent-cli`, select it with the
+   supported helper, and rerun both engine-led scenarios from fresh `codex exec` hosts
+   (`run-host.sh`, evidence in `candidate-matrix-20261017/`), judged by a verifier export of the
+   frozen commit. Then restore as before and record; close `.173` and `.174` on the evidence.
 2. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
    "on the lead row".
 3. No push, release or remote sync without approval.
@@ -687,8 +688,7 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no technical blocker. Two user decisions are pending (Next steps 1); `.163`, `.173`
-and `.174` are open. See Now and Beads.
+Current: no technical blocker and no decision pending; the reruns are in progress. See Now.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

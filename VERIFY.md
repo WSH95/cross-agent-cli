@@ -7,6 +7,37 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## atc-s96.174 and atc-s96.173 merged; new candidate to freeze (2026-10-17)
+
+On the user's decisions after the matrix (fix `.174` and accept the row-8 readings; fix
+`.173` and rerun the engine-led scenarios), both ran through the configured dev-team from
+this Claude Code host on installed 0.1.9, as two parallel tasks.
+
+- `.174`, slug `verifier-codex-wait-status`: the verifier's `codeModeWait` accepts codex-cli
+  0.163.0's `wait`, the 0.159.3 payload plus `status: "completed"`, and nothing wider;
+  `codexOwnCall` is unchanged. Planner `384727c5…` (it found the brief's criterion 5 could not
+  be checked against the restored sample; the operator had it checked by `--read-rollout`
+  instead, the full scoped run deferred to the reruns), plan review `2d0b37d1…` no major
+  issues, approved plan `b36e4b35…`, implementer `ba661905…` (red, then green), round 1
+  `01f072df…`/`44275ca2…`/`a194af7d…` no major issues with three Minor rows, wrap-up
+  `dd8ca71b…`, round 2 `732c6bf8…`/`14aff0c0…`/`b0599cb6…` no major issues, all rows
+  addressed. Merged `320be3a..9bb7365` (`7391736`, `9bb7365`).
+- `.173`, slug `role-prompt-project-scope`: the planner, plan reviewer, implementer, code
+  reviewer and resolver prompts of both dev-team modes carry the consultant's project-discovery
+  rule, worded for the root or the task worktree (the root's `.cross-agent/` named for the
+  worktree roles); `tests/skills.test.ts#specialistsProjectDiscovery` pins it; the mode
+  payloads are now 43,160 / 59,987 / 4,508 bytes. Planner `e7045926…`, plan review
+  `458e70d2…` no major issues, approved plan `16d01565…`, implementer `83204599…` (red, then
+  green), round 1 `50f30677…`/`337fac4a…`/`7a449a37…` no major issues; one cosmetic Minor
+  (line breaks) not taken. Merged `5ddf695..320be3a`. Follow-up named by seat 1: the root
+  roles' rule does not cover the root's own `.cross-agent/` and `.worktrees/`.
+- Gates and root suites green throughout; final root suite 1283 tests, 1280 pass, 0 fail,
+  3 skipped. Worktrees and branches removed. One brief deviation: `.174`'s round-1 briefs
+  said "the approved plan, verbatim" over a condensed plan.
+
+Both beads stay open: `.174` until its full scoped verifier run with the sample on the
+matrix config, `.173` until the engine-led reruns on a candidate that carries it.
+
 ## Candidate 24ea2d2: remaining matrix (2026-10-17)
 
 On the user's go-ahead, the remaining scenarios ran on the installed candidate `24ea2d2`, with
