@@ -886,3 +886,4 @@ Set up Project Steward in this repository.
 - 2026-10-17T16:03:44Z — claude — [auto-checkpoint] atc-uzf probes staged in the isolated profile ~/.openclaw-cross-agent-probe; waiting on the user's OpenAI sign-in for it.
 - 2026-10-17T17:13:26Z — claude — [auto-checkpoint] atc-uzf: T0–T6 and T8 committed (291f339..ab65142), T7 not triggered, suite 1293/1290/0 fail; diff review by gpt-6.1-sol and claude-opus-5-5 running.
 - 2026-10-17T18:10:17Z — claude — atc-uzf accepted on frozen 9f7dbb6 (VERIFY.md "OpenClaw host"); probes and acceptance recorded; probe credential removed and probe gateway uninstalled. Next: the user decides on a release.
+- 2026-10-17T18:22:41Z — claude — Release 0.1.11 (atc-uzf.15): 9cc70ae pushed; agent-plugins#26 (payload + README OpenClaw entries) squash-merged as 5392081; Claude Code and Codex on 0.1.11, caches equal the payloads.

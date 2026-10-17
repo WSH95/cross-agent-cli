@@ -7,6 +7,24 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Release 0.1.11 (2026-10-17)
+
+At the user's request, after the OpenClaw host's acceptance: the version went to 0.1.11 in
+`package.json` and both manifests (`9cc70ae`, suite 1295 tests, 1292 pass, 0 fail, 3 skipped);
+`main` was pushed (`3a567f2..9cc70ae`). `tools/publish_agent_artifact_pr.py --build` built both
+payloads from `9cc70ae` and opened WSH95/agent-plugins#26 (29 files, all under `cross-agent/`,
+equal to `dist/cross-agent`); at the user's request a second commit on the same branch updated the
+marketplace's own `README.md` — the cross-agent entries name OpenClaw, and a "For OpenClaw"
+paragraph links "Install it in OpenClaw" — and #26 was squash-merged as `5392081`.
+
+Installed: Claude Code, `claude plugin marketplace update agent-plugins` and `claude plugin update
+cross-agent@agent-plugins` (0.1.10 → 0.1.11; the cache equals the Claude payload apart from
+Claude Code's own `.in_use` marker). Codex, `codex plugin marketplace upgrade` and `codex plugin
+add cross-agent@agent-plugins` (0.1.11, installed and enabled; the cache equals the Codex
+payload); the managed connection's helper `check` resolves the 0.1.11 server. Running servers keep
+the code they started with until their host reconnects them. The user's own OpenClaw is not
+attached yet.
+
 ## OpenClaw host, `solo` and `dev-team-engine` — `atc-uzf` (2026-10-17)
 
 At the user's request OpenClaw became a fourth host, for `solo` and `dev-team-engine` only.

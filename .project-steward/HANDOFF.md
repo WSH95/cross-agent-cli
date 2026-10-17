@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T18:10:17Z
+updated_at: 2026-10-17T18:22:41Z
 updated_by: claude
 session_status: paused
 branch: main
@@ -24,8 +24,11 @@ Cleanup done: the probe profile's imported credential removed, its gateway unit 
 trusted folders restored; the profile directory `~/.openclaw-cross-agent-probe` and the samples
 under `~/.cache/agent-team/openclaw-probe/` remain as evidence. Deferred by the user's decision:
 `atc-uzf.12` (runners escaping the gateway's cgroup), `atc-uzf.13` (several projects per gateway).
-**Next:** the marketplace still serves 0.1.10 without any of this; a release (version bump, push,
-`publish_agent_artifact_pr.py`) and the user's own OpenClaw attach are the user's to approve.
+**Released as 0.1.11 (2026-10-17):** `9cc70ae` pushed; WSH95/agent-plugins#26 (payload plus the
+marketplace README's OpenClaw entries) squash-merged as `5392081`; Claude Code and Codex updated to
+0.1.11 (`VERIFY.md`, "Release 0.1.11"). **Next:** reconnect cross-agent in open hosts so they serve
+0.1.11; attaching the user's own OpenClaw (docs/install.md, "Install it in OpenClaw") is the user's
+to ask for; `atc-uzf.12` and `.13` stay deferred.
 
 **cross-agent 0.1.10 is released (2026-10-17).** At the user's request the E2 wording was fixed
 (`5576c66`), the version bumped (`4da1a9b`), `main` pushed, WSH95/agent-plugins#25 opened by the
