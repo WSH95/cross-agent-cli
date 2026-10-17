@@ -452,9 +452,10 @@ const launch = launcherFor(config);
 // classify, including changed command-field shapes, are `?`, named. codex-cli 0.159.3's own
 // `wait` on a code-mode cell that yielded, a `function_call` of exactly that type and name whose
 // arguments decode to exactly `{cell_id, yield_time_ms}` or those and `max_tokens`, its payload
-// carrying exactly the keys the recorded ones do, is a call that runs no command
-// (`codeModeWait`); a `wait` in any other shape, or with any other field, is unclassified. So
-// are its `sleep` and `request_user_input_async` in the shapes E5's host rollout recorded
+// carrying exactly the keys the recorded ones do, or those and 0.163.0's `status: "completed"`,
+// is a call that runs no command (`codeModeWait`); a `wait` in any other shape, with any other
+// field or another status, is unclassified. So are 0.159.3's `sleep` and
+// `request_user_input_async` in the shapes E5's host rollout recorded
 // (`codexOwnCall`), and in no other. An output carrying a
 // command is judged like the call; any other unclassified item with a field naming a tool,
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
@@ -2582,8 +2583,8 @@ function rolloutShows(shown, command) {
  * keystrokes of a `write_stdin` call and the argv of a `local_shell_call`; the argv of every
  * `CommandExecution` item and `exec_command_begin` event; and the tool of every
  * `McpToolCall` item and `mcp__…` call. The tool calls of codex-cli 0.159.2's that run
- * nothing (`quietTools`) are classified as such, and so are 0.159.3's `wait` on a yielded
- * code-mode cell (`codeModeWait`) and its `sleep` and `request_user_input_async`
+ * nothing (`quietTools`) are classified as such, and so are 0.159.3's and 0.163.0's `wait` on a
+ * yielded code-mode cell (`codeModeWait`) and 0.159.3's `sleep` and `request_user_input_async`
  * (`codexOwnCall`), each in the shapes recorded. An output carrying a command is judged
  * like the call. Any other tool-call entry or item with a field naming a tool, its
  * arguments or a command, a line that is not JSON, a script that does not read and a
@@ -2682,15 +2683,19 @@ function rolloutCommands(file) {
  * Whether a `function_call` payload is codex-cli 0.159.3's own `wait` on a code-mode cell that
  * yielded, in the shape every recorded one has (E2c's lead rollout, line 86; S11's B2, line 32;
  * the 36 in S11's and T14's archives): exactly the keys `type`, `id`, `name`, `arguments`,
- * `call_id` and `internal_chat_message_metadata_passthrough`, `type` the string `function_call`
- * and `name` the string `wait`, the passthrough exactly `{turn_id, create_time}`, and `arguments`
- * a JSON string decoding to exactly `{cell_id: string, yield_time_ms: number}`, with
- * `max_tokens: number` beside them or not. It names a cell and no command, and the cell is a
- * script this reader reads in its own `exec` call. A payload with any other key, at its top or
- * in its passthrough, is not this call, whatever its arguments say.
+ * `call_id` and `internal_chat_message_metadata_passthrough`, or those keys and `status`, the
+ * string `completed`, as codex-cli 0.163.0 writes it (the Codex lead 45ebb8b5's rollout in the
+ * 2026-10-17 candidate matrix, line 43 and seven more; all 29 waits in the matrix's thirteen
+ * rollouts); `type` the string `function_call` and `name` the string `wait`, the passthrough
+ * exactly `{turn_id, create_time}`, and `arguments` a JSON string decoding to exactly
+ * `{cell_id: string, yield_time_ms: number}`, with `max_tokens: number` beside them or not. It
+ * names a cell and no command, and the cell is a script this reader reads in its own `exec`
+ * call. A payload with any other key, or another status, at its top or in its passthrough, is
+ * not this call, whatever its arguments say.
  */
 function codeModeWait(payload) {
-  if (!exactKeys(payload, ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"])) return false;
+  const keys = ["type", "id", "name", "arguments", "call_id", "internal_chat_message_metadata_passthrough"];
+  if (!exactKeys(payload, keys) && !(exactKeys(payload, [...keys, "status"]) && payload.status === "completed")) return false;
   if (payload.type !== "function_call" || payload.name !== "wait") return false;
   if (typeof payload.id !== "string" || typeof payload.call_id !== "string") return false;
   const passthrough = payload.internal_chat_message_metadata_passthrough;

@@ -4019,6 +4019,20 @@ them. The last two entries are the 6b pre-flight's, for the versions it ran.
   them bind a `.codex-plugin` manifest is the runs' to say, and they found no `${PLUGIN_ROOT}`
   substituted in the inline `command`, `args` or `cwd` the runs tried
   (`docs/probes.md#codexPluginMount`).
+<!-- @anchor cliCodex1630 -->
+- **codex-cli 0.163.0** (2026-10-17, the candidate matrix, VERIFY.md's "Candidate 24ea2d2"). Seen in
+  runs: every tool call the matrix's thirteen session rollouts record (those started 03:41 to 04:37
+  in the sample and its worktrees) carries `status`, `completed` in all 267: 238 code-mode `exec`
+  custom tool calls and 29 `wait` function calls. The code-mode `wait` is 0.159.3's payload with
+  `status` beside its keys, and every one carries `max_tokens`. The Codex lead `45ebb8b5`'s rollout
+  (`rollout-2026-10-17T04-31-35-01a148fc-ddac-7b31-894e-efee7f374907.jsonl`) holds eight, at lines
+  43, 61, 67, 86, 103, 123, 167 and 183, differing only in ids, cell ids, `max_tokens`,
+  `yield_time_ms` and `create_time`. The end-to-end verifier answered `?` on each until
+  atc-s96.174, and since classifies the shape, with `status` exactly `completed` and no other key,
+  as a call that runs no command (line 43 verbatim in `tests/e2e-verify.test.ts#codexStatusWait`).
+  None of the thirteen holds a `sleep` or `request_user_input_async` call (the names appear only in
+  the session's base instructions), so those stay classified in 0.159.3's shapes alone
+  (`tools/e2e-verify.mjs#codexOwnCall`).
 
 ## Native output samples (2026-09-07)
 

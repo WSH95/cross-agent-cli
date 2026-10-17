@@ -1857,6 +1857,45 @@ test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no com
   }
 });
 
+// @anchor codexStatusWait
+// codex-cli 0.163.0's, verbatim: the Codex lead 45ebb8b5's rollout in the 2026-10-17 candidate
+// matrix, line 43 (`docs/probes.md#cliCodex1630`). Its seven other waits, and the 21 in the
+// matrix's twelve other rollouts, differ only in ids, cell ids, `max_tokens`, `yield_time_ms` and
+// `create_time`: each is 0.159.3's payload with `status: "completed"` beside its keys.
+const matrixWait = {
+  type: "function_call", status: "completed", id: "fc_0f1e003747bc26b2016ad3328cee988192b6a60151142c2f2b", name: "wait",
+  arguments: "{\"cell_id\":\"5\",\"max_tokens\":4000,\"yield_time_ms\":1000}", call_id: "call_047ed2c85ea04e5e99dd43e92014b0e6",
+  internal_chat_message_metadata_passthrough: { turn_id: "01a148fc-e5f7-7560-b306-c08c9687056c", create_time: 1792225932.9344862 },
+};
+const codexStatusWait = [
+  [matrixWait, "pass"],
+  // The arguments rules are 0.159.3's, unchanged: without `max_tokens` too.
+  [{ ...b2Wait, status: "completed" }, "pass"],
+  // Any other status, or one that only reads as `completed` once it is made a string,
+  [{ ...matrixWait, status: "in_progress" }, "?"],
+  [{ ...matrixWait, status: ["completed"] }, "?"],
+  // a field beside the seven keys or inside the passthrough, arguments 0.159.3's rules refuse,
+  [{ ...matrixWait, command: "claude -p hidden" }, "?"],
+  [{ ...matrixWait, internal_chat_message_metadata_passthrough: { ...matrixWait.internal_chat_message_metadata_passthrough, command: "claude -p hidden" } }, "?"],
+  [{ ...matrixWait, arguments: JSON.stringify({ cell_id: "5", max_tokens: 4000, yield_time_ms: 1000, cmd: "claude -p hi" }) }, "?"],
+  // and a key the recorded ones carry, missing.
+  [without(matrixWait, "call_id"), "?"],
+] as const;
+test("atc-s96.174: codex-cli 0.163.0's wait, 0.159.3's payload with status completed, runs no command, and no other status or key does", async (t) => {
+  // codex-cli 0.163.0 adds `status` to every tool-call payload, so each of the Codex lead's eight
+  // waits in the candidate matrix answered `?` on row 8.
+  for (const [entry, expected] of codexStatusWait) {
+    const sessionId = "01a0f44a-eb7a-7603-ae3a-000000006615";
+    const { code, out } = await run(await project(t, { codex: {
+      body: codexLog("/bin/bash -lc 'ls'"), sessionId,
+      rollout: rolloutOf(sessionId, [{ cmd: "ls", exit: 0 }, { entry }]),
+    } }));
+    assert.equal(verdict(out, scan), expected, `${JSON.stringify(entry)}\n${out}`);
+    assert.equal(code, { pass: 0, "?": 2 }[expected], out);
+    if (expected === "?") assert.match(row(out, scan), /a tool call this reader does not classify \(function_call wait\)/, out);
+  }
+});
+
 /** A copy of `value` without `key`: a recorded shape with one of its fields missing. */
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));

@@ -4144,10 +4144,16 @@ item, or changes a known command field's shape (`#codexRolloutUnclassified`,
 yielded — a `function_call` of exactly that type and name whose arguments decode to exactly `{cell_id,
 yield_time_ms}`, with `max_tokens` or without — names a cell and no command, and
 is classified as a call that runs none in those two recorded shapes and no other,
-its payload carrying exactly the keys every recorded one carries, so a field beside
-them or inside its passthrough leaves the call unclassified (`#codexCodeModeWait`). So are
-its own `sleep` and `request_user_input_async`, in the shapes E5's host rollout recorded
-and no other: `sleep` in the `clock` namespace with exactly `{duration_ms}`, and
+its payload carrying exactly the keys every recorded one carries (`#codexCodeModeWait`),
+or those and codex-cli 0.163.0's `status`, the string `completed`, which every tool
+call in the 2026-10-17 candidate matrix's thirteen 0.163.0 rollouts carries: the Codex
+lead `45ebb8b5`'s eight waits, line 43 of its rollout the first
+(`docs/probes.md#cliCodex1630`, `tools/e2e-verify.mjs#codeModeWait`,
+`tests/e2e-verify.test.ts#codexStatusWait`). A field beside them or inside its
+passthrough, or another status, leaves the call unclassified. So are 0.159.3's own
+`sleep` and `request_user_input_async`, in the shapes E5's host rollout recorded
+and no other (none of those thirteen rollouts holds either): `sleep` in the `clock`
+namespace with exactly `{duration_ms}`, and
 `request_user_input_async` with exactly `{questions}`, each question `{title, options}`
 or those and `question` — the shape Codex refused for that field, which ran nothing
 (`tools/e2e-verify.mjs#codexOwnCall`, `tests/e2e-verify.test.ts#codexOwnCalls`). An output carrying a command is judged like the call, and a
