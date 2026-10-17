@@ -1940,6 +1940,29 @@ test("the launcher and the Codex setup guide send setting up or changing a team 
   assert.match(guide, /Resolve `<skill-dir>` to the cross-agent skill's directory/);
 });
 
+// @anchor openclawSetupGuide
+test("the OpenClaw setup guide registers one complete server entry pinned by cwd, writes only on the user's answer, and removes without deleting the payload", () => {
+  // OpenClaw starts two copies of a registered server, its own and its Codex runtime's, each
+  // in the entry's cwd, and a same-name entry replaces a plugin's rather than merging with it
+  // (docs/probes.md#ocAttach): the entry is the whole attach, and its cwd is the project.
+  const file = path.join(launcherDir, "references", "openclaw-setup.md");
+  const guide = flat(fs.readFileSync(file, "utf8"));
+  assert.match(guide, /Resolve `<skill-dir>` to the cross-agent skill's directory/);
+  assert.match(guide, /setup skill/, "a team is set up through the setup skill");
+  assert.doesNotMatch(guide, /init --mode/);
+  for (const pin of [
+    /openclaw mcp add cross-agent --command node --arg "<payload>\/src\/server\.ts" --cwd "<project root>" --timeout 3600 --connect-timeout 30 --approval approve/,
+    /`solo` and `dev-team-engine`/, /one project per entry/i,
+    /user's own explicit answer/, /`CROSS_AGENT_TASK`, `CROSS_AGENT_DEPTH` or `CROSS_AGENT_LINEAGE`[^.]*stop/,
+    /back(ed)? up/, /`--profile <name>`/,
+    /new session/, /`openclaw mcp reload`[^.]*not the gateway/,
+    /`describe_mode` with `view: "summary"`/, /`list_roles`/,
+    /openclaw mcp unset cross-agent/, /`skills\.load\.extraDirs`[^.]*never[^.]*payload/,
+  ]) {
+    assert.match(guide, pin, `the OpenClaw setup guide: ${pin}`);
+  }
+});
+
 // @anchor setupRefusalCodes
 test("the setup skill names every refusal code init's setup calls answer with", () => {
   const codes = cliRefusalCodes();
