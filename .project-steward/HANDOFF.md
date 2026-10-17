@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T16:03:44Z
+updated_at: 2026-10-17T17:13:26Z
 updated_by: claude
 session_status: active
 branch: main
@@ -9,19 +9,22 @@ branch: main
 ## Now
 
 **OpenClaw host, epic `atc-uzf` (2026-10-17, Claude Code host).** The user asked for OpenClaw as a
-host running `solo` and `dev-team-engine` (no `dev-team`). Plan, reviewed twice by gpt-6-astra/xhigh
-(`bf98aa1c` rework, `98ad0432` approve with changes): `/home/wsh/.claude/plans/i-would-like-this-glittery-blanket.md`;
-children `atc-uzf.1`–`.13` hold its tasks. `atc-uzf.1` (T0, `childEnv` strips `OPENCLAW_*`) is
-committed as `291f339`, suite 1283/1280/0 fail/3 skipped. In flight: `atc-uzf.2`, the probes, in an
-isolated OpenClaw profile `~/.openclaw-cross-agent-probe` (port 19789, no channels, no daemon,
-Codex plugin 2026.10.2, model openai/gpt-6.1-sol, payload of `291f339` at
-`~/.cache/agent-team/openclaw-probe/payload` registered by `skills.load.extraDirs` and an
-`mcp.servers.cross-agent` entry pinned by `cwd` to the sample `~/.cache/agent-team/openclaw-probe/oc-engine`).
-**Blocker:** the probe profile needs the user's own OpenAI sign-in:
-`openclaw --profile cross-agent-probe models auth login --provider openai --method device-code`.
-The main OpenClaw profile and gateway are untouched. Code tasks are implemented directly in this
-session (user's choice); the diff is reviewed by gpt-6.1-sol/xhigh and claude-opus-5-5/xhigh before
-acceptance.
+host running `solo` and `dev-team-engine` (no `dev-team`). Plan, reviewed by gpt-6-astra/xhigh
+(`bf98aa1c` rework, `98ad0432` approve with changes, `13d4705c` approve with changes for T8):
+`/home/wsh/.claude/plans/i-would-like-this-glittery-blanket.md`. Committed on `main` (not pushed):
+`291f339` T0 childEnv strips `OPENCLAW_*`; `e22ecfb` T1 summary-first launcher + OpenClaw dev-team stop;
+`248430e` T5 `.openclaw/` host config; `4b69511` T3 `references/openclaw-setup.md`; `189c703` T4 setup
+skill; `4471eea` T2 launcher OpenClaw rules; `a74a6de` T8 a lost runner keeps its engine session
+(`lostSession`), found by the lifetime probe; `ab65142` T6 docs + AGENTS.md (Decision 0024). T7 not
+triggered. Suite 1293/1290/0 fail/3 skipped. Probes are rows `openclawProbes`…`ocLifetime` in
+`docs/probes.md`, evidence in `~/.cache/agent-team/probe-logs/openclaw-2026-10-17/`. **In flight:**
+`atc-uzf.10`, the diff review by gpt-6.1-sol/xhigh (`07dc65ce`) and claude-opus-5-5/xhigh (`85217d46`);
+then `atc-uzf.11` acceptance on a frozen candidate in the isolated profile `~/.openclaw-cross-agent-probe`
+(its own gateway unit `openclaw-gateway-cross-agent-probe.service`, port 19789, enabled; samples under
+`~/.cache/agent-team/openclaw-probe/`). **Cleanup owed:** the probe profile holds an auto-imported copy
+of the user's Codex CLI login — remove it before 2026-10-22; uninstall the probe gateway unit
+(`openclaw --profile cross-agent-probe gateway uninstall`) when acceptance ends. The main OpenClaw
+profile and gateway are untouched.
 
 **cross-agent 0.1.10 is released (2026-10-17).** At the user's request the E2 wording was fixed
 (`5576c66`), the version bumped (`4da1a9b`), `main` pushed, WSH95/agent-plugins#25 opened by the
