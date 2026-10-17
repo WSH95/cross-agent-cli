@@ -1,12 +1,27 @@
 ---
-updated_at: 2026-10-17T11:37:10Z
+updated_at: 2026-10-17T16:03:44Z
 updated_by: claude
-session_status: paused
+session_status: active
 branch: main
 ---
 # Handoff
 
 ## Now
+
+**OpenClaw host, epic `atc-uzf` (2026-10-17, Claude Code host).** The user asked for OpenClaw as a
+host running `solo` and `dev-team-engine` (no `dev-team`). Plan, reviewed twice by gpt-6-astra/xhigh
+(`bf98aa1c` rework, `98ad0432` approve with changes): `/home/wsh/.claude/plans/i-would-like-this-glittery-blanket.md`;
+children `atc-uzf.1`–`.13` hold its tasks. `atc-uzf.1` (T0, `childEnv` strips `OPENCLAW_*`) is
+committed as `291f339`, suite 1283/1280/0 fail/3 skipped. In flight: `atc-uzf.2`, the probes, in an
+isolated OpenClaw profile `~/.openclaw-cross-agent-probe` (port 19789, no channels, no daemon,
+Codex plugin 2026.10.2, model openai/gpt-6.1-sol, payload of `291f339` at
+`~/.cache/agent-team/openclaw-probe/payload` registered by `skills.load.extraDirs` and an
+`mcp.servers.cross-agent` entry pinned by `cwd` to the sample `~/.cache/agent-team/openclaw-probe/oc-engine`).
+**Blocker:** the probe profile needs the user's own OpenAI sign-in:
+`openclaw --profile cross-agent-probe models auth login --provider openai --method device-code`.
+The main OpenClaw profile and gateway are untouched. Code tasks are implemented directly in this
+session (user's choice); the diff is reviewed by gpt-6.1-sol/xhigh and claude-opus-5-5/xhigh before
+acceptance.
 
 **cross-agent 0.1.10 is released (2026-10-17).** At the user's request the E2 wording was fixed
 (`5576c66`), the version bumped (`4da1a9b`), `main` pushed, WSH95/agent-plugins#25 opened by the
