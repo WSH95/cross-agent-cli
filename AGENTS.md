@@ -3,7 +3,8 @@
 `cross-agent`: a multi-engine orchestrator — one MCP server plus a launcher
 skill — that runs headless `claude`, `codex`, and `grok` processes as a team
 from any host that can attach an MCP server and a skill (Claude Code, Codex,
-and Grok today). A team is a *mode*: roles, a lead loop, and a git policy,
+Grok, and OpenClaw, which runs `solo` and `dev-team-engine` only, today). A team is a
+*mode*: roles, a lead loop, and a git policy,
 kept as data under `modes/`; `dev-team` (planner, plan reviewer,
 implementer, as many code reviewer seats as the config binds, and a resolver,
 in git worktrees), `dev-team-engine` (the same team with its loop in a lead
@@ -147,7 +148,11 @@ Shipped:
   watch budget, the report — what every host-placed mode shares — the merge
   policy a `worktree: true` task settles under, the `review` and `critique`
   verbs, the reconciliation pass, each naming `host` placement — and the
-  engine-placement section a host follows while a lead runs the loop.
+  engine-placement section a host follows while a lead runs the loop. It reads
+  `describe_mode`'s summary first and the full loop only where its own session runs it,
+  and an OpenClaw host stops there on any host-placed mode but `solo`.
+  `skills/cross-agent/references/openclaw-setup.md` registers, changes and removes an
+  OpenClaw host's server entry, as `references/codex-setup.md` does Codex's connection.
 - `skills/setup/SKILL.md`: the setup skill, which sets a project up and changes
   its setup through the plugin's own CLI, `init --propose` and then `init --config -`
   once the user confirms, with each host's way of asking and reconnecting.
@@ -237,6 +242,11 @@ Planned, in the design's work plan: the backlog (row 14).
   absolute path>"]` and `enabled = ["cross-agent"]`, and `[mcp]` with
   `max_output_bytes = 100000`, in `.grok/config.toml`, the folder trusted
   (docs/install.md, "Install it in Grok").
+- An OpenClaw host (`solo` and `dev-team-engine`): a clone of WSH95/agent-plugins read in
+  place, its `cross-agent/claude/plugins/cross-agent/skills` listed in
+  `skills.load.extraDirs`, and `openclaw mcp add cross-agent --command node --arg
+  <payload>/src/server.ts --cwd <project root> --timeout 3600 --connect-timeout 30
+  --approval approve`, then a new session (docs/install.md, "Install it in OpenClaw").
 - An engine probe: `node tools/probe.mjs --engine claude --cwd <dir> --sandbox read-only --prompt "…"`.
 - A release: bump the version in `package.json` and both manifests, commit, push
   `main`, then `python3 tools/publish_agent_artifact_pr.py --build …`, which runs

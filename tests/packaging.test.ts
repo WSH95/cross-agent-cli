@@ -496,6 +496,36 @@ test("the install guide attaches Grok per project through the project's own .gro
   assert.ok(!section.includes("echo '.grok/' >> .gitignore"), "the Grok section appends the ignore line with printf");
 });
 
+// @anchor openclawInstall
+test("the install guide attaches OpenClaw by a skills directory and one complete server entry pinned by cwd, checks it, says what it does not do, and removes it", () => {
+  // The route the probes ran (docs/probes.md#openclawProbes and the rows after it): the Claude
+  // payload's skills/ read in place, and an mcp.servers entry OpenClaw starts twice, both copies
+  // in its cwd. Not a plugin install, whose same-name server a configured entry replaces.
+  const guide = fs.readFileSync(path.join(repoRoot, "docs", "install.md"), "utf8");
+  const grok = guide.indexOf("## Install it in Grok");
+  const start = guide.indexOf("## Install it in OpenClaw");
+  assert.ok(grok >= 0 && start > grok, "the OpenClaw section follows Grok's");
+  const next = guide.indexOf("\n## ", start + 1);
+  const section = guide.slice(start, next < 0 ? guide.length : next).replace(/\s+/g, " ");
+  const missing = [
+    "`solo` and `dev-team-engine`", "`dev-team`",
+    "git clone https://github.com/WSH95/agent-plugins ~/src/agent-plugins",
+    "P=$HOME/src/agent-plugins/cross-agent/claude/plugins/cross-agent",
+    "node tools/build-dist.mjs",
+    "openclaw config get skills.load.extraDirs --json",
+    `openclaw config set skills.load.extraDirs "[\\"$P/skills\\"]" --strict-json`,
+    "$P/bin/cross-agent init --mode dev-team-engine",
+    'openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve',
+    "`--profile <name>`", "not `openclaw plugins install`",
+    "/new", "openclaw mcp probe cross-agent", "fifteen", "mcp__cross_agent__",
+    "two copies", "one project per entry",
+    "`/new`", "runner lost", "resume",
+    "openclaw mcp unset cross-agent", "never the payload directory",
+    "`.openclaw/`", "built-in runtime",
+  ].filter((words) => !section.includes(words));
+  assert.deepEqual(missing, [], "the OpenClaw section names each of these");
+});
+
 // @anchor readmeInitThenCommit
 test("the README has the operator commit init's .gitignore change before a team's first task", () => {
   // A loop's first step stops unless the root's `git status --porcelain --untracked-files=normal`

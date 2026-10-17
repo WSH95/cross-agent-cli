@@ -7,7 +7,7 @@
 //   <out>/codex/.agents/plugins/marketplace.json   the same for Codex
 //   <out>/codex/plugins/cross-agent/               .codex-plugin/{plugin.json,serve} and the shared files
 //
-// Grok installs the Claude payload. The shared files are what an installed copy runs:
+// Grok installs the Claude payload, and OpenClaw reads it in place. The shared files are what an installed copy runs:
 // `bin/cross-agent`, `src/`, `modes/`, `skills/`, `LICENSE`, and `package.json` trimmed to
 // what a copy needs (`src/server.ts` reads its version there). They come from `git archive
 // <ref>`, so a payload is exactly a commit: nothing untracked, ignored or uncommitted reaches

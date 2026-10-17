@@ -1241,3 +1241,21 @@ limitations proposed in the plan stand open to the user's objection as before.
 ## 0023 — 2026-10-16T10:25:58.229476+00:00 — Bound native plugin-discovery proof
 
 The user directly selected bounded proof after native r3: accept top-level skills.list/read availability as an explicit unknown limitation, then complete all eight native turns and the remaining fixes/E2E checks. This changes only native .161 acceptance scope; it does not certify absence, relabel old strict failures, waive other isolation/retention checks, or waive any of the eight final E2E verifier checks. Resume the configured planner for a focused amendment, fresh review, test-first implementation and new fixed-artifact r4. All remaining campaign work and no-push/no-sync constraints remain.
+
+## 0024 — 2026-10-17T17:07:59Z — OpenClaw as a fourth host, solo and dev-team-engine only (atc-uzf)
+
+The user asked for OpenClaw as a host for `solo` and `dev-team-engine` (no `dev-team`), and
+decided: `dev-team` is refused at the skill level, with no server change; a gateway stop that
+ends running tasks is documented and recovered by reconcile and lead resume, with the systemd
+scope escape a deferred bead (`atc-uzf.12`); probes run in an isolated OpenClaw profile first;
+only OpenClaw's Codex runtime is verified; plans are reviewed by gpt-6-astra/xhigh and the code
+diff by gpt-6.1-sol/xhigh and claude-opus-5-5/xhigh, implementation done directly in the
+session; and AGENTS.md may change where necessary. Under that allowance `AGENTS.md` changed in
+three places: the opening names OpenClaw among the hosts with its two modes, the launcher's
+Layout entry names the summary-first read, the OpenClaw stop and
+`references/openclaw-setup.md`, and Run gains the OpenClaw host's recipe; earlier, `.openclaw/`
+joined Run's list of host configuration a task's commit and the merge refuse (`248430e`). The
+probe profile holds an auto-imported copy of the user's Codex CLI login, kept on the user's word
+for the probes and acceptance and to be removed before 2026-10-22. A probe forced one plan change,
+reviewed by gpt-6-astra (`13d4705c`, approve with changes): a task whose runner died keeps the
+session its engine announced, so a killed lead can be resumed (`atc-uzf.14`, `a74a6de`).

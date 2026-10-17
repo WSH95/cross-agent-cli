@@ -1,6 +1,6 @@
 ---
 name: cross-agent
-description: Use when the user asks to run work through a team, delegate to another harness, hand a bead or TODO to an agent, or says "ask codex to …", "ask grok to …", "ask claude to …". Also use to set up, check, repair, or remove cross-agent's one-time Codex MCP connection, including desktop Codex without a per-session CROSS_AGENT_PROJECT.
+description: Use when the user asks to run work through a team, delegate to another harness, hand a bead or TODO to an agent, or says "ask codex to …", "ask grok to …", "ask claude to …". Also use to set up, check, repair, or remove cross-agent's one-time Codex MCP connection, including desktop Codex without a per-session CROSS_AGENT_PROJECT, or its OpenClaw server entry.
 ---
 
 # cross-agent
@@ -34,7 +34,7 @@ When the user wants a team in a project with no `.cross-agent/config.json`, asks
 cross-agent or a team, or asks to change the team — the mode, a role's engine, model or
 effort, a seat, the test or setup command, or the merge policy — use the `setup` skill
 beside this one (`<skill-dir>/../setup/SKILL.md` from this skill's directory,
-`/cross-agent:setup` in Claude Code). It proposes, writes only once the user confirms, and
+`/cross-agent:setup` in Claude Code, `/skill setup` in OpenClaw). It proposes, writes only once the user confirms, and
 says when to reconnect. Do not edit the config for the user.
 
 ## Before delegating

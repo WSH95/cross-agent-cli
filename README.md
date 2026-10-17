@@ -1,7 +1,7 @@
 # cross-agent
 
 Run headless `claude`, `codex` and `grok` processes as one team, from whichever of the
-three you work in. cross-agent is an MCP server and a launcher skill: your session, the
+three you work in, or from OpenClaw. cross-agent is an MCP server and a launcher skill: your session, the
 **host**, hands work to other engines, each running headless in its own CLI's sandbox on
 your own subscription, and a **mode** decides the team — its roles, the loop its lead runs,
 and its git policy.
@@ -17,8 +17,9 @@ no setup.
 
 ## How it works
 
-- **One server, three hosts.** The same MCP server and skill attach to Claude Code, Codex
-  and Grok. `.cross-agent/config.json` binds each role to an engine, a model and an effort.
+- **One server, four hosts.** The same MCP server and skill attach to Claude Code, Codex,
+  Grok and OpenClaw, which runs `solo` and `dev-team-engine`. `.cross-agent/config.json`
+  binds each role to an engine, a model and an effort.
 - **Authority from process ancestry, not tokens.** Your session gets the operator's tools,
   a lead the loop's, and a specialist a few read tools and never `delegate`, so no
   delegation loop can form.
@@ -42,8 +43,9 @@ no setup.
 
 Claude Code and Codex install it from the
 [agent-plugins](https://github.com/WSH95/agent-plugins) marketplace; Grok attaches it per
-project from a clone of this repository. [docs/install.md](docs/install.md) has every
-step, check and removal, and the installs from a clone.
+project from a clone of this repository; OpenClaw reads a clone of the marketplace in place.
+[docs/install.md](docs/install.md) has every step, check and removal, and the installs
+from a clone.
 
 **Claude Code**, in a session:
 
@@ -71,6 +73,10 @@ through the marketplace as usual; the connection follows the installed version.
 **Grok:** clone this repository and name it in the project's own `.grok/config.toml`:
 [Install it in Grok](docs/install.md#install-it-in-grok).
 
+**OpenClaw** (`solo` and `dev-team-engine`): clone the marketplace, list its `skills/` in
+`skills.load.extraDirs`, and register the server with its `cwd` the project:
+[Install it in OpenClaw](docs/install.md#install-it-in-openclaw).
+
 ## Quick start
 
 **Ask another engine, with no project setup.** In any git repository, after attaching the plugin,
@@ -78,7 +84,8 @@ ask your session, for example: *"Use cross-agent to have Codex review src/parser
 tell me what it finds."*
 
 **Run a team.** Once per project, set it up in your host: `/cross-agent:setup` in Claude
-Code, `$` and the setup skill in Codex, `/setup` in Grok, or say "set up cross-agent". It
+Code, `$` and the setup skill in Codex, `/setup` in Grok, `/skill setup` in OpenClaw, or say
+"set up cross-agent". It
 proposes a team — the mode, and the engine, model and effort of each role — from the
 engines you have installed, and writes `.cross-agent/config.json` and two `.gitignore`
 lines only once you confirm. Ask for setup again to change the team later.
@@ -104,6 +111,8 @@ plugin does not put a `cross-agent` command on your shell's `PATH`:
 - **In Claude Code** the plugin's `bin/cross-agent` is on the session's Bash tool `PATH`:
   ask Claude to run `cross-agent report`.
 - **In Codex** the skills find the bundled CLI relative to their installed directory.
+- **In OpenClaw** the skills run the payload's `bin/cross-agent`, in the project's root,
+  since OpenClaw puts no plugin's `bin/` on its shell's `PATH`.
 - **From a terminal** run the installed copy's launcher, for example
   `~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent`, or link a
   clone's `bin/cross-agent` onto your `PATH`.

@@ -1,10 +1,11 @@
 # Installing cross-agent
 
-cross-agent attaches to a host — Claude Code, Codex or Grok — as one MCP server and the
-`cross-agent` launcher skill. Claude Code and Codex install it from the
+cross-agent attaches to a host — Claude Code, Codex, Grok or OpenClaw — as one MCP server
+and the `cross-agent` launcher skill. Claude Code and Codex install it from the
 [agent-plugins](https://github.com/WSH95/agent-plugins) marketplace; Grok attaches it per
-project from a clone of this repository. Each host's section gives the install, the check
-and the way back, and the install from a clone for development.
+project from a clone of this repository; OpenClaw reads a clone of the marketplace in place
+and runs the server from one entry in its own configuration. Each host's section gives the
+install, the check and the way back, and the install from a clone for development.
 
 ## Requirements
 
@@ -494,3 +495,99 @@ Four things hold for every Grok session attached this way:
   no `delegate`: a specialist that follows the skill and calls it is refused by Grok's own
   dispatcher, which holds no such tool, before the server is ever asked (`docs/probes.md`,
   "I1: authority under a Claude Code host"), and is never served.
+
+## Install it in OpenClaw
+
+An OpenClaw host runs two of the three modes, `solo` and `dev-team-engine`: the background
+team's loop runs in a lead the server launches, and OpenClaw only starts, watches and answers
+it. `dev-team`, whose loop runs in the host session itself, is not offered there: setup does
+not propose it, and the launcher stops on a project bound to it before it starts anything.
+These steps were run against OpenClaw 2026.10.2 with its agent on the Codex runtime
+(`docs/probes.md`, "OpenClaw as a host"); OpenClaw's built-in runtime was not run.
+
+The plugin's files are read in place, from a clone of the marketplace you keep and `git pull`
+to update:
+
+```
+git clone https://github.com/WSH95/agent-plugins ~/src/agent-plugins
+P=$HOME/src/agent-plugins/cross-agent/claude/plugins/cross-agent
+```
+
+From a clone of this repository, `node tools/build-dist.mjs --out <dir>` builds the same
+payload, at `<dir>/claude/plugins/cross-agent`. Where your OpenClaw runs under a named
+profile, every `openclaw` command below carries `--profile <name>`.
+
+**The skills.** OpenClaw finds the `cross-agent` and `setup` skills once the payload's
+`skills/` directory is listed in `skills.load.extraDirs`. Read the list first, and keep any
+directory it already holds in the one you write:
+
+```
+openclaw config get skills.load.extraDirs --json
+openclaw config set skills.load.extraDirs "[\"$P/skills\"]" --strict-json
+```
+
+The gateway applies the change without a restart, and the two skills show in `openclaw skills
+list` from `openclaw-extra`.
+
+**The project.** OpenClaw's agent works in its own workspace, never in your project, so set the
+project up where it is: ask OpenClaw to set up cross-agent for it (`/skill setup`, or `/setup`,
+naming the project's root), which proposes the background team and writes
+`.cross-agent/config.json` once you confirm, or from a terminal:
+
+```
+cd ~/code/my-project
+$P/bin/cross-agent init --mode dev-team-engine
+git add .gitignore && git commit -m "chore: ignore cross-agent's state" -- .gitignore
+```
+
+Commit that `.gitignore` change: the lead's first step stops on an uncommitted tree. A
+repository with no config runs `solo` on defaults, so a one-off delegation needs no `init`.
+
+**The server.** One entry in OpenClaw's configuration, complete in itself, its `cwd` the
+project's root — not `openclaw plugins install`, whose plugin brings a server of the same name
+that a configured entry replaces rather than completes:
+
+```
+openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve
+```
+
+`mcp add` starts the server once to check it before it saves the entry. OpenClaw runs two
+copies of the server for a session — its own, which lists the tools, and the one its Codex
+runtime gives the model — and both start in the entry's `cwd`, so the server serves that
+project as it would under any other host. Neither copy carries OpenClaw's own environment.
+`--timeout 3600` gives each call an hour, so the launcher's 600-second `wait` returns whole;
+`--approval approve` lets the model call the tools without asking at each call.
+
+**The check.** A running session keeps the copy of the server it started, so start a new one
+(`/new` in the chat) after any change to the entry, and ask it to show the cross-agent roster:
+the launcher calls `describe_mode`'s summary and `list_roles`, and the roster's first line is
+the project's root. `openclaw mcp probe cross-agent` starts the server once and counts its
+tools: fifteen under `dev-team-engine`, thirteen under `solo`. The model calls them as
+`mcp__cross_agent__<tool>`. `openclaw mcp reload` does not reach the gateway's sessions.
+
+What holds for every OpenClaw session attached this way:
+
+- **one project per entry.** To serve another project, change the entry's `cwd` (`openclaw
+  mcp show cross-agent`, then `openclaw mcp set cross-agent '<the entry with the new cwd>'`)
+  and start a new session; serving several at once is not built.
+- **The lead's questions come to you in the chat.** The host puts a lead's question to you
+  with its question tool and quotes it, with its id, when it ends its turn; your reply in the
+  chat is passed to the lead in your own words. A message you send while the host waits on the
+  lead reaches it when that wait returns, within ten minutes.
+- **Tasks live as long as the gateway does.** A `/new` or a deleted session leaves running
+  tasks running. A gateway stop, restart or update ends every task the gateway's server
+  started, since they run in the gateway's own systemd service: the next `list_tasks` settles
+  each `failed`, `runner lost`, and the host resumes a lead from where it was — its open
+  questions, and your answers, travel with it (`docs/probes.md`, "ocLifetime").
+- **Long answers are read whole.** The Codex runtime shows the model about 10,000 tokens of a
+  tool's answer and keeps the rest; the host prints the part it did not see before it relays
+  a report. A channel such as Telegram delivers a long report in several messages.
+- **`.openclaw/` stays out of task branches.** OpenClaw runs a repository's
+  `.openclaw/worktree-setup.sh` when it makes a worktree of it, so the commit and the merge
+  refuse a branch that carries `.openclaw/`, as they refuse `.claude/`, `.codex/`, `.grok/`
+  and `.mcp.json`.
+
+To remove it, on the gateway's host: `openclaw mcp unset cross-agent` for the server, and the
+payload's `skills` directory taken out of `skills.load.extraDirs`, written back with the
+directories you keep — never the payload directory itself, which another host's install may
+share. A running session keeps the server it started until it ends.

@@ -23,7 +23,9 @@ team's first task (`git add .gitignore && git commit -m '…' -- .gitignore`): a
 loop's first step stops unless `git status --porcelain --untracked-files=normal`
 prints nothing at the project's root. The server discovers that project from the
 host session's working directory, so a session started anywhere inside it runs
-that project's team. It reads the mode once, when it starts: after `init`, or after you
+that project's team; under OpenClaw, whose agent works in its own workspace, it is the
+`cwd` of the server's entry in OpenClaw's configuration (`docs/install.md`, "Install it in
+OpenClaw"). It reads the mode once, when it starts: after `init`, or after you
 change `mode`, start a new session, or, lighter, in Claude Code `/mcp`, choose
 cross-agent, Reconnect — `/reload-plugins` does not restart the server — since a running
 server refuses a delegation under a mode it is not serving and says to restart it.
@@ -381,7 +383,8 @@ session is. Under `placement: host` it is your own session: it loads the loop
 and is busy between `wait` calls. Under `placement: engine` a spawned engine
 runs the loop, your session stays free to check status, watch it, answer its
 questions through a mailbox, and cancel it, and the run survives closing your
-session. Both are built: `dev-team` and `solo` place the loop in your host
+session — under OpenClaw, a `/new` or a deleted session, though not a stop of OpenClaw's
+gateway, after which you resume the lead. Both are built: `dev-team` and `solo` place the loop in your host
 session, and `dev-team-engine` in a Claude or Codex lead it launches, which asks
 you questions through `list_asks`/`answer` or `cross-agent answer`. With a
 `records` block, a `dev-team-engine` lead works a set of tracker items or a goal in

@@ -7,7 +7,8 @@ history lives in ~/Documents/agent-team-devpack. -->
 ## Context
 
 This repository builds **cross-agent**: one MCP server plus a launcher skill
-that let any host session — Claude Code, Codex, or Grok — run a team of
+that let any host session — Claude Code, Codex, Grok, or OpenClaw, the last for
+`solo` and `dev-team-engine` alone (section 9) — run a team of
 headless `claude`, `codex`, and `grok` processes on the operator's own
 subscriptions, each inside its own sandbox. The four-role dev team that runs
 on OpenMausBot in `~/Documents/agent-team-devpack` is **one operating mode**
@@ -4330,7 +4331,8 @@ transcript audit.
 **The attach contract is the definition of a host: a stdio MCP server plus the
 launcher skill.** Everything else is per-host manifest detail, and the three
 manifests below are examples of satisfying that contract, not the contract
-itself. Repo root is the plugin root for all three hosts:
+itself; OpenClaw, the fourth host, satisfies it with no manifest at all (below). Repo root
+is the plugin root for the three plugin hosts:
 `.claude-plugin/plugin.json` (manifest and `mcpServers` in one) + `skills/` for Claude Code
 (`claude --plugin-dir ~/Documents/cross-agent-cli` in development);
 `.codex-plugin/plugin.json` with `skills: "./skills/"` and the server inline under
@@ -4410,6 +4412,48 @@ tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's 
 launcher reads `describe_mode`'s summary first (section 7), the cap still matters to a Grok
 host only where its own session runs a team loop and reads the full view: `dev-team`'s.
 
+**OpenClaw** is a host for `solo` and `dev-team-engine`, and needs neither a manifest nor a
+plugin install: it reads the Claude payload in place, its `skills/` listed in
+`skills.load.extraDirs`, and starts this server from one entry in its own configuration,
+`openclaw mcp add cross-agent --command node --arg <payload>/src/server.ts --cwd <project
+root> --timeout 3600 --connect-timeout 30 --approval approve`
+(`skills/cross-agent/references/openclaw-setup.md`, `tests/packaging.test.ts#openclawInstall`).
+The entry must be complete: OpenClaw overlays configured servers on a plugin's by name,
+replacing rather than merging, so a plugin install's own server would start without a project
+and an override could not complete it. OpenClaw 2026.10.2 on its Codex runtime starts two copies
+of the server for a session, its gateway's own for the tool catalog and the one the model
+calls, both in the entry's `cwd` and neither with OpenClaw's environment or `CODEX_HOME`, and
+both resolve to the operator row by ancestry with no host detection: no ancestor carries a
+task marker or is an engine of the ledger (`docs/probes.md#ocAttach`). The `cwd` is therefore
+the project, as a Claude Code or Grok session's directory is, and an uninitialized repository
+runs `solo` on defaults; one entry serves one project, and serving several from one gateway is
+not built. The model calls the tools as `mcp__cross_agent__<tool>` from Codex's code mode,
+which shows it about 10,000 tokens of a script's output and keeps the whole answer in the
+script (`docs/probes.md#ocResultCap`), so the launcher reads `describe_mode`'s summary first
+and has an OpenClaw host print what it did not see of a longer answer before it relays it. A
+600-second `wait` returns whole under the entry's 3600-second budget
+(`docs/probes.md#ocToolTimeout`). A lead's question reaches the user through the host's
+question tool and the answer through the chat (`docs/probes.md#ocAsk`). `dev-team` is not
+offered there: the launcher stops on a host-placed mode other than `solo` before any full
+`describe_mode` or `delegate` (`tests/skills.test.ts#launcherSummaryFirst`), and setup does not
+propose it (`tests/skills.test.ts#setupOnOpenClaw`). Four limits are recorded rather than
+removed. The gateway runs as a systemd user service with `KillMode=mixed`, and every runner and
+engine its server starts lives in that service's cgroup: a `/new` or a deleted session leaves
+them running, and a gateway stop, restart or update ends them, after which `list_tasks` settles
+each `failed`, `runner lost`, keeping the session its engine announced so a lead can be resumed
+(`docs/probes.md#ocLifetime`, `src/process.ts#lostSession`). OpenClaw's `env` takes literal
+values and forwards nothing, as Codex's `env_vars` does: a gateway started under an ancestor
+carrying `CROSS_AGENT_TASK` still gives its server the specialist row, since the walk reads
+that ancestor (`src/authority.ts#resolveAuthority`), but one started from a suite a lead runs,
+which carries `CROSS_AGENT_DEPTH` alone (`src/runcommand.ts#commandEnv`), would give its server
+the operator's row; no run started a gateway there. A session
+bound to the repository as OpenClaw's execution workspace loads the repository's `skills/` and
+`.agents/skills`, which are ordinary project files a task may change, read by the code
+reviewers in the diff; `.openclaw/`, whose `worktree-setup.sh` OpenClaw runs, is host
+configuration and refused (section 4, `docs/probes.md#ocProjectConfig`). And OpenClaw's
+built-in runtime, whose defaults are a 60-second call and a result cut at 16,000 to 64,000
+characters, was not run.
+
 The plugin root also carries `bin/cross-agent`, the operator CLI's launcher. Claude Code
 puts a plugin's `bin/` on its Bash tool's PATH while the plugin is enabled, so a host
 session runs `cross-agent <verb>` from the plugin's own copy, and a link to the launcher
@@ -4438,7 +4482,7 @@ bridges use: **neither `codex-plugin-cc` 1.0.6 nor `grok-build-plugin-cc`
 commands, one `model: sonnet, tools: Bash` forwarding subagent, hooks, and
 skills, with the engine reached by shelling out from that subagent. That shape
 is Claude-Code-only and gives the host no typed tools; an MCP server is the
-one attachment surface all three hosts share. Provenance: the installed plugin
+one attachment surface all four hosts share. Provenance: the installed plugin
 sources under `~/.claude/plugins/cache/`, read 2026-09-08.
 
 ### 10. Operator CLI
@@ -4831,8 +4875,8 @@ while its calls last (`src/engines/codex.ts#codex`).
 Chat, rooms, a roster UI, an approval broker, runtime bot creation, the lead's
 own persistence under `placement: host` (the host's job), ACP engines,
 branch-scoped git metadata grants, a conflict-edit mode for rebases. Deferred
-with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
-**not planned** and have none, because nothing would trigger them:
+with reasons. Five have a backlog bead (`atc-s96.25`, `.26`, `.28`, `atc-uzf.12`, `.13`);
+three are **not planned** and have none, because nothing would trigger them:
 
 - **Arbitrary-path workspace providers** (`atc-s96.25`). Only `root` and
   `worktree` are in scope. A provider that hands a role any path would have to
@@ -4850,6 +4894,15 @@ with reasons. Three have a backlog bead (`atc-s96.25`, `.26`, `.28`); two are
 - **Session transfer between engines.** Not planned: resume is bound to the
   original task's engine (`src/guard.ts#resumeRefusal`), and a transfer would
   have to reconstruct one engine's session state inside another's.
+- **`dev-team` under an OpenClaw host.** Not planned: OpenClaw hosts `solo` and
+  `dev-team-engine`, whose loop runs in a lead the server launches (section 9).
+- **Runners that outlive an OpenClaw gateway** (`atc-uzf.12`). A gateway stop ends every
+  task its server started, which `list_tasks` then settles and a lead's resume continues;
+  launching each runner in a transient systemd scope of its own would let tasks survive the
+  stop, at the price of a second process-ownership path beside section 2's.
+- **Several projects per OpenClaw gateway** (`atc-uzf.13`). One `mcp.servers` entry pins one
+  project by its `cwd`; serving several at once needs one entry per project or a per-session
+  binding.
 
 Three limits of worktree projects are deferred the same way, each for its reason:
 
