@@ -38,8 +38,11 @@ Rerun of the retest's verifier from this source against the retained records,
 `node tools/e2e-verify.mjs --project /home/wsh/Documents/cross-agent-codex-host-e2e-20261015
 --since 513019741df1420767fa45a4064b52e7a05e --slug codex-host-rotate-retest-20261016`:
 8 pass, 0 fail, 0 without evidence, exit 0, all 9 transcripts scanned. The sample's
-working tree stayed clean. The frozen candidate in Codex is unchanged and does not carry
-this fix; the solo and engine-led scenarios have not run.
+working tree stayed clean. The fix is in the verifier alone, which the plugin does not
+ship (`tools/build-dist.mjs` ships `bin`, `src`, `modes`, `skills`, `LICENSE`,
+`package.json` and the manifests), and those files are identical at `24ea2d2` and
+`e49fbf4`. The installed candidate is therefore still the build under test and needs no
+new freeze; the solo and engine-led scenarios have not run.
 
 Follow-ups, none blocking: `docs/design.md`'s E2 history still says these names are set
 aside "on the lead row"; and retest evidence should be kept outside the sample project,

@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T00:12:58Z
+updated_at: 2026-10-17T07:18:27Z
 updated_by: claude
 session_status: paused
 branch: main
@@ -21,7 +21,8 @@ rerun from source against the retained records, now reads 8 pass, 0 fail, exit 0
 `VERIFY.md` has the full record. Root is clean, root worktree only, no task branches.
 
 What has not changed: the frozen candidate `24ea2d2` is still installed and selected in
-Codex and does not carry this fix; the sample is still at `7ca2bb3` with its original
+Codex. It needs no new freeze: the fix is in the verifier alone, and every file the plugin
+ships is identical at `24ea2d2` and `main`. The sample is still at `7ca2bb3` with its original
 dev-team config; the solo and engine-led scenarios have not run. Nine beads stay open
 (.155, .156, .157, .159, .160, .161, .162, .169 held for candidate acceptance, and
 umbrella .163). Whether and how to finish that matrix is the user's decision.
@@ -582,9 +583,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Ask the user how to finish the campaign: freeze and install a candidate that carries
-   `39ac7c8`, then run the solo and both engine-led scenarios; or settle the held beads
-   another way. Do not start it without that answer.
+1. Ask the user how to finish the campaign: run the solo and both engine-led scenarios on
+   the installed candidate `24ea2d2`, judged by this checkout's `tools/e2e-verify.mjs` (no
+   new freeze; the fix changed no shipped file); or settle the held beads another way. Do not start it without that answer.
 2. If the matrix runs, keep all retest evidence outside the sample project (the reviewer
    that tripped row 8 was reading the operator's evidence under the sample's
    `.cross-agent/`), then restore the original sample config and Codex managed owner
