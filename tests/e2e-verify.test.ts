@@ -1859,9 +1859,10 @@ test("atc-s96.61: Codex's top-level wait on a yielded code-mode cell runs no com
 
 // @anchor codexStatusWait
 // codex-cli 0.163.0's, verbatim: the Codex lead 45ebb8b5's rollout in the 2026-10-17 candidate
-// matrix, line 43 (`docs/probes.md#cliCodex1630`). Its seven other waits, and the 21 in the
-// matrix's twelve other rollouts, differ only in ids, cell ids, `max_tokens`, `yield_time_ms` and
-// `create_time`: each is 0.159.3's payload with `status: "completed"` beside its keys.
+// matrix, line 43 (`docs/probes.md#cliCodex1630`). Its seven other waits differ only in ids, cell
+// ids, `max_tokens`, `yield_time_ms` and `create_time`; the 21 in the matrix's twelve other
+// rollouts also in `turn_id`, and seven of them give `yield_time_ms` before `max_tokens`. Each
+// is 0.159.3's payload with `status: "completed"` beside its keys.
 const matrixWait = {
   type: "function_call", status: "completed", id: "fc_0f1e003747bc26b2016ad3328cee988192b6a60151142c2f2b", name: "wait",
   arguments: "{\"cell_id\":\"5\",\"max_tokens\":4000,\"yield_time_ms\":1000}", call_id: "call_047ed2c85ea04e5e99dd43e92014b0e6",
@@ -2002,6 +2003,10 @@ const codexOwnCalls = [
   [{ ...e5Asked, namespace: "clock" }, "?"],
   [{ ...e5Asked, id: { command: "claude -p hi" } }, "?"],
   [{ ...e5Asked, call_id: null }, "?"],
+  // And either with codex-cli 0.163.0's `status: "completed"` beside its keys, which no rollout has
+  // recorded on them: they stay classified in 0.159.3's shapes alone (`docs/probes.md#cliCodex1630`).
+  [{ ...e5Sleep, status: "completed" }, "?"],
+  [{ ...e5Asked, status: "completed" }, "?"],
 ] as const;
 test("atc-s96.72: Codex's own sleep and request_user_input_async run no command, in exactly their recorded shapes", async (t) => {
   // E5's host rollout holds both, each a call the reader did not classify until a person read it.

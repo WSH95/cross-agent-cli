@@ -4150,10 +4150,11 @@ call in the 2026-10-17 candidate matrix's thirteen 0.163.0 rollouts carries: the
 lead `45ebb8b5`'s eight waits, line 43 of its rollout the first
 (`docs/probes.md#cliCodex1630`, `tools/e2e-verify.mjs#codeModeWait`,
 `tests/e2e-verify.test.ts#codexStatusWait`). A field beside them or inside its
-passthrough, or another status, leaves the call unclassified. So are 0.159.3's own
-`sleep` and `request_user_input_async`, in the shapes E5's host rollout recorded
-and no other (none of those thirteen rollouts holds either): `sleep` in the `clock`
-namespace with exactly `{duration_ms}`, and
+passthrough, or another status, leaves the call unclassified. 0.159.3's own `sleep`
+and `request_user_input_async` are classified the same way, as calls that run no
+command, in the shapes E5's host rollout recorded and no other (none of those
+thirteen rollouts holds either): `sleep` in the `clock` namespace with exactly
+`{duration_ms}`, and
 `request_user_input_async` with exactly `{questions}`, each question `{title, options}`
 or those and `question` — the shape Codex refused for that field, which ran nothing
 (`tools/e2e-verify.mjs#codexOwnCall`, `tests/e2e-verify.test.ts#codexOwnCalls`). An output carrying a command is judged like the call, and a

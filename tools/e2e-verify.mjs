@@ -454,9 +454,9 @@ const launch = launcherFor(config);
 // arguments decode to exactly `{cell_id, yield_time_ms}` or those and `max_tokens`, its payload
 // carrying exactly the keys the recorded ones do, or those and 0.163.0's `status: "completed"`,
 // is a call that runs no command (`codeModeWait`); a `wait` in any other shape, with any other
-// field or another status, is unclassified. So are 0.159.3's `sleep` and
-// `request_user_input_async` in the shapes E5's host rollout recorded
-// (`codexOwnCall`), and in no other. An output carrying a
+// field or another status, is unclassified. 0.159.3's `sleep` and `request_user_input_async`
+// are classified the same way, as calls that run no command, in the shapes E5's host rollout
+// recorded (`codexOwnCall`), and in no other. An output carrying a
 // command is judged like the call; any other unclassified item with a field naming a tool,
 // its arguments or a command, by any spelling, on it or one object below, is `?`. A
 // code-mode script is tokenized as JavaScript (`scriptRead`); each exec_command/write_stdin
