@@ -514,10 +514,14 @@ test("the install guide attaches OpenClaw by a skills directory and one complete
     "node tools/build-dist.mjs",
     "openclaw config get skills.load.extraDirs --json",
     `openclaw config set skills.load.extraDirs "[\\"$P/skills\\"]" --strict-json`,
+    // A list that already holds directories is written back whole, this one added.
+    "If it lists directories already", `openclaw config set skills.load.extraDirs "[\\"<a directory it listed>\\", \\"$P/skills\\"]" --strict-json`,
     "$P/bin/cross-agent init --mode dev-team-engine",
     'openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve',
     "`--profile <name>`", "not `openclaw plugins install`",
-    "/new", "openclaw mcp probe cross-agent", "fifteen", "mcp__cross_agent__",
+    "/new", "openclaw mcp probe cross-agent", "fifteen", "seventeen with a `records` block", "mcp__cross_agent__",
+    // The resume is the engine's to grant: a lead that died before announcing a session has none.
+    "when its engine had announced its session",
     "two copies", "one project per entry",
     "`/new`", "runner lost", "resume",
     "openclaw mcp unset cross-agent", "never the payload directory",

@@ -441,7 +441,7 @@ the server `cross-agent` from the same plugin. `grok mcp doctor cross-agent` lis
 cross-agent` among its config sources and reports `cross-agent (stdio: node
 <checkout>/src/server.ts)` started, its handshake OK, and the operator row's tools
 discovered: thirteen in a project bound to `dev-team` or `solo`, fifteen under
-`dev-team-engine`. `grok mcp list` and `grok plugin list` show neither, because they list
+`dev-team-engine`, seventeen with a `records` block. `grok mcp list` and `grok plugin list` show neither, because they list
 configured servers and installed plugins only. In a session the tools are spelled
 `cross-agent__<tool>`, the server's name and the tool's, and Grok reaches them through its
 own `search_tool` and `use_tool`. The session's first `system/init` line names the server
@@ -518,12 +518,23 @@ payload, at `<dir>/claude/plugins/cross-agent`. Where your OpenClaw runs under a
 profile, every `openclaw` command below carries `--profile <name>`.
 
 **The skills.** OpenClaw finds the `cross-agent` and `setup` skills once the payload's
-`skills/` directory is listed in `skills.load.extraDirs`. Read the list first, and keep any
-directory it already holds in the one you write:
+`skills/` directory is listed in `skills.load.extraDirs`, a list that `config set` replaces
+whole. Read it first:
 
 ```
 openclaw config get skills.load.extraDirs --json
+```
+
+If it answers with no list, or with `[]`:
+
+```
 openclaw config set skills.load.extraDirs "[\"$P/skills\"]" --strict-json
+```
+
+If it lists directories already, write them all back with this one added, for one directory:
+
+```
+openclaw config set skills.load.extraDirs "[\"<a directory it listed>\", \"$P/skills\"]" --strict-json
 ```
 
 The gateway applies the change without a restart, and the two skills show in `openclaw skills
@@ -562,7 +573,8 @@ project as it would under any other host. Neither copy carries OpenClaw's own en
 (`/new` in the chat) after any change to the entry, and ask it to show the cross-agent roster:
 the launcher calls `describe_mode`'s summary and `list_roles`, and the roster's first line is
 the project's root. `openclaw mcp probe cross-agent` starts the server once and counts its
-tools: fifteen under `dev-team-engine`, thirteen under `solo`. The model calls them as
+tools: fifteen under `dev-team-engine`, seventeen with a `records` block, thirteen under
+`solo`. The model calls them as
 `mcp__cross_agent__<tool>`. `openclaw mcp reload` does not reach the gateway's sessions.
 
 What holds for every OpenClaw session attached this way:
@@ -577,8 +589,9 @@ What holds for every OpenClaw session attached this way:
 - **Tasks live as long as the gateway does.** A `/new` or a deleted session leaves running
   tasks running. A gateway stop, restart or update ends every task the gateway's server
   started, since they run in the gateway's own systemd service: the next `list_tasks` settles
-  each `failed`, `runner lost`, and the host resumes a lead from where it was — its open
-  questions, and your answers, travel with it (`docs/probes.md`, "ocLifetime").
+  each `failed`, `runner lost`, and the host resumes a lead from where it was when its engine
+  had announced its session, as it does as soon as it starts — its open questions, and your
+  answers, travel with it (`docs/probes.md`, "ocLifetime").
 - **Long answers are read whole.** The Codex runtime shows the model about 10,000 tokens of a
   tool's answer and keeps the rest; the host prints the part it did not see before it relays
   a report. A channel such as Telegram delivers a long report in several messages.

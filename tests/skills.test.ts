@@ -357,7 +357,14 @@ test("an OpenClaw host runs its commands and writes its log at projectRoot, and 
   const reporting = flat(sectionOf(launcher(), "Reporting"));
   assert.match(reporting, /Under OpenClaw[^.]*`<projectRoot>\/\.cross-agent\/log\.md`/);
   const watching = flat(sectionOf(launcher(), "Watching"));
-  assert.match(watching, /Under OpenClaw[^.]*cut[^.]*script[^.]*whole/);
+  // Codex's own code mode cuts the same way (docs/probes.md, "Plugin isolation, the native
+  // protocol"), so the rule names the runtime, not only the OpenClaw host.
+  assert.match(watching, /Under a Codex runtime — a Codex host's or OpenClaw's —[^.]*cut[^.]*script[^.]*whole/);
+  // And the launcher says so before its middle, where a cut read of this file loses text.
+  const intro = flat(launcher().slice(0, launcher().indexOf("## Codex host setup")));
+  assert.match(intro, /Codex runtime[^.]*head and (the )?tail[^.]*read this file in parts[^.]*`## Watching`/);
+  // A script that printed an answer it never stored has lost the rest of it when the cell ends.
+  assert.match(watching, /`store` every answer[^.]*before you print any of it/);
   assert.match(watching, /never call `result` again for it/);
   assert.match(flat(engineSection().section), /as a Codex or an OpenClaw host has/);
 });
@@ -370,6 +377,9 @@ test("an OpenClaw host puts the lead's question with its own question tool, quot
   assert.equal(paragraphs.length, 1, "one paragraph says what an OpenClaw host does with an open ask");
   const [paragraph] = paragraphs;
   for (const pin of [/`ask_user`/, /`request_user_input_async`/, /question verbatim[^.]*id/, /`answer \{ask_id, text\}`[^.]*the user's own words/,
+    // `ask_user`'s own guidance says never to confirm a plan and to go on with best judgment on
+    // `no_answer`: the lead's question is the user's whatever that guidance says.
+    /approval of its plan among them, is the user's to answer, whatever `ask_user`'s own guidance says/,
     /`status: "no_answer"`[^.]*never authorizes an `answer`, a waiver or a write/, /leave the ask open/, /arrives only when (the|that) call returns/]) {
     assert.match(paragraph, pin, `the OpenClaw ask paragraph: ${pin}`);
   }

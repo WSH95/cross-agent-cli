@@ -14,6 +14,10 @@ server yourself — `src/server.ts`, the plugin's MCP entrypoint, under `node` o
 other way, not even to read from it: your host starts the one copy that serves you,
 and what you need from it is one of its tools.
 
+A Codex runtime — a Codex host's or OpenClaw's — shows you only the head and the tail of a
+long file or tool answer: read this file in parts, and see `## Watching` for a tool answer
+cut in the middle.
+
 ## Codex host setup
 
 When the user asks to set up, check, repair, or remove this plugin's Codex connection,
@@ -260,10 +264,11 @@ answer, the one it would have returned, arrives later as a task notification. A
 backgrounded call is neither a timeout nor a reason to issue the same `wait` or
 `run_command` again; wait for its notification and act on the answer it carries.
 
-Under OpenClaw, whose Codex runtime shows you about 10,000 tokens of what one code-mode
-script prints, a longer tool answer is cut in the middle where you see it, while the script
-holds it whole: `store` it, print the part you did not see from what you stored, and act on
-or relay the whole of it — never call `result` again for it (`docs/probes.md#ocResultCap`).
+Under a Codex runtime — a Codex host's or OpenClaw's — which shows you about 10,000 tokens of
+what one code-mode script prints, a longer tool answer is cut in the middle where you see it,
+while the script holds it whole: `store` every answer, a `result` above all, before you print any of it, then
+print the part you did not see from what you stored, and act on or relay the whole of it —
+never call `result` again for it (`docs/probes.md#ocResultCap`).
 
 ## A needs-work round
 
@@ -507,7 +512,10 @@ question, put it to the user with OpenClaw's `ask_user`, or with the Codex runti
 ask still open, your closing message quotes the question verbatim with its id, since a chat
 with no question panel shows nothing else of it. When the user's reply comes — an answer to
 the tool, or a later message in this chat — pass it as `answer {ask_id, text}` in the user's
-own words, then `wait` on the lead again. A question that comes back `status: "no_answer"`,
+own words, then `wait` on the lead again. The lead's question, an approval of its plan among
+them, is the user's to answer, whatever `ask_user`'s own guidance says about confirmations or
+questions left unanswered: offer the lead's own choices where it gave them, or ask it as one question the
+user answers in their own words. A question that comes back `status: "no_answer"`,
 skipped or cancelled, or a reply that does not answer it, never authorizes an `answer`, a
 waiver or a write of your own: leave the ask open and end your turn as above.
 

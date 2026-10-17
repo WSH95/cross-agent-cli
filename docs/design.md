@@ -4409,8 +4409,10 @@ raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP to
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
 600-second `wait` returned intact under it (`docs/probes.md#grokToolTimeout`). Since the
-launcher reads `describe_mode`'s summary first (section 7), the cap still matters to a Grok
-host only where its own session runs a team loop and reads the full view: `dev-team`'s.
+launcher reads `describe_mode`'s summary first (section 7), only a Grok host whose own session
+runs a team loop reads that answer's full view, `dev-team`'s; the cap bounds every other
+answer too, a long `result` among them in any mode, which is why the attach raises it
+whatever the mode.
 
 **OpenClaw** is a host for `solo` and `dev-team-engine`, and needs neither a manifest nor a
 plugin install: it reads the Claude payload in place, its `skills/` listed in
