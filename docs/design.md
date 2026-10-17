@@ -4042,7 +4042,17 @@ to the session that runs the loop, never to a specialist
 the same prompts — **plain shell**: run plain commands, read a status with
 `echo "exit $?"`, and take a permission layer's refusal as no result but a
 command to split into plain ones, because Claude's `dontAsk` layer may refuse the
-rest (section 3, `tests/skills.test.ts#specialistsPlainShell`). Acceptance is
+rest (section 3, `tests/skills.test.ts#specialistsPlainShell`). And one rule runs
+through them all, the consultant's included, in each role's own words —
+**discovery**: the directory a specialist was given, the project root for the
+planner and the plan reviewer and the task's worktree for the implementer, the
+code reviewer and the resolver, is the project it works on, where it looks for
+the project's files, instructions and code, searching no directory above or
+beside it — from a worktree, the project root and its `.cross-agent/` included —
+and reading beyond it only what the brief needs; the profiles restrict writes,
+not reads (P2), so this is the prompt's rule
+and no sandbox's (`tests/skills.test.ts#consultScopeSentence`,
+`#specialistsProjectDiscovery`). Acceptance is
 behavioural (the end-to-end runs). The devpack's text was carried over once by
 `tools/from-openmaus.mjs`, a harness beside `tools/probe.mjs` and not product
 code: it drops the sentences naming the devpack's own machinery, drops the git
@@ -4357,8 +4367,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 41,447 bytes under
-`dev-team`, 58,274 under `dev-team-engine` and 4,508 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 43,160 bytes under
+`dev-team`, 59,987 under `dev-team-engine` and 4,508 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a

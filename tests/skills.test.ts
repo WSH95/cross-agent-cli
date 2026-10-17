@@ -995,6 +995,31 @@ test("every specialist prompt says to run plain shell commands and to split one 
   }
 });
 
+// @anchor specialistsProjectDiscovery
+test("every specialist prompt looks for the project in its own workspace, the root or its worktree, and reads beyond it only what the brief needs", () => {
+  // The consultant's rule and its one allowance, unchanged in every specialist: the profiles
+  // restrict writes, not reads (P2, design section 3), so where a specialist looks for its
+  // project is the prompt's to say.
+  for (const [where, prompt] of specialistPrompts()) {
+    const text = flat(prompt);
+    assert.match(text, /look for its files, its instructions and its code there, and search no directory above or beside it for them/, where);
+    assert.match(text, /Read outside it only what the brief needs, such as a dependency's source, a tool's documentation or a path the brief names\./, where);
+  }
+  // Each in its own workspace's words: the root for the roles that read it, the worktree for
+  // the roles that work in one, with the root above that worktree named as no place to search.
+  const modes = builtInModesDir();
+  for (const mode of ["dev-team", "dev-team-engine"]) {
+    const role = (key: string) => flat(fs.readFileSync(path.join(modes, mode, "roles", `${key}.md`), "utf8"));
+    for (const key of ["planner", "plan-reviewer"]) {
+      assert.match(role(key), /The root you were given is the project you work on:/, `${mode}'s ${key}`);
+    }
+    for (const key of ["implementer", "code-reviewer", "resolver"]) {
+      assert.match(role(key), /The worktree you were given is the project you work on:/, `${mode}'s ${key}`);
+      assert.match(role(key), /the project root above it, its `\.cross-agent\/` included, is not yours to search/, `${mode}'s ${key}`);
+    }
+  }
+});
+
 test("every tool the dev-team loop calls is offered to the row its placement runs the loop in", () => {
   assertToolsExist(loop("dev-team"), "dev-team", "operator", "the dev-team loop");
   assertToolsExist(loop("dev-team-engine"), "dev-team-engine", "lead", "the engine-placed dev-team loop");
