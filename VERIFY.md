@@ -7,7 +7,7 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
-## atc-s96.174 and atc-s96.173 merged; new candidate to freeze (2026-10-17)
+## atc-s96.174 and atc-s96.173: fixed, frozen as d9f92524c899, rerun (2026-10-17)
 
 On the user's decisions after the matrix (fix `.174` and accept the row-8 readings; fix
 `.173` and rerun the engine-led scenarios), both ran through the configured dev-team from
@@ -35,8 +35,48 @@ this Claude Code host on installed 0.1.9, as two parallel tasks.
   3 skipped. Worktrees and branches removed. One brief deviation: `.174`'s round-1 briefs
   said "the approved plan, verbatim" over a condensed plan.
 
-Both beads stay open: `.174` until its full scoped verifier run with the sample on the
-matrix config, `.173` until the engine-led reruns on a candidate that carries it.
+### Candidate d9f92524c899 and the engine-led reruns
+
+Records commit `d9f92524c89922fcecdb2014cad76e206c0df3a2` was frozen
+(`.cross-agent/candidate-d9f92524c899`, 173 files, archive SHA-256 `601745b0…`, record
+`candidate-d9f92524c899-freeze.json`), installed as `cross-agent@cross-agent-cli` 0.1.9 (cache
+equal to the export) and selected as Codex's managed owner through the helpers. All five
+installed dev-team-engine specialist prompts carry the rule. Both reruns ran from fresh headless
+`codex exec` hosts as before, judged by the candidate's own `tools/e2e-verify.mjs`.
+
+| run | lead | specialists | merged | tests | verifier |
+|---|---|---|---|---|---|
+| Claude-led, `slug_longest_first` | `b2da58a8…` | 7, one plan round, one clean code round | `fe20fd9` | 178 | 8 pass, exit 0 |
+| Codex-led, `slug_unique_rotate` | `481e64bd…` | 11, one plan round, two code rounds (one Minor wrap-up) | `34fccd1` | 188 | 7 pass, row 8 `?` |
+
+The Codex-led `?` is the lead's `tools[t.name]` call to `describe_mode` after `ALL_TOOLS.find`,
+the class the user accepted on its reading (`codex-lead-rerun/verify-reading-row8.md`); all ten
+of its `wait` items are classified. Each lead asked one mailbox question, answered once with the
+scripted input; leads at depth 1, specialists at depth 2.
+
+- `.173` held: none of the eight Codex specialist tasks of the two reruns read outside the
+  sample (`scope-audit.txt` per run; their commands read in full: `find . -name AGENTS.md`,
+  no `..`, no home directory, no worktree reaching into the root). In the first runs all six
+  had. Claude and Grok specialists stayed inside as before.
+- Observation (seat 1's out-of-scope note on `.173`, now seen once): the Codex-led rerun's
+  root-placed Codex planner listed the sample's own `.cross-agent/`, read the lead's ask file
+  and listed its journals. That is inside the project root, which the root roles' rule does not
+  cover. `atc-s96.175`.
+- `.174` held: with the sample on the matrix's Codex-led config, the frozen verifier on the
+  first Codex-led scope (`--since 45ebb8b5 --slug codex-codex-lead-retest-20261017`) names only
+  the computed-name doubt for its lead, no unclassified `wait` (`codex-lead/verifier-d9f9252.out`).
+- Also held on this candidate: the Claude lead had no shell and used the summary view; the Codex
+  lead named no command tool; no lead restricted specialist tests; every Codex child saw only
+  Codex's built-in `~/.codex/skills/.system`.
+- Not rerun on this candidate: solo (its prompt is unchanged) and the host-placed dev-team scope
+  (its five role prompts are byte-identical to the dev-team-engine copies the reruns used).
+
+Restored after the reruns: the sample's original config (`6dc1f7…`), clean at `34fccd1` with
+only the root worktree; Codex's managed owner `cross-agent@agent-plugins` (state, entry and
+launcher equal to the saved original); the temporary plugin, marketplace and empty cache
+directory removed; `~/.codex/config.toml` byte-identical to its copy from before this install.
+All 582 prior sample evidence files and the 198 dev-team retest files still match. No push,
+release or sync.
 
 ## Candidate 24ea2d2: remaining matrix (2026-10-17)
 

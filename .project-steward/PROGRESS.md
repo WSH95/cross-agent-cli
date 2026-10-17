@@ -3,6 +3,14 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T10:56:09Z — claude
+
+Froze candidate `d9f92524c899` (carrying `.173` and `.174`), installed and selected it in Codex,
+and reran both engine-led scenarios: Claude-led 8/8; Codex-led 7 pass and the accepted
+computed-name `?`; no Codex specialist read outside the sample; `.174`'s full scoped check held.
+Restored the sample and Codex; closed `.173`, `.174` and the umbrella `.163`; filed P3
+`atc-s96.175`. Nothing pushed.
+
 ### 2026-10-17T10:37:37Z — claude
 
 [auto-checkpoint] Candidate d9f92524c899 frozen, installed and selected in Codex; Claude-led rerun settled, its Codex specialists stayed inside the sample; Codex-led rerun next.

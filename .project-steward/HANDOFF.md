@@ -1,12 +1,26 @@
 ---
-updated_at: 2026-10-17T10:37:37Z
+updated_at: 2026-10-17T10:56:09Z
 updated_by: claude
-session_status: active
+session_status: paused
 branch: main
 ---
 # Handoff
 
 ## Now
+
+**The acceptance campaign `atc-s96.163` is complete (2026-10-17, Claude Code host).** The
+remaining matrix ran on candidate `24ea2d2` (solo 6/6 with three 8/8 verifiers; both engine-led
+runs merged, 7 pass and a row-8 `?` each). On the user's decisions the row-8 readings were
+accepted, and `.174` (verifier: codex-cli 0.163.0's `wait` with `status`) and `.173` (every
+dev-team specialist prompt carries the project-discovery rule) were fixed through the dev-team,
+merged as `9bb7365` and `320be3a`, frozen as candidate `d9f92524c899` and rerun: Claude-led 8/8,
+Codex-led 7 pass and the accepted computed-name `?`; no Codex specialist read outside the
+sample. Every campaign bead is closed. One new P3, `atc-s96.175`: a root-placed Codex planner
+read the sample's own `.cross-agent/` (inside the root, which the new rule does not name).
+Everything is restored: the sample on its original config, clean at `34fccd1`; Codex on
+`cross-agent@agent-plugins` with its config byte-identical to before; the temporary candidate
+removed. Mode payloads are now 43,160 / 59,987 / 4,508 bytes. `VERIFY.md` has the full record.
+Nothing pushed.
 
 **atc-s96.160 is fixed at its cause (2026-10-17, Claude Code host).** The user asked for a
 review of the Codex-host campaign, then said to go ahead with the recommended fix. The
@@ -414,16 +428,8 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: both fixes are merged (`320be3a`, `9bb7365`) and recorded (`d9f9252`). Candidate
-`d9f92524c899` is frozen (`.cross-agent/candidate-d9f92524c899`, archive sha `601745b0…`,
-`candidate-d9f92524c899-freeze.json`), installed as `cross-agent@cross-agent-cli` and selected as
-Codex's managed owner (`candidate-d9f92524c899-install.txt`). The sample's config is the
-Claude-led engine config (`0a49a57a…`); the Claude-led rerun (lead `b2da58a8…`,
-`slug_longest_first`) has settled and its host is reporting; the Codex-led rerun follows. If
-this session stops: settle or cancel any live task, then restore the sample config
-(`candidate-original-sample-config.json`, `6dc1f7…`) and Codex (candidate helper `remove`,
-original helper `install --plugin cross-agent@agent-plugins`, `codex plugin remove
-cross-agent@cross-agent-cli`, `codex plugin marketplace remove cross-agent-cli`).
+Current: nothing in flight. No live task, no task worktree or branch here or in the sample;
+the sample and Codex are restored (see Now).
 
 Historical entries:
 
@@ -589,10 +595,9 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Freeze the records commit, install it as `cross-agent@cross-agent-cli`, select it with the
-   supported helper, and rerun both engine-led scenarios from fresh `codex exec` hosts
-   (`run-host.sh`, evidence in `candidate-matrix-20261017/`), judged by a verifier export of the
-   frozen commit. Then restore as before and record; close `.173` and `.174` on the evidence.
+1. Ask the user whether `atc-s96.175` (root roles reading the root's own `.cross-agent/` and
+   worktree directory) is fixed, which needs a prompt change, a new freeze and an engine-led
+   rerun, or recorded as a limitation and closed.
 2. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
    "on the lead row".
 3. No push, release or remote sync without approval.
@@ -689,7 +694,7 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no technical blocker and no decision pending; the reruns are in progress. See Now.
+Current: no technical blocker. One user decision is pending: `atc-s96.175` (Next steps 1). See Now.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 
