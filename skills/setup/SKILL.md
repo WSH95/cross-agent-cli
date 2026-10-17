@@ -26,12 +26,12 @@ directly from the project root.
 
 ## Hosts
 
-| | Claude Code | Codex | Grok |
-|---|---|---|---|
-| Start | `/cross-agent:setup` | `$`, then the setup skill | `/setup`, or `/cross-agent:setup` |
-| Ask | `AskUserQuestion` | numbered choices in chat (its question tool is off by default), answered with a number or in words | `ask_user_question` |
-| Reconnect | `/mcp`, choose cross-agent, Reconnect (`/reload-plugins` does not restart the server) | restart MCP servers, or open a new chat | open a new session |
-| Approval to run one command outside the sandbox | rerun it with the Bash tool's sandbox off, which asks the user | ask for escalated permissions for that command: its sandbox keeps `.git` read-only | use the approval Grok offers |
+| | Claude Code | Codex | Grok | OpenClaw |
+|---|---|---|---|---|
+| Start | `/cross-agent:setup` | `$`, then the setup skill | `/setup`, or `/cross-agent:setup` | `/skill setup`, or `/setup` |
+| Ask | `AskUserQuestion` | numbered choices in chat (its question tool is off by default), answered with a number or in words | `ask_user_question` | `ask_user` |
+| Reconnect | `/mcp`, choose cross-agent, Reconnect (`/reload-plugins` does not restart the server) | restart MCP servers, or open a new chat | open a new session | open a new session (`/new` in the chat): a session keeps the server it started |
+| Approval to run one command outside the sandbox | rerun it with the Bash tool's sandbox off, which asks the user | ask for escalated permissions for that command: its sandbox keeps `.git` read-only | use the approval Grok offers | use the approval OpenClaw offers |
 
 On any host the user can also ask for setup in words.
 
@@ -53,7 +53,10 @@ The meaning each role shows in a table:
    AI coding agents (Claude, Codex, Grok) and review their results. Setup writes one
    settings file, `.cross-agent/config.json`, and adds two lines to `.gitignore` and to
    git's local exclude file.
-2. **Look.** Run `"<skill-dir>/../../bin/cross-agent" init --propose --json`, then route in
+2. **Look.** Under OpenClaw, whose working directory is its own workspace and never the
+   user's project, first take the project's root from the user's request, or ask for it in
+   plain words, and run every command of this skill in that root, adding `--project <root>`
+   to every CLI call. Run `"<skill-dir>/../../bin/cross-agent" init --propose --json`, then route in
    this order:
    - `ok:false` → `## Refusals`;
    - `existing.tracked` → `## Refusals`;
@@ -68,7 +71,9 @@ The meaning each role shows in a table:
    - **Background team** (`dev-team-engine`): the same team, run by a lead agent; you answer its questions.
    - **One-off help** (`solo`): ask another agent to do or check one thing.
 
-   Name each unavailable mode with its `reason`. Then ask, offering only the available
+   Name each unavailable mode with its `reason`. Under OpenClaw, `dev-team` is unavailable too,
+   its reason that its loop runs in the host session, which OpenClaw does not run; say that
+   *Background team* is the one recommended there. Then ask, offering only the available
    modes:
 
    Ask: "How should cross-agent work here?" — options: *Team (dev-team, recommended)* / *Background team (dev-team-engine)* / *One-off help (solo)*
@@ -124,7 +129,7 @@ The meaning each role shows in a table:
   changed, or the whole `records` block dropped. The write checks every path and command,
   and a refusal names the field.
 - **New mode.** Use the new mode's proposal only when it is `available`; otherwise show its
-  `reason` and follow `## Refusals`. Take its `mode` and `roles`, and its `records` block
+  `reason` and follow `## Refusals`. Under OpenClaw, `dev-team` is never `available`. Take its `mode` and `roles`, and its `records` block
   where it has one; where it has none, the config keeps no block. Keep the current
   `project`, `limits`, `review`, `billing` and `engines`. One exception: when the current
   `limits.maxDepth` (1 when the config sets none) is below the proposal's, raise it to the
@@ -133,7 +138,9 @@ The meaning each role shows in a table:
 
 ## Later changes
 
-- Show the current setup from `existing.config` as the same table.
+- Show the current setup from `existing.config` as the same table. A mode of `dev-team` under OpenClaw
+  does not run there: say so, and offer the change to `dev-team-engine` or `solo` through
+  `## Applying a change`.
 - A role the mode declares but the config leaves unbound shows as unbound. Offer the
   proposal's binding for it as a change when that proposal is `available`.
 - Show `records` as First setup step 4 does when the config has a block. When the mode is
@@ -261,7 +268,11 @@ A refusal is an exit 3 with a `code`. Say each in plain words, with its next ste
   naming another project keeps serving it, since the hand-off's connection forwards that
   variable: only a new session started in `root` without it, or with it naming `root`,
   connects here.
-- **New session needed** (Grok, or Codex without a restart): the check cannot finish here.
+- **OpenClaw:** its server runs from an `mcp.servers` entry whose `cwd` is the project, which
+  no config write makes. After a first setup, and whenever the check meets missing tools or
+  another project, follow `<skill-dir>/../cross-agent/references/openclaw-setup.md`; its writes,
+  like this skill's, run only on the user's own explicit answer.
+- **New session needed** (Grok, OpenClaw, or Codex without a restart): the check cannot finish here.
   Say the connection is not yet verified, and give the request to start the new session
   with; the launcher checks the connection first there.
 - **Missing tools:**

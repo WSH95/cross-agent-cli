@@ -1721,31 +1721,52 @@ test("the setup skill runs the plugin's own CLI from its directory, with only op
 test("the setup skill names each host's way to start it, its question tool, its reconnect step and its sandbox approval", () => {
   const rows = sectionOf(setupSkill(), "Hosts").split("\n").filter((line) => line.startsWith("|"))
     .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()));
-  assert.deepEqual(rows[0].slice(1), ["Claude Code", "Codex", "Grok"], "one column per host");
+  assert.deepEqual(rows[0].slice(1), ["Claude Code", "Codex", "Grok", "OpenClaw"], "one column per host");
   const row = (name: string): string[] => {
     const found = rows.find((cells) => cells[0].startsWith(name));
     assert.ok(found !== undefined, `the hosts table has a ${name} row`);
-    assert.equal(found.length, 4, `${name}: one cell per host`);
+    assert.equal(found.length, 5, `${name}: one cell per host`);
     for (const cell of found.slice(1)) assert.notEqual(cell, "", `${name}: every host has its own`);
     return found.slice(1);
   };
-  const [claudeStart, codexStart, grokStart] = row("Start");
+  const [claudeStart, codexStart, grokStart, openclawStart] = row("Start");
   assert.match(claudeStart, /`\/cross-agent:setup`/);
   assert.match(codexStart, /`\$`/);
   assert.match(grokStart, /`\/setup`/);
-  const [claudeAsk, codexAsk, grokAsk] = row("Ask");
+  // OpenClaw exposes a user-invocable skill as `/skill <name>`, and as `/<name>` where native
+  // skill commands are on (its slash-commands reference).
+  assert.match(openclawStart, /`\/skill setup`/);
+  const [claudeAsk, codexAsk, grokAsk, openclawAsk] = row("Ask");
   assert.match(claudeAsk, /`AskUserQuestion`/);
   assert.match(codexAsk, /numbered choices/);
   assert.match(grokAsk, /`ask_user_question`/);
-  const [claudeReconnect, codexReconnect, grokReconnect] = row("Reconnect");
+  assert.match(openclawAsk, /`ask_user`/);
+  const [claudeReconnect, codexReconnect, grokReconnect, openclawReconnect] = row("Reconnect");
   assert.match(claudeReconnect, /`\/mcp`[^|]*Reconnect/);
   assert.match(claudeReconnect, /`\/reload-plugins` does not restart the server/);
   assert.match(codexReconnect, /restart MCP servers[^|]*new chat/);
   assert.match(grokReconnect, /new session/);
-  const [claudeApproval, codexApproval, grokApproval] = row("Approval");
+  // A running OpenClaw session keeps the server it started (docs/probes.md#ocAttach).
+  assert.match(openclawReconnect, /new session[^|]*`\/new`/);
+  const [claudeApproval, codexApproval, grokApproval, openclawApproval] = row("Approval");
   assert.match(claudeApproval, /sandbox/);
   assert.match(codexApproval, /escalated/);
   assert.match(grokApproval, /approval/);
+  assert.match(openclawApproval, /approval/);
+});
+
+// @anchor setupOnOpenClaw
+test("under OpenClaw the setup skill takes the project's root first and offers only solo and dev-team-engine", () => {
+  // An OpenClaw agent works in its own workspace, a git repository of its own, so a setup run
+  // where it stands would initialize that workspace; and OpenClaw runs no host-placed team loop.
+  const text = setupSkill();
+  const first = flat(sectionOf(text, "First setup"));
+  assert.match(first, /Under OpenClaw[^.]*own workspace[^.]*never the user's project/);
+  assert.match(first, /`--project <root>` to every CLI call/);
+  assert.match(first, /Under OpenClaw, `dev-team` is unavailable too/);
+  assert.match(flat(sectionOf(text, "Applying a change")), /Under OpenClaw, `dev-team` is never `available`/);
+  assert.match(flat(sectionOf(text, "Later changes")), /`dev-team` under OpenClaw[^.]*`dev-team-engine` or `solo`/);
+  assert.equal(questions(text).length, 7, "no new question: the project's root is asked in words");
 });
 
 test("the setup skill never tells the user to type a command, and the guard catches one that does", () => {
@@ -2023,6 +2044,12 @@ test("after a first setup or a reconnect the setup skill checks describe_mode an
   }
   assert.ok(section.includes("`<skill-dir>/../cross-agent/references/codex-setup.md`"), "the Codex connection setup, beside this skill");
   assert.ok(fs.statSync(path.resolve(setupDir, "../cross-agent/references/codex-setup.md")).isFile());
+  // OpenClaw's server runs from an entry whose cwd is the project, which no config write makes:
+  // a first setup there always goes on to the entry, through the guide beside the launcher.
+  assert.ok(section.includes("`<skill-dir>/../cross-agent/references/openclaw-setup.md`"), "the OpenClaw connection setup, beside this skill");
+  assert.ok(fs.statSync(path.resolve(setupDir, "../cross-agent/references/openclaw-setup.md")).isFile());
+  assert.match(section, /\*\*OpenClaw:\*\*[^.]*`mcp\.servers` entry whose `cwd` is the project/);
+  assert.match(section, /\*\*New session needed\*\* \(Grok, OpenClaw, or Codex without a restart\)/);
   // A folder outside git started no server, and `reconnect` cannot know it: after the skill's
   // own `git init`, the host reconnects first.
   assert.match(section, /when `reconnect` is true, or when this setup ran `git init`: give the host's reconnect step/);
