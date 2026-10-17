@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T07:42:50Z
+updated_at: 2026-10-17T08:32:14Z
 updated_by: claude
 session_status: active
 branch: main
@@ -414,15 +414,19 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: the remaining candidate matrix, on the user's go-ahead (2026-10-17). The sample's
-config is switched to `solo` (`candidate-config-solo.json`, through `init --config - --replace`;
-the original dev-team config is `candidate-original-sample-config.json`, hash `6dc1f7…`).
-A headless `codex exec` host (`run-host.sh solo-claude`) is running the Claude solo pair;
-its first task is consultation `fd1bdeef…`. Evidence goes to the source repo's ignored
-`.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`, not the sample. The
-verifier is the export `.cross-agent/verifier-332cf7f/`, run by the parent. If this session
-stops: wait for or cancel the host's tasks, then restore the sample config and the Codex
-managed owner before anything else.
+Current: the remaining candidate matrix, on the user's go-ahead (2026-10-17). Done so far,
+each from a fresh headless `codex exec` host (`run-host.sh`): solo Claude, Codex and Grok
+pairs, all six scenarios pass, each pair's verifier 8/8 (main now `9884d36`); Claude-led
+`dev-team-engine` (lead `92d60093…`, 7 specialists at depth 2, merged `445dee2`, 157 tests):
+7 pass and a `?` on row 8 for a computed `cmd` in the Codex plan reviewer's code-mode
+script, read by hand as no delegation or launch (`claude-lead/verify-reading-row8.md`);
+whether a recorded reading is accepted is for the user. Finding: both Codex dev-team
+specialists searched outside the sample (`find ..`, `ls ~`, `find ~/Documents`); the
+scope sentence `.156` added is only in the consult prompt. In flight: the Codex-led run,
+sample config `candidate-config-codex-engine.json`. Evidence:
+`.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`. If this session stops:
+wait for or cancel the host's tasks, then restore the sample config
+(`candidate-original-sample-config.json`, `6dc1f7…`) and the Codex managed owner.
 
 Historical entries:
 

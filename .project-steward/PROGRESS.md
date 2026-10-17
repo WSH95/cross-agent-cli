@@ -3,6 +3,10 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T08:32:14Z — claude
+
+[auto-checkpoint] Matrix: solo 6/6 scenarios, three 8/8 verifiers; Claude-led 7 pass + row-8 `?` (computed cmd, recorded reading); Codex dev-team specialists searched outside the sample; Codex-led run in flight.
+
 ### 2026-10-17T07:42:50Z — claude
 
 [auto-checkpoint] Remaining candidate matrix started on the user's go-ahead: sample switched to solo, Claude solo pair running under a headless Codex host; evidence in candidate-matrix-20261017.
