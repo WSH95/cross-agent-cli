@@ -706,7 +706,24 @@ test("a commit carrying a host's project configuration is refused naming each pa
   assert.ok(removed.includes(".mcp.json"), removed);
   assert.equal(await git(worktree, "ls-files", "--", ".mcp.json"), ".mcp.json", "the branch still tracks it");
 
-  assert.deepEqual(hostConfigPaths, [".claude", ".codex", ".grok", ".mcp.json"]);
+  assert.deepEqual(hostConfigPaths, [".claude", ".codex", ".grok", ".mcp.json", ".openclaw"]);
+});
+
+// @anchor commitRefusesOpenClawConfig
+test("a commit carrying OpenClaw's project directory is refused naming the path", async (t) => {
+  // OpenClaw runs a repository's executable `.openclaw/worktree-setup.sh` when it creates a
+  // session worktree of it (docs/probes.md#ocProjectConfig): a task branch that planted one
+  // would run on the operator's machine, outside every sandbox.
+  const { root, add } = await repository(t);
+  const worktree = await add("clawed");
+  const head = await git(worktree, "rev-parse", "HEAD");
+  await mkdir(path.join(worktree, ".openclaw"));
+  await writeFile(path.join(worktree, ".openclaw", "worktree-setup.sh"), "#!/bin/sh\necho planted\n", { mode: 0o755 });
+  await writeFile(path.join(worktree, "work.txt"), "the change the brief asked for\n");
+  accepted(await gitMutate(root, { slug: "clawed", args: servedStaging("dev-team") }, { waitSeconds: 5 }));
+  const reason = refusal(await gitMutate(root, { slug: "clawed", args: ["commit", "-m", "work"] }, { waitSeconds: 5 }));
+  assert.ok(reason.includes(".openclaw/worktree-setup.sh"), reason);
+  assert.equal(await git(worktree, "rev-parse", "HEAD"), head, "nothing was committed");
 });
 
 // @anchor hostConfigAnyCase

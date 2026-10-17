@@ -201,7 +201,8 @@ reconciliation trigger.
 which journals the `committed` step. The exclusions are not optional: a
 `.gitignore` the specialist wrote in its own worktree outranks the repository's
 own, and step 9 refuses a branch that carries either directory at all, or a
-host's project configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json` —
+host's project configuration — `.claude/`, `.codex/`, `.grok/`, `.mcp.json`,
+`.openclaw/` —
 which the commit above refuses first, naming the path. Those paths must be
 regular files: a symbolic link at any of them, anywhere in the project's tree,
 blocks every commit and every merge until the operator replaces it with a
@@ -302,7 +303,7 @@ root's HEAD is `<default>`, unless the journal holds a `tested` step at the bran
 head, unless every seat's finished review of that head ends `VERDICT: no major
 issues` or a `review-waived` step names it, and unless the branch carries nothing
 from `.cross-agent`, the worktree directory or a host's project configuration —
-`.claude/`, `.codex/`, `.grok/`, `.mcp.json` — which step 6's commit refuses too,
+`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, `.openclaw/` — which step 6's commit refuses too,
 naming the path. A symbolic link at any of those paths is refused the same way,
 at every commit and every merge, until it is replaced with a regular file at the
 root. Then `run_command {which: "test", where: "root", slug}`, which journals

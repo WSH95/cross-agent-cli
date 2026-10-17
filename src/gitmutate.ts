@@ -86,14 +86,15 @@ export const globalOptions = new Set(["--git-dir", "--work-tree", "-C", "-c"]);
 /**
  * Where each host reads a project's own configuration: Claude Code's `.claude/` (settings
  * and hooks) and `.mcp.json` (MCP servers), Codex's `.codex/`, Grok's `.grok/config.toml`
- * (plugins and servers). Each is loaded by the operator's own host session, outside any
+ * (plugins and servers), and OpenClaw's `.openclaw/`, whose `worktree-setup.sh` it runs when
+ * it makes a session worktree of the repository. Each is loaded by the operator's own host, outside any
  * sandbox, so none of them reaches the root through a task: `git_root` refuses a merge that
  * would carry one (`src/gitroot.ts#smuggled`), which is the gate, and `git_mutate` a commit
  * (`hostConfigFault`), which is the early warning. `AGENTS.md` and `CLAUDE.md` were
  * considered and are not here: a host reads them as instruction text and starts nothing
  * from them, and they are ordinary team edits the code reviewer reads in the diff.
  */
-export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok", ".mcp.json"];
+export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok", ".mcp.json", ".openclaw"];
 
 /**
  * `hostConfigPaths` as both git tools match them: in any case, since a host on a filesystem
@@ -103,7 +104,7 @@ export const hostConfigPaths: readonly string[] = [".claude", ".codex", ".grok",
  */
 export const hostConfigPathspecs: readonly string[] = hostConfigPaths.map((entry) => `:(icase)${entry}`);
 
-/** Whether a path is one `hostConfigPathspecs` match: one of the four in any case, or a path below one. */
+/** Whether a path is one `hostConfigPathspecs` match: one of the five in any case, or a path below one. */
 export function isHostConfigPath(file: string): boolean {
   const lower = file.toLowerCase();
   return hostConfigPaths.some((entry) => lower === entry || lower.startsWith(`${entry}/`));
@@ -111,7 +112,7 @@ export function isHostConfigPath(file: string): boolean {
 
 /**
  * Host links in a committed tree, without following any target. `ls-tree` does not support
- * `:(icase)`, so diff against the empty tree to list modes under exactly the four pathspecs.
+ * `:(icase)`, so diff against the empty tree to list modes under exactly the five pathspecs.
  * Unrelated files never enter the bounded output buffer. `hash-object` without `-w` writes
  * nothing and uses the repository's object format (SHA-1 or SHA-256).
  */
@@ -373,7 +374,7 @@ async function carriedUnder(
  * Names are read as bytes (`readdirSync(…, { encoding: "buffer" })`, with `lstat` on the byte
  * path), so a name that is not valid UTF-8 — which a string `readdirSync` turns into a
  * replacement character that no longer resolves — is still seen and refused (task 12
- * wrap-up, W-6). The top four host names are ASCII, so matching them as UTF-8 is exact.
+ * wrap-up, W-6). The top five host names are ASCII, so matching them as UTF-8 is exact.
  */
 function hostDiskLinks(workTree: string): string[] {
   const links: string[] = [];
@@ -410,7 +411,7 @@ export async function uncommitted(gitDir: string, workTree: string): Promise<str
 }
 
 /**
- * Why a commit in this worktree may not run, or null: changes under the four host paths,
+ * Why a commit in this worktree may not run, or null: changes under the five host paths,
  * or any symbolic link there in HEAD, the index or on disk, ignored links included. Host
  * configuration must be regular files; a link is refused by name even when unchanged.
  * `carriedUnder` still checks marked regular files by their bytes. Empty directories carry
@@ -438,8 +439,8 @@ async function hostConfigFault(gitDir: string, workTree: string): Promise<string
     ...[...links].map((file) => `${file} (symbolic link)`)];
   if (paths.length === 0) return null;
   return `git_mutate refuses to commit in ${workTree}: it would carry ${paths.join(", ")}. `
-    + "A host's project configuration — .claude/, .codex/, .grok/ and .mcp.json, in any case — "
-    + "loads hooks, MCP servers or plugins in the operator's own host session and is never committed through a task; remove changes from the worktree, "
+    + "A host's project configuration — .claude/, .codex/, .grok/, .mcp.json and .openclaw/, in any case — "
+    + "loads hooks, MCP servers, plugins or setup scripts in the operator's own host session and is never committed through a task; remove changes from the worktree, "
     + "or ignore regular files if they are the operator's own, clear any assume-unchanged or skip-worktree mark "
     + "(update-index --no-assume-unchanged or --no-skip-worktree), and commit again. "
     + "Host configuration must be regular files: replace symbolic links with regular files, at the root by hand for tracked links, before retrying";

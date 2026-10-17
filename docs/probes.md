@@ -4825,3 +4825,119 @@ the 62 files attempt 2's manifest lists, and the manifest itself, were unchanged
 
 The approved recipe and its two amendments are kept beside it, with the operator's own glue,
 `task4-native-control.mjs`, which is not product code.
+
+<!-- @anchor openclawProbes -->
+## OpenClaw as a host (2026-10-17)
+
+**The setup.** OpenClaw 2026.10.2 (b8952d4), its agent on the Codex app-server runtime
+(the `@openclaw/codex` plugin 2026.10.2, vendoring codex 0.160.0) with model
+`openai/gpt-6.1-sol`, in an isolated profile, `openclaw --profile cross-agent-probe`: its own
+config and state under `~/.openclaw-cross-agent-probe`, its gateway installed with `openclaw
+--profile cross-agent-probe gateway install --port 19789` as the systemd user unit
+`openclaw-gateway-cross-agent-probe.service` — the same unit template as the operator's own
+gateway, `KillMode=mixed` — no channel, and the operator's own profile and gateway untouched.
+The payload was `node tools/build-dist.mjs --ref 291f339`'s `claude/plugins/cross-agent/`,
+attached by the route the install guide gives: its `skills/` under
+`skills.load.extraDirs`, and one `mcp.servers.cross-agent` entry made by `openclaw mcp add
+cross-agent --command node --arg <payload>/src/server.ts --cwd <project> --timeout 3600
+--connect-timeout 30 --approval approve`. The projects were three samples under
+`~/.cache/agent-team/openclaw-probe/` — one initialized `dev-team-engine`, one `solo`, one
+not initialized — outside `/tmp`, which the engines' sandboxes write. Engines: Claude Code
+2.1.302, codex-cli 0.163.0, grok 1.0.52; Node 24.21.0 in the gateway's unit. Turns were
+driven with `openclaw --profile cross-agent-probe agent --session-key <key> --message-file
+<file> --json`. **The evidence is archived under
+`~/.cache/agent-team/probe-logs/openclaw-2026-10-17/`**: every message sent, every agent
+reply, the Codex rollouts of the host sessions, the server inspections, and the gateway's
+journal around each config change. Environments are recorded by name, with values only for
+`PATH`, `HOME`, `CODEX_HOME`, `PWD` and `CROSS_AGENT_*`, since the gateway's namespace
+carries its credentials.
+
+<!-- @anchor ocAttach -->
+### ocAttach: two copies of the server, each in the entry's `cwd`, each the operator's
+
+`openclaw mcp add` connects to the server before it saves the entry, and `openclaw mcp
+probe cross-agent` listed 15 tools — the operator row under `dev-team-engine`. OpenClaw's
+`skills list` showed both skills, `cross-agent` and `setup`, from `openclaw-extra`, at their
+real paths under the payload (`Path:
+~/.cache/agent-team/openclaw-probe/payload/claude/plugins/cross-agent/skills/setup/SKILL.md`,
+"Visible to model: yes", "Available as command: yes"), so `<skill-dir>/../../bin/cross-agent`
+and `<skill-dir>/../setup/SKILL.md` resolve through no link. No other skill named `setup`
+was installed in the profile.
+
+During one host turn two server processes ran (`servers-attach.json`):
+
+- the gateway's own copy, which OpenClaw keeps for its tool catalog: `gateway` → its
+  spawn-broker worker → `service-child-group-anchor.js` → `node <payload>/src/server.ts`,
+  the anchor's shell having `exec`ed away; environment `HOME`, `LOGNAME`, `PATH`, `SHELL`,
+  `USER` and nothing else;
+- the copy the model called, which the Codex app-server starts: `gateway` → `node codex.js
+  app-server` → the native `codex` → `node <payload>/src/server.ts`; environment `HOME`,
+  `LANG`, `LOGNAME`, `PATH`, `SHELL`, `TMPDIR`, `USER`, its `PATH` prefixed with the
+  app-server's `codex-arg0…` directory (links named `apply_patch`, `applypatch`,
+  `codex-execve-wrapper`, `codex-linux-sandbox`) and the plugin's `codex-path` directory
+  (`rg`), neither holding a `codex`, `claude` or `grok`.
+
+Both ran in the entry's `cwd`, the sample's root; neither carried an `OPENCLAW_*` variable
+or `CODEX_HOME`, though every ancestor up to the user's systemd carried eleven `OPENCLAW_*`
+names and the app-server `CODEX_HOME=<profile>/agents/main/agent/codex-home`; neither had
+`NoNewPrivs` or a seccomp filter. No ancestor carried `CROSS_AGENT_TASK` and none is an
+engine of the ledger, so both resolve to the operator row by the walk
+(`src/authority.ts#resolveAuthority`). The model called the tools as
+`mcp__cross_agent__<tool>` from Codex's code mode (`tools.mcp__cross_agent__describe_mode`),
+and said, asked which host it ran in, "Codex running inside OpenClaw".
+
+A change to the entry — `openclaw mcp set` with a new `cwd` — was applied by the running
+gateway without a restart (journal: "config change detected; evaluating reload
+(mcp.servers.cross-agent.cwd)", "config hot reload applied"): the gateway's copy exited, and
+the copy the earlier session's Codex thread had started kept running in the old `cwd`. A
+config change therefore reaches a new session; a session that already has the server keeps
+the one it started with.
+
+**Reading.** The entry's `cwd` alone pins the project for both copies, so no
+`CROSS_AGENT_PROJECT` is needed and an uninitialized repository runs `solo` on defaults, as
+under the other hosts (`src/project.ts#discoverProject`); neither the gateway's namespace nor
+its `CODEX_HOME` reaches the server, so engines start from the operator's own `~/.codex`, and
+`childEnv` strips `OPENCLAW_*` anyway for a server started some other way
+(`src/guard.ts#childEnv`). The binaries the server starts are the operator's:
+`src/engines/binaries.ts` searches `PATH`, and nothing OpenClaw puts first is named after an
+engine.
+
+<!-- @anchor ocResultCap -->
+### ocResultCap: Codex's code mode cuts what the model sees, not what a script holds
+
+Asked to show the roster, the host read the launcher with `cat` inside a code-mode script;
+the script's output came back "Warning: truncated output (original token count: 15171)",
+its head and tail kept, and the model read lines 260–540 again with `sed -n`. It called
+`describe_mode` with no `view` (the 0.1.10 launcher's first call), `store`d the answer, and its
+output too came back "truncated output (original token count: 20356)"; a second script
+`load`ed the stored answer and printed `{"characters":59961,"validJSON":true,…}`, and the
+roster the host showed was right. So under this runtime a tool answer reaches the script
+whole, and the model sees about 10,000 tokens of whatever the script prints, head and tail
+kept (`attach-rollout.jsonl`, lines 15–31).
+
+**Reading.** The launcher reads `describe_mode`'s summary first, which is about 1.9 KB, and
+the full view only where the host session runs the loop — under OpenClaw, `solo`'s 4.5 KB
+(`skills/cross-agent/SKILL.md`, "Before delegating"). The launcher itself, 35.7 KB, is read
+in parts under this runtime, as a Codex host reads it.
+
+<!-- @anchor ocProjectConfig -->
+### ocProjectConfig: OpenClaw runs a repository's `.openclaw/worktree-setup.sh`
+
+From OpenClaw 2026.10.2's own documentation, not a run: when OpenClaw makes a session
+worktree of a repository — a project registered with the gateway, or a session's managed
+worktree — "If `.openclaw/worktree-setup.sh` exists in the source repository and is
+executable, OpenClaw runs it with the new worktree as its current directory"
+(`openclaw/docs/concepts/managed-worktrees.md`), and it reads
+`.openclaw/worktree-profiles/<name>` there and a committed `.openclaw/portals.json`
+(`openclaw/docs/gateway/portals.md`) from the repository too. A session bound to the repository
+as its execution workspace also loads the repository's `skills/` and `.agents/skills` as
+skills (`openclaw/docs/concepts/system-prompt.md`).
+
+**Reading.** `.openclaw/` is a host's project configuration in the sense of design section
+4: a task branch that planted `.openclaw/worktree-setup.sh` would have it run on the
+operator's machine, outside every sandbox, the next time the operator made an OpenClaw
+worktree of the project. It joins `src/gitmutate.ts#hostConfigPaths`
+(`tests/gitmutate.test.ts#commitRefusesOpenClawConfig`). `skills/` and `.agents/skills` are
+not added: they are ordinary project directories — this repository's own `skills/` is its
+product — loaded only when the operator binds a session to the repository, and a change to
+them is a team edit the code reviewers read in the diff, as `AGENTS.md` is.

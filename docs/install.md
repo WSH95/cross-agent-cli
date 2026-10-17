@@ -377,10 +377,10 @@ your `PATH`.
 own entries later, because `.grok/config.toml` names your checkout's path, and because a
 committed `.grok/config.toml` would reach every task worktree: Grok takes a linked
 worktree as a project of its own, so it would load the plugin for every worktree
-specialist, and a specialist's edit to it — or to `.claude/`, `.codex/` or `.mcp.json` —
-is refused at the worktree's commit and at the merge, naming the path, so the ignore is
-what keeps the file out of the worktrees in the first place.
-Host configuration must be regular files: a symbolic link at any of the four root
+specialist, and a specialist's edit to it — or to `.claude/`, `.codex/`, `.mcp.json` or
+`.openclaw/` — is refused at the worktree's commit and at the merge, naming the path, so
+the ignore is what keeps the file out of the worktrees in the first place.
+Host configuration must be regular files: a symbolic link at any of the five root
 paths, or anywhere below them, is refused by name, case-insensitively. A commit checks
 its current tree, index and working tree (even ignored links); a merge checks the
 incoming branch's tree. Replace links with regular files before retrying, by hand at
@@ -413,7 +413,7 @@ value. Where you raise it, note the value you replace, for the removal below.
 
 The `[mcp]` table raises the size at which Grok cuts an MCP tool's answer, 20,000 bytes by
 default, past what `describe_mode` answers: the mode's text, without `projectRoot`, is
-43,160 bytes under `dev-team`, 59,987 under `dev-team-engine` and 4,508 under `solo`, and
+43,189 bytes under `dev-team`, 60,016 under `dev-team-engine` and 4,508 under `solo`, and
 the answer adds the project's root and settings beside it, so the default cuts both dev-team modes. Under the
 default, a Grok host in a `dev-team-engine` project read the first 19.5 KB of the mode and
 a note naming the file under its session directory where Grok had written the rest; with

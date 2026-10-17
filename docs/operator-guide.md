@@ -133,7 +133,7 @@ could not be written" left the commit in place without its step.
 
 A declared path is a relative path of letters, digits, `.`, `_` and `-` segments
 joined by `/`: no `.` or `..` segment, nothing under `.git` or `.cross-agent/`, no
-host configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`), no `AGENTS.md` or
+host configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, `.openclaw/`), no `AGENTS.md` or
 `CLAUDE.md` anywhere, in any case, no path under the mode's worktree directory, no
 path declared twice across both lists, and no existing component that is a symbolic
 link. Each refusal names the field, as `records.files[<n>]` counted from 0, and the

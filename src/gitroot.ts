@@ -521,9 +521,9 @@ interface Held {
  * are refused by name, in any case (design section 4) — and so is a host's project
  * configuration (`src/gitmutate.ts#hostConfigPaths`, in any case), which the operator's own
  * host session would load, however the branch came to carry it: this is the gate, and `git_mutate`'s
- * refusal of a commit only the early warning. Any symbolic link among the four or below
+ * refusal of a commit only the early warning. Any symbolic link among the five or below
  * them in the incoming tree is refused, even unchanged: host configuration must be regular
- * files. Only the four pathspecs are listed for links (`src/gitmutate.ts#hostTreeLinks`).
+ * files. Only the five pathspecs are listed for links (`src/gitmutate.ts#hostTreeLinks`).
  * Every path is named, so the repair is whole. Both sides are the commits the merge resolved
  * once, `before` and `branchHead`, never a name git would resolve again.
  */
@@ -540,7 +540,7 @@ async function smuggled(
   if (paths.length === 0) return null;
   return `git_root refuses to merge ${ref}: it carries ${paths.join(", ")}. `
     + `The project's own state and ${dir}/ are never merged into the root — a specialist could then commit what the lead runs there — `
-    + "and nor is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, in any case), "
+    + "and nor is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, .openclaw/, in any case), "
     + "which the operator's own host session would load. "
     + "Host configuration must be regular files: replace symbolic links with regular files at the root by hand. "
     + `Remove the changes from the branch and merge again`;

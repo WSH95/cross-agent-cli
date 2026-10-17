@@ -247,7 +247,7 @@ export function recordPathFault(file: string): string | null {
   if (segments.some((segment) => segment.toLowerCase() === ".git")) return `${named} lies in a .git directory, which is git's own`;
   if (segments[0].toLowerCase() === ".cross-agent") return `${named} lies under .cross-agent/, which only the server writes`;
   if (isHostConfigPath(file)) {
-    return `${named} is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, in any case), which no tool commits`;
+    return `${named} is a host's project configuration (.claude/, .codex/, .grok/, .mcp.json, .openclaw/, in any case), which no tool commits`;
   }
   if (segments.some((segment) => ["agents.md", "claude.md"].includes(segment.toLowerCase()))) {
     return `${named} is an instruction file a host reads (AGENTS.md or CLAUDE.md, in any case), which no tool commits`;

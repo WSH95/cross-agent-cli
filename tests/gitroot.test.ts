@@ -423,7 +423,7 @@ test("a branch with many unrelated files merges while the link check lists only 
   assert.ok(listings.length > 0, "the incoming tree was inspected for links");
   for (const argv of listings) {
     assert.deepEqual(argv.slice(argv.indexOf("--") + 1),
-      [":(icase).claude", ":(icase).codex", ":(icase).grok", ":(icase).mcp.json"], argv.join(" "));
+      [":(icase).claude", ":(icase).codex", ":(icase).grok", ":(icase).mcp.json", ":(icase).openclaw"], argv.join(" "));
   }
   assert.equal(await git(root, "rev-parse", "HEAD"), await git(root, "rev-parse", "task/bounded"));
 });

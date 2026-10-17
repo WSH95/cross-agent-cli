@@ -248,7 +248,7 @@ Planned, in the design's work plan: the backlog (row 14).
   `--plugin-dir` at an export (`git archive <commit> | tar -x -C <dir>`) of the frozen
   source commit `VERIFY.md` records for each release. `init --mode dev-team` here writes
   `.cross-agent/config.json`, which `.gitignore` already ignores. A change to host
-  configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, in any case) stays with the
+  configuration (`.claude/`, `.codex/`, `.grok/`, `.mcp.json`, `.openclaw/`, in any case) stays with the
   operator: a task's commit refuses it, and so does the merge.
 
 <!-- PROJECT-STEWARD:BEGIN commands -->

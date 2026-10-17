@@ -343,7 +343,7 @@ below is yours there.
    worktree outranks the repository's own, and the project's state is never
    committed to a task branch — the merge refuses a branch carrying either
    directory anyway, or a host's project configuration — `.claude/`, `.codex/`,
-   `.grok/`, `.mcp.json` — which the commit above refuses first, naming the path;
+   `.grok/`, `.mcp.json`, `.openclaw/` — which the commit above refuses first, naming the path;
    either refusal costs you the run. Each directory is excluded as itself and as
    everything below it, with its first character bracketed, because git treats an
    exclusion that spells an ignored directory's name as naming that directory: it

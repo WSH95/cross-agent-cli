@@ -2869,22 +2869,24 @@ the merge's refusal above still diffs the directory by its configured name
 **Nor does a host's project configuration.** `.claude/` and `.mcp.json` are
 where Claude Code reads a project's settings, hooks and MCP servers, `.codex/`
 where Codex reads a project's configuration, `.grok/config.toml` where Grok
-reads a project's plugins and servers (section 9), and each host reads them in
-the operator's own session, outside any sandbox. A writable specialist can add
+reads a project's plugins and servers (section 9), and `.openclaw/` where OpenClaw
+reads a repository's worktree profiles and its executable `worktree-setup.sh`, which it
+runs when it makes a session worktree of the repository (`docs/probes.md#ocProjectConfig`);
+each host reads them in the operator's own session, outside any sandbox. A writable specialist can add
 one in its worktree, or un-ignore `.grok/` where the install guide's recipe ignores it,
 and the loop's step 6 stages it; until this build the diff a code reviewer read
-was the only thing that would catch it. So the four paths are one list
+was the only thing that would catch it. So the five paths are one list
 (`src/gitmutate.ts#hostConfigPaths`), matched in any case — a host on a
 filesystem that ignores case reads `.Claude/` as `.claude/` — and as those names
 alone, so `.claude-plugin/`, `.claude.json`, `.mcp.json.bak` and a `.mcp.json`
 below the root pass (`#hostConfigPathspecs`), and both git tools read it. The
-root merge is the gate: `merge --ff-only` diffs the four beside `.cross-agent`
+root merge is the gate: `merge --ff-only` diffs the five beside `.cross-agent`
 and the worktree directory, so whatever a branch carries, however it came to
 carry it, is refused there, every path named (`src/gitroot.ts#smuggled`;
 `tests/gitroot.test.ts#mergeRefusesHostConfig`, `#mergeHostConfigAnyCase`,
 `#mergeProjectStateAnyCase`, `#mergeNamesEveryPath`). `git_mutate`'s refusal of a `commit` is the early
 warning, where the lead can still have the file taken out:
-`git status --porcelain --untracked-files=all` over the four names anything in
+`git status --porcelain --untracked-files=all` over the five names anything in
 the worktree — staged, changed or untracked — and `git ls-files -v` any tracked
 one marked assume-unchanged or skip-worktree whose working-tree bytes differ from
 its index entry, a change either mark hides from that status while a commit naming
@@ -2893,8 +2895,8 @@ so under `core.ignoreStat`, and both reads are taken under `git.lock` before the
 command runs (`src/gitmutate.ts#hostConfigFault`, `#carriedUnder`,
 `#differsFromIndex`, `#mutate`; `tests/gitmutate.test.ts#commitRefusesHostConfig`,
 `#hostConfigAnyCase`, `#commitRefusesAssumeUnchanged`,
-`#commitUnderIgnoreStat`). **Host configuration must be regular files.** A symbolic link at any
-of the four root paths, or anywhere below them, is refused by name even when
+`#commitUnderIgnoreStat`, `#commitRefusesOpenClawConfig`). **Host configuration must be regular files.** A symbolic link at any
+of the five root paths, or anywhere below them, is refused by name even when
 unchanged. At a worktree commit the check reads the commit's current tree
 (`HEAD`), the index and the working tree, including ignored links. At the
 root's merge it reads the incoming branch's tree. No link target is followed:
@@ -2918,9 +2920,9 @@ the operator's existing root configuration points into the tree. So the operator
 keeps the root's own host configuration as regular files too. A disk link's name is
 read as bytes, so one whose name is not valid UTF-8 is still refused
 (`tests/gitmutate.test.ts#commitHostLinkNonUtf8`).
-The tree read lists only the four host pathspecs, never the whole tree; because
+The tree read lists only the five host pathspecs, never the whole tree; because
 `ls-tree` does not support case-insensitive pathspecs, it uses `diff-tree`
-against the empty tree to read modes under those four instead
+against the empty tree to read modes under those five instead
 (`src/gitmutate.ts#hostTreeLinks`,
 `tests/gitroot.test.ts#mergeListsOnlyHostPaths`). The existing byte and
 symlink-mode checks for marked entries remain; a link replaced while
@@ -4387,8 +4389,8 @@ carry there: `cross-agent init` copies the main checkout's `.grok/config.toml` i
 as a regular file through no link, unless the file binds a project, and trusting the
 folder stays the user's (section 10, `src/cli.ts#copyGrokAttach`). The same project file
 raises Grok's result cap, `[mcp] max_output_bytes = 100000`: Grok cuts an MCP tool's answer at
-20,000 bytes by default, and the mode's text, without `projectRoot`, is 43,160 bytes under
-`dev-team`, 59,987 under `dev-team-engine` and 4,508 under `solo`
+20,000 bytes by default, and the mode's text, without `projectRoot`, is 43,189 bytes under
+`dev-team`, 60,016 under `dev-team-engine` and 4,508 under `solo`
 (`tests/packaging.test.ts#describeModeSizes`,
 `tests/server.test.ts#describeModeAnswerSize`). Grok's MCP
 tool timeout, `tool_timeout_sec`, is 6000 s by default and reaches the plugin's server, and a
