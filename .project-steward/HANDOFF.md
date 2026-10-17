@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-17T07:18:27Z
+updated_at: 2026-10-17T07:42:50Z
 updated_by: claude
-session_status: paused
+session_status: active
 branch: main
 ---
 # Handoff
@@ -414,10 +414,15 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: nothing in flight. The .160 fix is merged (`39ac7c8`) and the retest's verifier
-reads 8/8 from source. No live delegation, task worktree or task branch. Nine beads remain
-open. Sample clean at `7ca2bb3` with its original config; candidate `24ea2d2` still
-selected in Codex. The campaign matrix waits for the user. See Now.
+Current: the remaining candidate matrix, on the user's go-ahead (2026-10-17). The sample's
+config is switched to `solo` (`candidate-config-solo.json`, through `init --config - --replace`;
+the original dev-team config is `candidate-original-sample-config.json`, hash `6dc1f7…`).
+A headless `codex exec` host (`run-host.sh solo-claude`) is running the Claude solo pair;
+its first task is consultation `fd1bdeef…`. Evidence goes to the source repo's ignored
+`.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`, not the sample. The
+verifier is the export `.cross-agent/verifier-332cf7f/`, run by the parent. If this session
+stops: wait for or cancel the host's tasks, then restore the sample config and the Codex
+managed owner before anything else.
 
 Historical entries:
 

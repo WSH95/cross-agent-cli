@@ -3,6 +3,10 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T07:42:50Z — claude
+
+[auto-checkpoint] Remaining candidate matrix started on the user's go-ahead: sample switched to solo, Claude solo pair running under a headless Codex host; evidence in candidate-matrix-20261017.
+
 ### 2026-10-17T00:12:58Z — claude
 
 Reviewed the Codex-host campaign at the user's request, then, on the user's go-ahead, fixed
