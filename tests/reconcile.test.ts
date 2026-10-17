@@ -1145,12 +1145,14 @@ test("a task whose runner died before settling keeps the session its engine anno
   }
   const claudeInit = (id: string) => JSON.stringify({ type: "system", subtype: "init", cwd: root, session_id: id, tools: [] });
   const claude = await lost("claude", [
-    // A stderr line is the engine's diagnostics, never its stream; a broken line is skipped.
+    // A stderr line is the engine's diagnostics, never its stream (no adapter's JSON either,
+    // so the reader's skip is the intent written down); a broken line is skipped.
     `stderr ${claudeInit("from-stderr")}`, "{not json", claudeInit("claude-session"), claudeInit("a-later-session"),
     // A success the engine wrote before it died settles nothing: only the runner's outcome does.
     JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "done" }),
   ]);
-  const codex = await lost("codex", [JSON.stringify({ type: "thread.started", thread_id: "codex-thread" }),
+  // A line ended CRLF reads as the same line.
+  const codex = await lost("codex", [`${JSON.stringify({ type: "thread.started", thread_id: "codex-thread" })}\r`,
     JSON.stringify({ type: "turn.started" })]);
   const grok = await lost("grok", [claudeInit("grok-session")]);
   const silent = await lost("claude", [JSON.stringify({ type: "assistant", message: { content: [] } })]);
@@ -1168,6 +1170,43 @@ test("a task whose runner died before settling keeps the session its engine anno
     assert.deepEqual([settled.status, settled.reason], ["failed", "runner lost"], record.id);
     assert.equal(settled.sessionId ?? undefined, session, `${record.id}'s session`);
   }
+});
+
+test("a lost runner's session is read whole when its line straddles the log reader's chunk", async (t) => {
+  // The reader reads the log in 64 KiB chunks; a line, and a character of more than one
+  // byte, that crosses a chunk's end is joined as bytes before it is decoded.
+  const root = project(t);
+  const zoo = processes(t);
+  const record = await started(root, "running", now);
+  const leader = zoo.leader();
+  await zoo.reap(leader);
+  await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: leader.identity }, now + 1);
+  const head = Buffer.from('{"type":"thread.started","thread_id":"');
+  // The filler line and its newline end where the id's first byte is the chunk's last.
+  const filler = "x".repeat(64 * 1024 - head.length - 2);
+  fs.writeFileSync(record.logPath, `${filler}\n${head.toString()}é-thread"}\n`);
+  assert.equal(Buffer.byteLength(`${filler}\n`) + head.length, 64 * 1024 - 1, "the é straddles the chunk's end");
+
+  const { changed, errors } = await reconcile(root, now + 2);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => [value.status, value.sessionId]), [["failed", "é-thread"]]);
+});
+
+test("a lost runner's session is looked for in the log's first MiB alone", async (t) => {
+  // The session is an engine's opening line; a task has no time limit, so its log has no size
+  // limit, and reconciliation reads no further than the head for it.
+  const root = project(t);
+  const zoo = processes(t);
+  const record = await started(root, "running", now);
+  const leader = zoo.leader();
+  await zoo.reap(leader);
+  await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: leader.identity }, now + 1);
+  const filler = `${"x".repeat(1023)}\n`.repeat(1024);
+  fs.writeFileSync(record.logPath, `${filler}${JSON.stringify({ type: "thread.started", thread_id: "too-late" })}\n`);
+
+  const { changed, errors } = await reconcile(root, now + 2);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(changed.map((value) => [value.status, value.sessionId ?? null]), [["failed", null]]);
 });
 
 test("a group the cleanup itself had to kill keeps the session its engine announced", async (t) => {

@@ -457,20 +457,25 @@ export function lostSession(record: TaskRecord): { sessionId: string } | Record<
   try {
     fd = fs.openSync(record.logPath, "r");
     const buffer = Buffer.alloc(64 * 1024);
-    let pending = "";
+    // Bytes, not text, until a newline ends a line: a character of more than one byte can
+    // cross a chunk's end, and the pipeline decoded each line whole.
+    let pending = Buffer.alloc(0);
     for (let read = 0; read < sessionScanBytes;) {
       const count = fs.readSync(fd, buffer, 0, buffer.length, read);
       if (count === 0) break;
       read += count;
-      const lines = (pending + buffer.toString("utf8", 0, count)).split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        const event = sessionLine(line, parseLine);
+      const data = Buffer.concat([pending, buffer.subarray(0, count)]);
+      let start = 0;
+      for (let newline = data.indexOf(10, start); newline !== -1; newline = data.indexOf(10, start)) {
+        const event = sessionLine(data.toString("utf8", start, newline), parseLine);
         if (event !== null) return { sessionId: event };
+        start = newline + 1;
       }
+      pending = data.subarray(start);
     }
-    // A last line with no newline is still a whole line once the file has ended.
-    const event = sessionLine(pending, parseLine);
+    // A last line with no newline is a whole line once the file has ended; one the scan's
+    // bound cut is no JSON any adapter reads, so it gives no session either.
+    const event = sessionLine(pending.toString("utf8"), parseLine);
     return event === null ? {} : { sessionId: event };
   } catch {
     return {};
