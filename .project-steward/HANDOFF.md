@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T10:21:01Z
+updated_at: 2026-10-17T10:37:37Z
 updated_by: claude
 session_status: active
 branch: main
@@ -414,15 +414,16 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: on the user's decisions (fix `.174`, accept the row-8 readings; fix `.173`, rerun the
-engine-led scenarios), both fixes are merged through the dev-team: `.173` as `320be3a`, `.174`
-as `7391736`/`9bb7365`; root 1283 / 1280 / 0 / 3; no task worktree or branch. Next: freeze the
-records commit as a new candidate, install and select it in Codex, rerun the Claude-led and
-Codex-led `dev-team-engine` scenarios with new tasks (`slug_longest_first`,
-`slug_unique_rotate`), rerun the old Codex-led scope's verifier with the sample on its matrix
-config (`.174`'s criterion 5), then restore the sample config and Codex's managed owner.
-The sample is restored and clean at `8872514`; Codex is on `cross-agent@agent-plugins`.
-`VERIFY.md`, "atc-s96.174 and atc-s96.173 merged".
+Current: both fixes are merged (`320be3a`, `9bb7365`) and recorded (`d9f9252`). Candidate
+`d9f92524c899` is frozen (`.cross-agent/candidate-d9f92524c899`, archive sha `601745b0…`,
+`candidate-d9f92524c899-freeze.json`), installed as `cross-agent@cross-agent-cli` and selected as
+Codex's managed owner (`candidate-d9f92524c899-install.txt`). The sample's config is the
+Claude-led engine config (`0a49a57a…`); the Claude-led rerun (lead `b2da58a8…`,
+`slug_longest_first`) has settled and its host is reporting; the Codex-led rerun follows. If
+this session stops: settle or cancel any live task, then restore the sample config
+(`candidate-original-sample-config.json`, `6dc1f7…`) and Codex (candidate helper `remove`,
+original helper `install --plugin cross-agent@agent-plugins`, `codex plugin remove
+cross-agent@cross-agent-cli`, `codex plugin marketplace remove cross-agent-cli`).
 
 Historical entries:
 
