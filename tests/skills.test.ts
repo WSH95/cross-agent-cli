@@ -2036,6 +2036,11 @@ test("the OpenClaw setup guide registers one complete server entry pinned by cwd
     /new session/, /`openclaw mcp reload`[^.]*not the gateway/,
     /`describe_mode` with `view: "summary"`/, /`list_roles`/,
     /openclaw mcp unset cross-agent/, /`skills\.load\.extraDirs`[^.]*never[^.]*payload/,
+    // An installed plugin's skills are links under OpenClaw's plugin-skills/, so the plugin's own
+    // directory is two levels above the skill's real directory, not above the link
+    // (docs/probes.md#ocPluginInstall).
+    /`realpath "<skill-dir>\/\.\.\/\.\."`/, /`plugin-skills\/`/, /~\/\.openclaw\/extensions\/cross-agent/,
+    /openclaw plugins uninstall cross-agent/,
   ]) {
     assert.match(guide, pin, `the OpenClaw setup guide: ${pin}`);
   }

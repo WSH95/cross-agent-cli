@@ -3,8 +3,8 @@
 cross-agent attaches to a host — Claude Code, Codex, Grok or OpenClaw — as one MCP server
 and the `cross-agent` launcher skill. Claude Code and Codex install it from the
 [agent-plugins](https://github.com/WSH95/agent-plugins) marketplace; Grok attaches it per
-project from a clone of this repository; OpenClaw reads a clone of the marketplace in place
-and runs the server from one entry in its own configuration. Each host's section gives the
+project from a clone of this repository; OpenClaw installs it from the marketplace's git source
+as a plugin and runs the server from one entry in its own configuration. Each host's section gives the
 install, the check and the way back, and the install from a clone for development.
 
 ## Requirements
@@ -505,40 +505,20 @@ not propose it, and the launcher stops on a project bound to it before it starts
 These steps were run against OpenClaw 2026.10.2 with its agent on the Codex runtime
 (`docs/probes.md`, "OpenClaw as a host"); OpenClaw's built-in runtime was not run.
 
-The plugin's files are read in place, from a clone of the marketplace you keep and `git pull`
-to update:
+**The plugin.** OpenClaw installs it from this marketplace's git source, as a Claude bundle:
 
 ```
-git clone https://github.com/WSH95/agent-plugins ~/src/agent-plugins
-P=$HOME/src/agent-plugins/cross-agent/claude/plugins/cross-agent
+openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities
+P=$HOME/.openclaw/extensions/cross-agent
 ```
 
-From a clone of this repository, `node tools/build-dist.mjs --out <dir>` builds the same
-payload, at `<dir>/claude/plugins/cross-agent`. Where your OpenClaw runs under a named
-profile, every `openclaw` command below carries `--profile <name>`.
-
-**The skills.** OpenClaw finds the `cross-agent` and `setup` skills once the payload's
-`skills/` directory is listed in `skills.load.extraDirs`, a list that `config set` replaces
-whole. Read it first:
-
-```
-openclaw config get skills.load.extraDirs --json
-```
-
-If it answers with no list, or with `[]`:
-
-```
-openclaw config set skills.load.extraDirs "[\"$P/skills\"]" --strict-json
-```
-
-If it lists directories already, write them all back with this one added, for one directory:
-
-```
-openclaw config set skills.load.extraDirs "[\"<a directory it listed>\", \"$P/skills\"]" --strict-json
-```
-
-The gateway applies the change without a restart, and the two skills show in `openclaw skills
-list` from `openclaw-extra`.
+`--force` acknowledges a source outside OpenClaw's own ClawHub registry, and
+`--accept-capabilities` the server and the skills the plugin declares. The plugin lands in
+`~/.openclaw/extensions/cross-agent`, a directory with no version in its name, and the running
+gateway applies it without a restart: the `cross-agent` and `setup` skills show in `openclaw
+skills list`. `openclaw plugins update cross-agent` brings a later release to the same
+directory. Where your OpenClaw runs under a named profile, every `openclaw` command below carries
+`--profile <name>`, and the plugin's directory is `~/.openclaw-<name>/extensions/cross-agent`.
 
 **The project.** OpenClaw's agent works in its own workspace, never in your project, so set the
 project up where it is: ask OpenClaw to set up cross-agent for it (`/skill setup`, or `/setup`,
@@ -555,8 +535,10 @@ Commit that `.gitignore` change: the lead's first step stops on an uncommitted t
 repository with no config runs `solo` on defaults, so a one-off delegation needs no `init`.
 
 **The server.** One entry in OpenClaw's configuration, complete in itself, its `cwd` the
-project's root — not `openclaw plugins install`, whose plugin brings a server of the same name
-that a configured entry replaces rather than completes:
+project's root. The plugin declares a server of the same name, which starts in the plugin's own
+directory, where there is no project, so it serves nothing; the entry replaces the plugin's own
+server rather than completing it, which is why it names the command, the script and every
+setting:
 
 ```
 openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve
@@ -600,7 +582,13 @@ What holds for every OpenClaw session attached this way:
   refuse a branch that carries `.openclaw/`, as they refuse `.claude/`, `.codex/`, `.grok/`
   and `.mcp.json`.
 
-To remove it, on the gateway's host: `openclaw mcp unset cross-agent` for the server, and the
-payload's `skills` directory taken out of `skills.load.extraDirs`, written back with the
-directories you keep — never the payload directory itself, which another host's install may
-share. A running session keeps the server it started until it ends.
+To remove it, on the gateway's host: `openclaw mcp unset cross-agent` for the server entry,
+then `openclaw plugins uninstall cross-agent` for the plugin and its skills. A running session
+keeps the server it started until it ends.
+
+**From a build instead of the plugin**, for development: `node tools/build-dist.mjs --out <dir>`
+in a clone of this repository builds the payload at `<dir>/claude/plugins/cross-agent`. List its
+`skills/` directory in `skills.load.extraDirs` — read the list with `openclaw config get
+skills.load.extraDirs --json` and write it back whole with this one added, since `config set`
+replaces it — and give the entry that payload's `src/server.ts`. Removal takes that directory
+out of the list again, never deleting the payload, which another host's install may share.

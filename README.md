@@ -43,7 +43,7 @@ no setup.
 
 Claude Code and Codex install it from the
 [agent-plugins](https://github.com/WSH95/agent-plugins) marketplace; Grok attaches it per
-project from a clone of this repository; OpenClaw reads a clone of the marketplace in place.
+project from a clone of this repository; OpenClaw installs it from the marketplace's git source.
 [docs/install.md](docs/install.md) has every step, check and removal, and the installs
 from a clone.
 
@@ -73,9 +73,15 @@ through the marketplace as usual; the connection follows the installed version.
 **Grok:** clone this repository and name it in the project's own `.grok/config.toml`:
 [Install it in Grok](docs/install.md#install-it-in-grok).
 
-**OpenClaw** (`solo` and `dev-team-engine`): clone the marketplace, list its `skills/` in
-`skills.load.extraDirs`, and register the server with its `cwd` the project:
-[Install it in OpenClaw](docs/install.md#install-it-in-openclaw).
+**OpenClaw** (`solo` and `dev-team-engine`): install the plugin from the marketplace's git
+source and register the server with its `cwd` the project:
+
+```
+openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities
+```
+
+[Install it in OpenClaw](docs/install.md#install-it-in-openclaw) has the server entry and the
+rest.
 
 ## Quick start
 
@@ -111,8 +117,9 @@ plugin does not put a `cross-agent` command on your shell's `PATH`:
 - **In Claude Code** the plugin's `bin/cross-agent` is on the session's Bash tool `PATH`:
   ask Claude to run `cross-agent report`.
 - **In Codex** the skills find the bundled CLI relative to their installed directory.
-- **In OpenClaw** the skills run the payload's `bin/cross-agent`, in the project's root,
-  since OpenClaw puts no plugin's `bin/` on its shell's `PATH`.
+- **In OpenClaw** the skills run the plugin's `bin/cross-agent`, in
+  `~/.openclaw/extensions/cross-agent`, from the project's root, since OpenClaw puts no
+  plugin's `bin/` on its shell's `PATH`.
 - **From a terminal** run the installed copy's launcher, for example
   `~/.codex/plugins/cache/agent-plugins/cross-agent/<version>/bin/cross-agent`, or link a
   clone's `bin/cross-agent` onto your `PATH`.

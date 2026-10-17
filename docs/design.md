@@ -4414,15 +4414,19 @@ runs a team loop reads that answer's full view, `dev-team`'s; the cap bounds eve
 answer too, a long `result` among them in any mode, which is why the attach raises it
 whatever the mode.
 
-**OpenClaw** is a host for `solo` and `dev-team-engine`, and needs neither a manifest nor a
-plugin install: it reads the Claude payload in place, its `skills/` listed in
-`skills.load.extraDirs`, and starts this server from one entry in its own configuration,
-`openclaw mcp add cross-agent --command node --arg <payload>/src/server.ts --cwd <project
-root> --timeout 3600 --connect-timeout 30 --approval approve`
-(`skills/cross-agent/references/openclaw-setup.md`, `tests/packaging.test.ts#openclawInstall`).
-The entry must be complete: OpenClaw overlays configured servers on a plugin's by name,
-replacing rather than merging, so a plugin install's own server would start without a project
-and an override could not complete it. OpenClaw 2026.10.2 on its Codex runtime starts two copies
+**OpenClaw** is a host for `solo` and `dev-team-engine`, and needs no manifest of its own: it
+installs the Claude payload as a bundle from the marketplace's git source, `openclaw plugins
+install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force
+--accept-capabilities`, into the unversioned `~/.openclaw/extensions/cross-agent`, linking the
+two skills into its `plugin-skills/` (`docs/probes.md#ocPluginInstall`), and starts this server
+from one entry in its own configuration, `openclaw mcp add cross-agent --command node --arg
+<plugin>/src/server.ts --cwd <project root> --timeout 3600 --connect-timeout 30 --approval
+approve` (`skills/cross-agent/references/openclaw-setup.md`,
+`tests/packaging.test.ts#openclawInstall`). A development build attaches the same way with its
+`skills/` listed in `skills.load.extraDirs` instead. The entry must be complete: the plugin's own
+server of the same name starts in the plugin's directory, where there is no project, and OpenClaw
+overlays configured servers on a plugin's by name, replacing rather than merging, so the entry
+names the command and the script as well as the project. OpenClaw 2026.10.2 on its Codex runtime starts two copies
 of the server for a session, its gateway's own for the tool catalog and the one the model
 calls, both in the entry's `cwd` and neither with OpenClaw's environment or `CODEX_HOME`, and
 both resolve to the operator row by ancestry with no host detection: no ancestor carries a

@@ -497,10 +497,11 @@ test("the install guide attaches Grok per project through the project's own .gro
 });
 
 // @anchor openclawInstall
-test("the install guide attaches OpenClaw by a skills directory and one complete server entry pinned by cwd, checks it, says what it does not do, and removes it", () => {
-  // The route the probes ran (docs/probes.md#openclawProbes and the rows after it): the Claude
-  // payload's skills/ read in place, and an mcp.servers entry OpenClaw starts twice, both copies
-  // in its cwd. Not a plugin install, whose same-name server a configured entry replaces.
+test("the install guide installs OpenClaw's plugin from the git marketplace and one complete server entry pinned by cwd, checks it, says what it does not do, and removes it", () => {
+  // The route the probes ran (docs/probes.md#ocPluginInstall and the rows before it): the plugin
+  // installed from the marketplace's git source to an unversioned directory, and an
+  // mcp.servers entry naming its server, which OpenClaw starts twice, both copies in its cwd. The
+  // entry is complete because it replaces the plugin's own server rather than merging with it.
   const guide = fs.readFileSync(path.join(repoRoot, "docs", "install.md"), "utf8");
   const grok = guide.indexOf("## Install it in Grok");
   const start = guide.indexOf("## Install it in OpenClaw");
@@ -509,22 +510,20 @@ test("the install guide attaches OpenClaw by a skills directory and one complete
   const section = guide.slice(start, next < 0 ? guide.length : next).replace(/\s+/g, " ");
   const missing = [
     "`solo` and `dev-team-engine`", "`dev-team`",
-    "git clone https://github.com/WSH95/agent-plugins ~/src/agent-plugins",
-    "P=$HOME/src/agent-plugins/cross-agent/claude/plugins/cross-agent",
-    "node tools/build-dist.mjs",
-    "openclaw config get skills.load.extraDirs --json",
-    `openclaw config set skills.load.extraDirs "[\\"$P/skills\\"]" --strict-json`,
-    // A list that already holds directories is written back whole, this one added.
-    "If it lists directories already", `openclaw config set skills.load.extraDirs "[\\"<a directory it listed>\\", \\"$P/skills\\"]" --strict-json`,
+    "openclaw plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities",
+    "~/.openclaw/extensions/cross-agent", "openclaw plugins update cross-agent",
+    "P=$HOME/.openclaw/extensions/cross-agent",
     "$P/bin/cross-agent init --mode dev-team-engine",
     'openclaw mcp add cross-agent --command node --arg "$P/src/server.ts" --cwd "$HOME/code/my-project" --timeout 3600 --connect-timeout 30 --approval approve',
-    "`--profile <name>`", "not `openclaw plugins install`",
+    "`--profile <name>`", "~/.openclaw-<name>/extensions/cross-agent", "replaces the plugin's own server",
     "/new", "openclaw mcp probe cross-agent", "fifteen", "seventeen with a `records` block", "mcp__cross_agent__",
     // The resume is the engine's to grant: a lead that died before announcing a session has none.
     "when its engine had announced its session",
     "two copies", "one project per entry",
     "`/new`", "runner lost", "resume",
-    "openclaw mcp unset cross-agent", "never the payload directory",
+    "openclaw mcp unset cross-agent", "openclaw plugins uninstall cross-agent",
+    // A build of a clone attaches the same way without the plugin, for development.
+    "node tools/build-dist.mjs", "skills.load.extraDirs",
     "`.openclaw/`", "built-in runtime",
   ].filter((words) => !section.includes(words));
   assert.deepEqual(missing, [], "the OpenClaw section names each of these");

@@ -5,17 +5,23 @@ Use on the local Linux host where the OpenClaw gateway runs, with Node 24+, Git,
 `dev-team-engine`: the launcher stops on any other mode before it starts anything.
 
 Resolve `<skill-dir>` to the cross-agent skill's directory, the one holding this file's
-`references/`, also when the setup skill sent you here, and resolve `<payload>` to
-`<skill-dir>/../..` as an absolute path: the plugin's own copy, holding `src/server.ts`,
-`bin/` and `skills/`. OpenClaw found this skill because its `skills/` directory is listed in
-`skills.load.extraDirs`, which the install guide's first step adds. Where the user's
-OpenClaw runs under a named profile, every `openclaw` command below carries `--profile <name>`;
+`references/`, also when the setup skill sent you here, and resolve `<payload>` with
+`realpath "<skill-dir>/../.."`: the plugin's own copy, holding `src/server.ts`, `bin/` and
+`skills/`. OpenClaw links an installed plugin's skills into its `plugin-skills/` directory,
+so the path it shows you for this skill is a link, and `<skill-dir>/../..` read as text names
+the wrong directory; `realpath` follows the link. For the plugin installed from the
+marketplace, as the install guide says, `<payload>` is `~/.openclaw/extensions/cross-agent`;
+for a development build listed in `skills.load.extraDirs`, it is that build's directory. Where
+the user's OpenClaw runs under a named profile, every `openclaw` command below carries
+`--profile <name>`, and the plugin's directory is `~/.openclaw-<name>/extensions/cross-agent`;
 otherwise none does.
 
 ## What it registers
 
-One `mcp.servers.cross-agent` entry, complete in itself: OpenClaw replaces a server of the
-same name rather than merging with it, so the entry carries every key the server needs. Its
+One `mcp.servers.cross-agent` entry, complete in itself: the plugin declares a server of the
+same name, which starts in the plugin's own directory, where there is no project, and OpenClaw
+replaces that server with the entry rather than merging the two, so the entry carries every key
+the server needs. Its
 `cwd` is the project: OpenClaw starts two copies of the server for a session, its own and
 the one its Codex runtime gives the model, and both start there, so the server serves the
 project at that directory as it would under any other host. A Git repository with no
@@ -74,11 +80,12 @@ For an explicitly requested removal, after the backup above, and each step check
 
 - The server: `openclaw mcp unset cross-agent`. A running chat keeps the copy it started
   until its session ends.
-- The skills: read the list with `openclaw config get skills.load.extraDirs --json` and
-  write it back without this payload's `skills` directory, keeping every other entry, with
-  `openclaw config set skills.load.extraDirs '<the remaining list>' --strict-json`. Removal
-  edits `skills.load.extraDirs` and never deletes the payload directory, which another host's
-  installation may share.
+- The plugin and its skills: `openclaw plugins uninstall cross-agent`.
+- For a development build instead: read the list with `openclaw config get
+  skills.load.extraDirs --json` and write it back without this payload's `skills` directory,
+  keeping every other entry, with `openclaw config set skills.load.extraDirs '<the remaining
+  list>' --strict-json`. Removal edits `skills.load.extraDirs` and never deletes the payload
+  directory, which another host's installation may share.
 
 Keep unrelated servers and skill directories as they are. Do not invent a profile, a path,
 or a project binding: ask the user for any you cannot read from the commands above.

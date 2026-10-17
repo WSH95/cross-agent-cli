@@ -5050,3 +5050,30 @@ note. A solo run there committed, tested and merged a one-shot through the tools
 `log.md` lines in the project's own `.cross-agent/` (`acceptance/acc-solo-1.json`). No command
 asked for an approval in this profile, whose exec approvals are OpenClaw's defaults; a profile
 with `tools.exec.mode: "ask"` would ask before each, which this probe did not exercise.
+
+<!-- @anchor ocPluginInstall -->
+### ocPluginInstall: the plugin installed from the marketplace's git source (2026-10-17)
+
+After 0.1.11's release, asked why the attach needed a clone, `openclaw --profile
+cross-agent-probe plugins install cross-agent --marketplace https://github.com/WSH95/agent-plugins`
+was run. It stopped twice before installing: once for a source "outside ClawHub review and trust
+metadata" (`--force` acknowledges it), once for capability consent (`--accept-capabilities`).
+With both it cloned the marketplace, installed 0.1.11 as a Claude bundle into
+`~/.openclaw-cross-agent-probe/extensions/cross-agent` — `bin/`, `modes/`, `skills/`, `src/`,
+`.claude-plugin/`, no version in the directory's name — and linked its two skills into the
+profile's `plugin-skills/` (`cross-agent -> …/extensions/cross-agent/skills/cross-agent`, `setup ->
+…/skills/setup`); `openclaw skills list` showed both, and `bash` resolved
+`plugin-skills/cross-agent/../../bin/cross-agent` through the link to the plugin's own launcher.
+`openclaw mcp list` and `mcp doctor --probe` named no server for the plugin's own declaration; an
+entry made with `openclaw mcp add cross-agent --command node --arg
+<…>/extensions/cross-agent/src/server.ts --cwd <the solo sample> --timeout 3600
+--connect-timeout 30 --approval approve` probed at 13 tools, the operator row under `solo`. The
+same install in the user's own profile, at the user's request, printed "Applied in Gateway
+generation 3": the running gateway took the plugin without a restart.
+
+**Reading.** The marketplace's git source is the install, with `openclaw plugins update
+cross-agent` for a later release to the same directory, so no clone is kept. The plugin's skills
+are links, so a reader of `<skill-dir>/../..` follows the link first (`realpath`), and the
+server's entry stays complete, since it replaces the plugin's own server of the same name. Not
+run: an agent session on this route (the probe profile's credential had been removed) and an
+update through `openclaw plugins update`.

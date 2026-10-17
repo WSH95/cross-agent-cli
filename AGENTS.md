@@ -242,11 +242,12 @@ Planned, in the design's work plan: the backlog (row 14).
   absolute path>"]` and `enabled = ["cross-agent"]`, and `[mcp]` with
   `max_output_bytes = 100000`, in `.grok/config.toml`, the folder trusted
   (docs/install.md, "Install it in Grok").
-- An OpenClaw host (`solo` and `dev-team-engine`): a clone of WSH95/agent-plugins read in
-  place, its `cross-agent/claude/plugins/cross-agent/skills` listed in
-  `skills.load.extraDirs`, and `openclaw mcp add cross-agent --command node --arg
-  <payload>/src/server.ts --cwd <project root> --timeout 3600 --connect-timeout 30
-  --approval approve`, then a new session (docs/install.md, "Install it in OpenClaw").
+- An OpenClaw host (`solo` and `dev-team-engine`): `openclaw plugins install cross-agent
+  --marketplace https://github.com/WSH95/agent-plugins --force --accept-capabilities`, then
+  `openclaw mcp add cross-agent --command node --arg
+  ~/.openclaw/extensions/cross-agent/src/server.ts --cwd <project root> --timeout 3600
+  --connect-timeout 30 --approval approve` and a new session (docs/install.md, "Install it in
+  OpenClaw"); a development build lists its `skills/` in `skills.load.extraDirs` instead.
 - An engine probe: `node tools/probe.mjs --engine claude --cwd <dir> --sandbox read-only --prompt "…"`.
 - A release: bump the version in `package.json` and both manifests, commit, push
   `main`, then `python3 tools/publish_agent_artifact_pr.py --build …`, which runs
