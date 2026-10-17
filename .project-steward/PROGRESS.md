@@ -3,6 +3,19 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T08:50:09Z — claude
+
+Ran the remaining candidate matrix on the user's go-ahead, on installed `24ea2d2` (no new
+freeze: the `.160` fix ships no file), each scenario from a fresh headless `codex exec` host,
+evidence in the ignored `.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`.
+Solo: six scenarios pass, three verifiers 8/8. Claude-led and Codex-led `dev-team-engine`
+runs merged (157 and 167 tests) with 7 pass and a row-8 `?` each: the reader fails closed on
+a computed `cmd` and on `tools[t.name]`, and misses codex-cli 0.163.0's `status` key on `wait`
+(`atc-s96.174`); both read by hand as no delegation or launch. Closed the eight held beads on
+this evidence. New `atc-s96.173`: all six Codex dev-team specialists read outside the sample.
+Restored the sample config, the Codex managed owner and the temporary plugin; prior evidence
+hashes match. Two user decisions pending.
+
 ### 2026-10-17T08:32:14Z — claude
 
 [auto-checkpoint] Matrix: solo 6/6 scenarios, three 8/8 verifiers; Claude-led 7 pass + row-8 `?` (computed cmd, recorded reading); Codex dev-team specialists searched outside the sample; Codex-led run in flight.

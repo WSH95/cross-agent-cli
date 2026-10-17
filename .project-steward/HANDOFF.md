@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-10-17T08:32:14Z
+updated_at: 2026-10-17T08:50:09Z
 updated_by: claude
-session_status: active
+session_status: paused
 branch: main
 ---
 # Handoff
@@ -414,19 +414,12 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: the remaining candidate matrix, on the user's go-ahead (2026-10-17). Done so far,
-each from a fresh headless `codex exec` host (`run-host.sh`): solo Claude, Codex and Grok
-pairs, all six scenarios pass, each pair's verifier 8/8 (main now `9884d36`); Claude-led
-`dev-team-engine` (lead `92d60093…`, 7 specialists at depth 2, merged `445dee2`, 157 tests):
-7 pass and a `?` on row 8 for a computed `cmd` in the Codex plan reviewer's code-mode
-script, read by hand as no delegation or launch (`claude-lead/verify-reading-row8.md`);
-whether a recorded reading is accepted is for the user. Finding: both Codex dev-team
-specialists searched outside the sample (`find ..`, `ls ~`, `find ~/Documents`); the
-scope sentence `.156` added is only in the consult prompt. In flight: the Codex-led run,
-sample config `candidate-config-codex-engine.json`. Evidence:
-`.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`. If this session stops:
-wait for or cancel the host's tasks, then restore the sample config
-(`candidate-original-sample-config.json`, `6dc1f7…`) and the Codex managed owner.
+Current: nothing in flight. The remaining candidate matrix ran on the user's go-ahead
+(2026-10-17) and is restored: solo 6/6 with three 8/8 verifiers; both engine-led runs merged
+with 7 pass and a row-8 `?` each, resolved only by recorded readings. Eight held beads are
+closed; `.163` stays open on two user decisions (Next steps 1). Sample at `8872514`, original
+config, clean; Codex's managed owner is `cross-agent@agent-plugins` again and the temporary
+candidate plugin is removed. See `VERIFY.md`, "Candidate 24ea2d2: remaining matrix".
 
 Historical entries:
 
@@ -592,15 +585,15 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Ask the user how to finish the campaign: run the solo and both engine-led scenarios on
-   the installed candidate `24ea2d2`, judged by this checkout's `tools/e2e-verify.mjs` (no
-   new freeze; the fix changed no shipped file); or settle the held beads another way. Do not start it without that answer.
-2. If the matrix runs, keep all retest evidence outside the sample project (the reviewer
-   that tripped row 8 was reading the operator's evidence under the sample's
-   `.cross-agent/`), then restore the original sample config and Codex managed owner
-   through the supported helper. No push, release or remote sync without approval.
-3. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
+1. Ask the user two decisions before `.163` closes. (a) Whether the two engine-led row-8 `?`
+   count as passes on their recorded readings (`candidate-matrix-20261017/*/verify-reading-row8.md`;
+   E3/E2 precedent), with `atc-s96.174` (the reader's codex-cli 0.163.0 `wait` shape, a
+   verifier-only fix) either way. (b) Whether to fix `atc-s96.173` (the dev-team role prompts
+   lack the project-discovery sentence; all six Codex dev-team specialists read outside the
+   sample): a prompt change ships, so it needs a new freeze and the two engine-led reruns.
+2. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
    "on the lead row".
+3. No push, release or remote sync without approval.
 
 Historical next-step entries below predate the approved fix campaign:
 
@@ -694,9 +687,8 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no technical blocker. One user decision is pending: whether and how to run the
-remaining frozen-candidate matrix (Next steps 1). All source fixes are merged, reviewed and
-tested. See Now and Beads.
+Current: no technical blocker. Two user decisions are pending (Next steps 1); `.163`, `.173`
+and `.174` are open. See Now and Beads.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

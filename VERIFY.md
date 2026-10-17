@@ -7,6 +7,63 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## Candidate 24ea2d2: remaining matrix (2026-10-17)
+
+On the user's go-ahead, the remaining scenarios ran on the installed candidate `24ea2d2`, with
+no new freeze: the `.160` fix changed no shipped file. Each ran from a fresh headless
+`codex exec` host (codex-cli 0.163.0, the operator's default gpt-6.1-sol xhigh,
+`-s workspace-write`, Claude Code's session markers unset), not the desktop chat the dev-team
+scope used. The parent switched the sample's config per scenario with `init --config -
+--replace --expect`, ran the verifier from an export of `332cf7f` outside any sandbox, and kept
+all new evidence in this repository's ignored
+`.cross-agent/fix-acceptance-evidence/candidate-matrix-20261017/`, not in the sample.
+Versions as frozen: Claude 2.1.302, Codex 0.163.0, Grok 1.0.52, Node 24.11.0, Git 2.43.0.
+
+| scope | tasks | merged | tests | verifier |
+|---|---|---|---|---|
+| solo, Claude opus-5-5 | consult `fd1bdeef…` read-only, writable `3841863e…` | `beb90b4` | 147 | 8 pass, exit 0 |
+| solo, Codex gpt-6.1-sol | `280c8a0e…`, `b2009024…` | `1a1237b` | 147 | 8 pass, exit 0 |
+| solo, Grok grok-4.7 | `abfd3423…`, `19d104e3…` | `9884d36` | 147 | 8 pass, exit 0 |
+| Claude-led `dev-team-engine` | lead `92d60093…`, 7 specialists | `445dee2` | 157 | 7 pass, row 8 `?` |
+| Codex-led `dev-team-engine` | lead `45ebb8b5…`, 7 specialists | `8872514` | 167 | 7 pass, row 8 `?` |
+
+Solo: every delegation named its engine and model and omitted effort; each record returned
+effort `null`, depth 1, and each consultation returned all six reference outputs with
+matching before/after snapshots. Engine-led: each lead asked one mailbox question, answered
+once with the scripted input; leads at depth 1, specialists at depth 2 under them; one plan
+round and one clean code round each, no fix round or resolver.
+
+Both row-8 `?` are the reader failing closed, read by hand as no delegation and no engine
+launch (`claude-lead/verify-reading-row8.md`, `codex-lead/verify-reading-row8.md`):
+- Claude-led: the Codex plan reviewer built a `python3 -B -c` command by concatenating
+  string constants; the documented rule wants a literal `cmd`.
+- Codex-led: the lead called `describe_mode` as `tools[t.name]` after `ALL_TOOLS.find`, the
+  documented computed-name rule; and codex-cli 0.163.0 adds `status` to its `function_call
+  wait` payloads, which the reader's 0.159.3 key set does not hold (`atc-s96.174`).
+E3 and E2 were accepted on such readings; this campaign held the earlier 7/8 open instead,
+so whether these readings count is the user's decision. No check is claimed as 8/8.
+
+Held findings: `.155`, `.156`, `.157`, `.159`, `.160`, `.161`, `.162` and `.169` are closed on this
+evidence. Grok's `search_replace` edit was read; the solo Codex consult tasks stayed in their
+cwd; the Claude lead had no Bash and used the summary view, and the Codex lead launched with
+`features.shell_tool=false` and named no command tool; neither lead restricted specialist
+tests; Codex children saw only Codex's built-in skills; both summaries carried the project
+settings without the brief supplying them.
+
+New finding `atc-s96.173`: all six Codex dev-team specialists read outside the sample (AGENTS.md
+up to `/home`, `ls ~`, `find ~/Documents`, the sample's own records from a worktree); none of
+the 12 Claude and Grok specialists did. The project-discovery sentence `.156` added is only in
+the consult prompt. Reads only, no write or launch.
+
+Observations, no bead: each host's `git_root ls-files -s` was refused (not whitelisted) and
+reconciled; the Claude read-only consultant ran `git ls-files` and `git status --short` against
+its prompt; hosts waited in 45-second calls. Restored: the sample's original config (`6dc1f7…`),
+clean at `8872514` with only the root worktree; Codex's managed owner `cross-agent@agent-plugins`
+(state, entry and launcher equal to the saved original); the temporary plugin, marketplace
+and empty cache directory removed. All 582 prior sample evidence files and the 198 dev-team
+retest files still match. A mistyped `e2e-verify.mjs --help` ran this repository's suite once
+in the background; it changed nothing. No push, release or sync.
+
 ## atc-s96.160: row 8 no longer doubts a delegate mention (2026-10-17)
 
 The retest's one unresolved row came from a Codex plan reviewer reading a file named
