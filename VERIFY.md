@@ -7,6 +7,44 @@ transcripts stay in `docs/probes.md`.
 The repository was renamed from `~/Documents/agent-team-cli` to `~/Documents/cross-agent-cli`
 on 2026-10-03; each section keeps the paths and the Codex plugin names its runs used.
 
+## atc-s96.160: row 8 no longer doubts a delegate mention (2026-10-17)
+
+The retest's one unresolved row came from a Codex plan reviewer reading a file named
+`01-planner-delegate.json`. The earlier fix (`b5a5522`) had allowed only the exact read
+commands seen before, so any other harmless read naming `delegate` answered `?` again.
+On the user's go-ahead, this fix removes the cause: row 8 no longer counts a `delegate`
+name the reader cannot follow to a call, on any row. A delegate call it does follow still
+fails, unfollowed command-tool names and every other doubt still answer `?`, and launch
+judging is unchanged. `readsOnly`, `plainLauncher` and the delegate discount are removed.
+The reasons are in `tools/e2e-verify.mjs` and `docs/design.md`: a specialist's server does
+not serve `delegate`, a Codex specialist has no mount of this server, and any delegation
+that ran leaves a ledger record that rows 5 and 6 check.
+
+The configured dev-team ran it from a Claude Code host on installed 0.1.9, slug
+`verifier-delegate-mentions`, base `291c78e`:
+- Planner `610d6125…`, then `0974de46…` after review. Plan reviewer (Codex) `f0ca2559…`:
+  no major issues, one Minor (the depth-cap reasoning), folded.
+- Implementer `1d127eb7…`: the new `#delegateMentions` test failed first on the recorded
+  input, then passed; six existing tests updated. Committed as `13cfc1c`.
+- Round 1 at `13cfc1c`: Codex `89163ab3…` and Grok `381f7ee6…` no findings; Claude
+  `731b1cfa…` one Important, the text said a Codex specialist has no MCP server at all
+  when it has `codex_apps`. Fixed by `98fa6e3b…` as `39ac7c8`, wording only.
+- Round 2 at `39ac7c8`: Claude `d60fc7d9…`, Codex `e172fcbf…` and Grok `37ff8b42…` all
+  no major issues. One cosmetic Minor (a short line) was not taken.
+- Gate at both heads and root suite after the merge: 1281 tests, 1278 pass, 0 fail, 3
+  skipped. Merged `291c78e..39ac7c8`; worktree and branch removed.
+
+Rerun of the retest's verifier from this source against the retained records,
+`node tools/e2e-verify.mjs --project /home/wsh/Documents/cross-agent-codex-host-e2e-20261015
+--since 513019741df1420767fa45a4064b52e7a05e --slug codex-host-rotate-retest-20261016`:
+8 pass, 0 fail, 0 without evidence, exit 0, all 9 transcripts scanned. The sample's
+working tree stayed clean. The frozen candidate in Codex is unchanged and does not carry
+this fix; the solo and engine-led scenarios have not run.
+
+Follow-ups, none blocking: `docs/design.md`'s E2 history still says these names are set
+aside "on the lead row"; and retest evidence should be kept outside the sample project,
+since the reviewer that tripped row 8 was reading the operator's own evidence there.
+
 ## User pause (2026-10-16)
 
 The user paused the campaign. Read-only Task10 planner

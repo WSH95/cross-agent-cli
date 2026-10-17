@@ -1,6 +1,6 @@
 ---
-updated_at: 2026-10-16T22:43:48Z
-updated_by: codex
+updated_at: 2026-10-17T00:12:58Z
+updated_by: claude
 session_status: paused
 branch: main
 ---
@@ -8,17 +8,32 @@ branch: main
 
 ## Now
 
-PAUSED by the user on 2026-10-16T22:43:48Z. Do not continue until explicitly resumed.
-Planner8b8da25bfae124c3c270893ec502576b429d was cancelled through the installed server,
-exit143; result is empty, so no final plan was delivered. No plan review, implementation
-worktree or task branch was created. Reconciliation confirms no active source tasks.
-Task10 logs/specs/scratch and cancellation/result are retained in task10-paused-* evidence.
-Temporary candidate remains selected; restoration is pending completion or user direction.
+**atc-s96.160 is fixed at its cause (2026-10-17, Claude Code host).** The user asked for a
+review of the Codex-host campaign, then said to go ahead with the recommended fix. The
+earlier .160 fix (`b5a5522`) allowed only the exact read commands seen in archived runs,
+so the retest failed again on a new harmless read (a Codex plan reviewer reading
+`01-planner-delegate.json`). Row 8 now ignores a `delegate` name the reader cannot follow
+to a call, on any row; a followed delegate call still fails and every other doubt stays.
+It ran through the configured dev-team from this Claude Code session on installed 0.1.9:
+one plan review, two code-review rounds (one Important wording finding fixed), merged as
+`39ac7c8`. Root suite: 1281 tests, 1278 pass, 0 fail, 3 skipped. The retest's verifier,
+rerun from source against the retained records, now reads 8 pass, 0 fail, exit 0.
+`VERIFY.md` has the full record. Root is clean, root worktree only, no task branches.
 
-Acceptance campaign atc-s96.163 is paused. Nine beads remain: .160 needs an additional
-source pass after the candidate retest; .155/.156/.157/.159/.161/.162/.169 are merged but
-held for candidate acceptance; .163 is umbrella. Task9 .168 remains closed. No external
-blocker or human decision is pending. Source main before this pause checkpoint is abd355817a78e74e3f557f0d60edc93524649d6e.
+What has not changed: the frozen candidate `24ea2d2` is still installed and selected in
+Codex and does not carry this fix; the sample is still at `7ca2bb3` with its original
+dev-team config; the solo and engine-led scenarios have not run. Nine beads stay open
+(.155, .156, .157, .159, .160, .161, .162, .169 held for candidate acceptance, and
+umbrella .163). Whether and how to finish that matrix is the user's decision.
+
+The rest of this section is Codex's state at the user's pause (2026-10-16T22:43:48Z),
+kept for the matrix. Its Task10 planner was cancelled before delivering a plan; the work
+it was meant to plan is now the merge above.
+
+Acceptance campaign atc-s96.163 is paused. Before this session, .160 needed an additional
+source pass after the candidate retest; that pass is `39ac7c8`. .155/.156/.157/.159/.161/.162/.169 are merged but
+held for candidate acceptance; .163 is umbrella. Task9 .168 remains closed. Source main
+at the pause checkpoint was abd355817a78e74e3f557f0d60edc93524649d6e.
 
 Frozen candidate24ea2d285c7c12349dc41ba351dba1dab02fb5cd remains installed/selected as
 cross-agent@cross-agent-cli0.1.9. Its173 files/executable bits match the retained export;
@@ -398,9 +413,10 @@ What stands is the project's own record. The operator conditions a release names
 
 ## In flight
 
-Current: campaign .163 PAUSED by user; Task10 .160 planner cancelled before final plan.
-Candidate scope1 remains7pass/1unresolved. No live source/sample delegation or task worktree/branch. Nine beads
-remain. Sample clean at7ca2bb3/147tests, original config; candidate still selected. See Now.
+Current: nothing in flight. The .160 fix is merged (`39ac7c8`) and the retest's verifier
+reads 8/8 from source. No live delegation, task worktree or task branch. Nine beads remain
+open. Sample clean at `7ca2bb3` with its original config; candidate `24ea2d2` still
+selected in Codex. The campaign matrix waits for the user. See Now.
 
 Historical entries:
 
@@ -566,13 +582,15 @@ The task worktree is removed, and its ignored files are archived in
 
 ## Next steps
 
-1. Wait for explicit user resume. Then re-establish Task10 .160 planning through the
-   configured frozen development team using task10-acceptance.md, cancelled-planner logs
-   and the captured exact native case. No final plan was delivered.
-2. Freeze/install fixed candidate, verify the affected original scope without rewriting
-   old outcomes, then finish solo and both engine-led scenarios. Require all6 scopes8/8,
-   independent audits, original-config/managed-owner restoration, Beads closure on actual
-   acceptance and validated local evidence commit. No push/release/remote sync.
+1. Ask the user how to finish the campaign: freeze and install a candidate that carries
+   `39ac7c8`, then run the solo and both engine-led scenarios; or settle the held beads
+   another way. Do not start it without that answer.
+2. If the matrix runs, keep all retest evidence outside the sample project (the reviewer
+   that tripped row 8 was reading the operator's evidence under the sample's
+   `.cross-agent/`), then restore the original sample config and Codex managed owner
+   through the supported helper. No push, release or remote sync without approval.
+3. Optional follow-up: `docs/design.md`'s E2 history still says these names are set aside
+   "on the lead row".
 
 Historical next-step entries below predate the approved fix campaign:
 
@@ -666,9 +684,9 @@ Previous release and backlog pointers:
 
 ## Blockers
 
-Current: no external blocker or pending user decision. All source fixes and follow-ups
-are merged, reviewed and tested. The frozen-candidate mode matrix, restoration and final
-evidence remain before campaign completion. See Now and Beads.
+Current: no technical blocker. One user decision is pending: whether and how to run the
+remaining frozen-candidate matrix (Next steps 1). All source fixes are merged, reviewed and
+tested. See Now and Beads.
 
 Historical acceptance failures below are preserved; their fixes are now authorized:
 

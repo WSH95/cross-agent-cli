@@ -3,6 +3,16 @@
 Add new entries at the top when the project reaches a meaningful checkpoint.
 Do not record every edit.
 
+### 2026-10-17T00:12:58Z — claude
+
+Reviewed the Codex-host campaign at the user's request, then, on the user's go-ahead, fixed
+atc-s96.160 through the configured dev-team from a Claude Code host. Row 8 no longer counts
+a `delegate` name it cannot follow to a call, which removes the cause of the retest's `?`
+instead of allowing one more command shape. Merged as `39ac7c8` after one plan review and
+two code-review rounds; root suite 1281/1278/0 fail/3 skipped. The retest's verifier,
+rerun from source on the retained records, now reads 8/8, exit 0. Beads stay held; the
+remaining frozen-candidate matrix waits for the user. No push, release or remote sync.
+
 ### 2026-10-16T22:43:48Z — codex
 
 User paused the campaign. Task10 read-only planner 8b8da25bfae124c3c270893ec502576b429d
