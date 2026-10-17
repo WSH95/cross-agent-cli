@@ -1185,9 +1185,21 @@ Everything below is built, the operator CLI's listing among it
     find what is there without the ledger calling it a success
     (`src/process.ts#settlement`, `#terminateOrphans`, bead `atc-s96.30`).
     `orphaned → done` is a legal transition for this one writer
-    (`src/ledger.ts#transitions`);
+    (`src/ledger.ts#transitions`). A runner that died before its outcome — killed with
+    its engine, as an OpenClaw gateway's stop kills both (`docs/probes.md#ocLifetime`) —
+    left no session on the record either, and a resume needs one
+    (`src/delegate.ts#resumeFault`). So the settlement also keeps the session the engine
+    announced at the head of its own log, read through its adapter's `parseLine` as the
+    pipeline read it, the first one winning, `stderr `-prefixed lines skipped
+    (`src/process.ts#lostSession`, `tests/reconcile.test.ts#lostRunnerKeepsSession`). It
+    is metadata, never evidence: the status stays `runner lost`, a success line in the log
+    settles nothing, and a record that holds a session already, an engine with no adapter,
+    or a log that is missing, unreadable or names no session leaves the field as it was.
+    Whether the engine can continue that session is the engine's: a resume is possible,
+    not promised (`tests/delegate.test.ts#resumeAfterLostRunner`);
   - an `orphaned` record whose group this pass had to **kill**: `failed:
-    runner lost; engine group terminated`, and no outcome is read at all
+    runner lost; engine group terminated`, keeping the session its log announced as above,
+    and no outcome is read at all
     (`src/process.ts#terminateOrphans`). The engine was still running when the
     pass met it, so it did not end on its own, and settling it from a record
     written earlier would report a task this pass has just ended as one that

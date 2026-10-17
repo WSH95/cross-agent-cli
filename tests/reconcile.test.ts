@@ -1123,6 +1123,67 @@ test("an orphan is settled from the outcome its runner recorded, never from the 
   assert.deepEqual([byId.get(stale.id)!.status, byId.get(stale.id)!.reason], ["failed", "runner lost"]);
 });
 
+// @anchor lostRunnerKeepsSession
+test("a task whose runner died before settling keeps the session its engine announced in its own log, and nothing else from it", async (t) => {
+  // An OpenClaw gateway's stop kills a lead's runner and engine together, before the runner
+  // records the engine's session (docs/probes.md#ocLifetime): the log is the one place left
+  // that names it, and without it a resume of the lead is refused.
+  const root = project(t);
+  const zoo = processes(t);
+  /** A running record whose runner is dead and whose engine group is gone, its log as given. */
+  async function lost(engine: string, log: string[] | null, extra: Record<string, unknown> = {}): Promise<TaskRecord> {
+    const record = await started(root, "running", now);
+    const leader = zoo.leader();
+    await zoo.reap(leader);
+    await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: leader.identity, ...extra }, now + 1);
+    if (log !== null) fs.writeFileSync(record.logPath, log.map((line) => `${line}\n`).join(""));
+    if (engine !== "codex") {
+      const file = path.join(tasks(root), `${record.id}.json`);
+      fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), engine }));
+    }
+    return record;
+  }
+  const claudeInit = (id: string) => JSON.stringify({ type: "system", subtype: "init", cwd: root, session_id: id, tools: [] });
+  const claude = await lost("claude", [
+    // A stderr line is the engine's diagnostics, never its stream; a broken line is skipped.
+    `stderr ${claudeInit("from-stderr")}`, "{not json", claudeInit("claude-session"), claudeInit("a-later-session"),
+    // A success the engine wrote before it died settles nothing: only the runner's outcome does.
+    JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "done" }),
+  ]);
+  const codex = await lost("codex", [JSON.stringify({ type: "thread.started", thread_id: "codex-thread" }),
+    JSON.stringify({ type: "turn.started" })]);
+  const grok = await lost("grok", [claudeInit("grok-session")]);
+  const silent = await lost("claude", [JSON.stringify({ type: "assistant", message: { content: [] } })]);
+  const unlogged = await lost("claude", null);
+  const unknown = await lost("mystery", [claudeInit("mystery-session")]);
+  const kept = await lost("claude", [claudeInit("from-the-log")], { sessionId: "recorded-session" });
+
+  const { changed, errors } = await reconcile(root, now + 2);
+  assert.deepEqual(errors, []);
+  const byId = new Map(changed.map((value) => [value.id, value]));
+  for (const [record, session] of [[claude, "claude-session"], [codex, "codex-thread"], [grok, "grok-session"],
+    [silent, undefined], [unlogged, undefined], [unknown, undefined], [kept, "recorded-session"]] as const) {
+    const settled = byId.get(record.id);
+    assert.ok(settled !== undefined, `${record.id} settled`);
+    assert.deepEqual([settled.status, settled.reason], ["failed", "runner lost"], record.id);
+    assert.equal(settled.sessionId ?? undefined, session, `${record.id}'s session`);
+  }
+});
+
+test("a group the cleanup itself had to kill keeps the session its engine announced", async (t) => {
+  const root = project(t);
+  const zoo = processes(t);
+  const record = await started(root, "orphaned", now);
+  const engine = zoo.leader();
+  await change(root, record.id, { runnerIdentity: deadIdentity(), engineIdentity: engine.identity }, now + 1);
+  fs.writeFileSync(record.logPath, `${JSON.stringify({ type: "thread.started", thread_id: "codex-thread" })}\n`);
+
+  const { changed, skipped } = await terminateOrphans(root);
+  assert.deepEqual(skipped, []);
+  assert.deepEqual(changed.map((value) => [value.status, value.reason, value.sessionId]),
+    [["failed", "runner lost; engine group terminated", "codex-thread"]]);
+});
+
 test("a group the cleanup itself had to kill is a lost runner, whatever any outcome file says", async (t) => {
   const root = project(t);
   const zoo = processes(t);

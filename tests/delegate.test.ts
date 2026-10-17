@@ -10,6 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Authority } from "../src/authority.ts";
 import { CONFIG_PATH } from "../src/config.ts";
 import { delegate, protectedPathsFor, writableProfiles } from "../src/delegate.ts";
+import { listTasks } from "../src/tasks.ts";
 import type { DelegateRequest } from "../src/delegate.ts";
 import { listJournals, readJournal } from "../src/journal.ts";
 import { create, readSpec, scan, update, writeSpec } from "../src/ledger.ts";
@@ -457,6 +458,27 @@ test("a resume whose original never reached a session is refused rather than lau
   assert.equal(original.sessionId, null);
   const reason = refusal(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), resume: original.id }, options));
   assert.match(reason, new RegExp(`task ${original.id} recorded no engine session`));
+});
+
+// @anchor resumeAfterLostRunner
+test("a task whose runner died before settling is resumed with the session its log announced, once list_tasks settles it", async (t) => {
+  const p = await projectWithRoles(t);
+  const options = { authority: operator, mode: p.mode, env: engineEnv(p) };
+  // A gateway stop killed the runner and the engine together (docs/probes.md#ocLifetime): the
+  // record is still `running`, its runner gone and no session recorded, and the engine's own
+  // log holds the one it announced.
+  const original = await seed(p.root, { role: "planner", cwd: p.root, status: "running", sessionId: null });
+  fs.writeFileSync(original.logPath, `${JSON.stringify({ type: "system", subtype: "init", session_id: "grok-announced" })}\n`);
+  const refused = refusal(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), resume: original.id }, options));
+  assert.match(refused, new RegExp(`${original.id} is running`), "a record nobody has settled is still live");
+
+  const listed = await listTasks(p.root);
+  assert.equal(listed.tasks.find((task) => task.id === original.id)?.status, "failed");
+  const settled = scan(p.root).records.find((record) => record.id === original.id);
+  assert.deepEqual([settled?.status, settled?.reason, settled?.sessionId], ["failed", "runner lost", "grok-announced"]);
+
+  const resumed = launched(await delegate(p.root, { ...request({ role: "planner", cwd: p.root }), resume: original.id }, options));
+  assert.equal(readSpec(p.root, resumed).resumeSessionId, "grok-announced");
 });
 
 // @anchor delegationStartsGrok

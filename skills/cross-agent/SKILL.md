@@ -530,7 +530,11 @@ that failed or was killed is continued, not started again: `delegate {role:
 <lead.role>, cwd: <project root>, resume: <lead id>, brief}`, and the server
 appends to that brief every question the lead's chain asked so far with its status
 and answer — which is how an answer you gave a lead that died waiting reaches the
-one that continues it. A resume refused because an ask file cannot be read names that
+one that continues it. That holds for a lead killed together with its runner too — an
+OpenClaw gateway's stop or update ends every task its server started — once `list_tasks`
+has settled it `failed` with the session its engine announced; a lead that died before its
+engine announced one is refused a resume, and is started again on its task only on the
+user's word. A resume refused because an ask file cannot be read names that
 file: an unreadable ask file is the operator's to repair or remove by hand before the
 lead is resumed, and a cancel names the same files under `asksNotCancelled`.
 

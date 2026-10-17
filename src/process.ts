@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { lockWaitSeconds } from "./config.ts";
+import { adapterFor } from "./engines/registry.ts";
+import type { EngineEvent, EngineName } from "./engines/types.ts";
 import { currentBootId, list, readOutcome, readProcessStat, update } from "./ledger.ts";
 import type { EngineIdentity, ProcessIdentity, TaskPatch, TaskRecord } from "./ledger.ts";
 
@@ -406,7 +408,8 @@ export function selfLast<T extends { engineIdentity?: EngineIdentity | null }>(r
  * result file is not — the pipeline writes an engine's last word there whether the run
  * succeeded or failed, so its text proves only that something ended (bead atc-s96.30).
  * With no outcome recorded the result file is **named** rather than read, so an operator
- * can find what is there without the ledger calling it a success.
+ * can find what is there without the ledger calling it a success, and the session the
+ * engine announced in its own log is kept (`lostSession`), so the task can still be resumed.
  */
 export function settlement(projectRoot: string, record: TaskRecord): TaskPatch {
   const outcome = readOutcome(projectRoot, record);
@@ -423,7 +426,70 @@ export function settlement(projectRoot: string, record: TaskRecord): TaskPatch {
   return {
     status: "failed",
     reason: result.trim() === "" ? "runner lost" : `runner lost; result text present at ${record.resultPath}`,
+    ...lostSession(record),
   };
+}
+
+/** How much of an engine's log is read for its session, at most: the session is its opening. */
+const sessionScanBytes = 1 << 20;
+
+/**
+ * The session a record whose runner died before it settled still has, as a patch: what the
+ * engine announced at the head of its own log, read through its adapter's `parseLine` as the
+ * pipeline read it (`src/engines/spawn.ts#parsedEvent`), the first one winning. It is
+ * metadata, not evidence: it lets `delegate`'s resume continue the engine's conversation
+ * (`src/delegate.ts#resumeFault`) and settles nothing — the status stays the lost runner's.
+ * A record that already holds a session keeps it, and an engine this build has no adapter
+ * for, a log that cannot be read or one that announces no session give no patch, never a
+ * failed settlement. A line the pipeline prefixed `stderr ` is the engine's diagnostics, not
+ * its stream, and is skipped.
+ */
+export function lostSession(record: TaskRecord): { sessionId: string } | Record<string, never> {
+  if (record.sessionId) return {};
+  let parseLine: (line: string) => EngineEvent | null;
+  try {
+    const adapter = adapterFor(record.engine as EngineName);
+    parseLine = adapter.parseLine.bind(adapter);
+  } catch {
+    return {};
+  }
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(record.logPath, "r");
+    const buffer = Buffer.alloc(64 * 1024);
+    let pending = "";
+    for (let read = 0; read < sessionScanBytes;) {
+      const count = fs.readSync(fd, buffer, 0, buffer.length, read);
+      if (count === 0) break;
+      read += count;
+      const lines = (pending + buffer.toString("utf8", 0, count)).split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        const event = sessionLine(line, parseLine);
+        if (event !== null) return { sessionId: event };
+      }
+    }
+    // A last line with no newline is still a whole line once the file has ended.
+    const event = sessionLine(pending, parseLine);
+    return event === null ? {} : { sessionId: event };
+  } catch {
+    return {};
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* Read already; nothing more to do. */ }
+    }
+  }
+}
+
+function sessionLine(raw: string, parseLine: (line: string) => EngineEvent | null): string | null {
+  const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+  if (line === "" || line.startsWith("stderr ")) return null;
+  try {
+    const event = parseLine(line);
+    return event !== null && event.kind === "session" ? event.sessionId : null;
+  } catch {
+    return null;
+  }
 }
 
 // Each call judges every orphaned record on the current kernel state: an invalid or
@@ -458,7 +524,7 @@ export async function terminateOrphans(projectRoot: string): Promise<{ changed: 
     // it from a runner's outcome would report a task this pass has just ended as one that
     // finished (bead atc-s96.30, finding T3b-2).
     const patch: TaskPatch = state === "alive"
-      ? { status: "failed", reason: "runner lost; engine group terminated" }
+      ? { status: "failed", reason: "runner lost; engine group terminated", ...lostSession(record) }
       : settlement(projectRoot, record);
     // A record settled by another writer since the listing is refused: not changed.
     const result = await update(projectRoot, record.id, patch, Date.now(), { unlessTerminal: true, waitSeconds });

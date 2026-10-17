@@ -4984,3 +4984,36 @@ and the answer comes back as the user's next message, which the host passes on i
 words. A chat with no question panel sees only the host's closing message, so the launcher has
 the host quote the question and its id there, and holds `ask_user`'s `status: "no_answer"` to
 what it is, no answer (`skills/cross-agent/SKILL.md`, "Engine placement").
+
+<!-- @anchor ocLifetime -->
+### ocLifetime: a lead outlives its host session, not its gateway
+
+A host of the `dev-team-engine` sample started a lead (Claude, `claude-opus-5-5`) whose brief
+was to ask one question and keep waiting for the answer (`msg-life.txt`); it asked at
+16:44:14 (ask `d7dd4a7d…`), and its runner and engine ran in the probe gateway's own unit,
+`/user.slice/user-1000.slice/user@1000.service/app.slice/openclaw-gateway-cross-agent-probe.service`,
+the runner a child of the Codex runtime's copy of the server (`life.mjs`).
+
+- **`/new`** in that session (`✅ New session started.`): runner and engine still alive, with
+  the server copy that started them.
+- **`openclaw sessions delete`** of the session: the same — alive.
+- **`systemctl --user stop openclaw-gateway-cross-agent-probe.service`** at 16:46:57: the stop
+  returned at 16:46:59 and runner and engine were gone, with every copy of the server; the
+  unit's `KillMode=mixed` ends every process left in its cgroup. The record still said
+  `running`.
+
+After `systemctl --user start`, a new host session asked about the lead called `list_tasks`,
+which settled it `failed`, `runner lost`, and reported the open ask; asked to answer it and
+resume the lead, it recorded the answer and was refused: "refused resume of task
+0656fb15…: task 0656fb15… recorded no engine session to continue" (`turn-life-check.json`,
+`turn-life-resume.json`). The runner records the engine's session only when it settles, and
+this one never did; the engine's own log still held it, its first line Claude's `system`
+`init` with `session_id` `3fe99aab-…` (`engine-tasks/0656fb15….ndjson`).
+
+**Reading.** OpenClaw's session lifecycle leaves running tasks alone: they run detached from
+the server, and neither `/new` nor a deleted session ends the server copy that started them.
+A gateway stop, restart or update ends them all, since they live in the gateway's service. The
+recovery is the one the launcher gives for any lead that failed — reconcile, then resume — and
+it needed the session the log holds: the settlement now keeps it
+(`src/process.ts#lostSession`). Moving runners out of the gateway's service, so they outlive it,
+is not built (design "Not built").
