@@ -5609,8 +5609,10 @@ binding, and the project follows its own path (Context).
   `tool_progress` heartbeats, which the verifier has since learned in the shape E3
   recorded (`tests/e2e-verify.test.ts#claudeHeartbeat`), and E2's lead rollout a
   tool-discovery script naming `delegate` in a regular expression, which the verifier
-  has since learned to set aside on the lead row, whose own tool `delegate` is
-  (`tests/e2e-verify.test.ts#leadDelegateNames`; `docs/probes.md#e3`, `#e2`). E2's host ran two
+  has since learned to set aside on every row: a `delegate` name it cannot follow to a
+  call is no doubt anywhere, and a call it follows is an offence off the lead row, whose
+  own tool `delegate` is (`tests/e2e-verify.test.ts#leadDelegateNames`,
+  `#delegateMentions`; `docs/probes.md#e3`, `#e2`). E2's host ran two
   read-only `git` commands of its own; once the launcher's host-loop paragraphs
   named `host` placement, E2b's host kept to the launcher's calls but closed on a
   list of its own, and E2c's, under the launcher's closing paragraph conditioned
