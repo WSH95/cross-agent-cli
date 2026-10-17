@@ -1,5 +1,5 @@
 ---
-updated_at: 2026-10-17T18:22:41Z
+updated_at: 2026-10-17T18:49:43Z
 updated_by: claude
 session_status: paused
 branch: main
@@ -27,8 +27,15 @@ under `~/.cache/agent-team/openclaw-probe/` remain as evidence. Deferred by the 
 **Released as 0.1.11 (2026-10-17):** `9cc70ae` pushed; WSH95/agent-plugins#26 (payload plus the
 marketplace README's OpenClaw entries) squash-merged as `5392081`; Claude Code and Codex updated to
 0.1.11 (`VERIFY.md`, "Release 0.1.11"). **Next:** reconnect cross-agent in open hosts so they serve
-0.1.11; attaching the user's own OpenClaw (docs/install.md, "Install it in OpenClaw") is the user's
-to ask for; `atc-uzf.12` and `.13` stay deferred.
+0.1.11; `atc-uzf.12` and `.13` stay deferred.
+**User's OpenClaw (2026-10-17):** on the user's request cross-agent 0.1.11 is installed in the user's
+main OpenClaw profile as a plugin from the marketplace's git source (`~/.openclaw/extensions/cross-agent`,
+applied without a gateway restart; config backed up to `~/.openclaw/openclaw.json.before-cross-agent-20261017144312`);
+no server entry yet — the user chose to set a project up from chat later. **In flight:** `atc-uzf.16`, the
+docs moved to that plugin route (`950917f`, local, not pushed), under review by gpt-6.1-sol (`a5ea61c7`) and
+claude-opus-5-5 (`9ceeac6c`). The released 0.1.11 `openclaw-setup.md` reads `<skill-dir>/../..` as text,
+which through OpenClaw's `plugin-skills/` link names the wrong directory; the fix (realpath) needs a release
+(0.1.12, the user's to approve) and `openclaw plugins update cross-agent`, or the entry registered by hand.
 
 **cross-agent 0.1.10 is released (2026-10-17).** At the user's request the E2 wording was fixed
 (`5576c66`), the version bumped (`4da1a9b`), `main` pushed, WSH95/agent-plugins#25 opened by the
